@@ -4,968 +4,420 @@ White Creek Farm
 
 *Full System Handover Document*
 
-April 11, 2026
+Updated April 12, 2026
 
-*Built during April 9-11, 2026 build session*
+*Original build: April 9-11, 2026. Add Feed Webform + UI overhaul session: April 12, 2026.*
 
-**1. How to Work With the Next Claude Instance**
+---
 
-This section is the most important one. Ronnie has a specific way of
-working and the previous Claude learned it over two days. Read this
-carefully before starting any work.
+# SESSION SUMMARY — April 12, 2026
 
-**1.1 Ronnie\'s Working Style**
+This section covers everything built, tested, decided, and left open during the April 12 session. **Read this section first** before touching any code.
 
--   Ask lots of questions before building. Ronnie explicitly said \"I
-    like to operate with lots of questions and clarifying.\" Never jump
-    into code without fully understanding scope.
+## 1. What Was Built and Shipped
 
--   Always use ask_user_input_v0 with multiple choice options for
-    clarifying questions --- never as plain text bullet lists. This is a
-    standing instruction in userMemories.
+### Add Feed Webform (DECISIONS.md Items 1-7)
 
--   When scope is large (like the Layer Batch system), map out the FULL
-    design, confirm it, then build in phases. Ronnie said: \"Thank you
-    for really digging in and figuring all this out and getting the
-    scope of the build before just jumping in. This is the way I like to
-    operate.\"
+All items from DECISIONS.md were completed:
 
--   Never assume. If something is ambiguous, ask.
+**Item 1 — AddFeedWebform component:** Built as a standalone public component at hash route `#addfeed`. Inserts a new row into `layer_dailys`, `poultry_dailys`, or `pig_dailys` with `source: 'add_feed_webform'`. All other observation fields are omitted from the insert object. Pig inserts do NOT include `feed_type` (column doesn't exist on `pig_dailys`). ID generation: `String(Date.now())+Math.random().toString(36).slice(2,6)`. Component lives just before `WebformHub` in `index.html`.
 
--   Be honest about mistakes. When Claude gave a false answer about role
-    gating (saying Add Report was admin-only when it wasn\'t), the right
-    move was to own it clearly and correct it.
+**Item 2 — Routing wired:** `#addfeed` hash check in router, `'addfeed'` in `VALID_VIEWS`, public bypass before auth gates (`if(view==="addfeed") return React.createElement(AddFeedWebform, {sb})`), amber card at top of WebformHub hub screen.
 
--   Ronnie notices when Claude confirms things without checking the
-    code. Always verify before confirming.
+**Item 3 — Badges in Reports lists:** All 3 dailys views (BroilerDailysView, LayerDailysView, PigDailysView) show amber background + amber border + "🌾 Feed" badge pill on rows where `source === 'add_feed_webform'`.
 
--   Backup before major changes. Ronnie learned to run SQL backup tables
-    before touching database records. Always suggest this.
+**Item 4 — Filter chips:** Tri-state `[All | Daily Reports | 🌾 Add Feed]` toggle in each dailys view filter bar. Filter logic: `all` = no filter, `daily` = `r.source !== 'add_feed_webform'`, `addfeed` = `r.source === 'add_feed_webform'`. Null handling is correct for existing rows.
 
-**1.2 How to Start Each Session**
+**Item 5 — Edit modal field hiding:** When editing a row with `source === 'add_feed_webform'`, non-feed fields (grit, mortality, checks, comments, pig count, voltage) are hidden. Feed-relevant fields (date, batch, team member, feed_lbs, feed_type) remain editable. Modal title changes to "Edit [Program] Add Feed Report". Layer modal adds a feed_type toggle for Add Feed edits.
 
--   Read this document top to bottom first.
+**Item 6 — In-planner Add Feed button:** "🌾 Add Feed" button added to Broiler Dailys, Layer Dailys, and Pig Dailys views next to the existing "+ Add Report" button. Navigates to `#addfeed` via `window.location.hash='#addfeed';window.location.reload();`.
 
--   Copy the current index.html into /home/claude/index.html as the
-    working file.
+**Item 7 — Admin panel:** Add Feed webform entry is auto-injected into `webformsConfig.webforms` on load if not already present. Appears in admin panel with amber styling. Full sections/fields editor available — fields can be toggled on/off, marked required, relabeled. Add Group toggle works. Team member management works. Per-form team members fall back to global list if none configured (same as all other webforms).
 
--   Ask what Ronnie wants to work on --- don\'t assume.
+### AddFeedWebform Component Details
 
--   If a feature request is large, ask all clarifying questions BEFORE
-    writing any code. Use multiple rounds of ask_user_input_v0 if
-    needed.
+- **Admin-configurable:** Reads `full_config` from `webform_config` to get field enabled/required/label settings. Uses `isEnabled()`, `isRequired()`, `getLabel()` helpers.
+- **Add Group support:** `extraGroups` state array. "+ Add Another Group" button appears when `allowAddGroup` is enabled in admin config. All groups submit as separate records.
+- **Form flow:** Date → Team Member (optional) → Program (Pig/Broiler/Layer buttons) → Batch dropdown → Feed Type (not pig) → Feed lbs → Submit.
+- **Config loading:** Loads `housing_batch_map`, `broiler_groups`, `active_groups`, `team_members`, `per_form_team_members`, `full_config`, `webform_settings` from `webform_config` table (anon access).
+- **Layer batch_id:** Set to `null` on layer inserts. Can't resolve batch_id in anon context. This is the same as existing layer webform behavior. Aggregation works via `batch_label` + `.reduce()`.
+- **Navigation:** Uses `window.location.hash` + `window.location.reload()` because the Add Feed form lives at the public bypass level and React state-based navigation doesn't work for crossing the auth boundary.
 
--   Check if there are pending items from this document\'s \"Pending /
-    Not Yet Built\" section.
+### UI Polish — Daily Report Tiles
 
-**1.3 Known Gotchas With This Codebase**
+Applied consistently across all 3 standalone dailys views AND the home dashboard "LAST 5 DAYS" section:
 
--   Babel in-browser transpiler is strict about special characters
-    inside JSX. Never use template literals with special chars (·, ‹, ›,
-    →, ---) inside JSX. Use string concatenation + unicode escapes
-    instead (e.g. \'\\u00b7\' for ·).
+- **Yes/No fields:** Colored pill badges (green background for Yes, red for No) replacing plain checkmark text. Applied to Moved, Waterer, Nipple, Fence.
+- **Mortality:** Red pill badge when present, with mortality reason shown inline (💀 2 mort. — reason). Hidden muted text when absent.
+- **Team member:** Slate-blue pill badge.
+- **Comments/Issues:** Amber pill with 💬 icon. Consistent across broiler, layer, and pig views.
+- **Feed type pills:** Already existed, unchanged.
+- **Home dashboard type headers:** Enlarged from 10px to 13px. Tile gap increased from 3px to 8px. Section margin increased.
+- **Notable border:** Removed yes/no fields from `notable` check on home dashboard. Only mortality, comments, and low voltage trigger the red border now.
 
--   Never use const {useState} = React destructuring at the top of
-    standalone components that are defined near the App function. Use
-    React.useState() directly to avoid \"useState already declared\"
-    errors.
+### Pig Dashboard Overhaul
 
--   The app is ONE file --- index.html, \~8,400 lines. All React, CSS,
-    and JS live in it. Deploy = download + drag to Netlify.
+Replaced the basic pig dashboard with a data-rich view:
 
--   Supabase sessions expire. If daily records show 0, tell Ronnie to
-    sign out and sign back in. This has happened multiple times and is
-    always the fix.
+- **Stat tiles (2 rows of 4):** Pigs on Farm, Active Sows (with boar count sub), Active Cycles, Active Batches, Avg Born/Litter, Avg Alive/Litter, Overall Survival (with record count), Processed [Year] (with avg yield).
+- **Pigs on Farm Breakdown:** Individual tiles per group (SOWS, BOARS, then sub-batches sorted alphabetically). Only includes active batch pigs + SOWS + BOARS.
+- **Next Farrowing banner:** Shows upcoming farrowing window with "Window is OPEN" if in range.
+- **Active Feeder Batches:** Box-style metrics instead of line items. Colored header bars alternating green/amber/blue/pink per batch. Shows Current count, Original, Total Feed, Feed/Pig, Feed Cost, Cost/Pig, Report Days.
+- **Bar graphs side by side:** Farrowing Survival and Carcass Yield Trend in a 2-column grid.
+- **Removed:** Pig Notes section, Recent Daily Reports section.
 
--   app_store saves are JSON blobs --- always use sbSave() helper which
-    has retry logic and timeout handling.
+### Pig Feed Planning Tab (New — Replaces Old Calculator)
 
--   str_replace fails if content has changed since last view. Always
-    re-read the file section before editing.
+Complete replacement of the manual pig feed calculator (view==="pigs" / view==="pigfeed"):
 
-**1.4 Deployment Process**
+- **Current Daily Snapshot:** 4 tiles showing today's total daily need, sow feed (with nursing breakdown), boar feed, feeder pig feed.
+- **Nursing sow logic:** `nursingSowsOnDate(dateISO)` function scans all breeding cycles and farrowing records. A sow is nursing from her `farrowingDate` through `weaningEnd` of her cycle.
+- **Feed on Hand estimate:** Total ordered (from feed orders) minus total consumed (from pig_dailys). Shows days of feed remaining.
+- **Monthly Summary Table:** 6 past months + 3 future months. Columns: Month, Projected (calculated from rates), Actual (from pig_dailys), Variance, Ordered (editable input), On Hand.
+- **Feed orders:** Stored in `app_store` key `ppp-feed-orders-v1` as `{pig:{}, broiler:{}}`. Editable per-month input in the table. Auto-saves on change.
+- **Feed Rate Reference:** Quick reference card showing all rates.
 
--   Edit /home/claude/index.html
+### Other Features Built
 
--   Copy to /mnt/user-data/outputs/index.html
+- **Debounced auto-save + modal conversion:** Breeding cycles, processing trips, sub-batches all converted from inline forms to modal overlays with 1.5s debounced auto-save and save-on-close behavior. Done/Cancel buttons removed (only Delete shown when editing).
+- **Pig batch form:** All fields marked required. Original pig count auto-calculated from gilts + boars.
+- **Layer batch delete:** Delete button added to edit modal (hidden for Retirement Home).
+- **Retirement Home cleanup:** Edit modal hides Original Count, Supplier, Cost per Bird, Feed Cost Rates, Brooder Phase, Schooner Phase. Housing card hides Starter/Grower columns. Feed cost rates fall back to global rates. Included in saveFeedCosts.
+- **Per-batch housing colors:** Layer Batches list and Dashboard use rotating color palette (green, blue, amber, purple) for housing pills and cards. All housings within same batch share color.
+- **Colored header bars:** Layer batch cards on both Dashboard and Batches page have colored header bars matching the housing palette.
+- **Delete confirmations:** ALL delete actions across the entire app now use the type-"delete" confirmation modal (DeleteModal). No more `window.confirm` for deletes.
+- **Mortality reason:** Hidden until mortality count > 0, then required with red asterisk. Enforced in all forms: public webforms, AdminAddReportModal, standalone edit modals. Validation in `validateRequiredFields` and explicit submit checks.
+- **Feed type conditional:** Only required when feed_lbs > 0. Applied in `validateRequiredFields` and all submit functions.
+- **Pagination dedup:** All 3 dailys views (Broiler, Layer, Egg) have a `pgLoading` ref guard to prevent concurrent fetches, plus ID deduplication on append.
+- **Timeline bar opacity:** Broiler timeline bars render at 80% opacity.
+- **Filter toggle dividers:** Source filter buttons have 1px borders between them.
+- **Home dashboard Animals on Farm:** White stat card above Missed Daily Reports showing Broilers, Layer Hens, Pigs, and Total Animals. Non-clickable, visible to all roles.
+- **Layer icon:** Add Feed form uses 🐓 (rooster) for layers, matching the Layer Daily Report webform.
 
--   Present the file to Ronnie
+## 2. What Was Tested and Verified Working
 
--   Ronnie downloads it and drags to Netlify (app.netlify.com → Farm
-    Team → wcfplanner.com)
+- **Add Feed submission:** Tested for Layer (Eggmobile 2, 100 lbs STARTER). Row appeared in `layer_dailys` with `source='add_feed_webform'`. Visible in Layer Dailys view with amber badge when "All" or "Add Feed" filter active.
+- **Filter chips:** Toggling All/Daily Reports/Add Feed correctly filters. Counter shows correct numbers (e.g., "2060 total · 2059 shown" with Daily Reports active).
+- **Edit modal field hiding:** Layer Add Feed edit modal shows only date, team member, batch, feed type, feed lbs. Title shows "Edit Layer Add Feed Report".
+- **Add Feed button navigation:** Buttons in all 3 dailys views navigate to `#addfeed` via hash + reload.
+- **Admin panel Add Feed entry:** Appears in webform list with amber styling. Team member editing works. Sections/fields editor works.
+- **Retirement Home edit modal:** Only shows Batch Name, Status, Notes.
+- **Feed cost rates on Retirement Home:** Layer Dashboard shows Feed Cost and $/Dozen using global rate fallback.
+- **Pagination dedup:** Filter toggling no longer duplicates records.
+- **Breeding cycle auto-save:** Typing in fields triggers debounced save. Closing modal flushes pending save.
+- **Pig batch original count:** Auto-calculates from gilts + boars.
+- **Delete confirmations:** Tested on breeding cycle, layer batch — both show type-"delete" modal.
+- **Mortality reason conditional:** Tested on broiler webform — reason field hidden until count > 0, submission blocked without reason.
+- **Pig feed tab:** Loads without errors. Current snapshot shows calculated values. Monthly table renders with projected values.
 
--   Hard refresh: Cmd/Ctrl+Shift+R
+## 3. Decisions Made During Session (Not in Original DECISIONS.md)
 
--   Sign out and sign back in after deploy to refresh Supabase session
+### housing_batch_map shape correction
+DECISIONS.md verified fact #10 says `{ housingName: batchId }`. **This is wrong.** The actual shape is `{ housingName: batchName }` — values are batch NAMES (e.g., "L-26-01"), not batch IDs. Confirmed by reading `syncWebformConfig` at the line that builds the map: `return [h.housing_name, b?b.name:null]`. The map was also empty `{}` in Supabase during the session, likely a sync issue.
 
-**2. Infrastructure Overview**
+### batch_id on layer Add Feed inserts
+Set to `null`. The AddFeedWebform runs in anon context and can't access `layer_batches`/`layer_housings` tables to resolve the ID. This matches existing layer webform behavior. All feed aggregation works via `batch_label` + `.reduce()`, so null `batch_id` has no functional impact.
 
-**2.1 Hosting & Domain**
+### Hash navigation requires page reload
+`window.location.hash = '#addfeed'` alone doesn't trigger a React re-render because the App's router reads the hash only on initial mount. Solution: `window.location.hash='#addfeed';window.location.reload();`. Applied to all Add Feed buttons and the "Back to Daily Reports" / "Done" links.
 
-  -----------------------------------------------------------------------
-  **Service**            **Details**
-  ---------------------- ------------------------------------------------
-  Live URL               https://wcfplanner.com
+### React.useRef cannot be inside conditional blocks
+Placed `breedAutoSaveTimer` inside `if(view==="breeding")` initially — crashed the page because React hooks can't be called conditionally. Moved to top-level App scope. Same pattern used for `tripAutoSaveTimer` (top-level from the start).
 
-  Hosting                Netlify --- Farm Team account (ronnie-ipfsd1e)
+### No purple colors
+User preference: no purple anywhere in the UI. Pig feeder batch header colors use green/amber/blue/pink rotation instead.
 
-  Deploy method          Manual drag-and-drop of index.html in Netlify
-                         dashboard
+### Notable border simplified
+Home dashboard "LAST 5 DAYS" tile borders previously triggered on any yes/no field being false (group_moved, waterer_checked, etc.). Changed to only trigger on mortality, comments/issues, or low voltage. The colored yes/no pills already provide the visual signal.
 
-  DNS                    Netlify DNS (ns1-4.p09.nsone.net)
+### Retirement Home is not a normal batch
+It's a permanent pseudo-batch that never closes, never goes through brooder/schooner phases, and receives aged birds from all batches. The edit modal hides lifecycle fields. Feed cost rates fall back to global when not stored on the batch. The `saveFeedCosts` function no longer excludes Retirement Home from rate updates.
 
-  Domain registrar       Managed via Netlify
-  -----------------------------------------------------------------------
+### Feed orders data model
+Stored in `app_store` key `ppp-feed-orders-v1` as:
+```json
+{
+  "pig": { "2026-01": 5000, "2026-02": 4500 },
+  "broiler": { "2026-01": 8000 }
+}
+```
+Loaded in `loadAllData`, persisted via `sbSave`. State variable: `feedOrders` / `setFeedOrders`.
 
-**2.2 Supabase (Database + Auth + Edge Functions)**
+### Nursing sow calculation
+A sow is "nursing" from her actual `farrowingDate` (from farrowing records) through the `weaningEnd` of her breeding cycle. The function `nursingSowsOnDate(dateISO)` scans all breeding cycles and farrowing records to compute this. If a sow hasn't farrowed yet (no record), she's not counted as nursing even if the farrowing window is open.
 
-  ----------------------------------------------------------------------------
-  **Item**               **Value**
-  ---------------------- -----------------------------------------------------
-  Project ID             pzfujbjtayhkdlxiblwe
+## 4. Bugs Found, Workarounds, and Known Issues
 
-  Project URL            https://pzfujbjtayhkdlxiblwe.supabase.co
+### Bugs Found and Fixed
 
-  Project Name           Farm Planner
+- **Pagination race condition:** Toggling source filter caused re-renders while pagination was loading, resulting in the same page being fetched and appended multiple times. Fixed with `pgLoading` ref guard + ID deduplication on append. Applied to BroilerDailysView, LayerDailysView, EggDailysView.
 
-  Dashboard              supabase.com/dashboard/project/pzfujbjtayhkdlxiblwe
+- **React.useRef in conditional block:** `breedAutoSaveTimer` was initially defined inside `if(view==="breeding")`, violating hooks rules. Moved to App top-level scope.
 
-  Anon Key               eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\... (in
-                         index.html line 132)
+- **todayStr shadowing:** In pigsHome, `const todayStr = todayISO()` (a string) shadowed the outer scope where `todayStr` is sometimes a function. Then `todayStr()` was called in JSX, crashing because you can't call a string. Fixed by removing the `()`.
 
-  Admin email            ronnie@whitecreek.farm
-  ----------------------------------------------------------------------------
+- **Babel cache:** After deploying new code, the browser's Babel transpile cache (stored in localStorage) serves stale compiled code. Fix: `localStorage.clear()` + hard refresh. This is a recurring issue — always tell the user to clear cache after deploy.
 
-**2.3 Email (Resend)**
+- **housing_batch_map empty:** The map in `webform_config` was `{}` during the session. This means the `syncWebformConfig` function hasn't run after a logged-in admin loaded the app, or there are no active housings. The AddFeedWebform handles this gracefully — the "Active in batch: [name]" info line just doesn't show.
 
-  -----------------------------------------------------------------------
-  **Item**               **Value**
-  ---------------------- ------------------------------------------------
-  Service                Resend (resend.com)
+### Known Issues / Open Items
 
-  Sending domain         wcfplanner.com (verified)
+- **Broiler feed ordering:** Not yet built. The pig feed tab has feed ordering (monthly lbs ordered input). The same feature needs to be added to the Broiler Feed tab. The `feedOrders.broiler` key exists in the data model but the UI doesn't use it yet.
 
-  From address           reports@wcfplanner.com
+- **Pig feed tab "On Hand" column:** The monthly table has an "On Hand" column that currently shows "—" for all rows. This needs a running balance calculation (cumulative orders minus cumulative consumption up to that month).
 
-  Edge function          rapid-processor (Supabase Edge Functions)
+- **Pig feed tab — feeder pig count uses originalPigCount:** The projection uses `g.originalPigCount` for feeder pig count. It doesn't account for processed pigs (processing trips reduce the count). A more accurate projection would subtract processed pigs.
 
-  Secret                 RESEND_API_KEY stored in Supabase Edge Function
-                         Secrets
+- **Add Feed webform config not persisted initially:** The Add Feed webform entry is injected at runtime if not found in `webformsConfig.webforms`. This means the first time an admin edits it, the changes persist. But if they've never opened the admin panel, the default config (all fields enabled, feed_type and feed_lbs required) applies.
 
-  JWT verification       OFF on rapid-processor
+- **source column on existing rows:** Existing daily report rows have `source: null`. The filter logic handles this correctly (`r.source !== 'add_feed_webform'` returns true for null). No migration needed.
 
-  DNS records            4 records added to Netlify DNS (DKIM, SPF MX,
-                         SPF TXT, DMARC)
-  -----------------------------------------------------------------------
+## 5. Where We Left Off — Next Steps
 
-**2.4 Tech Stack**
+### Immediate Next Item: Broiler Feed Tab — Add Feed Ordering
 
--   React 18 (Babel in-browser transpiler --- no build step)
+The pig feed tab is complete with feed ordering. The same feed ordering feature needs to be added to the Broiler Feed tab (view==="feed"):
 
--   Supabase JS v2 (auth, database, edge functions)
+1. Add an "Ordered" column to the existing monthly feed summary table
+2. Add a "Feed on Hand" estimate card (ordered minus consumed)
+3. Use `feedOrders.broiler` for storage (key already exists in the data model)
+4. The existing broiler feed tab already has monthly projected vs actual data — just need to add the ordering inputs
 
--   SheetJS (Excel export, if used)
+### Other Pending Items
 
--   All in one single index.html file (\~8,400 lines, \~622KB)
+- **Fix pig feed tab "On Hand" running balance:** Calculate cumulative orders minus cumulative consumption per month
+- **Fix feeder pig count in projections:** Subtract processed pigs from `originalPigCount`
+- **Test pig feed tab thoroughly:** The nursing sow logic, monthly projections, and feed ordering all need real-world testing
+- **Add Feed for Layer — batch_id resolution:** Currently null. Could potentially resolve from `housing_batch_map` (maps housing_name → batch_name) and then look up batch_id. Low priority since aggregation works without it.
 
--   No npm, no bundler, no separate CSS file
+### Context for Next Session
 
-**3. Database Schema**
+- The app is a single `index.html` file (~10,200 lines). All React, CSS, and JS live in it. Babel transpiles JSX in-browser.
+- Deploy = push to GitHub (auto-deploys to Netlify). After deploy, user needs to clear localStorage + hard refresh.
+- Supabase is the backend. The `sb` variable is the anon Supabase client. Auth is handled by Supabase Auth.
+- The `app_store` table is a JSON blob store. Use `sbSave(key, value)` to persist.
+- `webform_config` table is anon-accessible. Used by public webforms.
+- **Babel gotchas:** No special characters in JSX template literals — use `\u` escapes. Never use destructured `useState` in standalone components near App — use `React.useState()`. No `React.useRef()` inside conditional blocks.
+- **DECISIONS.md** is the authoritative design document for the Add Feed feature. It has the full rationale, rejected alternatives, and verified facts. Read it before making changes to Add Feed.
 
-Supabase (PostgreSQL). All data lives here. The app_store table is the
-main JSON blob store.
+## 6. What Would Have Saved Time at the Start of This Session
 
-**3.1 Supabase Tables**
+1. **The housing_batch_map shape discrepancy.** DECISIONS.md said `{ housingName: batchId }` but the actual code builds `{ housingName: batchName }`. This took investigation to resolve. The DECISIONS.md should be updated to reflect reality.
 
-  -------------------------------------------------------------------------
-  **Table**         **Purpose**           **Key Fields**
-  ----------------- --------------------- ---------------------------------
-  app_store         Main JSON blob store  key (string), data (jsonb)
-                    --- all non-daily     
-                    data                  
+2. **The hash navigation pattern.** Knowing upfront that `window.location.hash` changes don't trigger React re-renders (because the router reads hash only on mount) would have saved a round-trip debugging the "buttons don't do anything" issue.
 
-  webform_config    Config for public     key (string), data (jsonb)
-                    webforms (anon        
-                    access)               
+3. **React hooks rules in this codebase.** The app has many views rendered inside `if(view===...)` blocks within the App function. Any `React.useRef()` or `React.useState()` calls inside these blocks will crash. Always put refs/state at the top level of App.
 
-  batches           Broiler batches       name, status, hatchDate, breed,
-                                          brooder, schooner,
-                                          processingDate, etc.
+4. **Babel cache.** After every deploy, the user must clear localStorage. This should be mentioned prominently in any handover doc. The Babel cache key includes a hash of the source, so it auto-invalidates on code changes, but stale cache from a previous version can cause confusing behavior.
 
-  poultry_dailys    Broiler daily reports date, batch_label, feed_type,
-                                          feed_lbs, grit_lbs,
-                                          mortality_count, team_member
+5. **Retirement Home is special.** It's not a normal layer batch — it's permanent, has no lifecycle phases, and was previously excluded from feed cost updates. Understanding this upfront would have prevented the "why are feed costs blank?" investigation.
 
-  layer_dailys      Layer daily reports   date, batch_label, feed_type,
-                                          feed_lbs, grit_lbs, layer_count,
-                                          mortality_count, team_member
+6. **The `source` column was already added to all 3 dailys tables.** This was done during the DECISIONS.md design session via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS source TEXT`. The column exists but all existing rows have null. No migration script needed — the column is just there.
 
-  egg_dailys        Egg collection        date, team_member,
-                    reports               group1-4_name/count,
-                                          daily_dozen_count, dozens_on_hand
+7. **Per-form team member fallback chain:** All webforms (including Add Feed) fall back to the global `team_members` list when no per-form members are configured. The user initially thought this was a bug but it's the designed behavior across all forms.
 
-  pig_dailys        Pig daily reports     date, batch_label, feed_lbs,
-                                          pig_count, fence_voltage,
-                                          team_member
+---
 
-  layer_batches     Layer batch parent    id, name, status, arrival_date,
-                    records (NEW)         brooder_name/dates,
-                                          schooner_name/dates
+# ORIGINAL SYSTEM DOCUMENTATION
 
-  layer_housings    Layer housing         id, batch_id, housing_name,
-                    sub-batches (NEW)     status, allocated_count,
-                                          current_count, start_date,
-                                          retired_date
+*The sections below are from the original April 9-11 handover document, updated where necessary to reflect April 12 changes.*
 
-  profiles          User profiles + roles id, full_name, role
-                                          (farm_team/management/admin)
+## 1. How to Work With the Next Claude Instance
 
-  batch-documents   File attachments on   batch_id, filename, url
-                    batches               
-  -------------------------------------------------------------------------
+### 1.1 Ronnie's Working Style (Byron)
 
-**3.2 app_store Keys**
+- Ask lots of questions before building. Never jump into code without fully understanding scope.
+- When scope is large, map out the FULL design, confirm it, then build in phases.
+- Never assume. If something is ambiguous, ask.
+- Be honest about mistakes.
+- Verify before confirming — Ronnie notices when Claude confirms things without checking the code.
+- Backup before major changes.
 
-  -----------------------------------------------------------------------
-  **Key**                    **Contents**
-  -------------------------- --------------------------------------------
-  ppp-v4                     Broiler batches array (the main batch data)
+### 1.2 How to Start Each Session
 
-  ppp-layer-groups-v1        Layer groups array (Eggmobile 2, Eggmobile
-                             3, Layer Schooner, Retirement Home)
+- Read this document AND DECISIONS.md top to bottom first.
+- Ask what the user wants to work on — don't assume.
+- Check if there are pending items from the "Where We Left Off" section above.
+- The `index.html` in the repo IS the latest deployed file.
 
-  ppp-webforms-v1            Webform configuration (fields, labels, team
-                             members per form)
+### 1.3 Known Gotchas With This Codebase
 
-  ppp-feeders-v1             Pig feeder groups / batches
+- **Babel in-browser transpiler** is strict about special characters inside JSX. Never use template literals with special chars (·, ‹, ›, →, —) inside JSX. Use string concatenation + unicode escapes (e.g. '\u00b7' for ·).
+- **Never use const {useState} = React** destructuring at the top of standalone components defined near the App function. Use React.useState() directly.
+- **Never put React.useRef() or React.useState() inside conditional blocks** (if/else). Always at the top level of the component function.
+- **The app is ONE file** — index.html, ~10,200 lines. All React, CSS, and JS live in it.
+- **Deploy = push to GitHub** → Netlify auto-deploys. After deploy, tell user to clear localStorage + hard refresh (Cmd+Shift+R).
+- **Supabase sessions expire.** If daily records show 0, tell user to sign out and sign back in.
+- **app_store saves** are JSON blobs — always use sbSave() helper which has retry logic and timeout handling.
+- **str_replace fails if content has changed since last view.** Always re-read the file section before editing.
+- **Hash navigation between public and authenticated views** requires `window.location.reload()` after setting the hash. React's router only reads the hash on mount.
+- **Babel cache in localStorage** can serve stale code after deploy. Always clear localStorage when debugging post-deploy issues.
 
-  ppp-pigs-v1                Pig sow/boar data
+### 1.4 Deployment Process
 
-  ppp-breeding-v1            Breeding cycle records
+- Push to GitHub main branch
+- Netlify auto-deploys from the repo
+- Hard refresh: Cmd/Ctrl+Shift+R
+- If page doesn't load: clear localStorage in browser console, then reload
+- Sign out and sign back in after deploy to refresh Supabase session
 
-  ppp-farrowing-v1           Farrowing records
+## 2. Infrastructure Overview
 
-  ppp-breeders-v1            Breeding pig registry
+### 2.1 Hosting & Domain
 
-  ppp-feed-costs-v1          Feed cost per lb (starter, grower, layer,
-                             pig)
+| Service | Details |
+|---|---|
+| Live URL | https://wcfplanner.com |
+| Hosting | Netlify — Farm Team account (ronnie-ipfsd1e) |
+| Deploy method | Auto-deploy from GitHub repo |
+| DNS | Netlify DNS |
 
-  ppp-broiler-notes-v1       Broiler section notes
+### 2.2 Supabase
 
-  ppp-pig-notes-v1           Pig section notes
+| Item | Value |
+|---|---|
+| Project URL | https://pzfujbjtayhkdlxiblwe.supabase.co |
+| Anon Key | In index.html line ~212 |
+| Admin email | ronnie@whitecreek.farm |
 
-  ppp-layer-notes-v1         Layer section notes
+### 2.3 Tech Stack
 
-  ppp-missed-cleared-v1      Set of cleared missed-report alerts
-  -----------------------------------------------------------------------
+- React 18 (Babel in-browser transpiler — no build step)
+- Supabase JS v2 (auth, database, edge functions)
+- SheetJS (Excel export, lazy-loaded)
+- All in one single index.html file (~10,200 lines)
+- No npm, no bundler, no separate CSS file
 
-**3.3 webform_config Keys**
+## 3. Database Schema
 
-  ------------------------------------------------------------------------
-  **Key**                 **Contents**
-  ----------------------- ------------------------------------------------
-  full_config             Full webform config including layerGroups,
-                          broilerGroups, teamMembers, webforms
+### 3.1 Tables
 
-  broiler_groups          Active broiler batch names for webform dropdown
+| Table | Purpose |
+|---|---|
+| app_store | Main JSON blob store — all non-daily data |
+| webform_config | Config for public webforms (anon access) |
+| batches | Broiler batches |
+| poultry_dailys | Broiler daily reports. Has `source` column (TEXT, nullable). |
+| layer_dailys | Layer daily reports. Has `source` column (TEXT, nullable). |
+| egg_dailys | Egg collection reports |
+| pig_dailys | Pig daily reports. Has `source` column (TEXT, nullable). |
+| layer_batches | Layer batch parent records |
+| layer_housings | Layer housing sub-batches |
+| profiles | User profiles + roles |
+| batch-documents | File attachments on batches |
 
-  active_groups           Active pig group names for webform dropdown
+### 3.2 app_store Keys
 
-  team_members            All team member names
+| Key | Contents |
+|---|---|
+| ppp-v4 | Broiler batches array |
+| ppp-layer-groups-v1 | Layer groups array |
+| ppp-webforms-v1 | Webform configuration (includes Add Feed webform entry) |
+| ppp-feeders-v1 | Pig feeder groups / batches |
+| ppp-pigs-v1 | Pig sow/boar data |
+| ppp-breeding-v1 | Breeding cycle records |
+| ppp-farrowing-v1 | Farrowing records |
+| ppp-breeders-v1 | Breeding pig registry |
+| ppp-feed-costs-v1 | Feed cost per lb |
+| ppp-feed-orders-v1 | Feed orders by month: `{pig:{}, broiler:{}}` |
+| ppp-broiler-notes-v1 | Broiler section notes |
+| ppp-pig-notes-v1 | Pig section notes |
+| ppp-layer-notes-v1 | Layer section notes |
+| ppp-missed-cleared-v1 | Cleared missed-report alerts |
 
-  per_form_team_members   Team members per form ID
+### 3.3 webform_config Keys
 
-  webform_settings        allowAddGroup per form
+| Key | Contents |
+|---|---|
+| full_config | Full webform config including Add Feed webform entry |
+| broiler_groups | Active broiler batch names |
+| active_groups | Active pig group names |
+| team_members | All team member names |
+| per_form_team_members | Team members per form ID (includes 'add-feed-webform') |
+| webform_settings | allowAddGroup per form |
+| housing_batch_map | Maps housing name → batch NAME (e.g. "Eggmobile 2" → "L-26-01"). NOT batch ID. |
+| layer_groups | Active layer group names |
 
-  housing_batch_map       Maps housing name → active batch name (e.g.
-                          \"Eggmobile 2\" → \"L-26-01\")
+### 3.4 source Column
 
-  layer_groups            Active layer group names (legacy, also in
-                          full_config)
-  ------------------------------------------------------------------------
+Added to `layer_dailys`, `poultry_dailys`, and `pig_dailys` during the DECISIONS.md design session:
+```sql
+ALTER TABLE layer_dailys ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE poultry_dailys ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE pig_dailys ADD COLUMN IF NOT EXISTS source TEXT;
+```
+- Existing rows have `source: null`
+- Add Feed rows have `source: 'add_feed_webform'`
+- No existing code filters by `source` except the new filter chips and badges
 
-**3.4 Backup Tables (Created April 10, 2026)**
+## 4. App Architecture
 
-These backup tables were created before major data operations. They can
-be used to restore data if needed.
+### 4.1 File Structure (Updated Line Numbers — Approximate)
 
--   \_backup_layer_dailys (2,022 records)
+- Lines 1-130: HTML head, CSS styles, CDN script tags
+- Lines 131-230: Supabase client init + helpers
+- Lines 230-520: Global constants, feed schedules, date helpers
+- Lines 520-600: Layer housing/feed cost helpers
+- Lines 600-790: LoginScreen, UsersModal
+- Lines 790-870: DEFAULT_WEBFORMS_CONFIG
+- Lines 870-1000: Styles, permission helpers
+- Lines 1000-1190: DeleteModal
+- Lines 1190-1420: **AddFeedWebform** (NEW)
+- Lines 1420-2100: WebformHub (public webforms)
+- Lines 2100-2200: FeedCostsPanel
+- Lines 2200+: App() — the main application
+- Lines 7900+: WcfYN, WcfToggle, AdminAddReportModal standalone components
+- Lines 8150+: BroilerDailysView standalone component
+- Lines 8400+: LayerBatchesView standalone component
+- Lines 9000+: LayersView standalone component
+- Lines 9200+: LayerDailysView standalone component
+- Lines 9500+: EggDailysView standalone component
+- Lines 9750+: PigDailysView standalone component
+- Final lines: ReactDOM.createRoot render + Babel boot script
 
--   \_backup_egg_dailys (996 records)
+### 4.2 Navigation Views (VALID_VIEWS)
 
--   \_backup_app_store (11 records)
+All original views plus `addfeed` (public, no auth).
 
--   \_backup_webform_config (6 records)
+### 4.3 Key People & Emails
 
--   \_backup_layer_batches (3 records)
+| Person | Role | Email |
+|---|---|---|
+| Ronnie Jones | Admin / Owner | ronnie@whitecreek.farm |
+| Mak | Management | mak@whitecreek.farm |
+| Simon | Farm Team | Simon.rosa3@gmail.com |
+| Josh | Farm Team | — |
+| Jenny | Farm Team | — |
 
--   \_backup_layer_housings (3 records)
+## 5. Add Feed Webform — Design Reference
 
-> *To restore: INSERT INTO layer_dailys SELECT \* FROM
-> \_backup_layer_dailys WHERE NOT EXISTS (SELECT 1 FROM layer_dailys
-> WHERE layer_dailys.id = \_backup_layer_dailys.id);*
+**Read DECISIONS.md for the full design document.** Key corrections from the April 12 session:
 
-**4. App Architecture**
+- `housing_batch_map` values are batch NAMES, not batch IDs (corrects verified fact #10)
+- The `housing_batch_map` may be empty `{}` if syncWebformConfig hasn't run
+- `batch_id` is set to null on layer Add Feed inserts (can't resolve in anon context)
+- The `feed_edit_log` table does NOT exist (was created and dropped during design session)
 
-**4.1 File Structure**
+## 6. Conditional Field Rules (Apply to ALL Forms)
 
-Everything is in one file: index.html. Sections in order:
+These rules apply everywhere — public webforms, AdminAddReportModal, standalone edit modals:
 
--   Lines 1-130: HTML head, CSS styles, CDN script tags (React, Babel,
-    Supabase, SheetJS)
+1. **Feed type** is only required when `feed_lbs > 0`. Enforced in `validateRequiredFields()` and explicit submit checks.
+2. **Mortality reason** is hidden until `mortality_count > 0`, then required with red asterisk. Enforced in `validateRequiredFields()` and explicit submit checks.
+3. All delete actions use the type-"delete" confirmation modal (DeleteModal). No `window.confirm` for deletes.
 
--   Lines 131-155: Supabase client init + wcfSendEmail helper
+## 7. Design Preferences (Discovered During Session)
 
--   Lines 156-475: Global constants (BROODER_DAYS, SCHOONERS, RESOURCES,
-    COLORS, STATUS_STYLE, etc.)
+- No purple colors anywhere
+- All modals should be centered overlays, not inline forms
+- Auto-save with debounce (1.5s) on edit forms; save on close (X button)
+- Delete actions: show only Delete button in footer when editing (no Done/Cancel with auto-save)
+- Report tiles should use colored pills for yes/no fields, not checkmarks
+- Comments should be highlighted in amber pills, not plain italic
+- Team member names should have subtle pill styling
+- Alternating colors on batch cards for visual separation
+- Colored header bars on batch cards matching housing colors
 
--   Lines 476-682: LoginScreen component
+---
 
--   Lines 683-873: UsersModal component
-
--   Lines 874-1474: WebformHub component (public-facing webforms)
-
--   Lines 1449-1475: DeleteModal component
-
--   Lines 1476+: App() --- the main application (\~5,000 lines)
-
--   Lines 6769+: WcfYN, WcfToggle, AdminAddReportModal standalone
-    components
-
--   Lines 7097+: BroilerDailysView standalone component
-
--   Lines 7280+: LayerBatchesView standalone component (NEW)
-
--   Lines 7785+: LayersView standalone component
-
--   Lines 7941+: LayerDailysView standalone component
-
--   Lines 8116+: EggDailysView standalone component
-
--   Lines 8285+: PigDailysView standalone component
-
--   Final lines: ReactDOM.createRoot render
-
-**4.2 User Roles**
-
-  ---------------------------------------------------------------------------
-  **Role**        **Access Level**                   **Who**
-  --------------- ---------------------------------- ------------------------
-  admin           Full access. Can delete anything,  ronnie@whitecreek.farm
-                  manage users, edit webform config  
-
-  management      Can edit most things. Cannot       Mak and others
-                  delete arbitrary records or manage 
-                  users                              
-
-  farm_team       Can submit daily reports, view all Simon, Josh, Jenny, etc.
-                  data, add reports                  
-
-  inactive        Login blocked                      Former team members
-  ---------------------------------------------------------------------------
-
-> *Add Report button is visible to ALL roles --- not just admin. This
-> was a point of confusion in the build session. The code has no role
-> gating on it.*
-
-**4.3 Navigation Views (VALID_VIEWS)**
-
-  ------------------------------------------------------------------------
-  **View**        **Section**     **Description**
-  --------------- --------------- ----------------------------------------
-  home            Global          Main home --- shows all 3 section
-                                  cards + timeline + admin recent reports
-
-  broilerHome     Broilers        Broiler dashboard
-
-  timeline        Broilers        Gantt chart --- broiler batches + layer
-                                  batches weeks 1-22
-
-  list            Broilers        Broiler batch list
-
-  feed            Broilers        Feed calculator / monthly summary
-
-  broilerdailys   Broilers        Broiler daily reports view
-
-  pigsHome        Pigs            Pig dashboard
-
-  breeding        Pigs            Breeding timeline
-
-  farrowing       Pigs            Farrowing records
-
-  sows            Pigs            Breeding pig registry
-
-  pigbatches      Pigs            Pig feeder batches
-
-  pigfeed         Pigs            Pig feed calculator
-
-  pigs            Pigs            Pig feed calculator (alias)
-
-  pigdailys       Pigs            Pig daily reports
-
-  layersHome      Layers          Layer dashboard
-
-  layerbatches    Layers          Layer batch management (NEW)
-
-  layerdailys     Layers          Layer daily reports
-
-  eggdailys       Layers          Egg daily reports
-
-  webforms        Webforms        Admin webform config
-
-  webformhub      Webforms        Public webform hub (farm team submits
-                                  here)
-
-  webform         Webforms        Individual webform submission
-
-  layers          Layers          Layer groups view (hidden from nav but
-                                  still routed)
-  ------------------------------------------------------------------------
-
-**5. Broiler System**
-
-**5.1 Timing Constants**
-
-  ------------------------------------------------------------------------
-  **Constant**        **Value**       **Meaning**
-  ------------------- --------------- ------------------------------------
-  BROODER_DAYS        14 days         Time in brooder for meat birds
-
-  CC_SCHOONER         35 days         Cornish Cross schooner duration
-
-  WR_SCHOONER         42 days         White Ranger schooner duration
-
-  BROODER_CLEANOUT    3 days          Cleanout buffer after brooder
-
-  SCHOONER_CLEANOUT   4 days          Cleanout buffer after schooner
-
-  WEEKS_SHOWN         52 weeks        Timeline window size
-  ------------------------------------------------------------------------
-
-**5.2 Infrastructure (RESOURCES)**
-
--   Brooder 1, Brooder 2, Brooder 3 (max 750 birds each)
-
--   Schooner 1 (solo, 650 birds)
-
--   Schooner 2&3, 4&5, 6&6A, 7&7A (pairs)
-
-**5.3 Batch Statuses**
-
--   planned --- future batch
-
--   active --- currently on farm
-
--   processed --- harvested (previously \"archived\", auto-migrated on
-    load)
-
-**5.4 Broiler Timeline**
-
-The Gantt chart at Broilers → Timeline shows:
-
--   Each resource row (brooder 1, 2, 3, schooner 1, 2&3, etc.) with
-    batch bars
-
--   Light color = brooder phase, dark color = schooner phase
-
--   Conflict detection: warns if two batches overlap on same resource
-    (including cleanout buffer)
-
--   conflictOverride flag allows manual override of conflicts
-
--   Layer batch rows shown below broiler rows in amber section (NEW)
-
--   Hover tooltip works for both broiler and layer batches
-
-**5.5 Broiler Daily Reports**
-
-Table: poultry_dailys. Fields: date, batch_label, feed_type
-(STARTER/GROWER), feed_lbs, grit_lbs, group_moved, waterer_checked,
-mortality_count, mortality_reason, comments, team_member.
-
-**6. Layer System (Most Complex --- Read Carefully)**
-
-The layer system was substantially redesigned during this build session.
-Read this section thoroughly before making any changes.
-
-**6.1 Layer Batch Lifecycle**
-
-Layer chicks go through 3 phases tracked in layer_batches:
-
--   Phase 1 --- BROODER: 3 weeks (21 days) fixed. Batch name (e.g.
-    L-26-01) shows on daily reports. Feed type = STARTER.
-
--   Phase 2 --- SCHOONER: 3-20 weeks (default 17 weeks / 119 days).
-    Batch name shows on daily reports. Feed type = GROWER. Uses same
-    schooner resources as broilers.
-
--   Phase 3 --- HOUSING: Birds split into 2-3 housings (eggmobiles,
-    layer schooner). Housing name shows on daily reports. Feed type =
-    LAYER.
-
-> *Layer batches appear on the Broiler Timeline during weeks 1-22
-> (brooder + schooner phases) to prevent double-booking of brooders and
-> schooners. Hover tooltip shows batch details.*
-
-**6.2 Current Layer Batches**
-
-  ------------------------------------------------------------------------------
-  **Batch**    **Status**   **Arrived**   **Housings**               **Notes**
-  ------------ ------------ ------------- -------------------------- -----------
-  L-23-01      Retired      Unknown       Eggmobile #2 - 2023, Layer 2023 flock
-                                          Schooner - 2023,           --- all
-                                          Retirement Home - 2023     retired
-
-  L-25-01      Active       Feb 13, 2025  Eggmobile 3 (from Jun 24,  
-                                          2025)                      
-
-  L-26-01      Active       Sep 25, 2025  Eggmobile 2 + Layer        
-                                          Schooner (from Jan 28,     
-                                          2026)                      
-
-  Retirement   Permanent    N/A           None (standalone)          Never
-  Home                                                               closes.
-                                                                     Receives
-                                                                     aged birds
-                                                                     from all
-                                                                     batches.
-  ------------------------------------------------------------------------------
-
-**6.3 Current Layer Housings (layer_housings table)**
-
-  --------------------------------------------------------------------------
-  **Housing**      **Batch**    **Status**   **Start Date**   **Capacity**
-  ---------------- ------------ ------------ ---------------- --------------
-  Eggmobile 3      L-25-01      Active       Jun 24, 2025     250 birds
-
-  Eggmobile 2      L-26-01      Active       Jan 28, 2026     250 birds
-
-  Layer Schooner   L-26-01      Active       Jan 28, 2026     450 birds
-
-  Eggmobile #2 -   L-23-01      Retired      Aug 31, 2023     250 birds
-  2023                                                        
-
-  Layer Schooner - L-23-01      Retired      Dec 4, 2023      450 birds
-  2023                                                        
-
-  Retirement       L-23-01      Retired      Unknown          Unlimited
-  Home - 2023                                                 
-  --------------------------------------------------------------------------
-
-**6.4 Housing Lock Rules**
-
--   A housing that is ACTIVE under any batch cannot be selected for
-    another batch --- it shows as disabled in the dropdown with \"In use
-    by \[batch\]\".
-
--   EXCEPTION: Retired batches can select any housing regardless of lock
-    status (historical record-keeping).
-
--   Retiring a housing immediately unlocks it for other batches.
-
--   Retiring a batch does NOT auto-retire its housings --- Ronnie
-    prefers to manually retire housings first, then retire the batch.
-
--   Housing capacity warnings: Layer Schooner = 450, Eggmobiles = 250.
-    Warning shown but not a hard block.
-
-**6.5 Daily Report Name Mapping**
-
-This is critical --- the batch_label in daily reports maps to housings
-by name AND date range:
-
-  ------------------------------------------------------------------------
-  **batch_label in   **Maps to**         **Date range**
-  DB**                                   
-  ------------------ ------------------- ---------------------------------
-  L-26-01 or L-25-01 Batch               Before first housing start_date
-                     (brooder/schooner   
-                     phase)              
-
-  Eggmobile 3        L-25-01 housing     Jun 24, 2025 onward
-
-  Eggmobile 2        L-26-01 housing     Jan 28, 2026 onward
-
-  Layer Schooner     L-26-01 housing     Jan 28, 2026 onward
-
-  Retirement Home    Retirement Home     All time
-                     batch               
-
-  Eggmobile #2 -     L-23-01 housing     Aug 31, 2023 onward
-  2023                                   
-
-  Layer Schooner -   L-23-01 housing     Dec 4, 2023 onward
-  2023                                   
-
-  Retirement Home -  L-23-01 housing     All time
-  2023                                   
-  ------------------------------------------------------------------------
-
-> **⚠ Date range filtering is critical. If the same housing name is
-> reused by a future batch, stats would bleed across batches without
-> date filtering. The inRange() function in LayerBatchesView handles
-> this.**
-
-**6.6 Feed Type Classification**
-
-  ------------------------------------------------------------------------
-  **Feed      **Phase**   **Period (L-25-01)**   **Period (L-26-01)**
-  Type**                                         
-  ----------- ----------- ---------------------- -------------------------
-  STARTER     Brooder     Feb 13 - Mar 6, 2025   Sep 25 - Oct 16, 2025
-
-  GROWER      Schooner    Mar 7 - Jun 23, 2025   Oct 17, 2025 - Jan 27,
-                                                 2026
-
-  LAYER       Housing     Jun 24, 2025+          Jan 28, 2026+
-  ------------------------------------------------------------------------
-
-Historical records (imported from Podio before April 2026) were
-backfilled using SQL UPDATE based on these date ranges.
-
-**6.7 Starter Feed Alert**
-
-Fires when STARTER feed for a layer batch crosses 1,400 lbs (same
-threshold as broilers). Email sent to Simon.rosa3@gmail.com, CC
-mak@whitecreek.farm. Edge function checks both poultry_dailys and
-layer_dailys tables based on the \"table\" param.
-
-**6.8 Layer Groups (webform_config)**
-
-The active layer groups that appear in webform dropdowns are:
-
--   Eggmobile 2 (in use --- L-26-01)
-
--   Eggmobile 3 (in use --- L-25-01)
-
--   Layer Schooner (in use --- L-26-01)
-
--   Retirement Home
-
-Logic: If a batch has active housings → housing names appear in webform
-(NOT the batch name). If a batch has no active housings yet
-(brooder/schooner phase) → batch name appears.
-
-The housing_batch_map in webform_config tells the webform which batch
-each housing belongs to, shown as a blue info note when selected.
-
-**7. Pig System**
-
-The pig system tracks sows, boars, breeding cycles, farrowing, and
-feeder (market) pig batches. Data stored in app_store JSON blobs.
-
-**7.1 Pig Sections**
-
--   Dashboard (pigsHome) --- active cycles, sow count, active batches
-
--   Timeline (breeding) --- breeding cycle Gantt (boar exposure →
-    farrowing → weaning)
-
--   Farrowing --- farrowing records with outcomes
-
--   Breeding Pigs (sows) --- sow and boar registry
-
--   Batches (pigbatches) --- feeder pig batches with sub-batches
-
--   Feed Calculator (pigs/pigfeed) --- feed planning
-
--   Pig Dailys --- daily reports per pig batch
-
-**7.2 Pig Daily Reports**
-
-Table: pig_dailys. Fields: date, batch_label, batch_id, feed_lbs,
-pig_count, fence_voltage, group_moved, nipple_drinker_moved/working,
-troughs_moved, fence_walked, issues, team_member.
-
-Pig batches use sub-batches (similar to layer housings). Sub-batch names
-show in daily report dropdowns. The active_groups in webform_config
-contains SOWS, BOARS, and all active pig sub-batch names.
-
-**7.3 Auto-Save**
-
-Pig batch forms auto-save with a 1.5 second debounce when editing
-existing records (same as broiler batches). Layer group forms also have
-auto-save.
-
-**8. Email Automation**
-
-**8.1 Edge Function: rapid-processor**
-
-Deployed to Supabase as \"rapid-processor\". Handles two email types.
-JWT verification is OFF. RESEND_API_KEY stored as a Supabase secret.
-
-**8.2 Email 1 --- Egg Report**
-
-  -----------------------------------------------------------------------
-  **Field**          **Value**
-  ------------------ ----------------------------------------------------
-  Trigger            Every egg report submission (webform OR admin Add
-                     Report)
-
-  To                 isabel@sonnysfarm.com
-
-  CC                 brian@sonnysfarm.com, jessica@marbellagroup.com
-
-  BCC                ronnie@whitecreek.farm
-
-  Subject            Inventory Egg Report - 10 April 2026 (en-GB date
-                     format)
-
-  Design             Olive green header (#566542), two stat cards, White
-                     Creek Farm branding
-
-  Content            Dozens on Hand (\<2 weeks old) + Dozens Collected
-                     Today
-
-  From               reports@wcfplanner.com (WCF Planner)
-  -----------------------------------------------------------------------
-
-**8.3 Email 2 --- Starter Feed Alert**
-
-  -----------------------------------------------------------------------
-  **Field**          **Value**
-  ------------------ ----------------------------------------------------
-  Trigger            When STARTER feed for a batch crosses 1,400 lbs for
-                     the first time
-
-  To                 Simon.rosa3@gmail.com
-
-  CC                 mak@whitecreek.farm
-
-  Subject            STARTER FEED LIMIT - NEAR CUTOFF FOR \[batch name\]
-
-  Content            \"Dear Supreme Chicken Raiser\...\" --- batch name +
-                     total lbs + 1,500 lb max warning
-
-  Applies to         Both broiler (poultry_dailys) and layer
-                     (layer_dailys) batches
-
-  One-time only      Only fires when total CROSSES 1,400. Not on every
-                     subsequent report.
-  -----------------------------------------------------------------------
-
-**8.4 Test Mode**
-
-Pass test_to in the edge function body to override recipients (sends
-only to that address with \[TEST\] prefix). Example from browser console
-on wcfplanner.com:
-
-sb.functions.invoke(\'rapid-processor\', {body: {type:\'egg_report\',
-test_to:\'ronnie@whitecreek.farm\', data:{date:\'2026-04-10\',
-team_member:\'Simon\', dozens_on_hand:14.5,
-daily_dozen_count:8}}}).then(r=\>console.log(r))
-
-**9. Webforms (Public Submission)**
-
-**9.1 Overview**
-
-Available at wcfplanner.com/#webforms --- no login required. Farm team
-uses this daily. The WebformHub component handles all public form
-submissions.
-
-**9.2 Active Webforms**
-
--   Broiler Daily --- submits to poultry_dailys. STARTER feed triggers
-    starter alert email.
-
--   Layer Daily --- submits to layer_dailys. Shows housing name + which
-    batch it belongs to. STARTER feed triggers alert.
-
--   Egg Daily --- submits to egg_dailys. Triggers egg report email.
-    Computes daily_dozen_count automatically.
-
--   Pig Daily --- submits to pig_dailys.
-
-**9.3 Webform Config**
-
-Each webform is fully configurable from the Admin → Webforms section:
-
--   Fields can be toggled on/off, marked required, renamed
-
--   Team members per form (shown in dropdown)
-
--   allowAddGroup --- allows \"Add Another Group\" button
-
--   Config stored in app_store (ppp-webforms-v1) and synced to
-    webform_config (full_config) for anon access
-
-**9.4 Admin Add Report**
-
-The AdminAddReportModal component mirrors the WebformHub --- same
-fields, same config. Available in all daily views (Broiler Dailys, Layer
-Dailys, Egg Dailys, Pig Dailys). Visible to ALL roles. Also triggers
-emails same as webform submissions.
-
-**10. Known Issues & Lessons Learned from This Build Session**
-
-**10.1 Mistakes Made (Don\'t Repeat)**
-
--   Claude said \"Add Report is admin only\" without checking the code.
-    It wasn\'t. Always verify before confirming.
-
--   Claude used template literals with special characters (·, ‹, ›, →)
-    inside JSX --- caused repeated Babel syntax errors. NEVER do this.
-    Use string concatenation + \\u escapes.
-
--   The Python file replacement script accidentally duplicated a comment
-    and removed a closing \</div\>, breaking the Gantt chart. Always
-    verify replacements carefully.
-
--   syncWebformConfig had stale closure issues --- lgData and lhData
-    params must be passed explicitly, not read from state inside the
-    function.
-
--   The initial layer batch stats computation had no date filtering ---
-    L-23-01 was pulling L-26-01 data because \"Eggmobile 2\" matched
-    regardless of date. Always filter by start_date and retired_date.
-
--   L-23-01 housings were initially seeded with names \"Eggmobile 2\"
-    and \"Layer Schooner\" instead of \"Eggmobile #2 - 2023\" and
-    \"Layer Schooner - 2023\", causing data bleed. Fixed with SQL
-    UPDATE.
-
-**10.2 Recurring Issues**
-
--   Supabase 401 errors → session expiry → fix = sign out + sign in.
-    Happens regularly. Always ask Ronnie to try this first.
-
--   str_replace failing → file has changed since last view → re-read the
-    target section before editing.
-
--   Babel errors from special chars in JSX → see 10.1 above.
-
-**10.3 Technical Debt / Known Limitations**
-
--   Retiring a batch does NOT auto-retire its housings. Ronnie is OK
-    with this (manual process).
-
--   The housing capacity warning (250/450 birds) is a warning only, not
-    a hard block. Ronnie chose this.
-
--   Eggmobile 2 has no STARTER/GROWER records from the pre-housing phase
-    (Sep 25 - Jan 27). Those records were likely logged under a
-    different name in Podio and weren\'t imported. Not a data problem
-    Claude created.
-
--   The \"layers\" view is still in VALID_VIEWS and routed, just not in
-    the nav. The LayersView component still works if navigated to
-    directly.
-
-**11. Pending / Not Yet Built**
-
-These items were discussed or partially scoped but not completed:
-
--   Broiler timeline conflict detection does not yet check layer batches
-    against broiler resource IDs (only visual). The schooner names used
-    by layer batches (e.g. \"Schooner 2&3\") need to map to RESOURCES
-    IDs for proper conflict detection.
-
--   No automated feed cost tracking per batch (cost per lb × lbs fed =
-    total feed cost).
-
--   No batch-level summary report / export for completed layer batches.
-
--   The Layers Dashboard \"Active Groups\" stat tile still reads from
-    layerGroups (the old system) rather than layerHousings. Could be
-    updated to show housing-level stats.
-
--   Current hen count on housings is manually updated --- not
-    automatically decremented when mortality is reported. Ronnie may
-    want this automated in future.
-
--   No scheduled/cron egg email (original Podio flow was daily cron).
-    The current implementation sends on submission which Ronnie chose.
-
-**12. Quick Reference**
-
-**12.1 Key People & Emails**
-
-  -----------------------------------------------------------------------
-  **Person**      **Role**           **Email**
-  --------------- ------------------ ------------------------------------
-  Ronnie Jones    Admin / Owner      ronnie@whitecreek.farm
-
-  Mak             Management         mak@whitecreek.farm
-
-  Simon           Farm Team          Simon.rosa3@gmail.com
-
-  Josh            Farm Team          ---
-
-  Jenny           Farm Team          ---
-
-  Isabel          Sonny\'s Farm (egg isabel@sonnysfarm.com
-                  report recipient)  
-
-  Brian           Sonny\'s Farm (CC  brian@sonnysfarm.com
-                  on egg report)     
-
-  Jessica         Marbella Group (CC jessica@marbellagroup.com
-                  on egg report)     
-  -----------------------------------------------------------------------
-
-**12.2 Key URLs**
-
-  ------------------------------------------------------------------------------------------
-  **Item**           **URL**
-  ------------------ -----------------------------------------------------------------------
-  Live app           https://wcfplanner.com
-
-  Webforms (public)  https://wcfplanner.com/#webforms
-
-  Netlify dashboard  https://app.netlify.com/teams/ronnie-ipfsd1e
-
-  Supabase dashboard https://supabase.com/dashboard/project/pzfujbjtayhkdlxiblwe
-
-  Supabase edge      https://supabase.com/dashboard/project/pzfujbjtayhkdlxiblwe/functions
-  functions          
-
-  Supabase SQL       https://supabase.com/dashboard/project/pzfujbjtayhkdlxiblwe/sql
-  editor             
-
-  Resend dashboard   https://resend.com (login with Ronnie\'s account)
-  ------------------------------------------------------------------------------------------
-
-**12.3 Common SQL Operations**
-
-Check what\'s in layer_dailys:
-
-SELECT batch_label, feed_type, COUNT(\*) FROM layer_dailys GROUP BY
-batch_label, feed_type ORDER BY batch_label;
-
-Restore from backup (example):
-
-INSERT INTO layer_dailys SELECT \* FROM \_backup_layer_dailys WHERE id
-NOT IN (SELECT id FROM layer_dailys);
-
-Check housing status:
-
-SELECT h.housing_name, h.status, b.name as batch FROM layer_housings h
-JOIN layer_batches b ON h.batch_id = b.id ORDER BY b.name;
-
-**12.4 Webform Config Sync**
-
-After any change to layer groups, layer batches, or layer housings ---
-sign out and sign back in. This triggers syncWebformConfig which pushes
-the updated housing_batch_map, full_config, and active group lists to
-webform_config for the public webform to read.
-
-**13. Closing Notes**
-
-This document was written at the end of an intensive two-day build
-session (April 9-11, 2026) in which the WCF Planner was built from
-scratch and significantly extended.
-
-The project started with a handover document from a previous Claude
-instance. This document supersedes that one and contains everything a
-new Claude instance needs to continue the work.
-
-The attached index.html is the complete, current, deployed version of
-the application. **Always start a new session by reading this document
-AND loading that file into /home/claude/index.html.**
-
-> *Ronnie\'s words at the end of the session: \"It was good working with
-> you. See you on the other side.\" --- The feeling is mutual. This is a
-> well-designed, thoughtfully built farm management system. Treat it
-> with care.*
-
-*--- End of Handover Document ---*
+*End of Handover Document*
