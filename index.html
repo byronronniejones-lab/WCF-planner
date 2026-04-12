@@ -2645,7 +2645,7 @@ function App(){
     }
     // Update active layer batches (new system) — push 3 frozen rates
     // Skip the Retirement Home pseudo-batch
-    const activeLBs = (layerBatches||[]).filter(b=>b.status==='active'&&b.name!=='Retirement Home');
+    const activeLBs = (layerBatches||[]).filter(b=>b.status==='active');
     if(activeLBs.length>0){
       const updatedLB = await Promise.all(activeLBs.map(async (b)=>{
         const upd = {
@@ -7659,7 +7659,12 @@ function App(){
         });
       });
       const dozens = totalEggs/12;
-      const cost = computeLayerFeedCost(starterFeed,growerFeed,layerFeed,batch);
+      // If batch has no rates (e.g. Retirement Home before first feed cost save), fall back to global rates
+      var costBatch = batch;
+      if((!parseFloat(batch.per_lb_starter_cost))&&(!parseFloat(batch.per_lb_grower_cost))&&(!parseFloat(batch.per_lb_layer_cost))){
+        costBatch = {...batch, per_lb_starter_cost:feedCosts.starter||0, per_lb_grower_cost:feedCosts.grower||0, per_lb_layer_cost:feedCosts.layer||0};
+      }
+      const cost = computeLayerFeedCost(starterFeed,growerFeed,layerFeed,costBatch);
       const hens = myHousings.filter(h=>h.status==='active').reduce((s,h)=>s+(parseInt(h.current_count)||0),0);
       // Eggs/hen/day uses span of window
       const days = Math.max(1, Math.round((new Date(toISO+'T12:00:00')-new Date(fromISO+'T12:00:00'))/86400000)+1);
@@ -7697,7 +7702,11 @@ function App(){
         });
       });
       const dozens=totalEggs/12;
-      const cost = batch ? computeLayerFeedCost(starterFeed,growerFeed,layerFeed,batch) : null;
+      var costBatchH = batch;
+      if(batch&&(!parseFloat(batch.per_lb_starter_cost))&&(!parseFloat(batch.per_lb_grower_cost))&&(!parseFloat(batch.per_lb_layer_cost))){
+        costBatchH = {...batch, per_lb_starter_cost:feedCosts.starter||0, per_lb_grower_cost:feedCosts.grower||0, per_lb_layer_cost:feedCosts.layer||0};
+      }
+      const cost = costBatchH ? computeLayerFeedCost(starterFeed,growerFeed,layerFeed,costBatchH) : null;
       const hens = parseInt(housing.current_count)||0;
       const days = Math.max(1, Math.round((new Date(toISO+'T12:00:00')-new Date(fromISO+'T12:00:00'))/86400000)+1);
       const epd = hens>0 && totalEggs>0 ? (totalEggs/(hens*days)) : null;
@@ -9085,8 +9094,8 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                       </div>
                       <div style={{display:'flex',gap:16,flexShrink:0}}>
                         <StatPill label="Total Feed" val={hs.totalFeed>0?Math.round(hs.totalFeed)+' lbs':'\u2014'} color="#92400e"/>
-                        <StatPill label="Starter" val={hs.starterFeed>0?Math.round(hs.starterFeed)+' lbs':'\u2014'} color="#1e40af"/>
-                        <StatPill label="Grower" val={hs.growerFeed>0?Math.round(hs.growerFeed)+' lbs':'\u2014'} color="#065f46"/>
+                        {selectedBatch&&selectedBatch.name!=='Retirement Home'&&<StatPill label="Starter" val={hs.starterFeed>0?Math.round(hs.starterFeed)+' lbs':'\u2014'} color="#1e40af"/>}
+                        {selectedBatch&&selectedBatch.name!=='Retirement Home'&&<StatPill label="Grower" val={hs.growerFeed>0?Math.round(hs.growerFeed)+' lbs':'\u2014'} color="#065f46"/>}
                         <StatPill label="Layer" val={hs.layerFeed>0?Math.round(hs.layerFeed)+' lbs':'\u2014'} color="#b45309"/>
                         <StatPill label="Mort." val={hs.totalMort||'0'} color={hs.totalMort>5?'#b91c1c':'#374151'}/>
                         <StatPill label="Eggs" val={hs.totalEggs>0?hs.totalEggs.toLocaleString():'\u2014'} color="#b45309"/>
@@ -9120,23 +9129,23 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
               <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,maxHeight:'70vh',overflowY:'auto'}}>
                 <div style={{gridColumn:'1/-1'}}><label style={S.label}>Batch Name *</label><input value={bForm.name} onChange={e=>updBatch(f=>({...f,name:e.target.value}))} placeholder="e.g. L-26-01"/></div>
                 <div><label style={S.label}>Status</label><select value={bForm.status} onChange={e=>updBatch(f=>({...f,status:e.target.value}))}><option value="active">Active</option><option value="retired">Retired</option></select></div>
-                <div><label style={S.label}>Original Count</label><input type="number" min="0" value={bForm.original_count||''} onChange={e=>updBatch(f=>({...f,original_count:e.target.value}))}/></div>
-                <div><label style={S.label}>Supplier</label><input value={bForm.supplier} onChange={e=>updBatch(f=>({...f,supplier:e.target.value}))}/></div>
-                <div style={{gridColumn:'1/-1'}}><label style={S.label}>Cost per Bird ($)</label><input type="number" min="0" step="0.01" style={{maxWidth:160}} value={bForm.cost_per_bird||''} onChange={e=>updBatch(f=>({...f,cost_per_bird:e.target.value}))}/></div>
+                {bForm.name!=='Retirement Home'&&<div><label style={S.label}>Original Count</label><input type="number" min="0" value={bForm.original_count||''} onChange={e=>updBatch(f=>({...f,original_count:e.target.value}))}/></div>}
+                {bForm.name!=='Retirement Home'&&<div><label style={S.label}>Supplier</label><input value={bForm.supplier} onChange={e=>updBatch(f=>({...f,supplier:e.target.value}))}/></div>}
+                {bForm.name!=='Retirement Home'&&<div style={{gridColumn:'1/-1'}}><label style={S.label}>Cost per Bird ($)</label><input type="number" min="0" step="0.01" style={{maxWidth:160}} value={bForm.cost_per_bird||''} onChange={e=>updBatch(f=>({...f,cost_per_bird:e.target.value}))}/></div>}
 
                 {/* FEED COST RATES (read-only — populated from global rates set in Admin → Feed Costs) */}
-                <div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:10,marginTop:4}}>
+                {bForm.name!=='Retirement Home'&&<div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:10,marginTop:4}}>
                   <div style={{fontSize:11,fontWeight:700,color:'#4b5563',letterSpacing:.5,marginBottom:6}}>{'\ud83d\udcb0 FEED COST RATES'} <span style={{fontWeight:400,color:'#9ca3af'}}>{'(locked \u2014 set in Admin \u203a Feed Costs)'}</span></div>
                   <div style={{display:'flex',gap:16,fontSize:12,color:'#374151',padding:'8px 12px',background:'#f9fafb',borderRadius:8,border:'1px solid #e5e7eb'}}>
                     <span>Starter: <strong>{bForm.per_lb_starter_cost!==''&&bForm.per_lb_starter_cost!=null?'$'+parseFloat(bForm.per_lb_starter_cost).toFixed(3)+'/lb':'\u2014'}</strong></span>
                     <span>Grower: <strong>{bForm.per_lb_grower_cost!==''&&bForm.per_lb_grower_cost!=null?'$'+parseFloat(bForm.per_lb_grower_cost).toFixed(3)+'/lb':'\u2014'}</strong></span>
                     <span>Layer: <strong>{bForm.per_lb_layer_cost!==''&&bForm.per_lb_layer_cost!=null?'$'+parseFloat(bForm.per_lb_layer_cost).toFixed(3)+'/lb':'\u2014'}</strong></span>
                   </div>
-                </div>
+                </div>}
 
                 {/* BROODER PHASE */}
-                <div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:10,marginTop:4,fontSize:11,fontWeight:700,color:'#4b5563',letterSpacing:.5}}>🔆 BROODER PHASE <span style={{fontWeight:400,color:'#9ca3af'}}>(fixed 3 weeks)</span></div>
-                <div style={{gridColumn:'1/-1'}}>
+                {bForm.name!=='Retirement Home'&&<div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:10,marginTop:4,fontSize:11,fontWeight:700,color:'#4b5563',letterSpacing:.5}}>🔆 BROODER PHASE <span style={{fontWeight:400,color:'#9ca3af'}}>(fixed 3 weeks)</span></div>}
+                {bForm.name!=='Retirement Home'&&<div style={{gridColumn:'1/-1'}}>
                   <label style={S.label}>Brooder</label>
                   <select value={bForm.brooder_name} onChange={e=>{
                     const val=e.target.value;
@@ -9163,8 +9172,8 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                       return <option key={b} value={'Brooder '+b} disabled={conflict} style={{color:conflict?'#9ca3af':'inherit'}}>{'Brooder '+b+(conflict?' ⚠ In use':'')}</option>;
                     })}
                   </select>
-                </div>
-                <div>
+                </div>}
+                {bForm.name!=='Retirement Home'&&<div>
                   <label style={S.label}>Date in Brooder</label>
                   <input type="date" value={bForm.brooder_entry_date} onChange={e=>{
                     const entry=e.target.value;
@@ -9172,15 +9181,15 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                     const schoonerOut=exit?toISO(addDays(new Date(exit+'T12:00:00'),119)):'';
                     updBatch(f=>({...f,brooder_entry_date:entry,brooder_exit_date:exit,schooner_entry_date:exit,schooner_exit_date:schoonerOut,arrival_date:entry||f.arrival_date}));
                   }}/>
-                </div>
-                <div>
+                </div>}
+                {bForm.name!=='Retirement Home'&&<div>
                   <label style={S.label}>Exit Date <span style={{color:'#9ca3af',fontWeight:400}}>(auto)</span></label>
                   <input type="date" value={bForm.brooder_exit_date} readOnly style={{background:'#f9fafb',color:'#6b7280'}}/>
-                </div>
+                </div>}
 
                 {/* SCHOONER PHASE */}
-                <div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:10,marginTop:4,fontSize:11,fontWeight:700,color:'#4b5563',letterSpacing:.5}}>🚌 SCHOONER PHASE <span style={{fontWeight:400,color:'#9ca3af'}}>(3 to 24 weeks)</span></div>
-                <div style={{gridColumn:'1/-1'}}>
+                {bForm.name!=='Retirement Home'&&<div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:10,marginTop:4,fontSize:11,fontWeight:700,color:'#4b5563',letterSpacing:.5}}>🚌 SCHOONER PHASE <span style={{fontWeight:400,color:'#9ca3af'}}>(3 to 24 weeks)</span></div>}
+                {bForm.name!=='Retirement Home'&&<div style={{gridColumn:'1/-1'}}>
                   <label style={S.label}>Schooner</label>
                   <select value={bForm.schooner_name} onChange={e=>updBatch(f=>({...f,schooner_name:e.target.value}))}>
                     <option value="">Select schooner…</option>
@@ -9199,20 +9208,20 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                       return <option key={s} value={'Schooner '+s} disabled={conflict} style={{color:conflict?'#9ca3af':'inherit'}}>{'Schooner '+s+(conflict?' ⚠ In use':'')}</option>;
                     })}
                   </select>
-                </div>
-                <div>
+                </div>}
+                {bForm.name!=='Retirement Home'&&<div>
                   <label style={S.label}>Entry Date <span style={{color:'#9ca3af',fontWeight:400}}>(auto)</span></label>
                   <input type="date" value={bForm.schooner_entry_date} onChange={e=>{
                     const entry=e.target.value;
                     const exit=entry?toISO(addDays(new Date(entry+'T12:00:00'),119)):'';
                     updBatch(f=>({...f,schooner_entry_date:entry,schooner_exit_date:exit}));
                   }}/>
-                </div>
-                <div>
+                </div>}
+                {bForm.name!=='Retirement Home'&&<div>
                   <label style={S.label}>Exit Date <span style={{color:'#9ca3af',fontWeight:400}}>(editable)</span></label>
                   <input type="date" value={bForm.schooner_exit_date} onChange={e=>updBatch(f=>({...f,schooner_exit_date:e.target.value}))}/>
-                </div>
-                {bForm.schooner_entry_date&&bForm.schooner_exit_date&&(()=>{
+                </div>}
+                {bForm.name!=='Retirement Home'&&bForm.schooner_entry_date&&bForm.schooner_exit_date&&(()=>{
                   const weeks=Math.round((new Date(bForm.schooner_exit_date+'T12:00:00')-new Date(bForm.schooner_entry_date+'T12:00:00'))/604800000);
                   const warn=weeks<3||weeks>24;
                   return <div style={{gridColumn:'1/-1',fontSize:11,padding:'4px 8px',borderRadius:5,background:warn?'#fef2f2':'#ecfdf5',color:warn?'#b91c1c':'#065f46',fontWeight:600}}>{warn?'\u26a0 ':''}{weeks} weeks in schooner {warn?'(expected 3 to 24 weeks)':'\u2713'}</div>;
