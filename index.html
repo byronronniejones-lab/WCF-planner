@@ -1186,6 +1186,285 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
 }
 
 
+// ── ADD FEED WEBFORM ──────────────────────────────────────────────────────────
+// Public webform for quick feed logging. Inserts a new row into the appropriate
+// *_dailys table with source='add_feed_webform'. No merge, no collision check.
+// Admin-configurable: fields can be toggled on/off, marked required, relabeled.
+// Supports Add Group (multiple batch+feed entries per submit).
+const AddFeedWebform = ({sb}) => {
+  const [configLoaded, setConfigLoaded] = React.useState(false);
+  const [wfCfg, setWfCfg] = React.useState(null);
+  const [wfSettings, setWfSettings] = React.useState({});
+  const [housingBatchMap, setHousingBatchMap] = React.useState({});
+  const [broilerGroups, setBroilerGroups] = React.useState([]);
+  const [pigGroups, setPigGroups] = React.useState([]);
+  const [layerGroupNames, setLayerGroupNames] = React.useState([]);
+  const [allTeamMembers, setAllTeamMembers] = React.useState([]);
+  const [perFormTM, setPerFormTM] = React.useState({});
+
+  const [program, setProgram] = React.useState('');
+  const [date, setDate] = React.useState('');
+  const [batchLabel, setBatchLabel] = React.useState('');
+  const [feedType, setFeedType] = React.useState('');
+  const [feedLbs, setFeedLbs] = React.useState('');
+  const [teamMember, setTeamMember] = React.useState(localStorage.getItem('wcf_team')||'');
+  const [extraGroups, setExtraGroups] = React.useState([]);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const [done, setDone] = React.useState(false);
+
+  React.useEffect(function(){
+    var d=new Date();
+    setDate(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+  },[]);
+
+  React.useEffect(function(){
+    Promise.all([
+      sb.from('webform_config').select('data').eq('key','housing_batch_map').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key','broiler_groups').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key','active_groups').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key','team_members').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key','full_config').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key','webform_settings').maybeSingle(),
+    ]).then(function(results){
+      var hbm=results[0],bg=results[1],ag=results[2],tm=results[3],pftm=results[4],fc=results[5],ws=results[6];
+      if(hbm&&hbm.data&&hbm.data.data) setHousingBatchMap(hbm.data.data);
+      if(bg&&bg.data&&Array.isArray(bg.data.data)&&bg.data.data.length>0) setBroilerGroups(bg.data.data);
+      if(ag&&ag.data&&Array.isArray(ag.data.data)&&ag.data.data.length>0) setPigGroups(ag.data.data);
+      if(tm&&tm.data&&Array.isArray(tm.data.data)&&tm.data.data.length>0) setAllTeamMembers(tm.data.data);
+      if(pftm&&pftm.data&&pftm.data.data) setPerFormTM(pftm.data.data);
+      if(ws&&ws.data&&ws.data.data) setWfSettings(ws.data.data);
+      if(fc&&fc.data&&fc.data.data){
+        setWfCfg(fc.data.data);
+        var lg=(fc.data.data.layerGroups||[]).filter(function(g){return g.status==='active';}).map(function(g){return g.name||g;});
+        if(lg.length>0) setLayerGroupNames(lg);
+        if((!tm||!tm.data||!tm.data.data||tm.data.data.length===0)&&fc.data.data.teamMembers&&fc.data.data.teamMembers.length>0){
+          setAllTeamMembers(fc.data.data.teamMembers);
+        }
+      }
+      setConfigLoaded(true);
+    });
+  },[]);
+
+  // Admin config helpers
+  var afWf=(wfCfg&&wfCfg.webforms||[]).find(function(w){return w.id==='add-feed-webform';})||null;
+  function getField(fieldId){
+    if(!afWf) return null;
+    return (afWf.sections||[]).flatMap(function(s){return s.fields||[];}).find(function(f){return f.id===fieldId;})||null;
+  }
+  function isEnabled(fieldId){var f=getField(fieldId);return f?f.enabled!==false:true;}
+  function isRequired(fieldId){var f=getField(fieldId);return f?f.required===true:false;}
+  function getLabel(fieldId,fallback){var f=getField(fieldId);return(f&&f.label)||fallback;}
+  function allowAddGroup(){
+    if(wfSettings&&wfSettings.allowAddGroup&&'add-feed-webform' in wfSettings.allowAddGroup) return wfSettings.allowAddGroup['add-feed-webform']===true;
+    return afWf?afWf.allowAddGroup===true:false;
+  }
+  var reqStar=function(fieldId){return isRequired(fieldId)?React.createElement('span',{style:{color:'#dc2626',marginLeft:2}},'*'):null;};
+
+  function getBatchOptions(){
+    if(program==='broiler') return broilerGroups;
+    if(program==='pig') return pigGroups;
+    if(program==='layer') return layerGroupNames;
+    return [];
+  }
+  function getTeamMemberList(){
+    var perForm=perFormTM['add-feed-webform'];
+    if(Array.isArray(perForm)&&perForm.length>0) return perForm;
+    if(afWf&&afWf.teamMembers&&afWf.teamMembers.length>0) return afWf.teamMembers;
+    return allTeamMembers;
+  }
+
+  function buildRecord(bl,ft,fl){
+    var id=String(Date.now())+Math.random().toString(36).slice(2,6);
+    var now=new Date().toISOString();
+    var lbs=parseFloat(fl)||0;
+    if(program==='layer') return {id:id,submitted_at:now,date:date,team_member:teamMember||null,batch_label:bl,batch_id:null,feed_lbs:lbs,feed_type:ft||null,source:'add_feed_webform'};
+    if(program==='broiler') return {id:id,submitted_at:now,date:date,team_member:teamMember||null,batch_label:bl,feed_lbs:lbs,feed_type:ft||null,source:'add_feed_webform'};
+    return {id:id,submitted_at:now,date:date,team_member:teamMember||null,batch_label:bl,batch_id:bl.toLowerCase().replace(/[^a-z0-9]+/g,'-'),feed_lbs:lbs,source:'add_feed_webform'};
+  }
+  function getTable(){
+    if(program==='layer') return 'layer_dailys';
+    if(program==='broiler') return 'poultry_dailys';
+    return 'pig_dailys';
+  }
+
+  function handleSubmit(){
+    if(!date){setErr('Please enter a date.');return;}
+    if(isRequired('team_member')&&!teamMember){setErr(getLabel('team_member','Team Member')+' is required.');return;}
+    if(!batchLabel){setErr('Please select a batch/group.');return;}
+    if(isRequired('feed_lbs')&&(!feedLbs||parseFloat(feedLbs)<=0)){setErr(getLabel('feed_lbs','Feed (lbs)')+' is required.');return;}
+    if(program!=='pig'&&isEnabled('feed_type')&&isRequired('feed_type')&&parseFloat(feedLbs)>0&&!feedType){setErr(getLabel('feed_type','Feed Type')+' is required when feed is entered.');return;}
+    // Validate extra groups
+    for(var i=0;i<extraGroups.length;i++){
+      var eg=extraGroups[i];
+      if(!eg.batchLabel) continue;
+      if(isRequired('feed_lbs')&&(!eg.feedLbs||parseFloat(eg.feedLbs)<=0)){setErr(getLabel('feed_lbs','Feed (lbs)')+' is required for '+eg.batchLabel+'.');return;}
+      if(program!=='pig'&&isEnabled('feed_type')&&isRequired('feed_type')&&parseFloat(eg.feedLbs)>0&&!eg.feedType){setErr(getLabel('feed_type','Feed Type')+' is required for '+eg.batchLabel+' when feed is entered.');return;}
+    }
+    setErr('');setSubmitting(true);
+    var table=getTable();
+    var recs=[buildRecord(batchLabel,feedType,feedLbs)];
+    extraGroups.filter(function(g){return g.batchLabel;}).forEach(function(g){
+      recs.push(buildRecord(g.batchLabel,g.feedType,g.feedLbs));
+    });
+    sb.from(table).insert(recs.length===1?recs[0]:recs).then(function(res){
+      setSubmitting(false);
+      if(res.error){setErr('Could not save: '+res.error.message);return;}
+      if(teamMember) localStorage.setItem('wcf_team',teamMember);
+      setDone(true);
+    });
+  }
+
+  function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setErr('');setDone(false);}
+
+  var wfBg={minHeight:'100vh',background:'linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%)',padding:'1rem',fontFamily:'inherit'};
+  var cardS={background:'white',borderRadius:12,padding:'20px',marginBottom:12,boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
+  var inpS={fontFamily:'inherit',fontSize:14,padding:'10px 12px',border:'1px solid #d1d5db',borderRadius:8,width:'100%',outline:'none',background:'white',color:'#111827',boxSizing:'border-box'};
+  var lblS={display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500};
+  var logoEl=(
+    <div style={{textAlign:'center',marginBottom:20}}>
+      <div style={{fontSize:18,fontWeight:800,color:'#92400e',letterSpacing:-.3}}>{'\ud83c\udf3e WCF Planner'}</div>
+      <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>Quick Feed Log</div>
+    </div>
+  );
+
+  if(done) return (
+    <div style={wfBg}>
+      <div style={{maxWidth:480,margin:'0 auto',paddingTop:'2rem',textAlign:'center'}}>
+        {logoEl}
+        <div style={{fontSize:56,marginBottom:12}}>{'\u2705'}</div>
+        <div style={{fontSize:20,fontWeight:700,color:'#111827',marginBottom:8}}>Feed logged!</div>
+        <div style={{fontSize:14,color:'#4b5563',marginBottom:28,lineHeight:1.6}}>
+          {batchLabel+' \u2014 '+feedLbs+' lbs'+(feedType?' ('+feedType+')':'')}
+          {extraGroups.filter(function(g){return g.batchLabel;}).length>0?(' + '+extraGroups.filter(function(g){return g.batchLabel;}).length+' more'):''}
+        </div>
+        <button onClick={resetForm} style={{width:'100%',padding:14,borderRadius:10,border:'none',background:'#92400e',color:'white',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:10}}>
+          Log Another
+        </button>
+        <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{width:'100%',padding:14,borderRadius:10,border:'1px solid #d1d5db',background:'white',color:'#374151',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render a feed group section (batch + feed type + lbs) — used for main and extras
+  function renderFeedGroup(bl,ft,fl,onChange,idx){
+    var batchOpts=getBatchOptions();
+    return React.createElement('div',{key:idx!=null?'eg'+idx:'main'},
+      React.createElement('div',{style:cardS},
+        idx!=null&&React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+          React.createElement('div',{style:{fontSize:13,fontWeight:600,color:'#92400e'}},getLabel('batch_label','Batch / Group')+' '+(idx+2)),
+          React.createElement('button',{type:'button',onClick:function(){setExtraGroups(function(p){return p.filter(function(_,i){return i!==idx;});});},style:{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}},'\u00d7')
+        ),
+        idx==null&&React.createElement('label',{style:lblS},getLabel('batch_label',program==='pig'?'Pig Group':program==='broiler'?'Broiler Batch':'Layer Group'),reqStar('batch_label')),
+        React.createElement('select',{value:bl,onChange:function(e){onChange('batchLabel',e.target.value);},style:inpS},
+          React.createElement('option',{value:''},'Select...'),
+          batchOpts.map(function(b){var name=typeof b==='object'?(b.name||b.label||b.value||''):b;return React.createElement('option',{key:name,value:name},name);})
+        ),
+        program==='layer'&&bl&&housingBatchMap[bl]&&React.createElement('div',{style:{marginTop:6,fontSize:11,color:'#1d4ed8',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,padding:'4px 8px'}},'Active in batch: ',React.createElement('strong',null,housingBatchMap[bl]))
+      ),
+      program!=='pig'&&isEnabled('feed_type')&&React.createElement('div',{style:cardS},
+        React.createElement('label',{style:lblS},getLabel('feed_type','Feed Type'),idx==null&&reqStar('feed_type')),
+        React.createElement('div',{style:{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid #d1d5db'}},
+          (program==='layer'?['STARTER','GROWER','LAYER']:['STARTER','GROWER']).map(function(f,fi,arr){
+            return React.createElement('button',{key:f,type:'button',onClick:function(){onChange('feedType',ft===f?'':f);},style:{flex:1,padding:'10px 0',border:'none',borderRight:fi<arr.length-1?'1px solid #d1d5db':'none',fontFamily:'inherit',fontSize:12,fontWeight:600,cursor:'pointer',background:ft===f?'#92400e':'white',color:ft===f?'white':'#6b7280'}},f);
+          })
+        )
+      ),
+      isEnabled('feed_lbs')&&React.createElement('div',{style:cardS},
+        React.createElement('label',{style:lblS},getLabel('feed_lbs','Feed (lbs)'),idx==null&&reqStar('feed_lbs')),
+        React.createElement('input',{type:'number',min:'0',step:'0.1',value:fl,onChange:function(e){onChange('feedLbs',e.target.value);},placeholder:'0',style:inpS})
+      )
+    );
+  }
+
+  return (
+    <div style={wfBg}>
+      <div style={{maxWidth:480,margin:'0 auto',paddingTop:'1rem'}}>
+        {logoEl}
+
+        <div style={{background:'#fef3c7',border:'1px solid #fde68a',borderRadius:10,fontSize:12,color:'#92400e',padding:'10px 16px',marginBottom:16}}>
+          For quick feed logging only. For full daily reports including mortality and care checks, use the Daily Report forms.
+        </div>
+
+        <div style={cardS}>
+          <label style={lblS}>{getLabel('date','Date')}{reqStar('date')}</label>
+          <input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={inpS}/>
+        </div>
+
+        {isEnabled('team_member')&&(
+          <div style={cardS}>
+            <label style={lblS}>{getLabel('team_member','Team Member')}{reqStar('team_member')}</label>
+            <select value={teamMember} onChange={function(e){setTeamMember(e.target.value);}} style={inpS}>
+              <option value="">Select...</option>
+              {getTeamMemberList().map(function(m){return <option key={m} value={m}>{m}</option>;})}
+            </select>
+          </div>
+        )}
+
+        <div style={cardS}>
+          <label style={lblS}>Program</label>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+            {[
+              {key:'pig',icon:'\ud83d\udc37',label:'Pig',color:'#7c3aed',bg:'#f5f3ff'},
+              {key:'broiler',icon:'\ud83d\udc14',label:'Broiler',color:'#1e3a5f',bg:'#eff6ff'},
+              {key:'layer',icon:'\ud83d\udc13',label:'Layer',color:'#b45309',bg:'#fffbeb'},
+            ].map(function(p){return (
+              <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);}} style={{
+                padding:'16px 8px',borderRadius:12,cursor:'pointer',fontFamily:'inherit',
+                border:program===p.key?'2px solid '+p.color:'2px solid #e5e7eb',
+                background:program===p.key?p.bg:'white',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:6
+              }}>
+                <span style={{fontSize:32}}>{p.icon}</span>
+                <span style={{fontSize:13,fontWeight:600,color:p.color}}>{p.label}</span>
+              </button>
+            );})}
+          </div>
+        </div>
+
+        {program&&renderFeedGroup(batchLabel,feedType,feedLbs,function(k,v){
+          if(k==='batchLabel') setBatchLabel(v);
+          else if(k==='feedType') setFeedType(v);
+          else if(k==='feedLbs') setFeedLbs(v);
+        },null)}
+
+        {program&&extraGroups.map(function(eg,ei){
+          return renderFeedGroup(eg.batchLabel||'',eg.feedType||'',eg.feedLbs||'',function(k,v){
+            setExtraGroups(function(p){return p.map(function(g,i){if(i!==ei)return g;var n={};for(var x in g)n[x]=g[x];n[k]=v;return n;});});
+          },ei);
+        })}
+
+        {program&&allowAddGroup()&&(
+          <button type="button" onClick={function(){setExtraGroups(function(p){return p.concat([{batchLabel:'',feedType:'',feedLbs:''}]);});}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#92400e',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
+        )}
+
+        {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
+
+        {program&&(
+          <button onClick={handleSubmit} disabled={submitting} style={{
+            width:'100%',padding:14,border:'none',borderRadius:10,
+            background:'#92400e',color:'white',fontSize:15,fontWeight:600,
+            cursor:submitting?'not-allowed':'pointer',opacity:submitting?.6:1,
+            fontFamily:'inherit',marginBottom:16
+          }}>
+            {submitting?'Submitting\u2026':(1+extraGroups.filter(function(g){return g.batchLabel;}).length)>1?'Log '+(1+extraGroups.filter(function(g){return g.batchLabel;}).length)+' Feed Entries':'Log Feed'}
+          </button>
+        )}
+
+        <div style={{textAlign:'center',marginTop:12}}>
+          <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{background:'none',border:'none',color:'#92400e',fontSize:13,cursor:'pointer',fontFamily:'inherit',textDecoration:'underline'}}>
+            {'\u2190 Back to Daily Reports'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig}) => {
   const {useState, useEffect} = React;
   const [loadedConfig, setLoadedConfig] = useState(null); // loaded from Supabase full_config
@@ -1344,12 +1623,21 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     const allFields = (wf.sections||[]).flatMap(s=>s.fields||[]);
     const required = allFields.filter(f=>f.required===true && f.enabled!==false);
     for(const f of required){
+      // feed_type is only required when feed_lbs > 0 (conditional rule)
+      if(f.id==='feed_type' && !(parseFloat(formValues['feed_lbs'])>0)) continue;
+      // mortality_reason is only required when mortality_count > 0 (conditional rule)
+      if(f.id==='mortality_reason' && !(parseInt(formValues['mortality_count'])>0)) continue;
       const v = formValues[f.id];
       // Empty string, null, undefined → missing. Boolean false IS valid (e.g. "Group moved? No").
       const missing = (v===''||v==null||(typeof v==='string'&&v.trim()===''));
       if(missing){
         return (f.label||f.id)+' is required.';
       }
+    }
+    // Mortality reason is always required when mortality_count > 0, regardless of admin config
+    if(parseInt(formValues['mortality_count'])>0){
+      const mr=formValues['mortality_reason'];
+      if(!mr||String(mr).trim()==='') return 'Mortality reason is required when mortalities are reported.';
     }
     return null;
   }
@@ -1369,8 +1657,10 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     if(reqErr){setErr(reqErr);return;}
     // Conditional rule: feed_type is required when feed_lbs > 0 (main + each extra group)
     if(parseFloat(bForm.feedLbs)>0 && !bForm.feedType){setErr('Feed Type is required when Feed (lbs) is entered.');return;}
+    if(parseInt(bForm.mortalityCount)>0 && !bForm.mortalityReason.trim()){setErr('Mortality reason is required when mortalities are reported.');return;}
     for(const eg of extraBroilerGroups.filter(g=>g.batchLabel)){
       if(parseFloat(eg.feedLbs)>0 && !eg.feedType){setErr('Feed Type is required for '+eg.batchLabel+' when Feed (lbs) is entered.');return;}
+      if(parseInt(eg.mortalityCount)>0 && !(eg.mortalityReason||'').trim()){setErr('Mortality reason is required for '+eg.batchLabel+' when mortalities are reported.');return;}
     }
     setErr('');setSubmitting(true);
     localStorage.setItem('wcf_team',bForm.teamMember);
@@ -1399,8 +1689,10 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     if(reqErr){setErr(reqErr);return;}
     // Conditional rule: feed_type is required when feed_lbs > 0 (main + each extra group)
     if(parseFloat(lForm.feedLbs)>0 && !lForm.feedType){setErr('Feed Type is required when Feed (lbs) is entered.');return;}
+    if(parseInt(lForm.mortalityCount)>0 && !lForm.mortalityReason.trim()){setErr('Mortality reason is required when mortalities are reported.');return;}
     for(const eg of extraLayerGroups.filter(g=>g.batchLabel)){
       if(parseFloat(eg.feedLbs)>0 && !eg.feedType){setErr('Feed Type is required for '+eg.batchLabel+' when Feed (lbs) is entered.');return;}
+      if(parseInt(eg.mortalityCount)>0 && !(eg.mortalityReason||'').trim()){setErr('Mortality reason is required for '+eg.batchLabel+' when mortalities are reported.');return;}
     }
     setErr('');setSubmitting(true);
     localStorage.setItem('wcf_team',lForm.teamMember);
@@ -1513,6 +1805,15 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
       <div style={{maxWidth:480,margin:'0 auto',paddingTop:'1rem'}}>
         {logo}
         <div style={{fontSize:13,color:'#6b7280',textAlign:'center',marginBottom:20}}>Select a report type to fill out</div>
+        <div onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{background:'#fef3c7',borderRadius:12,padding:'16px 18px',marginBottom:16,cursor:'pointer',boxShadow:'0 1px 3px rgba(0,0,0,.08)',display:'flex',alignItems:'center',gap:14,border:'1px solid #fde68a'}}>
+          <div style={{fontSize:32}}>{'\ud83c\udf3e'}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:16,fontWeight:700,color:'#92400e'}}>Add Feed</div>
+            <div style={{fontSize:12,color:'#92400e',opacity:.8}}>Quick log feed added in the field</div>
+            <div style={{fontSize:11,color:'#92400e',opacity:.6,marginTop:2}}>{'Pig \u00b7 Broiler \u00b7 Layer'}</div>
+          </div>
+          <div style={{color:'#92400e',fontSize:18}}>{'\u203a'}</div>
+        </div>
         {[
           {id:'broiler',label:'🐔 Broiler Daily Report'},
           {id:'layer',label:'🐓 Layer Daily Report'},
@@ -1563,7 +1864,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
         <div style={sectionStyle}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div><label style={labelStyle}>Mortalities{reqStar('broiler-dailys','mortality_count')}</label><input type="number" min="0" value={bForm.mortalityCount||''} onChange={e=>setBForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inputStyle}/></div>
-            <div><label style={labelStyle}>Reason{reqStar('broiler-dailys','mortality_reason')}</label><input value={bForm.mortalityReason} onChange={e=>setBForm(f=>({...f,mortalityReason:e.target.value}))} style={inputStyle}/></div>
+            {parseInt(bForm.mortalityCount)>0&&<div><label style={labelStyle}>Reason <span style={{color:'#dc2626'}}>*</span></label><input value={bForm.mortalityReason} onChange={e=>setBForm(f=>({...f,mortalityReason:e.target.value}))} style={inputStyle}/></div>}
           </div>
         </div>
         <div style={sectionStyle}>
@@ -1590,7 +1891,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
                   <div><label style={labelStyle}>Group moved?{reqStar('broiler-dailys','group_moved')}</label><YN val={eg.groupMoved!==false} onChange={v=>setExtraBroilerGroups(p=>p.map((g,i)=>i===ei?{...g,groupMoved:v}:g))}/></div>
                   <div><label style={labelStyle}>Waterer checked?{reqStar('broiler-dailys','waterer_checked')}</label><YN val={eg.watererChecked!==false} onChange={v=>setExtraBroilerGroups(p=>p.map((g,i)=>i===ei?{...g,watererChecked:v}:g))}/></div>
                   <div><label style={labelStyle}>Mortalities{reqStar('broiler-dailys','mortality_count')}</label><input type="number" min="0" value={eg.mortalityCount||''} onChange={e=>setExtraBroilerGroups(p=>p.map((g,i)=>i===ei?{...g,mortalityCount:e.target.value}:g))} placeholder="0" style={inputStyle}/></div>
-                  <div><label style={labelStyle}>Mortality reason{reqStar('broiler-dailys','mortality_reason')}</label><input value={eg.mortalityReason||''} onChange={e=>setExtraBroilerGroups(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inputStyle}/></div>
+                  {parseInt(eg.mortalityCount)>0&&<div><label style={labelStyle}>Mortality reason <span style={{color:'#dc2626'}}>*</span></label><input value={eg.mortalityReason||''} onChange={e=>setExtraBroilerGroups(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inputStyle}/></div>}
                   <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Comments / Issues{reqStar('broiler-dailys','comments')}</label><textarea value={eg.comments||''} onChange={e=>setExtraBroilerGroups(p=>p.map((g,i)=>i===ei?{...g,comments:e.target.value}:g))} rows={3} placeholder="Type 0 if nothing to report" style={{...inputStyle,resize:'vertical'}}/></div>
                 </div>
               </div>
@@ -1642,7 +1943,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
         <div style={sectionStyle}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div><label style={labelStyle}>Mortalities{reqStar('layer-dailys','mortality_count')}</label><input type="number" min="0" value={lForm.mortalityCount||''} onChange={e=>setLForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inputStyle}/></div>
-            <div><label style={labelStyle}>Reason{reqStar('layer-dailys','mortality_reason')}</label><input value={lForm.mortalityReason} onChange={e=>setLForm(f=>({...f,mortalityReason:e.target.value}))} style={inputStyle}/></div>
+            {parseInt(lForm.mortalityCount)>0&&<div><label style={labelStyle}>Reason <span style={{color:'#dc2626'}}>*</span></label><input value={lForm.mortalityReason} onChange={e=>setLForm(f=>({...f,mortalityReason:e.target.value}))} style={inputStyle}/></div>}
           </div>
         </div>
         <div style={sectionStyle}>
@@ -1670,7 +1971,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
                   <div><label style={labelStyle}>Group moved?{reqStar('layer-dailys','group_moved')}</label><YN val={eg.groupMoved!==false} onChange={v=>setExtraLayerGroups(p=>p.map((g,i)=>i===ei?{...g,groupMoved:v}:g))}/></div>
                   <div><label style={labelStyle}>Waterer checked?{reqStar('layer-dailys','waterer_checked')}</label><YN val={eg.watererChecked!==false} onChange={v=>setExtraLayerGroups(p=>p.map((g,i)=>i===ei?{...g,watererChecked:v}:g))}/></div>
                   <div><label style={labelStyle}>Mortalities{reqStar('layer-dailys','mortality_count')}</label><input type="number" min="0" value={eg.mortalityCount||''} onChange={e=>setExtraLayerGroups(p=>p.map((g,i)=>i===ei?{...g,mortalityCount:e.target.value}:g))} placeholder="0" style={inputStyle}/></div>
-                  <div><label style={labelStyle}>Mortality reason{reqStar('layer-dailys','mortality_reason')}</label><input value={eg.mortalityReason||''} onChange={e=>setExtraLayerGroups(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inputStyle}/></div>
+                  {parseInt(eg.mortalityCount)>0&&<div><label style={labelStyle}>Mortality reason <span style={{color:'#dc2626'}}>*</span></label><input value={eg.mortalityReason||''} onChange={e=>setExtraLayerGroups(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inputStyle}/></div>}
                   <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Comments / Issues{reqStar('layer-dailys','comments')}</label><textarea value={eg.comments||''} onChange={e=>setExtraLayerGroups(p=>p.map((g,i)=>i===ei?{...g,comments:e.target.value}:g))} rows={3} placeholder="Type 0 if nothing to report" style={{...inputStyle,resize:'vertical'}}/></div>
                 </div>
               </div>
@@ -1932,6 +2233,7 @@ function App(){
   const [view,           setView]          = useState(()=>{
     const h = window.location.hash;
     if(h==='#webforms'||h==='#/webforms') return 'webformhub';
+    if(h==='#addfeed'||h==='#/addfeed') return 'addfeed';
     if(h==='#pigdailys'||h==='#/pigdailys') return 'webform';
     return 'home';
   });
@@ -2153,7 +2455,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   useEffect(()=>{
@@ -2223,9 +2525,24 @@ function App(){
       if(store['ppp-origin-options-v1']) setOriginOptions(store['ppp-origin-options-v1']);
       if(store['ppp-pigs-v1']) setPigData(store['ppp-pigs-v1']);
       if(store['ppp-webforms-v1']){
-        setWebformsConfig(store['ppp-webforms-v1']);
+        // Inject Add Feed webform entry if not already present
+        var wfCfg=store['ppp-webforms-v1'];
+        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='add-feed-webform';})){
+          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'add-feed-webform',teamMembers:[],name:'Add Feed Webform',description:'Quick feed logging for pig, broiler, and layer programs',table:'multiple',allowAddGroup:false,sections:[
+            {id:'s-info',title:'Report Info',system:true,fields:[
+              {id:'date',label:'Date',type:'date',required:true,system:true,enabled:true},
+              {id:'team_member',label:'Team Member',type:'team_picker',required:false,system:false,enabled:true}
+            ]},
+            {id:'s-feed',title:'Feed',system:false,fields:[
+              {id:'batch_label',label:'Batch / Group',type:'group_picker',required:true,system:true,enabled:true},
+              {id:'feed_type',label:'Feed Type',type:'button_toggle',options:['STARTER','GROWER','LAYER'],required:true,system:false,enabled:true},
+              {id:'feed_lbs',label:'Feed (lbs)',type:'number',required:true,system:false,enabled:true}
+            ]}
+          ]}]};
+        }
+        setWebformsConfig(wfCfg);
         // Per-form team members for logged-in users
-        const allMembers=[...new Set((store['ppp-webforms-v1'].webforms||[]).flatMap(w=>w.teamMembers||[]))].sort();
+        const allMembers=[...new Set((wfCfg.webforms||[]).flatMap(w=>w.teamMembers||[]))].sort();
         if(allMembers.length>0) setWfTeamMembers(allMembers);
       }
       if(store['ppp-layer-groups-v1']) setLayerGroups(store['ppp-layer-groups-v1']);
@@ -2874,6 +3191,7 @@ function App(){
 
   // ── WEBFORM BYPASS — no auth required ──
   if(view==="webform") return renderWebform();
+  if(view==="addfeed") return React.createElement(AddFeedWebform, {sb});
   if(view==="webformhub") return React.createElement(WebformHub, {sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig});
 
   // ── AUTH GATES ──
@@ -3184,15 +3502,15 @@ function App(){
                         const color = typeColors[type]||'#374151';
                         const bg = typeBg[type]||'#f9fafb';
                         return (
-                          <div key={type} style={{marginBottom:6}}>
-                            <div style={{fontSize:10,fontWeight:700,color:color,letterSpacing:.5,marginBottom:3,paddingLeft:2}}>{type.toUpperCase()}</div>
-                            <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                          <div key={type} style={{marginBottom:10}}>
+                            <div style={{fontSize:13,fontWeight:700,color:color,letterSpacing:.5,marginBottom:6,paddingLeft:2}}>{type.toUpperCase()}</div>
+                            <div style={{display:'flex',flexDirection:'column',gap:8}}>
                               {typeRecs.map((r,i)=>{
                                 const d = r.raw||{};
                                 const hasMort = parseInt(d.mortality_count)>0;
                                 const hasIssue = (d.issues&&String(d.issues).trim().length>2) || (d.comments&&String(d.comments).trim().length>2&&String(d.comments).trim()!=='0');
                                 const lowVolt = d.fence_voltage!=null&&parseFloat(d.fence_voltage)<3;
-                                const notable = hasMort||hasIssue||lowVolt||d.group_moved===false||d.waterer_checked===false||d.nipple_drinker_working===false||d.fence_walked===false;
+                                const notable = hasMort||hasIssue||lowVolt;
                                 const dateIdx = di;
                                 const shadeBg = dateIdx%2===0?'white':'#f8fafc';
                                 return (
@@ -3210,14 +3528,14 @@ function App(){
                                         return (<>
                                           <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
                                             <span style={{fontWeight:700,color:'#111827',minWidth:80,flexShrink:0,fontSize:12}}>{d.batch_label||'—'}</span>
-                                            <span style={{color:'#6b7280',fontSize:12,flexShrink:0}}>{d.team_member||'—'}</span>
+                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
                                             <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:90}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':'#d1fae5',color:d.feed_type==='STARTER'?'#1e40af':'#065f46'}}>{d.feed_type}</span>}</span>
                                             <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasGrit?`grit ${d.grit_lbs} lbs`:'no grit'}</span>
-                                            <span style={{color:hasMort?'#b91c1c':'#9ca3af',fontWeight:hasMort?700:400,fontSize:12}}>{hasMort?`💀 ${d.mortality_count} mort.`:'no mort.'}</span>
-                                            <span style={{fontSize:11,color:d.group_moved===false?'#b91c1c':'#6b7280'}}>{d.group_moved===false?'⚠ not moved':'moved ✓'}</span>
-                                            <span style={{fontSize:11,color:d.waterer_checked===false?'#b91c1c':'#6b7280'}}>{d.waterer_checked===false?'⚠ waterer':'waterer ✓'}</span>
+                                            <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none'}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
+                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
                                           </div>
-                                          {comment&&<div style={{fontSize:11,color:'#374151',paddingLeft:92,fontStyle:'italic'}}>{comment}</div>}
+                                          {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
                                         </>);
                                       }
                                       if(r.type==='🐓 Layer'){
@@ -3227,15 +3545,15 @@ function App(){
                                         return (<>
                                           <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
                                             <span style={{fontWeight:700,color:'#111827',minWidth:110,flexShrink:0,fontSize:12}}>{d.batch_label||'—'}</span>
-                                            <span style={{color:'#6b7280',fontSize:12,flexShrink:0}}>{d.team_member||'—'}</span>
+                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
                                             <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:90}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':d.feed_type==='GROWER'?'#d1fae5':'#fef3c7',color:d.feed_type==='STARTER'?'#1e40af':d.feed_type==='GROWER'?'#065f46':'#92400e'}}>{d.feed_type}</span>}</span>
                                             <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasGrit?`grit ${d.grit_lbs} lbs`:'no grit'}</span>
                                             <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasCount?`🐔 ${d.layer_count} hens`:'no count'}</span>
-                                            <span style={{color:hasMort?'#b91c1c':'#9ca3af',fontWeight:hasMort?700:400,fontSize:12}}>{hasMort?`💀 ${d.mortality_count} mort.`:'no mort.'}</span>
-                                            <span style={{fontSize:11,color:d.group_moved===false?'#b91c1c':'#6b7280'}}>{d.group_moved===false?'⚠ not moved':'moved ✓'}</span>
-                                            <span style={{fontSize:11,color:d.waterer_checked===false?'#b91c1c':'#6b7280'}}>{d.waterer_checked===false?'⚠ waterer':'waterer ✓'}</span>
+                                            <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none'}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
+                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
                                           </div>
-                                          {comment&&<div style={{fontSize:11,color:'#374151',paddingLeft:115,fontStyle:'italic'}}>{comment}</div>}
+                                          {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
                                         </>);
                                       }
                                       if(r.type==='🐷 Pig'){
@@ -3246,15 +3564,15 @@ function App(){
                                         return (<>
                                           <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
                                             <span style={{fontWeight:700,color:'#111827',minWidth:100,flexShrink:0,fontSize:12}}>{d.batch_label||'—'}</span>
-                                            <span style={{color:'#6b7280',fontSize:12,flexShrink:0}}>{d.team_member||'—'}</span>
+                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
                                             <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:90}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
                                             <span style={{color:'#7c3aed',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
                                             <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,minWidth:60}}>{hasVolt?`⚡ ${d.fence_voltage} kV`:'no voltage'}</span>
-                                            <span style={{fontSize:11,color:d.group_moved===false?'#b91c1c':'#6b7280'}}>{d.group_moved===false?'⚠ not moved':'moved ✓'}</span>
-                                            <span style={{fontSize:11,color:d.nipple_drinker_working===false?'#b91c1c':'#6b7280'}}>{d.nipple_drinker_working===false?'⚠ nipple':'nipple ✓'}</span>
-                                            <span style={{fontSize:11,color:d.fence_walked===false?'#b91c1c':'#6b7280'}}>{d.fence_walked===false?'⚠ fence':'fence ✓'}</span>
+                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.nipple_drinker_working===false?'#fef2f2':'#f0fdf4',color:d.nipple_drinker_working===false?'#b91c1c':'#065f46',border:d.nipple_drinker_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Nipple: '+(d.nipple_drinker_working===false?'No':'Yes')}</span>
+                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.fence_walked===false?'#fef2f2':'#f0fdf4',color:d.fence_walked===false?'#b91c1c':'#065f46',border:d.fence_walked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Fence: '+(d.fence_walked===false?'No':'Yes')}</span>
                                           </div>
-                                          {issues&&<div style={{fontSize:11,color:'#b91c1c',paddingLeft:104,fontStyle:'italic'}}>⚠ {issues}</div>}
+                                          {issues&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+issues}</div>}
                                         </>);
                                       }
                                       if(r.type==='🥚 Egg'){
@@ -3264,11 +3582,11 @@ function App(){
                                         return (<>
                                           <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
                                             <span style={{fontWeight:700,color:'#b45309',fontSize:12,flexShrink:0}}>🥚 {total} eggs</span>
-                                            <span style={{color:'#6b7280',fontSize:12,flexShrink:0}}>{d.team_member||'—'}</span>
+                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
                                             {groups.map(([n,c])=><span key={n} style={{color:'#374151',fontSize:11}}>{n}: <strong>{c}</strong></span>)}
                                             {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12}}>📦 {d.dozens_on_hand} doz</span>}
                                           </div>
-                                          {comment&&<div style={{fontSize:11,color:'#374151',paddingLeft:80,fontStyle:'italic'}}>{comment}</div>}
+                                          {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
                                         </>);
                                       }
                                       return null;
@@ -6339,19 +6657,20 @@ function App(){
 
 
               {webformsConfig.webforms.map(wf=>{
+                const isAddFeed=wf.id==='add-feed-webform';
                 const totalFields=(wf.sections||[]).reduce((s,sec)=>s+sec.fields.filter(f=>f.enabled).length,0);
                 return (
-                  <div key={wf.id} style={{background:"white",border:"1px solid #e5e7eb",borderRadius:10,padding:"16px",marginBottom:12}}>
+                  <div key={wf.id} style={{background:isAddFeed?"#fffbeb":"white",border:isAddFeed?"1px solid #fde68a":"1px solid #e5e7eb",borderRadius:10,padding:"16px",marginBottom:12}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
                       <div>
-                        <div style={{fontSize:14,fontWeight:700,color:"#111827"}}>{wf.name}</div>
+                        <div style={{fontSize:14,fontWeight:700,color:isAddFeed?"#92400e":"#111827"}}>{isAddFeed?'\ud83c\udf3e ':''}{wf.name}</div>
                         <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{wf.description}</div>
-                        <a href="/#webforms" target="_blank" style={{fontSize:11,color:"#085041",display:"block",marginTop:4}}>wcfplanner.com/#webforms</a>
+                        <a href={isAddFeed?"/#addfeed":"/#webforms"} target="_blank" style={{fontSize:11,color:"#085041",display:"block",marginTop:4}}>{'wcfplanner.com/#'+(isAddFeed?'addfeed':'webforms')}</a>
                       </div>
-                      <button onClick={()=>{setEditWfId(wf.id);setWfView("list");setAddingTo(null);}} style={{padding:"6px 16px",borderRadius:7,border:"none",background:"#085041",color:"white",fontSize:12,fontWeight:600,cursor:"pointer"}}>Edit →</button>
+                      <button onClick={()=>{setEditWfId(wf.id);setWfView("list");setAddingTo(null);}} style={{padding:"6px 16px",borderRadius:7,border:"none",background:isAddFeed?"#92400e":"#085041",color:"white",fontSize:12,fontWeight:600,cursor:"pointer"}}>Edit {'\u2192'}</button>
                     </div>
                     <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,color:"#6b7280",alignItems:"center",flexWrap:"wrap"}}>
-                      <span>📋 {(wf.sections||[]).length} sections · {totalFields} active fields</span>
+                      {!isAddFeed&&<span>📋 {(wf.sections||[]).length} sections · {totalFields} active fields</span>}
                       <span>👤 {(wf.teamMembers||[]).length} team members</span>
                       <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",marginLeft:"auto",userSelect:"none"}}>
                         <span style={{color:"#374151",fontWeight:500,fontSize:11}}>Add Group:</span>
@@ -7771,7 +8090,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
               </div></div>}
               {(isEnabled('broiler-dailys','mortality_count')||isEnabled('broiler-dailys','mortality_reason'))&&<div style={sec}><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                 {isEnabled('broiler-dailys','mortality_count')&&<div><label style={lbl}>{getFieldLabel('broiler-dailys','mortality_count','Mortalities')}{reqStar('broiler-dailys','mortality_count')}</label><input type="number" min="0" value={bForm.mortalityCount||''} onChange={e=>setBForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inp}/></div>}
-                {isEnabled('broiler-dailys','mortality_reason')&&<div><label style={lbl}>{getFieldLabel('broiler-dailys','mortality_reason','Reason')}{reqStar('broiler-dailys','mortality_reason')}</label><input value={bForm.mortalityReason} onChange={e=>setBForm(f=>({...f,mortalityReason:e.target.value}))} style={inp}/></div>}
+                {isEnabled('broiler-dailys','mortality_reason')&&parseInt(bForm.mortalityCount)>0&&<div><label style={lbl}>{getFieldLabel('broiler-dailys','mortality_reason','Reason')} <span style={{color:'#dc2626'}}>*</span></label><input value={bForm.mortalityReason} onChange={e=>setBForm(f=>({...f,mortalityReason:e.target.value}))} style={inp}/></div>}
               </div></div>}
               {isEnabled('broiler-dailys','comments')&&<div style={sec}><label style={lbl}>{getFieldLabel('broiler-dailys','comments','Comments / Issues')}{reqStar('broiler-dailys','comments')}</label><textarea value={bForm.comments} onChange={e=>setBForm(f=>({...f,comments:e.target.value}))} rows={3} placeholder="Type 0 if nothing to report" style={{...inp,resize:'vertical'}}/></div>}
               {allowAddGroup('broiler-dailys')&&<div>
@@ -7786,7 +8105,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Group moved?</label><WcfYN val={eg.groupMoved!==false} onChange={v=>setExtraB(p=>p.map((g,i)=>i===ei?{...g,groupMoved:v}:g))}/></div>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Waterer checked?</label><WcfYN val={eg.watererChecked!==false} onChange={v=>setExtraB(p=>p.map((g,i)=>i===ei?{...g,watererChecked:v}:g))}/></div>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Mortalities</label><input type="number" min="0" value={eg.mortalityCount||''} onChange={e=>setExtraB(p=>p.map((g,i)=>i===ei?{...g,mortalityCount:e.target.value}:g))} placeholder="0" style={inp}/></div>
-                      <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Mortality reason</label><input value={eg.mortalityReason||''} onChange={e=>setExtraB(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inp}/></div>
+                      {parseInt(eg.mortalityCount)>0&&<div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Mortality reason <span style={{color:'#dc2626'}}>*</span></label><input value={eg.mortalityReason||''} onChange={e=>setExtraB(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inp}/></div>}
                       <div style={{gridColumn:'1/-1'}}><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Comments</label><textarea value={eg.comments||''} onChange={e=>setExtraB(p=>p.map((g,i)=>i===ei?{...g,comments:e.target.value}:g))} rows={2} placeholder="Type 0 if nothing to report" style={{...inp,resize:'vertical'}}/></div>
                     </div>
                   </div>
@@ -7814,7 +8133,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
               </div></div>}
               {(isEnabled('layer-dailys','mortality_count')||isEnabled('layer-dailys','mortality_reason'))&&<div style={sec}><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                 {isEnabled('layer-dailys','mortality_count')&&<div><label style={lbl}>{getFieldLabel('layer-dailys','mortality_count','Mortalities')}{reqStar('layer-dailys','mortality_count')}</label><input type="number" min="0" value={lForm.mortalityCount||''} onChange={e=>setLForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inp}/></div>}
-                {isEnabled('layer-dailys','mortality_reason')&&<div><label style={lbl}>{getFieldLabel('layer-dailys','mortality_reason','Reason')}{reqStar('layer-dailys','mortality_reason')}</label><input value={lForm.mortalityReason} onChange={e=>setLForm(f=>({...f,mortalityReason:e.target.value}))} style={inp}/></div>}
+                {isEnabled('layer-dailys','mortality_reason')&&parseInt(lForm.mortalityCount)>0&&<div><label style={lbl}>{getFieldLabel('layer-dailys','mortality_reason','Reason')} <span style={{color:'#dc2626'}}>*</span></label><input value={lForm.mortalityReason} onChange={e=>setLForm(f=>({...f,mortalityReason:e.target.value}))} style={inp}/></div>}
               </div></div>}
               {isEnabled('layer-dailys','comments')&&<div style={sec}><label style={lbl}>{getFieldLabel('layer-dailys','comments','Comments / Issues')}{reqStar('layer-dailys','comments')}</label><textarea value={lForm.comments} onChange={e=>setLForm(f=>({...f,comments:e.target.value}))} rows={3} placeholder="Type 0 if nothing to report" style={{...inp,resize:'vertical'}}/></div>}
               {allowAddGroup('layer-dailys')&&<div>
@@ -7829,7 +8148,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Group moved?</label><WcfYN val={eg.groupMoved!==false} onChange={v=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,groupMoved:v}:g))}/></div>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Waterer checked?</label><WcfYN val={eg.watererChecked!==false} onChange={v=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,watererChecked:v}:g))}/></div>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Mortalities</label><input type="number" min="0" value={eg.mortalityCount||''} onChange={e=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,mortalityCount:e.target.value}:g))} placeholder="0" style={inp}/></div>
-                      <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Mortality reason</label><input value={eg.mortalityReason||''} onChange={e=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inp}/></div>
+                      {parseInt(eg.mortalityCount)>0&&<div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Mortality reason <span style={{color:'#dc2626'}}>*</span></label><input value={eg.mortalityReason||''} onChange={e=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,mortalityReason:e.target.value}:g))} style={inp}/></div>}
                       <div style={{gridColumn:'1/-1'}}><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Comments</label><textarea value={eg.comments||''} onChange={e=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,comments:e.target.value}:g))} rows={2} placeholder="Type 0 if nothing to report" style={{...inp,resize:'vertical'}}/></div>
                     </div>
                   </div>
@@ -7930,6 +8249,7 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
   const [fTeam,setFTeam]=useState('');
   const [fFrom,setFFrom]=useState('');
   const [fTo,setFTo]=useState('');
+  const [srcFilter,setSrcFilter]=useState('all');
   const EMPTY={date:todayStr(),teamMember:'',batchLabel:'',feedType:'GROWER',feedLbs:'',gritLbs:'',mortalityCount:'',mortalityReason:'',groupMoved:true,watererChecked:true,comments:''};
   const [form,setForm]=useState(EMPTY);
   const role=authState?.role;
@@ -7953,19 +8273,24 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
     sb.from('batches').select('name,status').order('name').then(({data})=>{if(data)setBatches(data);});
   },[]);
 
-  // Auto-load all pages on mount
+  // Auto-load all pages on mount (guarded to prevent duplicate fetches on re-render)
+  const pgLoading=React.useRef(false);
   React.useEffect(()=>{
-    if(hasMore){
+    if(hasMore&&!pgLoading.current){
+      pgLoading.current=true;
       const next=page+1;
       sb.from('poultry_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).range(next*PAGE,(next+1)*PAGE-1).then(({data})=>{
-        if(data){setRecords(r=>[...r,...data]);setHasMore(data.length===PAGE);setPage(next);}
+        pgLoading.current=false;
+        if(data){setRecords(r=>{const ids=new Set(r.map(x=>x.id));return[...r,...data.filter(x=>!ids.has(x.id))];});setHasMore(data.length===PAGE);setPage(next);}
       });
     }
   },[hasMore,page]);
 
-  function openEdit(d){setForm({date:d.date||todayStr(),teamMember:d.team_member||'',batchLabel:d.batch_label||'',feedType:d.feed_type||'GROWER',feedLbs:d.feed_lbs!=null?d.feed_lbs:'',gritLbs:d.grit_lbs!=null?d.grit_lbs:'',mortalityCount:d.mortality_count!=null?d.mortality_count:'',mortalityReason:d.mortality_reason||'',groupMoved:d.group_moved!==false,watererChecked:d.waterer_checked!==false,comments:d.comments||''});setEditId(d.id);setShowForm(true);}
+  const [editSource,setEditSource]=useState(null);
+  function openEdit(d){setForm({date:d.date||todayStr(),teamMember:d.team_member||'',batchLabel:d.batch_label||'',feedType:d.feed_type||'GROWER',feedLbs:d.feed_lbs!=null?d.feed_lbs:'',gritLbs:d.grit_lbs!=null?d.grit_lbs:'',mortalityCount:d.mortality_count!=null?d.mortality_count:'',mortalityReason:d.mortality_reason||'',groupMoved:d.group_moved!==false,watererChecked:d.waterer_checked!==false,comments:d.comments||''});setEditId(d.id);setEditSource(d.source||null);setShowForm(true);}
   const [showAddModal,setShowAddModal]=useState(false);
   function save(){
+    if(parseInt(form.mortalityCount)>0&&!(form.mortalityReason||'').trim()){alert('Mortality reason is required when mortalities are reported.');return;}
     const rec={date:form.date,team_member:form.teamMember,batch_label:form.batchLabel,feed_type:form.feedType||'GROWER',feed_lbs:form.feedLbs!==''?parseFloat(form.feedLbs):0,grit_lbs:form.gritLbs!==''?parseFloat(form.gritLbs):0,mortality_count:form.mortalityCount!==''?parseInt(form.mortalityCount):0,mortality_reason:form.mortalityReason||null,group_moved:form.groupMoved,waterer_checked:form.watererChecked,comments:form.comments||null};
     if(editId){
       sb.from('poultry_dailys').update(rec).eq('id',editId).then(({error})=>{
@@ -7986,7 +8311,7 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
 
   const batchOpts=[...new Set(records.map(r=>r.batch_label).filter(Boolean))].sort();
   const teamOpts=[...new Set(records.map(r=>r.team_member).filter(Boolean))].sort();
-  let filtered=records.filter(r=>(!fBatch||r.batch_label===fBatch)&&(!fTeam||r.team_member===fTeam)&&(!fFrom||r.date>=fFrom)&&(!fTo||r.date<=fTo));
+  let filtered=records.filter(r=>(!fBatch||r.batch_label===fBatch)&&(!fTeam||r.team_member===fTeam)&&(!fFrom||r.date>=fFrom)&&(!fTo||r.date<=fTo)&&(srcFilter==='all'||(srcFilter==='daily'&&r.source!=='add_feed_webform')||(srcFilter==='addfeed'&&r.source==='add_feed_webform')));
   const totalFeed=filtered.reduce((s,r)=>s+(parseFloat(r.feed_lbs)||0),0);
   const totalMort=filtered.reduce((s,r)=>s+(parseInt(r.mortality_count)||0),0);
   const fi={padding:'6px 10px',borderRadius:6,border:'1px solid #d1d5db',fontSize:12,fontFamily:'inherit',background:'white',width:'auto'};
@@ -8000,7 +8325,10 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
             <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>Broiler Daily Reports</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed · <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span></div>
           </div>
-          <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
+            <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          </div>
         </div>
         {showAddModal&&<AdminAddReportModal sb={sb} formType="broiler" onClose={()=>setShowAddModal(false)} onSaved={recs=>{setRecords(p=>[...recs,...p]);refreshDailys&&refreshDailys('broiler');}}/>}
         <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
@@ -8008,7 +8336,12 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
           <span style={{fontSize:12,color:'#6b7280'}}>to</span>
           <input type="date" value={fTo} onChange={e=>setFTo(e.target.value)} style={{...fi,width:130}}/>
           <select value={fBatch} onChange={e=>setFBatch(e.target.value)} style={fi}><option value=''>All batches</option>{batchOpts.map(b=><option key={b} value={b}>{b}</option>)}</select>
-          {(fBatch||fFrom||fTo)&&<button onClick={()=>{setFBatch('');setFFrom('');setFTo('');}} style={{...fi,color:'#6b7280',cursor:'pointer'}}>Clear</button>}
+          {(fBatch||fFrom||fTo||srcFilter!=='all')&&<button onClick={()=>{setFBatch('');setFFrom('');setFTo('');setSrcFilter('all');}} style={{...fi,color:'#6b7280',cursor:'pointer'}}>Clear</button>}
+          <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db',marginLeft:'auto'}}>
+            {[{k:'all',l:'All'},{k:'daily',l:'Daily Reports'},{k:'addfeed',l:'\ud83c\udf3e Add Feed'}].map(function(o,oi){return(
+              <button key={o.k} onClick={function(){setSrcFilter(o.k);}} style={{padding:'5px 10px',border:'none',borderRight:oi<2?'1px solid #d1d5db':'none',fontFamily:'inherit',fontSize:11,fontWeight:600,cursor:'pointer',background:srcFilter===o.k?'#92400e':'white',color:srcFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+            );})}
+          </div>
         </div>
         {loading&&<div style={{textAlign:'center',padding:'3rem',color:'#9ca3af'}}>Loading...</div>}
         {!loading&&filtered.length===0&&<div style={{textAlign:'center',padding:'3rem',color:'#9ca3af',fontSize:13}}>No records found</div>}
@@ -8028,21 +8361,21 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
                 <React.Fragment key={d.id}>
                   {showDivider&&<div style={{height:2,background:'#9ca3af',margin:'6px 0',borderRadius:1}}/>}
                   <div onClick={()=>openEdit(d)} style={{
-                    background:'white',borderRadius:8,cursor:'pointer',
-                    border:notable?'1.5px solid #fca5a5':'1px solid #e5e7eb',
-                    padding:'8px 14px',display:'flex',flexDirection:'column',gap:4,
-                  background:shadeBg}} className="hoverable-tile">
+                    background:d.source==='add_feed_webform'?'#fffbeb':shadeBg,borderRadius:8,cursor:'pointer',
+                    border:notable?'1.5px solid #fca5a5':d.source==='add_feed_webform'?'1px solid #fde68a':'1px solid #e5e7eb',
+                    padding:'8px 14px',display:'flex',flexDirection:'column',gap:4}} className="hoverable-tile">
                     <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
                       <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
                       <span style={{fontWeight:700,color:'#111827',minWidth:80,flexShrink:0,fontSize:13}}>{d.batch_label||'—'}</span>
-                      <span style={{color:'#6b7280',minWidth:65,flexShrink:0,fontSize:12}}>{d.team_member||'—'}</span>
+                      {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
                       <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:100}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':'#d1fae5',color:d.feed_type==='STARTER'?'#1e40af':'#065f46'}}>{d.feed_type}</span>}</span>
                       <span style={{color:'#374151',fontSize:12,minWidth:80}}>{hasGrit?`grit ${parseFloat(d.grit_lbs)} lbs`:'no grit'}</span>
-                      <span style={{color:hasMort?'#b91c1c':'#9ca3af',fontWeight:hasMort?700:400,fontSize:12,minWidth:80}}>{hasMort?`💀 ${d.mortality_count} mort.`:'no mort.'}</span>
-                      <span style={{fontSize:11,color:d.group_moved===false?'#b91c1c':'#6b7280'}}>{d.group_moved===false?'⚠ not moved':'moved ✓'}</span>
-                      <span style={{fontSize:11,color:d.waterer_checked===false?'#b91c1c':'#6b7280'}}>{d.waterer_checked===false?'⚠ waterer':'waterer ✓'}</span>
+                      <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none',minWidth:80}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
                     </div>
-                    {comment&&<div style={{fontSize:11,color:'#374151',paddingLeft:102,fontStyle:'italic'}}>{comment}</div>}
+                    {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
                   </div>
                 </React.Fragment>
               );
@@ -8055,10 +8388,11 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
         <div onClick={()=>setShowForm(false)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:480,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
             <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
-              <div style={{fontSize:15,fontWeight:600,color:'#085041'}}>{editId?'Edit':'Add'} Broiler Daily Report</div>
+              <div style={{fontSize:15,fontWeight:600,color:'#085041'}}>{editId?(editSource==='add_feed_webform'?'Edit Broiler Add Feed Report':'Edit Broiler Daily Report'):'Add Broiler Daily Report'}</div>
               <button onClick={()=>setShowForm(false)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>×</button>
             </div>
             <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,maxHeight:'70vh',overflowY:'auto'}}>
+
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Date *</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Team Member</label><select value={form.teamMember} onChange={e=>setForm(f=>({...f,teamMember:e.target.value}))}><option value=''>Select...</option>{teamMembers.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Batch</label>
@@ -8074,20 +8408,20 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
                 </div>
               </div>
               <div><label style={S.label}>Feed (lbs)</label><input type="number" min="0" step="0.1" value={form.feedLbs||''} onChange={e=>setForm(f=>({...f,feedLbs:e.target.value}))} placeholder="0"/></div>
-              <div><label style={S.label}>Grit (lbs)</label><input type="number" min="0" step="0.1" value={form.gritLbs||''} onChange={e=>setForm(f=>({...f,gritLbs:e.target.value}))} placeholder="0"/></div>
-              <div><label style={S.label}>Mortality count</label><input type="number" min="0" value={form.mortalityCount||''} onChange={e=>setForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0"/></div>
-              <div><label style={S.label}>Mortality reason</label><input value={form.mortalityReason} onChange={e=>setForm(f=>({...f,mortalityReason:e.target.value}))}/></div>
-              <div><label style={S.label}>Group moved?</label>
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Grit (lbs)</label><input type="number" min="0" step="0.1" value={form.gritLbs||''} onChange={e=>setForm(f=>({...f,gritLbs:e.target.value}))} placeholder="0"/></div>}
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Mortality count</label><input type="number" min="0" value={form.mortalityCount||''} onChange={e=>setForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0"/></div>}
+              {editSource!=='add_feed_webform'&&parseInt(form.mortalityCount)>0&&<div><label style={S.label}>Mortality reason <span style={{color:'#dc2626'}}>*</span></label><input value={form.mortalityReason} onChange={e=>setForm(f=>({...f,mortalityReason:e.target.value}))}/></div>}
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Group moved?</label>
                 <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
                   {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l})=><button key={l} type="button" onClick={()=>setForm(f=>({...f,groupMoved:v}))} style={{flex:1,padding:'7px 0',border:'none',fontFamily:'inherit',fontSize:12,cursor:'pointer',background:form.groupMoved===v?(v?'#085041':'#374151'):'#f9fafb',color:form.groupMoved===v?'white':'#6b7280'}}>{l}</button>)}
                 </div>
-              </div>
-              <div><label style={S.label}>Waterer checked?</label>
+              </div>}
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Waterer checked?</label>
                 <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
                   {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l})=><button key={l} type="button" onClick={()=>setForm(f=>({...f,watererChecked:v}))} style={{flex:1,padding:'7px 0',border:'none',fontFamily:'inherit',fontSize:12,cursor:'pointer',background:form.watererChecked===v?(v?'#085041':'#374151'):'#f9fafb',color:form.watererChecked===v?'white':'#6b7280'}}>{l}</button>)}
                 </div>
-              </div>
-              <div style={{gridColumn:'1/-1'}}><label style={S.label}>Comments</label><textarea value={form.comments} onChange={e=>setForm(f=>({...f,comments:e.target.value}))} rows={2} style={{resize:'vertical'}}/></div>
+              </div>}
+              {editSource!=='add_feed_webform'&&<div style={{gridColumn:'1/-1'}}><label style={S.label}>Comments</label><textarea value={form.comments} onChange={e=>setForm(f=>({...f,comments:e.target.value}))} rows={2} style={{resize:'vertical'}}/></div>}
             </div>
             <div style={{padding:'12px 20px',borderTop:'1px solid #e5e7eb',display:'flex',gap:8}}>
               <button onClick={save} style={{...S.btnPrimary,width:'auto',padding:'8px 20px'}}>Save</button>
@@ -9125,6 +9459,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
   const [fTeam,setFTeam]=useState('');
   const [fFrom,setFFrom]=useState('');
   const [fTo,setFTo]=useState('');
+  const [srcFilter,setSrcFilter]=useState('all');
   const EMPTY={date:todayStr(),teamMember:'',batchLabel:'',feedType:'LAYER',feedLbs:'',gritLbs:'',layerCount:'',groupMoved:true,watererChecked:true,mortalityCount:'',mortalityReason:'',comments:''};
   const [form,setForm]=useState(EMPTY);
 
@@ -9146,19 +9481,24 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
     sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data})=>{if(data?.data)setTeamMembers(data.data);});
   },[]);
 
-  // Auto-load all pages on mount
+  // Auto-load all pages on mount (guarded to prevent duplicate fetches on re-render)
+  const pgLoading=React.useRef(false);
   React.useEffect(()=>{
-    if(hasMore){
+    if(hasMore&&!pgLoading.current){
+      pgLoading.current=true;
       const next=page+1;
       sb.from('layer_dailys').select('*').order('date',{ascending:false}).range(next*PAGE,(next+1)*PAGE-1).then(({data})=>{
-        if(data){setRecords(r=>[...r,...data]);setHasMore(data.length===PAGE);setPage(next);}
+        pgLoading.current=false;
+        if(data){setRecords(r=>{const ids=new Set(r.map(x=>x.id));return[...r,...data.filter(x=>!ids.has(x.id))];});setHasMore(data.length===PAGE);setPage(next);}
       });
     }
   },[hasMore,page]);
 
-  function openEdit(d){setForm({date:d.date||todayStr(),teamMember:d.team_member||'',batchLabel:d.batch_label||'',feedType:d.feed_type||'LAYER',feedLbs:d.feed_lbs!=null?d.feed_lbs:'',gritLbs:d.grit_lbs!=null?d.grit_lbs:'',layerCount:d.layer_count!=null?d.layer_count:'',groupMoved:d.group_moved!==false,watererChecked:d.waterer_checked!==false,mortalityCount:d.mortality_count!=null?d.mortality_count:'',mortalityReason:d.mortality_reason||'',comments:d.comments||''});setEditId(d.id);setShowForm(true);}
+  const [editSource,setEditSource]=useState(null);
+  function openEdit(d){setForm({date:d.date||todayStr(),teamMember:d.team_member||'',batchLabel:d.batch_label||'',feedType:d.feed_type||'LAYER',feedLbs:d.feed_lbs!=null?d.feed_lbs:'',gritLbs:d.grit_lbs!=null?d.grit_lbs:'',layerCount:d.layer_count!=null?d.layer_count:'',groupMoved:d.group_moved!==false,watererChecked:d.waterer_checked!==false,mortalityCount:d.mortality_count!=null?d.mortality_count:'',mortalityReason:d.mortality_reason||'',comments:d.comments||''});setEditId(d.id);setEditSource(d.source||null);setShowForm(true);}
   const [showAddModal,setShowAddModal]=useState(false);
   async function save(){
+    if(parseInt(form.mortalityCount)>0&&!(form.mortalityReason||'').trim()){alert('Mortality reason is required when mortalities are reported.');return;}
     const rec={date:form.date,team_member:form.teamMember,batch_label:form.batchLabel,feed_type:form.feedType||'LAYER',feed_lbs:form.feedLbs!==''?parseFloat(form.feedLbs):0,grit_lbs:form.gritLbs!==''?parseFloat(form.gritLbs):0,layer_count:form.layerCount!==''?parseInt(form.layerCount):null,group_moved:form.groupMoved,waterer_checked:form.watererChecked,mortality_count:form.mortalityCount!==''?parseInt(form.mortalityCount):0,mortality_reason:form.mortalityReason||null,comments:form.comments||null};
     if(editId){
       const {error}=await sb.from('layer_dailys').update(rec).eq('id',editId);
@@ -9214,7 +9554,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
   const groupOpts=(layerGroups||[]).filter(g=>g.status==='active').map(g=>g.name);
   const allGroups=[...new Set(records.map(r=>r.batch_label).filter(Boolean))].sort();
   const teamOpts=[...new Set(records.map(r=>r.team_member).filter(Boolean))].sort();
-  const filtered=records.filter(r=>(!fGroup||r.batch_label===fGroup)&&(!fTeam||r.team_member===fTeam)&&(!fFrom||r.date>=fFrom)&&(!fTo||r.date<=fTo));
+  const filtered=records.filter(r=>(!fGroup||r.batch_label===fGroup)&&(!fTeam||r.team_member===fTeam)&&(!fFrom||r.date>=fFrom)&&(!fTo||r.date<=fTo)&&(srcFilter==='all'||(srcFilter==='daily'&&r.source!=='add_feed_webform')||(srcFilter==='addfeed'&&r.source==='add_feed_webform')));
   const fi={padding:'6px 10px',borderRadius:6,border:'1px solid #d1d5db',fontSize:12,fontFamily:'inherit',background:'white',width:'auto'};
 
   return (
@@ -9226,7 +9566,10 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
             <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>Layer Daily Reports</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown</div>
           </div>
-          <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
+            <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          </div>
         </div>
         {showAddModal&&<AdminAddReportModal sb={sb} formType="layer" onClose={()=>setShowAddModal(false)} onSaved={recs=>{setRecords(p=>[...recs,...p]);refreshDailys&&refreshDailys('layer');}}/>}
         <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
@@ -9234,7 +9577,12 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
           <span style={{fontSize:12,color:'#6b7280'}}>to</span>
           <input type="date" value={fTo} onChange={e=>setFTo(e.target.value)} style={{...fi,width:130}}/>
           <select value={fGroup} onChange={e=>setFGroup(e.target.value)} style={fi}><option value=''>All groups</option>{allGroups.map(g=><option key={g} value={g}>{g}</option>)}</select>
-          {(fGroup||fFrom||fTo)&&<button onClick={()=>{setFGroup('');setFFrom('');setFTo('');}} style={{...fi,color:'#6b7280',cursor:'pointer'}}>Clear</button>}
+          {(fGroup||fFrom||fTo||srcFilter!=='all')&&<button onClick={()=>{setFGroup('');setFFrom('');setFTo('');setSrcFilter('all');}} style={{...fi,color:'#6b7280',cursor:'pointer'}}>Clear</button>}
+          <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db',marginLeft:'auto'}}>
+            {[{k:'all',l:'All'},{k:'daily',l:'Daily Reports'},{k:'addfeed',l:'\ud83c\udf3e Add Feed'}].map(function(o,oi){return(
+              <button key={o.k} onClick={function(){setSrcFilter(o.k);}} style={{padding:'5px 10px',border:'none',borderRight:oi<2?'1px solid #d1d5db':'none',fontFamily:'inherit',fontSize:11,fontWeight:600,cursor:'pointer',background:srcFilter===o.k?'#92400e':'white',color:srcFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+            );})}
+          </div>
         </div>
         {loading&&<div style={{textAlign:'center',padding:'3rem',color:'#9ca3af'}}>Loading...</div>}
         {!loading&&filtered.length===0&&<div style={{textAlign:'center',padding:'3rem',color:'#9ca3af',fontSize:13}}>No records found</div>}
@@ -9255,21 +9603,22 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
                 <React.Fragment key={d.id}>
                   {showDivider&&<div style={{height:2,background:'#9ca3af',margin:'6px 0',borderRadius:1}}/>}
                   <div onClick={()=>openEdit(d)} style={{
-                    background:'white',borderRadius:8,cursor:'pointer',
-                    border:notable?'1.5px solid #fca5a5':'1px solid #e5e7eb',
-                    padding:'8px 14px',display:'flex',flexDirection:'column',gap:4,
-                  background:shadeBg}} className="hoverable-tile">
+                    background:d.source==='add_feed_webform'?'#fffbeb':shadeBg,borderRadius:8,cursor:'pointer',
+                    border:notable?'1.5px solid #fca5a5':d.source==='add_feed_webform'?'1px solid #fde68a':'1px solid #e5e7eb',
+                    padding:'8px 14px',display:'flex',flexDirection:'column',gap:4}} className="hoverable-tile">
                     <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
                       <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
                       <span style={{fontWeight:700,color:'#111827',minWidth:110,flexShrink:0,fontSize:13}}>{d.batch_label||'—'}</span>
-                      <span style={{color:'#6b7280',minWidth:65,flexShrink:0,fontSize:12}}>{d.team_member||'—'}</span>
+                      {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
                       <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:100}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':d.feed_type==='GROWER'?'#d1fae5':'#fef3c7',color:d.feed_type==='STARTER'?'#1e40af':d.feed_type==='GROWER'?'#065f46':'#92400e'}}>{d.feed_type}</span>}</span>
                       <span style={{color:'#374151',fontSize:12,minWidth:80}}>{hasGrit?`grit ${parseFloat(d.grit_lbs)} lbs`:'no grit'}</span>
                       <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasCount?`🐔 ${d.layer_count} hens`:'no count'}</span>
-                      <span style={{fontSize:11,color:d.group_moved===false?'#b91c1c':'#6b7280'}}>{d.group_moved===false?'⚠ not moved':'moved ✓'}</span>
-                      <span style={{fontSize:11,color:d.waterer_checked===false?'#b91c1c':'#6b7280'}}>{d.waterer_checked===false?'⚠ waterer':'waterer ✓'}</span>
+                      <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none'}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
                     </div>
-                    {comment&&<div style={{fontSize:11,color:'#374151',paddingLeft:102,fontStyle:'italic'}}>{comment}</div>}
+                    {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
                   </div>
                 </React.Fragment>
               );
@@ -9282,10 +9631,11 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
         <div onClick={()=>setShowForm(false)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:480,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
             <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
-              <div style={{fontSize:15,fontWeight:600,color:'#b45309'}}>{editId?'Edit':'Add'} Layer Daily Report</div>
+              <div style={{fontSize:15,fontWeight:600,color:'#b45309'}}>{editId?(editSource==='add_feed_webform'?'Edit Layer Add Feed Report':'Edit Layer Daily Report'):'Add Layer Daily Report'}</div>
               <button onClick={()=>setShowForm(false)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>×</button>
             </div>
             <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,maxHeight:'70vh',overflowY:'auto'}}>
+
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Date *</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Team Member</label><select value={form.teamMember} onChange={e=>setForm(f=>({...f,teamMember:e.target.value}))}><option value=''>Select...</option>{teamMembers.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Group</label>
@@ -9295,22 +9645,27 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
                   {allGroups.filter(g=>!groupOpts.includes(g)).map(g=><option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
+              {editSource==='add_feed_webform'&&<div style={{gridColumn:'1/-1'}}><label style={S.label}>Feed Type</label>
+                <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
+                  {['STARTER','GROWER','LAYER'].map(function(ft,fi){return <button key={ft} type="button" onClick={function(){setForm(function(f){return{...f,feedType:f.feedType===ft?'':ft};});}} style={{flex:1,padding:'7px 0',border:'none',borderRight:fi<2?'1px solid #d1d5db':'none',fontFamily:'inherit',fontSize:12,fontWeight:600,cursor:'pointer',background:form.feedType===ft?'#92400e':'#f9fafb',color:form.feedType===ft?'white':'#6b7280'}}>{ft}</button>;})}
+                </div>
+              </div>}
               <div><label style={S.label}>Feed (lbs)</label><input type="number" min="0" step="0.1" value={form.feedLbs||''} onChange={e=>setForm(f=>({...f,feedLbs:e.target.value}))} placeholder="0"/></div>
-              <div><label style={S.label}>Grit (lbs)</label><input type="number" min="0" step="0.1" value={form.gritLbs||''} onChange={e=>setForm(f=>({...f,gritLbs:e.target.value}))} placeholder="0"/></div>
-              <div><label style={S.label}>Hen Count</label><input type="number" min="0" value={form.layerCount||''} onChange={e=>setForm(f=>({...f,layerCount:e.target.value}))} placeholder="0"/></div>
-              <div><label style={S.label}>Mortality count</label><input type="number" min="0" value={form.mortalityCount||''} onChange={e=>setForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0"/></div>
-              <div style={{gridColumn:'1/-1'}}><label style={S.label}>Mortality reason</label><input value={form.mortalityReason} onChange={e=>setForm(f=>({...f,mortalityReason:e.target.value}))}/></div>
-              <div><label style={S.label}>Group moved?</label>
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Grit (lbs)</label><input type="number" min="0" step="0.1" value={form.gritLbs||''} onChange={e=>setForm(f=>({...f,gritLbs:e.target.value}))} placeholder="0"/></div>}
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Hen Count</label><input type="number" min="0" value={form.layerCount||''} onChange={e=>setForm(f=>({...f,layerCount:e.target.value}))} placeholder="0"/></div>}
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Mortality count</label><input type="number" min="0" value={form.mortalityCount||''} onChange={e=>setForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0"/></div>}
+              {editSource!=='add_feed_webform'&&parseInt(form.mortalityCount)>0&&<div style={{gridColumn:'1/-1'}}><label style={S.label}>Mortality reason <span style={{color:'#dc2626'}}>*</span></label><input value={form.mortalityReason} onChange={e=>setForm(f=>({...f,mortalityReason:e.target.value}))}/></div>}
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Group moved?</label>
                 <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
                   {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l})=><button key={l} type="button" onClick={()=>setForm(f=>({...f,groupMoved:v}))} style={{flex:1,padding:'7px 0',border:'none',fontFamily:'inherit',fontSize:12,cursor:'pointer',background:form.groupMoved===v?(v?'#085041':'#374151'):'#f9fafb',color:form.groupMoved===v?'white':'#6b7280'}}>{l}</button>)}
                 </div>
-              </div>
-              <div><label style={S.label}>Waterer checked?</label>
+              </div>}
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Waterer checked?</label>
                 <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
                   {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l})=><button key={l} type="button" onClick={()=>setForm(f=>({...f,watererChecked:v}))} style={{flex:1,padding:'7px 0',border:'none',fontFamily:'inherit',fontSize:12,cursor:'pointer',background:form.watererChecked===v?(v?'#085041':'#374151'):'#f9fafb',color:form.watererChecked===v?'white':'#6b7280'}}>{l}</button>)}
                 </div>
-              </div>
-              <div style={{gridColumn:'1/-1'}}><label style={S.label}>Comments</label><textarea value={form.comments} onChange={e=>setForm(f=>({...f,comments:e.target.value}))} rows={2} style={{resize:'vertical'}}/></div>
+              </div>}
+              {editSource!=='add_feed_webform'&&<div style={{gridColumn:'1/-1'}}><label style={S.label}>Comments</label><textarea value={form.comments} onChange={e=>setForm(f=>({...f,comments:e.target.value}))} rows={2} style={{resize:'vertical'}}/></div>}
             </div>
             <div style={{padding:'12px 20px',borderTop:'1px solid #e5e7eb',display:'flex',gap:8}}>
               <button onClick={save} style={{...S.btnPrimary,width:'auto',padding:'8px 20px'}}>Save</button>
@@ -9358,12 +9713,15 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
     sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data})=>{if(data?.data)setTeamMembers(data.data);});
   },[]);
 
-  // Auto-load all pages on mount
+  // Auto-load all pages on mount (guarded to prevent duplicate fetches on re-render)
+  const pgLoading=React.useRef(false);
   React.useEffect(()=>{
-    if(hasMore){
+    if(hasMore&&!pgLoading.current){
+      pgLoading.current=true;
       const next=page+1;
       sb.from('egg_dailys').select('*').order('date',{ascending:false}).range(next*PAGE,(next+1)*PAGE-1).then(({data})=>{
-        if(data){setRecords(r=>[...r,...data]);setHasMore(data.length===PAGE);setPage(next);}
+        pgLoading.current=false;
+        if(data){setRecords(r=>{const ids=new Set(r.map(x=>x.id));return[...r,...data.filter(x=>!ids.has(x.id))];});setHasMore(data.length===PAGE);setPage(next);}
       });
     }
   },[hasMore,page]);
@@ -9435,11 +9793,11 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
                   <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
                     <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
                     <span style={{fontWeight:700,color:'#b45309',minWidth:80,flexShrink:0}}>🥚 {total} eggs</span>
-                    <span style={{color:'#6b7280',minWidth:65,flexShrink:0,fontSize:12}}>{d.team_member||'—'}</span>
+                    <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
                     {groups.map(([n,c])=><span key={n} style={{color:'#374151',fontSize:12,minWidth:100}}>{n}: <strong>{c}</strong></span>)}
                     {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12}}>📦 {d.dozens_on_hand} doz on hand</span>}
                   </div>
-                  {comment&&<div style={{fontSize:11,color:'#374151',paddingLeft:102,fontStyle:'italic'}}>{comment}</div>}
+                  {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
                 </div>
               );
             })}
@@ -9507,6 +9865,7 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
   const [fTeam,setFTeam]=useState('');
   const [fFrom,setFFrom]=useState('');
   const [fTo,setFTo]=useState('');
+  const [srcFilter,setSrcFilter]=useState('all');
   const EMPTY={date:todayStr(),teamMember:'',batchLabel:'',pigCount:'',feedLbs:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''};
   const [form,setForm]=useState(EMPTY);
 
@@ -9523,7 +9882,8 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
     }
   },[pendingEdit,pigDailys]);
 
-  function openEdit(d){setForm({date:d.date||todayStr(),teamMember:d.team_member||'',batchLabel:d.batch_label||'',pigCount:d.pig_count!=null?d.pig_count:'',feedLbs:d.feed_lbs!=null?d.feed_lbs:'',groupMoved:d.group_moved!==false,nippleDrinkerMoved:d.nipple_drinker_moved!==false,nippleDrinkerWorking:d.nipple_drinker_working!==false,troughsMoved:d.troughs_moved!==false,fenceWalked:d.fence_walked!==false,fenceVoltage:d.fence_voltage!=null?d.fence_voltage:'',issues:d.issues||''});setEditId(d.id);setShowForm(true);}
+  const [editSource,setEditSource]=useState(null);
+  function openEdit(d){setForm({date:d.date||todayStr(),teamMember:d.team_member||'',batchLabel:d.batch_label||'',pigCount:d.pig_count!=null?d.pig_count:'',feedLbs:d.feed_lbs!=null?d.feed_lbs:'',groupMoved:d.group_moved!==false,nippleDrinkerMoved:d.nipple_drinker_moved!==false,nippleDrinkerWorking:d.nipple_drinker_working!==false,troughsMoved:d.troughs_moved!==false,fenceWalked:d.fence_walked!==false,fenceVoltage:d.fence_voltage!=null?d.fence_voltage:'',issues:d.issues||''});setEditId(d.id);setEditSource(d.source||null);setShowForm(true);}
   const [showAddModal,setShowAddModal]=useState(false);
   function save(){
     const matchedGroup=feederGroups.find(g=>g.batchName===form.batchLabel);
@@ -9549,7 +9909,7 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
   function del(id){window._wcfConfirmDelete?.('Delete this daily report? This cannot be undone.',()=>{sb.from('pig_dailys').delete().eq('id',id).then(()=>{refreshDailys&&refreshDailys('pig');});setPigDailys(p=>p.filter(r=>r.id!==id));setShowForm(false);setEditId(null);});}
 
   const teamOpts=[...new Set(pigDailys.map(r=>r.team_member).filter(Boolean))].sort();
-  let filtered=pigDailys.filter(r=>(!fBatch||r.batch_label===fBatch)&&(!fTeam||r.team_member===fTeam)&&(!fFrom||r.date>=fFrom)&&(!fTo||r.date<=fTo));
+  let filtered=pigDailys.filter(r=>(!fBatch||r.batch_label===fBatch)&&(!fTeam||r.team_member===fTeam)&&(!fFrom||r.date>=fFrom)&&(!fTo||r.date<=fTo)&&(srcFilter==='all'||(srcFilter==='daily'&&r.source!=='add_feed_webform')||(srcFilter==='addfeed'&&r.source==='add_feed_webform')));
   const totalFeed=filtered.reduce((s,r)=>s+(parseFloat(r.feed_lbs)||0),0);
   const voltColor=v=>v==null?'#9ca3af':v<3?'#b91c1c':v<5?'#92400e':'#065f46';
   const fi={padding:'6px 10px',borderRadius:6,border:'1px solid #d1d5db',fontSize:12,fontFamily:'inherit',background:'white',width:'auto'};
@@ -9563,7 +9923,10 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
             <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>Pig Daily Reports</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{pigDailys.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed in view</div>
           </div>
-          <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
+            <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          </div>
         </div>
         {showAddModal&&<AdminAddReportModal sb={sb} formType="pig" onClose={()=>setShowAddModal(false)} onSaved={recs=>{setPigDailys(p=>[...recs,...p]);refreshDailys&&refreshDailys('pig');}}/>}
         <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
@@ -9571,7 +9934,12 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
           <span style={{fontSize:12,color:'#6b7280'}}>to</span>
           <input type="date" value={fTo} onChange={e=>setFTo(e.target.value)} style={{...fi,width:130}}/>
           <select value={fBatch} onChange={e=>setFBatch(e.target.value)} style={fi}><option value=''>All batches</option>{fromRecords.map(b=><option key={b} value={b}>{b}</option>)}</select>
-          {(fBatch||fFrom||fTo)&&<button onClick={()=>{setFBatch('');setFFrom('');setFTo('');}} style={{...fi,color:'#6b7280',cursor:'pointer'}}>Clear</button>}
+          {(fBatch||fFrom||fTo||srcFilter!=='all')&&<button onClick={()=>{setFBatch('');setFFrom('');setFTo('');setSrcFilter('all');}} style={{...fi,color:'#6b7280',cursor:'pointer'}}>Clear</button>}
+          <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db',marginLeft:'auto'}}>
+            {[{k:'all',l:'All'},{k:'daily',l:'Daily Reports'},{k:'addfeed',l:'\ud83c\udf3e Add Feed'}].map(function(o,oi){return(
+              <button key={o.k} onClick={function(){setSrcFilter(o.k);}} style={{padding:'5px 10px',border:'none',borderRight:oi<2?'1px solid #d1d5db':'none',fontFamily:'inherit',fontSize:11,fontWeight:600,cursor:'pointer',background:srcFilter===o.k?'#92400e':'white',color:srcFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+            );})}
+          </div>
         </div>
         {pigDailys.length===0&&<div style={{textAlign:'center',padding:'3rem',color:'#9ca3af',fontSize:13}}>No pig daily reports yet</div>}
         {pigDailys.length>0&&filtered.length===0&&<div style={{textAlign:'center',padding:'3rem',color:'#9ca3af',fontSize:13}}>No records match the current filters</div>}
@@ -9591,22 +9959,22 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
                 <React.Fragment key={d.id}>
                   {showDivider&&<div style={{height:2,background:'#9ca3af',margin:'6px 0',borderRadius:1}}/>}
                   <div onClick={()=>openEdit(d)} style={{
-                    background:'white',borderRadius:8,cursor:'pointer',
-                    border:notable?'1.5px solid #fca5a5':'1px solid #e5e7eb',
-                    padding:'8px 14px',display:'flex',flexDirection:'column',gap:4,
-                  background:shadeBg}} className="hoverable-tile">
+                    background:d.source==='add_feed_webform'?'#fffbeb':shadeBg,borderRadius:8,cursor:'pointer',
+                    border:notable?'1.5px solid #fca5a5':d.source==='add_feed_webform'?'1px solid #fde68a':'1px solid #e5e7eb',
+                    padding:'8px 14px',display:'flex',flexDirection:'column',gap:4}} className="hoverable-tile">
                     <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
                       <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
                       <span style={{fontWeight:700,color:'#111827',minWidth:100,flexShrink:0,fontSize:13}}>{d.batch_label||'—'}</span>
-                      <span style={{color:'#6b7280',minWidth:65,flexShrink:0,fontSize:12}}>{d.team_member||'—'}</span>
+                      {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
                       <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:100}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
                       <span style={{color:'#7c3aed',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
                       <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,minWidth:70}}>{hasVolt?`⚡ ${d.fence_voltage} kV`:'no voltage'}</span>
-                      <span style={{fontSize:11,color:d.group_moved===false?'#b91c1c':'#6b7280'}}>{d.group_moved===false?'⚠ not moved':'moved ✓'}</span>
-                      <span style={{fontSize:11,color:d.nipple_drinker_working===false?'#b91c1c':'#6b7280'}}>{d.nipple_drinker_working===false?'⚠ nipple':'nipple ✓'}</span>
-                      <span style={{fontSize:11,color:d.fence_walked===false?'#b91c1c':'#6b7280'}}>{d.fence_walked===false?'⚠ fence':'fence ✓'}</span>
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.nipple_drinker_working===false?'#fef2f2':'#f0fdf4',color:d.nipple_drinker_working===false?'#b91c1c':'#065f46',border:d.nipple_drinker_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Nipple: '+(d.nipple_drinker_working===false?'No':'Yes')}</span>
+                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.fence_walked===false?'#fef2f2':'#f0fdf4',color:d.fence_walked===false?'#b91c1c':'#065f46',border:d.fence_walked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Fence: '+(d.fence_walked===false?'No':'Yes')}</span>
                     </div>
-                    {issues&&<div style={{fontSize:11,color:'#b91c1c',paddingLeft:102,fontStyle:'italic'}}>⚠ {issues}</div>}
+                    {issues&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+issues}</div>}
                   </div>
                 </React.Fragment>
               );
@@ -9618,10 +9986,11 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
         <div onClick={()=>setShowForm(false)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:480,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
             <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
-              <div style={{fontSize:15,fontWeight:600,color:'#7c3aed'}}>{editId?'Edit':'Add'} Pig Daily Report</div>
+              <div style={{fontSize:15,fontWeight:600,color:'#7c3aed'}}>{editId?(editSource==='add_feed_webform'?'Edit Pig Add Feed Report':'Edit Pig Daily Report'):'Add Pig Daily Report'}</div>
               <button onClick={()=>setShowForm(false)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>×</button>
             </div>
             <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,maxHeight:'70vh',overflowY:'auto'}}>
+
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Date *</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Team Member</label><select value={form.teamMember} onChange={e=>setForm(f=>({...f,teamMember:e.target.value}))}><option value=''>Select...</option>{teamMembers.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Pig Group / Batch</label>
@@ -9632,16 +10001,16 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
                 </select>
               </div>
               <div><label style={S.label}>Feed (lbs)</label><input type="number" min="0" step="0.1" value={form.feedLbs||''} onChange={e=>setForm(f=>({...f,feedLbs:e.target.value}))} placeholder="0"/></div>
-              <div><label style={S.label}>Pig Count</label><input type="number" min="0" value={form.pigCount||''} onChange={e=>setForm(f=>({...f,pigCount:e.target.value}))} placeholder="0"/></div>
-              <div style={{gridColumn:'1/-1'}}><label style={S.label}>Fence Voltage (kV)</label><input type="number" min="0" step="0.1" value={form.fenceVoltage||''} onChange={e=>setForm(f=>({...f,fenceVoltage:e.target.value}))}/></div>
-              {[['groupMoved','Group moved?'],['nippleDrinkerMoved','Nipple drinker moved?'],['nippleDrinkerWorking','Nipple drinker working?'],['troughsMoved','Troughs moved?'],['fenceWalked','Fence walked?']].map(([k,l])=>(
+              {editSource!=='add_feed_webform'&&<div><label style={S.label}>Pig Count</label><input type="number" min="0" value={form.pigCount||''} onChange={e=>setForm(f=>({...f,pigCount:e.target.value}))} placeholder="0"/></div>}
+              {editSource!=='add_feed_webform'&&<div style={{gridColumn:'1/-1'}}><label style={S.label}>Fence Voltage (kV)</label><input type="number" min="0" step="0.1" value={form.fenceVoltage||''} onChange={e=>setForm(f=>({...f,fenceVoltage:e.target.value}))}/></div>}
+              {editSource!=='add_feed_webform'&&[['groupMoved','Group moved?'],['nippleDrinkerMoved','Nipple drinker moved?'],['nippleDrinkerWorking','Nipple drinker working?'],['troughsMoved','Troughs moved?'],['fenceWalked','Fence walked?']].map(([k,l])=>(
                 <div key={k}><label style={S.label}>{l}</label>
                   <div style={{display:'flex',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
                     {[{v:true,lbl:'Yes'},{v:false,lbl:'No'}].map(({v,lbl})=><button key={lbl} type="button" onClick={()=>setForm(f=>({...f,[k]:v}))} style={{flex:1,padding:'7px 0',border:'none',fontFamily:'inherit',fontSize:12,cursor:'pointer',background:form[k]===v?(v?'#085041':'#374151'):'#f9fafb',color:form[k]===v?'white':'#6b7280'}}>{lbl}</button>)}
                   </div>
                 </div>
               ))}
-              <div style={{gridColumn:'1/-1'}}><label style={S.label}>Issues / Notes</label><textarea value={form.issues} onChange={e=>setForm(f=>({...f,issues:e.target.value}))} rows={3} style={{resize:'vertical'}}/></div>
+              {editSource!=='add_feed_webform'&&<div style={{gridColumn:'1/-1'}}><label style={S.label}>Issues / Notes</label><textarea value={form.issues} onChange={e=>setForm(f=>({...f,issues:e.target.value}))} rows={3} style={{resize:'vertical'}}/></div>}
             </div>
             <div style={{padding:'12px 20px',borderTop:'1px solid #e5e7eb',display:'flex',gap:8}}>
               <button onClick={save} style={{...S.btnPrimary,width:'auto',padding:'8px 20px'}}>Save</button>
