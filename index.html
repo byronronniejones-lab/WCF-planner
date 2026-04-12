@@ -2288,6 +2288,8 @@ function App(){
   const [originalFeederForm, setOriginalFeederForm] = useState(null);
   const pigAutoSaveTimer = React.useRef(null);
   const subAutoSaveTimer = React.useRef(null);
+  const tripAutoSaveTimer = React.useRef(null);
+  const breedAutoSaveTimer = React.useRef(null);
   const [activeTripBatchId, setActiveTripBatchId] = useState(null);
   const [tripForm,       setTripForm]      = useState({date:"",pigCount:0,liveWeights:"",hangingWeight:0,notes:""});
   const [editTripId,     setEditTripId]    = useState(null);
@@ -3417,6 +3419,47 @@ function App(){
           )}
 
 
+{/* ── Animals on Farm ── */}
+          {(()=>{
+            const totalHens=(layerHousings||[]).filter(h=>h.status==='active').reduce((s,h)=>s+(parseInt(h.current_count)||0),0);
+            const activeFeederNamesHome=feederGroups.filter(g=>g.status==='active').flatMap(g=>{
+              const subs=(g.subBatches||[]).filter(s=>s.status==='active');
+              return subs.length>0?subs.map(s=>(s.name||'').toLowerCase().trim()):[(g.batchName||'').toLowerCase().trim()];
+            });
+            const pigCounts={};
+            [...pigDailys].sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
+              if(d.pig_count>0&&d.batch_label){
+                const lbl=d.batch_label.toLowerCase().trim();
+                if(activeFeederNamesHome.includes(lbl)||lbl==='sows'||lbl==='boars') pigCounts[d.batch_label]=parseInt(d.pig_count);
+              }
+            });
+            const totalPigs=Object.values(pigCounts).reduce((s,v)=>s+v,0);
+            const totalAll=projectedBirds+totalHens+totalPigs;
+            return (
+              <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:14,padding:'16px 24px'}}>
+                <div style={{fontSize:12,fontWeight:600,color:'#4b5563',letterSpacing:.3,marginBottom:12}}>ANIMALS ON FARM</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:16,alignItems:'center'}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:28,fontWeight:700,color:'#1e3a5f'}}>{projectedBirds.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc14 Broilers'}</div>
+                  </div>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:28,fontWeight:700,color:'#92400e'}}>{totalHens.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc13 Layer Hens'}</div>
+                  </div>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:28,fontWeight:700,color:'#7c3aed'}}>{totalPigs.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc37 Pigs'}</div>
+                  </div>
+                  <div style={{textAlign:'center',borderLeft:'1px solid #e5e7eb',paddingLeft:16}}>
+                    <div style={{fontSize:28,fontWeight:700,color:'#085041'}}>{totalAll.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>Total Animals</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
 {/* ── Missed Daily Reports ── */}
           {allMissed.length>0&&(
             <div>
@@ -4544,7 +4587,7 @@ function App(){
                           style={{position:"absolute",left:left+"%",width:w+"%",top:6,bottom:6,
                             borderRadius:4,cursor:"pointer",display:"flex",alignItems:"center",
                             padding:"0 6px",overflow:"hidden",zIndex:isHovered?10:1,
-                            background:C.bg,
+                            background:C.bg,opacity:0.8,
                             color:C.tx,
                             border:'1px solid '+C.bd,
                             outline:b.conflictOverride?"2px dashed #E24B4A":isHovered?"2px solid rgba(0,0,0,.25)":"none",
@@ -4599,7 +4642,7 @@ function App(){
                           style={{position:'absolute',left:left+'%',width:w+'%',top:6,bottom:6,
                             borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',
                             padding:'0 6px',overflow:'hidden',zIndex:isHov?10:1,
-                            background:C.bg,
+                            background:C.bg,opacity:0.8,
                             color:C.tx,
                             border:'2px solid #f59e0b',
                             outline:isHov?'2px solid rgba(0,0,0,.25)':'none',
@@ -4764,7 +4807,7 @@ function App(){
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,minWidth:1100}}>
                   <thead>
                     <tr style={{background:'#ecfdf5',borderBottom:'1px solid #d1fae5'}}>
-                      {['Batch','Breed','Time on Farm','Schooner','Birds Arrived','4 Wk Lbs','6 Wk Lbs','Feed / Bird','Starter Feed','Grower Feed','Total Feed','# Processed','Avg Breast','Avg Thigh','Avg Dressed'].map(h=>(
+                      {['Batch','Breed','Time on Farm','Schooner','Birds Arrived','4 Wk Lbs','6 Wk Lbs','Feed / Bird','Starter Feed','Grower Feed','Total Feed','# Processed','Avg Breast','Avg Thigh','Avg Dressed',''].map(h=>(
                         <th key={h} style={{padding:'7px 10px',textAlign:'left',fontWeight:600,color:'#374151',whiteSpace:'nowrap',fontSize:11}}>{h}</th>
                       ))}
                     </tr>
@@ -4821,6 +4864,7 @@ function App(){
                           {cell(n(b.avgBreastLbs)>0?`${n(b.avgBreastLbs)} lbs`:null)}
                           {cell(n(b.avgThighsLbs)>0?`${n(b.avgThighsLbs)} lbs`:null)}
                           {cell(n(b.avgDressedLbs)>0?`${n(b.avgDressedLbs)} lbs`:null)}
+                          {isAdmin&&<td style={{padding:'7px 10px',whiteSpace:'nowrap'}}><button onClick={e=>{e.stopPropagation();del(b.id);}} style={{fontSize:11,color:'#b91c1c',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>Delete</button></td>}
                         </tr>
                       );
                     })}
@@ -5277,8 +5321,44 @@ function App(){
     const totalBorn = farrowingRecs.reduce((s,r)=>s+(parseInt(r.totalBorn)||0),0);
     const totalDeaths = farrowingRecs.reduce((s,r)=>s+(parseInt(r.deaths)||0),0);
     const survivalRate = totalBorn>0?Math.round(((totalBorn-totalDeaths)/totalBorn)*100):null;
-    const avgLitterSize = farrowingRecs.length>0?avg(farrowingRecs,r=>parseInt(r.totalBorn)||null):null;
+    const avgLitterBorn = farrowingRecs.length>0?avg(farrowingRecs,r=>parseInt(r.totalBorn)||null):null;
+    const avgLitterAlive = farrowingRecs.length>0?avg(farrowingRecs,r=>{const b=parseInt(r.totalBorn)||0;const d=parseInt(r.deaths)||0;return b>0?b-d:null;}):null;
     const totalFarrowed = farrowingRecs.length;
+    // Active sows/boars from breeder registry
+    const activeSows = breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')).length;
+    const activeBoars = breeders.filter(b=>!b.archived&&b.sex==='Boar').length;
+    // Total pigs on farm — only active batches + breeding stock
+    const activeFeederNames = activeFeeders.flatMap(g=>{
+      const subs=(g.subBatches||[]).filter(s=>s.status==='active');
+      return subs.length>0?subs.map(s=>(s.name||'').toLowerCase().trim()):[(g.batchName||'').toLowerCase().trim()];
+    });
+    const pigCountsByGroup = (()=>{
+      const counts={};
+      [...pigDailys].sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
+        if(d.pig_count>0&&d.batch_label){
+          const lbl=d.batch_label.toLowerCase().trim();
+          if(activeFeederNames.includes(lbl)||lbl==='sows'||lbl==='boars') counts[d.batch_label]=parseInt(d.pig_count);
+        }
+      });
+      return counts;
+    })();
+    const pigsOnFarm = Object.values(pigCountsByGroup).reduce((s,v)=>s+v,0);
+    const pigBreakdown = Object.entries(pigCountsByGroup).sort((a,b)=>b[1]-a[1]).map(e=>e[0]+': '+e[1]).join(' \u00b7 ');
+    // Pigs processed + avg yield from trips
+    const allTrips = feederGroups.flatMap(g=>(g.processingTrips||[]).map(t=>({...t,batch:g.batchName})));
+    const currentYear = new Date().getFullYear().toString();
+    const yearTrips = allTrips.filter(t=>(t.date||'').startsWith(currentYear));
+    const totalProcessed = yearTrips.reduce((s,t)=>s+(parseInt(t.pigCount)||0),0);
+    const avgYield = (()=>{
+      const yields=allTrips.map(t=>{const live=((t.liveWeights||'').split(/[\s,]+/).map(v=>parseFloat(v)).filter(v=>!isNaN(v)&&v>0)).reduce((a,b)=>a+b,0);const hang=parseFloat(t.hangingWeight)||0;return live>0&&hang>0?Math.round((hang/live)*1000)/10:null;}).filter(Boolean);
+      return yields.length>0?Math.round(yields.reduce((a,b)=>a+b,0)/yields.length*10)/10:null;
+    })();
+    // Next farrowing window
+    const nextFarrowing = (()=>{
+      const today2=todayISO();
+      const upcoming=breedingCycles.map(c=>{const tl=calcBreedingTimeline(c.exposureStart);if(!tl)return null;if(tl.farrowingEnd<today2)return null;return{group:c.group,start:tl.farrowingStart,end:tl.farrowingEnd};}).filter(Boolean).sort((a,b)=>a.start.localeCompare(b.start));
+      return upcoming.length>0?upcoming[0]:null;
+    })();
 
     // Recent 5 cycles survival
     const recentCycleSurvival = breedingCycles.slice(-5).map(c=>{
@@ -5349,99 +5429,122 @@ function App(){
 
 
 
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+            <StatTile label="Pigs on Farm" val={pigsOnFarm>0?pigsOnFarm.toLocaleString():'\u2014'} color="#7c3aed"/>
+            <StatTile label="Active Sows" val={activeSows} sub={activeBoars+' boar'+(activeBoars!==1?'s':'')} color="#7c3aed"/>
             <StatTile label="Active Cycles" val={activeCycles2.length}/>
-            <StatTile label="Active Feeder Batches" val={activeFeeders.length} color="#92400e"/>
-            <StatTile label="Farrowing Records" val={totalFarrowed} color="#7c3aed"/>
-            <StatTile label="Avg Litter Size" val={avgLitterSize!=null?fmtN(avgLitterSize,1):'—'} color="#7c3aed"/>
-            <StatTile label="Overall Survival" val={survivalRate!=null?survivalRate+'%':'—'} color={survivalRate!=null?(survivalRate>=80?'#065f46':survivalRate>=65?'#92400e':'#b91c1c'):'#374151'}/>
+            <StatTile label="Active Batches" val={activeFeeders.length} color="#92400e"/>
+            <StatTile label="Avg Born / Litter" val={avgLitterBorn!=null?fmtN(avgLitterBorn,1):'\u2014'} color="#7c3aed"/>
+            <StatTile label="Avg Alive / Litter" val={avgLitterAlive!=null?fmtN(avgLitterAlive,1):'\u2014'} color="#065f46"/>
+            <StatTile label="Overall Survival" val={survivalRate!=null?survivalRate+'%':'\u2014'} color={survivalRate!=null?(survivalRate>=80?'#065f46':survivalRate>=65?'#92400e':'#b91c1c'):'#374151'} sub={totalFarrowed+' records'}/>
+            <StatTile label={'Processed '+currentYear} val={totalProcessed>0?totalProcessed.toLocaleString():'\u2014'} color="#374151" sub={avgYield!=null?'Avg yield: '+avgYield+'%':null}/>
           </div>
+          {pigsOnFarm>0&&(
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>PIGS ON FARM BREAKDOWN</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8}}>
+                {Object.entries(pigCountsByGroup).sort((a,b)=>{
+                  const al=a[0].toLowerCase(),bl=b[0].toLowerCase();
+                  if(al==='sows') return -1; if(bl==='sows') return 1;
+                  if(al==='boars') return -1; if(bl==='boars') return 1;
+                  return al.localeCompare(bl);
+                }).map(([name,count])=>(
+                  <div key={name} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:10,padding:'10px 14px',textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.4,marginBottom:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</div>
+                    <div style={{fontSize:20,fontWeight:700,color:'#7c3aed'}}>{count}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {nextFarrowing&&(
+            <div style={{background:'#f5f3ff',border:'1px solid #ddd6fe',borderRadius:12,padding:'12px 18px',display:'flex',alignItems:'center',gap:12}}>
+              <span style={{fontSize:20}}>{'\ud83d\udc37'}</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:'#5b21b6'}}>{'Next Farrowing \u2014 Group '+nextFarrowing.group}</div>
+                <div style={{fontSize:12,color:'#6b7280'}}>{fmtS(nextFarrowing.start)+' \u2192 '+fmtS(nextFarrowing.end)+(nextFarrowing.start<=todayStr?' \u00b7 Window is OPEN':'')}</div>
+              </div>
+            </div>
+          )}
 
           {/* Active feeder batches */}
           {feederBatchStats.length>0&&(
             <div>
               <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>ACTIVE FEEDER BATCHES</div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:10}}>
-                {feederBatchStats.map(({g,totalFeed,originalCount,reportDays,daysOld,feedPerPig,totalFeedCost,costPerPig})=>(
-                  <div key={g.id} onClick={()=>setView('pigbatches')} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px',cursor:'pointer'}} className="hoverable-tile">
-                    <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>{g.batchName}</div>
-                    {[
-                      {l:'Age',v:daysOld!=null?(Math.floor(daysOld/30)+'m '+(daysOld%30)+'d'):'\u2014'},
-                      {l:'Original count',v:originalCount>0?originalCount.toString():'\u2014'},
-                      {l:'Total feed',v:totalFeed>0?Math.round(totalFeed).toLocaleString()+' lbs':'\u2014'},
-                      {l:'Feed / pig',v:feedPerPig?feedPerPig+' lbs':'\u2014'},
-                      {l:'Feed cost',v:totalFeedCost!=null?'$'+totalFeedCost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'\u2014',color:'#92400e'},
-                      {l:'Cost / pig',v:costPerPig!=null?'$'+costPerPig.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'\u2014',color:'#065f46'},
-                      {l:'Daily reports',v:reportDays+' days recorded'},
-                    ].map(({l,v,color})=>(
-                      <div key={l} style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:4}}>
-                        <span style={{color:'#9ca3af'}}>{l}</span>
-                        <span style={{fontWeight:600,color:color||'#111827'}}>{v}</span>
+              <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                {feederBatchStats.map(({g,totalFeed,originalCount,reportDays,daysOld,feedPerPig,totalFeedCost,costPerPig},fbi)=>{
+                  const fbColors=[{bg:'#ecfdf5',bd:'#6ee7b7',tx:'#065f46'},{bg:'#fef3c7',bd:'#fcd34d',tx:'#92400e'},{bg:'#dbeafe',bd:'#93c5fd',tx:'#1e40af'},{bg:'#fce7f3',bd:'#f9a8d4',tx:'#9d174d'}];
+                  const fbc=fbColors[fbi%fbColors.length];
+                  const activeSubs=(g.subBatches||[]).filter(s=>s.status==='active');
+                  const subNames=activeSubs.length>0?activeSubs.map(s=>(s.name||'').toLowerCase().trim()):[g.batchName.toLowerCase().trim()];
+                  const latestCounts={};
+                  [...pigDailys].sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
+                    if(d.pig_count>0&&d.batch_label&&subNames.includes(d.batch_label.toLowerCase().trim())) latestCounts[d.batch_label]=parseInt(d.pig_count);
+                  });
+                  const currentCount=Object.values(latestCounts).reduce((s,v)=>s+v,0);
+                  return (
+                  <div key={g.id} onClick={()=>setView('pigbatches')} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:14,overflow:'hidden',cursor:'pointer'}} className="hoverable-tile">
+                    <div style={{background:fbc.bg,borderBottom:'1px solid '+fbc.bd,padding:'10px 18px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                      <span style={{fontSize:15,fontWeight:700,color:fbc.tx}}>{g.batchName}</span>
+                      <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>Active</span>
+                      {daysOld!=null&&<span style={{fontSize:11,color:'#6b7280'}}>{Math.floor(daysOld/30)+'m '+(daysOld%30)+'d old'}</span>}
+                    </div>
+                    <div style={{padding:'12px 18px'}}>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
+                        {[
+                          {l:'Current',v:currentCount>0?currentCount.toString():'\u2014',c:'#7c3aed'},
+                          {l:'Original',v:originalCount>0?originalCount.toString():'\u2014'},
+                          {l:'Total Feed',v:totalFeed>0?Math.round(totalFeed).toLocaleString()+' lbs':'\u2014',c:'#92400e'},
+                          {l:'Feed / Pig',v:feedPerPig?feedPerPig+' lbs':'\u2014'},
+                          {l:'Feed Cost',v:totalFeedCost!=null?'$'+totalFeedCost.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}):'\u2014',c:'#92400e'},
+                          {l:'Cost / Pig',v:costPerPig!=null?'$'+costPerPig.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'\u2014',c:'#065f46'},
+                          {l:'Report Days',v:reportDays.toString()},
+                        ].map(t=>(
+                          <div key={t.l} style={{padding:'8px 10px',background:'#f9fafb',border:'1px solid #f3f4f6',borderRadius:8}}>
+                            <div style={{fontSize:9,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.4,marginBottom:2}}>{t.l}</div>
+                            <div style={{fontSize:14,fontWeight:700,color:t.c||'#111827'}}>{t.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Farrowing survival + Carcass yield side by side */}
+          {(recentCycleSurvival.length>=2||yieldTrend.length>=2)&&(
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+              {recentCycleSurvival.length>=2&&(
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>FARROWING SURVIVAL</div>
+                  <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
+                    {recentCycleSurvival.map((c,i)=>(
+                      <div key={i}><div style={{fontSize:10,color:'#6b7280',marginBottom:1}}>{c.label} {'\u2014'} {c.born} born, {c.dead} died</div>
+                        {trendBar(c.survival,100,c.survival>=80?'#065f46':c.survival>=65?'#d97706':'#b91c1c')}
                       </div>
                     ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Sow farrowing survival trend */}
-          {recentCycleSurvival.length>=2&&(
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>FARROWING SURVIVAL — RECENT CYCLES</div>
-              <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px',maxWidth:480}}>
-                {recentCycleSurvival.map((c,i)=>(
-                  <div key={i}><div style={{fontSize:10,color:'#6b7280',marginBottom:1}}>{c.label} — {c.born} born, {c.dead} died</div>
-                    {trendBar(c.survival,100,c.survival>=80?'#065f46':c.survival>=65?'#d97706':'#b91c1c')}
+                </div>
+              )}
+              {yieldTrend.length>=2&&(
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>CARCASS YIELD TREND</div>
+                  <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
+                    {yieldTrend.map((t,i)=>(
+                      <div key={i}><div style={{fontSize:10,color:'#6b7280',marginBottom:1}}>{t.batch} {'\u00b7'} {fmt(t.date)}</div>
+                        {trendBar(t.yield,100,'#7c3aed')}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Carcass yield trend */}
-          {yieldTrend.length>=2&&(
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>CARCASS YIELD TREND</div>
-              <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px',maxWidth:480}}>
-                {yieldTrend.map((t,i)=>(
-                  <div key={i}><div style={{fontSize:10,color:'#6b7280',marginBottom:1}}>{t.batch} · {fmt(t.date)}</div>
-                    {trendBar(t.yield,100,'#7c3aed')}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* Recent pig daily reports */}
-          {recentPigDailys.length>0&&(
-            <div>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:600,color:'#4b5563',letterSpacing:.3}}>RECENT DAILY REPORTS</div>
-                <button onClick={()=>setView('pigdailys')} style={{fontSize:11,color:'#7c3aed',background:'none',border:'none',cursor:'pointer',fontWeight:600,fontFamily:'inherit'}}>View all →</button>
-              </div>
-              <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}}>
-                {recentPigDailys.map((d,i)=>(
-                  <div key={d.id||i} style={{padding:'10px 16px',borderBottom:i<recentPigDailys.length-1?'1px solid #f3f4f6':'none',display:'flex',alignItems:'center',gap:12,fontSize:12}}>
-                    <span style={{color:'#6b7280',minWidth:80,flexShrink:0}}>{fmt(d.date)}</span>
-                    <span style={{fontWeight:600,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'—'}</span>
-                    <span style={{color:'#6b7280',flexShrink:0}}>{d.team_member||'—'}</span>
-                    {d.feed_lbs>0&&<span style={{color:'#92400e',fontWeight:600,flexShrink:0}}>🌾 {parseFloat(d.feed_lbs).toLocaleString()} lbs</span>}
-                    {d.pig_count>0&&<span style={{color:'#7c3aed',fontWeight:600,flexShrink:0}}>🐷 {d.pig_count}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>PIG NOTES</div>
-            <textarea value={pigNotes} onChange={e=>setPigNotes(e.target.value)}
-              onBlur={()=>sb.from('app_store').upsert({key:'ppp-pig-notes-v1',data:pigNotes},{onConflict:'key'}).then(()=>{})}
-              placeholder="Notes, reminders, observations for the pig operation..."
-              style={{width:'100%',minHeight:100,padding:'12px 14px',border:'1px solid #e5e7eb',borderRadius:12,fontSize:13,fontFamily:'inherit',resize:'vertical',background:'white',outline:'none',color:'#374151',boxSizing:'border-box'}}/>
-            <div style={{fontSize:10,color:'#9ca3af',marginTop:4}}>Auto-saves when you click away</div>
-          </div>
 
         </div>
       </div>
@@ -5458,36 +5561,42 @@ function App(){
 
     const EMPTY_BREED = {group:"1",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:""};
 
-    function saveBreedForm(){
-      if(!breedForm.exposureStart){ alert("Please enter an exposure start date."); return; }
-      const tl = calcBreedingTimeline(breedForm.exposureStart);
-      const parseTags = str => str.split('\n').map(t=>t.trim()).filter(Boolean);
-      // Check for duplicates across both boar tag lists
-      const t1 = parseTags(breedForm.boar1Tags);
-      const t2 = parseTags(breedForm.boar2Tags);
-      const allTags = [...t1, ...t2];
-      const seen = new Set();
-      const dupes = allTags.filter(t => { if(seen.has(t)){return true;} seen.add(t); return false; });
-      if(dupes.length > 0){ alert(`Duplicate tag numbers found: ${dupes.join(', ')}. Each sow can only appear once per cycle.`); return; }
-      // Check duplicates against other cycles in same group
-      const otherCycleTags = breedingCycles
-        .filter(c => c.id !== editBreedId && c.group === breedForm.group)
-        .flatMap(c => [...parseTags(c.boar1Tags||''), ...parseTags(c.boar2Tags||'')]);
-      const crossDupes = allTags.filter(t => otherCycleTags.includes(t));
-      if(crossDupes.length > 0 && !window.confirm(`Tag(s) ${crossDupes.join(', ')} already appear in another cycle for Group ${breedForm.group}. Continue anyway?`)){ return; }
-      const cycle = {id:editBreedId||String(Date.now()), 
-        ...breedForm,
+    function persistBreedCycle(formSnapshot, cycleId){
+      if(!formSnapshot.exposureStart) return;
+      const tl = calcBreedingTimeline(formSnapshot.exposureStart);
+      const parseTags = function(str){return str.split('\n').map(function(t){return t.trim();}).filter(Boolean);};
+      const t1 = parseTags(formSnapshot.boar1Tags);
+      const t2 = parseTags(formSnapshot.boar2Tags);
+      const id = cycleId||String(Date.now());
+      const cycle = {id:id,
+        ...formSnapshot,
         sowCount: t1.length + t2.length,
         boar1Count: t1.length,
         boar2Count: t2.length,
         ...tl,
         boar1Name:boarNames.boar1, boar2Name:boarNames.boar2};
-      const nb = editBreedId
-        ? breedingCycles.map(c=>c.id===editBreedId?cycle:c)
+      const nb = cycleId
+        ? breedingCycles.map(function(c){return c.id===cycleId?cycle:c;})
         : [...breedingCycles, cycle];
-      nb.sort((a,b)=>a.exposureStart.localeCompare(b.exposureStart));
-      setBreedingCycles(nb); persistBreeding(nb); setShowBreedForm(false); setEditBreedId(null);
-      // Tags and all data saved to Supabase via persistBreeding
+      nb.sort(function(a,b){return a.exposureStart.localeCompare(b.exposureStart);});
+      setBreedingCycles(nb); persistBreeding(nb);
+      if(!editBreedId) setEditBreedId(id);
+    }
+    function updBreed(k, v){
+      var next = {...breedForm, [k]: v};
+      setBreedForm(next);
+      if(!next.exposureStart) return;
+      clearTimeout(breedAutoSaveTimer.current);
+      breedAutoSaveTimer.current = setTimeout(function(){
+        persistBreedCycle(next, editBreedId);
+      }, 1500);
+    }
+    function closeBreedForm(){
+      clearTimeout(breedAutoSaveTimer.current);
+      if(breedForm.exposureStart){
+        persistBreedCycle(breedForm, editBreedId);
+      }
+      setShowBreedForm(false); setEditBreedId(null);
     }
 
     // Phase row definitions per group
@@ -5507,8 +5616,8 @@ function App(){
           <div style={{background:"rgba(0,0,0,.45)",position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:500,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"2rem 1rem",overflowY:"auto"}}>
             <div style={{background:"white",borderRadius:12,width:"100%",maxWidth:560,border:"1px solid #e5e7eb"}}>
               <div style={{padding:"14px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{fontSize:15,fontWeight:600}}>{editBreedId?"Edit Breeding Cycle":"Add Breeding Cycle"}</div>
-                <button onClick={()=>{setShowBreedForm(false);setEditBreedId(null);}} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#999"}}>×</button>
+                <div style={{fontSize:15,fontWeight:600}}>{editBreedId?"Edit Breeding Cycle":"Add Breeding Cycle"} <span style={{fontWeight:400,color:"#9ca3af",fontSize:11,marginLeft:6}}>Auto-saves as you type</span></div>
+                <button onClick={closeBreedForm} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#999"}}>×</button>
               </div>
               <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:10}}>
 
@@ -5530,7 +5639,7 @@ function App(){
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <div>
                     <label style={S.label}>Sow group</label>
-                    <select value={breedForm.group} onChange={e=>setBreedForm({...breedForm,group:e.target.value})}>
+                    <select value={breedForm.group} onChange={e=>updBreed('group',e.target.value)}>
                       {PIG_GROUPS.map(g=><option key={g} value={g}>Group {g}</option>)}
                     </select>
                   </div>
@@ -5538,13 +5647,13 @@ function App(){
 
                   <div>
                     <label style={S.label}>First day exposure (start date)</label>
-                    <input type="date" value={breedForm.exposureStart} onChange={e=>setBreedForm({...breedForm,exposureStart:e.target.value})}/>
+                    <input type="date" value={breedForm.exposureStart} onChange={e=>updBreed('exposureStart',e.target.value)}/>
                   </div>
                   <div>
                     <label style={S.label}>{boarNames.boar1} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
-                    <textarea rows={5} value={breedForm.boar1Tags||""} onChange={e=>setBreedForm({...breedForm,boar1Tags:e.target.value})} placeholder="e.g. 5&#10;13&#10;19" style={{fontFamily:"monospace",fontSize:13}}/>
+                    <textarea rows={5} value={breedForm.boar1Tags||""} onChange={e=>updBreed('boar1Tags',e.target.value)} placeholder="e.g. 5&#10;13&#10;19" style={{fontFamily:"monospace",fontSize:13}}/>
                     <div style={{marginTop:4}}>
-                      <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar1Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){setBreedForm({...breedForm,boar1Tags:[...cur,e.target.value].join('\n')});}e.target.value='';}} style={{fontSize:11}}>
+                      <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar1Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar1Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
                         <option value="">＋ Add sow from profiles...</option>
                         {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
                           <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'} (Group {b.group||'?'})</option>
@@ -5555,9 +5664,9 @@ function App(){
                   </div>
                   <div>
                     <label style={S.label}>{boarNames.boar2} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
-                    <textarea rows={5} value={breedForm.boar2Tags||""} onChange={e=>setBreedForm({...breedForm,boar2Tags:e.target.value})} placeholder="e.g. 6&#10;17&#10;98" style={{fontFamily:"monospace",fontSize:13}}/>
+                    <textarea rows={5} value={breedForm.boar2Tags||""} onChange={e=>updBreed('boar2Tags',e.target.value)} placeholder="e.g. 6&#10;17&#10;98" style={{fontFamily:"monospace",fontSize:13}}/>
                     <div style={{marginTop:4}}>
-                      <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar2Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){setBreedForm({...breedForm,boar2Tags:[...cur,e.target.value].join('\n')});}e.target.value='';}} style={{fontSize:11}}>
+                      <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar2Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar2Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
                         <option value="">＋ Add sow from profiles...</option>
                         {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
                           <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'} (Group {b.group||'?'})</option>
@@ -5593,14 +5702,12 @@ function App(){
 
                 <div>
                   <label style={S.label}>Notes</label>
-                  <textarea value={breedForm.notes} onChange={e=>setBreedForm({...breedForm,notes:e.target.value})} rows={2}/>
+                  <textarea value={breedForm.notes} onChange={e=>updBreed('notes',e.target.value)} rows={2}/>
                 </div>
               </div>
-              <div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8}}>
-                <button onClick={saveBreedForm} style={{...S.btnPrimary}}>{editBreedId?"Save changes":"Add cycle"}</button>
-                {editBreedId&&<button onClick={()=>{if(window.confirm("Delete this cycle?")){const nb=breedingCycles.filter(c=>c.id!==editBreedId);setBreedingCycles(nb);persistBreeding(nb);setShowBreedForm(false);setEditBreedId(null);}}} style={S.btnDanger}>Delete</button>}
-                <button onClick={()=>{setShowBreedForm(false);setEditBreedId(null);}} style={S.btnGhost}>Cancel</button>
-              </div>
+              {editBreedId&&<div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8}}>
+                <button onClick={()=>{confirmDelete("Delete this breeding cycle? This cannot be undone.",()=>{clearTimeout(breedAutoSaveTimer.current);const nb=breedingCycles.filter(c=>c.id!==editBreedId);setBreedingCycles(nb);persistBreeding(nb);setShowBreedForm(false);setEditBreedId(null);});}} style={S.btnDanger}>Delete</button>
+              </div>}
             </div>
           </div>
         )}
@@ -5903,23 +6010,40 @@ function App(){
       return Math.round((hang/live)*1000)/10;
     }
 
-    function saveTrip(batchId) {
-      if(!tripForm.date) { alert("Please enter a processing date."); return; }
-      // Parse numeric form fields back to numbers (form state holds raw strings during typing)
-      const tripFormNum = {...tripForm};
+    function persistTrip(batchId, formSnapshot, currentTripId) {
+      if(!formSnapshot.date) return;
+      const tripFormNum = {...formSnapshot};
       ['pigCount','hangingWeight'].forEach(key=>{
         const v = tripFormNum[key];
         tripFormNum[key] = (v===''||v==null) ? 0 : (parseFloat(v)||0);
       });
-      const trip = {id:editTripId||String(Date.now()), ...tripFormNum};
+      const tripId = currentTripId || String(Date.now());
+      const trip = {id:tripId, ...tripFormNum};
       const nb = feederGroups.map(g=>{
         if(g.id!==batchId) return g;
         const trips = g.processingTrips||[];
-        const updated = editTripId ? trips.map(t=>t.id===editTripId?trip:t) : [...trips,trip];
+        const updated = currentTripId ? trips.map(t=>t.id===currentTripId?trip:t) : [...trips,trip];
         updated.sort((a,b)=>a.date.localeCompare(b.date));
         return {...g, processingTrips:updated};
       });
       persistFeeders(nb);
+      if(!editTripId) setEditTripId(tripId);
+      return tripId;
+    }
+    function updTrip(k, v) {
+      const next = {...tripForm, [k]: v};
+      setTripForm(next);
+      if(!next.date) return;
+      clearTimeout(tripAutoSaveTimer.current);
+      tripAutoSaveTimer.current = setTimeout(()=>{
+        persistTrip(activeTripBatchId, next, editTripId);
+      }, 1500);
+    }
+    function closeTripForm() {
+      clearTimeout(tripAutoSaveTimer.current);
+      if(tripForm.date && activeTripBatchId) {
+        persistTrip(activeTripBatchId, tripForm, editTripId);
+      }
       setTripForm({date:"",pigCount:0,liveWeights:"",hangingWeight:0,notes:""});
       setEditTripId(null); setActiveTripBatchId(null);
     }
@@ -5936,6 +6060,8 @@ function App(){
 
     function updFeeder(k, v) {
       const f = {...feederForm, [k]: v};
+      // Auto-compute originalPigCount from gilts + boars
+      if(k==='giltCount'||k==='boarCount') f.originalPigCount=(parseInt(k==='giltCount'?v:f.giltCount)||0)+(parseInt(k==='boarCount'?v:f.boarCount)||0);
       setFeederForm(f);
       if (editFeederId) {
         clearTimeout(pigAutoSaveTimer.current);
@@ -6023,13 +6149,13 @@ function App(){
               <div style={{padding:"16px 20px"}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                 <div style={{gridColumn:"1/-1"}}>
-                  <label style={S.label}>Batch name</label>
+                  <label style={S.label}>Batch name <span style={{color:'#dc2626'}}>*</span></label>
                   <input value={feederForm.batchName} onChange={e=>updFeeder('batchName',e.target.value)} placeholder="e.g. Group 2 Fall 2025"/>
                 </div>
                 <div>
-                  <label style={S.label}>Linked breeding cycle</label>
+                  <label style={S.label}>Linked breeding cycle <span style={{color:'#dc2626'}}>*</span></label>
                   <select value={feederForm.cycleId} onChange={e=>updFeeder('cycleId',e.target.value)}>
-                    <option value="">— None —</option>
+                    <option value="">{'\u2014 Select \u2014'}</option>
                     {breedingCycles.map(c=>{
                       const tl=calcBreedingTimeline(c.exposureStart);
                       return <option key={c.id} value={c.id}>Group {c.group} — {tl?fmtS(tl.farrowingStart)+" to "+fmtS(tl.farrowingEnd):fmtS(c.exposureStart)}</option>;
@@ -6037,27 +6163,27 @@ function App(){
                   </select>
                 </div>
                 <div>
-                  <label style={S.label}>Status</label>
+                  <label style={S.label}>Status <span style={{color:'#dc2626'}}>*</span></label>
                   <select value={feederForm.status} onChange={e=>updFeeder('status',e.target.value)}>
                     {["active","processed"].map(s=><option key={s} value={s}>{s==="processed"?"Processed":"Active"}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={S.label}>Start date</label>
+                  <label style={S.label}>Start date <span style={{color:'#dc2626'}}>*</span></label>
                   <input type="date" value={feederForm.startDate||""} onChange={e=>updFeeder('startDate',e.target.value)}/>
                 </div>
                 <div>
-                  <label style={S.label}>Original pig count</label>
-                  <input type="number" min="0" value={feederForm.originalPigCount||''} onChange={e=>updFeeder('originalPigCount',e.target.value)}/>
-                  <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Headcount at batch start</div>
-                </div>
-                <div>
-                  <label style={S.label}>Gilts count</label>
+                  <label style={S.label}>Gilts count <span style={{color:'#dc2626'}}>*</span></label>
                   <input type="number" min="0" value={feederForm.giltCount||''} onChange={e=>updFeeder('giltCount',e.target.value)}/>
                 </div>
                 <div>
-                  <label style={S.label}>Boars count (intact males)</label>
+                  <label style={S.label}>Boars count (intact males) <span style={{color:'#dc2626'}}>*</span></label>
                   <input type="number" min="0" value={feederForm.boarCount||''} onChange={e=>updFeeder('boarCount',e.target.value)}/>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <label style={S.label}>Original pig count</label>
+                  <div style={{padding:'8px 11px',background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:6,fontSize:13,fontWeight:600,color:'#374151'}}>{(parseInt(feederForm.giltCount)||0)+(parseInt(feederForm.boarCount)||0)}</div>
+                  <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Auto-calculated: gilts + boars</div>
                 </div>
                 <div style={{gridColumn:"1/-1"}}>
                   <div style={{fontSize:11,fontWeight:700,color:'#4b5563',letterSpacing:.5,marginBottom:6}}>{'\ud83d\udcb0 FEED COST RATE'} <span style={{fontWeight:400,color:'#9ca3af'}}>{'(locked \u2014 set in Admin \u203a Feed Costs)'}</span></div>
@@ -6221,41 +6347,41 @@ function App(){
                     </div>
                   </div>
 
-                  {/* Sub-batch form */}
+                  {/* Sub-batch form (modal) */}
                   {(showSubForm===g.id)&&(
-                    <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:"12px",marginBottom:10}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                        <div style={{fontSize:12,fontWeight:600,color:"#085041"}}>{editSubId?"Edit sub-batch":"New sub-batch"} <span style={{fontWeight:400,color:"#9ca3af",fontSize:11,marginLeft:6}}>Auto-saves as you type</span></div>
-                        <button onClick={()=>closeSubForm(g.id)} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"#9ca3af",lineHeight:1,padding:"0 4px"}}>×</button>
-                      </div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                        <div style={{gridColumn:"1/-1"}}>
-                          <label style={S.label}>Sub-batch name *</label>
-                          <input value={subForm.name} onChange={e=>updSub(g.id,'name',e.target.value)} placeholder="e.g. P-26-01 A (GILTS)"/>
-                          <div style={{fontSize:10,color:"#9ca3af",marginTop:2}}>Must match the label used on daily reports</div>
+                    <div onClick={()=>closeSubForm(g.id)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+                      <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:12,width:"100%",maxWidth:480,boxShadow:"0 8px 32px rgba(0,0,0,.2)"}}>
+                        <div style={{padding:"14px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                          <div style={{fontSize:15,fontWeight:600,color:"#085041"}}>{editSubId?"Edit Sub-batch":"New Sub-batch"} <span style={{fontWeight:400,color:"#9ca3af",fontSize:11,marginLeft:6}}>Auto-saves as you type</span></div>
+                          <button onClick={()=>closeSubForm(g.id)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af",lineHeight:1}}>×</button>
                         </div>
-                        <div>
-                          <label style={S.label}>Gilts count</label>
-                          <input type="number" min="0" value={subForm.giltCount||''} onChange={e=>updSub(g.id,'giltCount',e.target.value)}/>
+                        <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                          <div style={{gridColumn:"1/-1"}}>
+                            <label style={S.label}>Sub-batch name *</label>
+                            <input value={subForm.name} onChange={e=>updSub(g.id,'name',e.target.value)} placeholder="e.g. P-26-01 A (GILTS)"/>
+                            <div style={{fontSize:10,color:"#9ca3af",marginTop:2}}>Must match the label used on daily reports</div>
+                          </div>
+                          <div>
+                            <label style={S.label}>Gilts count</label>
+                            <input type="number" min="0" value={subForm.giltCount||''} onChange={e=>updSub(g.id,'giltCount',e.target.value)}/>
+                          </div>
+                          <div>
+                            <label style={S.label}>Boars count</label>
+                            <input type="number" min="0" value={subForm.boarCount||''} onChange={e=>updSub(g.id,'boarCount',e.target.value)}/>
+                          </div>
+                          <div>
+                            <label style={S.label}>Original count</label>
+                            <input type="number" min="0" value={subForm.originalPigCount||''} onChange={e=>updSub(g.id,'originalPigCount',e.target.value)}/>
+                          </div>
+                          <div>
+                            <label style={S.label}>Notes</label>
+                            <input value={subForm.notes} onChange={e=>updSub(g.id,'notes',e.target.value)} placeholder="Optional"/>
+                          </div>
                         </div>
-                        <div>
-                          <label style={S.label}>Boars count</label>
-                          <input type="number" min="0" value={subForm.boarCount||''} onChange={e=>updSub(g.id,'boarCount',e.target.value)}/>
-                        </div>
-                        <div>
-                          <label style={S.label}>Original count</label>
-                          <input type="number" min="0" value={subForm.originalPigCount||''} onChange={e=>updSub(g.id,'originalPigCount',e.target.value)}/>
-                        </div>
-                        <div>
-                          <label style={S.label}>Notes</label>
-                          <input value={subForm.notes} onChange={e=>updSub(g.id,'notes',e.target.value)} placeholder="Optional"/>
-                        </div>
-                      </div>
-                      {editSubId&&(
-                        <div style={{display:"flex",gap:6,marginTop:10}}>
+                        {editSubId&&<div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8}}>
                           <button onClick={()=>deleteSubBatch(g.id,editSubId)} style={S.btnDanger}>Delete</button>
-                        </div>
-                      )}
+                        </div>}
+                      </div>
                     </div>
                   )}
 
@@ -6297,45 +6423,50 @@ function App(){
                     </button>
                   </div>
 
-                  {/* Trip form */}
+                  {/* Trip form (modal) */}
                   {showTripForm&&(
-                    <div style={{background:"#ecfdf5",border:"1px solid #e5e7eb",borderRadius:10,padding:"12px",marginBottom:10}}>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                        <div>
-                          <label style={S.label}>Processing date</label>
-                          <input type="date" value={tripForm.date} onChange={e=>setTripForm({...tripForm,date:e.target.value})}/>
+                    <div onClick={closeTripForm} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+                      <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:12,width:"100%",maxWidth:520,boxShadow:"0 8px 32px rgba(0,0,0,.2)"}}>
+                        <div style={{padding:"14px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                          <div style={{fontSize:15,fontWeight:600,color:"#085041"}}>{editTripId?"Edit Processing Trip":"New Processing Trip"} <span style={{fontWeight:400,color:"#9ca3af",fontSize:11,marginLeft:6}}>Auto-saves as you type</span></div>
+                          <button onClick={closeTripForm} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af",lineHeight:1}}>×</button>
                         </div>
-                        <div>
-                          <label style={S.label}>Number of pigs</label>
-                          <input type="number" min="0" value={tripForm.pigCount||''} onChange={e=>setTripForm({...tripForm,pigCount:e.target.value})}/>
+                        <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                          <div>
+                            <label style={S.label}>Processing date</label>
+                            <input type="date" value={tripForm.date} onChange={e=>updTrip('date',e.target.value)}/>
+                          </div>
+                          <div>
+                            <label style={S.label}>Number of pigs</label>
+                            <input type="number" min="0" value={tripForm.pigCount||''} onChange={e=>updTrip('pigCount',e.target.value)}/>
+                          </div>
+                          <div style={{gridColumn:"1/-1"}}>
+                            <label style={S.label}>Live weights — enter each pig's weight separated by commas or spaces</label>
+                            <input value={tripForm.liveWeights} onChange={e=>updTrip('liveWeights',e.target.value)} placeholder="e.g. 245, 268, 231, 255, 240"/>
+                            {tripForm.liveWeights&&(()=>{
+                              const wts = parseLiveWeights(tripForm.liveWeights);
+                              const total = wts.reduce((a,b)=>a+b,0);
+                              const avg = wts.length>0?Math.round(total/wts.length):0;
+                              return wts.length>0?(
+                                <div style={{fontSize:11,color:"#085041",marginTop:3}}>{wts.length} pigs {'\u00b7'} Total: {Math.round(total)} lbs {'\u00b7'} Avg: {avg} lbs/pig</div>
+                              ):null;
+                            })()}
+                          </div>
+                          <div>
+                            <label style={S.label}>Hanging weight (lbs) — total for this trip</label>
+                            <input type="number" min="0" step="0.1" value={tripForm.hangingWeight||''} onChange={e=>updTrip('hangingWeight',e.target.value)}/>
+                            {tripForm.hangingWeight>0&&tripTotalLive(tripForm)>0&&(
+                              <div style={{fontSize:11,color:"#16a34a",marginTop:3}}>Carcass yield: {tripYield(tripForm)}%</div>
+                            )}
+                          </div>
+                          <div>
+                            <label style={S.label}>Notes</label>
+                            <input value={tripForm.notes} onChange={e=>updTrip('notes',e.target.value)} placeholder="Any notes for this trip..."/>
+                          </div>
                         </div>
-                        <div style={{gridColumn:"1/-1"}}>
-                          <label style={S.label}>Live weights — enter each pig's weight separated by commas or spaces</label>
-                          <input value={tripForm.liveWeights} onChange={e=>setTripForm({...tripForm,liveWeights:e.target.value})} placeholder="e.g. 245, 268, 231, 255, 240"/>
-                          {tripForm.liveWeights&&(()=>{
-                            const wts = parseLiveWeights(tripForm.liveWeights);
-                            const total = wts.reduce((a,b)=>a+b,0);
-                            const avg = wts.length>0?Math.round(total/wts.length):0;
-                            return wts.length>0?(
-                              <div style={{fontSize:11,color:"#085041",marginTop:3}}>{wts.length} pigs · Total: {Math.round(total)} lbs · Avg: {avg} lbs/pig</div>
-                            ):null;
-                          })()}
-                        </div>
-                        <div>
-                          <label style={S.label}>Hanging weight (lbs) — total for this trip</label>
-                          <input type="number" min="0" step="0.1" value={tripForm.hangingWeight||''} onChange={e=>setTripForm({...tripForm,hangingWeight:e.target.value})}/>
-                          {tripForm.hangingWeight>0&&tripTotalLive(tripForm)>0&&(
-                            <div style={{fontSize:11,color:"#16a34a",marginTop:3}}>Carcass yield: {tripYield(tripForm)}%</div>
-                          )}
-                        </div>
-                        <div>
-                          <label style={S.label}>Notes</label>
-                          <input value={tripForm.notes} onChange={e=>setTripForm({...tripForm,notes:e.target.value})} placeholder="Any notes for this trip..."/>
-                        </div>
-                      </div>
-                      <div style={{display:"flex",gap:6}}>
-                        <button onClick={()=>saveTrip(g.id)} style={{...S.btnPrimary,width:"auto",padding:"7px 18px"}}>{editTripId?"Save trip":"Add trip"}</button>
-                        <button onClick={()=>{setActiveTripBatchId(null);setEditTripId(null);}} style={S.btnGhost}>Cancel</button>
+                        {editTripId&&<div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8}}>
+                          <button onClick={()=>{deleteTrip(g.id,editTripId);setActiveTripBatchId(null);setEditTripId(null);}} style={S.btnDanger}>Delete</button>
+                        </div>}
                       </div>
                     </div>
                   )}
@@ -7118,7 +7249,7 @@ function App(){
               </div>
               <div style={{padding:"12px 20px",borderTop:"1px solid var(--border)",display:"flex",gap:8}}>
                 <button onClick={saveFarrowForm} style={S.btnPrimary}>{editFarrowId?"Save changes":"Add record"}</button>
-                {editFarrowId&&<button onClick={()=>{if(window.confirm("Delete this record?")){const nb=farrowingRecs.filter(r=>r.id!==editFarrowId);setFarrowingRecs(nb);persistFarrowing(nb);setShowFarrowForm(false);setEditFarrowId(null);}}} style={S.btnDanger}>Delete</button>}
+                {editFarrowId&&<button onClick={()=>{confirmDelete("Delete this farrowing record? This cannot be undone.",()=>{const nb=farrowingRecs.filter(r=>r.id!==editFarrowId);setFarrowingRecs(nb);persistFarrowing(nb);setShowFarrowForm(false);setEditFarrowId(null);});}} style={S.btnDanger}>Delete</button>}
                 <button onClick={()=>{setShowFarrowForm(false);setEditFarrowId(null);}} style={S.btnGhost}>Cancel</button>
               </div>
             </div>
@@ -7493,7 +7624,7 @@ function App(){
               {breederForm.birthDate&&<div style={{marginTop:8,fontSize:12,color:"#065f46"}}>Age: {pigAge(breederForm.birthDate)}</div>}
               <div style={{display:"flex",gap:8,marginTop:12}}>
                 <button onClick={saveBreeder} style={{...S.btnPrimary,width:"auto",padding:"8px 20px"}}>{editBreederId?"Save changes":"Add pig"}</button>
-                {editBreederId&&<button onClick={()=>{if(window.confirm("Delete this pig permanently?")){const nb=breeders.filter(b=>b.id!==editBreederId);setBreeders(nb);persistBreeders(nb);setShowBreederForm(false);setEditBreederId(null);}}} style={S.btnDanger}>Delete</button>}
+                {editBreederId&&<button onClick={()=>{confirmDelete("Delete this pig permanently? This cannot be undone.",()=>{const nb=breeders.filter(b=>b.id!==editBreederId);setBreeders(nb);persistBreeders(nb);setShowBreederForm(false);setEditBreederId(null);});}} style={S.btnDanger}>Delete</button>}
                 <button onClick={()=>{setShowBreederForm(false);setEditBreederId(null);}} style={S.btnGhost}>Cancel</button>
               </div>
                 </div>
@@ -7818,42 +7949,46 @@ function App(){
 
           {/* Active batch cards */}
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
-            {dashBatches.map(batch=>{
+            {dashBatches.map(function(batch,bi){
               const myHousings = (layerHousings||[]).filter(h=>h.batch_id===batch.id);
               const cur = computeBatchWindow(batch, periodFrom, today);
               const prev = computeBatchWindow(batch, prevFrom, prevTo);
               const anchor = batch.brooder_entry_date || batch.arrival_date;
               const ageMonths = anchor ? +(((new Date(today+'T12:00:00')-new Date(anchor+'T12:00:00'))/86400000)/30.44).toFixed(1) : 0;
+              var batchColors=[{bg:'#ecfdf5',bd:'#a7f3d0',tx:'#065f46'},{bg:'#eff6ff',bd:'#bfdbfe',tx:'#1e40af'},{bg:'#fffbeb',bd:'#fde68a',tx:'#92400e'},{bg:'#f5f3ff',bd:'#ddd6fe',tx:'#5b21b6'}];
+              var bc=batchColors[bi%batchColors.length];
               return (
-                <div key={batch.id} onClick={()=>setView('layerbatches')} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:14,padding:'18px 20px',cursor:'pointer'}} className="hoverable-tile">
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap'}}>
-                    <span style={{fontSize:16,fontWeight:700,color:'#111827'}}>{batch.name}</span>
+                <div key={batch.id} onClick={()=>setView('layerbatches')} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:14,overflow:'hidden',cursor:'pointer'}} className="hoverable-tile">
+                  <div style={{background:bc.bg,borderBottom:'1px solid '+bc.bd,padding:'12px 20px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                    <span style={{fontSize:16,fontWeight:700,color:bc.tx}}>{batch.name}</span>
                     <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>Active</span>
                     {ageMonths>0&&<span style={{fontSize:11,color:'#6b7280'}}>{ageMonths} months old</span>}
                     {batch.original_count&&<span style={{fontSize:11,color:'#6b7280'}}>{'\u00b7 '}{batch.original_count.toLocaleString()} birds</span>}
                   </div>
+                  <div style={{padding:'14px 20px'}}>
                   <MetricsGrid s={cur} prev={prev} hidePhases={myHousings.length>0}/>
                   {myHousings.length>0&&(
                     <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed #e5e7eb'}}>
                       <div style={{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5,marginBottom:8,fontWeight:600}}>HOUSINGS</div>
                       <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                        {myHousings.map(h=>{
+                        {(function(){var batchColors=[{bg:'#ecfdf5',bd:'#a7f3d0',tx:'#065f46'},{bg:'#eff6ff',bd:'#bfdbfe',tx:'#1e40af'},{bg:'#fffbeb',bd:'#fde68a',tx:'#92400e'},{bg:'#f5f3ff',bd:'#ddd6fe',tx:'#5b21b6'}];var bc=batchColors[bi%batchColors.length];return myHousings.map(h=>{
                           const hCur = computeHousingWindow(h, batch, periodFrom, today);
                           const hPrev = computeHousingWindow(h, batch, prevFrom, prevTo);
                           return (
-                            <div key={h.id} style={{padding:'10px 12px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10}}>
+                            <div key={h.id} style={{padding:'10px 12px',background:bc.bg,border:'1px solid '+bc.bd,borderRadius:10}}>
                               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
-                                <span style={{fontSize:13,fontWeight:700,color:'#92400e'}}>{'\ud83c\udfe0 '+h.housing_name}</span>
+                                <span style={{fontSize:13,fontWeight:700,color:bc.tx}}>{'\ud83c\udfe0 '+h.housing_name}</span>
                                 <span style={{fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:8,background:h.status==='active'?'#d1fae5':'#f3f4f6',color:h.status==='active'?'#065f46':'#6b7280',textTransform:'uppercase'}}>{h.status}</span>
-                                {hCur.hens>0&&<span style={{fontSize:11,color:'#92400e',fontWeight:600}}>{hCur.hens.toLocaleString()} hens</span>}
+                                {hCur.hens>0&&<span style={{fontSize:11,color:bc.tx,fontWeight:600}}>{hCur.hens.toLocaleString()} hens</span>}
                               </div>
                               <MetricsGrid s={{...hCur,days:layerDashPeriod}} prev={hPrev} hideHens={true} hidePhases={true}/>
                             </div>
                           );
-                        })}
+                        });})()}
                       </div>
                     </div>
                   )}
+                  </div>
                 </div>
               );
             })}
@@ -8835,35 +8970,43 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
             {!loading&&(
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {/* Active batches */}
-                {layerBatches.filter(b=>b.status==='active').map(batch=>{
+                {layerBatches.filter(b=>b.status==='active').map(function(batch,bi){
                   const stats=batchStats[batch.id]||{};
                   const housings=layerHousings.filter(h=>h.batch_id===batch.id);
                   const activeH=housings.filter(h=>h.status==='active');
                   const isRetHome=batch.name==='Retirement Home';
+                  var batchColors=[{bg:'#ecfdf5',bd:'#a7f3d0',tx:'#065f46'},{bg:'#eff6ff',bd:'#bfdbfe',tx:'#1e40af'},{bg:'#fffbeb',bd:'#fde68a',tx:'#92400e'},{bg:'#f5f3ff',bd:'#ddd6fe',tx:'#5b21b6'}];
+                  var bc=batchColors[bi%batchColors.length];
                   return (
-                    <div key={batch.id} onClick={()=>setSelectedBatchId(batch.id)} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px',cursor:'pointer',display:'flex',gap:20,alignItems:'flex-start'}} className="hoverable-tile">
+                    <div key={batch.id} onClick={()=>setSelectedBatchId(batch.id)} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,overflow:'hidden',cursor:'pointer'}} className="hoverable-tile">
+                      <div style={{background:bc.bg,borderBottom:'1px solid '+bc.bd,padding:'10px 20px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                        <span style={{fontSize:15,fontWeight:700,color:bc.tx}}>{batch.name}</span>
+                        <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>{isRetHome?'Permanent':'Active'}</span>
+                        {(batch.brooder_entry_date||batch.arrival_date)&&(()=>{const anchor=batch.brooder_entry_date||batch.arrival_date;const days=Math.max(0,Math.round((new Date(new Date().toISOString().split('T')[0]+'T12:00:00')-new Date(anchor+'T12:00:00'))/86400000));const months=+(days/30.44).toFixed(1);return <span style={{fontSize:11,color:'#6b7280'}}>In brooder {fmt(anchor)}{months>0?(' \u00b7 '+months+' months'):''}</span>;})()}
+                        {batch.original_count&&<span style={{fontSize:11,color:'#6b7280'}}>{batch.original_count.toLocaleString()} birds</span>}
+                      </div>
+                      <div style={{padding:'12px 20px',display:'flex',gap:20,alignItems:'flex-start'}}>
                       <div style={{flex:1}}>
-                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
-                          <span style={{fontSize:15,fontWeight:700,color:'#111827'}}>{batch.name}</span>
-                          <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>{isRetHome?'Permanent':'Active'}</span>
-                          {(batch.brooder_entry_date||batch.arrival_date)&&(()=>{const anchor=batch.brooder_entry_date||batch.arrival_date;const days=Math.max(0,Math.round((new Date(new Date().toISOString().split('T')[0]+'T12:00:00')-new Date(anchor+'T12:00:00'))/86400000));const months=+(days/30.44).toFixed(1);return <span style={{fontSize:11,color:'#6b7280'}}>In brooder {fmt(anchor)}{months>0?(' \u00b7 '+months+' months'):''}</span>;})()}
-                          {batch.original_count&&<span style={{fontSize:11,color:'#6b7280'}}>{batch.original_count.toLocaleString()} birds</span>}
-                        </div>
-                        {activeH.length>0&&(
+                        {activeH.length>0&&(()=>{
+                          var batchColors=[{bg:'#ecfdf5',bd:'#a7f3d0',tx:'#065f46'},{bg:'#eff6ff',bd:'#bfdbfe',tx:'#1e40af'},{bg:'#fffbeb',bd:'#fde68a',tx:'#92400e'},{bg:'#f5f3ff',bd:'#ddd6fe',tx:'#5b21b6'}];
+                          var bc=batchColors[bi%batchColors.length];
+                          return (
                           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:8}}>
                             {activeH.map(h=>(
-                              <span key={h.id} style={{fontSize:11,background:'#fffbeb',border:'1px solid #fde68a',color:'#92400e',padding:'2px 8px',borderRadius:6,fontWeight:600}}>
+                              <span key={h.id} style={{fontSize:11,background:bc.bg,border:'1px solid '+bc.bd,color:bc.tx,padding:'2px 8px',borderRadius:6,fontWeight:600}}>
                                 🏠 {h.housing_name}{h.current_count?' · '+h.current_count+' hens':''}
                               </span>
                             ))}
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
                       <div style={{display:'flex',gap:20,flexShrink:0}}>
                         <StatPill label="Feed" val={stats.totalFeed>0?Math.round(stats.totalFeed).toLocaleString()+' lbs':'\u2014'} color="#92400e"/>
                         <StatPill label="Mort." val={stats.totalMort>0?stats.totalMort:'0'} color={stats.totalMort>10?'#b91c1c':'#374151'}/>
                         <StatPill label="Dozens" val={stats.totalEggs>0?Math.floor(stats.totalEggs/12).toLocaleString():'\u2014'} color="#065f46"/>
                         {(()=>{const fc=computeLayerFeedCost(stats.starterFeed,stats.growerFeed,stats.layerFeed,batch);return <StatPill label="Cost" val={fc!=null?'$'+fc.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}):'\u2014'} color="#065f46"/>;})()}
+                      </div>
                       </div>
                     </div>
                   );
@@ -8872,11 +9015,11 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                 {layerBatches.filter(b=>b.status==='retired').length>0&&(
                   <>
                     <div style={{fontSize:12,fontWeight:600,color:'#4b5563',letterSpacing:.3,marginTop:8}}>RETIRED BATCHES</div>
-                    {layerBatches.filter(b=>b.status==='retired').map(batch=>{
+                    {layerBatches.filter(b=>b.status==='retired').map(function(batch,bi){
                       const stats=batchStats[batch.id]||{};
                       const housings=layerHousings.filter(h=>h.batch_id===batch.id);
                       return (
-                        <div key={batch.id} onClick={()=>setSelectedBatchId(batch.id)} style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 20px',cursor:'pointer',display:'flex',gap:20,alignItems:'center',opacity:.8}} className="hoverable-tile">
+                        <div key={batch.id} onClick={()=>setSelectedBatchId(batch.id)} style={{background:bi%2===0?'#f9fafb':'#f3f4f6',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 20px',cursor:'pointer',display:'flex',gap:20,alignItems:'center',opacity:.8}} className="hoverable-tile">
                           <div style={{flex:1}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
                               <span style={{fontSize:14,fontWeight:700,color:'#374151'}}>{batch.name}</span>
@@ -9230,6 +9373,9 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                 <div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:10,marginTop:4}}><label style={S.label}>Notes</label><textarea value={bForm.notes} onChange={e=>updBatch(f=>({...f,notes:e.target.value}))} rows={2} style={{resize:'vertical'}}/></div>
                 {err&&<div style={{gridColumn:'1/-1',color:'#b91c1c',fontSize:12,fontWeight:600}}>{err}</div>}
               </div>
+              {editBatchId&&bForm.name!=='Retirement Home'&&<div style={{padding:'12px 20px',borderTop:'1px solid #e5e7eb'}}>
+                <button onClick={function(){confirmDelete('Delete batch '+bForm.name+'? This will also delete all its housings. This cannot be undone.',function(){clearTimeout(batchAutoSaveTimer.current);sb.from('layer_housings').delete().eq('batch_id',editBatchId).then(function(){setLayerHousings(function(prev){return prev.filter(function(h){return h.batch_id!==editBatchId;});});});sb.from('layer_batches').delete().eq('id',editBatchId).then(function(){setLayerBatches(function(prev){return prev.filter(function(b){return b.id!==editBatchId;});});});setShowBatchForm(false);setEditBatchId(null);setBForm(EMPTY_BATCH);setSelectedBatchId(null);});}} style={S.btnDanger}>Delete Batch</button>
+              </div>}
             </div>
           </div>
         )}
