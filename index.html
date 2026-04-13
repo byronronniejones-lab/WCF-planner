@@ -316,6 +316,83 @@ function calcBatchFeedForMonth(batch, yearMonth) {
   return { starter: Math.round(starter), grower: Math.round(grower) };
 }
 
+// ── LAYER FEED SCHEDULE ──────────────────────────────────────────────────
+// Weeks 1-6: starter, Weeks 7-20: grower, Week 21+: layer feed (0.25 lbs/bird/day)
+// Starter capped at 1,500 lbs per batch (same as broilers).
+const LAYER_FEED_SCHEDULE = [
+  {week:1,  phase:'starter', lbsPerBird:0.50},
+  {week:2,  phase:'starter', lbsPerBird:1.00},
+  {week:3,  phase:'starter', lbsPerBird:1.10},
+  {week:4,  phase:'starter', lbsPerBird:1.20},
+  {week:5,  phase:'starter', lbsPerBird:1.20},
+  {week:6,  phase:'starter', lbsPerBird:1.00},
+  {week:7,  phase:'grower',  lbsPerBird:0.60},
+  {week:8,  phase:'grower',  lbsPerBird:0.65},
+  {week:9,  phase:'grower',  lbsPerBird:0.70},
+  {week:10, phase:'grower',  lbsPerBird:0.75},
+  {week:11, phase:'grower',  lbsPerBird:0.80},
+  {week:12, phase:'grower',  lbsPerBird:0.80},
+  {week:13, phase:'grower',  lbsPerBird:0.85},
+  {week:14, phase:'grower',  lbsPerBird:0.85},
+  {week:15, phase:'grower',  lbsPerBird:0.90},
+  {week:16, phase:'grower',  lbsPerBird:0.90},
+  {week:17, phase:'grower',  lbsPerBird:0.95},
+  {week:18, phase:'grower',  lbsPerBird:0.95},
+  {week:19, phase:'grower',  lbsPerBird:1.00},
+  {week:20, phase:'grower',  lbsPerBird:1.00},
+];
+const LAYER_FEED_PER_DAY = 0.25; // lbs/bird/day on layer feed (week 21+)
+
+// For a layer batch + month, return {starter, grower, layer} lbs projected.
+// Uses brooder_entry_date as day 0, original_count for starter/grower phases,
+// computeProjectedCount for layer phase hen count.
+function calcLayerFeedForMonth(batch, housings, layerDailys, yearMonth) {
+  const startDate = batch.brooder_entry_date || batch.arrival_date;
+  if(!startDate) return {starter:0, grower:0, layer:0};
+  const birdCount = parseInt(batch.original_count) || 0;
+  if(birdCount <= 0) return {starter:0, grower:0, layer:0};
+  const [y,m] = yearMonth.split('-').map(Number);
+  const monthStart = new Date(y, m-1, 1);
+  const monthEnd = new Date(y, m, 0, 23, 59, 59);
+  let starter = 0, grower = 0, layer = 0;
+  // Weeks 1-20: starter/grower from schedule
+  LAYER_FEED_SCHEDULE.forEach(function(w, i){
+    const weekStart = addDays(startDate, i*7);
+    const weekEnd = addDays(startDate, (i+1)*7 - 1);
+    if(weekStart <= monthEnd && weekEnd >= monthStart){
+      const overlapStart = weekStart < monthStart ? monthStart : weekStart;
+      const overlapEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+      const overlapDays = (overlapEnd - overlapStart) / 86400000 + 1;
+      const prop = overlapDays / 7;
+      const lbs = w.lbsPerBird * birdCount * prop;
+      if(w.phase === 'starter') starter += lbs;
+      else grower += lbs;
+    }
+  });
+  // Week 21+: layer feed at 0.25 lbs/bird/day using projected hen count
+  var layerStart = addDays(startDate, 20*7); // day 140
+  if(layerStart <= monthEnd){
+    var lStart = layerStart < monthStart ? monthStart : layerStart;
+    var lEnd = monthEnd;
+    var lDays = Math.max(0, (lEnd - lStart) / 86400000 + 1);
+    if(lDays > 0){
+      // Use projected hen count from active housings for this batch
+      var batchHousings = (housings||[]).filter(function(h){return h.batch_id===batch.id && h.status==='active';});
+      var hens = 0;
+      if(batchHousings.length > 0){
+        batchHousings.forEach(function(h){
+          var proj = computeProjectedCount(h, layerDailys);
+          hens += proj ? proj.projected : (parseInt(h.current_count)||0);
+        });
+      } else {
+        hens = birdCount; // fallback if no housings yet
+      }
+      layer += hens * LAYER_FEED_PER_DAY * lDays;
+    }
+  }
+  return {starter:Math.round(starter), grower:Math.round(grower), layer:Math.round(layer)};
+}
+
 const CC_HATCHERIES = ["So Big Farms","Meyer Hatchery","Welp Hatchery","Myers Poultry"];
 const WR_HATCHERIES = ["Freedom Ranger Hatchery"];
 // Merged list — used for new/active batches now that any hatchery may supply any breed.
@@ -2309,6 +2386,10 @@ function App(){
   const [wfGroups,      setWfGroups]      = useState([]);
   const [feedCosts,     setFeedCosts]     = useState({starter:0, grower:0, layer:0, pig:0, grit:0});
   const [feedOrders,   setFeedOrders]    = useState({pig:{},broiler:{}});
+  const [pigFeedInventory, setPigFeedInventory] = useState(null); // {count, date} or null
+  const [pigFeedExpandedMonths, setPigFeedExpandedMonths] = useState(new Set());
+  const [poultryFeedInventory, setPoultryFeedInventory] = useState(null); // {starter:{count,date}, grower:{count,date}, layer:{count,date}}
+  const [poultryFeedExpandedMonths, setPoultryFeedExpandedMonths] = useState(new Set());
   const [adminTab,      setAdminTab]      = useState('webforms'); // 'webforms' | 'feedcosts'
   const [pendingEdit,   setPendingEdit]   = useState(null); // {id, viewName} — opens edit on nav
   const [wfTeamMembers, setWfTeamMembers] = useState([]);
@@ -2551,6 +2632,8 @@ function App(){
       if(store['ppp-layer-groups-v1']) setLayerGroups(store['ppp-layer-groups-v1']);
       if(store['ppp-missed-cleared-v1']) setMissedCleared(new Set(store['ppp-missed-cleared-v1']||[]));
       if(store['ppp-feed-orders-v1']) setFeedOrders(store['ppp-feed-orders-v1']);
+      if(store['ppp-pig-feed-inventory-v1']) setPigFeedInventory(store['ppp-pig-feed-inventory-v1']);
+      if(store['ppp-poultry-feed-inventory-v1']) setPoultryFeedInventory(store['ppp-poultry-feed-inventory-v1']);
       if(store['ppp-broiler-notes-v1']) setBroilerNotes(store['ppp-broiler-notes-v1']||'');
       if(store['ppp-pig-notes-v1'])     setPigNotes(store['ppp-pig-notes-v1']||'');
       if(store['ppp-layer-notes-v1'])   setLayerNotes(store['ppp-layer-notes-v1']||'');
@@ -3174,10 +3257,10 @@ function App(){
             ⌂ Home
           </button>
           <div style={{width:1,height:20,background:"#e5e7eb",margin:"0 4px"}}/>
-          {inPoultry&&[["broilerHome","Dashboard"],["timeline","Timeline"],["list","Batches"],["broilerdailys","Dailys"],["feed","Feed"]].map(([v,l])=>(
+          {inPoultry&&[["broilerHome","Dashboard"],["timeline","Timeline"],["list","Batches"],["broilerdailys","Dailys"],["feed","Poultry Feed"]].map(([v,l])=>(
             <button key={v} style={nb(view===v&&!showForm)} onClick={()=>{setShowForm(false);setView(v);}}>{l}</button>
           ))}
-          {inPigs&&[["pigsHome","Dashboard"],["breeding","Timeline"],["farrowing","Farrowing"],["sows","Breeding Pigs"],["pigbatches","Batches"],["pigdailys","Dailys"],["pigs","Feed Calculator"]].map(([v,l])=>(
+          {inPigs&&[["pigsHome","Dashboard"],["breeding","Timeline"],["farrowing","Farrowing"],["sows","Breeding Pigs"],["pigbatches","Batches"],["pigdailys","Dailys"],["pigs","Feed"]].map(([v,l])=>(
             <button key={v} style={nb(view===v&&!showForm&&!showBreedForm&&!showFarrowForm)} onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView(v);}}>{l}</button>
           ))}
           {inLayers&&[["layersHome","Dashboard"],["layerbatches","Layer Batches"],["layerdailys","Layer Dailys"],["eggdailys","Egg Dailys"]].map(([v,l])=>(
@@ -4130,6 +4213,8 @@ function App(){
     const activeBr  = batches.filter(b=>calcPoultryStatus(b)==='active');
     // Ignore batches before 2025 for all dashboard metrics
     const procBr    = batches.filter(b=>b.status==='processed'&&(b.hatchDate||'')>='2025');
+    const currentYear = String(new Date().getFullYear());
+    const procBrThisYear = procBr.filter(b=>(b.processingDate||'').startsWith(currentYear));
     const ccBr      = procBr.filter(b=>b.breed==='CC');
     const wrBr      = procBr.filter(b=>b.breed==='WR');
     const avg = (arr,fn) => { const v=arr.map(fn).filter(x=>x!=null&&!isNaN(x)); return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
@@ -4200,11 +4285,11 @@ function App(){
       </div>
     );
 
-    // Financial
-    const finBr = procBr.filter(b=>batchFeed(b)>0&&b.totalToProcessor>0);
-    const totalLbsMeat = procBr.reduce((s,b)=>s+(b.totalToProcessor||0)*(parseFloat(b.avgDressedLbs)||0),0);
-    const totalLbsWhole = procBr.reduce((s,b)=>s+(parseFloat(b.totalLbsWhole)||0),0);
-    const totalLbsCuts  = procBr.reduce((s,b)=>s+(parseFloat(b.totalLbsCuts)||0),0);
+    // Financial — this year only
+    const finBr = procBrThisYear.filter(b=>batchFeed(b)>0&&b.totalToProcessor>0);
+    const totalLbsMeat = procBrThisYear.reduce((s,b)=>s+(b.totalToProcessor||0)*(parseFloat(b.avgDressedLbs)||0),0);
+    const totalLbsWhole = procBrThisYear.reduce((s,b)=>s+(parseFloat(b.totalLbsWhole)||0),0);
+    const totalLbsCuts  = procBrThisYear.reduce((s,b)=>s+(parseFloat(b.totalLbsCuts)||0),0);
     const wholePct = (totalLbsWhole+totalLbsCuts)>0?Math.round(totalLbsWhole/(totalLbsWhole+totalLbsCuts)*100):null;
     const cutsPct  = wholePct!=null?100-wholePct:null;
     const totalFeedCost = finBr.reduce((s,b)=>s+batchFeed(b)*(b.perLbStandardCost||0),0);
@@ -4270,8 +4355,8 @@ function App(){
             <StatTile label="Active Batches" val={activeBr.length}/>
             <StatTile label="Birds on Farm" val={activeBr.reduce((s,b)=>s+(parseInt(b.birdCountActual)||parseInt(b.birdCount)||0),0).toLocaleString()} color="#1e3a5f"/>
             <StatTile label="Projected Birds" val={activeBr.reduce((s,b)=>{const stats=calcBroilerStatsFromDailys(b,broilerDailys);return s+stats.projectedBirds;},0).toLocaleString()} color="#085041"/>
-            <StatTile label="Processed Batches" val={procBr.length} color="#374151"/>
-            <StatTile label="Total Lbs Produced" val={totalLbsMeat>0?Math.round(totalLbsMeat).toLocaleString()+' lbs':'\u2014'} color="#065f46"/>
+            {(function(){var yrBirds=procBrThisYear.reduce(function(s,b){return s+(parseInt(b.totalToProcessor)||0);},0);return React.createElement(StatTile,{label:'Processed Birds '+currentYear,val:yrBirds.toLocaleString(),color:'#374151',sub:procBrThisYear.length+' batch'+(procBrThisYear.length!==1?'es':'')});})()}
+            {(function(){var yrWhole=procBrThisYear.reduce(function(s,b){return s+(parseFloat(b.totalLbsWhole)||0);},0);var yrCuts=procBrThisYear.reduce(function(s,b){return s+(parseFloat(b.totalLbsCuts)||0);},0);var yrTotal=yrWhole+yrCuts;return React.createElement(StatTile,{label:'Total Lbs '+currentYear,val:yrTotal>0?Math.round(yrTotal).toLocaleString()+' lbs':'\u2014',color:'#065f46',sub:yrWhole>0?'Whole: '+Math.round(yrWhole).toLocaleString()+' \u00b7 Cuts: '+Math.round(yrCuts).toLocaleString():''});})()}
           </div>
 
           {/* Active batch tracker */}
@@ -4291,8 +4376,8 @@ function App(){
                       const stats = calcBroilerStatsFromDailys(b, broilerDailys);
                       const dayOne = parseInt(b.birdCountActual)||parseInt(b.birdCount)||0;
                       return [
-                        {l:'Days to processing',v:daysToProc!=null?daysToProc+' days':'\u2014',warn:daysToProc!=null&&daysToProc<=7},
-                        {l:'Days on farm',v:daysActive+' days'},
+                        {l:'To processing',v:daysToProc!=null?Math.floor(daysToProc/7)+'w '+daysToProc%7+'d':'\u2014',warn:daysToProc!=null&&daysToProc<=7},
+                        {l:'On farm',v:Math.floor(daysActive/7)+'w '+daysActive%7+'d'},
                         {l:'Current phase',v:phaseLabel},
                         {l:'Birds (day 1)',v:dayOne>0?dayOne.toLocaleString():'\u2014'},
                         {l:'Projected birds',v:stats.projectedBirds.toLocaleString(),green:true},
@@ -4357,15 +4442,14 @@ function App(){
           {/* Financial summary */}
           {finBr.length>=2&&(
             <div>
-              <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>FINANCIAL SUMMARY</div>
+              <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>{'FINANCIAL SUMMARY '+currentYear}</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
-                <StatTile label="Total Feed Cost" val={totalFeedCost>0?'$'+Math.round(totalFeedCost).toLocaleString():'—'} color="#92400e"/>
-                <StatTile label="Total Cost" val={totalAllCost>0?'$'+Math.round(totalAllCost).toLocaleString():'—'} color="#7f1d1d"/>
-                <StatTile label="Feed Cost %" val={feedCostPct!=null?feedCostPct+'%':'—'} color="#92400e" sub="of total cost"/>
-                <StatTile label="Avg Cost / Bird" val={totalProc>0&&totalAllCost>0?'$'+(totalAllCost/totalProc).toFixed(2):'—'} color="#374151"/>
-                <StatTile label="Total Lbs Meat" val={totalLbsMeat>0?Math.round(totalLbsMeat).toLocaleString()+' lbs':'—'} color="#065f46"/>
-                {totalLbsWhole>0&&<StatTile label="Total Lbs — Whole" val={Math.round(totalLbsWhole).toLocaleString()+' lbs'+(wholePct!=null?' ('+wholePct+'%)':'')} color="#065f46"/>}
-                {totalLbsCuts>0&&<StatTile label="Total Lbs — Cuts" val={Math.round(totalLbsCuts).toLocaleString()+' lbs'+(cutsPct!=null?' ('+cutsPct+'%)':'')} color="#1e3a5f"/>}
+                <StatTile label="Total Feed Cost" val={totalFeedCost>0?'$'+Math.round(totalFeedCost).toLocaleString():'\u2014'} color="#92400e"/>
+                <StatTile label="Processing Cost" val={(function(){var pc=finBr.reduce(function(s,b){return s+(parseFloat(b.processingCost)||0);},0);return pc>0?'$'+Math.round(pc).toLocaleString():'\u2014';})()}  color="#374151"/>
+                <StatTile label="Total Cost" val={totalAllCost>0?'$'+Math.round(totalAllCost).toLocaleString():'\u2014'} color="#7f1d1d" sub="Feed + processing"/>
+                <StatTile label="Avg Cost / Bird" val={totalProc>0&&totalAllCost>0?'$'+(totalAllCost/totalProc).toFixed(2):'\u2014'} color="#374151"/>
+                {totalLbsWhole>0&&<StatTile label="Total Lbs \u2014 Whole" val={Math.round(totalLbsWhole).toLocaleString()+' lbs'+(wholePct!=null?' ('+wholePct+'%)':'')} color="#065f46"/>}
+                {totalLbsCuts>0&&<StatTile label="Total Lbs \u2014 Cuts" val={Math.round(totalLbsCuts).toLocaleString()+' lbs'+(cutsPct!=null?' ('+cutsPct+'%)':'')} color="#1e3a5f"/>}
               </div>
             </div>
           )}
@@ -4403,37 +4487,6 @@ function App(){
             </div>
           )}
 
-          {/* Recent daily reports */}
-          {recentDailys.length>0&&(
-            <div>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:600,color:'#4b5563',letterSpacing:.3}}>RECENT DAILY REPORTS</div>
-                <button onClick={()=>setView('broilerdailys')} style={{fontSize:11,color:'#085041',background:'none',border:'none',cursor:'pointer',fontWeight:600,fontFamily:'inherit'}}>View all →</button>
-              </div>
-              <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}}>
-                {recentDailys.map((d,i)=>(
-                  <div key={d.id||i} style={{padding:'10px 16px',borderBottom:i<recentDailys.length-1?'1px solid #f3f4f6':'none',display:'flex',alignItems:'center',gap:12,fontSize:12}}>
-                    <span style={{color:'#6b7280',minWidth:80,flexShrink:0}}>{fmt(d.date)}</span>
-                    <span style={{fontWeight:600,color:'#111827',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'—'}</span>
-                    <span style={{color:'#6b7280',flexShrink:0}}>{d.team_member||'—'}</span>
-                    {(d.feed_lbs>0)&&<span style={{color:'#92400e',fontWeight:600,flexShrink:0}}>🌾 {parseFloat(d.feed_lbs).toLocaleString()} lbs</span>}
-                    {(d.mortality_count>0)&&<span style={{color:'#b91c1c',fontWeight:600,flexShrink:0}}>💀 {d.mortality_count}</span>}
-                    <span style={{fontSize:10,color:d.feed_type==='STARTER'?'#1d4ed8':'#065f46',background:d.feed_type==='STARTER'?'#eff6ff':'#ecfdf5',padding:'2px 7px',borderRadius:10,fontWeight:600,flexShrink:0}}>{d.feed_type||'—'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Notes */}
-          <div>
-            <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>BROILER NOTES</div>
-            <textarea value={broilerNotes} onChange={e=>setBroilerNotes(e.target.value)}
-              onBlur={()=>sb.from('app_store').upsert({key:'ppp-broiler-notes-v1',data:broilerNotes},{onConflict:'key'}).then(()=>{})}
-              placeholder="Notes, reminders, announcements for the broiler operation..."
-              style={{width:'100%',minHeight:100,padding:'12px 14px',border:'1px solid #e5e7eb',borderRadius:12,fontSize:13,fontFamily:'inherit',resize:'vertical',background:'white',outline:'none',color:'#374151',boxSizing:'border-box'}}/>
-            <div style={{fontSize:10,color:'#9ca3af',marginTop:4}}>Auto-saves when you click away</div>
-          </div>
 
         </div>
       </div>
@@ -4993,109 +5046,355 @@ function App(){
     </div>
   );
 
-  // ── FEED VIEW ──
+  // ── POULTRY FEED VIEW ──
   if(view==="feed") {
-    // Build monthly summary for next 12 months
     const today = new Date();
-    const months = Array.from({length:12}, (_,i) => {
-      const d = new Date(today.getFullYear(), today.getMonth()+i, 1);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    });
-    function fmtMonth(ym) {
-      const [y,m] = ym.split("-").map(Number);
-      return new Date(y,m-1,1).toLocaleDateString("en-US",{month:"short",year:"numeric"});
+    const todayDate = todayISO();
+    const months = [];
+    for(var mi2=-3;mi2<=6;mi2++){
+      var d2=new Date(today.getFullYear(),today.getMonth()+mi2,1);
+      months.push(d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0'));
     }
-    const activeBatches = batches.filter(b => b.status !== "processed" && b.hatchDate);
-    const monthlyData = months.map(ym => {
-      let starter=0, grower=0;
-      activeBatches.forEach(b => {
-        const f = calcBatchFeedForMonth(b, ym);
-        starter += f.starter; grower += f.grower;
-      });
-      return { ym, starter: Math.round(starter), grower: Math.round(grower), total: Math.round(starter+grower) };
-    }).filter(m => m.total > 0);
+    var thisYM=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+    function fmtMonth(ym){var p=ym.split('-').map(Number);return new Date(p[0],p[1]-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});}
 
-    // Build monthly totals with past-month detection
-    const now2 = new Date();
-    const thisYM = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`;
+    var activeBroilers=batches.filter(function(b){return b.hatchDate;});
+    var activeLayerBatchesForFeed=(layerBatches||[]).filter(function(b){return b.status==='active'&&b.name!=='Retirement Home';});
+    var activeHousings=(layerHousings||[]).filter(function(h){return h.status==='active';});
+
+    // Pre-compute actual consumption by month and feed type
+    var actualByMonth={};
+    months.forEach(function(ym){actualByMonth[ym]={starter:0,grower:0,layer:0};});
+    (broilerDailys||[]).forEach(function(d){
+      if(!d.date) return;
+      var ym=d.date.substring(0,7);
+      if(!actualByMonth[ym]) return;
+      var lbs=parseFloat(d.feed_lbs)||0;
+      if(d.feed_type==='STARTER') actualByMonth[ym].starter+=lbs;
+      else if(d.feed_type==='GROWER') actualByMonth[ym].grower+=lbs;
+    });
+    (allLayerDailys||[]).forEach(function(d){
+      if(!d.date) return;
+      var ym=d.date.substring(0,7);
+      if(!actualByMonth[ym]) return;
+      var lbs=parseFloat(d.feed_lbs)||0;
+      if(d.feed_type==='STARTER') actualByMonth[ym].starter+=lbs;
+      else if(d.feed_type==='GROWER') actualByMonth[ym].grower+=lbs;
+      else if(d.feed_type==='LAYER') actualByMonth[ym].layer+=lbs;
+    });
+
+    var monthlyData=months.map(function(ym){
+      var p=ym.split('-').map(Number);var daysInMonth=new Date(p[0],p[1],0).getDate();
+      var isFuture=ym>thisYM;var isCurrent=ym===thisYM;
+      // Broiler projected
+      var bStarter=0,bGrover=0;
+      activeBroilers.forEach(function(b){var f=calcBatchFeedForMonth(b,ym);bStarter+=f.starter;bGrover+=f.grower;});
+      // Layer projected
+      var lStarter=0,lGrover=0,lLayer=0;
+      activeLayerBatchesForFeed.forEach(function(b){
+        var f=calcLayerFeedForMonth(b,layerHousings||[],allLayerDailys||[],ym);
+        lStarter+=f.starter;lGrover+=f.grower;lLayer+=f.layer;
+      });
+      var starter=Math.round(bStarter+lStarter);
+      var grower=Math.round(bGrover+lGrover);
+      var layerFeed=Math.round(lLayer);
+      var total=starter+grower+layerFeed;
+      var act=actualByMonth[ym]||{starter:0,grower:0,layer:0};
+      var actualTotal=Math.round(act.starter+act.grower+act.layer);
+      var ordS=(feedOrders.starter||{})[ym]||0;
+      var ordG=(feedOrders.grower||{})[ym]||0;
+      var ordL=(feedOrders.layerfeed||{})[ym]||0;
+      var ordered=Math.round((parseFloat(ordS)||0)+(parseFloat(ordG)||0)+(parseFloat(ordL)||0));
+      return {ym:ym,daysInMonth:daysInMonth,starter:starter,grower:grower,layerFeed:layerFeed,total:total,
+        actualStarter:Math.round(act.starter),actualGrover:Math.round(act.grower),actualLayer:Math.round(act.layer),actualTotal:actualTotal,
+        ordS:ordS,ordG:ordG,ordL:ordL,ordered:ordered,isFuture:isFuture,isCurrent:isCurrent,
+        bStarter:Math.round(bStarter),bGrover:Math.round(bGrover),lStarter:Math.round(lStarter),lGrover:Math.round(lGrover),lLayer:Math.round(lLayer)};
+    });
+
+    // Save helpers
+    function savePoultryOrder(type,ym,val){
+      var next={...feedOrders,[type]:{...(feedOrders[type]||{}),[ym]:parseFloat(val)||0}};
+      setFeedOrders(next);sbSave('ppp-feed-orders-v1',next);
+    }
+    function savePoultryFeedCount(type,count,date){
+      var inv={...(poultryFeedInventory||{})};
+      inv[type]={count:parseFloat(count)||0,date:date||todayDate};
+      setPoultryFeedInventory(inv);sbSave('ppp-poultry-feed-inventory-v1',inv);
+    }
+
+    // On Hand per feed type — anchored from physical count
+    function calcOnHand(type,throughYM){
+      var inv=poultryFeedInventory&&poultryFeedInventory[type];
+      if(!inv) return null;
+      var invYM=inv.date.substring(0,7);
+      if(throughYM<invYM) return null;
+      var orderKey=type==='layer'?'layerfeed':type;
+      var ftKey=type==='starter'?'STARTER':type==='grower'?'GROWER':'LAYER';
+      // Orders after count month through target month
+      var ordersSince=0;
+      Object.entries(feedOrders[orderKey]||{}).forEach(function(e){
+        if(e[0]>invYM&&e[0]<=throughYM) ordersSince+=(parseFloat(e[1])||0);
+      });
+      // Actual consumption after count date through target month end
+      var consumed=0;
+      var allDailys=(broilerDailys||[]).concat(allLayerDailys||[]);
+      allDailys.forEach(function(d){
+        if(!d.date||d.date<=inv.date) return;
+        if(d.date.substring(0,7)>throughYM) return;
+        if(d.feed_type===ftKey) consumed+=(parseFloat(d.feed_lbs)||0);
+      });
+      // For future months or remaining days in current month, add projected consumption
+      var projFuture=0;
+      monthlyData.forEach(function(md){
+        if(md.ym<=invYM||md.ym>throughYM) return;
+        var projForType=type==='starter'?md.starter:type==='grower'?md.grower:md.layerFeed;
+        if(md.isFuture) projFuture+=projForType;
+        else if(md.isCurrent){
+          var dayOfMonth=new Date().getDate();
+          var daysLeft=md.daysInMonth-dayOfMonth;
+          if(daysLeft>0) projFuture+=Math.round(projForType*(daysLeft/md.daysInMonth));
+        }
+      });
+      return Math.round(inv.count+ordersSince-consumed-projFuture);
+    }
+
+    // Expandable month rows — uses top-level state
+    var expandedMonths2=poultryFeedExpandedMonths;
+    function toggleMonth2(ym){setPoultryFeedExpandedMonths(function(s){var n=new Set(s);n.has(ym)?n.delete(ym):n.add(ym);return n;});}
+
+    // Current physical count display
+    var pInv=poultryFeedInventory;
+    var onHandStarter=calcOnHand('starter',thisYM);
+    var onHandGrover=calcOnHand('grower',thisYM);
+    var onHandLayer=calcOnHand('layer',thisYM);
+    var totalOnHand=(onHandStarter!=null||onHandGrover!=null||onHandLayer!=null)?((onHandStarter||0)+(onHandGrover||0)+(onHandLayer||0)):null;
+    var hasAnyCount=pInv&&(pInv.starter||pInv.grower||pInv.layer);
 
     return (
       <div>
         <Header/>
-        <div style={{padding:"1rem",display:"flex",flexDirection:"column",gap:"1rem"}}>
+        <div style={{padding:"1rem",maxWidth:1200,margin:"0 auto",display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
-          {/* Monthly summary FIRST */}
-          <div style={{...S.card}}>
-            <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",fontWeight:600,fontSize:14,color:"#085041"}}>
-              Monthly Feed Summary — All Active &amp; Planned Batches
-            </div>
-            {monthlyData.length===0 ? (
-              <div style={{padding:"2rem",textAlign:"center",color:"#9ca3af",fontSize:13}}>No feed data — add batches with hatch dates to see monthly totals</div>
-            ) : (
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead>
-                    <tr style={{background:"#ecfdf5",borderBottom:"1px solid #e5e7eb"}}>
-                      <th style={{padding:"8px 16px",textAlign:"left",fontWeight:600,color:"#4b5563"}}>Month</th>
-                      <th style={{padding:"8px 16px",textAlign:"right",fontWeight:600,color:"#1d4ed8"}}>Starter (lbs)</th>
-                      <th style={{padding:"8px 16px",textAlign:"right",fontWeight:600,color:"#085041"}}>Grower (lbs)</th>
-                      <th style={{padding:"8px 16px",textAlign:"right",fontWeight:600,color:"#1a1a1a"}}>Total (lbs)</th>
-                      <th style={{padding:"8px 16px",textAlign:"left",fontWeight:600,color:"#4b5563"}}>Active batches</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {monthlyData.map((m,i) => {
-                      const isPast = m.ym < thisYM;
-                      const isCurrent = m.ym === thisYM;
-                      const isExpanded = collapsedMonths.has(m.ym+'_open');
-                      const batchesInMonth = activeBatches.filter(b => {
-                        const f = calcBatchFeedForMonth(b, m.ym);
-                        return f.starter+f.grower > 0;
-                      });
-                      if(isPast && !isExpanded) return (
-                        <tr key={m.ym} onClick={()=>setCollapsedMonths(s=>{const n=new Set(s);n.add(m.ym+'_open');return n;})}
-                          style={{borderBottom:"1px solid #e5e7eb",background:"#f9fafb",cursor:"pointer"}}>
-                          <td style={{padding:"6px 16px",fontSize:11,color:"#9ca3af",fontStyle:"italic"}} colSpan={5}>
-                            {fmtMonth(m.ym)} — {m.total.toLocaleString()} lbs · click to expand
-                          </td>
-                        </tr>
-                      );
-                      return (
-                        <tr key={m.ym} style={{borderBottom:"1px solid #e5e7eb",background:isCurrent?"#ecfdf5":i%2===0?"white":"#fafafa"}}>
-                          <td style={{padding:"8px 16px",fontWeight:isCurrent?700:500}}>
-                            {fmtMonth(m.ym)}{isCurrent&&<span style={{fontSize:10,marginLeft:6,color:"#065f46",fontWeight:600}}>THIS MONTH</span>}
-                            {isPast&&isExpanded&&<button onClick={()=>setCollapsedMonths(s=>{const n=new Set(s);n.delete(m.ym+'_open');return n;})} style={{marginLeft:8,fontSize:10,color:"#9ca3af",background:"none",border:"none",cursor:"pointer"}}>collapse</button>}
-                          </td>
-                          <td style={{padding:"8px 16px",textAlign:"right",color:"#1d4ed8",fontWeight:500}}>{m.starter.toLocaleString()}</td>
-                          <td style={{padding:"8px 16px",textAlign:"right",color:"#085041",fontWeight:500}}>{m.grower.toLocaleString()}</td>
-                          <td style={{padding:"8px 16px",textAlign:"right",fontWeight:700}}>{m.total.toLocaleString()}</td>
-                          <td style={{padding:"8px 16px",fontSize:11,color:"#4b5563"}}>{batchesInMonth.map(b=>b.name).join(", ")}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          {/* Physical count + Feed on Hand */}
+          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px'}}>
+            <div style={{display:'flex',alignItems:'flex-start',gap:20,flexWrap:'wrap'}}>
+              <div style={{flex:1,minWidth:220}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#085041',marginBottom:10}}>Poultry Feed on Hand</div>
+                {hasAnyCount?(
+                  <div>
+                    <div style={{fontSize:28,fontWeight:700,color:totalOnHand>0?'#065f46':'#b91c1c',lineHeight:1,marginBottom:8}}>{totalOnHand!=null?totalOnHand.toLocaleString()+' lbs':'\u2014'}</div>
+                    <div style={{display:'flex',gap:14,flexWrap:'wrap',fontSize:12}}>
+                      {[['Starter',onHandStarter,pInv&&pInv.starter,'#1d4ed8'],['Grower',onHandGrover,pInv&&pInv.grower,'#085041'],['Layer Feed',onHandLayer,pInv&&pInv.layer,'#b45309']].map(function(t){
+                        return React.createElement('div',{key:t[0],style:{background:'#f8fafc',border:'1px solid #e5e7eb',borderRadius:8,padding:'6px 10px',minWidth:100}},
+                          React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.4}},t[0]),
+                          React.createElement('div',{style:{fontSize:14,fontWeight:700,color:t[1]!=null?(t[1]>0?t[3]:'#b91c1c'):'#9ca3af'}},t[1]!=null?t[1].toLocaleString()+' lbs':'\u2014'),
+                          t[2]&&React.createElement('div',{style:{fontSize:9,color:'#9ca3af',marginTop:2}},'Count: '+t[2].count.toLocaleString()+' on '+fmt(t[2].date))
+                        );
+                      })}
+                    </div>
+                  </div>
+                ):(
+                  <div style={{fontSize:13,color:'#9ca3af'}}>Enter a physical count to start tracking inventory.</div>
+                )}
               </div>
-            )}
+              <div style={{background:'#f8fafc',border:'1px solid #e5e7eb',borderRadius:10,padding:'12px 16px',minWidth:300}}>
+                <div style={{fontSize:11,fontWeight:600,color:'#4b5563',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>
+                  {hasAnyCount?'Update Physical Count':'Enter Physical Count'}
+                </div>
+                <div style={{display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap'}}>
+                  <div>
+                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Feed type</label>
+                    <select id="poultry-feed-count-type" defaultValue="starter" style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}>
+                      <option value="starter">Starter</option>
+                      <option value="grower">Grower</option>
+                      <option value="layer">Layer Feed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Lbs on hand</label>
+                    <input id="poultry-feed-count-input" type="number" min="0" step="100" placeholder="e.g. 2000" style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,width:100,fontFamily:'inherit'}}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Date</label>
+                    <input id="poultry-feed-count-date" type="date" defaultValue={todayDate} style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
+                  </div>
+                  <button onClick={function(){
+                    var el=document.getElementById('poultry-feed-count-input');
+                    var dl=document.getElementById('poultry-feed-count-date');
+                    var tp=document.getElementById('poultry-feed-count-type');
+                    if(!el||!el.value){alert('Enter the lbs on hand.');return;}
+                    savePoultryFeedCount(tp.value,el.value,dl?dl.value:todayDate);
+                    el.value='';
+                  }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>
+                    Save Count
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Per-batch breakdown - COLLAPSIBLE */}
+          {/* Monthly summary — current first, then future, then past by year */}
+          {(function(){
+            // Render a single month card
+            function renderMonthCard(md){
+              var ohS=calcOnHand('starter',md.ym);
+              var ohG=calcOnHand('grower',md.ym);
+              var ohL=calcOnHand('layer',md.ym);
+              var types=[
+                {key:'starter',label:'Starter',color:'#1d4ed8',proj:md.starter,actual:md.actualStarter,ordKey:'starter',oh:ohS},
+                {key:'grower',label:'Grower',color:'#085041',proj:md.grower,actual:md.actualGrover,ordKey:'grower',oh:ohG},
+                {key:'layer',label:'Layer Feed',color:'#b45309',proj:md.layerFeed,actual:md.actualLayer,ordKey:'layerfeed',oh:ohL},
+              ];
+              return React.createElement('div',{key:md.ym,style:{background:'white',border:md.isCurrent?'2px solid #085041':'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}},
+                React.createElement('div',{style:{padding:'10px 16px',display:'flex',alignItems:'center',gap:8,background:md.isCurrent?'#ecfdf5':md.isFuture?'#f8fafc':'white'}},
+                  React.createElement('span',{style:{fontSize:14,fontWeight:700,color:'#111827'}},fmtMonth(md.ym)),
+                  md.isCurrent&&React.createElement('span',{style:{fontSize:10,fontWeight:700,color:'#065f46',background:'#d1fae5',padding:'1px 8px',borderRadius:10}},'NOW'),
+                  md.isFuture&&React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},'projected')
+                ),
+                React.createElement('div',{style:{padding:'0 16px 12px'}},
+                  React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+                    React.createElement('thead',null,
+                      React.createElement('tr',{style:{borderBottom:'1px solid #e5e7eb'}},
+                        React.createElement('th',{style:{padding:'6px 0',textAlign:'left',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5,width:90}},'Feed Type'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Projected'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Actual'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Variance'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5,width:100}},'Ordered'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'On Hand')
+                      )
+                    ),
+                    React.createElement('tbody',null,
+                      types.map(function(t){
+                        var ordVal=(feedOrders[t.ordKey]||{})[md.ym]||'';
+                        var variance=(!md.isFuture&&t.actual>0)?(t.actual-t.proj):null;
+                        return React.createElement('tr',{key:t.key,style:{borderBottom:'1px solid #f3f4f6'}},
+                          React.createElement('td',{style:{padding:'7px 0',fontWeight:600,color:t.color,fontSize:12}},t.label),
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',color:'#374151'}},t.proj>0?t.proj.toLocaleString():'\u2014'),
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:600,color:md.isFuture?'#9ca3af':'#111827'}},md.isFuture?'\u2014':t.actual.toLocaleString()),
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:600,color:variance==null?'#9ca3af':variance>0?'#b91c1c':'#065f46'}},variance==null?'\u2014':(variance>0?'+':'')+variance.toLocaleString()),
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right'},onClick:function(e){e.stopPropagation();}},
+                            React.createElement('input',{type:'number',min:'0',step:'100',value:ordVal,onChange:function(e){savePoultryOrder(t.ordKey,md.ym,e.target.value);},placeholder:'0',style:{width:85,fontSize:12,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit'}})
+                          ),
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:600,color:t.oh==null?'#9ca3af':t.oh>0?'#065f46':'#b91c1c'}},t.oh==null?'\u2014':t.oh.toLocaleString())
+                        );
+                      })
+                    )
+                  )
+                ),
+                (md.total>0)&&React.createElement('div',{style:{borderTop:'1px solid #f3f4f6',padding:'8px 16px',fontSize:11,color:'#6b7280',display:'flex',flexDirection:'column',gap:6}},
+                  (md.bStarter>0||md.bGrover>0)&&React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}},
+                    React.createElement('span',{style:{fontWeight:600,color:'#1e3a5f',minWidth:50}},'\ud83d\udc14 Broilers:'),
+                    activeBroilers.map(function(b){
+                      var bf=calcBatchFeedForMonth(b,md.ym);
+                      if(bf.starter+bf.grower<=0) return null;
+                      var birdCount=parseInt(b.birdCountActual)||parseInt(b.birdCount)||0;
+                      var tl2=calcTimeline(b.hatchDate,b.breed,b.processingDate);
+                      var phase2='';
+                      if(tl2){var midDate=new Date(md.ym+'-15T12:00:00');phase2=midDate<new Date(tl2.brooderOut+'T12:00:00')?'Brooder':'Schooner';}
+                      return React.createElement('span',{key:b.id,style:{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:500}},
+                        b.name+' \u00b7 '+birdCount.toLocaleString()+' birds'+(phase2?' \u00b7 '+phase2:'')+' \u00b7 '+(bf.starter+bf.grower).toLocaleString()+' lbs'
+                      );
+                    }).filter(Boolean)
+                  ),
+                  (md.lStarter>0||md.lGrover>0||md.lLayer>0)&&React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}},
+                    React.createElement('span',{style:{fontWeight:600,color:'#92400e',minWidth:50}},'\ud83d\udc13 Layers:'),
+                    activeLayerBatchesForFeed.map(function(b){
+                      var lf=calcLayerFeedForMonth(b,layerHousings||[],allLayerDailys||[],md.ym);
+                      if(lf.starter+lf.grower+lf.layer<=0) return null;
+                      var batchHousings2=(layerHousings||[]).filter(function(h){return h.batch_id===b.id&&h.status==='active';});
+                      var hens=0;
+                      batchHousings2.forEach(function(h){var proj=computeProjectedCount(h,allLayerDailys||[]);hens+=proj?proj.projected:(parseInt(h.current_count)||0);});
+                      if(hens===0) hens=parseInt(b.original_count)||0;
+                      var startDate=b.brooder_entry_date||b.arrival_date;
+                      var ageMs=startDate?(new Date(md.ym+'-15T12:00:00')-new Date(startDate+'T12:00:00')):0;
+                      var ageWeeks=ageMs>0?Math.floor(ageMs/86400000/7):0;
+                      var phase=ageWeeks<6?'Starter':ageWeeks<20?'Grower':'Layer';
+                      return React.createElement('span',{key:b.id,style:{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:500}},
+                        b.name+' \u00b7 '+hens.toLocaleString()+' hens \u00b7 '+phase+' \u00b7 '+(lf.starter+lf.grower+lf.layer).toLocaleString()+' lbs'
+                      );
+                    }).filter(Boolean)
+                  )
+                )
+              );
+            }
+
+            // Split months into current, future, past
+            var currentMonth=monthlyData.filter(function(m){return m.isCurrent;});
+            var futureMonths=monthlyData.filter(function(m){return m.isFuture;});
+            var pastMonths=monthlyData.filter(function(m){return !m.isCurrent&&!m.isFuture;}).reverse(); // newest first
+
+            // Group past months by year
+            var pastByYear={};
+            pastMonths.forEach(function(m){var yr=m.ym.substring(0,4);if(!pastByYear[yr])pastByYear[yr]=[];pastByYear[yr].push(m);});
+            var pastYears=Object.keys(pastByYear).sort().reverse(); // newest year first
+
+            var secToggle=poultryFeedExpandedMonths;
+            function togSec(key){setPoultryFeedExpandedMonths(function(s){var n=new Set(s);n.has(key)?n.delete(key):n.add(key);return n;});}
+
+            return React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'1.25rem'}},
+              // Section header
+              React.createElement('div',{style:{fontSize:14,fontWeight:700,color:'#085041'}},'Monthly Poultry Feed Summary'),
+
+              // Current month — always visible
+              currentMonth.length>0&&React.createElement('div',null,
+                currentMonth.map(renderMonthCard)
+              ),
+
+              // Future months — collapsible
+              futureMonths.length>0&&React.createElement('div',null,
+                React.createElement('div',{onClick:function(){togSec('future');},style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer',padding:'8px 0',marginBottom:6}},
+                  React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secToggle.has('future')?'\u25bc':'\u25b6'),
+                  React.createElement('span',{style:{fontSize:13,fontWeight:600,color:'#4b5563'}},'UPCOMING MONTHS'),
+                  React.createElement('span',{style:{fontSize:11,color:'#9ca3af'}},'('+futureMonths.length+')')
+                ),
+                secToggle.has('future')&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+                  futureMonths.map(renderMonthCard)
+                )
+              ),
+
+              // Past months — collapsible, grouped by year
+              pastYears.length>0&&React.createElement('div',null,
+                React.createElement('div',{onClick:function(){togSec('past');},style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer',padding:'8px 0',marginBottom:6}},
+                  React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secToggle.has('past')?'\u25bc':'\u25b6'),
+                  React.createElement('span',{style:{fontSize:13,fontWeight:600,color:'#4b5563'}},'PAST MONTHS'),
+                  React.createElement('span',{style:{fontSize:11,color:'#9ca3af'}},'('+pastMonths.length+')')
+                ),
+                secToggle.has('past')&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+                  pastYears.map(function(yr){
+                    var yearMonths=pastByYear[yr];
+                    var yearKey='past-'+yr;
+                    return React.createElement('div',{key:yr},
+                      pastYears.length>1&&React.createElement('div',{onClick:function(){togSec(yearKey);},style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer',padding:'4px 0',marginBottom:6}},
+                        React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secToggle.has(yearKey)?'\u25bc':'\u25b6'),
+                        React.createElement('span',{style:{fontSize:12,fontWeight:600,color:'#6b7280'}},yr),
+                        React.createElement('span',{style:{fontSize:11,color:'#9ca3af'}},'('+yearMonths.length+' months)')
+                      ),
+                      (pastYears.length===1||secToggle.has(yearKey))&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+                        yearMonths.map(renderMonthCard)
+                      )
+                    );
+                  })
+                )
+              )
+            );
+          })()}
+
+          {/* Per-batch breakdown - Broiler COLLAPSIBLE */}
           <div style={{...S.card}}>
             <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
               onClick={()=>setCollapsedBatches(s=>{const n=new Set(s); n.has('all')?n.delete('all'):n.add('all'); return n;})}>
-              <div style={{fontWeight:600,fontSize:14,color:"#085041"}}>Feed Estimate Per Batch</div>
-              <span style={{fontSize:12,color:"#9ca3af"}}>{collapsedBatches.has('all')?'▶ expand':'▼ collapse'}</span>
+              <div style={{fontWeight:600,fontSize:14,color:"#085041"}}>{'\ud83d\udc14 Broiler Feed Estimate Per Batch'}</div>
+              <span style={{fontSize:12,color:"#9ca3af"}}>{collapsedBatches.has('all')?'\u25b6 expand':'\u25bc collapse'}</span>
             </div>
             {!collapsedBatches.has('all')&&<>
-            {activeBatches.length===0&&(
-              <div style={{padding:"2rem",textAlign:"center",color:"#9ca3af",fontSize:13}}>No active or planned batches</div>
+            {activeBroilers.length===0&&(
+              <div style={{padding:"2rem",textAlign:"center",color:"#9ca3af",fontSize:13}}>No active or planned broiler batches</div>
             )}
-            {activeBatches.map(b => {
+            {activeBroilers.map(b => {
               const {schedule, starter, grower, total} = calcBatchFeed(b);
               const C = getBatchColor(b.name);
               return (
                 <div key={b.id} style={{borderBottom:"1px solid #e5e7eb"}}>
-                  {/* Batch header */}
                   <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",background:"#f9fafb",flexWrap:"wrap"}}>
                     <span style={{display:"inline-block",width:12,height:12,borderRadius:3,background:C.bg,border:'1px solid '+C.bd}}/>
                     <div style={{fontWeight:600,fontSize:13,color:"#1a1a1a",minWidth:100}}>{b.name}</div>
@@ -5117,7 +5416,6 @@ function App(){
                       </div>
                     </div>
                   </div>
-                  {/* Weekly breakdown */}
                   <div style={{overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                       <thead>
@@ -5126,7 +5424,7 @@ function App(){
                           <th style={{padding:"5px 12px",textAlign:"left",fontWeight:600,color:"#4b5563"}}>Phase</th>
                           <th style={{padding:"5px 12px",textAlign:"left",fontWeight:600,color:"#4b5563"}}>Location</th>
                           <th style={{padding:"5px 12px",textAlign:"right",fontWeight:600,color:"#4b5563",whiteSpace:"nowrap"}}>Lbs/Bird</th>
-                          <th style={{padding:"5px 12px",textAlign:"right",fontWeight:600,color:"#4b5563",whiteSpace:"nowrap"}}>Total Lbs (750 birds)</th>
+                          <th style={{padding:"5px 12px",textAlign:"right",fontWeight:600,color:"#4b5563",whiteSpace:"nowrap"}}>Total Lbs</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -5140,7 +5438,7 @@ function App(){
                                 {w.phase==="starter"?"Starter":"Grower"}
                               </span>
                             </td>
-                            <td style={{padding:"5px 12px",color:"#4b5563"}}>{i < 2 ? `Brooder ${b.brooder}` : `Schooner ${b.schooner}`}</td>
+                            <td style={{padding:"5px 12px",color:"#4b5563"}}>{i < 2 ? 'Brooder '+b.brooder : 'Schooner '+b.schooner}</td>
                             <td style={{padding:"5px 12px",textAlign:"right"}}>{w.lbsPerBird.toFixed(2)}</td>
                             <td style={{padding:"5px 12px",textAlign:"right",fontWeight:500}}>{w.totalLbs.toLocaleString()}</td>
                           </tr>
@@ -5151,6 +5449,69 @@ function App(){
                         </tr>
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              );
+            })}
+          </>}
+          </div>
+
+          {/* Per-batch breakdown - Layer COLLAPSIBLE */}
+          <div style={{...S.card}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+              onClick={()=>setCollapsedBatches(s=>{const n=new Set(s); n.has('layers')?n.delete('layers'):n.add('layers'); return n;})}>
+              <div style={{fontWeight:600,fontSize:14,color:"#b45309"}}>{'\ud83d\udc13 Layer Feed Estimate Per Batch'}</div>
+              <span style={{fontSize:12,color:"#9ca3af"}}>{collapsedBatches.has('layers')?'\u25b6 expand':'\u25bc collapse'}</span>
+            </div>
+            {!collapsedBatches.has('layers')&&<>
+            {activeLayerBatchesForFeed.length===0&&(
+              <div style={{padding:"2rem",textAlign:"center",color:"#9ca3af",fontSize:13}}>No active layer batches</div>
+            )}
+            {activeLayerBatchesForFeed.map(function(b){
+              var startDate=b.brooder_entry_date||b.arrival_date;
+              var birdCount=parseInt(b.original_count)||0;
+              var batchHousings=activeHousings.filter(function(h){return h.batch_id===b.id;});
+              var hens=0;
+              batchHousings.forEach(function(h){
+                var proj=computeProjectedCount(h,allLayerDailys||[]);
+                hens+=proj?proj.projected:(parseInt(h.current_count)||0);
+              });
+              if(hens===0) hens=birdCount;
+              var totalStarter=0,totalGrover=0,totalLayer=0;
+              LAYER_FEED_SCHEDULE.forEach(function(w){
+                if(w.phase==='starter') totalStarter+=w.lbsPerBird*birdCount;
+                else totalGrover+=w.lbsPerBird*birdCount;
+              });
+              // Cap starter at 1500
+              if(totalStarter>1500) totalStarter=1500;
+              // Layer feed: estimate 365 days/year at 0.25/bird/day
+              totalLayer=hens*LAYER_FEED_PER_DAY*365;
+              var ageMs=startDate?(new Date()-new Date(startDate+'T12:00:00')):0;
+              var ageWeeks=ageMs>0?Math.floor(ageMs/86400000/7):0;
+              var phase=ageWeeks<6?'Starter':ageWeeks<20?'Grower':'Layer Feed';
+              return (
+                <div key={b.id} style={{borderBottom:'1px solid #e5e7eb'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',background:'#fffbeb',flexWrap:'wrap'}}>
+                    <span style={{fontSize:14}}>{'\ud83d\udc13'}</span>
+                    <div style={{fontWeight:600,fontSize:13,color:'#92400e',minWidth:100}}>{b.name}</div>
+                    <span style={S.badge('#fef3c7','#92400e')}>{phase}</span>
+                    {startDate&&<span style={{fontSize:11,color:'#6b7280'}}>Started: {fmt(startDate)}</span>}
+                    <span style={{fontSize:11,color:'#6b7280'}}>{birdCount>0?birdCount+' birds':'no bird count'}</span>
+                    {hens!==birdCount&&<span style={{fontSize:11,color:'#6b7280'}}>{'\u2192 '+hens+' projected hens'}</span>}
+                    <div style={{marginLeft:'auto',display:'flex',gap:16,flexWrap:'wrap'}}>
+                      <div style={{textAlign:'center'}}>
+                        <div style={{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5}}>Starter</div>
+                        <div style={{fontSize:15,fontWeight:700,color:'#1d4ed8'}}>{Math.round(totalStarter).toLocaleString()} lbs</div>
+                      </div>
+                      <div style={{textAlign:'center'}}>
+                        <div style={{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5}}>Grower</div>
+                        <div style={{fontSize:15,fontWeight:700,color:'#085041'}}>{Math.round(totalGrover).toLocaleString()} lbs</div>
+                      </div>
+                      <div style={{textAlign:'center'}}>
+                        <div style={{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5}}>Layer / Year</div>
+                        <div style={{fontSize:15,fontWeight:700,color:'#b45309'}}>{Math.round(totalLayer).toLocaleString()} lbs</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -5234,11 +5595,6 @@ function App(){
       return {ym,daysInMonth,proj,projTotal:Math.round(projTotal),actual:Math.round(actual),ordered,isFuture,isCurrent};
     });
 
-    // Feed on hand estimate: total ordered all time minus total consumed all time
-    const totalOrdered=Object.values(feedOrders.pig||{}).reduce((s,v)=>s+(parseFloat(v)||0),0);
-    const totalConsumed=pigDailys.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
-    const feedOnHand=Math.round(totalOrdered-totalConsumed);
-
     // Current month snapshot
     const curProj=projectedDailyFeed(todayISO());
 
@@ -5247,6 +5603,71 @@ function App(){
       setFeedOrders(next);
       sbSave('ppp-feed-orders-v1',next);
     }
+
+    function savePigFeedCount(count,date){
+      const inv={count:parseFloat(count)||0,date:date||todayISO()};
+      setPigFeedInventory(inv);
+      sbSave('ppp-pig-feed-inventory-v1',inv);
+    }
+
+    // ── Feed on Hand calculation (anchored from physical count) ──
+    const inv=pigFeedInventory; // {count, date} or null
+    const todayDate=todayISO();
+    // Orders since the physical count date (inclusive of count month)
+    const ordersSinceCount=inv?Object.entries(feedOrders.pig||{}).reduce((s,[ym,v])=>{
+      // An order for a month counts if the month is after the count date's month
+      // (the count already includes any feed delivered before the count)
+      if(ym>inv.date.substring(0,7)) return s+(parseFloat(v)||0);
+      return s;
+    },0):0;
+    // Actual consumption since the physical count date (strictly after)
+    const consumedSinceCount=inv?pigDailys.filter(d=>d.date&&d.date>inv.date).reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0):0;
+    const feedOnHand=inv?Math.round(inv.count+ordersSinceCount-consumedSinceCount):null;
+
+    // Per-group projected feed for a given month
+    function projectedFeedByGroup(ym){
+      const [y,m]=ym.split('-').map(Number);
+      const daysInMonth=new Date(y,m,0).getDate();
+      const midDate=ym+'-15';
+      const totalActiveSows=breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')).length;
+      const totalBoars=breeders.filter(b=>!b.archived&&b.sex==='Boar').length;
+      const nursing=nursingSowsOnDate(midDate);
+      const nonNursing=Math.max(0,totalActiveSows-nursing);
+      const sowFeed=(nonNursing*5+nursing*12)*daysInMonth;
+      const boarFeed=totalBoars*5*daysInMonth;
+      const groups=[{label:'SOWS',projected:Math.round(sowFeed)},{label:'BOARS',projected:Math.round(boarFeed)}];
+      feederGroups.filter(g=>g.status==='active').forEach(g=>{
+        const cycle=breedingCycles.find(c=>c.id===g.cycleId);
+        const tl=cycle?calcBreedingTimeline(cycle.exposureStart):null;
+        const birthDate=tl?tl.farrowingStart:(g.startDate||null);
+        if(!birthDate) return;
+        const ageMs=new Date(midDate+'T12:00:00')-new Date(birthDate+'T12:00:00');
+        if(ageMs<0) return;
+        const ageMonths=ageMs/86400000/30.44;
+        const pigCount=parseInt(g.originalPigCount)||0;
+        const feed=pigCount*Math.max(1,ageMonths)*daysInMonth;
+        // Use sub-batch names if available, otherwise main batch name
+        const activeSubs=(g.subBatches||[]).filter(s2=>s2.status==='active');
+        const label=activeSubs.length>0?activeSubs.map(s2=>s2.name).join(', '):g.batchName;
+        groups.push({label,projected:Math.round(feed),batchName:g.batchName,subNames:activeSubs.map(s2=>(s2.name||'').toLowerCase().trim()),mainName:(g.batchName||'').toLowerCase().trim()});
+      });
+      return groups;
+    }
+
+    // Actual feed by group for a month from pig_dailys
+    function actualFeedByGroup(ym){
+      const monthDailys=pigDailys.filter(d=>d.date&&d.date.startsWith(ym));
+      const byLabel={};
+      monthDailys.forEach(d=>{
+        const lbl=d.batch_label||'Unknown';
+        byLabel[lbl]=(byLabel[lbl]||0)+(parseFloat(d.feed_lbs)||0);
+      });
+      return byLabel;
+    }
+
+    // Expandable month rows — uses top-level state (React hooks can't be inside conditionals)
+    const expandedMonths=pigFeedExpandedMonths;
+    function toggleMonth(ym){setPigFeedExpandedMonths(s=>{const n=new Set(s);n.has(ym)?n.delete(ym):n.add(ym);return n;});}
 
     return (
       <div>
@@ -5275,16 +5696,54 @@ function App(){
             </div>
           </div>
 
-          {/* Feed on hand */}
-          <div style={{background:feedOnHand>0?'#ecfdf5':'#fef2f2',border:'1px solid '+(feedOnHand>0?'#a7f3d0':'#fecaca'),borderRadius:12,padding:'14px 20px',display:'flex',alignItems:'center',gap:16}}>
-            <div>
-              <div style={{fontSize:12,fontWeight:600,color:feedOnHand>0?'#065f46':'#b91c1c'}}>Estimated Feed on Hand</div>
-              <div style={{fontSize:28,fontWeight:700,color:feedOnHand>0?'#065f46':'#b91c1c'}}>{feedOnHand.toLocaleString()+' lbs'}</div>
-            </div>
-            <div style={{marginLeft:'auto',fontSize:11,color:'#6b7280',textAlign:'right'}}>
-              <div>Total ordered: {totalOrdered.toLocaleString()} lbs</div>
-              <div>Total consumed: {Math.round(totalConsumed).toLocaleString()} lbs</div>
-              {curProj.total>0&&<div style={{marginTop:4,fontWeight:600,color:feedOnHand>0?'#065f46':'#b91c1c'}}>{'~'+Math.max(0,Math.round(feedOnHand/curProj.total))+' days of feed remaining'}</div>}
+          {/* Physical count + Feed on Hand */}
+          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px'}}>
+            <div style={{display:'flex',alignItems:'flex-start',gap:20,flexWrap:'wrap'}}>
+              {/* Left: current on hand */}
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{fontSize:12,fontWeight:600,color:'#4b5563',marginBottom:8}}>Feed on Hand</div>
+                {feedOnHand!=null?(
+                  <div>
+                    <div style={{fontSize:32,fontWeight:700,color:feedOnHand>0?'#065f46':'#b91c1c',lineHeight:1}}>{feedOnHand.toLocaleString()+' lbs'}</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>
+                      {'Last count: '+inv.count.toLocaleString()+' lbs on '+fmt(inv.date)}
+                      {ordersSinceCount>0&&(' + '+Math.round(ordersSinceCount).toLocaleString()+' ordered')}
+                      {consumedSinceCount>0&&(' \u2212 '+Math.round(consumedSinceCount).toLocaleString()+' consumed')}
+                    </div>
+                    {curProj.total>0&&<div style={{fontSize:12,fontWeight:600,color:feedOnHand>0?'#065f46':'#b91c1c',marginTop:4}}>{'~'+Math.max(0,Math.round(feedOnHand/curProj.total))+' days of feed remaining'}</div>}
+                  </div>
+                ):(
+                  <div style={{fontSize:13,color:'#9ca3af'}}>Enter a physical count to start tracking inventory.</div>
+                )}
+              </div>
+              {/* Right: physical count input */}
+              <div style={{background:'#f8fafc',border:'1px solid #e5e7eb',borderRadius:10,padding:'12px 16px',minWidth:260}}>
+                <div style={{fontSize:11,fontWeight:600,color:'#4b5563',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>
+                  {inv?'Update Physical Count':'Enter Physical Count'}
+                </div>
+                <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+                  <div style={{flex:1}}>
+                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Lbs on hand</label>
+                    <input id="pig-feed-count-input" type="number" min="0" step="100" placeholder="e.g. 5000"
+                      defaultValue={inv?inv.count:''}
+                      style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',fontFamily:'inherit'}}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Date</label>
+                    <input id="pig-feed-count-date" type="date" defaultValue={inv?inv.date:todayDate}
+                      style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
+                  </div>
+                  <button onClick={()=>{
+                    const el=document.getElementById('pig-feed-count-input');
+                    const dl=document.getElementById('pig-feed-count-date');
+                    if(!el||!el.value){alert('Enter the lbs on hand.');return;}
+                    savePigFeedCount(el.value,dl?dl.value:todayDate);
+                  }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',flexShrink:0}}>
+                    Save Count
+                  </button>
+                </div>
+                {inv&&<div style={{fontSize:10,color:'#9ca3af',marginTop:6}}>Last updated: {fmt(inv.date)}</div>}
+              </div>
             </div>
           </div>
 
@@ -5292,6 +5751,7 @@ function App(){
           <div style={{...S.card}}>
             <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",fontWeight:600,fontSize:14,color:"#085041"}}>
               Monthly Feed Summary {'\u2014'} Projected vs Actual
+              <span style={{fontSize:11,fontWeight:400,color:'#9ca3af',marginLeft:10}}>Click a month to see per-group breakdown</span>
             </div>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -5305,25 +5765,118 @@ function App(){
                 <tbody>
                   {monthlyData.map((md,mi)=>{
                     const variance=md.actual>0?md.actual-md.projTotal:null;
-                    const runningOrdered=monthlyData.slice(0,mi+1).reduce((s,m2)=>s+m2.ordered,0);
-                    const runningConsumed=monthlyData.slice(0,mi+1).reduce((s,m2)=>s+m2.actual,0);
-                    const runningOnHand=Math.round(totalOrdered-totalConsumed+(md.isFuture?0:0));
+                    // On Hand: anchor from physical count, then running balance forward
+                    // Find which month the physical count falls in
+                    const invYM=inv?inv.date.substring(0,7):null;
+                    let onHand=null;
+                    if(inv){
+                      if(md.ym<invYM){
+                        // Before the count — no meaningful On Hand
+                        onHand=null;
+                      } else if(md.ym===invYM){
+                        // Count month: start from count, subtract consumption after count date within this month, add nothing (order for this month assumed already in count)
+                        const consumedAfterCount=pigDailys.filter(d=>d.date&&d.date>inv.date&&d.date.startsWith(md.ym)).reduce((s2,d)=>s2+(parseFloat(d.feed_lbs)||0),0);
+                        // For remaining days in the current month after today, use projected daily rate
+                        let projRemaining=0;
+                        if(md.isCurrent){
+                          const dayOfMonth=new Date().getDate();
+                          const daysLeft=md.daysInMonth-dayOfMonth;
+                          if(daysLeft>0) projRemaining=curProj.total*daysLeft;
+                        }
+                        onHand=Math.round(inv.count-consumedAfterCount-projRemaining);
+                      } else {
+                        // After count month: carry forward from count month
+                        // on hand = count + orders after count month through this month - consumption after count date through this month
+                        const ordersThrough=Object.entries(feedOrders.pig||{}).reduce((s2,[ym2,v])=>{
+                          if(ym2>invYM&&ym2<=md.ym) return s2+(parseFloat(v)||0);
+                          return s2;
+                        },0);
+                        const consumedThrough=pigDailys.filter(d=>d.date&&d.date>inv.date&&d.date.substring(0,7)<=md.ym).reduce((s2,d)=>s2+(parseFloat(d.feed_lbs)||0),0);
+                        // For future months or current month's remaining days, add projected consumption
+                        let projFuture=0;
+                        monthlyData.forEach(m2=>{
+                          if(m2.ym<=invYM) return; // skip months at or before count
+                          if(m2.ym>md.ym) return; // skip months after this row
+                          if(m2.isFuture) projFuture+=m2.projTotal;
+                          else if(m2.isCurrent){
+                            // Current month: actual already counted in consumedThrough, add projected for remaining days
+                            const dayOfMonth=new Date().getDate();
+                            const daysLeft=m2.daysInMonth-dayOfMonth;
+                            if(daysLeft>0) projFuture+=curProj.total*daysLeft;
+                          }
+                        });
+                        onHand=Math.round(inv.count+ordersThrough-consumedThrough-projFuture);
+                      }
+                    }
                     const fmtMonth2=ym=>{const[y2,m2]=ym.split('-').map(Number);return new Date(y2,m2-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});};
+                    const isExpanded=expandedMonths.has(md.ym);
+                    const projGroups=isExpanded?projectedFeedByGroup(md.ym):[];
+                    const actualGroups=isExpanded?actualFeedByGroup(md.ym):{};
                     return (
-                      <tr key={md.ym} style={{borderBottom:'1px solid #e5e7eb',background:md.isCurrent?'#ecfdf5':md.isFuture?'#f8fafc':mi%2===0?'white':'#fafafa'}}>
+                      <React.Fragment key={md.ym}>
+                      <tr onClick={()=>toggleMonth(md.ym)} style={{borderBottom:isExpanded?'none':'1px solid #e5e7eb',background:md.isCurrent?'#ecfdf5':md.isFuture?'#f8fafc':mi%2===0?'white':'#fafafa',cursor:'pointer'}} className="hoverable-row">
                         <td style={{padding:'8px 14px',fontWeight:md.isCurrent?700:500}}>
+                          <span style={{fontSize:10,color:'#9ca3af',marginRight:4}}>{isExpanded?'\u25bc':'\u25b6'}</span>
                           {fmtMonth2(md.ym)}{md.isCurrent&&<span style={{fontSize:10,marginLeft:6,color:'#065f46',fontWeight:600}}>NOW</span>}
                           {md.isFuture&&<span style={{fontSize:10,marginLeft:6,color:'#9ca3af'}}>projected</span>}
                         </td>
                         <td style={{padding:'8px 14px',textAlign:'right',color:'#6b7280'}}>{md.projTotal.toLocaleString()} lbs</td>
                         <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:md.isFuture?'#9ca3af':'#111827'}}>{md.isFuture?'\u2014':md.actual.toLocaleString()+' lbs'}</td>
                         <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:variance==null?'#9ca3af':variance>0?'#b91c1c':'#065f46'}}>{variance==null?'\u2014':(variance>0?'+':'')+variance.toLocaleString()+' lbs'}</td>
-                        <td style={{padding:'8px 14px',textAlign:'right'}}>
+                        <td style={{padding:'8px 14px',textAlign:'right'}} onClick={e=>e.stopPropagation()}>
                           <input type="number" min="0" step="100" value={md.ordered||''} onChange={e=>savePigOrder(md.ym,e.target.value)}
                             placeholder="0" style={{width:90,fontSize:12,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit'}}/>
                         </td>
-                        <td style={{padding:'8px 14px',textAlign:'right',color:'#6b7280'}}>{'\u2014'}</td>
+                        <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:onHand==null?'#9ca3af':onHand>0?'#065f46':'#b91c1c'}}>{onHand==null?'\u2014':onHand.toLocaleString()+' lbs'}</td>
                       </tr>
+                      {isExpanded&&(
+                        <tr style={{borderBottom:'1px solid #e5e7eb'}}>
+                          <td colSpan={6} style={{padding:0}}>
+                            <div style={{background:'#f8fafc',padding:'8px 14px 8px 32px'}}>
+                              <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                                <thead>
+                                  <tr style={{borderBottom:'1px solid #e5e7eb'}}>
+                                    <th style={{padding:'4px 10px',textAlign:'left',fontWeight:600,color:'#6b7280'}}>Group</th>
+                                    <th style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}}>Projected</th>
+                                    <th style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}}>Actual</th>
+                                    <th style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}}>Variance</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {projGroups.map((pg,gi)=>{
+                                    // Match actual by label: for SOWS/BOARS match directly, for batches match sub-batch names or main name
+                                    let actualLbs=0;
+                                    if(pg.label==='SOWS') actualLbs=actualGroups['SOWS']||0;
+                                    else if(pg.label==='BOARS') actualLbs=actualGroups['BOARS']||0;
+                                    else {
+                                      // Sum any matching sub-batch or main batch labels
+                                      Object.entries(actualGroups).forEach(([lbl,lbs])=>{
+                                        const low=lbl.toLowerCase().trim();
+                                        if(pg.subNames&&pg.subNames.length>0){
+                                          if(pg.subNames.includes(low)) actualLbs+=lbs;
+                                        } else if(pg.mainName&&low===pg.mainName){
+                                          actualLbs+=lbs;
+                                        }
+                                      });
+                                    }
+                                    actualLbs=Math.round(actualLbs);
+                                    const gVar=md.isFuture?null:(actualLbs>0?actualLbs-pg.projected:null);
+                                    return (
+                                      <tr key={gi} style={{borderBottom:'1px solid #f0f0f0'}}>
+                                        <td style={{padding:'4px 10px',fontWeight:500,color:'#374151'}}>{pg.label}</td>
+                                        <td style={{padding:'4px 10px',textAlign:'right',color:'#6b7280'}}>{pg.projected.toLocaleString()}</td>
+                                        <td style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:md.isFuture?'#9ca3af':'#111827'}}>{md.isFuture?'\u2014':actualLbs.toLocaleString()}</td>
+                                        <td style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:gVar==null?'#9ca3af':gVar>0?'#b91c1c':'#065f46'}}>{gVar==null?'\u2014':(gVar>0?'+':'')+gVar.toLocaleString()}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -5498,15 +6051,81 @@ function App(){
               </div>
             </div>
           )}
-          {nextFarrowing&&(
-            <div style={{background:'#f5f3ff',border:'1px solid #ddd6fe',borderRadius:12,padding:'12px 18px',display:'flex',alignItems:'center',gap:12}}>
-              <span style={{fontSize:20}}>{'\ud83d\udc37'}</span>
-              <div>
-                <div style={{fontSize:13,fontWeight:700,color:'#5b21b6'}}>{'Next Farrowing \u2014 Group '+nextFarrowing.group}</div>
-                <div style={{fontSize:12,color:'#6b7280'}}>{fmtS(nextFarrowing.start)+' \u2192 '+fmtS(nextFarrowing.end)+(nextFarrowing.start<=todayStr?' \u00b7 Window is OPEN':'')}</div>
-              </div>
-            </div>
-          )}
+          {/* Breeding group status — current phase + next milestone for each group */}
+          {(function(){
+            var today3=todayISO();
+            var groupStatuses=PIG_GROUPS.map(function(g){
+              // Find the most recent active or upcoming cycle for this group
+              var cycles=breedingCycles.filter(function(c){return c.group===g;}).map(function(c){
+                var tl=calcBreedingTimeline(c.exposureStart);
+                if(!tl) return null;
+                return {c:c,tl:tl};
+              }).filter(Boolean).sort(function(a,b){return a.c.exposureStart.localeCompare(b.c.exposureStart);});
+              // Find the cycle that's currently active or the next upcoming one
+              var current=null;
+              for(var ci=cycles.length-1;ci>=0;ci--){
+                var ct=cycles[ci];
+                if(ct.tl.boarStart<=today3&&ct.tl.growEnd>=today3){current=ct;break;}
+              }
+              if(!current){
+                // No active cycle — find the next upcoming one
+                for(var ci2=0;ci2<cycles.length;ci2++){
+                  if(cycles[ci2].tl.boarStart>today3){current=cycles[ci2];break;}
+                }
+              }
+              if(!current&&cycles.length>0) current=cycles[cycles.length-1]; // fallback to most recent
+              if(!current) return {group:g,phase:'No cycles',next:null,color:PIG_GROUP_COLORS[g]};
+
+              var tl=current.tl;
+              var phase='',nextStep='',nextDate='',isActive=false;
+              if(today3<tl.boarStart){
+                phase='Planned';nextStep='Boar Exposure starts';nextDate=tl.boarStart;
+              } else if(today3<=tl.boarEnd){
+                phase='Boar Exposure';nextStep='Exposure Paddock';nextDate=tl.paddockStart;isActive=true;
+              } else if(today3<=tl.paddockEnd){
+                phase='Exp. Paddock';nextStep='Farrowing window opens';nextDate=tl.farrowingStart;isActive=true;
+              } else if(today3<=tl.farrowingEnd){
+                phase='Farrowing';nextStep='Weaning starts';nextDate=tl.weaningStart;isActive=true;
+              } else if(today3<=tl.weaningEnd){
+                phase='Weaning';nextStep='Grow-out starts';nextDate=tl.growStart;isActive=true;
+              } else if(today3<=tl.growEnd){
+                phase='Grow-out';nextStep='Cycle complete';nextDate=tl.growEnd;isActive=true;
+              } else {
+                phase='Completed';nextStep='Start next cycle';nextDate=null;
+              }
+              var daysToNext=nextDate?Math.max(0,Math.round((new Date(nextDate+'T12:00:00')-new Date(today3+'T12:00:00'))/86400000)):null;
+              return {group:g,phase:phase,nextStep:nextStep,nextDate:nextDate,daysToNext:daysToNext,isActive:isActive,color:PIG_GROUP_COLORS[g],tl:tl,cycle:current.c};
+            });
+            if(groupStatuses.every(function(gs){return gs.phase==='No cycles';})) return null;
+            return React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}},'BREEDING GROUP STATUS'),
+              React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat('+PIG_GROUPS.length+',1fr)',gap:10}},
+                groupStatuses.map(function(gs){
+                  var bgColor=gs.color?gs.color.boar:'#f3f4f6';
+                  var textColor=PIG_GROUP_TEXT[gs.group]||'#111827';
+                  return React.createElement('div',{key:gs.group,style:{background:'white',border:'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}},
+                    React.createElement('div',{style:{background:bgColor,padding:'8px 14px',display:'flex',alignItems:'center',gap:8}},
+                      React.createElement('span',{style:{fontSize:14}},'\ud83d\udc37'),
+                      React.createElement('span',{style:{fontSize:13,fontWeight:700,color:textColor}},'Group '+gs.group)
+                    ),
+                    React.createElement('div',{style:{padding:'10px 14px'}},
+                      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:6}},
+                        React.createElement('span',{style:{fontSize:11,fontWeight:700,color:gs.isActive?'#065f46':'#6b7280',background:gs.isActive?'#d1fae5':'#f3f4f6',padding:'2px 8px',borderRadius:10}},gs.phase)
+                      ),
+                      gs.nextStep&&React.createElement('div',{style:{fontSize:12,color:'#374151',marginBottom:2}},
+                        React.createElement('span',{style:{color:'#9ca3af'}},'Next: '),
+                        React.createElement('span',{style:{fontWeight:600}},gs.nextStep)
+                      ),
+                      gs.nextDate&&React.createElement('div',{style:{fontSize:11,color:'#6b7280'}},
+                        fmt(gs.nextDate),
+                        gs.daysToNext!=null&&gs.daysToNext>0&&React.createElement('span',{style:{marginLeft:6,fontWeight:600,color:gs.daysToNext<=7?'#b91c1c':'#6b7280'}},'('+gs.daysToNext+' days)')
+                      )
+                    )
+                  );
+                })
+              )
+            );
+          })()}
 
           {/* Active feeder batches */}
           {feederBatchStats.length>0&&(
@@ -7985,7 +8604,7 @@ function App(){
           {/* Period toggle for active batches */}
           <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
             <div style={{fontSize:13,fontWeight:600,color:'#4b5563',letterSpacing:.3}}>ACTIVE BATCHES {'\u2014'} ROLLING WINDOW</div>
-            <PeriodToggle val={layerDashPeriod} setVal={setLayerDashPeriod} opts={[{v:7,l:'7 Days'},{v:30,l:'30 Days'},{v:90,l:'90 Days'}]}/>
+            <PeriodToggle val={layerDashPeriod} setVal={setLayerDashPeriod} opts={[{v:30,l:'30 Days'},{v:90,l:'90 Days'},{v:120,l:'120 Days'}]}/>
           </div>
 
           {/* Active batch cards */}
@@ -8057,15 +8676,6 @@ function App(){
             );
           })()}
 
-          {/* Notes */}
-          <div>
-            <div style={{fontSize:13,fontWeight:600,color:'#4b5563',marginBottom:8,letterSpacing:.3}}>LAYER NOTES</div>
-            <textarea value={layerNotes} onChange={e=>setLayerNotes(e.target.value)}
-              onBlur={()=>sb.from('app_store').upsert({key:'ppp-layer-notes-v1',data:layerNotes},{onConflict:'key'}).then(()=>{})}
-              placeholder="Notes, reminders, observations for the layer operation..."
-              style={{width:'100%',minHeight:100,padding:'12px 14px',border:'1px solid #e5e7eb',borderRadius:12,fontSize:13,fontFamily:'inherit',resize:'vertical',background:'white',outline:'none',color:'#374151',boxSizing:'border-box'}}/>
-            <div style={{fontSize:10,color:'#9ca3af',marginTop:4}}>Auto-saves when you click away</div>
-          </div>
 
         </div>
       </div>
