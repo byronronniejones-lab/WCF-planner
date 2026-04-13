@@ -5051,7 +5051,7 @@ function App(){
     const today = new Date();
     const todayDate = todayISO();
     const months = [];
-    for(var mi2=-3;mi2<=6;mi2++){
+    for(var mi2=-18;mi2<=6;mi2++){
       var d2=new Date(today.getFullYear(),today.getMonth()+mi2,1);
       months.push(d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0'));
     }
@@ -5109,7 +5109,7 @@ function App(){
         actualStarter:Math.round(act.starter),actualGrover:Math.round(act.grower),actualLayer:Math.round(act.layer),actualTotal:actualTotal,
         ordS:ordS,ordG:ordG,ordL:ordL,ordered:ordered,isFuture:isFuture,isCurrent:isCurrent,
         bStarter:Math.round(bStarter),bGrover:Math.round(bGrover),lStarter:Math.round(lStarter),lGrover:Math.round(lGrover),lLayer:Math.round(lLayer)};
-    });
+    }).filter(function(m){return m.total>0||m.actualTotal>0||m.ordered>0||m.isCurrent;});
 
     // Save helpers
     function savePoultryOrder(type,ym,val){
@@ -5747,142 +5747,140 @@ function App(){
             </div>
           </div>
 
-          {/* Monthly summary table */}
-          <div style={{...S.card}}>
-            <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",fontWeight:600,fontSize:14,color:"#085041"}}>
-              Monthly Feed Summary {'\u2014'} Projected vs Actual
-              <span style={{fontSize:11,fontWeight:400,color:'#9ca3af',marginLeft:10}}>Click a month to see per-group breakdown</span>
-            </div>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr style={{background:"#ecfdf5",borderBottom:"1px solid #e5e7eb"}}>
-                    {['Month','Projected','Actual','Variance','Ordered','On Hand'].map(h=>(
-                      <th key={h} style={{padding:"8px 14px",textAlign:h==='Month'?'left':'right',fontWeight:600,color:"#4b5563",whiteSpace:'nowrap'}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyData.map((md,mi)=>{
-                    const variance=md.actual>0?md.actual-md.projTotal:null;
-                    // On Hand: anchor from physical count, then running balance forward
-                    // Find which month the physical count falls in
-                    const invYM=inv?inv.date.substring(0,7):null;
-                    let onHand=null;
-                    if(inv){
-                      if(md.ym<invYM){
-                        // Before the count — no meaningful On Hand
-                        onHand=null;
-                      } else if(md.ym===invYM){
-                        // Count month: start from count, subtract consumption after count date within this month, add nothing (order for this month assumed already in count)
-                        const consumedAfterCount=pigDailys.filter(d=>d.date&&d.date>inv.date&&d.date.startsWith(md.ym)).reduce((s2,d)=>s2+(parseFloat(d.feed_lbs)||0),0);
-                        // For remaining days in the current month after today, use projected daily rate
-                        let projRemaining=0;
-                        if(md.isCurrent){
-                          const dayOfMonth=new Date().getDate();
-                          const daysLeft=md.daysInMonth-dayOfMonth;
-                          if(daysLeft>0) projRemaining=curProj.total*daysLeft;
-                        }
-                        onHand=Math.round(inv.count-consumedAfterCount-projRemaining);
-                      } else {
-                        // After count month: carry forward from count month
-                        // on hand = count + orders after count month through this month - consumption after count date through this month
-                        const ordersThrough=Object.entries(feedOrders.pig||{}).reduce((s2,[ym2,v])=>{
-                          if(ym2>invYM&&ym2<=md.ym) return s2+(parseFloat(v)||0);
-                          return s2;
-                        },0);
-                        const consumedThrough=pigDailys.filter(d=>d.date&&d.date>inv.date&&d.date.substring(0,7)<=md.ym).reduce((s2,d)=>s2+(parseFloat(d.feed_lbs)||0),0);
-                        // For future months or current month's remaining days, add projected consumption
-                        let projFuture=0;
-                        monthlyData.forEach(m2=>{
-                          if(m2.ym<=invYM) return; // skip months at or before count
-                          if(m2.ym>md.ym) return; // skip months after this row
-                          if(m2.isFuture) projFuture+=m2.projTotal;
-                          else if(m2.isCurrent){
-                            // Current month: actual already counted in consumedThrough, add projected for remaining days
-                            const dayOfMonth=new Date().getDate();
-                            const daysLeft=m2.daysInMonth-dayOfMonth;
-                            if(daysLeft>0) projFuture+=curProj.total*daysLeft;
-                          }
-                        });
-                        onHand=Math.round(inv.count+ordersThrough-consumedThrough-projFuture);
-                      }
-                    }
-                    const fmtMonth2=ym=>{const[y2,m2]=ym.split('-').map(Number);return new Date(y2,m2-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});};
-                    const isExpanded=expandedMonths.has(md.ym);
-                    const projGroups=isExpanded?projectedFeedByGroup(md.ym):[];
-                    const actualGroups=isExpanded?actualFeedByGroup(md.ym):{};
-                    return (
-                      <React.Fragment key={md.ym}>
-                      <tr onClick={()=>toggleMonth(md.ym)} style={{borderBottom:isExpanded?'none':'1px solid #e5e7eb',background:md.isCurrent?'#ecfdf5':md.isFuture?'#f8fafc':mi%2===0?'white':'#fafafa',cursor:'pointer'}} className="hoverable-row">
-                        <td style={{padding:'8px 14px',fontWeight:md.isCurrent?700:500}}>
-                          <span style={{fontSize:10,color:'#9ca3af',marginRight:4}}>{isExpanded?'\u25bc':'\u25b6'}</span>
-                          {fmtMonth2(md.ym)}{md.isCurrent&&<span style={{fontSize:10,marginLeft:6,color:'#065f46',fontWeight:600}}>NOW</span>}
-                          {md.isFuture&&<span style={{fontSize:10,marginLeft:6,color:'#9ca3af'}}>projected</span>}
-                        </td>
-                        <td style={{padding:'8px 14px',textAlign:'right',color:'#6b7280'}}>{md.projTotal.toLocaleString()} lbs</td>
-                        <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:md.isFuture?'#9ca3af':'#111827'}}>{md.isFuture?'\u2014':md.actual.toLocaleString()+' lbs'}</td>
-                        <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:variance==null?'#9ca3af':variance>0?'#b91c1c':'#065f46'}}>{variance==null?'\u2014':(variance>0?'+':'')+variance.toLocaleString()+' lbs'}</td>
-                        <td style={{padding:'8px 14px',textAlign:'right'}} onClick={e=>e.stopPropagation()}>
-                          <input type="number" min="0" step="100" value={md.ordered||''} onChange={e=>savePigOrder(md.ym,e.target.value)}
-                            placeholder="0" style={{width:90,fontSize:12,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit'}}/>
-                        </td>
-                        <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:onHand==null?'#9ca3af':onHand>0?'#065f46':'#b91c1c'}}>{onHand==null?'\u2014':onHand.toLocaleString()+' lbs'}</td>
-                      </tr>
-                      {isExpanded&&(
-                        <tr style={{borderBottom:'1px solid #e5e7eb'}}>
-                          <td colSpan={6} style={{padding:0}}>
-                            <div style={{background:'#f8fafc',padding:'8px 14px 8px 32px'}}>
-                              <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-                                <thead>
-                                  <tr style={{borderBottom:'1px solid #e5e7eb'}}>
-                                    <th style={{padding:'4px 10px',textAlign:'left',fontWeight:600,color:'#6b7280'}}>Group</th>
-                                    <th style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}}>Projected</th>
-                                    <th style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}}>Actual</th>
-                                    <th style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}}>Variance</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {projGroups.map((pg,gi)=>{
-                                    // Match actual by label: for SOWS/BOARS match directly, for batches match sub-batch names or main name
-                                    let actualLbs=0;
-                                    if(pg.label==='SOWS') actualLbs=actualGroups['SOWS']||0;
-                                    else if(pg.label==='BOARS') actualLbs=actualGroups['BOARS']||0;
-                                    else {
-                                      // Sum any matching sub-batch or main batch labels
-                                      Object.entries(actualGroups).forEach(([lbl,lbs])=>{
-                                        const low=lbl.toLowerCase().trim();
-                                        if(pg.subNames&&pg.subNames.length>0){
-                                          if(pg.subNames.includes(low)) actualLbs+=lbs;
-                                        } else if(pg.mainName&&low===pg.mainName){
-                                          actualLbs+=lbs;
-                                        }
-                                      });
-                                    }
-                                    actualLbs=Math.round(actualLbs);
-                                    const gVar=md.isFuture?null:(actualLbs>0?actualLbs-pg.projected:null);
-                                    return (
-                                      <tr key={gi} style={{borderBottom:'1px solid #f0f0f0'}}>
-                                        <td style={{padding:'4px 10px',fontWeight:500,color:'#374151'}}>{pg.label}</td>
-                                        <td style={{padding:'4px 10px',textAlign:'right',color:'#6b7280'}}>{pg.projected.toLocaleString()}</td>
-                                        <td style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:md.isFuture?'#9ca3af':'#111827'}}>{md.isFuture?'\u2014':actualLbs.toLocaleString()}</td>
-                                        <td style={{padding:'4px 10px',textAlign:'right',fontWeight:600,color:gVar==null?'#9ca3af':gVar>0?'#b91c1c':'#065f46'}}>{gVar==null?'\u2014':(gVar>0?'+':'')+gVar.toLocaleString()}</td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                      </React.Fragment>
+          {/* Monthly summary — card per month, current first, collapsible past/future */}
+          {(function(){
+            function fmtMonth2(ym){var p=ym.split('-').map(Number);return new Date(p[0],p[1]-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});}
+            // On Hand calculator for a given month
+            function pigOnHandForMonth(md2){
+              var invYM=inv?inv.date.substring(0,7):null;
+              if(!inv||md2.ym<invYM) return null;
+              if(md2.ym===invYM){
+                var consumedAfterCount=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.startsWith(md2.ym);}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
+                var projRemaining=0;
+                if(md2.isCurrent){var dayOfMonth=new Date().getDate();var daysLeft=md2.daysInMonth-dayOfMonth;if(daysLeft>0)projRemaining=curProj.total*daysLeft;}
+                return Math.round(inv.count-consumedAfterCount-projRemaining);
+              }
+              var ordersThrough=Object.entries(feedOrders.pig||{}).reduce(function(s2,e){if(e[0]>invYM&&e[0]<=md2.ym)return s2+(parseFloat(e[1])||0);return s2;},0);
+              var consumedThrough=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.substring(0,7)<=md2.ym;}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
+              var projFuture=0;
+              monthlyData.forEach(function(m2){
+                if(m2.ym<=invYM||m2.ym>md2.ym) return;
+                if(m2.isFuture) projFuture+=m2.projTotal;
+                else if(m2.isCurrent){var dl2=m2.daysInMonth-new Date().getDate();if(dl2>0)projFuture+=curProj.total*dl2;}
+              });
+              return Math.round(inv.count+ordersThrough-consumedThrough-projFuture);
+            }
+
+            function renderPigMonthCard(md2){
+              var variance=md2.actual>0?md2.actual-md2.projTotal:null;
+              var onHand=pigOnHandForMonth(md2);
+              var projGroups=projectedFeedByGroup(md2.ym);
+              var actualGroups=actualFeedByGroup(md2.ym);
+              return React.createElement('div',{key:md2.ym,style:{background:'white',border:md2.isCurrent?'2px solid #085041':'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}},
+                // Header
+                React.createElement('div',{style:{padding:'10px 16px',display:'flex',alignItems:'center',gap:8,background:md2.isCurrent?'#ecfdf5':md2.isFuture?'#f8fafc':'white'}},
+                  React.createElement('span',{style:{fontSize:14,fontWeight:700,color:'#111827'}},fmtMonth2(md2.ym)),
+                  md2.isCurrent&&React.createElement('span',{style:{fontSize:10,fontWeight:700,color:'#065f46',background:'#d1fae5',padding:'1px 8px',borderRadius:10}},'NOW'),
+                  md2.isFuture&&React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},'projected')
+                ),
+                // Stats row
+                React.createElement('div',{style:{padding:'8px 16px 12px',display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}},
+                  [{l:'Projected',v:md2.projTotal.toLocaleString(),c:'#6b7280'},
+                   {l:'Actual',v:md2.isFuture?'\u2014':md2.actual.toLocaleString(),c:md2.isFuture?'#9ca3af':'#111827'},
+                   {l:'Variance',v:variance==null?'\u2014':(variance>0?'+':'')+variance.toLocaleString(),c:variance==null?'#9ca3af':variance>0?'#b91c1c':'#065f46'},
+                   {l:'Ordered',v:'_input_',c:'#111827'},
+                   {l:'On Hand',v:onHand==null?'\u2014':onHand.toLocaleString(),c:onHand==null?'#9ca3af':onHand>0?'#065f46':'#b91c1c'}
+                  ].map(function(s2){
+                    return React.createElement('div',{key:s2.l},
+                      React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},s2.l),
+                      s2.v==='_input_'
+                        ? React.createElement('input',{type:'number',min:'0',step:'100',value:md2.ordered||'',onChange:function(e){savePigOrder(md2.ym,e.target.value);},onClick:function(e){e.stopPropagation();},placeholder:'0',style:{width:'100%',fontSize:13,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit',fontWeight:600,boxSizing:'border-box'}})
+                        : React.createElement('div',{style:{fontSize:15,fontWeight:600,color:s2.c}},s2.v)
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                  })
+                ),
+                // Per-group breakdown (expandable)
+                React.createElement('div',{style:{borderTop:'1px solid #f3f4f6',padding:'8px 16px 10px'}},
+                  React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
+                    React.createElement('thead',null,
+                      React.createElement('tr',{style:{borderBottom:'1px solid #e5e7eb'}},
+                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'left',fontWeight:600,color:'#6b7280'}},'Group'),
+                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Projected'),
+                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Actual'),
+                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Variance')
+                      )
+                    ),
+                    React.createElement('tbody',null,
+                      projGroups.map(function(pg,gi){
+                        var actualLbs=0;
+                        if(pg.label==='SOWS') actualLbs=actualGroups['SOWS']||0;
+                        else if(pg.label==='BOARS') actualLbs=actualGroups['BOARS']||0;
+                        else {
+                          Object.entries(actualGroups).forEach(function(e2){
+                            var low=e2[0].toLowerCase().trim();
+                            if(pg.subNames&&pg.subNames.length>0){if(pg.subNames.includes(low))actualLbs+=e2[1];}
+                            else if(pg.mainName&&low===pg.mainName){actualLbs+=e2[1];}
+                          });
+                        }
+                        actualLbs=Math.round(actualLbs);
+                        var gVar=md2.isFuture?null:(actualLbs>0?actualLbs-pg.projected:null);
+                        return React.createElement('tr',{key:gi,style:{borderBottom:'1px solid #f0f0f0'}},
+                          React.createElement('td',{style:{padding:'4px 10px',fontWeight:500,color:'#374151'}},pg.label),
+                          React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',color:'#6b7280'}},pg.projected.toLocaleString()),
+                          React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:md2.isFuture?'#9ca3af':'#111827'}},md2.isFuture?'\u2014':actualLbs.toLocaleString()),
+                          React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:gVar==null?'#9ca3af':gVar>0?'#b91c1c':'#065f46'}},gVar==null?'\u2014':(gVar>0?'+':'')+gVar.toLocaleString())
+                        );
+                      })
+                    )
+                  )
+                )
+              );
+            }
+
+            var currentMonth=monthlyData.filter(function(m){return m.isCurrent;});
+            var futureMonths=monthlyData.filter(function(m){return m.isFuture;});
+            var pastMonths=monthlyData.filter(function(m){return !m.isCurrent&&!m.isFuture;}).reverse();
+            var pastByYear={};
+            pastMonths.forEach(function(m){var yr=m.ym.substring(0,4);if(!pastByYear[yr])pastByYear[yr]=[];pastByYear[yr].push(m);});
+            var pastYears=Object.keys(pastByYear).sort().reverse();
+
+            var secToggle=pigFeedExpandedMonths;
+            function togSec(key){setPigFeedExpandedMonths(function(s){var n=new Set(s);n.has(key)?n.delete(key):n.add(key);return n;});}
+
+            return React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'1.25rem'}},
+              React.createElement('div',{style:{fontSize:14,fontWeight:700,color:'#085041'}},'Monthly Pig Feed Summary'),
+              currentMonth.length>0&&React.createElement('div',null,currentMonth.map(renderPigMonthCard)),
+              futureMonths.length>0&&React.createElement('div',null,
+                React.createElement('div',{onClick:function(){togSec('future');},style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer',padding:'8px 0',marginBottom:6}},
+                  React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secToggle.has('future')?'\u25bc':'\u25b6'),
+                  React.createElement('span',{style:{fontSize:13,fontWeight:600,color:'#4b5563'}},'UPCOMING MONTHS'),
+                  React.createElement('span',{style:{fontSize:11,color:'#9ca3af'}},'('+futureMonths.length+')')
+                ),
+                secToggle.has('future')&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10}},futureMonths.map(renderPigMonthCard))
+              ),
+              pastYears.length>0&&React.createElement('div',null,
+                React.createElement('div',{onClick:function(){togSec('past');},style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer',padding:'8px 0',marginBottom:6}},
+                  React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secToggle.has('past')?'\u25bc':'\u25b6'),
+                  React.createElement('span',{style:{fontSize:13,fontWeight:600,color:'#4b5563'}},'PAST MONTHS'),
+                  React.createElement('span',{style:{fontSize:11,color:'#9ca3af'}},'('+pastMonths.length+')')
+                ),
+                secToggle.has('past')&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+                  pastYears.map(function(yr){
+                    var yearMonths=pastByYear[yr];
+                    var yearKey='past-'+yr;
+                    return React.createElement('div',{key:yr},
+                      pastYears.length>1&&React.createElement('div',{onClick:function(){togSec(yearKey);},style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer',padding:'4px 0',marginBottom:6}},
+                        React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secToggle.has(yearKey)?'\u25bc':'\u25b6'),
+                        React.createElement('span',{style:{fontSize:12,fontWeight:600,color:'#6b7280'}},yr),
+                        React.createElement('span',{style:{fontSize:11,color:'#9ca3af'}},'('+yearMonths.length+' months)')
+                      ),
+                      (pastYears.length===1||secToggle.has(yearKey))&&React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10}},yearMonths.map(renderPigMonthCard))
+                    );
+                  })
+                )
+              )
+            );
+          })()}
 
           {/* Feed rates reference */}
           <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 20px'}}>
