@@ -6219,7 +6219,7 @@ function App(){
     function bpct(iso){ return ((new Date(iso+"T12:00:00")-btlS)/86400000/bTotalDays)*100; }
     const bWkHdrs = Array.from({length:BREED_WEEKS},(_,i)=>addDays(btlS,i*7));
 
-    const EMPTY_BREED = {group:"1",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:""};
+    const EMPTY_BREED = {group:"1",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:"",boar1Name:boarNames.boar1,boar2Name:boarNames.boar2};
 
     function persistBreedCycle(formSnapshot, cycleId){
       if(!formSnapshot.exposureStart) return;
@@ -6234,7 +6234,7 @@ function App(){
         boar1Count: t1.length,
         boar2Count: t2.length,
         ...tl,
-        boar1Name:boarNames.boar1, boar2Name:boarNames.boar2};
+        boar1Name:formSnapshot.boar1Name||boarNames.boar1, boar2Name:formSnapshot.boar2Name||boarNames.boar2};
       const nb = cycleId
         ? breedingCycles.map(function(c){return c.id===cycleId?cycle:c;})
         : [...breedingCycles, cycle];
@@ -6281,17 +6281,17 @@ function App(){
               </div>
               <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:10}}>
 
-                {/* Boar names (global setting) */}
+                {/* Boar names (per cycle) */}
                 <div style={{background:"#f0f7ff",border:"1px solid #B5D4F4",borderRadius:10,padding:"10px 14px"}}>
-                  <div style={{fontSize:12,fontWeight:600,color:"#1d4ed8",marginBottom:8}}>Boar names (global)</div>
+                  <div style={{fontSize:12,fontWeight:600,color:"#1d4ed8",marginBottom:8}}>Boar names for this cycle</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                     <div>
                       <label style={S.label}>Boar 1 name</label>
-                      <input value={boarNames.boar1} onChange={e=>{const nb={...boarNames,boar1:e.target.value};setBoarNames(nb);persistBoars(nb);}}/>
+                      <input value={breedForm.boar1Name||''} onChange={e=>updBreed('boar1Name',e.target.value)}/>
                     </div>
                     <div>
                       <label style={S.label}>Boar 2 name</label>
-                      <input value={boarNames.boar2} onChange={e=>{const nb={...boarNames,boar2:e.target.value};setBoarNames(nb);persistBoars(nb);}}/>
+                      <input value={breedForm.boar2Name||''} onChange={e=>updBreed('boar2Name',e.target.value)}/>
                     </div>
                   </div>
                 </div>
@@ -6310,7 +6310,7 @@ function App(){
                     <input type="date" value={breedForm.exposureStart} onChange={e=>updBreed('exposureStart',e.target.value)}/>
                   </div>
                   <div>
-                    <label style={S.label}>{boarNames.boar1} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
+                    <label style={S.label}>{breedForm.boar1Name||boarNames.boar1} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
                     <textarea rows={5} value={breedForm.boar1Tags||""} onChange={e=>updBreed('boar1Tags',e.target.value)} placeholder="e.g. 5&#10;13&#10;19" style={{fontFamily:"monospace",fontSize:13}}/>
                     <div style={{marginTop:4}}>
                       <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar1Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar1Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
@@ -6323,7 +6323,7 @@ function App(){
                     <div style={{fontSize:11,color:"#065f46",marginTop:3}}>{(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length} sows</div>
                   </div>
                   <div>
-                    <label style={S.label}>{boarNames.boar2} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
+                    <label style={S.label}>{breedForm.boar2Name||boarNames.boar2} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
                     <textarea rows={5} value={breedForm.boar2Tags||""} onChange={e=>updBreed('boar2Tags',e.target.value)} placeholder="e.g. 6&#10;17&#10;98" style={{fontFamily:"monospace",fontSize:13}}/>
                     <div style={{marginTop:4}}>
                       <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar2Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar2Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
@@ -6385,7 +6385,22 @@ function App(){
           </div>
 
           {/* Gantt */}
-          <div className="breed-gantt" style={{...S.card,overflowX:"auto"}}>
+          <div className="breed-gantt" style={{...S.card,overflowX:"auto",position:"relative"}}>
+            {/* Floating tooltip for pig timeline */}
+            {tooltip&&tooltip.type==='pig'&&(function(){
+              return React.createElement('div',{style:{position:'fixed',left:tooltip.vx,top:tooltip.vy,transform:'translate(-50%,-100%)',zIndex:9999,pointerEvents:'none',display:'flex',flexDirection:'column',alignItems:'center'}},
+                React.createElement('div',{style:{background:'#1a1a1a',color:'white',borderRadius:10,padding:'9px 12px',fontSize:12,boxShadow:'0 4px 16px rgba(0,0,0,.35)',minWidth:180,maxWidth:260}},
+                  React.createElement('div',{style:{fontWeight:700,fontSize:13,marginBottom:5,color:'white'}},'Group '+tooltip.group+' \u2014 '+tooltip.phaseName),
+                  React.createElement('div',{style:{display:'grid',gridTemplateColumns:'auto 1fr',gap:'3px 10px'}},
+                    React.createElement('span',{style:{color:'#9ca3af'}},'Period:'),
+                    React.createElement('span',{style:{color:'white'}},fmt(tooltip.start)+' \u2192 '+fmt(tooltip.end)),
+                    React.createElement('span',{style:{color:'#9ca3af'}},'Sows:'),
+                    React.createElement('span',{style:{color:'white'}},(tooltip.sowCount||'?')+' total')
+                  )
+                ),
+                React.createElement('div',{style:{width:0,height:0,borderLeft:'7px solid transparent',borderRight:'7px solid transparent',borderTop:'7px solid #1a1a1a'}})
+              );
+            })()}
             <div style={{width:`${210+BREED_WEEKS*80}px`}}>
               {/* Week headers */}
               <div style={{display:"flex",borderBottom:"1px solid #e5e7eb"}}>
@@ -6443,10 +6458,12 @@ function App(){
                         };
                         const label = `G${c.group} — ${phaseNames[row.phase]||row.phase}`;
                         return (
-                          <div key={c.id} onClick={()=>{setBreedForm({group:c.group,boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||""});setEditBreedId(c.id);setShowBreedForm(true);}}
-                            title={`${label}\n${fmtS(s)} → ${fmtS(e)}\nClick to edit`}
+                          <div key={c.id} onClick={()=>{setBreedForm({group:c.group,boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}}
+                            onMouseEnter={function(ev){var r=ev.currentTarget.getBoundingClientRect();setTooltip({type:'pig',group:c.group,phase:row.phase,phaseName:phaseNames[row.phase]||row.phase,start:s,end:e,sowCount:c.sowCount,vx:r.left+r.width/2,vy:r.top-10});}}
+                            onMouseLeave={function(){setTooltip(null);}}
                             style={{position:"absolute",left:`${left}%`,width:`${w}%`,top:4,bottom:4,borderRadius:4,cursor:"pointer",
-                              background:phaseColor,display:"flex",alignItems:"center",padding:"0 7px",overflow:"hidden"}}>
+                              background:phaseColor,display:"flex",alignItems:"center",padding:"0 7px",overflow:"hidden",
+                              outline:tooltip&&tooltip.type==='pig'&&tooltip.group===c.group&&tooltip.phase===row.phase?'2px solid rgba(0,0,0,.25)':'none'}}>
                             <span style={{fontSize:10,fontWeight:600,color:txtColor,whiteSpace:"nowrap",textOverflow:"ellipsis",overflow:"hidden"}}>{label}</span>
                           </div>
                         );
@@ -6483,12 +6500,12 @@ function App(){
                     <div style={{display:"flex",flexWrap:"wrap",gap:"6px 20px",alignItems:"center",marginBottom:6}}>
                       <strong>Group {c.group}</strong>
                       <span style={{color:"#4b5563"}}>{c.sowCount||"?"} sows total</span>
-                      <span style={{color:"#4b5563"}}>Sows in with Boars: {fmtS(tl.boarStart)} → {fmtS(tl.boarEnd)}</span>
-                      <span style={{color:"#4b5563"}}>Exposed Paddock: {fmtS(tl.paddockStart)} → {fmtS(tl.paddockEnd)}</span>
-                      <span style={{color:"#4b5563"}}>Farrowing: {fmtS(tl.farrowingStart)} → {fmtS(tl.farrowingEnd)}</span>
-                      <span style={{color:"#4b5563"}}>Grow-out ends: {fmtS(tl.growEnd)}</span>
+                      <span style={{color:"#4b5563"}}>Sows in with Boars: {fmt(tl.boarStart)} {'\u2192'} {fmt(tl.boarEnd)}</span>
+                      <span style={{color:"#4b5563"}}>Exposed Paddock: {fmt(tl.paddockStart)} {'\u2192'} {fmt(tl.paddockEnd)}</span>
+                      <span style={{color:"#4b5563"}}>Farrowing: {fmt(tl.farrowingStart)} {'\u2192'} {fmt(tl.farrowingEnd)}</span>
+                      <span style={{color:"#4b5563"}}>Grow-out ends: {fmt(tl.growEnd)}</span>
                       <span style={S.badge(calcCycleStatus(c)==="completed"?"#4b5563":calcCycleStatus(c)==="active"?"#085041":"#374151","white")}>{c.status}</span>
-                      <button onClick={()=>{setBreedForm({group:c.group,boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||""});setEditBreedId(c.id);setShowBreedForm(true);}} style={{marginLeft:"auto",fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
+                      <button onClick={()=>{setBreedForm({group:c.group,boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}} style={{marginLeft:"auto",fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 20px",borderTop:"1px solid #e5e7eb",paddingTop:6}}>
                       <div style={{fontSize:11}}><span style={{color:"#9ca3af"}}>{c.boar1Name||boarNames.boar1} ({c.boar1Count||"?"} sows): </span><span style={{fontWeight:500}}>{c.boar1Tags||"—"}</span></div>
@@ -7693,6 +7710,29 @@ function App(){
 
 
 
+  // Resolve sire for a farrowing record from breeding cycle data.
+  // Checks which cycle the farrowing belongs to (by date window),
+  // then checks if the sow tag is in boar1Tags or boar2Tags to determine the sire.
+  // Falls back to the manually entered r.sire for unlinked historical records.
+  function resolveSire(rec){
+    if(!rec||!rec.sow) return null;
+    var sowTag=rec.sow.trim();
+    for(var ci=0;ci<breedingCycles.length;ci++){
+      var c=breedingCycles[ci];
+      var tl=calcBreedingTimeline(c.exposureStart);
+      if(!tl) continue;
+      if(!rec.farrowingDate) continue;
+      var rd=new Date(rec.farrowingDate+'T12:00:00');
+      if(rd<new Date(tl.farrowingStart+'T12:00:00')||rd>addDays(new Date(tl.farrowingEnd+'T12:00:00'),14)) continue;
+      var b1Tags=(c.boar1Tags||'').split(/[\n,]+/).map(function(t){return t.trim();}).filter(Boolean);
+      var b2Tags=(c.boar2Tags||'').split(/[\n,]+/).map(function(t){return t.trim();}).filter(Boolean);
+      if(b1Tags.includes(sowTag)) return c.boar1Name||boarNames.boar1;
+      if(b2Tags.includes(sowTag)) return c.boar2Name||boarNames.boar2;
+    }
+    // No cycle match — return null (Unknown), not the hardcoded r.sire
+    return null;
+  }
+
   // ── FARROWING RECORDS VIEW ──
   if(view==="farrowing") {
     const QUALITY_OPTS = ["","excellent","average","poor"];
@@ -7827,8 +7867,8 @@ function App(){
                   <tr key={r.id} style={{borderBottom:"1px solid #f5f5f5",background:i%2===0?"white":"#fafafa"}}>
                     <td style={{padding:"6px 8px",fontWeight:600}}>#{r.sow}</td>
                     <td style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{fmt(r.farrowingDate)}</td>
-                    <td style={{padding:"6px 8px",whiteSpace:"nowrap",color:"var(--green-700)"}}>{impregDate?fmtS(impregDate):"—"}</td>
-                    <td style={{padding:"6px 8px"}}>{r.sire||"—"}</td>
+                    <td style={{padding:"6px 8px",whiteSpace:"nowrap",color:"var(--green-700)"}}>{impregDate?fmt(impregDate):"\u2014"}</td>
+                    <td style={{padding:"6px 8px"}}>{resolveSire(r)||"\u2014"}</td>
                     <td style={{padding:"6px 8px"}}>{r.motheringQuality?<span style={S.badge(qc.bg,qc.tx)}>{qualityLabel(r.motheringQuality)}</span>:<span style={{color:"var(--text-muted)"}}>—</span>}</td>
                     <td style={{padding:"6px 8px",textAlign:"center",fontWeight:500}}>{r.totalBorn||0}</td>
                     <td style={{padding:"6px 8px",textAlign:"center",color:"#A32D2D",fontWeight:500}}>{r.deaths||0}</td>
@@ -7861,47 +7901,136 @@ function App(){
                 <button onClick={()=>{setShowFarrowForm(false);setEditFarrowId(null);}} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#999"}}>×</button>
               </div>
               <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div><label style={S.label}>Sow #</label><input value={farrowForm.sow} onChange={e=>setFarrowForm({...farrowForm,sow:e.target.value})} placeholder="e.g. 5"/></div>
-                  <div><label style={S.label}>Group</label>
-                    <select value={farrowForm.group} onChange={e=>setFarrowForm({...farrowForm,group:e.target.value})}>
-                      {PIG_GROUPS.map(g=><option key={g} value={g}>Group {g}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={S.label}>Farrowing date</label>
-                    <input type="date" value={farrowForm.farrowingDate} onChange={e=>setFarrowForm({...farrowForm,farrowingDate:e.target.value})}/>
-                  </div>
-                  <div>
-                    <label style={S.label}>Impregnation date (auto)</label>
-                    <div style={{padding:"7px 10px",border:"1px solid var(--border)",borderRadius:8,background:"var(--green-50)",fontSize:13,color:farrowForm.farrowingDate?"#085041":"#aaa"}}>
-                      {farrowForm.farrowingDate ? fmt(toISO(addDays(farrowForm.farrowingDate,-116))) : "— enter farrowing date —"}
-                    </div>
-                    <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>116 days before farrowing date</div>
-                  </div>
-                  <div><label style={S.label}>Sire</label>
-                    <select value={farrowForm.sire} onChange={e=>setFarrowForm({...farrowForm,sire:e.target.value})}>
-                      <option value="">Unknown</option>
-                      <option value={boarNames.boar1}>{boarNames.boar1}</option>
-                      <option value={boarNames.boar2}>{boarNames.boar2}</option>
-                    </select>
-                  </div>
-                  <div><label style={S.label}>Exposure start</label><input type="date" value={farrowForm.exposureStart} onChange={e=>setFarrowForm({...farrowForm,exposureStart:e.target.value})}/></div>
-                  <div><label style={S.label}>Total born</label><input type="number" min="0" value={farrowForm.totalBorn||''} onChange={e=>setFarrowForm({...farrowForm,totalBorn:e.target.value})}/></div>
-                  <div><label style={S.label}>Deaths</label><input type="number" min="0" value={farrowForm.deaths||''} onChange={e=>setFarrowForm({...farrowForm,deaths:e.target.value})}/>
-                    <div style={{fontSize:11,color:"var(--green-700)",marginTop:3}}>Alive: {Math.max(0,(parseInt(farrowForm.totalBorn)||0)-(parseInt(farrowForm.deaths)||0))}</div>
-                  </div>
-                  <div><label style={S.label}>Mothering quality</label>
-                    <select value={farrowForm.motheringQuality} onChange={e=>setFarrowForm({...farrowForm,motheringQuality:e.target.value})}>
-                      {QUALITY_OPTS.map(q=><option key={q} value={q}>{qualityLabel(q)}</option>)}
-                    </select>
-                  </div>
-                  <div><label style={S.label}>Location</label>
-                    <select value={farrowForm.location} onChange={e=>setFarrowForm({...farrowForm,location:e.target.value})}>
-                      {LOCATION_OPTS.map(l=><option key={l} value={l}>{locationLabel(l)}</option>)}
-                    </select>
-                  </div>
-                </div>
+                {/* Auto-resolve cycle from farrowing date */}
+                {(function(){
+                  // Find matching cycle based on farrowing date
+                  var matchedCycle=null;
+                  if(farrowForm.farrowingDate){
+                    var fd=new Date(farrowForm.farrowingDate+'T12:00:00');
+                    for(var ci2=0;ci2<breedingCycles.length;ci2++){
+                      var cc=breedingCycles[ci2];
+                      var ttl=calcBreedingTimeline(cc.exposureStart);
+                      if(!ttl) continue;
+                      if(fd>=new Date(ttl.farrowingStart+'T12:00:00')&&fd<=addDays(new Date(ttl.farrowingEnd+'T12:00:00'),14)){
+                        matchedCycle=cc;break;
+                      }
+                    }
+                  }
+                  // Build sow dropdown from matched cycle's tags
+                  var sowOptions=[];
+                  if(matchedCycle){
+                    var b1t=(matchedCycle.boar1Tags||'').split(/[\n,]+/).map(function(t){return t.trim();}).filter(Boolean);
+                    var b2t=(matchedCycle.boar2Tags||'').split(/[\n,]+/).map(function(t){return t.trim();}).filter(Boolean);
+                    var allTagsInCycle=[...b1t,...b2t];
+                    // Find sows already recorded in this cycle's farrowing window
+                    var mcTl=calcBreedingTimeline(matchedCycle.exposureStart);
+                    var alreadyRecorded=new Set();
+                    if(mcTl){
+                      farrowingRecs.forEach(function(r2){
+                        if(!r2.farrowingDate||!r2.sow) return;
+                        // Skip the record currently being edited
+                        if(editFarrowId&&r2.id===editFarrowId) return;
+                        var rd2=new Date(r2.farrowingDate+'T12:00:00');
+                        if(rd2>=new Date(mcTl.farrowingStart+'T12:00:00')&&rd2<=addDays(new Date(mcTl.farrowingEnd+'T12:00:00'),14)){
+                          alreadyRecorded.add(r2.sow.trim());
+                        }
+                      });
+                    }
+                    sowOptions=allTagsInCycle.filter(function(t){return !alreadyRecorded.has(t);}).sort(function(a,b){return(parseFloat(a)||0)-(parseFloat(b)||0);});
+                  }
+                  var resolvedSire=resolveSire({sow:farrowForm.sow,farrowingDate:farrowForm.farrowingDate,sire:farrowForm.sire});
+                  var resolvedGroup=matchedCycle?matchedCycle.group:farrowForm.group;
+                  var resolvedExposure=matchedCycle?matchedCycle.exposureStart:(farrowForm.exposureStart||'');
+                  var readOnlyField={padding:'7px 10px',border:'1px solid var(--border)',borderRadius:8,background:'var(--green-50)',fontSize:13,color:'#085041'};
+                  return React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+                    // Farrowing date — first so cycle resolves before sow selection
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Farrowing date'),
+                      React.createElement('input',{type:'date',value:farrowForm.farrowingDate,onChange:function(e){
+                        var newDate=e.target.value;
+                        var newForm={...farrowForm,farrowingDate:newDate};
+                        // Auto-set group and exposure from matched cycle
+                        if(newDate){
+                          var fd2=new Date(newDate+'T12:00:00');
+                          for(var ci3=0;ci3<breedingCycles.length;ci3++){
+                            var cc2=breedingCycles[ci3];
+                            var ttl2=calcBreedingTimeline(cc2.exposureStart);
+                            if(!ttl2) continue;
+                            if(fd2>=new Date(ttl2.farrowingStart+'T12:00:00')&&fd2<=addDays(new Date(ttl2.farrowingEnd+'T12:00:00'),14)){
+                              newForm.group=cc2.group;
+                              newForm.exposureStart=cc2.exposureStart;
+                              break;
+                            }
+                          }
+                        }
+                        setFarrowForm(newForm);
+                      }})
+                    ),
+                    // Sow — dropdown if cycle matched, text input fallback
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Sow #'),
+                      sowOptions.length>0
+                        ? React.createElement('select',{value:farrowForm.sow,onChange:function(e){setFarrowForm({...farrowForm,sow:e.target.value});}},
+                            React.createElement('option',{value:''},'Select sow...'),
+                            sowOptions.map(function(t){return React.createElement('option',{key:t,value:t},'#'+t);})
+                          )
+                        : React.createElement('input',{value:farrowForm.sow,onChange:function(e){setFarrowForm({...farrowForm,sow:e.target.value});},placeholder:'e.g. 5'})
+                    ),
+                    // Group — read-only when cycle matched
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Group'+(matchedCycle?' (from cycle)':'')),
+                      matchedCycle
+                        ? React.createElement('div',{style:readOnlyField},'Group '+resolvedGroup)
+                        : React.createElement('select',{value:farrowForm.group,onChange:function(e){setFarrowForm({...farrowForm,group:e.target.value});}},
+                            PIG_GROUPS.map(function(g){return React.createElement('option',{key:g,value:g},'Group '+g);})
+                          )
+                    ),
+                    // Impregnation date (auto)
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Impregnation date (auto)'),
+                      React.createElement('div',{style:{...readOnlyField,color:farrowForm.farrowingDate?'#085041':'#aaa'}},
+                        farrowForm.farrowingDate?fmt(toISO(addDays(farrowForm.farrowingDate,-116))):'\u2014 enter farrowing date \u2014'
+                      ),
+                      React.createElement('div',{style:{fontSize:11,color:'var(--text-muted)',marginTop:2}},'116 days before farrowing date')
+                    ),
+                    // Sire (from cycle)
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Sire (from cycle)'),
+                      React.createElement('div',{style:{...readOnlyField,color:resolvedSire?'#085041':'#9ca3af'}},
+                        resolvedSire||'Select sow and farrowing date'
+                      )
+                    ),
+                    // Exposure start — read-only when cycle matched
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Exposure start'+(matchedCycle?' (from cycle)':'')),
+                      matchedCycle
+                        ? React.createElement('div',{style:readOnlyField},fmt(resolvedExposure))
+                        : React.createElement('input',{type:'date',value:farrowForm.exposureStart,onChange:function(e){setFarrowForm({...farrowForm,exposureStart:e.target.value});}})
+                    ),
+                    // Remaining fields inside the same grid
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Total born'),
+                      React.createElement('input',{type:'number',min:'0',value:farrowForm.totalBorn||'',onChange:function(e){setFarrowForm({...farrowForm,totalBorn:e.target.value});}})
+                    ),
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Deaths'),
+                      React.createElement('input',{type:'number',min:'0',value:farrowForm.deaths||'',onChange:function(e){setFarrowForm({...farrowForm,deaths:e.target.value});}}),
+                      React.createElement('div',{style:{fontSize:11,color:'var(--green-700)',marginTop:3}},'Alive: '+Math.max(0,(parseInt(farrowForm.totalBorn)||0)-(parseInt(farrowForm.deaths)||0)))
+                    ),
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Mothering quality'),
+                      React.createElement('select',{value:farrowForm.motheringQuality,onChange:function(e){setFarrowForm({...farrowForm,motheringQuality:e.target.value});}},
+                        QUALITY_OPTS.map(function(q){return React.createElement('option',{key:q,value:q},qualityLabel(q));})
+                      )
+                    ),
+                    React.createElement('div',null,
+                      React.createElement('label',{style:S.label},'Location'),
+                      React.createElement('select',{value:farrowForm.location,onChange:function(e){setFarrowForm({...farrowForm,location:e.target.value});}},
+                        LOCATION_OPTS.map(function(l){return React.createElement('option',{key:l,value:l},locationLabel(l));})
+                      )
+                    )
+                  );
+                })()}
                 <div><label style={S.label}>Demeanor</label><input value={farrowForm.demeanor} onChange={e=>setFarrowForm({...farrowForm,demeanor:e.target.value})} placeholder="e.g. Friendly, protective..."/></div>
                 <div><label style={S.label}>What went well?</label><textarea rows={2} value={farrowForm.wentWell} onChange={e=>setFarrowForm({...farrowForm,wentWell:e.target.value})}/></div>
                 <div><label style={S.label}>What didn't go well?</label><textarea rows={2} value={farrowForm.didntGoWell} onChange={e=>setFarrowForm({...farrowForm,didntGoWell:e.target.value})}/></div>
@@ -8098,6 +8227,8 @@ function App(){
       return {litters:recs.length, alive:born-dead, born};
     }
 
+    // resolveSire is defined above (shared between farrowing + sows views)
+
     // Sort: group first (blank last), then tag numerically
     function sortPigs(list) {
       return [...list].sort((a,b)=>{
@@ -8171,16 +8302,45 @@ function App(){
       );
     }
 
+    // Build farrowing history for a sow: each cycle she was in, with farrowing record or "missed"
+    function sowFarrowHistory(tag){
+      var tagStr=String(tag).trim();
+      var history=[];
+      breedingCycles.forEach(function(c){
+        var allTags=[...(c.boar1Tags||'').split(/[\n,]+/),...(c.boar2Tags||'').split(/[\n,]+/)].map(function(t){return t.trim();}).filter(Boolean);
+        if(!allTags.includes(tagStr)) return;
+        var tl=calcBreedingTimeline(c.exposureStart);
+        if(!tl) return;
+        // Find farrowing record for this sow in this cycle's window
+        var rec=farrowingRecs.find(function(r){
+          if(r.sow.trim()!==tagStr) return false;
+          if(!r.farrowingDate) return false;
+          var rd=new Date(r.farrowingDate+'T12:00:00');
+          return rd>=new Date(tl.farrowingStart+'T12:00:00')&&rd<=addDays(new Date(tl.farrowingEnd+'T12:00:00'),14);
+        });
+        var b1Tags2=(c.boar1Tags||'').split(/[\n,]+/).map(function(t){return t.trim();}).filter(Boolean);
+        var sire=rec?resolveSire(rec):(b1Tags2.includes(tagStr)?(c.boar1Name||boarNames.boar1):(c.boar2Name||boarNames.boar2));
+        history.push({cycle:c,tl:tl,rec:rec,sire:sire||null,missed:!rec});
+      });
+      // Add any farrowing records not matched to a cycle above
+      var matchedRecIds=new Set(history.filter(function(h2){return h2.rec;}).map(function(h2){return h2.rec.id;}));
+      farrowingRecs.filter(function(r){return r.sow.trim()===tagStr&&!matchedRecIds.has(r.id);}).forEach(function(r){
+        history.push({cycle:null,tl:null,rec:r,sire:resolveSire(r),missed:false});
+      });
+      // Sort newest first by farrowing date or cycle exposure date
+      history.sort(function(a,b){
+        var da=a.rec?a.rec.farrowingDate:(a.cycle?a.cycle.exposureStart:'');
+        var db=b.rec?b.rec.farrowingDate:(b.cycle?b.cycle.exposureStart:'');
+        return (db||'').localeCompare(da||'');
+      });
+      return history;
+    }
+
     function PigTile({pig}) {
       const stats=sowFarrowStats(pig.tag);
       const C=pig.group?PIG_GROUP_COLORS[pig.group]:null;
-      const statusColor={
-        'Sow Group':{bg:"#085041",tx:"white"},
-        'Boar Group':{bg:"#1e3a5f",tx:"white"},
-        'Deceased':{bg:"#4b5563",tx:"white"},
-        'Processed':{bg:"#374151",tx:"white"},
-        'Sold':{bg:"#374151",tx:"white"},
-      }[pig.status]||{bg:"#374151",tx:"white"};
+      const isSow=pig.sex==='Sow'||pig.sex==='Gilt';
+      const history=isSow?sowFarrowHistory(pig.tag):[];
       return (
         <div style={{background:"white",border:"1px solid #e5e7eb",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           {/* Tile header */}
@@ -8188,16 +8348,46 @@ function App(){
             style={{padding:"12px 16px",background:"white",borderBottom:"1px solid #e5e7eb",cursor:"pointer"}}>
             <div style={{fontSize:16,fontWeight:700,color:"#111827"}}>#{pig.tag} <span style={{fontSize:12,fontWeight:400,color:"#6b7280"}}>{pig.sex}</span></div>
             <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>
-              {pig.breed||"—"} · {pigAge(pig.birthDate)}
+              {pig.breed||"\u2014"} {'\u00b7'} {pigAge(pig.birthDate)}
               {(pig.status==="Deceased"||pig.status==="Processed"||pig.status==="Sold")&&<span style={{marginLeft:6,padding:"1px 7px",borderRadius:10,background:"#374151",color:"white",fontSize:10,fontWeight:600}}>{pig.status}</span>}
             </div>
           </div>
           {/* Stats grid */}
           <div style={{padding:"10px 16px",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
             {pig.lastWeight&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Last Weight</div><div style={{fontSize:15,fontWeight:600,color:"#111827"}}>{pig.lastWeight} lbs</div></div>}
-            {pig.sex!=='Boar'&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Litters</div><div style={{fontSize:15,fontWeight:600,color:"#111827"}}>{stats.litters}</div></div>}
-            {pig.sex!=='Boar'&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Alive Total</div><div style={{fontSize:15,fontWeight:600,color:"#065f46"}}>{stats.alive}</div></div>}
+            {isSow&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Litters</div><div style={{fontSize:15,fontWeight:600,color:"#111827"}}>{stats.litters}</div></div>}
+            {isSow&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Alive Total</div><div style={{fontSize:15,fontWeight:600,color:"#065f46"}}>{stats.alive}</div></div>}
           </div>
+          {/* Farrowing history */}
+          {isSow&&history.length>0&&(
+            <div style={{borderTop:"1px solid #f3f4f6",padding:"8px 16px 10px"}}>
+              <div style={{fontSize:10,fontWeight:600,color:"#6b7280",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Farrowing History</div>
+              {history.filter(function(h2){
+                // Hide "missed" entries until farrowing window has closed
+                if(h2.missed&&h2.tl&&h2.tl.farrowingEnd>=todayISO()) return false;
+                return true;
+              }).map(function(h,hi){
+                if(h.missed){
+                  return React.createElement('div',{key:hi,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:hi<history.length-1?'1px solid #f8f8f8':'none',fontSize:11}},
+                    React.createElement('span',{style:{color:'#b91c1c',fontWeight:600,background:'#fef2f2',padding:'1px 6px',borderRadius:4,fontSize:10}},'MISSED'),
+                    React.createElement('span',{style:{color:'#6b7280'}},'G'+h.cycle.group+' \u00b7 Cycle '+fmt(h.cycle.exposureStart)),
+                    h.sire&&React.createElement('span',{style:{color:'#9ca3af'}},'\u00b7 Sire: '+h.sire)
+                  );
+                }
+                var born=parseInt(h.rec.totalBorn)||0;
+                var dead=parseInt(h.rec.deaths)||0;
+                var alive=born-dead;
+                return React.createElement('div',{key:hi,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:hi<history.length-1?'1px solid #f8f8f8':'none',fontSize:11,flexWrap:'wrap'}},
+                  React.createElement('span',{style:{color:'#374151',fontWeight:600,minWidth:90}},fmt(h.rec.farrowingDate)),
+                  React.createElement('span',{style:{color:'#065f46',fontWeight:600}},alive+' alive'),
+                  React.createElement('span',{style:{color:'#9ca3af'}},born+' born'),
+                  dead>0&&React.createElement('span',{style:{color:'#b91c1c'}},dead+' died'),
+                  h.cycle&&React.createElement('span',{style:{color:'#9ca3af'}},'G'+h.cycle.group),
+                  h.sire&&React.createElement('span',{style:{color:'#9ca3af'}},'\u00b7 '+h.sire)
+                );
+              })}
+            </div>
+          )}
           {pig.notes&&<div style={{padding:"0 16px 10px",fontSize:11,color:"#6b7280",fontStyle:"italic"}}>{pig.notes}</div>}
         </div>
       );
@@ -8208,14 +8398,14 @@ function App(){
         <Header/>
         <div style={{padding:"1rem",display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
-          {/* Leaderboard */}
+          {/* Sow Leaderboard */}
           {leaderboard.length>0&&(
             <div style={{background:"white",border:"1px solid #e5e7eb",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
               <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f8fafb"}}>
-                <div style={{fontWeight:600,fontSize:14}}>🏆 Leaderboard — Most Alive Piglets</div>
+                <div style={{fontWeight:600,fontSize:14}}>{'\ud83c\udfc6 Sow Leaderboard \u2014 Most Alive Piglets'}</div>
                 {leaderboard.length>5&&(
                   <button onClick={()=>setLeaderboardExpanded(e=>!e)} style={{fontSize:12,color:"#085041",background:"none",border:"none",cursor:"pointer"}}>
-                    {leaderboardExpanded?`Show top 5`:`Show all ${leaderboard.length}`}
+                    {leaderboardExpanded?'Show top 5':'Show all '+leaderboard.length}
                   </button>
                 )}
               </div>
@@ -8225,7 +8415,7 @@ function App(){
                     <div style={{width:24,height:24,borderRadius:12,background:i===0?"#f59e0b":i===1?"#9ca3af":i===2?"#cd7c4b":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:i<3?"white":"#6b7280",flexShrink:0}}>{i+1}</div>
                     <div style={{flex:1}}>
                       <span style={{fontWeight:600}}>Sow #{p.tag}</span>
-                      <span style={{fontSize:11,color:"#9ca3af",marginLeft:8}}>{p.litters} litter{p.litters!==1?"s":" "} · {p.born} born</span>
+                      <span style={{fontSize:11,color:"#9ca3af",marginLeft:8}}>{p.litters} litter{p.litters!==1?"s":" "} {'\u00b7'} {p.born} born</span>
                     </div>
                     <div style={{fontSize:16,fontWeight:700,color:"#065f46"}}>{p.alive} alive</div>
                   </div>
@@ -8233,6 +8423,42 @@ function App(){
               </div>
             </div>
           )}
+
+          {/* Boar Leaderboard */}
+          {(function(){
+            var boarStats={};
+            farrowingRecs.forEach(function(r){
+              var sire=(resolveSire(r)||'').trim();
+              if(!sire) return;
+              if(!boarStats[sire]) boarStats[sire]={name:sire,litters:0,born:0,dead:0,alive:0};
+              boarStats[sire].litters++;
+              var b=parseInt(r.totalBorn)||0;
+              var d=parseInt(r.deaths)||0;
+              boarStats[sire].born+=b;
+              boarStats[sire].dead+=d;
+              boarStats[sire].alive+=(b-d);
+            });
+            var boarBoard=Object.values(boarStats).sort(function(a,b){return b.alive-a.alive;});
+            if(boarBoard.length===0) return null;
+            return React.createElement('div',{style:{background:'white',border:'1px solid #e5e7eb',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}},
+              React.createElement('div',{style:{padding:'12px 16px',borderBottom:'1px solid #e5e7eb',background:'#f8fafb'}},
+                React.createElement('div',{style:{fontWeight:600,fontSize:14}},'\ud83c\udfc6 Boar Leaderboard \u2014 Most Alive Piglets')
+              ),
+              React.createElement('div',{style:{padding:'10px 16px'}},
+                boarBoard.map(function(b,i){
+                  var survPct=b.born>0?Math.round((b.alive/b.born)*100):0;
+                  return React.createElement('div',{key:b.name,style:{display:'flex',alignItems:'center',gap:12,padding:'7px 0',borderBottom:i<boarBoard.length-1?'1px solid #f0f0f0':'none'}},
+                    React.createElement('div',{style:{width:24,height:24,borderRadius:12,background:i===0?'#f59e0b':i===1?'#9ca3af':'#e5e7eb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:i<2?'white':'#6b7280',flexShrink:0}},String(i+1)),
+                    React.createElement('div',{style:{flex:1}},
+                      React.createElement('span',{style:{fontWeight:600}},b.name),
+                      React.createElement('span',{style:{fontSize:11,color:'#9ca3af',marginLeft:8}},b.litters+' litter'+(b.litters!==1?'s':'')+' \u00b7 '+b.born+' born \u00b7 '+survPct+'% survival')
+                    ),
+                    React.createElement('div',{style:{fontSize:16,fontWeight:700,color:'#065f46'}},b.alive+' alive')
+                  );
+                })
+              )
+            );
+          })()}
 
           {/* Add pig button */}
           <div style={{display:"flex",justifyContent:"flex-end"}}>
