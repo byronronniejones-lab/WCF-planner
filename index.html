@@ -5051,7 +5051,7 @@ function App(){
     const today = new Date();
     const todayDate = todayISO();
     const months = [];
-    for(var mi2=-18;mi2<=6;mi2++){
+    for(var mi2=-6;mi2<=6;mi2++){
       var d2=new Date(today.getFullYear(),today.getMonth()+mi2,1);
       months.push(d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0'));
     }
@@ -5124,38 +5124,63 @@ function App(){
 
     // On Hand per feed type — anchored from physical count
     function calcOnHand(type,throughYM){
-      var inv=poultryFeedInventory&&poultryFeedInventory[type];
-      if(!inv) return null;
-      var invYM=inv.date.substring(0,7);
-      if(throughYM<invYM) return null;
+      var pInv2=poultryFeedInventory&&poultryFeedInventory[type];
       var orderKey=type==='layer'?'layerfeed':type;
       var ftKey=type==='starter'?'STARTER':type==='grower'?'GROWER':'LAYER';
-      // Orders after count month through target month
-      var ordersSince=0;
-      Object.entries(feedOrders[orderKey]||{}).forEach(function(e){
-        if(e[0]>invYM&&e[0]<=throughYM) ordersSince+=(parseFloat(e[1])||0);
-      });
-      // Actual consumption after count date through target month end
-      var consumed=0;
       var allDailys=(broilerDailys||[]).concat(allLayerDailys||[]);
-      allDailys.forEach(function(d){
-        if(!d.date||d.date<=inv.date) return;
-        if(d.date.substring(0,7)>throughYM) return;
-        if(d.feed_type===ftKey) consumed+=(parseFloat(d.feed_lbs)||0);
+
+      if(pInv2){
+        // Anchored from physical count
+        var invYM=pInv2.date.substring(0,7);
+        if(throughYM<invYM) return null;
+        var ordersSince=0;
+        Object.entries(feedOrders[orderKey]||{}).forEach(function(e){
+          if(e[0]>invYM&&e[0]<=throughYM) ordersSince+=(parseFloat(e[1])||0);
+        });
+        var consumed=0;
+        allDailys.forEach(function(d){
+          if(!d.date||d.date<=pInv2.date) return;
+          if(d.date.substring(0,7)>throughYM) return;
+          if(d.feed_type===ftKey) consumed+=(parseFloat(d.feed_lbs)||0);
+        });
+        var projFuture=0;
+        monthlyData.forEach(function(md){
+          if(md.ym<=invYM||md.ym>throughYM) return;
+          var projForType=type==='starter'?md.starter:type==='grower'?md.grower:md.layerFeed;
+          if(md.isFuture) projFuture+=projForType;
+          else if(md.isCurrent){
+            var dayOfMonth=new Date().getDate();
+            var daysLeft=md.daysInMonth-dayOfMonth;
+            if(daysLeft>0) projFuture+=Math.round(projForType*(daysLeft/md.daysInMonth));
+          }
+        });
+        return Math.round(pInv2.count+ordersSince-consumed-projFuture);
+      }
+
+      // No physical count — running balance from orders - consumption
+      var totalOrd=Object.values(feedOrders[orderKey]||{}).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
+      if(totalOrd<=0) return null;
+      var ordThrough=0;
+      Object.entries(feedOrders[orderKey]||{}).forEach(function(e){
+        if(e[0]<=throughYM) ordThrough+=(parseFloat(e[1])||0);
       });
-      // For future months or remaining days in current month, add projected consumption
-      var projFuture=0;
+      var consThrough=0;
+      allDailys.forEach(function(d){
+        if(!d.date) return;
+        if(d.date.substring(0,7)>throughYM) return;
+        if(d.feed_type===ftKey) consThrough+=(parseFloat(d.feed_lbs)||0);
+      });
+      var projFut2=0;
       monthlyData.forEach(function(md){
-        if(md.ym<=invYM||md.ym>throughYM) return;
+        if(md.ym>throughYM) return;
         var projForType=type==='starter'?md.starter:type==='grower'?md.grower:md.layerFeed;
-        if(md.isFuture) projFuture+=projForType;
+        if(md.isFuture) projFut2+=projForType;
         else if(md.isCurrent){
-          var dayOfMonth=new Date().getDate();
-          var daysLeft=md.daysInMonth-dayOfMonth;
-          if(daysLeft>0) projFuture+=Math.round(projForType*(daysLeft/md.daysInMonth));
+          var dl3=md.daysInMonth-new Date().getDate();
+          if(dl3>0) projFut2+=Math.round(projForType*(dl3/md.daysInMonth));
         }
       });
-      return Math.round(inv.count+ordersSince-consumed-projFuture);
+      return Math.round(ordThrough-consThrough-projFut2);
     }
 
     // Expandable month rows — uses top-level state
@@ -5168,7 +5193,7 @@ function App(){
     var onHandGrover=calcOnHand('grower',thisYM);
     var onHandLayer=calcOnHand('layer',thisYM);
     var totalOnHand=(onHandStarter!=null||onHandGrover!=null||onHandLayer!=null)?((onHandStarter||0)+(onHandGrover||0)+(onHandLayer||0)):null;
-    var hasAnyCount=pInv&&(pInv.starter||pInv.grower||pInv.layer);
+    var hasAnyCount=(pInv&&(pInv.starter||pInv.grower||pInv.layer))||totalOnHand!=null;
 
     return (
       <div>
@@ -5610,19 +5635,26 @@ function App(){
       sbSave('ppp-pig-feed-inventory-v1',inv);
     }
 
-    // ── Feed on Hand calculation (anchored from physical count) ──
+    // ── Feed on Hand calculation ──
+    // If physical count exists: anchor from count + orders since - consumed since
+    // If no count: total orders all time - total consumed all time
     const inv=pigFeedInventory; // {count, date} or null
     const todayDate=todayISO();
-    // Orders since the physical count date (inclusive of count month)
-    const ordersSinceCount=inv?Object.entries(feedOrders.pig||{}).reduce((s,[ym,v])=>{
-      // An order for a month counts if the month is after the count date's month
-      // (the count already includes any feed delivered before the count)
-      if(ym>inv.date.substring(0,7)) return s+(parseFloat(v)||0);
-      return s;
-    },0):0;
-    // Actual consumption since the physical count date (strictly after)
-    const consumedSinceCount=inv?pigDailys.filter(d=>d.date&&d.date>inv.date).reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0):0;
-    const feedOnHand=inv?Math.round(inv.count+ordersSinceCount-consumedSinceCount):null;
+    const totalPigOrdered=Object.values(feedOrders.pig||{}).reduce((s,v)=>s+(parseFloat(v)||0),0);
+    const totalPigConsumed=pigDailys.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
+    var feedOnHand;
+    if(inv){
+      const ordersSinceCount=Object.entries(feedOrders.pig||{}).reduce((s,[ym,v])=>{
+        if(ym>inv.date.substring(0,7)) return s+(parseFloat(v)||0);
+        return s;
+      },0);
+      const consumedSinceCount=pigDailys.filter(d=>d.date&&d.date>inv.date).reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
+      feedOnHand=Math.round(inv.count+ordersSinceCount-consumedSinceCount);
+    } else if(totalPigOrdered>0){
+      feedOnHand=Math.round(totalPigOrdered-totalPigConsumed);
+    } else {
+      feedOnHand=null;
+    }
 
     // Per-group projected feed for a given month
     function projectedFeedByGroup(ym){
@@ -5751,24 +5783,38 @@ function App(){
           {(function(){
             function fmtMonth2(ym){var p=ym.split('-').map(Number);return new Date(p[0],p[1]-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});}
             // On Hand calculator for a given month
+            // With physical count: anchor from count. Without: orders - consumption running balance.
             function pigOnHandForMonth(md2){
-              var invYM=inv?inv.date.substring(0,7):null;
-              if(!inv||md2.ym<invYM) return null;
-              if(md2.ym===invYM){
-                var consumedAfterCount=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.startsWith(md2.ym);}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
-                var projRemaining=0;
-                if(md2.isCurrent){var dayOfMonth=new Date().getDate();var daysLeft=md2.daysInMonth-dayOfMonth;if(daysLeft>0)projRemaining=curProj.total*daysLeft;}
-                return Math.round(inv.count-consumedAfterCount-projRemaining);
+              if(inv){
+                var invYM=inv.date.substring(0,7);
+                if(md2.ym<invYM) return null;
+                if(md2.ym===invYM){
+                  var consumedAfterCount=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.startsWith(md2.ym);}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
+                  var projRemaining=0;
+                  if(md2.isCurrent){var dayOfMonth=new Date().getDate();var daysLeft=md2.daysInMonth-dayOfMonth;if(daysLeft>0)projRemaining=curProj.total*daysLeft;}
+                  return Math.round(inv.count-consumedAfterCount-projRemaining);
+                }
+                var ordersThrough=Object.entries(feedOrders.pig||{}).reduce(function(s2,e){if(e[0]>invYM&&e[0]<=md2.ym)return s2+(parseFloat(e[1])||0);return s2;},0);
+                var consumedThrough=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.substring(0,7)<=md2.ym;}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
+                var projFuture=0;
+                monthlyData.forEach(function(m2){
+                  if(m2.ym<=invYM||m2.ym>md2.ym) return;
+                  if(m2.isFuture) projFuture+=m2.projTotal;
+                  else if(m2.isCurrent){var dl2=m2.daysInMonth-new Date().getDate();if(dl2>0)projFuture+=curProj.total*dl2;}
+                });
+                return Math.round(inv.count+ordersThrough-consumedThrough-projFuture);
               }
-              var ordersThrough=Object.entries(feedOrders.pig||{}).reduce(function(s2,e){if(e[0]>invYM&&e[0]<=md2.ym)return s2+(parseFloat(e[1])||0);return s2;},0);
-              var consumedThrough=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.substring(0,7)<=md2.ym;}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
-              var projFuture=0;
+              // No physical count — running balance from orders - consumption
+              if(totalPigOrdered<=0) return null;
+              var ordThrough=Object.entries(feedOrders.pig||{}).reduce(function(s2,e){if(e[0]<=md2.ym)return s2+(parseFloat(e[1])||0);return s2;},0);
+              var consThrough=pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)<=md2.ym;}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
+              var projFut2=0;
               monthlyData.forEach(function(m2){
-                if(m2.ym<=invYM||m2.ym>md2.ym) return;
-                if(m2.isFuture) projFuture+=m2.projTotal;
-                else if(m2.isCurrent){var dl2=m2.daysInMonth-new Date().getDate();if(dl2>0)projFuture+=curProj.total*dl2;}
+                if(m2.ym>md2.ym) return;
+                if(m2.isFuture) projFut2+=m2.projTotal;
+                else if(m2.isCurrent){var dl3=m2.daysInMonth-new Date().getDate();if(dl3>0)projFut2+=curProj.total*dl3;}
               });
-              return Math.round(inv.count+ordersThrough-consumedThrough-projFuture);
+              return Math.round(ordThrough-consThrough-projFut2);
             }
 
             function renderPigMonthCard(md2){
