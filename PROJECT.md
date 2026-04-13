@@ -2,421 +2,397 @@
 
 White Creek Farm
 
-*Full System Handover Document*
+*Comprehensive System Handover Document*
 
-Updated April 12, 2026
-
-*Original build: April 9-11, 2026. Add Feed Webform + UI overhaul session: April 12, 2026.*
+Updated April 13, 2026
 
 ---
 
-# SESSION SUMMARY — April 12, 2026
+# 1. How to Start a New Session
 
-This section covers everything built, tested, decided, and left open during the April 12 session. **Read this section first** before touching any code.
+1. Read this document top to bottom.
+2. Ask Ronnie what he wants to work on — don't assume.
+3. Read the relevant section(s) of `index.html` before writing any code.
+4. Check the "Open Items" section for pending work.
 
-## 1. What Was Built and Shipped
-
-### Add Feed Webform (DECISIONS.md Items 1-7)
-
-All items from DECISIONS.md were completed:
-
-**Item 1 — AddFeedWebform component:** Built as a standalone public component at hash route `#addfeed`. Inserts a new row into `layer_dailys`, `poultry_dailys`, or `pig_dailys` with `source: 'add_feed_webform'`. All other observation fields are omitted from the insert object. Pig inserts do NOT include `feed_type` (column doesn't exist on `pig_dailys`). ID generation: `String(Date.now())+Math.random().toString(36).slice(2,6)`. Component lives just before `WebformHub` in `index.html`.
-
-**Item 2 — Routing wired:** `#addfeed` hash check in router, `'addfeed'` in `VALID_VIEWS`, public bypass before auth gates (`if(view==="addfeed") return React.createElement(AddFeedWebform, {sb})`), amber card at top of WebformHub hub screen.
-
-**Item 3 — Badges in Reports lists:** All 3 dailys views (BroilerDailysView, LayerDailysView, PigDailysView) show amber background + amber border + "🌾 Feed" badge pill on rows where `source === 'add_feed_webform'`.
-
-**Item 4 — Filter chips:** Tri-state `[All | Daily Reports | 🌾 Add Feed]` toggle in each dailys view filter bar. Filter logic: `all` = no filter, `daily` = `r.source !== 'add_feed_webform'`, `addfeed` = `r.source === 'add_feed_webform'`. Null handling is correct for existing rows.
-
-**Item 5 — Edit modal field hiding:** When editing a row with `source === 'add_feed_webform'`, non-feed fields (grit, mortality, checks, comments, pig count, voltage) are hidden. Feed-relevant fields (date, batch, team member, feed_lbs, feed_type) remain editable. Modal title changes to "Edit [Program] Add Feed Report". Layer modal adds a feed_type toggle for Add Feed edits.
-
-**Item 6 — In-planner Add Feed button:** "🌾 Add Feed" button added to Broiler Dailys, Layer Dailys, and Pig Dailys views next to the existing "+ Add Report" button. Navigates to `#addfeed` via `window.location.hash='#addfeed';window.location.reload();`.
-
-**Item 7 — Admin panel:** Add Feed webform entry is auto-injected into `webformsConfig.webforms` on load if not already present. Appears in admin panel with amber styling. Full sections/fields editor available — fields can be toggled on/off, marked required, relabeled. Add Group toggle works. Team member management works. Per-form team members fall back to global list if none configured (same as all other webforms).
-
-### AddFeedWebform Component Details
-
-- **Admin-configurable:** Reads `full_config` from `webform_config` to get field enabled/required/label settings. Uses `isEnabled()`, `isRequired()`, `getLabel()` helpers.
-- **Add Group support:** `extraGroups` state array. "+ Add Another Group" button appears when `allowAddGroup` is enabled in admin config. All groups submit as separate records.
-- **Form flow:** Date → Team Member (optional) → Program (Pig/Broiler/Layer buttons) → Batch dropdown → Feed Type (not pig) → Feed lbs → Submit.
-- **Config loading:** Loads `housing_batch_map`, `broiler_groups`, `active_groups`, `team_members`, `per_form_team_members`, `full_config`, `webform_settings` from `webform_config` table (anon access).
-- **Layer batch_id:** Set to `null` on layer inserts. Can't resolve batch_id in anon context. This is the same as existing layer webform behavior. Aggregation works via `batch_label` + `.reduce()`.
-- **Navigation:** Uses `window.location.hash` + `window.location.reload()` because the Add Feed form lives at the public bypass level and React state-based navigation doesn't work for crossing the auth boundary.
-
-### UI Polish — Daily Report Tiles
-
-Applied consistently across all 3 standalone dailys views AND the home dashboard "LAST 5 DAYS" section:
-
-- **Yes/No fields:** Colored pill badges (green background for Yes, red for No) replacing plain checkmark text. Applied to Moved, Waterer, Nipple, Fence.
-- **Mortality:** Red pill badge when present, with mortality reason shown inline (💀 2 mort. — reason). Hidden muted text when absent.
-- **Team member:** Slate-blue pill badge.
-- **Comments/Issues:** Amber pill with 💬 icon. Consistent across broiler, layer, and pig views.
-- **Feed type pills:** Already existed, unchanged.
-- **Home dashboard type headers:** Enlarged from 10px to 13px. Tile gap increased from 3px to 8px. Section margin increased.
-- **Notable border:** Removed yes/no fields from `notable` check on home dashboard. Only mortality, comments, and low voltage trigger the red border now.
-
-### Pig Dashboard Overhaul
-
-Replaced the basic pig dashboard with a data-rich view:
-
-- **Stat tiles (2 rows of 4):** Pigs on Farm, Active Sows (with boar count sub), Active Cycles, Active Batches, Avg Born/Litter, Avg Alive/Litter, Overall Survival (with record count), Processed [Year] (with avg yield).
-- **Pigs on Farm Breakdown:** Individual tiles per group (SOWS, BOARS, then sub-batches sorted alphabetically). Only includes active batch pigs + SOWS + BOARS.
-- **Next Farrowing banner:** Shows upcoming farrowing window with "Window is OPEN" if in range.
-- **Active Feeder Batches:** Box-style metrics instead of line items. Colored header bars alternating green/amber/blue/pink per batch. Shows Current count, Original, Total Feed, Feed/Pig, Feed Cost, Cost/Pig, Report Days.
-- **Bar graphs side by side:** Farrowing Survival and Carcass Yield Trend in a 2-column grid.
-- **Removed:** Pig Notes section, Recent Daily Reports section.
-
-### Pig Feed Planning Tab (New — Replaces Old Calculator)
-
-Complete replacement of the manual pig feed calculator (view==="pigs" / view==="pigfeed"):
-
-- **Current Daily Snapshot:** 4 tiles showing today's total daily need, sow feed (with nursing breakdown), boar feed, feeder pig feed.
-- **Nursing sow logic:** `nursingSowsOnDate(dateISO)` function scans all breeding cycles and farrowing records. A sow is nursing from her `farrowingDate` through `weaningEnd` of her cycle.
-- **Feed on Hand estimate:** Total ordered (from feed orders) minus total consumed (from pig_dailys). Shows days of feed remaining.
-- **Monthly Summary Table:** 6 past months + 3 future months. Columns: Month, Projected (calculated from rates), Actual (from pig_dailys), Variance, Ordered (editable input), On Hand.
-- **Feed orders:** Stored in `app_store` key `ppp-feed-orders-v1` as `{pig:{}, broiler:{}}`. Editable per-month input in the table. Auto-saves on change.
-- **Feed Rate Reference:** Quick reference card showing all rates.
-
-### Other Features Built
-
-- **Debounced auto-save + modal conversion:** Breeding cycles, processing trips, sub-batches all converted from inline forms to modal overlays with 1.5s debounced auto-save and save-on-close behavior. Done/Cancel buttons removed (only Delete shown when editing).
-- **Pig batch form:** All fields marked required. Original pig count auto-calculated from gilts + boars.
-- **Layer batch delete:** Delete button added to edit modal (hidden for Retirement Home).
-- **Retirement Home cleanup:** Edit modal hides Original Count, Supplier, Cost per Bird, Feed Cost Rates, Brooder Phase, Schooner Phase. Housing card hides Starter/Grower columns. Feed cost rates fall back to global rates. Included in saveFeedCosts.
-- **Per-batch housing colors:** Layer Batches list and Dashboard use rotating color palette (green, blue, amber, purple) for housing pills and cards. All housings within same batch share color.
-- **Colored header bars:** Layer batch cards on both Dashboard and Batches page have colored header bars matching the housing palette.
-- **Delete confirmations:** ALL delete actions across the entire app now use the type-"delete" confirmation modal (DeleteModal). No more `window.confirm` for deletes.
-- **Mortality reason:** Hidden until mortality count > 0, then required with red asterisk. Enforced in all forms: public webforms, AdminAddReportModal, standalone edit modals. Validation in `validateRequiredFields` and explicit submit checks.
-- **Feed type conditional:** Only required when feed_lbs > 0. Applied in `validateRequiredFields` and all submit functions.
-- **Pagination dedup:** All 3 dailys views (Broiler, Layer, Egg) have a `pgLoading` ref guard to prevent concurrent fetches, plus ID deduplication on append.
-- **Timeline bar opacity:** Broiler timeline bars render at 80% opacity.
-- **Filter toggle dividers:** Source filter buttons have 1px borders between them.
-- **Home dashboard Animals on Farm:** White stat card above Missed Daily Reports showing Broilers, Layer Hens, Pigs, and Total Animals. Non-clickable, visible to all roles.
-- **Layer icon:** Add Feed form uses 🐓 (rooster) for layers, matching the Layer Daily Report webform.
-
-## 2. What Was Tested and Verified Working
-
-- **Add Feed submission:** Tested for Layer (Eggmobile 2, 100 lbs STARTER). Row appeared in `layer_dailys` with `source='add_feed_webform'`. Visible in Layer Dailys view with amber badge when "All" or "Add Feed" filter active.
-- **Filter chips:** Toggling All/Daily Reports/Add Feed correctly filters. Counter shows correct numbers (e.g., "2060 total · 2059 shown" with Daily Reports active).
-- **Edit modal field hiding:** Layer Add Feed edit modal shows only date, team member, batch, feed type, feed lbs. Title shows "Edit Layer Add Feed Report".
-- **Add Feed button navigation:** Buttons in all 3 dailys views navigate to `#addfeed` via hash + reload.
-- **Admin panel Add Feed entry:** Appears in webform list with amber styling. Team member editing works. Sections/fields editor works.
-- **Retirement Home edit modal:** Only shows Batch Name, Status, Notes.
-- **Feed cost rates on Retirement Home:** Layer Dashboard shows Feed Cost and $/Dozen using global rate fallback.
-- **Pagination dedup:** Filter toggling no longer duplicates records.
-- **Breeding cycle auto-save:** Typing in fields triggers debounced save. Closing modal flushes pending save.
-- **Pig batch original count:** Auto-calculates from gilts + boars.
-- **Delete confirmations:** Tested on breeding cycle, layer batch — both show type-"delete" modal.
-- **Mortality reason conditional:** Tested on broiler webform — reason field hidden until count > 0, submission blocked without reason.
-- **Pig feed tab:** Loads without errors. Current snapshot shows calculated values. Monthly table renders with projected values.
-
-## 3. Decisions Made During Session (Not in Original DECISIONS.md)
-
-### housing_batch_map shape correction
-DECISIONS.md verified fact #10 says `{ housingName: batchId }`. **This is wrong.** The actual shape is `{ housingName: batchName }` — values are batch NAMES (e.g., "L-26-01"), not batch IDs. Confirmed by reading `syncWebformConfig` at the line that builds the map: `return [h.housing_name, b?b.name:null]`. The map was also empty `{}` in Supabase during the session, likely a sync issue.
-
-### batch_id on layer Add Feed inserts
-Set to `null`. The AddFeedWebform runs in anon context and can't access `layer_batches`/`layer_housings` tables to resolve the ID. This matches existing layer webform behavior. All feed aggregation works via `batch_label` + `.reduce()`, so null `batch_id` has no functional impact.
-
-### Hash navigation requires page reload
-`window.location.hash = '#addfeed'` alone doesn't trigger a React re-render because the App's router reads the hash only on initial mount. Solution: `window.location.hash='#addfeed';window.location.reload();`. Applied to all Add Feed buttons and the "Back to Daily Reports" / "Done" links.
-
-### React.useRef cannot be inside conditional blocks
-Placed `breedAutoSaveTimer` inside `if(view==="breeding")` initially — crashed the page because React hooks can't be called conditionally. Moved to top-level App scope. Same pattern used for `tripAutoSaveTimer` (top-level from the start).
-
-### No purple colors
-User preference: no purple anywhere in the UI. Pig feeder batch header colors use green/amber/blue/pink rotation instead.
-
-### Notable border simplified
-Home dashboard "LAST 5 DAYS" tile borders previously triggered on any yes/no field being false (group_moved, waterer_checked, etc.). Changed to only trigger on mortality, comments/issues, or low voltage. The colored yes/no pills already provide the visual signal.
-
-### Retirement Home is not a normal batch
-It's a permanent pseudo-batch that never closes, never goes through brooder/schooner phases, and receives aged birds from all batches. The edit modal hides lifecycle fields. Feed cost rates fall back to global when not stored on the batch. The `saveFeedCosts` function no longer excludes Retirement Home from rate updates.
-
-### Feed orders data model
-Stored in `app_store` key `ppp-feed-orders-v1` as:
-```json
-{
-  "pig": { "2026-01": 5000, "2026-02": 4500 },
-  "broiler": { "2026-01": 8000 }
-}
-```
-Loaded in `loadAllData`, persisted via `sbSave`. State variable: `feedOrders` / `setFeedOrders`.
-
-### Nursing sow calculation
-A sow is "nursing" from her actual `farrowingDate` (from farrowing records) through the `weaningEnd` of her breeding cycle. The function `nursingSowsOnDate(dateISO)` scans all breeding cycles and farrowing records to compute this. If a sow hasn't farrowed yet (no record), she's not counted as nursing even if the farrowing window is open.
-
-## 4. Bugs Found, Workarounds, and Known Issues
-
-### Bugs Found and Fixed
-
-- **Pagination race condition:** Toggling source filter caused re-renders while pagination was loading, resulting in the same page being fetched and appended multiple times. Fixed with `pgLoading` ref guard + ID deduplication on append. Applied to BroilerDailysView, LayerDailysView, EggDailysView.
-
-- **React.useRef in conditional block:** `breedAutoSaveTimer` was initially defined inside `if(view==="breeding")`, violating hooks rules. Moved to App top-level scope.
-
-- **todayStr shadowing:** In pigsHome, `const todayStr = todayISO()` (a string) shadowed the outer scope where `todayStr` is sometimes a function. Then `todayStr()` was called in JSX, crashing because you can't call a string. Fixed by removing the `()`.
-
-- **Babel cache:** After deploying new code, the browser's Babel transpile cache (stored in localStorage) serves stale compiled code. Fix: `localStorage.clear()` + hard refresh. This is a recurring issue — always tell the user to clear cache after deploy.
-
-- **housing_batch_map empty:** The map in `webform_config` was `{}` during the session. This means the `syncWebformConfig` function hasn't run after a logged-in admin loaded the app, or there are no active housings. The AddFeedWebform handles this gracefully — the "Active in batch: [name]" info line just doesn't show.
-
-### Known Issues / Open Items
-
-- **Broiler feed ordering:** Not yet built. The pig feed tab has feed ordering (monthly lbs ordered input). The same feature needs to be added to the Broiler Feed tab. The `feedOrders.broiler` key exists in the data model but the UI doesn't use it yet.
-
-- **Pig feed tab "On Hand" column:** The monthly table has an "On Hand" column that currently shows "—" for all rows. This needs a running balance calculation (cumulative orders minus cumulative consumption up to that month).
-
-- **Pig feed tab — feeder pig count uses originalPigCount:** The projection uses `g.originalPigCount` for feeder pig count. It doesn't account for processed pigs (processing trips reduce the count). A more accurate projection would subtract processed pigs.
-
-- **Add Feed webform config not persisted initially:** The Add Feed webform entry is injected at runtime if not found in `webformsConfig.webforms`. This means the first time an admin edits it, the changes persist. But if they've never opened the admin panel, the default config (all fields enabled, feed_type and feed_lbs required) applies.
-
-- **source column on existing rows:** Existing daily report rows have `source: null`. The filter logic handles this correctly (`r.source !== 'add_feed_webform'` returns true for null). No migration needed.
-
-## 5. Where We Left Off — Next Steps
-
-### Immediate Next Item: Broiler Feed Tab — Add Feed Ordering
-
-The pig feed tab is complete with feed ordering. The same feed ordering feature needs to be added to the Broiler Feed tab (view==="feed"):
-
-1. Add an "Ordered" column to the existing monthly feed summary table
-2. Add a "Feed on Hand" estimate card (ordered minus consumed)
-3. Use `feedOrders.broiler` for storage (key already exists in the data model)
-4. The existing broiler feed tab already has monthly projected vs actual data — just need to add the ordering inputs
-
-### Other Pending Items
-
-- **Fix pig feed tab "On Hand" running balance:** Calculate cumulative orders minus cumulative consumption per month
-- **Fix feeder pig count in projections:** Subtract processed pigs from `originalPigCount`
-- **Test pig feed tab thoroughly:** The nursing sow logic, monthly projections, and feed ordering all need real-world testing
-- **Add Feed for Layer — batch_id resolution:** Currently null. Could potentially resolve from `housing_batch_map` (maps housing_name → batch_name) and then look up batch_id. Low priority since aggregation works without it.
-
-### Context for Next Session
-
-- The app is a single `index.html` file (~10,200 lines). All React, CSS, and JS live in it. Babel transpiles JSX in-browser.
-- Deploy = push to GitHub (auto-deploys to Netlify). After deploy, user needs to clear localStorage + hard refresh.
-- Supabase is the backend. The `sb` variable is the anon Supabase client. Auth is handled by Supabase Auth.
-- The `app_store` table is a JSON blob store. Use `sbSave(key, value)` to persist.
-- `webform_config` table is anon-accessible. Used by public webforms.
-- **Babel gotchas:** No special characters in JSX template literals — use `\u` escapes. Never use destructured `useState` in standalone components near App — use `React.useState()`. No `React.useRef()` inside conditional blocks.
-- **DECISIONS.md** is the authoritative design document for the Add Feed feature. It has the full rationale, rejected alternatives, and verified facts. Read it before making changes to Add Feed.
-
-## 6. What Would Have Saved Time at the Start of This Session
-
-1. **The housing_batch_map shape discrepancy.** DECISIONS.md said `{ housingName: batchId }` but the actual code builds `{ housingName: batchName }`. This took investigation to resolve. The DECISIONS.md should be updated to reflect reality.
-
-2. **The hash navigation pattern.** Knowing upfront that `window.location.hash` changes don't trigger React re-renders (because the router reads hash only on mount) would have saved a round-trip debugging the "buttons don't do anything" issue.
-
-3. **React hooks rules in this codebase.** The app has many views rendered inside `if(view===...)` blocks within the App function. Any `React.useRef()` or `React.useState()` calls inside these blocks will crash. Always put refs/state at the top level of App.
-
-4. **Babel cache.** After every deploy, the user must clear localStorage. This should be mentioned prominently in any handover doc. The Babel cache key includes a hash of the source, so it auto-invalidates on code changes, but stale cache from a previous version can cause confusing behavior.
-
-5. **Retirement Home is special.** It's not a normal layer batch — it's permanent, has no lifecycle phases, and was previously excluded from feed cost updates. Understanding this upfront would have prevented the "why are feed costs blank?" investigation.
-
-6. **The `source` column was already added to all 3 dailys tables.** This was done during the DECISIONS.md design session via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS source TEXT`. The column exists but all existing rows have null. No migration script needed — the column is just there.
-
-7. **Per-form team member fallback chain:** All webforms (including Add Feed) fall back to the global `team_members` list when no per-form members are configured. The user initially thought this was a bug but it's the designed behavior across all forms.
-
----
-
-# ORIGINAL SYSTEM DOCUMENTATION
-
-*The sections below are from the original April 9-11 handover document, updated where necessary to reflect April 12 changes.*
-
-## 1. How to Work With the Next Claude Instance
-
-### 1.1 Ronnie's Working Style (Byron)
+### Ronnie's Working Style
 
 - Ask lots of questions before building. Never jump into code without fully understanding scope.
 - When scope is large, map out the FULL design, confirm it, then build in phases.
 - Never assume. If something is ambiguous, ask.
-- Be honest about mistakes.
-- Verify before confirming — Ronnie notices when Claude confirms things without checking the code.
-- Backup before major changes.
+- Be honest about mistakes. Ronnie notices when Claude confirms things without checking the code.
+- No purple colors anywhere in the UI.
+- Prefers bulletproof over fast. No shortcuts.
+- "We don't spare any expense for tokens" — read the full file if needed, don't skim.
 
-### 1.2 How to Start Each Session
+### Critical Codebase Constraints
 
-- Read this document AND DECISIONS.md top to bottom first.
-- Ask what the user wants to work on — don't assume.
-- Check if there are pending items from the "Where We Left Off" section above.
-- The `index.html` in the repo IS the latest deployed file.
+- **Single file app**: Everything is in `index.html` (~11,280 lines). All React, CSS, and JS live in it. No npm, no bundler, no separate CSS.
+- **Babel in-browser transpiler**: No special characters in JSX template literals. Use `\u` escapes (e.g. `'\u00b7'` for ·). Never use `const {useState} = React` destructuring in standalone components near App — use `React.useState()` directly.
+- **const/let inside conditional blocks CAN CRASH**: The `if(view==="...")` blocks inside App's render are technically block scope. `const` and `let` inside them may work in function bodies but `var` is safer inside conditional blocks and nested `if/else` within those blocks. The pig feed tab crashed because `const` was used inside an `if(inv)` block within the `if(view==="pigs")` block. When in doubt, use `var`.
+- **React hooks rules**: Never put `React.useRef()` or `React.useState()` inside conditional blocks. Always at top level of the component function.
+- **Deploy = push to GitHub** → Netlify auto-deploys. After deploy, user must clear localStorage + hard refresh (Ctrl+Shift+R).
+- **Babel cache**: Stored in localStorage with keys starting `wcf-babel-`. After editing the file locally, the user must clear these keys or all of localStorage before refreshing. The cache key includes a source hash, so it auto-invalidates on deploy, but local edits may confuse it.
+- **Hash navigation** between public and authenticated views requires `window.location.reload()` after setting the hash. React's router only reads the hash on mount.
 
-### 1.3 Known Gotchas With This Codebase
+### Deployment Process
 
-- **Babel in-browser transpiler** is strict about special characters inside JSX. Never use template literals with special chars (·, ‹, ›, →, —) inside JSX. Use string concatenation + unicode escapes (e.g. '\u00b7' for ·).
-- **Never use const {useState} = React** destructuring at the top of standalone components defined near the App function. Use React.useState() directly.
-- **Never put React.useRef() or React.useState() inside conditional blocks** (if/else). Always at the top level of the component function.
-- **The app is ONE file** — index.html, ~10,200 lines. All React, CSS, and JS live in it.
-- **Deploy = push to GitHub** → Netlify auto-deploys. After deploy, tell user to clear localStorage + hard refresh (Cmd+Shift+R).
-- **Supabase sessions expire.** If daily records show 0, tell user to sign out and sign back in.
-- **app_store saves** are JSON blobs — always use sbSave() helper which has retry logic and timeout handling.
-- **str_replace fails if content has changed since last view.** Always re-read the file section before editing.
-- **Hash navigation between public and authenticated views** requires `window.location.reload()` after setting the hash. React's router only reads the hash on mount.
-- **Babel cache in localStorage** can serve stale code after deploy. Always clear localStorage when debugging post-deploy issues.
+1. `git add index.html && git commit -m "message" && git push`
+2. Netlify auto-deploys from the repo
+3. User: clear localStorage + hard refresh (Ctrl+Shift+R)
+4. Sign out and sign back in if Supabase session is stale
 
-### 1.4 Deployment Process
+---
 
-- Push to GitHub main branch
-- Netlify auto-deploys from the repo
-- Hard refresh: Cmd/Ctrl+Shift+R
-- If page doesn't load: clear localStorage in browser console, then reload
-- Sign out and sign back in after deploy to refresh Supabase session
+# 2. Infrastructure
 
-## 2. Infrastructure Overview
-
-### 2.1 Hosting & Domain
+### Hosting & Domain
 
 | Service | Details |
 |---|---|
 | Live URL | https://wcfplanner.com |
-| Hosting | Netlify — Farm Team account (ronnie-ipfsd1e) |
-| Deploy method | Auto-deploy from GitHub repo |
-| DNS | Netlify DNS |
+| Hosting | Netlify — Farm Team account |
+| Deploy method | Auto-deploy from GitHub main branch |
+| Repo | https://github.com/byronronniejones-lab/WCF-planner |
 
-### 2.2 Supabase
+### Supabase
 
 | Item | Value |
 |---|---|
 | Project URL | https://pzfujbjtayhkdlxiblwe.supabase.co |
-| Anon Key | In index.html line ~212 |
+| Anon Key | In index.html line ~213 |
 | Admin email | ronnie@whitecreek.farm |
 
-### 2.3 Tech Stack
+### Tech Stack
 
-- React 18 (Babel in-browser transpiler — no build step)
-- Supabase JS v2 (auth, database, edge functions)
-- SheetJS (Excel export, lazy-loaded)
-- All in one single index.html file (~10,200 lines)
-- No npm, no bundler, no separate CSS file
+- React 18 (CDN, Babel in-browser transpiler — no build step)
+- Supabase JS v2 (auth, database, storage, edge functions)
+- SheetJS/XLSX (Excel parsing, lazy-loaded on first use)
+- Single `index.html` file (~11,280 lines)
+- No npm, no bundler, no separate CSS files
+- Geist font from Google Fonts
 
-## 3. Database Schema
+---
 
-### 3.1 Tables
+# 3. Database Schema
+
+### Tables
 
 | Table | Purpose |
 |---|---|
-| app_store | Main JSON blob store — all non-daily data |
-| webform_config | Config for public webforms (anon access) |
-| batches | Broiler batches |
+| app_store | Main JSON blob store — all non-daily data. Key-value with `key` (text) and `data` (jsonb). |
+| webform_config | Config for public webforms (anon-accessible RLS). Key-value same shape. |
 | poultry_dailys | Broiler daily reports. Has `source` column (TEXT, nullable). |
 | layer_dailys | Layer daily reports. Has `source` column (TEXT, nullable). |
-| egg_dailys | Egg collection reports |
-| pig_dailys | Pig daily reports. Has `source` column (TEXT, nullable). |
-| layer_batches | Layer batch parent records |
-| layer_housings | Layer housing sub-batches |
-| profiles | User profiles + roles |
-| batch-documents | File attachments on batches |
+| egg_dailys | Egg collection reports. |
+| pig_dailys | Pig daily reports. Has `source` column (TEXT, nullable). NO `feed_type` column. |
+| layer_batches | Layer batch parent records (dedicated table, not in app_store). |
+| layer_housings | Layer housing records with `current_count` anchor model (dedicated table). |
+| profiles | User profiles + roles (farm_team, management, admin, inactive). |
+| batch-documents | Supabase Storage bucket for file attachments on broiler batches. |
 
-### 3.2 app_store Keys
+### app_store Keys
 
 | Key | Contents |
 |---|---|
 | ppp-v4 | Broiler batches array |
-| ppp-layer-groups-v1 | Layer groups array |
+| ppp-layer-groups-v1 | Layer groups array (legacy, being replaced by layer_batches/layer_housings) |
 | ppp-webforms-v1 | Webform configuration (includes Add Feed webform entry) |
-| ppp-feeders-v1 | Pig feeder groups / batches |
-| ppp-pigs-v1 | Pig sow/boar data |
+| ppp-feeders-v1 | Pig feeder groups / batches with sub-batches and processing trips |
+| ppp-pigs-v1 | Pig sow/boar count data |
 | ppp-breeding-v1 | Breeding cycle records |
-| ppp-farrowing-v1 | Farrowing records |
-| ppp-breeders-v1 | Breeding pig registry |
-| ppp-feed-costs-v1 | Feed cost per lb |
-| ppp-feed-orders-v1 | Feed orders by month: `{pig:{}, broiler:{}}` |
+| ppp-farrowing-v1 | Farrowing records (initialized from INITIAL_FARROWING constant) |
+| ppp-breeders-v1 | Breeding pig registry (initialized from INITIAL_BREEDERS constant) |
+| ppp-boars-v1 | Boar names mapping |
+| ppp-breed-options-v1 | Breed dropdown options |
+| ppp-origin-options-v1 | Origin dropdown options |
+| ppp-feed-costs-v1 | Feed cost per lb: `{starter, grower, layer, pig, grit}` |
+| ppp-feed-orders-v1 | Feed orders by month: `{pig:{}, starter:{}, grower:{}, layerfeed:{}}` |
+| ppp-pig-feed-inventory-v1 | Pig physical feed count: `{count, date}` or null |
+| ppp-poultry-feed-inventory-v1 | Poultry physical counts: `{starter:{count,date}, grower:{count,date}, layer:{count,date}}` |
 | ppp-broiler-notes-v1 | Broiler section notes |
 | ppp-pig-notes-v1 | Pig section notes |
 | ppp-layer-notes-v1 | Layer section notes |
-| ppp-missed-cleared-v1 | Cleared missed-report alerts |
+| ppp-missed-cleared-v1 | Cleared missed-report alerts (Set serialized as array) |
+| ppp-archived-sows-v1 | Archived sow records |
 
-### 3.3 webform_config Keys
+### webform_config Keys
 
 | Key | Contents |
 |---|---|
-| full_config | Full webform config including Add Feed webform entry |
-| broiler_groups | Active broiler batch names |
-| active_groups | Active pig group names |
-| team_members | All team member names |
-| per_form_team_members | Team members per form ID (includes 'add-feed-webform') |
-| webform_settings | allowAddGroup per form |
-| housing_batch_map | Maps housing name → batch NAME (e.g. "Eggmobile 2" → "L-26-01"). NOT batch ID. |
+| full_config | Full webform config — webforms array, teamMembers, broilerGroups, layerGroups |
+| broiler_groups | Active broiler batch names (array of strings) |
+| active_groups | Active pig group names (array of strings) |
+| team_members | All team member names (flat array) |
+| per_form_team_members | Team members per form ID: `{"pig-dailys":[...],"add-feed-webform":[...]}` |
+| webform_settings | `{allowAddGroup: {"pig-dailys": true, ...}}` |
+| housing_batch_map | Maps housing name → batch NAME: `{"Eggmobile 2": "L-26-01"}`. NOT batch ID. |
 | layer_groups | Active layer group names |
 
-### 3.4 source Column
+---
 
-Added to `layer_dailys`, `poultry_dailys`, and `pig_dailys` during the DECISIONS.md design session:
-```sql
-ALTER TABLE layer_dailys ADD COLUMN IF NOT EXISTS source TEXT;
-ALTER TABLE poultry_dailys ADD COLUMN IF NOT EXISTS source TEXT;
-ALTER TABLE pig_dailys ADD COLUMN IF NOT EXISTS source TEXT;
-```
-- Existing rows have `source: null`
-- Add Feed rows have `source: 'add_feed_webform'`
-- No existing code filters by `source` except the new filter chips and badges
+# 4. Application Architecture
 
-## 4. App Architecture
+### File Structure (Current Line Numbers — Approximate)
 
-### 4.1 File Structure (Updated Line Numbers — Approximate)
+| Lines | Section |
+|---|---|
+| 1-120 | HTML head, CSS styles, webform styles, print styles |
+| 125-182 | Babel transpile cache, lazy XLSX loader |
+| 183-208 | Boot loader spinner, `<div id="root">` |
+| 209-233 | Supabase client init, email helper |
+| 236-268 | Broiler feed constants (CC/WR schedules, starter/grower splits) |
+| 269-317 | `getFeedSchedule()`, `calcBatchFeed()`, `calcBatchFeedForMonth()` |
+| 319-394 | Layer feed schedule, `calcLayerFeedForMonth()` |
+| 396-515 | Hatcheries, schooners, brooders, pig breeding constants, timeline calculators, auto-status |
+| 516-533 | INITIAL_BREEDERS, INITIAL_FARROWING hardcoded data |
+| 534-593 | Resources, batch color palette, `getBatchColor()` |
+| 595-685 | Layer housing helpers: `setHousingAnchorFromReport()`, `computeProjectedCount()`, `computeLayerFeedCost()` |
+| 687-843 | Status/breed styles, date helpers, holiday logic, `calcTimeline()`, `detectConflicts()` |
+| 845-866 | EMPTY_FORM for broiler batches |
+| 868-942 | `LoginScreen` component |
+| 945-1065 | DEFAULT_WEBFORMS_CONFIG, styles object `S`, permission helpers |
+| 1074-1263 | `UsersModal` component |
+| 1271-1542 | `AddFeedWebform` component (public, `#addfeed` route) |
+| 1545-2196 | `WebformHub` component (public daily report forms — broiler, layer, pig, egg) |
+| 2198-2256 | `FeedCostsPanel` component |
+| 2260-2284 | `DeleteModal` component |
+| 2287-2447 | `App()` function start — all state declarations (~160 useState calls) |
+| 2450-2693 | Auth listener, `loadAllData()`, data loading from Supabase |
+| 2695-2920 | Persist helpers, `syncWebformConfig()`, backup/restore |
+| 2923-3158 | Broiler form helpers: `upd()`, `openAdd()`, `openEdit()`, `submit()`, `del()` |
+| 3160-3273 | Timeline helpers, derived values, `Header` component |
+| 3276-3298 | Delete confirm modal, webform/auth bypasses |
+| 3301-3739 | **Home Dashboard** — nav cards, animals on farm, missed reports, next 30 days, admin daily report tiles |
+| 3742-4208 | **Broiler batch edit form** (modal overlay) |
+| 4211-4494 | **Broiler Home Dashboard** — stats, active batch tracker, breed comparison, trends, financial summary |
+| 4497-4731 | **Timeline view** (Gantt chart — broiler + layer bars) |
+| 4734-4735 | BroilerDailysView / PigDailysView delegation |
+| 4738-5048 | **Batch List view** — active table, comparison table, processed cards |
+| 5050-5529 | **Poultry Feed tab** — ledger per feed type (starter/grower/layer), top summary table, monthly tiles, per-batch breakdown |
+| 5530-6028 | **Pig Feed tab** — daily snapshot, on-hand/end-of-month/suggested-order cards, physical count, monthly ledger tiles, per-group breakdown |
+| 6030-6336 | **Pigs Home Dashboard** — stats, pigs on farm, next farrowing, active batches, bar graphs |
+| 6337-6648 | **Breeding Timeline** (Gantt chart) |
+| 6649-7314 | **Pig Batches view** — feeder groups, sub-batches, processing trips |
+| 7315-7859 | **Admin/Webforms view** — webform editor, field config, team members, feed costs panel |
+| 7860-8331 | **Farrowing view** — records list, form, filters |
+| 8332-8764 | **Sows/Breeding Pigs view** — registry, breeder forms, leaderboard |
+| 8765-9033 | **Layers Home Dashboard** — stats, egg production, feed summary |
+| 9034-9037 | LayersView, LayerBatchesView, LayerDailysView, EggDailysView delegation |
+| 9038-9046 | App closing bracket + default return |
+| 9047-9066 | WcfYN, WcfToggle standalone components |
+| 9067-9382 | AdminAddReportModal (inline add daily report from admin) |
+| 9383-9583 | **BroilerDailysView** standalone component |
+| 9584-10448 | **LayerBatchesView** standalone component (with housing management) |
+| 10449-10604 | **LayersView** standalone component (legacy layer groups) |
+| 10605-10837 | **LayerDailysView** standalone component |
+| 10838-11012 | **EggDailysView** standalone component |
+| 11013-11219 | **PigDailysView** standalone component |
+| 11220-11280 | ReactDOM.createRoot, Babel boot script |
 
-- Lines 1-130: HTML head, CSS styles, CDN script tags
-- Lines 131-230: Supabase client init + helpers
-- Lines 230-520: Global constants, feed schedules, date helpers
-- Lines 520-600: Layer housing/feed cost helpers
-- Lines 600-790: LoginScreen, UsersModal
-- Lines 790-870: DEFAULT_WEBFORMS_CONFIG
-- Lines 870-1000: Styles, permission helpers
-- Lines 1000-1190: DeleteModal
-- Lines 1190-1420: **AddFeedWebform** (NEW)
-- Lines 1420-2100: WebformHub (public webforms)
-- Lines 2100-2200: FeedCostsPanel
-- Lines 2200+: App() — the main application
-- Lines 7900+: WcfYN, WcfToggle, AdminAddReportModal standalone components
-- Lines 8150+: BroilerDailysView standalone component
-- Lines 8400+: LayerBatchesView standalone component
-- Lines 9000+: LayersView standalone component
-- Lines 9200+: LayerDailysView standalone component
-- Lines 9500+: EggDailysView standalone component
-- Lines 9750+: PigDailysView standalone component
-- Final lines: ReactDOM.createRoot render + Babel boot script
+### Navigation Views (VALID_VIEWS)
 
-### 4.2 Navigation Views (VALID_VIEWS)
+`home`, `broilerHome`, `pigsHome`, `layersHome`, `timeline`, `list`, `feed`, `pigs`, `breeding`, `pigbatches`, `farrowing`, `sows`, `webforms`, `webformhub`, `webform`, `broilerdailys`, `pigdailys`, `layers`, `layerbatches`, `layerdailys`, `eggdailys`, `addfeed`
 
-All original views plus `addfeed` (public, no auth).
+Public (no auth): `webform`, `webformhub`, `addfeed`
 
-### 4.3 Key People & Emails
+### Key People
 
 | Person | Role | Email |
 |---|---|---|
-| Ronnie Jones | Admin / Owner | ronnie@whitecreek.farm |
+| Ronnie Jones (Byron) | Admin / Owner | ronnie@whitecreek.farm |
 | Mak | Management | mak@whitecreek.farm |
 | Simon | Farm Team | Simon.rosa3@gmail.com |
 | Josh | Farm Team | — |
 | Jenny | Farm Team | — |
 
-## 5. Add Feed Webform — Design Reference
+---
 
-**Read DECISIONS.md for the full design document.** Key corrections from the April 12 session:
+# 5. Feed System (Pig & Poultry) — Detailed
 
-- `housing_batch_map` values are batch NAMES, not batch IDs (corrects verified fact #10)
-- The `housing_batch_map` may be empty `{}` if syncWebformConfig hasn't run
-- `batch_id` is set to null on layer Add Feed inserts (can't resolve in anon context)
-- The `feed_edit_log` table does NOT exist (was created and dropped during design session)
+This is the most recently built and actively evolving part of the app. Read carefully.
 
-## 6. Conditional Field Rules (Apply to ALL Forms)
+### Data Model
 
-These rules apply everywhere — public webforms, AdminAddReportModal, standalone edit modals:
+Feed orders stored in `ppp-feed-orders-v1`:
+```json
+{
+  "pig": { "2025-10": 13900, "2025-11": 10000, ... },
+  "starter": { "2025-10": 3950, ... },
+  "grower": { "2025-10": 23950, ... },
+  "layerfeed": { "2025-10": 0, ... }
+}
+```
+
+Physical count stored in `ppp-pig-feed-inventory-v1` (pig) and `ppp-poultry-feed-inventory-v1` (poultry).
+
+### Order Timing Model
+
+**Orders arrive at the END of the month.** This means:
+- The current month's order has NOT arrived yet (mid-month).
+- "Actual On Hand" = orders from past months only minus consumption since tracking started.
+- "End of Month Estimate" = all orders through current month (including current month's arriving order) minus all consumption (actual + projected remaining days).
+- "Suggested Order" for next month = next month's projected consumption minus end-of-month estimate.
+
+### Tracking Start Date
+
+Tracking starts from the **first month with any order entered** across all feed types for that program. Consumption before that month is ignored (pre-tracking). For poultry, the first order in ANY of starter/grower/layerfeed triggers tracking for ALL three types.
+
+### Running Inventory Ledger (Monthly Tiles)
+
+Both pig and poultry feed tabs use a forward-pass ledger:
+```
+START OF MONTH = previous month's END (or 0 for first tracking month)
+CONSUMED = actual (past months) | actual + projected remaining (current) | projected (future)
+ORDERED = entered amount (arrives end of month)
+END OF MONTH = START - CONSUMED + ORDERED
+```
+
+Each month's START = previous month's END, creating a running balance.
+
+### Physical Count
+
+When entered, the physical count:
+1. Becomes the new anchor — all calculations from that point forward use it as START.
+2. Shows an adjustment badge: "Count adj +/- X" showing how far off the system estimate was.
+3. End of Month and Suggested Order recalculate from the count-based anchor.
+4. Only the latest count is stored (no history).
+
+### Pig Feed Tab (view==="pigs")
+
+**Top section**: 4 stat tiles (Today's Daily Need, Sows, Boars, Feeder Pigs) + 3 cards (Actual On Hand, End of Month Est., Order for [Next Month]) + Physical Count input.
+
+**Projections**:
+- Sows (non-nursing): 5 lbs/day
+- Nursing sows: 12 lbs/day (calculated from farrowing records + breeding timelines)
+- Boars: 5 lbs/day
+- Feeder pigs: 1 lb/day per month of age
+
+**Monthly tiles**: Ledger format (START/CONSUMED/ORDERED/END) + variance line (per-day and monthly, extrapolated for current month) + per-group breakdown table (Proj/day, Actual/day, Variance/day).
+
+### Poultry Feed Tab (view==="feed")
+
+**Top section**: Compact table with one row per feed type (Starter/Grower/Layer Feed), columns: On Hand, End of Mo Est., Order for [Next Month], Proj Need. + Physical Count input.
+
+**Monthly tiles**: Ledger table per feed type (START/CONSUMED/ORDERED/END OF MO). No daily variance (bulk feeding causes huge swings that don't normalize until month end). No per-batch breakdown in tiles.
+
+**Below tiles**: Broiler Feed Estimate Per Batch (collapsible) + Layer Feed Estimate Per Batch (collapsible). These show weekly feed schedules per batch.
+
+---
+
+# 6. Other Major Features
+
+### Add Feed Webform (`#addfeed`)
+
+Public form for quick feed logging. Inserts a new row into the appropriate `*_dailys` table with `source: 'add_feed_webform'`. Does NOT merge or mutate existing rows. All 16+ feed aggregation sites use `.reduce()` so multiple rows per batch+date work automatically.
+
+- Admin-configurable via the webform editor (fields can be toggled, relabeled, marked required).
+- Filter chips in Reports lists: All / Daily Reports / Add Feed.
+- Edit modals hide non-feed fields when editing Add Feed rows.
+- Pig inserts do NOT include `feed_type` (column doesn't exist on `pig_dailys`).
+
+### Layer Housing Model
+
+- `layer_batches` table stores batch-level data (name, original_count, feed cost rates, lifecycle dates).
+- `layer_housings` table stores per-housing data (housing_name, batch_id, current_count anchor, start_date).
+- `current_count` is a verified anchor from physical counts. Projected count = anchor minus mortalities since anchor date.
+- The "Retirement Home" is a permanent pseudo-batch that never closes. Edit modal hides lifecycle fields.
+
+### Broiler Batch System
+
+- Batches stored in `ppp-v4` (app_store).
+- Auto-status: planned → active → processed based on dates.
+- Feed data: B-24-* batches use legacy manual fields; B-25+ batches pull from `poultry_dailys` (daily reports).
+- Processing data: birds to processor, avg dressed weight, avg breast/thigh, whole/cuts lbs.
+- Document attachments via Supabase Storage. Excel files auto-parsed for processor data.
+- Batch color palette (24 colors) assigned by trailing batch number for visual distinction.
+
+### Pig Breeding System
+
+- Breeding cycles with timeline: Boar Exposure → Paddock → Farrowing → Weaning → Grow-out.
+- Constants: 45-day exposure, 116-day gestation, 42-day weaning, 183-day grow-out.
+- Farrowing records linked to cycles and sows.
+- Feeder groups with sub-batches and processing trips.
+- Breeding pig registry with tag numbers, weights, purchase info.
+
+### Daily Reports / Webforms
+
+- Public webforms at `#webforms` (no auth needed) for Broiler, Layer, Pig, and Egg daily reports.
+- All forms have per-form team member config, admin-configurable required/optional fields.
+- Add Group feature: submit multiple batch reports in one form submission.
+- Conditional rules: feed_type required only when feed_lbs > 0; mortality_reason required only when mortality_count > 0.
+- All delete actions use the type-"delete" confirmation modal (no `window.confirm`).
+
+### Permissions
+
+| Role | Can Do |
+|---|---|
+| farm_team | Edit + delete daily reports only |
+| management | Edit anything, delete daily reports only |
+| admin | Full access — edit and delete everything |
+
+---
+
+# 7. Conditional Field Rules (Apply to ALL Forms)
 
 1. **Feed type** is only required when `feed_lbs > 0`. Enforced in `validateRequiredFields()` and explicit submit checks.
-2. **Mortality reason** is hidden until `mortality_count > 0`, then required with red asterisk. Enforced in `validateRequiredFields()` and explicit submit checks.
-3. All delete actions use the type-"delete" confirmation modal (DeleteModal). No `window.confirm` for deletes.
+2. **Mortality reason** is hidden until `mortality_count > 0`, then required with red asterisk.
+3. All delete actions use `DeleteModal` (type "delete" to confirm).
 
-## 7. Design Preferences (Discovered During Session)
+---
 
-- No purple colors anywhere
-- All modals should be centered overlays, not inline forms
-- Auto-save with debounce (1.5s) on edit forms; save on close (X button)
-- Delete actions: show only Delete button in footer when editing (no Done/Cancel with auto-save)
-- Report tiles should use colored pills for yes/no fields, not checkmarks
-- Comments should be highlighted in amber pills, not plain italic
-- Team member names should have subtle pill styling
-- Alternating colors on batch cards for visual separation
-- Colored header bars on batch cards matching housing colors
+# 8. Design Preferences
+
+- No purple colors
+- Modals: centered overlays, not inline forms
+- Auto-save with 1.5s debounce on edit forms; save on close
+- Colored pills for yes/no fields, team members, comments
+- Delete button only in modal footer when editing (no Done/Cancel with auto-save)
+- Alternating colors on batch cards
+- The pig feed tile layout is the model for all feed tab tiles
+
+---
+
+# 9. Open Items / Known Issues
+
+### Feed System
+
+- **Physical count not yet tested on live data.** The pig and poultry physical count systems are built but Ronnie hasn't done a real physical count yet. The adjustment calculation (system estimate vs actual count) needs real-world validation.
+- **Feeder pig count uses originalPigCount for projections.** Processing trips reduce actual pig count, but the projection still uses the original. A more accurate projection would subtract processed pigs.
+- **Nursing sow detection depends on farrowing records.** If a sow farrows but no record is entered, she won't be counted as nursing (stays at 5 lbs/day instead of 12).
+
+### General
+
+- **Add Feed webform batch_id for layers is null.** Can't resolve in anon context. Aggregation works via `batch_label` + `.reduce()`. Low priority.
+- **housing_batch_map may be empty** if `syncWebformConfig` hasn't run after an admin loads the app. The Add Feed form handles this gracefully.
+- **Supabase sessions expire.** If daily records show 0, user should sign out and back in.
+
+---
+
+# 10. Lessons for Future Claude Sessions
+
+### Mistakes Made and How to Avoid Them
+
+1. **`inv.count` crash when `inv` is null.** The pig feed "On Hand" display tried to access `inv.count` when there was no physical count (inv=null) but feedOnHand was set from the orders-consumption path. Always check for null before accessing properties in display code, especially when multiple code paths can set the displayed value.
+
+2. **Counting ALL consumption instead of from tracking start.** The original On Hand calculation counted consumption from the beginning of time but orders only started in October 2025. Result: hugely negative numbers. Fix: find the earliest order month and only count consumption from that month forward.
+
+3. **Monthly variance comparing partial month actual vs full month projected.** Showing `actual_so_far - full_month_projected` mid-month produces misleading negative numbers. Fix: extrapolate the daily rate to a full month before comparing (or just show per-day variance).
+
+4. **Combined totals across feed types are meaningless for poultry.** Starter, grower, and layer feed have completely different usage patterns and ordering. Showing a combined "Actual: 1,782/day" across all three types tells you nothing. Always show per-type metrics for poultry.
+
+5. **const inside conditional blocks in Babel.** While technically valid JS, `const` inside `if(view===...)` blocks and especially nested `if/else` within those blocks can crash in this Babel setup. Use `var` for any variable declared inside conditional blocks. This bit us on the pig feed tab (`const` inside `if(inv)` inside `if(view==="pigs")`).
+
+6. **Babel cache prevents seeing local changes.** After editing `index.html` locally, the browser serves the cached transpiled version. Must clear `wcf-babel-*` keys from localStorage before refreshing. Always remind the user.
+
+7. **Poultry daily variance is useless.** Bulk feeding (filling bins and wagons) creates huge daily swings. A day with 3,000 lbs followed by days with 0 doesn't mean consumption changed. Only monthly totals are meaningful for poultry. Pig daily reports are more granular so daily variance works there.
+
+### Architecture Patterns to Follow
+
+- **Persist helpers**: Use `sbSave(key, value)` for app_store writes (has retry logic and timeout handling).
+- **Dedicated tables vs app_store**: Daily reports use dedicated Supabase tables with RLS. Everything else uses app_store JSON blobs.
+- **Standalone components**: BroilerDailysView, LayerBatchesView, LayerDailysView, EggDailysView, PigDailysView are standalone components defined outside App(). They receive props from App. This keeps App's render function manageable.
+- **webform_config sync**: When data changes (batches, groups, team members), `syncWebformConfig()` pushes the latest data to the `webform_config` table so public webforms (no auth) can access it.
 
 ---
 
