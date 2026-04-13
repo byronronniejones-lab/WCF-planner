@@ -4395,22 +4395,23 @@ function App(){
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(270px,1fr))',gap:10}}>
                 {activeBatchDetails.map(({b,inBrooder,daysToProc,daysActive,feedSoFar,mortSoFar,mortPct,phaseLabel,B2})=>(
                   <div key={b.id} onClick={()=>setView('list')} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px',cursor:'pointer'}} className="hoverable-tile">
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10,flexWrap:'wrap'}}>
                       <span style={{fontSize:16}}>{inBrooder?'🐣':'🐔'}</span>
-                      <strong style={{fontSize:13}}>{b.name}</strong>
-                      <span style={S.badge(B2.bg,B2.tx)}>{b.breed}</span>
-                      <span style={{marginLeft:'auto',fontSize:10,fontWeight:700,color:inBrooder?'#065f46':'#1e3a5f',background:inBrooder?'#ecfdf5':'#eff6ff',padding:'2px 8px',borderRadius:10}}>{inBrooder?'BROODER':'SCHOONER'}</span>
+                      <strong style={{fontSize:13,whiteSpace:'nowrap'}}>{b.name}</strong>
+                      <span style={{...S.badge(B2.bg,B2.tx),whiteSpace:'nowrap'}}>{b.breed}</span>
+                      <span style={{...S.badge('#f3f4f6','#374151'),whiteSpace:'nowrap'}}>{'Sch '+b.schooner}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:inBrooder?'#065f46':'#1e3a5f',background:inBrooder?'#ecfdf5':'#eff6ff',padding:'2px 8px',borderRadius:10,whiteSpace:'nowrap'}}>{inBrooder?'BROODER':'SCHOONER'}</span>
                     </div>
                     {(()=>{
                       const stats = calcBroilerStatsFromDailys(b, broilerDailys);
                       const dayOne = parseInt(b.birdCountActual)||parseInt(b.birdCount)||0;
+                      const projFeed = calcBatchFeed(b);
                       return [
                         {l:'To processing',v:daysToProc!=null?Math.floor(daysToProc/7)+'w '+daysToProc%7+'d':'\u2014',warn:daysToProc!=null&&daysToProc<=7},
                         {l:'On farm',v:Math.floor(daysActive/7)+'w '+daysActive%7+'d'},
                         {l:'Current phase',v:phaseLabel},
                         {l:'Birds (day 1)',v:dayOne>0?dayOne.toLocaleString():'\u2014'},
                         {l:'Projected birds',v:stats.projectedBirds.toLocaleString(),green:true},
-                        {l:'Feed consumed',v:feedSoFar>0?Math.round(feedSoFar).toLocaleString()+' lbs':'\u2014'},
                         {l:'Mortality',v:mortSoFar>0?`${mortSoFar} birds (${mortPct}%)`:'0',warn:mortSoFar>15},
                       ];
                     })().map(({l,v,warn,green})=>(
@@ -4419,6 +4420,29 @@ function App(){
                         <span style={{fontWeight:600,color:warn?'#b91c1c':green?'#085041':'#111827'}}>{v}</span>
                       </div>
                     ))}
+                    {/* Feed: Projected vs Actual */}
+                    {(()=>{
+                      const stats2 = calcBroilerStatsFromDailys(b, broilerDailys);
+                      const pf = calcBatchFeed(b);
+                      return React.createElement('div',{style:{marginTop:6,paddingTop:6,borderTop:'1px solid #f3f4f6'}},
+                        React.createElement('div',{style:{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5,marginBottom:4}},'Feed: Projected / Actual'),
+                        [
+                          {l:'Starter',proj:pf.starter,act:stats2.starterFeed,color:'#1d4ed8'},
+                          {l:'Grower',proj:pf.grower,act:stats2.growerFeed,color:'#085041'},
+                        ].map(function(f){
+                          var diff=f.act-f.proj;
+                          return React.createElement('div',{key:f.l,style:{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:11,marginBottom:3}},
+                            React.createElement('span',{style:{color:f.color,fontWeight:600}},f.l),
+                            React.createElement('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+                              React.createElement('span',{style:{color:'#6b7280'}},f.proj.toLocaleString()),
+                              React.createElement('span',{style:{color:'#9ca3af'}},' / '),
+                              React.createElement('span',{style:{fontWeight:700,color:f.act>0?'#111827':'#9ca3af'}},f.act>0?f.act.toLocaleString():'\u2014'),
+                              f.act>0&&React.createElement('span',{style:{fontSize:10,fontWeight:600,color:diff>0?'#b91c1c':'#065f46',marginLeft:4}},'('+(diff>0?'+':'')+diff.toLocaleString()+')')
+                            )
+                          );
+                        })
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -5209,16 +5233,34 @@ function App(){
       pActualOnHand={starter:aohS,grower:aohG,layer:aohL,total:(aohS||0)+(aohG||0)+(aohL||0)};
       pEndOfMonth={starter:curLgS?curLgS.end:null,grower:curLgG?curLgG.end:null,layer:curLgL?curLgL.end:null,total:(curLgS?curLgS.end:0)+(curLgG?curLgG.end:0)+(curLgL?curLgL.end:0)};
     }
-    // Suggested order per type for next month
-    var pNextMonth=new Date(today.getFullYear(),today.getMonth()+1,1);
-    var pNextYM=pNextMonth.getFullYear()+'-'+String(pNextMonth.getMonth()+1).padStart(2,'0');
-    var pNextMD=monthlyData.find(function(m){return m.ym===pNextYM;});
+    // Suggested order — auto-detect: all 3 types must have current month order before cycling to next
+    var pCurHasAllOrders=(feedOrders.starter||{})[thisYM]!=null
+      &&(feedOrders.grower||{})[thisYM]!=null
+      &&(feedOrders.layerfeed||{})[thisYM]!=null;
+    var pOrderOffset=pCurHasAllOrders?1:0;
+    var pOrderTarget=new Date(today.getFullYear(),today.getMonth()+pOrderOffset,1);
+    var pOrderTargetYM=pOrderTarget.getFullYear()+'-'+String(pOrderTarget.getMonth()+1).padStart(2,'0');
+    var pOrderTargetLabel=pOrderTarget.toLocaleDateString('en-US',{month:'short'});
+    var pOrderTargetMD=monthlyData.find(function(m){return m.ym===pOrderTargetYM;});
+    var pNextMonth=new Date(today.getFullYear(),today.getMonth()+pOrderOffset,1);
+    var pMonthAfter=new Date(today.getFullYear(),today.getMonth()+pOrderOffset+1,1);
+    var pMonthAfterYM=pMonthAfter.getFullYear()+'-'+String(pMonthAfter.getMonth()+1).padStart(2,'0');
+    var pMonthAfterMD=monthlyData.find(function(m){return m.ym===pMonthAfterYM;});
     var pSugOrder=null;
-    if(pNextMD&&pEndOfMonth){
+    if(pEndOfMonth||!pCurHasAllOrders){
+      var pBase=pEndOfMonth||{starter:0,grower:0,layer:0};
+      // If ordering for current month, base is previous month end (start of current month)
+      if(!pCurHasAllOrders&&curLgS){
+        pBase={starter:curLgS?curLgS.start:0,grower:curLgG?curLgG.start:0,layer:curLgL?curLgL.start:0};
+      }
+      var sNeed=(pOrderTargetMD?pOrderTargetMD.starter:0)+(pMonthAfterMD?pMonthAfterMD.starter:0);
+      var gNeed=(pOrderTargetMD?pOrderTargetMD.grower:0)+(pMonthAfterMD?pMonthAfterMD.grower:0);
+      var lNeed=(pOrderTargetMD?pOrderTargetMD.layerFeed:0)+(pMonthAfterMD?pMonthAfterMD.layerFeed:0);
       pSugOrder={
-        starter:Math.max(0,(pNextMD.starter||0)-(pEndOfMonth.starter||0)),
-        grower:Math.max(0,(pNextMD.grower||0)-(pEndOfMonth.grower||0)),
-        layer:Math.max(0,(pNextMD.layerFeed||0)-(pEndOfMonth.layer||0)),
+        starter:Math.max(0,sNeed-(pBase.starter||0)),
+        grower:Math.max(0,gNeed-(pBase.grower||0)),
+        layer:Math.max(0,lNeed-(pBase.layer||0)),
+        sNeed:sNeed,gNeed:gNeed,lNeed:lNeed,
       };
       pSugOrder.total=pSugOrder.starter+pSugOrder.grower+pSugOrder.layer;
     }
@@ -5239,23 +5281,31 @@ function App(){
                   <th style={{padding:'8px 16px',textAlign:'left',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>Feed Type</th>
                   <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>On Hand</th>
                   <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>End of Mo Est.</th>
-                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:pSugOrder&&pSugOrder.total>0?'#92400e':'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>{'Order for '+pNextMonth.toLocaleDateString('en-US',{month:'short'})}</th>
-                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>{'Proj Need ('+pNextMonth.toLocaleDateString('en-US',{month:'short'})+')'}</th>
+                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:pSugOrder&&pSugOrder.total>0?'#92400e':'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>{'Order for '+pOrderTargetLabel}</th>
+                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>{'Need thru '+pMonthAfter.toLocaleDateString('en-US',{month:'short'})}</th>
                 </tr>
               </thead>
               <tbody>
                 {[
-                  {label:'Starter',color:'#1d4ed8',aoh:pActualOnHand?pActualOnHand.starter:null,eom:pEndOfMonth?pEndOfMonth.starter:null,sug:pSugOrder?pSugOrder.starter:null,need:pNextMD?pNextMD.starter:null},
-                  {label:'Grower',color:'#085041',aoh:pActualOnHand?pActualOnHand.grower:null,eom:pEndOfMonth?pEndOfMonth.grower:null,sug:pSugOrder?pSugOrder.grower:null,need:pNextMD?pNextMD.grower:null},
-                  {label:'Layer Feed',color:'#b45309',aoh:pActualOnHand?pActualOnHand.layer:null,eom:pEndOfMonth?pEndOfMonth.layer:null,sug:pSugOrder?pSugOrder.layer:null,need:pNextMD?pNextMD.layerFeed:null},
+                  {label:'Starter',key:'starter',color:'#1d4ed8',aoh:pActualOnHand?pActualOnHand.starter:null,eom:pEndOfMonth?pEndOfMonth.starter:null,sug:pSugOrder?pSugOrder.starter:null,need:pSugOrder?pSugOrder.sNeed:null,m1:pOrderTargetMD?pOrderTargetMD.starter:0,m2:pMonthAfterMD?pMonthAfterMD.starter:0,countAdj:curLgS&&curLgS.countMonth?curLgS.countAdj:null,countDate:pInv&&pInv.starter?pInv.starter.date:null},
+                  {label:'Grower',key:'grower',color:'#085041',aoh:pActualOnHand?pActualOnHand.grower:null,eom:pEndOfMonth?pEndOfMonth.grower:null,sug:pSugOrder?pSugOrder.grower:null,need:pSugOrder?pSugOrder.gNeed:null,m1:pOrderTargetMD?pOrderTargetMD.grower:0,m2:pMonthAfterMD?pMonthAfterMD.grower:0,countAdj:curLgG&&curLgG.countMonth?curLgG.countAdj:null,countDate:pInv&&pInv.grower?pInv.grower.date:null},
+                  {label:'Layer Feed',key:'layer',color:'#b45309',aoh:pActualOnHand?pActualOnHand.layer:null,eom:pEndOfMonth?pEndOfMonth.layer:null,sug:pSugOrder?pSugOrder.layer:null,need:pSugOrder?pSugOrder.lNeed:null,m1:pOrderTargetMD?pOrderTargetMD.layerFeed:0,m2:pMonthAfterMD?pMonthAfterMD.layerFeed:0,countAdj:curLgL&&curLgL.countMonth?curLgL.countAdj:null,countDate:pInv&&pInv.layer?pInv.layer.date:null},
                 ].map(function(ft){
                   return React.createElement('tr',{key:ft.label,style:{borderBottom:'1px solid #f3f4f6'}},
                     React.createElement('td',{style:{padding:'10px 16px',fontWeight:700,color:ft.color,fontSize:13}},
                       React.createElement('span',{style:{display:'inline-block',width:8,height:8,borderRadius:2,background:ft.color,marginRight:8}}),ft.label),
-                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:15,fontWeight:700,color:ft.aoh!=null?(ft.aoh>0?'#065f46':'#b91c1c'):'#9ca3af'}},ft.aoh!=null?ft.aoh.toLocaleString():'\u2014'),
+                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right'}},
+                      React.createElement('div',{style:{fontSize:15,fontWeight:700,color:ft.aoh!=null?(ft.aoh>0?'#065f46':'#b91c1c'):'#9ca3af'}},ft.aoh!=null?ft.aoh.toLocaleString():'\u2014'),
+                      ft.countDate&&React.createElement('div',{style:{fontSize:9,color:'#9ca3af'}},'Count: '+fmt(ft.countDate)),
+                      ft.countAdj!=null&&ft.countAdj!==0&&React.createElement('div',{style:{fontSize:9,color:ft.countAdj>0?'#065f46':'#b91c1c'}},
+                        'Adj '+(ft.countAdj>0?'+':'')+ft.countAdj.toLocaleString())
+                    ),
                     React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:15,fontWeight:700,color:ft.eom!=null?(ft.eom>0?'#065f46':'#b91c1c'):'#9ca3af'}},ft.eom!=null?ft.eom.toLocaleString():'\u2014'),
                     React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:15,fontWeight:700,color:ft.sug>0?'#92400e':'#065f46',background:ft.sug>0?'#fffbeb':'transparent'}},ft.sug!=null?(ft.sug>0?ft.sug.toLocaleString():'\u2713 Surplus'):'\u2014'),
-                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:12,color:'#6b7280'}},ft.need!=null?ft.need.toLocaleString():'\u2014')
+                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right'}},
+                      React.createElement('div',{style:{fontSize:12,color:'#6b7280',fontWeight:600}},ft.need!=null?ft.need.toLocaleString():'\u2014'),
+                      React.createElement('div',{style:{fontSize:10,color:'#9ca3af'}},ft.m1.toLocaleString()+' ('+pOrderTargetLabel+') + '+ft.m2.toLocaleString()+' ('+pMonthAfter.toLocaleDateString('en-US',{month:'short'})+')')
+                    )
                   );
                 })}
               </tbody>
@@ -5327,7 +5377,7 @@ function App(){
                     React.createElement('tbody',null,
                       types.map(function(t){
                         var lg=t.lg;
-                        var ordVal=(feedOrders[t.ordKey]||{})[md.ym]||'';
+                        var ordRaw=(feedOrders[t.ordKey]||{})[md.ym];var ordVal=ordRaw!=null&&ordRaw!==''?ordRaw:'';
                         return React.createElement('tr',{key:t.key,style:{borderBottom:'1px solid #f3f4f6'}},
                           React.createElement('td',{style:{padding:'7px 0',fontWeight:600,color:t.color,fontSize:12}},t.label),
                           React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',color:lg?'#374151':'#9ca3af'}},lg?lg.start.toLocaleString():'\u2014'),
@@ -5410,82 +5460,106 @@ function App(){
             );
           })()}
 
-          {/* Per-batch breakdown - Broiler COLLAPSIBLE */}
-          <div style={{...S.card}}>
-            <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
-              onClick={()=>setCollapsedBatches(s=>{const n=new Set(s); n.has('all')?n.delete('all'):n.add('all'); return n;})}>
-              <div style={{fontWeight:600,fontSize:14,color:"#085041"}}>{'\ud83d\udc14 Broiler Feed Estimate Per Batch'}</div>
-              <span style={{fontSize:12,color:"#9ca3af"}}>{collapsedBatches.has('all')?'\u25b6 expand':'\u25bc collapse'}</span>
-            </div>
-            {!collapsedBatches.has('all')&&<>
-            {activeBroilers.length===0&&(
-              <div style={{padding:"2rem",textAlign:"center",color:"#9ca3af",fontSize:13}}>No active or planned broiler batches</div>
-            )}
-            {activeBroilers.map(b => {
-              const {schedule, starter, grower, total} = calcBatchFeed(b);
-              const C = getBatchColor(b.name);
-              return (
-                <div key={b.id} style={{borderBottom:"1px solid #e5e7eb"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",background:"#f9fafb",flexWrap:"wrap"}}>
-                    <span style={{display:"inline-block",width:12,height:12,borderRadius:3,background:C.bg,border:'1px solid '+C.bd}}/>
-                    <div style={{fontWeight:600,fontSize:13,color:"#1a1a1a",minWidth:100}}>{b.name}</div>
-                    <span style={S.badge((BREED_STYLE[b.breed]||BREED_STYLE.CC).bg,(BREED_STYLE[b.breed]||BREED_STYLE.CC).tx)}>{breedLabel(b.breed)}</span>
-                    <span style={S.badge('#f3f4f6','#374151')}>Schooner {b.schooner}</span>
-                    <span style={{fontSize:12,color:"#4b5563"}}>Hatch: {fmt(b.hatchDate)}</span>
-                    <div style={{marginLeft:"auto",display:"flex",gap:16,flexWrap:"wrap"}}>
-                      <div style={{textAlign:"center"}}>
-                        <div style={{fontSize:10,color:"#9ca3af",textTransform:"uppercase",letterSpacing:.5}}>Starter</div>
-                        <div style={{fontSize:15,fontWeight:700,color:"#1d4ed8"}}>{starter.toLocaleString()} lbs</div>
-                      </div>
-                      <div style={{textAlign:"center"}}>
-                        <div style={{fontSize:10,color:"#9ca3af",textTransform:"uppercase",letterSpacing:.5}}>Grower</div>
-                        <div style={{fontSize:15,fontWeight:700,color:"#085041"}}>{grower.toLocaleString()} lbs</div>
-                      </div>
-                      <div style={{textAlign:"center"}}>
-                        <div style={{fontSize:10,color:"#9ca3af",textTransform:"uppercase",letterSpacing:.5}}>Total</div>
-                        <div style={{fontSize:15,fontWeight:700,color:"#1a1a1a"}}>{total.toLocaleString()} lbs</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{overflowX:"auto"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                      <thead>
-                        <tr style={{background:"#ecfdf5"}}>
-                          <th style={{padding:"5px 12px",textAlign:"left",fontWeight:600,color:"#4b5563",whiteSpace:"nowrap"}}>Week</th>
-                          <th style={{padding:"5px 12px",textAlign:"left",fontWeight:600,color:"#4b5563"}}>Phase</th>
-                          <th style={{padding:"5px 12px",textAlign:"left",fontWeight:600,color:"#4b5563"}}>Location</th>
-                          <th style={{padding:"5px 12px",textAlign:"right",fontWeight:600,color:"#4b5563",whiteSpace:"nowrap"}}>Lbs/Bird</th>
-                          <th style={{padding:"5px 12px",textAlign:"right",fontWeight:600,color:"#4b5563",whiteSpace:"nowrap"}}>Total Lbs</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {schedule.map((w,i) => (
-                          <tr key={i} style={{borderTop:"1px solid #e5e7eb",background:w.phase==="starter"?"#f0f7ff":"#f0faf5"}}>
-                            <td style={{padding:"5px 12px",fontWeight:500}}>Week {w.week}</td>
-                            <td style={{padding:"5px 12px"}}>
-                              <span style={{padding:"2px 7px",borderRadius:4,fontSize:10,fontWeight:600,
-                                background:w.phase==="starter"?"#E6F1FB":"#EAF3DE",
-                                color:w.phase==="starter"?"#185FA5":"#27500A"}}>
-                                {w.phase==="starter"?"Starter":"Grower"}
-                              </span>
-                            </td>
-                            <td style={{padding:"5px 12px",color:"#4b5563"}}>{i < 2 ? 'Brooder '+b.brooder : 'Schooner '+b.schooner}</td>
-                            <td style={{padding:"5px 12px",textAlign:"right"}}>{w.lbsPerBird.toFixed(2)}</td>
-                            <td style={{padding:"5px 12px",textAlign:"right",fontWeight:500}}>{w.totalLbs.toLocaleString()}</td>
-                          </tr>
-                        ))}
-                        <tr style={{borderTop:"2px solid #ddd",background:"#ecfdf5",fontWeight:600}}>
-                          <td colSpan={4} style={{padding:"6px 12px",textAlign:"right",color:"#4b5563"}}>Total</td>
-                          <td style={{padding:"6px 12px",textAlign:"right"}}>{total.toLocaleString()} lbs</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+          {/* Per-batch breakdown - Broiler: Active expanded, Processed collapsible, Planned collapsible */}
+          {(function(){
+            function renderBroilerBatchFeed(b){
+              var feed=calcBatchFeed(b);var schedule=feed.schedule;var starter=feed.starter;var grower=feed.grower;var total=feed.total;
+              var C=getBatchColor(b.name);
+              var bStats=calcBroilerStatsFromDailys(b,broilerDailys);
+              var actStarter=bStats.starterFeed;var actGrower=bStats.growerFeed;var actTotal=actStarter+actGrower;
+              var autoSt=calcPoultryStatus(b);
+              return React.createElement('div',{key:b.id,style:{borderBottom:'1px solid #e5e7eb'}},
+                React.createElement('div',{style:{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',background:'#f9fafb',flexWrap:'wrap'}},
+                  React.createElement('span',{style:{display:'inline-block',width:12,height:12,borderRadius:3,background:C.bg,border:'1px solid '+C.bd}}),
+                  React.createElement('div',{style:{fontWeight:600,fontSize:13,color:'#1a1a1a',minWidth:100}},b.name),
+                  React.createElement('span',{style:S.badge((BREED_STYLE[b.breed]||BREED_STYLE.CC).bg,(BREED_STYLE[b.breed]||BREED_STYLE.CC).tx)},breedLabel(b.breed)),
+                  React.createElement('span',{style:S.badge('#f3f4f6','#374151')},'Schooner '+b.schooner),
+                  React.createElement('span',{style:{fontSize:12,color:'#4b5563'}},'Hatch: '+fmt(b.hatchDate)),
+                  (function(){var autoSt2=calcPoultryStatus(b);var endDate=autoSt2==='processed'?b.processingDate:todayISO();if(!b.hatchDate||!endDate)return null;var days=Math.round((new Date(endDate+'T12:00:00')-new Date(b.hatchDate+'T12:00:00'))/86400000);var w2=Math.floor(days/7);var d2=days%7;return React.createElement('span',{style:{fontSize:11,fontWeight:600,color:'#085041',background:'#ecfdf5',padding:'2px 8px',borderRadius:10}},w2+'w '+d2+'d'+(autoSt2==='processed'?' total':''));})(),
+                  (parseInt(b.totalToProcessor)>0)?React.createElement('span',{style:{fontSize:11,fontWeight:600,color:'#374151',background:'#f3f4f6',padding:'2px 8px',borderRadius:10}},parseInt(b.totalToProcessor).toLocaleString()+' processed'):null,
+                  React.createElement('div',{style:{marginLeft:'auto',display:'flex',gap:20,flexWrap:'wrap'}},
+                    [{label:'Starter',proj:starter,act:actStarter,color:'#1d4ed8'},
+                     {label:'Grower',proj:grower,act:actGrower,color:'#085041'},
+                     {label:'Total',proj:total,act:actTotal,color:'#1a1a1a'}
+                    ].map(function(col){
+                      var diff=col.act-col.proj;
+                      return React.createElement('div',{key:col.label,style:{textAlign:'center'}},
+                        React.createElement('div',{style:{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5}},col.label),
+                        React.createElement('div',{style:{display:'flex',gap:6,alignItems:'baseline',justifyContent:'center'}},
+                          React.createElement('span',{style:{fontSize:13,fontWeight:700,color:col.color}},col.proj.toLocaleString()),
+                          React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},'/'),
+                          React.createElement('span',{style:{fontSize:13,fontWeight:700,color:col.act>0?'#111827':'#9ca3af'}},col.act>0?col.act.toLocaleString():'\u2014')
+                        ),
+                        col.act>0&&React.createElement('div',{style:{fontSize:10,fontWeight:600,color:diff>0?'#b91c1c':'#065f46'}},(diff>0?'+':'')+diff.toLocaleString())
+                      );
+                    })
+                  )
+                ),
+                React.createElement('div',{style:{overflowX:'auto'}},
+                  React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
+                    React.createElement('thead',null,
+                      React.createElement('tr',{style:{background:'#ecfdf5'}},
+                        React.createElement('th',{style:{padding:'5px 12px',textAlign:'left',fontWeight:600,color:'#4b5563',whiteSpace:'nowrap'}},'Week'),
+                        React.createElement('th',{style:{padding:'5px 12px',textAlign:'left',fontWeight:600,color:'#4b5563'}},'Phase'),
+                        React.createElement('th',{style:{padding:'5px 12px',textAlign:'left',fontWeight:600,color:'#4b5563'}},'Location'),
+                        React.createElement('th',{style:{padding:'5px 12px',textAlign:'right',fontWeight:600,color:'#4b5563',whiteSpace:'nowrap'}},'Lbs/Bird'),
+                        React.createElement('th',{style:{padding:'5px 12px',textAlign:'right',fontWeight:600,color:'#4b5563',whiteSpace:'nowrap'}},'Total Lbs')
+                      )
+                    ),
+                    React.createElement('tbody',null,
+                      schedule.map(function(w,i){
+                        return React.createElement('tr',{key:i,style:{borderTop:'1px solid #e5e7eb',background:w.phase==='starter'?'#f0f7ff':'#f0faf5'}},
+                          React.createElement('td',{style:{padding:'5px 12px',fontWeight:500}},'Week '+w.week),
+                          React.createElement('td',{style:{padding:'5px 12px'}},
+                            React.createElement('span',{style:{padding:'2px 7px',borderRadius:4,fontSize:10,fontWeight:600,background:w.phase==='starter'?'#E6F1FB':'#EAF3DE',color:w.phase==='starter'?'#185FA5':'#27500A'}},w.phase==='starter'?'Starter':'Grower')
+                          ),
+                          React.createElement('td',{style:{padding:'5px 12px',color:'#4b5563'}},i<2?'Brooder '+b.brooder:'Schooner '+b.schooner),
+                          React.createElement('td',{style:{padding:'5px 12px',textAlign:'right'}},w.lbsPerBird.toFixed(2)),
+                          React.createElement('td',{style:{padding:'5px 12px',textAlign:'right',fontWeight:500}},w.totalLbs.toLocaleString())
+                        );
+                      }),
+                      React.createElement('tr',{style:{borderTop:'2px solid #ddd',background:'#ecfdf5',fontWeight:600}},
+                        React.createElement('td',{colSpan:4,style:{padding:'6px 12px',textAlign:'right',color:'#4b5563'}},'Total'),
+                        React.createElement('td',{style:{padding:'6px 12px',textAlign:'right'}},total.toLocaleString()+' lbs')
+                      )
+                    )
+                  )
+                )
               );
-            })}
-          </>}
-          </div>
+            }
+            var activeBrFeed=activeBroilers.filter(function(b){return calcPoultryStatus(b)==='active';});
+            var plannedBrFeed=activeBroilers.filter(function(b){return calcPoultryStatus(b)==='planned';});
+            var processedBrFeed=batches.filter(function(b){return calcPoultryStatus(b)==='processed'&&b.hatchDate;}).sort(function(a,b){return (b.processingDate||b.hatchDate||'').localeCompare(a.processingDate||a.hatchDate||'');});
+            var secT=collapsedBatches;
+            function togBr(key){setCollapsedBatches(function(s){var n=new Set(s);n.has(key)?n.delete(key):n.add(key);return n;});}
+            return React.createElement('div',{style:{...S.card}},
+              React.createElement('div',{style:{padding:'12px 16px',borderBottom:'1px solid #e5e7eb'}},
+                React.createElement('div',{style:{fontWeight:600,fontSize:14,color:'#085041'}},'\ud83d\udc14 Broiler Feed Estimate Per Batch')
+              ),
+              // Active — always expanded
+              activeBrFeed.length>0&&React.createElement('div',null,
+                React.createElement('div',{style:{padding:'8px 16px',fontSize:12,fontWeight:700,color:'#065f46',background:'#ecfdf5',borderBottom:'1px solid #d1fae5'}},'ACTIVE ('+activeBrFeed.length+')'),
+                activeBrFeed.map(renderBroilerBatchFeed)
+              ),
+              activeBrFeed.length===0&&React.createElement('div',{style:{padding:'2rem',textAlign:'center',color:'#9ca3af',fontSize:13}},'No active broiler batches'),
+              // Processed — collapsible, newest first
+              processedBrFeed.length>0&&React.createElement('div',null,
+                React.createElement('div',{onClick:function(){togBr('proc');},style:{padding:'8px 16px',fontSize:12,fontWeight:700,color:'#4b5563',background:'#f9fafb',borderBottom:'1px solid #e5e7eb',cursor:'pointer',display:'flex',alignItems:'center',gap:6}},
+                  React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secT.has('proc')?'\u25bc':'\u25b6'),
+                  'PROCESSED ('+processedBrFeed.length+')'
+                ),
+                secT.has('proc')&&processedBrFeed.map(renderBroilerBatchFeed)
+              ),
+              // Planned — collapsible
+              plannedBrFeed.length>0&&React.createElement('div',null,
+                React.createElement('div',{onClick:function(){togBr('planned');},style:{padding:'8px 16px',fontSize:12,fontWeight:700,color:'#4b5563',background:'#f8fafc',borderBottom:'1px solid #e5e7eb',cursor:'pointer',display:'flex',alignItems:'center',gap:6}},
+                  React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},secT.has('planned')?'\u25bc':'\u25b6'),
+                  'PLANNED ('+plannedBrFeed.length+')'
+                ),
+                secT.has('planned')&&plannedBrFeed.map(renderBroilerBatchFeed)
+              )
+            );
+          })()}
 
           {/* Per-batch breakdown - Layer COLLAPSIBLE */}
           <div style={{...S.card}}>
@@ -5667,11 +5741,29 @@ function App(){
     var projRemainingThisMonth=curMonthDaysLeft>0?Math.round(curProj.total*curMonthDaysLeft):0;
     // End of month estimate (current month's order arrives, minus all consumption including projected)
     var endOfMonthEst=firstPigOrderYM!=='9999-99'?Math.round(ordersThroughCurrent-totalPigConsumed-projRemainingThisMonth):null;
-    // Suggested order for next month
-    var nextMonth2=new Date(now.getFullYear(),now.getMonth()+1,1);
+    // Suggested order — auto-detect: if current month has no order yet, show current month; otherwise show next
+    var curMonthHasOrder=(feedOrders.pig||{})[thisYM]!=null;
+    var orderTargetOffset=curMonthHasOrder?1:0;
+    var orderTargetMonth=new Date(now.getFullYear(),now.getMonth()+orderTargetOffset,1);
+    var orderTargetYM=orderTargetMonth.getFullYear()+'-'+String(orderTargetMonth.getMonth()+1).padStart(2,'0');
+    var orderTargetLabel=orderTargetMonth.toLocaleDateString('en-US',{month:'short'});
+    // Need covers target month + month after (order arrives end of target month, must last through month after)
+    var nextMonth2=new Date(now.getFullYear(),now.getMonth()+orderTargetOffset+1,1);
     var nextYM=nextMonth2.getFullYear()+'-'+String(nextMonth2.getMonth()+1).padStart(2,'0');
+    var orderTargetData=monthlyData.find(function(m){return m.ym===orderTargetYM;});
     var nextMonthData=monthlyData.find(function(m){return m.ym===nextYM;});
-    var suggestedOrder=nextMonthData&&endOfMonthEst!=null?Math.max(0,nextMonthData.projTotal-endOfMonthEst):null;
+    var monthAfterNext0=new Date(now.getFullYear(),now.getMonth()+orderTargetOffset+1,1);
+    var monthAfterNextYM0=monthAfterNext0.getFullYear()+'-'+String(monthAfterNext0.getMonth()+1).padStart(2,'0');
+    var monthAfterNextData0=monthlyData.find(function(m){return m.ym===monthAfterNextYM0;});
+    // Base for suggested order: if ordering for current month, use previous month end; if ordering for next month, use current month end
+    var orderBaseEst=curMonthHasOrder?endOfMonthEst:(function(){
+      // End of previous month = start of current month in ledger terms (before current month consumption/orders)
+      var prevEnd=Object.entries(feedOrders.pig||{}).reduce(function(s,e){if(e[0]<thisYM)return s+(parseFloat(e[1])||0);return s;},0)
+        -pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)>=firstPigOrderYM&&d.date.substring(0,7)<thisYM;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0);
+      return firstPigOrderYM!=='9999-99'?Math.round(prevEnd):null;
+    })();
+    var twoMonthNeed0=(orderTargetData?orderTargetData.projTotal:0)+(monthAfterNextData0?monthAfterNextData0.projTotal:0);
+    var suggestedOrder=orderBaseEst!=null?Math.max(0,twoMonthNeed0-orderBaseEst):null;
 
     var feedOnHand=null;
     var physCountAdjustment=null;
@@ -5688,13 +5780,18 @@ function App(){
       var systemEstAtCount=Math.round(ordersArrived-pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)>=firstPigOrderYM&&d.date<=inv.date;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0));
       physCountAdjustment=Math.round(inv.count-systemEstAtCount);
       // Recalculate end of month est anchored from physical count
+      // Include current month's order — it arrives end of month (after any mid-month count)
       var ordSinceCountThruMonth=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
-        if(e[0]>invYM&&e[0]<=thisYM) return s+(parseFloat(e[1])||0);
+        if(e[0]>=invYM&&e[0]<=thisYM) return s+(parseFloat(e[1])||0);
         return s;
       },0);
       endOfMonthEst=Math.round(inv.count+ordSinceCountThruMonth-consumedSinceCount-projRemainingThisMonth);
-      // Recalculate suggested order from physical-count-based end of month
-      suggestedOrder=nextMonthData&&endOfMonthEst!=null?Math.max(0,nextMonthData.projTotal-endOfMonthEst):null;
+      // Recalculate suggested order — must cover next TWO months (order arrives end of next month, need to last through month after)
+      var monthAfterNext=new Date(now.getFullYear(),now.getMonth()+2,1);
+      var monthAfterNextYM=monthAfterNext.getFullYear()+'-'+String(monthAfterNext.getMonth()+1).padStart(2,'0');
+      var monthAfterNextData=monthlyData.find(function(m){return m.ym===monthAfterNextYM;});
+      var twoMonthNeed=(nextMonthData?nextMonthData.projTotal:0)+(monthAfterNextData?monthAfterNextData.projTotal:0);
+      suggestedOrder=endOfMonthEst!=null?Math.max(0,twoMonthNeed-endOfMonthEst):null;
     } else if(firstPigOrderYM!=='9999-99'){
       feedOnHand=Math.round(ordersArrived-totalPigConsumed);
     }
@@ -5750,71 +5847,33 @@ function App(){
         <Header/>
         <div style={{padding:"1rem",maxWidth:1100,margin:"0 auto",display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
-          {/* Current snapshot */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
-            <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
-              <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Today's Daily Need</div>
-              <div style={{fontSize:26,fontWeight:700,color:'#085041',lineHeight:1}}>{curProj.total.toLocaleString()+' lbs'}</div>
-              <div style={{fontSize:11,color:'#9ca3af',marginTop:3}}>{Math.round(curProj.total*30).toLocaleString()+' lbs/month'}</div>
-            </div>
-            <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
-              <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Sows ({curProj.nonNursing} reg + {curProj.nursing} nursing)</div>
-              <div style={{fontSize:26,fontWeight:700,color:'#065f46',lineHeight:1}}>{curProj.sowFeed+' lbs/day'}</div>
-              <div style={{fontSize:11,color:'#9ca3af',marginTop:3}}>{curProj.nonNursing+' x 5 + '+curProj.nursing+' x 12'}</div>
-            </div>
-            <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
-              <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Boars</div>
-              <div style={{fontSize:26,fontWeight:700,color:'#1e40af',lineHeight:1}}>{curProj.boarFeed+' lbs/day'}</div>
-            </div>
-            <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
-              <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Feeder Pigs</div>
-              <div style={{fontSize:26,fontWeight:700,color:'#92400e',lineHeight:1}}>{curProj.feederFeed+' lbs/day'}</div>
-            </div>
-          </div>
-
-          {/* Feed on Hand + End of Month + Suggested Order */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+          {/* 4 top tiles — big numbers */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:10}}>
             {/* Actual On Hand */}
             <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
               <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Actual On Hand</div>
-              {feedOnHand!=null?(
-                <div>
-                  <div style={{fontSize:28,fontWeight:700,color:feedOnHand>0?'#065f46':'#b91c1c',lineHeight:1}}>{feedOnHand.toLocaleString()+' lbs'}</div>
-                  <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>
-                    {inv?('Count: '+inv.count.toLocaleString()+' on '+fmt(inv.date))
-                      :('Arrived: '+ordersArrived.toLocaleString()+' \u2212 used: '+Math.round(totalPigConsumed).toLocaleString())}
-                  </div>
-                  {curProj.total>0&&<div style={{fontSize:12,fontWeight:600,color:feedOnHand>0?'#065f46':'#b91c1c',marginTop:4}}>{'~'+Math.max(0,Math.round(feedOnHand/curProj.total))+' days remaining'}</div>}
-                  {inv&&physCountAdjustment!=null&&physCountAdjustment!==0&&<div style={{fontSize:10,color:physCountAdjustment>0?'#065f46':'#b91c1c',marginTop:4,padding:'3px 8px',background:physCountAdjustment>0?'#ecfdf5':'#fef2f2',borderRadius:6,display:'inline-block'}}>{'Count adjusted '+(physCountAdjustment>0?'+':'')+physCountAdjustment.toLocaleString()+' lbs vs system estimate'}</div>}
-                </div>
-              ):(
-                <div style={{fontSize:13,color:'#9ca3af',marginTop:8}}>Enter orders to start tracking</div>
-              )}
+              <div style={{fontSize:28,fontWeight:700,color:feedOnHand!=null?(feedOnHand>0?'#065f46':'#b91c1c'):'#9ca3af',lineHeight:1}}>{feedOnHand!=null?feedOnHand.toLocaleString()+' lbs':'\u2014'}</div>
+              {inv&&<div style={{fontSize:11,color:'#9ca3af',marginTop:6}}>{'Count: '+fmt(inv.date)}</div>}
+              {inv&&physCountAdjustment!=null&&physCountAdjustment!==0&&<div style={{fontSize:10,color:physCountAdjustment>0?'#065f46':'#b91c1c',marginTop:2}}>{'Adj '+(physCountAdjustment>0?'+':'')+physCountAdjustment.toLocaleString()+' vs system'}</div>}
+              {!inv&&feedOnHand!=null&&curProj.total>0&&<div style={{fontSize:11,color:'#065f46',fontWeight:600,marginTop:4}}>{'~'+Math.max(0,Math.round(feedOnHand/curProj.total))+' days remaining'}</div>}
             </div>
-            {/* End of Month Estimate */}
+            {/* End of Month Est */}
             <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
               <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>End of Month Est.</div>
-              {endOfMonthEst!=null?(
-                <div>
-                  <div style={{fontSize:28,fontWeight:700,color:endOfMonthEst>0?'#065f46':'#b91c1c',lineHeight:1}}>{endOfMonthEst.toLocaleString()+' lbs'}</div>
-                  <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{'Incl. '+((feedOrders.pig||{})[thisYM]||0).toLocaleString()+' arriving + '+projRemainingThisMonth.toLocaleString()+' projected use'}</div>
-                </div>
-              ):(
-                <div style={{fontSize:13,color:'#9ca3af',marginTop:8}}>{'\u2014'}</div>
-              )}
+              <div style={{fontSize:28,fontWeight:700,color:endOfMonthEst!=null?(endOfMonthEst>0?'#065f46':'#b91c1c'):'#9ca3af',lineHeight:1}}>{endOfMonthEst!=null?endOfMonthEst.toLocaleString()+' lbs':'\u2014'}</div>
+              <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{'Incl. '+((feedOrders.pig||{})[thisYM]||0).toLocaleString()+' arriving'}</div>
             </div>
             {/* Suggested Order */}
             <div style={{background:suggestedOrder>0?'#fffbeb':'white',border:suggestedOrder>0?'2px solid #fde68a':'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
-              <div style={{fontSize:11,color:suggestedOrder>0?'#92400e':'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>{'Order for '+(function(){var nm=new Date(now.getFullYear(),now.getMonth()+1,1);return nm.toLocaleDateString('en-US',{month:'short'});})()}</div>
-              {suggestedOrder!=null?(
-                <div>
-                  <div style={{fontSize:28,fontWeight:700,color:suggestedOrder>0?'#92400e':'#065f46',lineHeight:1}}>{suggestedOrder>0?suggestedOrder.toLocaleString()+' lbs':'Surplus'}</div>
-                  <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{nextMonthData?('Projected need: '+nextMonthData.projTotal.toLocaleString()+' lbs'):''}</div>
-                  {suggestedOrder===0&&endOfMonthEst!=null&&nextMonthData&&<div style={{fontSize:11,color:'#065f46',marginTop:2}}>{'Carryover covers '+nextMonthData.projTotal.toLocaleString()+' projected'}</div>}
-                </div>
-              ):(
-                <div style={{fontSize:13,color:'#9ca3af',marginTop:8}}>{'\u2014'}</div>
-              )}
+              <div style={{fontSize:11,color:suggestedOrder>0?'#92400e':'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>{'Order for '+orderTargetLabel}</div>
+              <div style={{fontSize:28,fontWeight:700,color:suggestedOrder!=null?(suggestedOrder>0?'#92400e':'#065f46'):'#9ca3af',lineHeight:1}}>{suggestedOrder!=null?(suggestedOrder>0?suggestedOrder.toLocaleString()+' lbs':'Surplus'):'\u2014'}</div>
+              <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{'Carryover: '+(orderBaseEst!=null?orderBaseEst.toLocaleString():'\u2014')+' lbs'}</div>
+            </div>
+            {/* Need thru */}
+            <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
+              <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>{'Need thru '+monthAfterNext0.toLocaleDateString('en-US',{month:'short'})}</div>
+              <div style={{fontSize:28,fontWeight:700,color:'#111827',lineHeight:1}}>{twoMonthNeed0.toLocaleString()+' lbs'}</div>
+              <div style={{fontSize:11,color:'#9ca3af',marginTop:6}}>{(orderTargetData?orderTargetData.projTotal.toLocaleString():'0')+' ('+orderTargetLabel+') + '+(monthAfterNextData0?monthAfterNextData0.projTotal.toLocaleString():'0')+' ('+monthAfterNext0.toLocaleDateString('en-US',{month:'short'})+')'}</div>
             </div>
           </div>
 
@@ -5922,7 +5981,7 @@ function App(){
                   // ORDERED (input)
                   React.createElement('div',null,
                     React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},'Ordered'),
-                    React.createElement('input',{type:'number',min:'0',step:'100',value:md2.ordered||'',onChange:function(e){savePigOrder(md2.ym,e.target.value);},onClick:function(e){e.stopPropagation();},placeholder:'0',style:{width:'100%',fontSize:14,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit',fontWeight:600,boxSizing:'border-box'}}),
+                    React.createElement('input',{type:'number',min:'0',step:'100',value:md2.ordered!=null&&md2.ordered!==''?md2.ordered:'',onChange:function(e){savePigOrder(md2.ym,e.target.value);},onClick:function(e){e.stopPropagation();},placeholder:'0',style:{width:'100%',fontSize:14,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit',fontWeight:600,boxSizing:'border-box'}}),
                     React.createElement('div',{style:{fontSize:10,color:'#9ca3af',marginTop:1}},'arrives end of mo.')
                   ),
                   // END OF MONTH

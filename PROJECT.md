@@ -399,4 +399,103 @@ Public form for quick feed logging. Inserts a new row into the appropriate `*_da
 
 ---
 
-*End of Handover Document*
+# 11. Session Update — April 13, 2026 (continued)
+
+Everything below was built after the initial PROJECT.md was written earlier in the same session.
+
+## What Was Built
+
+### Feed Tab — Order Auto-Detect
+
+The "Order for [Month]" tile/column no longer hard-switches on the 1st of each month. Instead it auto-detects whether the current month's order has been entered:
+
+- **Pig**: If `feedOrders.pig[currentYM]` is non-null (including 0), it cycles to show next month.
+- **Poultry**: ALL 3 types (starter, grower, layerfeed) must have a non-null entry for the current month before cycling. Entering `0` counts as "I decided not to order this type" and triggers the cycle.
+
+This matches the real workflow — Ronnie places orders as late as the 5th of the month, not always on the 1st.
+
+### Feed Tab — Two-Month Order Window
+
+The suggested order now covers **two months** of projected consumption, not one. Rationale: if you order in May, it arrives end of May. You need it to cover May consumption (while waiting for delivery) AND June consumption (until June's order arrives end of June).
+
+- Suggested order = max(0, (target month projected + month after projected) - carryover)
+- The "Need thru [Month]" column/tile shows the two-month total with per-month breakdown.
+- Carryover amount shown for context.
+
+### Feed Tab — Physical Count End-of-Month Fix
+
+When a physical count is in the current month, the current month's order is now included in the end-of-month estimate. Previously `e[0]>invYM` excluded it because `'2026-04' > '2026-04'` is false. Changed to `e[0]>=invYM` since orders arrive end of month (after any mid-month count).
+
+### Feed Tab — Zero Order Input Fix
+
+Entering `0` in an ordered field previously showed blank (the value binding `value||''` treated 0 as falsy). Fixed to use `value!=null&&value!==''?value:''` so `0` displays correctly.
+
+### Feed Tab — Poultry Physical Count Display
+
+The poultry top summary table now shows per-type:
+- Physical count date under the On Hand value (e.g., "Count: Apr 13, 2026")
+- Adjustment badge when count differs from system estimate ("Adj +/-X")
+
+### Feed Tab — Pig Top Section Redesign
+
+Removed the 4 daily snapshot tiles (Today's Daily Need, Sows, Boars, Feeder Pigs) — that data is redundant with the monthly tile's variance section. Replaced with 4 big tiles matching the dashboard style:
+1. **Actual On Hand** — with count date and adjustment
+2. **End of Month Est.** — with arriving order amount
+3. **Order for [Month]** — auto-detected, with carryover
+4. **Need thru [Month]** — two-month total with per-month breakdown
+
+### Broiler Dashboard — Active Batch Cards
+
+- Added **schooner badge** (e.g., "Sch 2&3") with `whiteSpace:'nowrap'` to prevent wrapping
+- Added **Feed: Projected / Actual** section at bottom of each card showing Starter and Grower with variance in green/red
+
+### Broiler Feed Estimate Per Batch — Restructured
+
+The section on the Poultry Feed tab is now split into three groups:
+1. **ACTIVE (N)** — always expanded
+2. **PROCESSED (N)** — collapsible, newest first (sorted by processing date descending)
+3. **PLANNED (N)** — collapsible
+
+Each batch shows:
+- Header: name, breed, schooner, hatch date, time on farm (Xw Xd), processed count (if applicable)
+- Feed: Projected / Actual for Starter, Grower, Total with variance
+- Weekly schedule table
+
+### Pig Feed Projections — Processed Pigs Subtracted
+
+`projectedDailyFeed()` and `projectedFeedByGroup()` now subtract processed pigs from `originalPigCount`:
+```javascript
+const processed = (g.processingTrips||[]).reduce((s,t) => s + (parseInt(t.pigCount)||0), 0);
+const pigCount = Math.max(0, (parseInt(g.originalPigCount)||0) - processed);
+```
+
+### Poultry Daily Variance Removed
+
+Removed per-type daily variance from poultry monthly tiles. Bulk feeding (filling bins/wagons in large amounts) creates huge daily swings that don't normalize until month end. Only monthly variance shown for poultry. Pig daily variance kept (more granular daily reporting).
+
+### Pig Monthly Variance — Extrapolated for Current Month
+
+Monthly variance for the current month now extrapolates: takes the actual daily rate, projects it over the full month, then compares to projection. Shows "est." suffix. Previously compared partial-month actual vs full-month projected = misleading.
+
+### Per-Group Variance — Per-Day Rates
+
+Pig feed monthly tile group breakdown now shows Proj/day, Actual/day, Variance/day instead of monthly totals. More useful for identifying which groups are over/under.
+
+## Additional Lessons Learned
+
+8. **`value||''` kills zero inputs.** Any controlled React input with `value={x||''}` will show blank when x=0. Use `value={x!=null&&x!==''?x:''}` to preserve zero as a valid displayed value.
+
+9. **Auto-detect order cycling must treat 0 as "entered."** The original check `parseFloat(x)>0` meant entering 0 (deliberately not ordering) didn't trigger the cycle. Changed to `x!=null` — any non-null entry means the order decision was made.
+
+10. **Physical count in current month needs same-month order included.** Orders arrive end of month, after any mid-month count. The end-of-month estimate must include the current month's order even when the physical count is in the same month. Use `>=` not `>` for the month comparison.
+
+11. **Two-month order window matches real ordering cadence.** One-month lookahead showed "Surplus" when carryover covered the next month but not the month after. Since the order arrives at end of next month, you need it to cover two months of consumption from when you'd run out.
+
+## Open Items
+
+- **Physical count — real-world testing pending.** Ronnie entered counts for all feed types on Apr 13, 2026. Adjustment badges are showing. Monthly tiles show count-anchored calculations. Full validation will come over the next weeks as consumption accumulates against the counted baseline.
+- **Cattle module** — research completed (comprehensive report on cattle tracking software). Waiting for Ronnie to upload Podio exports and PWA flow documentation before designing the data model and UI.
+
+---
+
+*End of Handover Document — Updated April 13, 2026 (evening)*
