@@ -5122,224 +5122,201 @@ function App(){
       setPoultryFeedInventory(inv);sbSave('ppp-poultry-feed-inventory-v1',inv);
     }
 
-    // On Hand per feed type — anchored from physical count
-    function calcOnHand(type,throughYM){
-      var pInv2=poultryFeedInventory&&poultryFeedInventory[type];
+    // Find earliest month with ANY poultry feed order — this is when tracking starts
+    var allPoultryOrderMonths=[].concat(
+      Object.keys(feedOrders.starter||{}).filter(function(k){return (parseFloat((feedOrders.starter||{})[k])||0)>0;}),
+      Object.keys(feedOrders.grower||{}).filter(function(k){return (parseFloat((feedOrders.grower||{})[k])||0)>0;}),
+      Object.keys(feedOrders.layerfeed||{}).filter(function(k){return (parseFloat((feedOrders.layerfeed||{})[k])||0)>0;})
+    ).sort();
+    var firstPoultryOrderYM=allPoultryOrderMonths.length>0?allPoultryOrderMonths[0]:'9999-99';
+
+    // ── Build poultry running ledger per feed type ──
+    var pAllDailys=(broilerDailys||[]).concat(allLayerDailys||[]);
+    var pLedger={starter:{},grower:{},layer:{}};
+    var pDaysLeft=new Date(today.getFullYear(),today.getMonth()+1,0).getDate()-today.getDate();
+    ['starter','grower','layer'].forEach(function(type){
       var orderKey=type==='layer'?'layerfeed':type;
       var ftKey=type==='starter'?'STARTER':type==='grower'?'GROWER':'LAYER';
-      var allDailys=(broilerDailys||[]).concat(allLayerDailys||[]);
-
-      if(pInv2){
-        // Anchored from physical count
-        var invYM=pInv2.date.substring(0,7);
-        if(throughYM<invYM) return null;
-        var ordersSince=0;
-        Object.entries(feedOrders[orderKey]||{}).forEach(function(e){
-          if(e[0]>invYM&&e[0]<=throughYM) ordersSince+=(parseFloat(e[1])||0);
-        });
-        var consumed=0;
-        allDailys.forEach(function(d){
-          if(!d.date||d.date<=pInv2.date) return;
-          if(d.date.substring(0,7)>throughYM) return;
-          if(d.feed_type===ftKey) consumed+=(parseFloat(d.feed_lbs)||0);
-        });
-        var projFuture=0;
-        monthlyData.forEach(function(md){
-          if(md.ym<=invYM||md.ym>throughYM) return;
-          var projForType=type==='starter'?md.starter:type==='grower'?md.grower:md.layerFeed;
-          if(md.isFuture) projFuture+=projForType;
-          else if(md.isCurrent){
-            var dayOfMonth=new Date().getDate();
-            var daysLeft=md.daysInMonth-dayOfMonth;
-            if(daysLeft>0) projFuture+=Math.round(projForType*(daysLeft/md.daysInMonth));
-          }
-        });
-        return Math.round(pInv2.count+ordersSince-consumed-projFuture);
-      }
-
-      // No physical count — running balance from orders - consumption
-      var totalOrd=Object.values(feedOrders[orderKey]||{}).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
-      if(totalOrd<=0) return null;
-      var ordThrough=0;
-      Object.entries(feedOrders[orderKey]||{}).forEach(function(e){
-        if(e[0]<=throughYM) ordThrough+=(parseFloat(e[1])||0);
-      });
-      var consThrough=0;
-      allDailys.forEach(function(d){
-        if(!d.date) return;
-        if(d.date.substring(0,7)>throughYM) return;
-        if(d.feed_type===ftKey) consThrough+=(parseFloat(d.feed_lbs)||0);
-      });
-      var projFut2=0;
-      monthlyData.forEach(function(md){
-        if(md.ym>throughYM) return;
-        var projForType=type==='starter'?md.starter:type==='grower'?md.grower:md.layerFeed;
-        if(md.isFuture) projFut2+=projForType;
-        else if(md.isCurrent){
-          var dl3=md.daysInMonth-new Date().getDate();
-          if(dl3>0) projFut2+=Math.round(projForType*(dl3/md.daysInMonth));
+      var projKey=type==='starter'?'starter':type==='grower'?'grower':'layerFeed';
+      var actualKey=type==='starter'?'actualStarter':type==='grower'?'actualGrover':'actualLayer';
+      var runBal2=0;
+      var pInv2=poultryFeedInventory&&poultryFeedInventory[type];
+      var countApplied2=false;
+      var allSorted=monthlyData.slice().sort(function(a,b){return a.ym.localeCompare(b.ym);});
+      for(var mi4=0;mi4<allSorted.length;mi4++){
+        var md4=allSorted[mi4];
+        if(md4.ym<firstPoultryOrderYM){pLedger[type][md4.ym]=null;continue;}
+        var st=runBal2;
+        var isCM=false;var cAdj=null;
+        if(pInv2&&!countApplied2){
+          var iYM=pInv2.date.substring(0,7);
+          if(iYM===md4.ym){
+            cAdj=Math.round(pInv2.count-runBal2);st=pInv2.count;isCM=true;countApplied2=true;
+            var cA=0;pAllDailys.forEach(function(d){if(d.date&&d.date>pInv2.date&&d.date.startsWith(md4.ym)&&d.feed_type===ftKey)cA+=(parseFloat(d.feed_lbs)||0);});
+            var pR=0;if(md4.isCurrent&&pDaysLeft>0)pR=Math.round(md4[projKey]*(pDaysLeft/md4.daysInMonth));
+            var cons=Math.round(cA+pR);var ord=parseFloat((feedOrders[orderKey]||{})[md4.ym])||0;var en=Math.round(st-cons+ord);
+            pLedger[type][md4.ym]={start:st,consumed:cons,actualCons:Math.round(cA),projCons:Math.round(pR),ordered:ord,end:en,countMonth:true,countAdj:cAdj,proj:md4[projKey],actual:md4[actualKey]};
+            runBal2=en;continue;
+          } else if(iYM<md4.ym){st=pInv2.count;countApplied2=true;}
         }
-      });
-      return Math.round(ordThrough-consThrough-projFut2);
+        var aCtual=md4[actualKey];var pRoj=0;
+        if(md4.isCurrent&&pDaysLeft>0)pRoj=Math.round(md4[projKey]*(pDaysLeft/md4.daysInMonth));
+        else if(md4.isFuture){pRoj=md4[projKey];aCtual=0;}
+        var cons2=Math.round(aCtual+pRoj);var ord2=parseFloat((feedOrders[orderKey]||{})[md4.ym])||0;var en2=Math.round(st-cons2+ord2);
+        pLedger[type][md4.ym]={start:Math.round(st),consumed:cons2,actualCons:Math.round(aCtual),projCons:Math.round(pRoj),ordered:ord2,end:en2,countMonth:isCM,countAdj:cAdj,proj:md4[projKey],actual:md4[actualKey]};
+        runBal2=en2;
+      }
+    });
+
+    // Top-level aggregates for cards
+    var pInv=poultryFeedInventory;
+    var curLgS=pLedger.starter[thisYM];var curLgG=pLedger.grower[thisYM];var curLgL=pLedger.layer[thisYM];
+    var pActualOnHand=null;var pEndOfMonth=null;
+    if(curLgS||curLgG||curLgL){
+      // Actual on hand = start of month - actual consumed so far (no projected, no current month order)
+      var aohS=curLgS?Math.round(curLgS.start-curLgS.actualCons):null;
+      var aohG=curLgG?Math.round(curLgG.start-curLgG.actualCons):null;
+      var aohL=curLgL?Math.round(curLgL.start-curLgL.actualCons):null;
+      pActualOnHand={starter:aohS,grower:aohG,layer:aohL,total:(aohS||0)+(aohG||0)+(aohL||0)};
+      pEndOfMonth={starter:curLgS?curLgS.end:null,grower:curLgG?curLgG.end:null,layer:curLgL?curLgL.end:null,total:(curLgS?curLgS.end:0)+(curLgG?curLgG.end:0)+(curLgL?curLgL.end:0)};
+    }
+    // Suggested order per type for next month
+    var pNextMonth=new Date(today.getFullYear(),today.getMonth()+1,1);
+    var pNextYM=pNextMonth.getFullYear()+'-'+String(pNextMonth.getMonth()+1).padStart(2,'0');
+    var pNextMD=monthlyData.find(function(m){return m.ym===pNextYM;});
+    var pSugOrder=null;
+    if(pNextMD&&pEndOfMonth){
+      pSugOrder={
+        starter:Math.max(0,(pNextMD.starter||0)-(pEndOfMonth.starter||0)),
+        grower:Math.max(0,(pNextMD.grower||0)-(pEndOfMonth.grower||0)),
+        layer:Math.max(0,(pNextMD.layerFeed||0)-(pEndOfMonth.layer||0)),
+      };
+      pSugOrder.total=pSugOrder.starter+pSugOrder.grower+pSugOrder.layer;
     }
 
-    // Expandable month rows — uses top-level state
     var expandedMonths2=poultryFeedExpandedMonths;
     function toggleMonth2(ym){setPoultryFeedExpandedMonths(function(s){var n=new Set(s);n.has(ym)?n.delete(ym):n.add(ym);return n;});}
-
-    // Current physical count display
-    var pInv=poultryFeedInventory;
-    var onHandStarter=calcOnHand('starter',thisYM);
-    var onHandGrover=calcOnHand('grower',thisYM);
-    var onHandLayer=calcOnHand('layer',thisYM);
-    var totalOnHand=(onHandStarter!=null||onHandGrover!=null||onHandLayer!=null)?((onHandStarter||0)+(onHandGrover||0)+(onHandLayer||0)):null;
-    var hasAnyCount=(pInv&&(pInv.starter||pInv.grower||pInv.layer))||totalOnHand!=null;
 
     return (
       <div>
         <Header/>
         <div style={{padding:"1rem",maxWidth:1200,margin:"0 auto",display:"flex",flexDirection:"column",gap:"1.25rem"}}>
 
-          {/* Physical count + Feed on Hand */}
-          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px'}}>
-            <div style={{display:'flex',alignItems:'flex-start',gap:20,flexWrap:'wrap'}}>
-              <div style={{flex:1,minWidth:220}}>
-                <div style={{fontSize:13,fontWeight:700,color:'#085041',marginBottom:10}}>Poultry Feed on Hand</div>
-                {hasAnyCount?(
-                  <div>
-                    <div style={{fontSize:28,fontWeight:700,color:totalOnHand>0?'#065f46':'#b91c1c',lineHeight:1,marginBottom:8}}>{totalOnHand!=null?totalOnHand.toLocaleString()+' lbs':'\u2014'}</div>
-                    <div style={{display:'flex',gap:14,flexWrap:'wrap',fontSize:12}}>
-                      {[['Starter',onHandStarter,pInv&&pInv.starter,'#1d4ed8'],['Grower',onHandGrover,pInv&&pInv.grower,'#085041'],['Layer Feed',onHandLayer,pInv&&pInv.layer,'#b45309']].map(function(t){
-                        return React.createElement('div',{key:t[0],style:{background:'#f8fafc',border:'1px solid #e5e7eb',borderRadius:8,padding:'6px 10px',minWidth:100}},
-                          React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.4}},t[0]),
-                          React.createElement('div',{style:{fontSize:14,fontWeight:700,color:t[1]!=null?(t[1]>0?t[3]:'#b91c1c'):'#9ca3af'}},t[1]!=null?t[1].toLocaleString()+' lbs':'\u2014'),
-                          t[2]&&React.createElement('div',{style:{fontSize:9,color:'#9ca3af',marginTop:2}},'Count: '+t[2].count.toLocaleString()+' on '+fmt(t[2].date))
-                        );
-                      })}
-                    </div>
-                  </div>
-                ):(
-                  <div style={{fontSize:13,color:'#9ca3af'}}>Enter a physical count to start tracking inventory.</div>
-                )}
+          {/* Compact feed summary table — one row per type */}
+          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+              <thead>
+                <tr style={{borderBottom:'1px solid #e5e7eb',background:'#f9fafb'}}>
+                  <th style={{padding:'8px 16px',textAlign:'left',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>Feed Type</th>
+                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>On Hand</th>
+                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>End of Mo Est.</th>
+                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:pSugOrder&&pSugOrder.total>0?'#92400e':'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>{'Order for '+pNextMonth.toLocaleDateString('en-US',{month:'short'})}</th>
+                  <th style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}}>{'Proj Need ('+pNextMonth.toLocaleDateString('en-US',{month:'short'})+')'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {label:'Starter',color:'#1d4ed8',aoh:pActualOnHand?pActualOnHand.starter:null,eom:pEndOfMonth?pEndOfMonth.starter:null,sug:pSugOrder?pSugOrder.starter:null,need:pNextMD?pNextMD.starter:null},
+                  {label:'Grower',color:'#085041',aoh:pActualOnHand?pActualOnHand.grower:null,eom:pEndOfMonth?pEndOfMonth.grower:null,sug:pSugOrder?pSugOrder.grower:null,need:pNextMD?pNextMD.grower:null},
+                  {label:'Layer Feed',color:'#b45309',aoh:pActualOnHand?pActualOnHand.layer:null,eom:pEndOfMonth?pEndOfMonth.layer:null,sug:pSugOrder?pSugOrder.layer:null,need:pNextMD?pNextMD.layerFeed:null},
+                ].map(function(ft){
+                  return React.createElement('tr',{key:ft.label,style:{borderBottom:'1px solid #f3f4f6'}},
+                    React.createElement('td',{style:{padding:'10px 16px',fontWeight:700,color:ft.color,fontSize:13}},
+                      React.createElement('span',{style:{display:'inline-block',width:8,height:8,borderRadius:2,background:ft.color,marginRight:8}}),ft.label),
+                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:15,fontWeight:700,color:ft.aoh!=null?(ft.aoh>0?'#065f46':'#b91c1c'):'#9ca3af'}},ft.aoh!=null?ft.aoh.toLocaleString():'\u2014'),
+                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:15,fontWeight:700,color:ft.eom!=null?(ft.eom>0?'#065f46':'#b91c1c'):'#9ca3af'}},ft.eom!=null?ft.eom.toLocaleString():'\u2014'),
+                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:15,fontWeight:700,color:ft.sug>0?'#92400e':'#065f46',background:ft.sug>0?'#fffbeb':'transparent'}},ft.sug!=null?(ft.sug>0?ft.sug.toLocaleString():'\u2713 Surplus'):'\u2014'),
+                    React.createElement('td',{style:{padding:'10px 12px',textAlign:'right',fontSize:12,color:'#6b7280'}},ft.need!=null?ft.need.toLocaleString():'\u2014')
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Physical count input */}
+          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'12px 20px'}}>
+            <div style={{display:'flex',gap:12,alignItems:'flex-end',flexWrap:'wrap'}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#4b5563',alignSelf:'center'}}>{pInv&&(pInv.starter||pInv.grower||pInv.layer)?'Update Physical Count':'Enter Physical Count'}</div>
+              <div>
+                <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Feed type</label>
+                <select id="poultry-feed-count-type" defaultValue="starter" style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}>
+                  <option value="starter">Starter</option>
+                  <option value="grower">Grower</option>
+                  <option value="layer">Layer Feed</option>
+                </select>
               </div>
-              <div style={{background:'#f8fafc',border:'1px solid #e5e7eb',borderRadius:10,padding:'12px 16px',minWidth:300}}>
-                <div style={{fontSize:11,fontWeight:600,color:'#4b5563',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>
-                  {hasAnyCount?'Update Physical Count':'Enter Physical Count'}
-                </div>
-                <div style={{display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap'}}>
-                  <div>
-                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Feed type</label>
-                    <select id="poultry-feed-count-type" defaultValue="starter" style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}>
-                      <option value="starter">Starter</option>
-                      <option value="grower">Grower</option>
-                      <option value="layer">Layer Feed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Lbs on hand</label>
-                    <input id="poultry-feed-count-input" type="number" min="0" step="100" placeholder="e.g. 2000" style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,width:100,fontFamily:'inherit'}}/>
-                  </div>
-                  <div>
-                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Date</label>
-                    <input id="poultry-feed-count-date" type="date" defaultValue={todayDate} style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
-                  </div>
-                  <button onClick={function(){
-                    var el=document.getElementById('poultry-feed-count-input');
-                    var dl=document.getElementById('poultry-feed-count-date');
-                    var tp=document.getElementById('poultry-feed-count-type');
-                    if(!el||!el.value){alert('Enter the lbs on hand.');return;}
-                    savePoultryFeedCount(tp.value,el.value,dl?dl.value:todayDate);
-                    el.value='';
-                  }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>
-                    Save Count
-                  </button>
-                </div>
+              <div>
+                <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Lbs on hand</label>
+                <input id="poultry-feed-count-input" type="number" min="0" step="100" placeholder="e.g. 2000" style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,width:100,fontFamily:'inherit'}}/>
               </div>
+              <div>
+                <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Date</label>
+                <input id="poultry-feed-count-date" type="date" defaultValue={todayDate} style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
+              </div>
+              <button onClick={function(){
+                var el=document.getElementById('poultry-feed-count-input');
+                var dl=document.getElementById('poultry-feed-count-date');
+                var tp=document.getElementById('poultry-feed-count-type');
+                if(!el||!el.value){alert('Enter the lbs on hand.');return;}
+                savePoultryFeedCount(tp.value,el.value,dl?dl.value:todayDate);
+                el.value='';
+              }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>
+                Save Count
+              </button>
             </div>
           </div>
 
           {/* Monthly summary — current first, then future, then past by year */}
           {(function(){
-            // Render a single month card
+            // Render a single month card — ledger format
             function renderMonthCard(md){
-              var ohS=calcOnHand('starter',md.ym);
-              var ohG=calcOnHand('grower',md.ym);
-              var ohL=calcOnHand('layer',md.ym);
+              var lgS=pLedger.starter[md.ym];var lgG=pLedger.grower[md.ym];var lgL=pLedger.layer[md.ym];
               var types=[
-                {key:'starter',label:'Starter',color:'#1d4ed8',proj:md.starter,actual:md.actualStarter,ordKey:'starter',oh:ohS},
-                {key:'grower',label:'Grower',color:'#085041',proj:md.grower,actual:md.actualGrover,ordKey:'grower',oh:ohG},
-                {key:'layer',label:'Layer Feed',color:'#b45309',proj:md.layerFeed,actual:md.actualLayer,ordKey:'layerfeed',oh:ohL},
+                {key:'starter',label:'Starter',color:'#1d4ed8',ordKey:'starter',lg:lgS,proj:md.starter,actual:md.actualStarter},
+                {key:'grower',label:'Grower',color:'#085041',ordKey:'grower',lg:lgG,proj:md.grower,actual:md.actualGrover},
+                {key:'layer',label:'Layer Feed',color:'#b45309',ordKey:'layerfeed',lg:lgL,proj:md.layerFeed,actual:md.actualLayer},
               ];
+              var daysElapsed=md.isFuture?0:md.isCurrent?today.getDate():md.daysInMonth;
               return React.createElement('div',{key:md.ym,style:{background:'white',border:md.isCurrent?'2px solid #085041':'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}},
                 React.createElement('div',{style:{padding:'10px 16px',display:'flex',alignItems:'center',gap:8,background:md.isCurrent?'#ecfdf5':md.isFuture?'#f8fafc':'white'}},
                   React.createElement('span',{style:{fontSize:14,fontWeight:700,color:'#111827'}},fmtMonth(md.ym)),
                   md.isCurrent&&React.createElement('span',{style:{fontSize:10,fontWeight:700,color:'#065f46',background:'#d1fae5',padding:'1px 8px',borderRadius:10}},'NOW'),
                   md.isFuture&&React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},'projected')
                 ),
-                React.createElement('div',{style:{padding:'0 16px 12px'}},
+                // Ledger table per feed type
+                React.createElement('div',{style:{padding:'0 16px 8px'}},
                   React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
                     React.createElement('thead',null,
                       React.createElement('tr',{style:{borderBottom:'1px solid #e5e7eb'}},
                         React.createElement('th',{style:{padding:'6px 0',textAlign:'left',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5,width:90}},'Feed Type'),
-                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Projected'),
-                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Actual'),
-                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Variance'),
-                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5,width:100}},'Ordered'),
-                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'On Hand')
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Start'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'Consumed'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5,width:90}},'Ordered'),
+                        React.createElement('th',{style:{padding:'6px 8px',textAlign:'right',fontWeight:600,color:'#6b7280',fontSize:10,textTransform:'uppercase',letterSpacing:.5}},'End of Mo')
                       )
                     ),
                     React.createElement('tbody',null,
                       types.map(function(t){
+                        var lg=t.lg;
                         var ordVal=(feedOrders[t.ordKey]||{})[md.ym]||'';
-                        var variance=(!md.isFuture&&t.actual>0)?(t.actual-t.proj):null;
                         return React.createElement('tr',{key:t.key,style:{borderBottom:'1px solid #f3f4f6'}},
                           React.createElement('td',{style:{padding:'7px 0',fontWeight:600,color:t.color,fontSize:12}},t.label),
-                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',color:'#374151'}},t.proj>0?t.proj.toLocaleString():'\u2014'),
-                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:600,color:md.isFuture?'#9ca3af':'#111827'}},md.isFuture?'\u2014':t.actual.toLocaleString()),
-                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:600,color:variance==null?'#9ca3af':variance>0?'#b91c1c':'#065f46'}},variance==null?'\u2014':(variance>0?'+':'')+variance.toLocaleString()),
-                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right'},onClick:function(e){e.stopPropagation();}},
-                            React.createElement('input',{type:'number',min:'0',step:'100',value:ordVal,onChange:function(e){savePoultryOrder(t.ordKey,md.ym,e.target.value);},placeholder:'0',style:{width:85,fontSize:12,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit'}})
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',color:lg?'#374151':'#9ca3af'}},lg?lg.start.toLocaleString():'\u2014'),
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',color:'#111827'}},
+                            lg?React.createElement('span',null,lg.consumed.toLocaleString(),
+                              (md.isCurrent&&lg.projCons>0)?React.createElement('span',{style:{fontSize:10,color:'#9ca3af',marginLeft:4}},'('+lg.actualCons.toLocaleString()+'+'+lg.projCons.toLocaleString()+'p)'):null
+                            ):'\u2014'
                           ),
-                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:600,color:t.oh==null?'#9ca3af':t.oh>0?'#065f46':'#b91c1c'}},t.oh==null?'\u2014':t.oh.toLocaleString())
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right'},onClick:function(e){e.stopPropagation();}},
+                            React.createElement('input',{type:'number',min:'0',step:'100',value:ordVal,onChange:function(e){savePoultryOrder(t.ordKey,md.ym,e.target.value);},placeholder:'0',style:{width:80,fontSize:12,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit'}})
+                          ),
+                          React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:700,color:lg?(lg.end>0?'#065f46':'#b91c1c'):'#9ca3af'}},lg?lg.end.toLocaleString():'\u2014')
                         );
                       })
                     )
                   )
                 ),
-                (md.total>0)&&React.createElement('div',{style:{borderTop:'1px solid #f3f4f6',padding:'8px 16px',fontSize:11,color:'#6b7280',display:'flex',flexDirection:'column',gap:6}},
-                  (md.bStarter>0||md.bGrover>0)&&React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}},
-                    React.createElement('span',{style:{fontWeight:600,color:'#1e3a5f',minWidth:50}},'\ud83d\udc14 Broilers:'),
-                    activeBroilers.map(function(b){
-                      var bf=calcBatchFeedForMonth(b,md.ym);
-                      if(bf.starter+bf.grower<=0) return null;
-                      var birdCount=parseInt(b.birdCountActual)||parseInt(b.birdCount)||0;
-                      var tl2=calcTimeline(b.hatchDate,b.breed,b.processingDate);
-                      var phase2='';
-                      if(tl2){var midDate=new Date(md.ym+'-15T12:00:00');phase2=midDate<new Date(tl2.brooderOut+'T12:00:00')?'Brooder':'Schooner';}
-                      return React.createElement('span',{key:b.id,style:{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:500}},
-                        b.name+' \u00b7 '+birdCount.toLocaleString()+' birds'+(phase2?' \u00b7 '+phase2:'')+' \u00b7 '+(bf.starter+bf.grower).toLocaleString()+' lbs'
-                      );
-                    }).filter(Boolean)
-                  ),
-                  (md.lStarter>0||md.lGrover>0||md.lLayer>0)&&React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}},
-                    React.createElement('span',{style:{fontWeight:600,color:'#92400e',minWidth:50}},'\ud83d\udc13 Layers:'),
-                    activeLayerBatchesForFeed.map(function(b){
-                      var lf=calcLayerFeedForMonth(b,layerHousings||[],allLayerDailys||[],md.ym);
-                      if(lf.starter+lf.grower+lf.layer<=0) return null;
-                      var batchHousings2=(layerHousings||[]).filter(function(h){return h.batch_id===b.id&&h.status==='active';});
-                      var hens=0;
-                      batchHousings2.forEach(function(h){var proj=computeProjectedCount(h,allLayerDailys||[]);hens+=proj?proj.projected:(parseInt(h.current_count)||0);});
-                      if(hens===0) hens=parseInt(b.original_count)||0;
-                      var startDate=b.brooder_entry_date||b.arrival_date;
-                      var ageMs=startDate?(new Date(md.ym+'-15T12:00:00')-new Date(startDate+'T12:00:00')):0;
-                      var ageWeeks=ageMs>0?Math.floor(ageMs/86400000/7):0;
-                      var phase=ageWeeks<6?'Starter':ageWeeks<20?'Grower':'Layer';
-                      return React.createElement('span',{key:b.id,style:{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,padding:'2px 8px',fontSize:10,fontWeight:500}},
-                        b.name+' \u00b7 '+hens.toLocaleString()+' hens \u00b7 '+phase+' \u00b7 '+(lf.starter+lf.grower+lf.layer).toLocaleString()+' lbs'
-                      );
-                    }).filter(Boolean)
-                  )
-                )
+                null
               );
             }
 
@@ -5636,22 +5613,60 @@ function App(){
     }
 
     // ── Feed on Hand calculation ──
-    // If physical count exists: anchor from count + orders since - consumed since
-    // If no count: total orders all time - total consumed all time
+    // Orders arrive at END of month — current month's order hasn't arrived yet.
+    // Actual On Hand = orders arrived (past months) - consumption since tracking started
+    // End of Month Est = orders through current month - consumption through end of month (actual + projected)
     const inv=pigFeedInventory; // {count, date} or null
     const todayDate=todayISO();
-    const totalPigOrdered=Object.values(feedOrders.pig||{}).reduce((s,v)=>s+(parseFloat(v)||0),0);
-    const totalPigConsumed=pigDailys.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
+    var pigOrderMonths=Object.keys(feedOrders.pig||{}).filter(function(k){return (parseFloat((feedOrders.pig||{})[k])||0)>0;}).sort();
+    var firstPigOrderYM=pigOrderMonths.length>0?pigOrderMonths[0]:'9999-99';
+    // Only count consumption from when tracking started
+    var totalPigConsumed=pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)>=firstPigOrderYM;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0);
+    // Orders that have ARRIVED = past months only (current month arrives at end of month)
+    var ordersArrived=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
+      if(e[0]<thisYM&&e[0]>=firstPigOrderYM) return s+(parseFloat(e[1])||0);
+      return s;
+    },0);
+    // All orders through current month (including current month's pending delivery)
+    var ordersThroughCurrent=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
+      if(e[0]<=thisYM) return s+(parseFloat(e[1])||0);
+      return s;
+    },0);
+    // Projected remaining consumption for rest of current month
+    var curMonthDaysLeft=new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate();
+    var projRemainingThisMonth=curMonthDaysLeft>0?Math.round(curProj.total*curMonthDaysLeft):0;
+    // End of month estimate (current month's order arrives, minus all consumption including projected)
+    var endOfMonthEst=firstPigOrderYM!=='9999-99'?Math.round(ordersThroughCurrent-totalPigConsumed-projRemainingThisMonth):null;
+    // Suggested order for next month
+    var nextMonth2=new Date(now.getFullYear(),now.getMonth()+1,1);
+    var nextYM=nextMonth2.getFullYear()+'-'+String(nextMonth2.getMonth()+1).padStart(2,'0');
+    var nextMonthData=monthlyData.find(function(m){return m.ym===nextYM;});
+    var suggestedOrder=nextMonthData&&endOfMonthEst!=null?Math.max(0,nextMonthData.projTotal-endOfMonthEst):null;
+
     var feedOnHand=null;
+    var physCountAdjustment=null;
     if(inv){
+      // Physical count path — orders arrived since count (exclude current month)
+      var invYM=inv.date.substring(0,7);
       var ordersSinceCount=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
-        if(e[0]>inv.date.substring(0,7)) return s+(parseFloat(e[1])||0);
+        if(e[0]>invYM&&e[0]<thisYM) return s+(parseFloat(e[1])||0);
         return s;
       },0);
       var consumedSinceCount=pigDailys.filter(function(d){return d.date&&d.date>inv.date;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0);
       feedOnHand=Math.round(inv.count+ordersSinceCount-consumedSinceCount);
-    } else if(totalPigOrdered>0){
-      feedOnHand=Math.round(totalPigOrdered-totalPigConsumed);
+      // Calculate what system estimated at time of count vs what was actually counted
+      var systemEstAtCount=Math.round(ordersArrived-pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)>=firstPigOrderYM&&d.date<=inv.date;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0));
+      physCountAdjustment=Math.round(inv.count-systemEstAtCount);
+      // Recalculate end of month est anchored from physical count
+      var ordSinceCountThruMonth=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
+        if(e[0]>invYM&&e[0]<=thisYM) return s+(parseFloat(e[1])||0);
+        return s;
+      },0);
+      endOfMonthEst=Math.round(inv.count+ordSinceCountThruMonth-consumedSinceCount-projRemainingThisMonth);
+      // Recalculate suggested order from physical-count-based end of month
+      suggestedOrder=nextMonthData&&endOfMonthEst!=null?Math.max(0,nextMonthData.projTotal-endOfMonthEst):null;
+    } else if(firstPigOrderYM!=='9999-99'){
+      feedOnHand=Math.round(ordersArrived-totalPigConsumed);
     }
 
     // Per-group projected feed for a given month
@@ -5726,155 +5741,221 @@ function App(){
             </div>
           </div>
 
-          {/* Physical count + Feed on Hand */}
-          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px'}}>
-            <div style={{display:'flex',alignItems:'flex-start',gap:20,flexWrap:'wrap'}}>
-              {/* Left: current on hand */}
-              <div style={{flex:1,minWidth:200}}>
-                <div style={{fontSize:12,fontWeight:600,color:'#4b5563',marginBottom:8}}>Feed on Hand</div>
-                {feedOnHand!=null?(
-                  <div>
-                    <div style={{fontSize:32,fontWeight:700,color:feedOnHand>0?'#065f46':'#b91c1c',lineHeight:1}}>{feedOnHand.toLocaleString()+' lbs'}</div>
-                    <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>
-                      {'Last count: '+inv.count.toLocaleString()+' lbs on '+fmt(inv.date)}
-                      {ordersSinceCount>0&&(' + '+Math.round(ordersSinceCount).toLocaleString()+' ordered')}
-                      {consumedSinceCount>0&&(' \u2212 '+Math.round(consumedSinceCount).toLocaleString()+' consumed')}
-                    </div>
-                    {curProj.total>0&&<div style={{fontSize:12,fontWeight:600,color:feedOnHand>0?'#065f46':'#b91c1c',marginTop:4}}>{'~'+Math.max(0,Math.round(feedOnHand/curProj.total))+' days of feed remaining'}</div>}
+          {/* Feed on Hand + End of Month + Suggested Order */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+            {/* Actual On Hand */}
+            <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
+              <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Actual On Hand</div>
+              {feedOnHand!=null?(
+                <div>
+                  <div style={{fontSize:28,fontWeight:700,color:feedOnHand>0?'#065f46':'#b91c1c',lineHeight:1}}>{feedOnHand.toLocaleString()+' lbs'}</div>
+                  <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>
+                    {inv?('Count: '+inv.count.toLocaleString()+' on '+fmt(inv.date))
+                      :('Arrived: '+ordersArrived.toLocaleString()+' \u2212 used: '+Math.round(totalPigConsumed).toLocaleString())}
                   </div>
-                ):(
-                  <div style={{fontSize:13,color:'#9ca3af'}}>Enter a physical count to start tracking inventory.</div>
-                )}
-              </div>
-              {/* Right: physical count input */}
-              <div style={{background:'#f8fafc',border:'1px solid #e5e7eb',borderRadius:10,padding:'12px 16px',minWidth:260}}>
-                <div style={{fontSize:11,fontWeight:600,color:'#4b5563',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>
-                  {inv?'Update Physical Count':'Enter Physical Count'}
+                  {curProj.total>0&&<div style={{fontSize:12,fontWeight:600,color:feedOnHand>0?'#065f46':'#b91c1c',marginTop:4}}>{'~'+Math.max(0,Math.round(feedOnHand/curProj.total))+' days remaining'}</div>}
+                  {inv&&physCountAdjustment!=null&&physCountAdjustment!==0&&<div style={{fontSize:10,color:physCountAdjustment>0?'#065f46':'#b91c1c',marginTop:4,padding:'3px 8px',background:physCountAdjustment>0?'#ecfdf5':'#fef2f2',borderRadius:6,display:'inline-block'}}>{'Count adjusted '+(physCountAdjustment>0?'+':'')+physCountAdjustment.toLocaleString()+' lbs vs system estimate'}</div>}
                 </div>
-                <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
-                  <div style={{flex:1}}>
-                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Lbs on hand</label>
-                    <input id="pig-feed-count-input" type="number" min="0" step="100" placeholder="e.g. 5000"
-                      defaultValue={inv?inv.count:''}
-                      style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',fontFamily:'inherit'}}/>
-                  </div>
-                  <div>
-                    <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Date</label>
-                    <input id="pig-feed-count-date" type="date" defaultValue={inv?inv.date:todayDate}
-                      style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
-                  </div>
-                  <button onClick={()=>{
-                    const el=document.getElementById('pig-feed-count-input');
-                    const dl=document.getElementById('pig-feed-count-date');
-                    if(!el||!el.value){alert('Enter the lbs on hand.');return;}
-                    savePigFeedCount(el.value,dl?dl.value:todayDate);
-                  }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',flexShrink:0}}>
-                    Save Count
-                  </button>
+              ):(
+                <div style={{fontSize:13,color:'#9ca3af',marginTop:8}}>Enter orders to start tracking</div>
+              )}
+            </div>
+            {/* End of Month Estimate */}
+            <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
+              <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>End of Month Est.</div>
+              {endOfMonthEst!=null?(
+                <div>
+                  <div style={{fontSize:28,fontWeight:700,color:endOfMonthEst>0?'#065f46':'#b91c1c',lineHeight:1}}>{endOfMonthEst.toLocaleString()+' lbs'}</div>
+                  <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{'Incl. '+((feedOrders.pig||{})[thisYM]||0).toLocaleString()+' arriving + '+projRemainingThisMonth.toLocaleString()+' projected use'}</div>
                 </div>
-                {inv&&<div style={{fontSize:10,color:'#9ca3af',marginTop:6}}>Last updated: {fmt(inv.date)}</div>}
+              ):(
+                <div style={{fontSize:13,color:'#9ca3af',marginTop:8}}>{'\u2014'}</div>
+              )}
+            </div>
+            {/* Suggested Order */}
+            <div style={{background:suggestedOrder>0?'#fffbeb':'white',border:suggestedOrder>0?'2px solid #fde68a':'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
+              <div style={{fontSize:11,color:suggestedOrder>0?'#92400e':'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>{'Order for '+(function(){var nm=new Date(now.getFullYear(),now.getMonth()+1,1);return nm.toLocaleDateString('en-US',{month:'short'});})()}</div>
+              {suggestedOrder!=null?(
+                <div>
+                  <div style={{fontSize:28,fontWeight:700,color:suggestedOrder>0?'#92400e':'#065f46',lineHeight:1}}>{suggestedOrder>0?suggestedOrder.toLocaleString()+' lbs':'Surplus'}</div>
+                  <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{nextMonthData?('Projected need: '+nextMonthData.projTotal.toLocaleString()+' lbs'):''}</div>
+                  {suggestedOrder===0&&endOfMonthEst!=null&&nextMonthData&&<div style={{fontSize:11,color:'#065f46',marginTop:2}}>{'Carryover covers '+nextMonthData.projTotal.toLocaleString()+' projected'}</div>}
+                </div>
+              ):(
+                <div style={{fontSize:13,color:'#9ca3af',marginTop:8}}>{'\u2014'}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Physical count input */}
+          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'12px 20px'}}>
+            <div style={{display:'flex',gap:12,alignItems:'flex-end',flexWrap:'wrap'}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#4b5563',alignSelf:'center'}}>{inv?'Update Physical Count':'Enter Physical Count'}</div>
+              <div>
+                <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Lbs on hand</label>
+                <input id="pig-feed-count-input" type="number" min="0" step="100" placeholder="e.g. 5000"
+                  defaultValue={inv?inv.count:''}
+                  style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,width:120,fontFamily:'inherit'}}/>
               </div>
+              <div>
+                <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Date</label>
+                <input id="pig-feed-count-date" type="date" defaultValue={inv?inv.date:todayDate}
+                  style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
+              </div>
+              <button onClick={()=>{
+                const el=document.getElementById('pig-feed-count-input');
+                const dl=document.getElementById('pig-feed-count-date');
+                if(!el||!el.value){alert('Enter the lbs on hand.');return;}
+                savePigFeedCount(el.value,dl?dl.value:todayDate);
+              }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>
+                Save Count
+              </button>
+              {inv&&<div style={{fontSize:10,color:'#9ca3af',alignSelf:'center'}}>Last: {fmt(inv.date)}</div>}
             </div>
           </div>
 
           {/* Monthly summary — card per month, current first, collapsible past/future */}
           {(function(){
             function fmtMonth2(ym){var p=ym.split('-').map(Number);return new Date(p[0],p[1]-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});}
-            // On Hand calculator for a given month
-            // With physical count: anchor from count. Without: orders - consumption running balance.
-            function pigOnHandForMonth(md2){
-              if(inv){
-                var invYM=inv.date.substring(0,7);
-                if(md2.ym<invYM) return null;
-                if(md2.ym===invYM){
-                  var consumedAfterCount=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.startsWith(md2.ym);}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
-                  var projRemaining=0;
-                  if(md2.isCurrent){var dayOfMonth=new Date().getDate();var daysLeft=md2.daysInMonth-dayOfMonth;if(daysLeft>0)projRemaining=curProj.total*daysLeft;}
-                  return Math.round(inv.count-consumedAfterCount-projRemaining);
-                }
-                var ordersThrough=Object.entries(feedOrders.pig||{}).reduce(function(s2,e){if(e[0]>invYM&&e[0]<=md2.ym)return s2+(parseFloat(e[1])||0);return s2;},0);
-                var consumedThrough=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.substring(0,7)<=md2.ym;}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
-                var projFuture=0;
-                monthlyData.forEach(function(m2){
-                  if(m2.ym<=invYM||m2.ym>md2.ym) return;
-                  if(m2.isFuture) projFuture+=m2.projTotal;
-                  else if(m2.isCurrent){var dl2=m2.daysInMonth-new Date().getDate();if(dl2>0)projFuture+=curProj.total*dl2;}
-                });
-                return Math.round(inv.count+ordersThrough-consumedThrough-projFuture);
+
+            // ── Build running inventory ledger ──
+            // START → CONSUMED → ORDERED (arrives end of month) → END
+            var pigLedger={};
+            var runBal=0;
+            var allMonthsSorted=monthlyData.slice().sort(function(a,b){return a.ym.localeCompare(b.ym);});
+            var countApplied=false;
+            for(var mi3=0;mi3<allMonthsSorted.length;mi3++){
+              var md3=allMonthsSorted[mi3];
+              if(md3.ym<firstPigOrderYM){pigLedger[md3.ym]=null;continue;}
+              var lgStart=runBal;
+              var lgCountMonth=false;
+              var lgCountAdj=null;
+              // Physical count override
+              if(inv&&!countApplied){
+                var invYM3=inv.date.substring(0,7);
+                if(invYM3===md3.ym){
+                  lgCountAdj=Math.round(inv.count-runBal);
+                  lgStart=inv.count;
+                  lgCountMonth=true;
+                  countApplied=true;
+                  var cAfter=pigDailys.filter(function(d){return d.date&&d.date>inv.date&&d.date.startsWith(md3.ym);}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0);
+                  var pRem=0;
+                  if(md3.isCurrent){var dl4=md3.daysInMonth-now.getDate();if(dl4>0)pRem=Math.round(curProj.total*dl4);}
+                  var lgCons=Math.round(cAfter+pRem);
+                  var lgOrd=parseFloat(md3.ordered)||0;
+                  var lgEnd=Math.round(lgStart-lgCons+lgOrd);
+                  pigLedger[md3.ym]={start:lgStart,consumed:lgCons,actualCons:Math.round(cAfter),projCons:Math.round(pRem),ordered:lgOrd,end:lgEnd,countMonth:true,countAdj:lgCountAdj};
+                  runBal=lgEnd;continue;
+                } else if(invYM3<md3.ym){lgStart=inv.count;countApplied=true;}
               }
-              // No physical count — running balance from orders - consumption
-              if(totalPigOrdered<=0) return null;
-              var ordThrough=Object.entries(feedOrders.pig||{}).reduce(function(s2,e){if(e[0]<=md2.ym)return s2+(parseFloat(e[1])||0);return s2;},0);
-              var consThrough=pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)<=md2.ym;}).reduce(function(s2,d){return s2+(parseFloat(d.feed_lbs)||0);},0);
-              var projFut2=0;
-              monthlyData.forEach(function(m2){
-                if(m2.ym>md2.ym) return;
-                if(m2.isFuture) projFut2+=m2.projTotal;
-                else if(m2.isCurrent){var dl3=m2.daysInMonth-new Date().getDate();if(dl3>0)projFut2+=curProj.total*dl3;}
-              });
-              return Math.round(ordThrough-consThrough-projFut2);
+              var lgActual=md3.actual;
+              var lgProj=0;
+              if(md3.isCurrent){var dl5=md3.daysInMonth-now.getDate();if(dl5>0)lgProj=Math.round(curProj.total*dl5);}
+              else if(md3.isFuture){lgProj=md3.projTotal;lgActual=0;}
+              var lgCons2=Math.round(lgActual+lgProj);
+              var lgOrd2=parseFloat(md3.ordered)||0;
+              var lgEnd2=Math.round(lgStart-lgCons2+lgOrd2);
+              pigLedger[md3.ym]={start:Math.round(lgStart),consumed:lgCons2,actualCons:Math.round(lgActual),projCons:Math.round(lgProj),ordered:lgOrd2,end:lgEnd2,countMonth:lgCountMonth,countAdj:lgCountAdj};
+              runBal=lgEnd2;
             }
 
             function renderPigMonthCard(md2){
-              var variance=md2.actual>0?md2.actual-md2.projTotal:null;
-              var onHand=pigOnHandForMonth(md2);
+              var lg=pigLedger[md2.ym];
+              if(!lg) return null;
               var projGroups=projectedFeedByGroup(md2.ym);
               var actualGroups=actualFeedByGroup(md2.ym);
+              var variance=(!md2.isFuture&&md2.actual>0)?(md2.actual-md2.projTotal):null;
               return React.createElement('div',{key:md2.ym,style:{background:'white',border:md2.isCurrent?'2px solid #085041':'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}},
                 // Header
                 React.createElement('div',{style:{padding:'10px 16px',display:'flex',alignItems:'center',gap:8,background:md2.isCurrent?'#ecfdf5':md2.isFuture?'#f8fafc':'white'}},
                   React.createElement('span',{style:{fontSize:14,fontWeight:700,color:'#111827'}},fmtMonth2(md2.ym)),
                   md2.isCurrent&&React.createElement('span',{style:{fontSize:10,fontWeight:700,color:'#065f46',background:'#d1fae5',padding:'1px 8px',borderRadius:10}},'NOW'),
-                  md2.isFuture&&React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},'projected')
+                  md2.isFuture&&React.createElement('span',{style:{fontSize:10,color:'#9ca3af'}},'projected'),
+                  lg.countMonth&&lg.countAdj!=null&&lg.countAdj!==0&&React.createElement('span',{style:{fontSize:10,fontWeight:600,color:lg.countAdj>0?'#065f46':'#b91c1c',background:lg.countAdj>0?'#ecfdf5':'#fef2f2',padding:'1px 8px',borderRadius:10}},
+                    'Count adj '+(lg.countAdj>0?'+':'')+lg.countAdj.toLocaleString())
                 ),
-                // Stats row
-                React.createElement('div',{style:{padding:'8px 16px 12px',display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}},
-                  [{l:'Projected',v:md2.projTotal.toLocaleString(),c:'#6b7280'},
-                   {l:'Actual',v:md2.isFuture?'\u2014':md2.actual.toLocaleString(),c:md2.isFuture?'#9ca3af':'#111827'},
-                   {l:'Variance',v:variance==null?'\u2014':(variance>0?'+':'')+variance.toLocaleString(),c:variance==null?'#9ca3af':variance>0?'#b91c1c':'#065f46'},
-                   {l:'Ordered',v:'_input_',c:'#111827'},
-                   {l:'On Hand',v:onHand==null?'\u2014':onHand.toLocaleString(),c:onHand==null?'#9ca3af':onHand>0?'#065f46':'#b91c1c'}
-                  ].map(function(s2){
-                    return React.createElement('div',{key:s2.l},
-                      React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},s2.l),
-                      s2.v==='_input_'
-                        ? React.createElement('input',{type:'number',min:'0',step:'100',value:md2.ordered||'',onChange:function(e){savePigOrder(md2.ym,e.target.value);},onClick:function(e){e.stopPropagation();},placeholder:'0',style:{width:'100%',fontSize:13,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit',fontWeight:600,boxSizing:'border-box'}})
-                        : React.createElement('div',{style:{fontSize:15,fontWeight:600,color:s2.c}},s2.v)
-                    );
-                  })
+                // Ledger row — START / CONSUMED / ORDERED / END
+                React.createElement('div',{style:{padding:'8px 16px 6px',display:'grid',gridTemplateColumns:'1fr 1.2fr 1fr 1fr',gap:10}},
+                  // START
+                  React.createElement('div',null,
+                    React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},'Start of Month'),
+                    React.createElement('div',{style:{fontSize:16,fontWeight:600,color:lg.start>=0?'#374151':'#b91c1c'}},lg.start.toLocaleString())
+                  ),
+                  // CONSUMED
+                  React.createElement('div',null,
+                    React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},'Consumed'),
+                    React.createElement('div',{style:{fontSize:16,fontWeight:600,color:'#111827'}},lg.consumed.toLocaleString()),
+                    (md2.isCurrent&&lg.projCons>0)?React.createElement('div',{style:{fontSize:10,color:'#9ca3af',marginTop:1}},lg.actualCons.toLocaleString()+' actual + '+lg.projCons.toLocaleString()+' proj'):null,
+                    md2.isFuture?React.createElement('div',{style:{fontSize:10,color:'#9ca3af',marginTop:1}},'projected'):null
+                  ),
+                  // ORDERED (input)
+                  React.createElement('div',null,
+                    React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},'Ordered'),
+                    React.createElement('input',{type:'number',min:'0',step:'100',value:md2.ordered||'',onChange:function(e){savePigOrder(md2.ym,e.target.value);},onClick:function(e){e.stopPropagation();},placeholder:'0',style:{width:'100%',fontSize:14,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit',fontWeight:600,boxSizing:'border-box'}}),
+                    React.createElement('div',{style:{fontSize:10,color:'#9ca3af',marginTop:1}},'arrives end of mo.')
+                  ),
+                  // END OF MONTH
+                  React.createElement('div',null,
+                    React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},'End of Month'),
+                    React.createElement('div',{style:{fontSize:16,fontWeight:700,color:lg.end>0?'#065f46':'#b91c1c'}},lg.end.toLocaleString())
+                  )
                 ),
-                // Per-group breakdown (expandable)
+                // Projected vs Actual — daily rates + extrapolated monthly variance
+                (function(){
+                  var projDaily=Math.round(md2.projTotal/md2.daysInMonth);
+                  var daysElapsed=md2.isFuture?0:md2.isCurrent?now.getDate():md2.daysInMonth;
+                  var actualDaily=daysElapsed>0?Math.round(md2.actual/daysElapsed):0;
+                  var dailyVar=daysElapsed>0?(actualDaily-projDaily):null;
+                  // Monthly variance: for completed months use actual totals, for current month extrapolate daily rate to full month
+                  var moVar=null;
+                  if(!md2.isFuture&&daysElapsed>0){
+                    if(md2.isCurrent) moVar=Math.round(actualDaily*md2.daysInMonth)-md2.projTotal;
+                    else moVar=md2.actual-md2.projTotal;
+                  }
+                  return React.createElement('div',{style:{padding:'2px 16px 8px',display:'flex',gap:16,fontSize:11,color:'#6b7280'}},
+                    React.createElement('span',null,'Proj: '+projDaily.toLocaleString()+'/day ('+md2.projTotal.toLocaleString()+' mo)'),
+                    !md2.isFuture&&React.createElement('span',null,'Actual: '+actualDaily.toLocaleString()+'/day'+(md2.isCurrent?' ('+md2.actual.toLocaleString()+' so far)':' ('+md2.actual.toLocaleString()+' mo)')),
+                    dailyVar!=null&&dailyVar!==0&&React.createElement('span',{style:{fontWeight:600,color:dailyVar>0?'#b91c1c':'#065f46'}},(dailyVar>0?'+':'')+dailyVar.toLocaleString()+'/day'),
+                    moVar!=null&&moVar!==0&&React.createElement('span',{style:{fontWeight:600,color:moVar>0?'#b91c1c':'#065f46'}},(moVar>0?'+':'')+moVar.toLocaleString()+' mo'+(md2.isCurrent?' est.':''))
+                  );
+                })(),
+                // Per-group breakdown
                 React.createElement('div',{style:{borderTop:'1px solid #f3f4f6',padding:'8px 16px 10px'}},
                   React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
                     React.createElement('thead',null,
                       React.createElement('tr',{style:{borderBottom:'1px solid #e5e7eb'}},
                         React.createElement('th',{style:{padding:'4px 10px',textAlign:'left',fontWeight:600,color:'#6b7280'}},'Group'),
-                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Projected'),
-                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Actual'),
-                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Variance')
+                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Proj/day'),
+                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Actual/day'),
+                        React.createElement('th',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:'#6b7280'}},'Variance/day')
                       )
                     ),
                     React.createElement('tbody',null,
-                      projGroups.map(function(pg,gi){
-                        var actualLbs=0;
-                        if(pg.label==='SOWS') actualLbs=actualGroups['SOWS']||0;
-                        else if(pg.label==='BOARS') actualLbs=actualGroups['BOARS']||0;
-                        else {
-                          Object.entries(actualGroups).forEach(function(e2){
-                            var low=e2[0].toLowerCase().trim();
-                            if(pg.subNames&&pg.subNames.length>0){if(pg.subNames.includes(low))actualLbs+=e2[1];}
-                            else if(pg.mainName&&low===pg.mainName){actualLbs+=e2[1];}
-                          });
-                        }
-                        actualLbs=Math.round(actualLbs);
-                        var gVar=md2.isFuture?null:(actualLbs>0?actualLbs-pg.projected:null);
-                        return React.createElement('tr',{key:gi,style:{borderBottom:'1px solid #f0f0f0'}},
-                          React.createElement('td',{style:{padding:'4px 10px',fontWeight:500,color:'#374151'}},pg.label),
-                          React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',color:'#6b7280'}},pg.projected.toLocaleString()),
-                          React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:md2.isFuture?'#9ca3af':'#111827'}},md2.isFuture?'\u2014':actualLbs.toLocaleString()),
-                          React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:gVar==null?'#9ca3af':gVar>0?'#b91c1c':'#065f46'}},gVar==null?'\u2014':(gVar>0?'+':'')+gVar.toLocaleString())
-                        );
-                      })
+                      (function(){
+                        var gDaysElapsed=md2.isFuture?0:md2.isCurrent?now.getDate():md2.daysInMonth;
+                        return projGroups.map(function(pg,gi){
+                          var actualLbs=0;
+                          if(pg.label==='SOWS') actualLbs=actualGroups['SOWS']||0;
+                          else if(pg.label==='BOARS') actualLbs=actualGroups['BOARS']||0;
+                          else {
+                            Object.entries(actualGroups).forEach(function(e2){
+                              var low=e2[0].toLowerCase().trim();
+                              if(pg.subNames&&pg.subNames.length>0){if(pg.subNames.includes(low))actualLbs+=e2[1];}
+                              else if(pg.mainName&&low===pg.mainName){actualLbs+=e2[1];}
+                            });
+                          }
+                          actualLbs=Math.round(actualLbs);
+                          var projDay=Math.round(pg.projected/md2.daysInMonth);
+                          var actualDay=gDaysElapsed>0?Math.round(actualLbs/gDaysElapsed):0;
+                          var gVar=md2.isFuture?null:(gDaysElapsed>0?(actualDay-projDay):null);
+                          return React.createElement('tr',{key:gi,style:{borderBottom:'1px solid #f0f0f0'}},
+                            React.createElement('td',{style:{padding:'4px 10px',fontWeight:500,color:'#374151'}},pg.label),
+                            React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',color:'#6b7280'}},projDay.toLocaleString()),
+                            React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:md2.isFuture?'#9ca3af':'#111827'}},md2.isFuture?'\u2014':actualDay.toLocaleString()),
+                            React.createElement('td',{style:{padding:'4px 10px',textAlign:'right',fontWeight:600,color:gVar==null?'#9ca3af':gVar>0?'#b91c1c':'#065f46'}},gVar==null?'\u2014':(gVar>0?'+':'')+gVar.toLocaleString())
+                          );
+                        });
+                      })()
                     )
                   )
                 )
