@@ -357,15 +357,11 @@ Public form for quick feed logging. Inserts a new row into the appropriate `*_da
 
 ### Feed System
 
-- **Physical count not yet tested on live data.** The pig and poultry physical count systems are built but Ronnie hasn't done a real physical count yet. The adjustment calculation (system estimate vs actual count) needs real-world validation.
-- **Feeder pig count uses originalPigCount for projections.** Processing trips reduce actual pig count, but the projection still uses the original. A more accurate projection would subtract processed pigs.
-- **Nursing sow detection depends on farrowing records.** If a sow farrows but no record is entered, she won't be counted as nursing (stays at 5 lbs/day instead of 12).
+- **Physical count not yet tested on live data.** The pig and poultry physical count systems are built but Ronnie hasn't done a real physical count yet. The adjustment calculation (system estimate vs actual count) needs real-world validation. Code reviewed for edge cases — handles count in current month, past month, and no count.
 
 ### General
 
-- **Add Feed webform batch_id for layers is null.** Can't resolve in anon context. Aggregation works via `batch_label` + `.reduce()`. Low priority.
-- **housing_batch_map may be empty** if `syncWebformConfig` hasn't run after an admin loads the app. The Add Feed form handles this gracefully.
-- **Supabase sessions expire.** If daily records show 0, user should sign out and back in.
+- No major open items. All previously listed issues have been fixed (see section 10).
 
 ---
 
@@ -387,12 +383,19 @@ Public form for quick feed logging. Inserts a new row into the appropriate `*_da
 
 7. **Poultry daily variance is useless.** Bulk feeding (filling bins and wagons) creates huge daily swings. A day with 3,000 lbs followed by days with 0 doesn't mean consumption changed. Only monthly totals are meaningful for poultry. Pig daily reports are more granular so daily variance works there.
 
+### Issues Fixed April 13 Session
+
+- **Feeder pig projections now subtract processed pigs.** `projectedDailyFeed()` and `projectedFeedByGroup()` both subtract `(g.processingTrips||[]).reduce(pigCount)` from `originalPigCount`. Previously over-projected for batches that had sent pigs to processing.
+- **Layer batch_id now resolved in Add Feed webform.** The `full_config` layerGroups have `id` fields. AddFeedWebform builds a `layerBatchIdMap` from layerGroups + housing_batch_map to resolve `batch_id` from `batch_label`. No longer null.
+- **syncWebformConfig race condition fixed.** Layer batches and housings from dedicated tables are now loaded with `Promise.all()` and syncWebformConfig is called AFTER they resolve, with the fresh data passed directly. Previously used `setTimeout` which could fire before async loads completed, resulting in empty `housing_batch_map`.
+- **Supabase session auto-refresh on tab focus.** Added a `visibilitychange` listener that calls `sb.auth.getUser()` when the tab becomes visible. If the session has expired, it signs out cleanly instead of showing empty data.
+
 ### Architecture Patterns to Follow
 
 - **Persist helpers**: Use `sbSave(key, value)` for app_store writes (has retry logic and timeout handling).
 - **Dedicated tables vs app_store**: Daily reports use dedicated Supabase tables with RLS. Everything else uses app_store JSON blobs.
 - **Standalone components**: BroilerDailysView, LayerBatchesView, LayerDailysView, EggDailysView, PigDailysView are standalone components defined outside App(). They receive props from App. This keeps App's render function manageable.
-- **webform_config sync**: When data changes (batches, groups, team members), `syncWebformConfig()` pushes the latest data to the `webform_config` table so public webforms (no auth) can access it.
+- **webform_config sync**: When data changes (batches, groups, team members), `syncWebformConfig()` pushes the latest data to the `webform_config` table so public webforms (no auth) can access it. Initial load now awaits layer data before syncing.
 
 ---
 

@@ -1276,6 +1276,7 @@ const AddFeedWebform = ({sb}) => {
   const [broilerGroups, setBroilerGroups] = React.useState([]);
   const [pigGroups, setPigGroups] = React.useState([]);
   const [layerGroupNames, setLayerGroupNames] = React.useState([]);
+  const [layerBatchIdMap, setLayerBatchIdMap] = React.useState({});
   const [allTeamMembers, setAllTeamMembers] = React.useState([]);
   const [perFormTM, setPerFormTM] = React.useState({});
 
@@ -1314,8 +1315,21 @@ const AddFeedWebform = ({sb}) => {
       if(ws&&ws.data&&ws.data.data) setWfSettings(ws.data.data);
       if(fc&&fc.data&&fc.data.data){
         setWfCfg(fc.data.data);
-        var lg=(fc.data.data.layerGroups||[]).filter(function(g){return g.status==='active';}).map(function(g){return g.name||g;});
+        var lgAll=(fc.data.data.layerGroups||[]).filter(function(g){return g.status==='active';});
+        var lg=lgAll.map(function(g){return g.name||g;});
         if(lg.length>0) setLayerGroupNames(lg);
+        // Build name→id map for batch_id resolution
+        var idMap={};
+        lgAll.forEach(function(g){if(g.id&&g.name) idMap[g.name]=g.id;});
+        // Also map housing names to batch IDs via housing_batch_map + layerGroups
+        if(hbm&&hbm.data&&hbm.data.data){
+          Object.entries(hbm.data.data).forEach(function(e){
+            var batchName=e[1];
+            var batch=lgAll.find(function(g2){return g2.name===batchName;});
+            if(batch&&batch.id) idMap[e[0]]=batch.id;
+          });
+        }
+        setLayerBatchIdMap(idMap);
         if((!tm||!tm.data||!tm.data.data||tm.data.data.length===0)&&fc.data.data.teamMembers&&fc.data.data.teamMembers.length>0){
           setAllTeamMembers(fc.data.data.teamMembers);
         }
@@ -1356,7 +1370,7 @@ const AddFeedWebform = ({sb}) => {
     var id=String(Date.now())+Math.random().toString(36).slice(2,6);
     var now=new Date().toISOString();
     var lbs=parseFloat(fl)||0;
-    if(program==='layer') return {id:id,submitted_at:now,date:date,team_member:teamMember||null,batch_label:bl,batch_id:null,feed_lbs:lbs,feed_type:ft||null,source:'add_feed_webform'};
+    if(program==='layer') return {id:id,submitted_at:now,date:date,team_member:teamMember||null,batch_label:bl,batch_id:layerBatchIdMap[bl]||null,feed_lbs:lbs,feed_type:ft||null,source:'add_feed_webform'};
     if(program==='broiler') return {id:id,submitted_at:now,date:date,team_member:teamMember||null,batch_label:bl,feed_lbs:lbs,feed_type:ft||null,source:'add_feed_webform'};
     return {id:id,submitted_at:now,date:date,team_member:teamMember||null,batch_label:bl,batch_id:bl.toLowerCase().replace(/[^a-z0-9]+/g,'-'),feed_lbs:lbs,source:'add_feed_webform'};
   }
@@ -2570,6 +2584,22 @@ function App(){
     return ()=>{ subscription.unsubscribe(); clearTimeout(authTimeout); };
   },[]);
 
+  // Refresh Supabase session when tab becomes visible (prevents stale session after backgrounding)
+  useEffect(()=>{
+    function handleVisibility(){
+      if(document.visibilityState==='visible'&&authState&&authState.user){
+        sb.auth.getUser().then(function(res){
+          if(res.error){
+            console.warn('Session expired, signing out');
+            sb.auth.signOut();
+          }
+        }).catch(function(){});
+      }
+    }
+    document.addEventListener('visibilitychange',handleVisibility);
+    return function(){document.removeEventListener('visibilitychange',handleVisibility);};
+  },[authState]);
+
   async function loadUser(user){
     try {
       // Race the profile fetch against a 5s timeout
@@ -2637,23 +2667,22 @@ function App(){
       if(store['ppp-broiler-notes-v1']) setBroilerNotes(store['ppp-broiler-notes-v1']||'');
       if(store['ppp-pig-notes-v1'])     setPigNotes(store['ppp-pig-notes-v1']||'');
       if(store['ppp-layer-notes-v1'])   setLayerNotes(store['ppp-layer-notes-v1']||'');
-      // Load layer batches and housings from dedicated tables
-      sb.from('layer_batches').select('*').order('name').then(({data})=>{if(data)setLayerBatches(data);});
-      sb.from('layer_housings').select('*').order('start_date').then(({data})=>{if(data)setLayerHousings(data);});
-      // Sync webform config for farm team access
-      setTimeout(()=>syncWebformConfig(store['ppp-webforms-v1']||null, store['ppp-feeders-v1']||null, store['ppp-v4']||[], store['ppp-layer-groups-v1']||[]), 2000);
-      // Sync webform_config with direct data to avoid stale closure
+      // Load layer batches and housings from dedicated tables, THEN sync webform config
+      var lbPromise=sb.from('layer_batches').select('*').order('name');
+      var lhPromise=sb.from('layer_housings').select('*').order('start_date');
+      Promise.all([lbPromise,lhPromise]).then(function(results){
+        var lbData=results[0].data||[];
+        var lhData2=results[1].data||[];
+        setLayerBatches(lbData);
+        setLayerHousings(lhData2);
+        // Now sync webform config with actual layer data available
+        syncWebformConfig(store['ppp-webforms-v1']||null, store['ppp-feeders-v1']||null, store['ppp-v4']||[], store['ppp-layer-groups-v1']||[], lhData2);
+      });
       // Sync broiler groups to webform_config for anon webform access
       const activeBroilerGroups = (store['ppp-v4']||[])
         .filter(b=>b.status!=='archived'&&b.status!=='processed')
         .map(b=>b.name);
       sb.from('webform_config').upsert({key:'broiler_groups',data:activeBroilerGroups},{onConflict:'key'}).then(()=>{});
-      setTimeout(()=>syncWebformConfig(
-        store['ppp-webforms-v1']||null,
-        store['ppp-feeders-v1']||null,
-        store['ppp-v4']||[],
-        store['ppp-layer-groups-v1']||[]
-      ), 1000);
     } else if(!error){
       // No data yet - init farrowing with historical records
       setFarrowingRecs(INITIAL_FARROWING);
@@ -5568,7 +5597,8 @@ function App(){
         const ageMs=new Date(dateISO+'T12:00:00')-new Date(birthDate+'T12:00:00');
         if(ageMs<0) return;
         const ageMonths=ageMs/86400000/30.44;
-        const pigCount=parseInt(g.originalPigCount)||0;
+        const processed=(g.processingTrips||[]).reduce(function(s,t){return s+(parseInt(t.pigCount)||0);},0);
+        const pigCount=Math.max(0,(parseInt(g.originalPigCount)||0)-processed);
         feederFeed+=pigCount*Math.max(1,ageMonths);
       });
       return {sowFeed:Math.round(sowFeed),boarFeed:Math.round(boarFeed),feederFeed:Math.round(feederFeed),total:Math.round(sowFeed+boarFeed+feederFeed),nursing,nonNursing};
@@ -5689,7 +5719,8 @@ function App(){
         const ageMs=new Date(midDate+'T12:00:00')-new Date(birthDate+'T12:00:00');
         if(ageMs<0) return;
         const ageMonths=ageMs/86400000/30.44;
-        const pigCount=parseInt(g.originalPigCount)||0;
+        const processed2=(g.processingTrips||[]).reduce(function(s,t){return s+(parseInt(t.pigCount)||0);},0);
+        const pigCount=Math.max(0,(parseInt(g.originalPigCount)||0)-processed2);
         const feed=pigCount*Math.max(1,ageMonths)*daysInMonth;
         // Use sub-batch names if available, otherwise main batch name
         const activeSubs=(g.subBatches||[]).filter(s2=>s2.status==='active');
