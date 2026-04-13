@@ -5642,18 +5642,16 @@ function App(){
     const todayDate=todayISO();
     const totalPigOrdered=Object.values(feedOrders.pig||{}).reduce((s,v)=>s+(parseFloat(v)||0),0);
     const totalPigConsumed=pigDailys.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
-    var feedOnHand;
+    var feedOnHand=null;
     if(inv){
-      const ordersSinceCount=Object.entries(feedOrders.pig||{}).reduce((s,[ym,v])=>{
-        if(ym>inv.date.substring(0,7)) return s+(parseFloat(v)||0);
+      var ordersSinceCount=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
+        if(e[0]>inv.date.substring(0,7)) return s+(parseFloat(e[1])||0);
         return s;
       },0);
-      const consumedSinceCount=pigDailys.filter(d=>d.date&&d.date>inv.date).reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
+      var consumedSinceCount=pigDailys.filter(function(d){return d.date&&d.date>inv.date;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0);
       feedOnHand=Math.round(inv.count+ordersSinceCount-consumedSinceCount);
     } else if(totalPigOrdered>0){
       feedOnHand=Math.round(totalPigOrdered-totalPigConsumed);
-    } else {
-      feedOnHand=null;
     }
 
     // Per-group projected feed for a given month
