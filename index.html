@@ -1862,9 +1862,15 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
   }
   async function submitEgg(){
     if(!eForm.date||!eForm.teamMember){setErr('Please fill in date and team member.');return;}
+    // An egg_group field is considered "filled" if either a group name OR an egg count was provided
+    const grpFilled = (n,c) => (n&&String(n).trim()!=='') || (c!==''&&c!=null);
     const valuesByFieldId = {
       date: eForm.date, team_member: eForm.teamMember,
       dozens_on_hand: eForm.dozensOnHand, comments: eForm.comments,
+      group1_pair: grpFilled(eForm.g1n,eForm.g1c) ? 'filled' : '',
+      group2_pair: grpFilled(eForm.g2n,eForm.g2c) ? 'filled' : '',
+      group3_pair: grpFilled(eForm.g3n,eForm.g3c) ? 'filled' : '',
+      group4_pair: grpFilled(eForm.g4n,eForm.g4c) ? 'filled' : '',
     };
     const reqErr = validateRequiredFields('egg-dailys', valuesByFieldId);
     if(reqErr){setErr(reqErr);return;}
