@@ -453,6 +453,32 @@ function calcBreedingTimeline(exposureStart) {
     farrowingStart, farrowingEnd, weaningStart, weaningEnd, growStart, growEnd };
 }
 
+// ── BREEDING CYCLE LABELS ────────────────────────────────────────────────
+// Auto-generate per-year global sequence number for breeding cycles.
+// Format: "Group N - YY-NN" (e.g. "Group 1 - 25-01").
+// NN resets each year; first cycle to start in any year gets 01, then 02, etc.
+// regardless of which group it's in.
+function buildCycleSeqMap(cycles) {
+  const seqMap = {};
+  const dated = (cycles||[]).filter(c=>c&&c.id&&c.exposureStart);
+  const sorted = [...dated].sort((a,b)=>{
+    if(a.exposureStart!==b.exposureStart) return a.exposureStart.localeCompare(b.exposureStart);
+    return String(a.id).localeCompare(String(b.id));
+  });
+  const yearCounts = {};
+  sorted.forEach(c=>{
+    const yr = c.exposureStart.slice(2,4); // '2025' -> '25'
+    yearCounts[yr] = (yearCounts[yr]||0) + 1;
+    seqMap[c.id] = yr + '-' + String(yearCounts[yr]).padStart(2,'0');
+  });
+  return seqMap;
+}
+function cycleLabel(cycle, seqMap) {
+  if(!cycle) return '';
+  const suffix = seqMap && seqMap[cycle.id];
+  return 'Group ' + cycle.group + (suffix ? ' - ' + suffix : '');
+}
+
 // ── AUTO-STATUS HELPERS ──────────────────────────────────────────────────
 function calcPoultryStatus(batch) {
   // Trust user's explicit status choice. Auto-compute only when not set.
@@ -3430,13 +3456,15 @@ function App(){
     });
 
     // Pig events
+    const _weekSeqMap = buildCycleSeqMap(breedingCycles);
     breedingCycles.forEach(c=>{
       const tl = calcBreedingTimeline(c.exposureStart);
       if(!tl) return;
+      const lbl = cycleLabel(c, _weekSeqMap);
       if(tl.farrowingStart >= todayStr && tl.farrowingStart <= in30)
-        weekEvents.push({type:'farrow-open', label:`Group ${c.group} farrowing window opens`, date:tl.farrowingStart, color:'#1e40af', icon:'🐷'});
+        weekEvents.push({type:'farrow-open', label:`${lbl} farrowing window opens`, date:tl.farrowingStart, color:'#1e40af', icon:'🐷'});
       if(tl.farrowingEnd >= todayStr && tl.farrowingEnd <= in30)
-        weekEvents.push({type:'farrow-close', label:`Group ${c.group} farrowing window closes`, date:tl.farrowingEnd, color:'#be185d', icon:'🐷'});
+        weekEvents.push({type:'farrow-close', label:`${lbl} farrowing window closes`, date:tl.farrowingEnd, color:'#be185d', icon:'🐷'});
       // Sows due in window
       if(tl.farrowingStart <= in30 && tl.farrowingEnd >= todayStr) {
         const expected = [...(c.boar1Tags||'').split(/[\n,]+/), ...(c.boar2Tags||'').split(/[\n,]+/)]
@@ -3444,7 +3472,7 @@ function App(){
         const farrowed = new Set(farrowingRecs.filter(r=>r.group===c.group).map(r=>r.sow.trim()));
         const pending = expected.filter(t=>!farrowed.has(t));
         if(pending.length>0)
-          weekEvents.push({type:'farrow-due', label:`${pending.length} sow${pending.length>1?'s':''} due to farrow (Group ${c.group})`, date:tl.farrowingStart, color:'#1e40af', icon:'🌱'});
+          weekEvents.push({type:'farrow-due', label:`${pending.length} sow${pending.length>1?'s':''} due to farrow (${lbl})`, date:tl.farrowingStart, color:'#1e40af', icon:'🌱'});
       }
     });
 
@@ -3534,6 +3562,7 @@ function App(){
 
     // Performance trends
     // Pig farrowing survival per cycle (most recent 5)
+    const _homeSeqMap = buildCycleSeqMap(breedingCycles);
     const cycleSurvival = breedingCycles.map(c=>{
       const tl = calcBreedingTimeline(c.exposureStart);
       if(!tl) return null;
@@ -3545,7 +3574,8 @@ function App(){
       if(recs.length===0) return null;
       const born=recs.reduce((s,r)=>s+(parseInt(r.totalBorn)||0),0);
       const dead=recs.reduce((s,r)=>s+(parseInt(r.deaths)||0),0);
-      return {label:`G${c.group} ${fmtS(c.exposureStart)}`, survival:born>0?Math.round(((born-dead)/born)*100):0, recs:recs.length};
+      const _suf=_homeSeqMap[c.id];
+      return {label:`G${c.group}${_suf?' · '+_suf:''} ${fmtS(c.exposureStart)}`, survival:born>0?Math.round(((born-dead)/born)*100):0, recs:recs.length};
     }).filter(Boolean).slice(-5);
 
     // Pig carcass yield trend
@@ -6250,6 +6280,7 @@ function App(){
     })();
 
     // Recent 5 cycles survival
+    const _pigsHomeSeqMap = buildCycleSeqMap(breedingCycles);
     const recentCycleSurvival = breedingCycles.slice(-5).map(c=>{
       const tl=calcBreedingTimeline(c.exposureStart); if(!tl) return null;
       const recs=farrowingRecs.filter(r=>{
@@ -6260,7 +6291,8 @@ function App(){
       if(!recs.length) return null;
       const born=recs.reduce((s,r)=>s+(parseInt(r.totalBorn)||0),0);
       const dead=recs.reduce((s,r)=>s+(parseInt(r.deaths)||0),0);
-      return {label:`G${c.group} ${fmtS(c.exposureStart)}`,survival:born>0?Math.round(((born-dead)/born)*100):0,born,dead};
+      const _suf=_pigsHomeSeqMap[c.id];
+      return {label:`G${c.group}${_suf?' · '+_suf:''} ${fmtS(c.exposureStart)}`,survival:born>0?Math.round(((born-dead)/born)*100):0,born,dead};
     }).filter(Boolean);
 
     // Feeder batch performance
@@ -6513,6 +6545,7 @@ function App(){
     const bTotalDays = BREED_WEEKS*7;
     function bpct(iso){ return ((new Date(iso+"T12:00:00")-btlS)/86400000/bTotalDays)*100; }
     const bWkHdrs = Array.from({length:BREED_WEEKS},(_,i)=>addDays(btlS,i*7));
+    const cycleSeqMap = buildCycleSeqMap(breedingCycles);
 
     const EMPTY_BREED = {group:"1",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:"",boar1Name:boarNames.boar1,boar2Name:boarNames.boar2};
 
@@ -6685,7 +6718,7 @@ function App(){
             {tooltip&&tooltip.type==='pig'&&(function(){
               return React.createElement('div',{style:{position:'fixed',left:tooltip.vx,top:tooltip.vy,transform:'translate(-50%,-100%)',zIndex:9999,pointerEvents:'none',display:'flex',flexDirection:'column',alignItems:'center'}},
                 React.createElement('div',{style:{background:'#1a1a1a',color:'white',borderRadius:10,padding:'9px 12px',fontSize:12,boxShadow:'0 4px 16px rgba(0,0,0,.35)',minWidth:180,maxWidth:260}},
-                  React.createElement('div',{style:{fontWeight:700,fontSize:13,marginBottom:5,color:'white'}},'Group '+tooltip.group+' \u2014 '+tooltip.phaseName),
+                  React.createElement('div',{style:{fontWeight:700,fontSize:13,marginBottom:5,color:'white'}},(tooltip.cycleLbl||('Group '+tooltip.group))+' \u2014 '+tooltip.phaseName),
                   React.createElement('div',{style:{display:'grid',gridTemplateColumns:'auto 1fr',gap:'3px 10px'}},
                     React.createElement('span',{style:{color:'#9ca3af'}},'Period:'),
                     React.createElement('span',{style:{color:'white'}},fmt(tooltip.start)+' \u2192 '+fmt(tooltip.end)),
@@ -6751,10 +6784,12 @@ function App(){
                           gilt:"Gilts Grow Out",
                           boarGrow:"Boars Grow Out",
                         };
-                        const label = `G${c.group} — ${phaseNames[row.phase]||row.phase}`;
+                        const cLbl = cycleLabel(c, cycleSeqMap);
+                        const cSuffix = cycleSeqMap[c.id];
+                        const label = `G${c.group}${cSuffix?' · '+cSuffix:''} — ${phaseNames[row.phase]||row.phase}`;
                         return (
                           <div key={c.id} onClick={()=>{setBreedForm({group:c.group,boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}}
-                            onMouseEnter={function(ev){var r=ev.currentTarget.getBoundingClientRect();setTooltip({type:'pig',group:c.group,phase:row.phase,phaseName:phaseNames[row.phase]||row.phase,start:s,end:e,sowCount:c.sowCount,vx:r.left+r.width/2,vy:r.top-10});}}
+                            onMouseEnter={function(ev){var r=ev.currentTarget.getBoundingClientRect();setTooltip({type:'pig',group:c.group,cycleLbl:cLbl,phase:row.phase,phaseName:phaseNames[row.phase]||row.phase,start:s,end:e,sowCount:c.sowCount,vx:r.left+r.width/2,vy:r.top-10});}}
                             onMouseLeave={function(){setTooltip(null);}}
                             style={{position:"absolute",left:`${left}%`,width:`${w}%`,top:4,bottom:4,borderRadius:4,cursor:"pointer",
                               background:phaseColor,display:"flex",alignItems:"center",padding:"0 7px",overflow:"hidden",
@@ -6793,7 +6828,7 @@ function App(){
                 return (
                   <div key={c.id} style={{background:"white",border:`1px solid ${C.farrowing}`,borderRadius:10,padding:"10px 14px",fontSize:12}}>
                     <div style={{display:"flex",flexWrap:"wrap",gap:"6px 20px",alignItems:"center",marginBottom:6}}>
-                      <strong>Group {c.group}</strong>
+                      <strong>{cycleLabel(c, cycleSeqMap)}</strong>
                       <span style={{color:"#4b5563"}}>{c.sowCount||"?"} sows total</span>
                       <span style={{color:"#4b5563"}}>Sows in with Boars: {fmt(tl.boarStart)} {'\u2192'} {fmt(tl.boarEnd)}</span>
                       <span style={{color:"#4b5563"}}>Exposed Paddock: {fmt(tl.paddockStart)} {'\u2192'} {fmt(tl.paddockEnd)}</span>
@@ -6820,6 +6855,7 @@ function App(){
   // ── PIG BATCHES VIEW ──
   if(view==="pigbatches") {
     const statusColors = {active:{bg:"#085041",tx:"white"},processed:{bg:"#4b5563",tx:"white"}};
+    const cycleSeqMap = buildCycleSeqMap(breedingCycles);
 
     // Match pig_dailys to a name (case-insensitive) — used for both batch and sub-batch matching
     function dailysForName(name){
@@ -7130,7 +7166,7 @@ function App(){
                     <option value="">{'\u2014 Select \u2014'}</option>
                     {breedingCycles.map(c=>{
                       const tl=calcBreedingTimeline(c.exposureStart);
-                      return <option key={c.id} value={c.id}>Group {c.group} — {tl?fmtS(tl.farrowingStart)+" to "+fmtS(tl.farrowingEnd):fmtS(c.exposureStart)}</option>;
+                      return <option key={c.id} value={c.id}>{cycleLabel(c, cycleSeqMap)} — {tl?fmtS(tl.farrowingStart)+" to "+fmtS(tl.farrowingEnd):fmtS(c.exposureStart)}</option>;
                     })}
                   </select>
                 </div>
@@ -7471,7 +7507,7 @@ function App(){
                 {/* Cycle info footer */}
                 {tl&&(
                   <div style={{padding:"6px 16px",background:"#ecfdf5",borderTop:"1px solid #e5e7eb",fontSize:11,color:"#9ca3af"}}>
-                    Group {cycle.group} · Farrowing: {fmtS(tl.farrowingStart)} → {fmtS(tl.farrowingEnd)} · {boarNames.boar1}: {cycle.boar1Tags||"—"} · {boarNames.boar2}: {cycle.boar2Tags||"—"}
+                    {cycleLabel(cycle, cycleSeqMap)} · Farrowing: {fmtS(tl.farrowingStart)} → {fmtS(tl.farrowingEnd)} · {boarNames.boar1}: {cycle.boar1Tags||"—"} · {boarNames.boar2}: {cycle.boar2Tags||"—"}
                   </div>
                 )}
               </div>
@@ -8030,6 +8066,7 @@ function App(){
 
   // ── FARROWING RECORDS VIEW ──
   if(view==="farrowing") {
+    const cycleSeqMap = buildCycleSeqMap(breedingCycles);
     const QUALITY_OPTS = ["","excellent","average","poor"];
     const LOCATION_OPTS = ["","inside-hut","outside-hut","inside-pen","outside-pen"];
     const locationLabel = v => ({"":" — ","inside-hut":"Inside hut","outside-hut":"Outside hut","inside-pen":"Inside pen","outside-pen":"Outside pen"}[v]||v);
@@ -8074,7 +8111,7 @@ function App(){
         .map(tag => ({
           tag,
           status: windowPassed ? 'missed' : windowStarted ? 'pending' : 'not_yet',
-          cycleLabel: `Group ${c.group} (${fmtS(tl.farrowingStart)} – ${fmtS(tl.farrowingEnd)})`
+          cycleLabel: `${cycleLabel(c, cycleSeqMap)} (${fmtS(tl.farrowingStart)} – ${fmtS(tl.farrowingEnd)})`
         }));
     }
 
@@ -8367,7 +8404,7 @@ function App(){
             return (
               <div key={c.id} style={{background:"white",border:`1px solid ${C.farrowing}`,borderLeft:`5px solid ${C.farrowing}`,borderRadius:12,overflow:"hidden",boxShadow:"var(--shadow-sm)"}}>
                 <div style={{padding:"10px 16px",background:C.boar,display:"flex",flexWrap:"wrap",gap:"6px 16px",alignItems:"center"}}>
-                  <strong style={{fontSize:13}}>Group {c.group}</strong>
+                  <strong style={{fontSize:13}}>{cycleLabel(c, cycleSeqMap)}</strong>
                   <span style={{fontSize:12,color:"#444"}}>Boars in: {fmtS(c.exposureStart)} → {fmtS(tl.boarEnd)}</span>
                   <span style={{fontSize:12,color:"#444"}}>Farrowing window: {fmtS(tl.farrowingStart)} → {fmtS(tl.farrowingEnd)}</span>
                   {c.boar1Tags&&<span style={{fontSize:11,color:"var(--text-secondary)"}}>{boarNames.boar1}: {c.boar1Tags}</span>}
@@ -8665,7 +8702,7 @@ function App(){
                 if(h.missed){
                   return React.createElement('div',{key:hi,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:hi<history.length-1?'1px solid #f8f8f8':'none',fontSize:11}},
                     React.createElement('span',{style:{color:'#b91c1c',fontWeight:600,background:'#fef2f2',padding:'1px 6px',borderRadius:4,fontSize:10}},'MISSED'),
-                    React.createElement('span',{style:{color:'#6b7280'}},'G'+h.cycle.group+' \u00b7 Cycle '+fmt(h.cycle.exposureStart)),
+                    React.createElement('span',{style:{color:'#6b7280'}},cycleLabel(h.cycle, cycleSeqMap)+' \u00b7 '+fmt(h.cycle.exposureStart)),
                     h.sire&&React.createElement('span',{style:{color:'#9ca3af'}},'\u00b7 Sire: '+h.sire)
                   );
                 }
@@ -8677,7 +8714,7 @@ function App(){
                   React.createElement('span',{style:{color:'#065f46',fontWeight:600}},alive+' alive'),
                   React.createElement('span',{style:{color:'#9ca3af'}},born+' born'),
                   dead>0&&React.createElement('span',{style:{color:'#b91c1c'}},dead+' died'),
-                  h.cycle&&React.createElement('span',{style:{color:'#9ca3af'}},'G'+h.cycle.group),
+                  h.cycle&&React.createElement('span',{style:{color:'#9ca3af'}},cycleLabel(h.cycle, cycleSeqMap)),
                   h.sire&&React.createElement('span',{style:{color:'#9ca3af'}},'\u00b7 '+h.sire)
                 );
               })}
