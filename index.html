@@ -449,7 +449,9 @@ function calcBreedingTimeline(exposureStart) {
 
 // ── AUTO-STATUS HELPERS ──────────────────────────────────────────────────
 function calcPoultryStatus(batch) {
-  if(!batch.hatchDate) return batch.status||'planned';
+  // Trust user's explicit status choice. Auto-compute only when not set.
+  if(batch.status) return batch.status;
+  if(!batch.hatchDate) return 'planned';
   const today = todayISO();
   const tl = calcTimeline(batch.hatchDate, batch.breed, batch.processingDate);
   if(!tl) return 'planned';
@@ -4611,8 +4613,8 @@ function App(){
               const b=tooltip.batch;
               const isBrooder=tooltip.resType==="brooder";
               const live=calcTimeline(b.hatchDate, b.breed, b.processingDate);
-              const brooderIn  = live ? live.brooderIn  : b.brooderIn;
-              const brooderOut = live ? live.brooderOut : b.brooderOut;
+              const brooderIn  = b.brooderIn  || (live ? live.brooderIn  : null);
+              const brooderOut = b.brooderOut || (live ? live.brooderOut : null);
               const schoonerIn = live ? live.schoonerIn : b.schoonerIn;
               const schoonerOut= live ? live.schoonerOut: b.schoonerOut;
               return (
@@ -4838,8 +4840,9 @@ function App(){
                 const hw=isNearHoliday(b.hatchDate);
                 const pw=b.processingDate&&isNearHoliday(b.processingDate);
                 const live=calcTimeline(b.hatchDate, b.breed, b.processingDate);
-                const brooderIn  = live ? live.brooderIn  : b.brooderIn;
-                const brooderOut = live ? live.brooderOut : b.brooderOut;
+                // Prefer stored brooderIn (hatchDate+1 per migration) over calcTimeline's (same as hatch)
+                const brooderIn  = b.brooderIn  || (live ? live.brooderIn  : null);
+                const brooderOut = b.brooderOut || (live ? live.brooderOut : null);
                 const schoonerIn = live ? live.schoonerIn : b.schoonerIn;
                 const schoonerOut= live ? live.schoonerOut: b.schoonerOut;
                 return (
