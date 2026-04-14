@@ -221,6 +221,8 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
     lock: (name, acquireTimeout, fn) => fn()
   }
 });
+// Expose for browser console testing (e.g. sending test emails)
+window.sb = sb;
 
 // ── EMAIL HELPER ─────────────────────────────────────────────────────────────
 // Fire-and-forget: calls the Supabase send-email edge function.
