@@ -498,4 +498,213 @@ Pig feed monthly tile group breakdown now shows Proj/day, Actual/day, Variance/d
 
 ---
 
-*End of Handover Document — Updated April 13, 2026 (evening)*
+*End of April 13 Session*
+
+---
+
+# 12. Session Update — April 14, 2026
+
+## What Was Built
+
+### Egg Webform Group 1 Required Bug Fix (commit `4b6e02d`)
+
+When submitting the egg collection form, Group 1 was flagged as missing even when filled. Root cause: `validateRequiredFields()` checks pair fields `group1_pair…group4_pair`, but `submitEgg()` didn't pass those values into `valuesByFieldId`. Fixed by computing a `grpFilled(name, count)` helper — a group pair counts as "filled" if either the group name OR the egg count was entered — and passing the resolved `'filled' | ''` value for each group.
+
+Location: `submitEgg()` at index.html:1863-1886.
+
+### Program Color Palette (commit `524b4c2`)
+
+Applied Ronnie's internal color designations site-wide. Previously the app used broiler blue, pig purple, and layer amber in a mixed way. The new palette:
+
+| Program | Primary | Medium | Bright | BG | Lightest | Border |
+|---|---|---|---|---|---|---|
+| **Broilers (yellow)** | `#a16207` | `#ca8a04` | `#eab308` | `#fef9c3` | `#fefce8` | `#fde047` |
+| **Layers (brown)** | `#78350f` | `#92400e` | `#b45309` | `#fffbeb` | `#fef3c7` | `#fde68a` |
+| **Pigs (blue)** | `#1e40af` | `#1e3a8a` | `#2563eb` | `#eff6ff` | `#dbeafe` | `#bfdbfe` |
+| **Cattle (red)** | `#991b1b` | `#b91c1c` | `#dc2626` | `#fef2f2` | `#fee2e2` | `#fca5a5` |
+| **Sheep (green)** | `#166534` | `#15803d` | `#16a34a` | `#f0fdf4` | `#dcfce7` | `#86efac` |
+
+Cattle and sheep palettes are reserved for the upcoming modules — nothing in the current codebase uses them yet.
+
+**AddFeedWebform** (public `#addfeed` form): rebranded from amber to farm green (`#085041`) since it is a shared program-agnostic entry point. Gradient, logo, submit button, info banner, "Log Another" button, "Add Another Group" dashed button, and back link all updated.
+
+**Preserved palettes** (intentionally NOT touched):
+- `BATCH_COLOR_PALETTE` (index.html:561-593) — 24-color rotation for timeline uniqueness
+- Housing `batchColors` palettes (lines 9139, 9155, 10150, 10163) — 4-color rotation for visual variety of layer housings
+- `fbColors`, lifecycle phase colors, STARTER/GROWER pill styling, and generic warning/success colors
+
+**Pre-existing bugs also fixed during the swap**:
+- Boar count pill in pig batches used broiler blue → now pig blue
+- Boars section header in Sows view used broiler blue → now pig blue
+- Total Hens stat on layers dashboard used broiler blue → now layer brown
+- Layer batch age & "Original → Current" tiles used broiler blue → now layer brown
+- Boar badge inside feeder sub-batch rows (line 7372) used broiler yellow → now pig blue
+
+### Pig Breeding Cycle Auto-Labels (commit `3e1b76f`)
+
+Every breeding cycle now has an auto-generated label in the format `Group N - YY-NN`. Examples: `Group 1 - 25-01`, `Group 3 - 25-02`, `Group 2 - 26-01`.
+
+**Sequencing rules** (per Ronnie's spec):
+- The `YY-NN` suffix is a **per-year global sequence** across ALL groups.
+- First cycle to start in any year (by `exposureStart` ascending) gets `YY-01`, the next `YY-02`, etc.
+- If Group 1 starts its first cycle Jan 3 and Group 3 starts Jan 10, Group 1 is `25-01` and Group 3 is `25-02`.
+- If Group 1 starts a second cycle in the same year, it gets the next available number (e.g., `25-04`) — the sequence is time-ordered, not per-group.
+- Retroactive: the suffix is computed from existing data, so all historical cycles get labeled automatically.
+
+**Implementation** (index.html:456-481):
+```javascript
+function buildCycleSeqMap(cycles) { ... }   // { cycleId → "YY-NN" }
+function cycleLabel(cycle, seqMap) { ... }  // "Group N - YY-NN"
+```
+
+**Display locations updated**:
+- Breeding Timeline Gantt — bar label + hover tooltip
+- Breeding cycles list (under the Gantt)
+- Farrowing records — per-cycle section headers + missed-sow notices + history chips in the sow detail view
+- Pig Batches — cycle info footer under each feeder group + "Linked breeding cycle" dropdown options
+- Home Dashboard — "Next 30 Days" events (farrowing window opens/closes, sows due to farrow)
+- Pigs Home Dashboard + Home Dashboard — cycle survival chart labels
+
+## Pig Cycle Labeling — Ronnie's Full Answers
+
+For reference, these were his rules when we designed the labeling:
+
+1. Format: `Group 1 - 25-01`
+2. The first group to start its cycle that year gets `-01`, then `-02`, `-03` in cycle-start order. If Group 1 ever starts a second cycle in the same year, that one gets `-04`.
+3. Labels auto-generate — no manual entry.
+4. Display in: Gantt timeline, farrowing records, pig batches/feeder groups, home dashboard events.
+5. Retroactive: existing cycles should get labels without any data migration.
+6. Build this after the color palette swap and BEFORE the cattle module.
+
+## Cattle Module — Full Answers Received, Ready to Build
+
+Ronnie answered all 31 cattle-module questions via the file `cattle question answers.txt` on his Desktop. The full answer set is pasted below. All Podio app field definitions are in `Cattle upload from Podio/all fields 3 cattle app.txt`.
+
+### Key Decisions Captured
+
+- **Statuses**: Use Podio statuses as the animal location. Add a new status `Backgrounders` between young cattle and Finishers. A calf moves through many statuses over its lifetime — we'll need a breeding timeline to organize phases.
+- **Sire tracking**: By tag # or registration # (for embryos / pregnant cows that came off-farm).
+- **Calving**: Separate focused calving table, running record per cow. Must cross-link to the rest of that cow's tracking data.
+- **Cow problem flagging**: Need a way to flag cows that don't take care of their calves or have major pregnancy complications — a breeding blacklist + general issue flags.
+- **Registration & DNA**: Spot for registration number. Want DNA test PDF attach + eventually a parser to pull data from the PDF (manual entry acceptable for now).
+- **Breeding timeline**: Tracks on a timeline (Ronnie uses Asana timeline/gantt today for this).
+- **Full records**: Every sire and dam needs full history. Currently only one bull, about to be sold.
+- **Preg checks**: Blood-based at-home tests going forward.
+- **Nutrition tracking**: Track NFC and Protein over 30 / 90 / 120-day rolling windows. Admin feed tab needs a "Cattle Inputs" table where Ronnie enters DM, NFC, Protein per hay type, so daily reports auto-calculate the nutrition picture per group. Also wants recommendations for amounts needed to hit nutritional goals.
+- **Feed test results**: Test-driven DM/NFC/Protein values change over time. App must NOT retroactively recalculate past daily reports when the feed table is updated — only new reports use the new numbers. Upload test result PDFs + keep a history of changes with the PDFs attached.
+- **1000-lb cow units**: Auto-calculate from total weight / 1000 (NOT from average weight × count).
+- **Hay tracking**: No standard monthly order cadence. Ronnie orders hay all the time. Needs projected hay on site + ordering flow driven by herd weights and nutritional needs.
+- **Pasture**: Regenerative rotational grazing — animals move constantly. Needs help configuring pasture-usage tracking.
+- **Weigh-ins**: Rapid individual weigh-in entry with a note field. Flag missing tag #s per group weighed (we only weigh one location-based group at a time). Handle missing/lost tags by flagging "unknown animal in group X" so we can reconcile later.
+- **Analytics**: Connect nutrition + weight to look for weight trends (including seasonal). Ronnie wants us to think through every data connection that produces actionable insights. Open to external APIs (weather is the obvious candidate).
+- **Processing batches**: Naming convention `C-26-01`, `B-26-02`, etc. — 3-4 cows per batch. Finished animals picked out and grouped when ready to process.
+- **Cost tracking**: Detailed per-head cost. Will upload inventory reports + cut pricing spreadsheets (same pattern Ronnie wants extended to broilers and pigs eventually).
+- **Daily webform**: Per-group entry only (no daily individual cow tracking — hundreds of cows makes that infeasible). Webform must be substantially streamlined. Calculations happen in the app, not in the webform.
+- **Infrastructure stance**: "We have to do per group... spare no token expense. We need bulletproof infrastructure." — so when we build, we go deep, no shortcuts.
+
+### 3-Phase Build Plan (confirmed before this session)
+
+**Phase 1** — Daily Ops Foundation
+- Cattle Daily Report webform (per-group, streamlined)
+- Cattle Dailys tab (daily report list + edit)
+- Admin Cattle Feed Inputs panel (hay/feed cut DM/NFC/Protein entries + upload test PDFs with version history)
+- PDF upload + history per feed cut
+
+**Phase 2** — Weigh-Ins
+- Weigh-ins tab with "session mode" for rapid entry
+- Individual entries with notes
+- Missing-tag reconciliation per group session
+- ADG chart (daily weight gain) + seasonal trend view
+- 1000-lb cow unit auto-calc (total weight / 1000)
+
+**Phase 3** — Directory, Lifecycle & Finance
+- Cattle directory / tracker with all Podio fields (tag#, reg#, sex, status, breed, breeding blacklist, % wagyu, origin, birth date, purchase info, sire, dam, hanging weight, processing date, carcass yield %)
+- Calving records (per-cow running history + complications flagging)
+- Breeding events + timeline Gantt
+- Processing batches with `C-26-01` naming
+- Sale records
+- Per-head cost rollup (feed + processing + inputs + cut pricing)
+- Import Ronnie's Podio exports: 469 animals + 1,930 weigh-ins + 1,525 daily reports
+
+### Full Answers File (Desktop: `cattle question answers.txt`)
+
+```
+1. We will go by the podio statuses, These are the locations of the animal. In the phases an A calf could pass through many of these locations. We will most likely need a breeding timeline to better organize phases. We will be adding in the status Backgrounders. This is a step before Finishers for younger cattle we plan to process.
+2. We need to track the sire and will do by tag # or reg # for embryos or preg  cows that came off farm.
+3. Yes a focused calving table. It would just be a running record of Calving per cow. but we need to think about about how to see the rest of the tracking data for the cow.
+4. no
+5. We need a way to keep track of cows that don't take care of their calf or have major preg complications for breeding, we need another way to flag overall issues with cows.
+6. yes we need a spot for reg number and a way to attach dna test or a parsing funtion to grab data off a pdf.
+7. no
+8. We have a cattle breeding project in asana and can view it with the timeline display to give us a gant chart.
+9. We need to track this on the time line
+10. We really need the capability of full records. We only have 1 bull currently and we are getting ready to sell him.
+11. We did preg checks by blood with at home style test and will use this going forward.
+12. We need to track NFC and Protein, but I would like to do this over longer windows. 30, 90 120 days. I will need a table in the admin feed tab where I can add in Cattle inputs and put in the DM, NFC and Protein so that when it gets logged in the daily reports for that group we will have a picture of their nutrition. We will need reccomendations for amounts to hit certain nutrional goals
+13. These come from tests and they are likely to change the app need to adjust the calcualtion for the change in the feed table but not affect past calculations. I would like a place to upload the test results and would like a history of changes with the test results attached
+14. This should auto calculated based on the weights. Not avg weight but total weight / 1000
+15. We will need a way to have projected hay on site with ordering, but this won't be a standard monthly order. I order hay at all times. This will all be based on hay needs by herd weights
+16. See q 1 answer.
+17. Yes I need something to track pasture usage. Need help configuring this. WE are a regenerative farm that move animal constanl;y
+18. yes.
+19. Great idea, yes we need a rapid way to enter in weight data, that will also track if we missed any tag # when weighing a group as we only weigh 1 group at a time based on their location status. Would need to be individual weigh in with a note field. Sometime we have a missing tag so we would need figure out who this missing tag is.
+20. yes. We really need to get sophisticated and see possible weight trends (maybe even season) since we will have all the nutritional data. Think about all the ways that data needs to be connect to produce the most actionable date.  Think about any other data we could bring in through API that would be helpful.
+21. what we have is the best unless you can think of something else. We pick out cattle that are ready to process, 3 or 4 or so at a time and them call them a Batch ( C-26-01 was 4 cows, B-26-02 was 3 cows etc/
+22. Need detailed cost per head.  We have a website with cut pricing that can factored into the equation and I can upload inventory reports and I will need a way to upload pricing spread sheets that we can eventually buil into the broiler and pigs
+23. yes
+24. All of the above with the rooling windo with nutritional data and how much of what feed the groups should be getting
+25. no vs but we do need to see where we stand
+26. yes
+27. yes
+28. yes
+29. yes. spare no token expense. We need bullet proof infrastructure.
+30. Yes we have to do per group but the report wont be where calculation are done any more. Webform needs to be streamlined. No way to track hundreds of cows individually daily.
+31. Just a 4th option as the webform will be substantially streamlined
+```
+
+### Podio Field Reference (Desktop: `Cattle upload from Podio/all fields 3 cattle app.txt`)
+
+Three Podio apps back the current cattle system — field lists are documented there. Key fields we'll model:
+
+**Cattle Tracker**: Tag#, Pic, Purchase Tag ID, Sex, Status, Breed, Breeding Blacklist, % Wagyu, Origin, Birth Date, Age, Purchase Date, Receiving Weight, Purchase Amount, Last Recorded Weight, Weight History, Breeding Status, Last Calving, Calves (app-ref), Sire (app-ref), Dam (app-ref), Hanging Weight, Processing Date, Carcass Yield %.
+
+**Weigh Ins**: Tag#, Cow (app-ref), Date, Weight.
+
+**Cattle Dailys** (webform): Date, Team Member, Cattle Group, 1000 lb Cow Units, Hay Type #1-3 (with Bales, DM, Lbs Protein, Lbs NFC calcs per type), Lbs of Citrus Pellets + NFC/Protein, Lbs of Alfalfa Pellets + NFC/Protein, DM Needed, DM Given, Protein %, NFC %, Waste %, Hay & Pellets cost, Waterers checked, Fence Voltage (KV), Issues / Mortalities / Comments.
+
+## Outstanding Items
+
+### High Priority — Queued for Next Session
+
+- **Cattle module Phase 1** — start here: Cattle Daily Report webform + Dailys tab + Admin Cattle Feed Inputs panel + PDF upload with version history.
+- **Cattle module Phase 2** — Weigh-ins tab with session mode, missing-tag tracking, ADG chart, 1000-lb-unit auto-calc.
+- **Cattle module Phase 3** — Directory, calving, breeding, processing batches, sale records, per-head cost rollup, Podio import (469 animals, 1,930 weigh-ins, 1,525 daily reports).
+
+### Deferred Until After Cattle Module
+
+- **Animals on Farm tile expansion** — currently 4 columns (Broilers / Layer Hens / Pigs / Total). Needs to expand to include Cattle and Sheep. Postponed because showing empty "0" tiles for unbuilt programs is noise — we'll add each tile as its program comes online.
+- **DNA test PDF parser** — Ronnie wants a function that extracts data from uploaded DNA PDFs. Manual entry is acceptable in the interim. Defer until Cattle Phase 3 is stable.
+- **Cut pricing spreadsheet upload** — planned for cattle first, then extend to broilers and pigs. Ronnie will supply spreadsheet samples.
+- **Weather API integration** — Ronnie is open to it for all programs (pasture rotation, cattle nutrition-trend analysis, broiler brood heat planning). No specific API chosen yet.
+
+### Previously Open — Still Applies
+
+- **Physical feed counts** — Ronnie entered counts for all feed types on Apr 13, 2026. Adjustment badges are showing in the UI. Real-world validation accumulates over the next weeks as consumption runs against the counted baseline. No bugs reported yet.
+
+## Known Issues
+
+None open at end of session. All bugs surfaced during color swap were fixed and deployed.
+
+## Lessons Added This Session
+
+12. **Always scope color changes by context, not global find-replace.** The color swap couldn't use a single `sed` command because the SAME hex code appeared in multiple contexts (e.g., `#fffbeb` is the AddFeedWebform background AND the layer program card background — the former needed to change to farm green, the latter had to stay as layer brown). Approach that worked: work line-by-line in the relevant component functions; preserve documented palettes (BATCH_COLOR_PALETTE, housing batchColors); spot-check with grep after each pass.
+
+13. **Pre-existing bugs surface during color audits.** Several places were using broiler blue in non-broiler contexts (boars, layer hens, layer batch stats). These only became visible because a systematic audit was being performed. When doing any site-wide visual pass, look for and fix leaked colors — don't just change what you're targeting.
+
+14. **Retroactive auto-labels beat data migration.** The pig cycle label `Group N - YY-NN` is derived purely from `exposureStart` at render time. No schema change, no migration, no "backfill" script. Deploy the helper and every existing cycle gets labeled. This pattern works any time you can compute a display value deterministically from existing fields.
+
+15. **Per-view seq maps, not App-wide.** The `cycleSeqMap` is computed fresh inside each view that needs it (`view==="breeding"`, `view==="pigbatches"`, `view==="farrowing"`, plus the home-dashboard week-events block). The data set is small (<100 cycles) so the cost is negligible, and it keeps the scope local — no risk of a stale App-level memo drifting from a re-render. Good pattern for any derived data keyed off a single state slice.
+
+---
+
+*End of Handover Document — Updated April 14, 2026*
