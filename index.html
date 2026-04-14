@@ -464,7 +464,7 @@ function calcPoultryStatus(batch) {
 // Returns: {starterFeed, growerFeed, gritLbs, mortality, projectedBirds, mortPct, dailyCount}
 function calcBroilerStatsFromDailys(batch, broilerDailys){
   const isLegacy = (/^b-24-/i).test(batch.name||"");
-  const dayOneCount = parseInt(batch.birdCountActual) || parseInt(batch.birdCount) || 0;
+  const dayOneCount = parseInt(batch.birdCountActual) || 0;
   if(isLegacy){
     const mort = parseInt(batch.mortalityCumulative)||0;
     return {
@@ -2622,10 +2622,23 @@ function App(){
       const store={};
       data.forEach(row=>store[row.key]=row.data);
       if(store['ppp-v4']) {
-        const migrated = store['ppp-v4'].map(b=>b.status==='archived'?{...b,status:'processed'}:b);
-        const hadArchived = store['ppp-v4'].some(b=>b.status==='archived');
+        // Migrate: archived → processed, and fix brooderIn=hatchDate → hatchDate+1 for active/planned batches
+        let changed=false;
+        const migrated = store['ppp-v4'].map(b=>{
+          let nb=b;
+          if(b.status==='archived'){nb={...nb,status:'processed'};changed=true;}
+          // Fix brooderIn if it equals hatchDate (was same-day, should be +1)
+          if(b.status!=='processed'&&b.hatchDate&&b.brooderIn===b.hatchDate){
+            try {
+              const newBrooderIn=toISO(addDays(new Date(b.hatchDate+'T12:00:00'),1));
+              nb={...nb,brooderIn:newBrooderIn};
+              changed=true;
+            } catch(e){}
+          }
+          return nb;
+        });
         setBatches(migrated);
-        if(hadArchived){ sb.from('app_store').upsert({key:'ppp-v4',data:migrated},{onConflict:'key'}).then(()=>{}); }
+        if(changed){ sb.from('app_store').upsert({key:'ppp-v4',data:migrated},{onConflict:'key'}).then(()=>{}); }
       }
       if(store['ppp-pigs-v1']) setPigData(store['ppp-pigs-v1']);
       if(store['ppp-breeding-v1']) setBreedingCycles(store['ppp-breeding-v1']);
@@ -2957,11 +2970,13 @@ function App(){
       // (Previously locked WR to Freedom Ranger Hatchery; that's no longer enforced.)
     }
     if(k==="schooner") f.birdCount=v==="1"?650:750;
-    // When hatchDate changes, default brooderIn to hatchDate + 1 if blank
-    // (user can still manually override)
-    if(k==="hatchDate" && v && (!f.brooderIn || f.brooderIn==="")){
+    // When hatchDate changes, default brooderIn to hatchDate + 1 if blank OR if brooderIn matches hatchDate
+    // (i.e., was previously auto-filled as same day). User can still manually override.
+    if(k==="hatchDate" && v){
       try {
-        f.brooderIn = toISO(addDays(new Date(v+'T12:00:00'), 1));
+        if(!f.brooderIn || f.brooderIn==="" || f.brooderIn===form.hatchDate || f.brooderIn===v){
+          f.brooderIn = toISO(addDays(new Date(v+'T12:00:00'), 1));
+        }
       } catch(e) { /* ignore parse errors */ }
     }
     setForm(f);
@@ -3336,7 +3351,7 @@ function App(){
     const activeBatches = batches.filter(b => calcPoultryStatus(b)==='active');
     const plannedBatches = batches.filter(b => calcPoultryStatus(b)==='planned');
     const processedBatches = batches.filter(b => calcPoultryStatus(b)==='processed');
-    const birdsOnFarm = activeBatches.reduce((s,b)=>s+(parseInt(b.birdCountActual)||parseInt(b.birdCount)||0),0);
+    const birdsOnFarm = activeBatches.reduce((s,b)=>s+(parseInt(b.birdCountActual)||0),0);
     const projectedBirds = activeBatches.reduce((s,b)=>{
       const stats = calcBroilerStatsFromDailys(b, broilerDailys);
       return s + stats.projectedBirds;
@@ -3419,8 +3434,13 @@ function App(){
       const broilerCheck = new Set(broilerDailys.filter(d=>d.date===checkDate).map(d=>(d.batch_label||'').toLowerCase().trim().replace(/^\(processed\)\s*/,'')));
       const pigCheck     = new Set(pigDailys.filter(d=>d.date===checkDate).map(d=>(d.batch_label||'').toLowerCase().trim()));
       const layerCheck   = new Set(layerDailysRecent.filter(d=>d.date===checkDate).map(d=>(d.batch_label||'').toLowerCase().trim()));
-      // Broilers
-      batches.filter(b=>calcPoultryStatus(b)==='active').forEach(b=>{
+      // Broilers — only check batches user has explicitly marked active AND only for days the batch was on the farm
+      batches.filter(b=>b.status==='active').forEach(b=>{
+        // Skip days before the batch arrived (use brooderIn, fall back to hatchDate)
+        const earliestDate=b.brooderIn||b.hatchDate;
+        if(earliestDate&&checkDate<earliestDate) return;
+        // Skip days after processing
+        if(b.processingDate&&checkDate>b.processingDate) return;
         const key=`${b.id}|${checkDate}`;
         if(!broilerCheck.has(b.name.toLowerCase().trim())&&!missedCleared.has(key))
           allMissed.push({key,label:b.name,icon:'🐔',type:'Broiler',date:checkDate});
@@ -3945,8 +3965,8 @@ function App(){
               </div>
               <div>
                 <label style={S.label}>Birds arrived</label>
-                <input type="number" value={form.birdCountActual||''} onChange={e=>upd("birdCountActual",e.target.value)} placeholder={form.birdCount||'750'}/>
-                <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>Actual day-1 count after hatchery overship. Leave blank to use Birds ordered.</div>
+                <input type="number" value={form.birdCountActual||''} onChange={e=>upd("birdCountActual",e.target.value)} placeholder="Enter actual count"/>
+                <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>Actual day-1 count after hatchery overship. Enter manually — never auto-fills from ordered.</div>
               </div>
 
               <div>
@@ -4382,7 +4402,7 @@ function App(){
           {/* Key stats */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
             <StatTile label="Active Batches" val={activeBr.length}/>
-            <StatTile label="Birds on Farm" val={activeBr.reduce((s,b)=>s+(parseInt(b.birdCountActual)||parseInt(b.birdCount)||0),0).toLocaleString()} color="#1e3a5f"/>
+            <StatTile label="Birds on Farm" val={activeBr.reduce((s,b)=>s+(parseInt(b.birdCountActual)||0),0).toLocaleString()} color="#1e3a5f"/>
             <StatTile label="Projected Birds" val={activeBr.reduce((s,b)=>{const stats=calcBroilerStatsFromDailys(b,broilerDailys);return s+stats.projectedBirds;},0).toLocaleString()} color="#085041"/>
             {(function(){var yrBirds=procBrThisYear.reduce(function(s,b){return s+(parseInt(b.totalToProcessor)||0);},0);return React.createElement(StatTile,{label:'Processed Birds '+currentYear,val:yrBirds.toLocaleString(),color:'#374151',sub:procBrThisYear.length+' batch'+(procBrThisYear.length!==1?'es':'')});})()}
             {(function(){var yrWhole=procBrThisYear.reduce(function(s,b){return s+(parseFloat(b.totalLbsWhole)||0);},0);var yrCuts=procBrThisYear.reduce(function(s,b){return s+(parseFloat(b.totalLbsCuts)||0);},0);var yrTotal=yrWhole+yrCuts;return React.createElement(StatTile,{label:'Total Lbs '+currentYear,val:yrTotal>0?Math.round(yrTotal).toLocaleString()+' lbs':'\u2014',color:'#065f46',sub:yrWhole>0?'Whole: '+Math.round(yrWhole).toLocaleString()+' \u00b7 Cuts: '+Math.round(yrCuts).toLocaleString():''});})()}
@@ -4404,7 +4424,7 @@ function App(){
                     </div>
                     {(()=>{
                       const stats = calcBroilerStatsFromDailys(b, broilerDailys);
-                      const dayOne = parseInt(b.birdCountActual)||parseInt(b.birdCount)||0;
+                      const dayOne = parseInt(b.birdCountActual)||0;
                       const projFeed = calcBatchFeed(b);
                       return [
                         {l:'To processing',v:daysToProc!=null?Math.floor(daysToProc/7)+'w '+daysToProc%7+'d':'\u2014',warn:daysToProc!=null&&daysToProc<=7},
@@ -5166,7 +5186,11 @@ function App(){
 
     // Save helpers
     function savePoultryOrder(type,ym,val){
-      var next={...feedOrders,[type]:{...(feedOrders[type]||{}),[ym]:parseFloat(val)||0}};
+      // Empty string = clear the order (delete key). Any number (including 0) = save as decision made.
+      var typeOrders={...(feedOrders[type]||{})};
+      if(val===''||val==null){delete typeOrders[ym];}
+      else{typeOrders[ym]=parseFloat(val)||0;}
+      var next={...feedOrders,[type]:typeOrders};
       setFeedOrders(next);sbSave('ppp-feed-orders-v1',next);
     }
     function savePoultryFeedCount(type,count,date){
@@ -5695,7 +5719,8 @@ function App(){
       const projTotal=proj.total*daysInMonth;
       // Actual consumption from pig_dailys
       const actual=pigDailys.filter(d=>d.date&&d.date.startsWith(ym)).reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
-      const ordered=((feedOrders.pig||{})[ym])||0;
+      const orderedRaw=(feedOrders.pig||{})[ym];
+      const ordered=orderedRaw!=null?orderedRaw:null;
       const isFuture=ym>thisYM;
       const isCurrent=ym===thisYM;
       return {ym,daysInMonth,proj,projTotal:Math.round(projTotal),actual:Math.round(actual),ordered,isFuture,isCurrent};
@@ -5705,7 +5730,11 @@ function App(){
     const curProj=projectedDailyFeed(todayISO());
 
     function savePigOrder(ym,val){
-      const next={...feedOrders,pig:{...(feedOrders.pig||{}),[ym]:parseFloat(val)||0}};
+      // Empty string = clear the order (delete key). Any number (including 0) = save as decision made.
+      var pigOrders={...(feedOrders.pig||{})};
+      if(val===''||val==null){delete pigOrders[ym];}
+      else{pigOrders[ym]=parseFloat(val)||0;}
+      const next={...feedOrders,pig:pigOrders};
       setFeedOrders(next);
       sbSave('ppp-feed-orders-v1',next);
     }
