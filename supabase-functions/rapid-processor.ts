@@ -137,7 +137,7 @@ function welcomeEmailHtml(name: string, email: string, role: string, resetLink: 
   const bodyHtml = `
     <p style="font-family:Georgia,serif;font-size:16px;color:#232323;margin:0 0 16px 0;">Welcome, <strong style="color:#566542;">${name || email}</strong>!</p>
 
-    <p style="font-family:Georgia,serif;font-size:15px;color:#232323;line-height:1.6;margin:0 0 20px 0;">Your account has been created for the White Creek Farm planner. This is the system we use to track broilers, layers, pigs, and cattle on the farm.</p>
+    <p style="font-family:Georgia,serif;font-size:15px;color:#232323;line-height:1.6;margin:0 0 20px 0;">Your account has been created for the White Creek Farm planner. This is the system we use to track all animal programs on the farm.</p>
 
     <!-- Role card -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
