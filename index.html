@@ -885,9 +885,16 @@ function LoginScreen({onLogin}) {
   async function handleReset(e) {
     e.preventDefault();
     setLoading(true); setError('');
-    const {error} = await sb.auth.resetPasswordForEmail(email);
-    if(error) { setError(error.message); }
-    else { setResetSent(true); }
+    try {
+      // Use our branded email via edge function instead of Supabase's default
+      const {error: fnError} = await sb.functions.invoke('rapid-processor', {
+        body: { type: 'password_reset', data: { email: email } }
+      });
+      if(fnError) throw fnError;
+      setResetSent(true);
+    } catch(err) {
+      setError(err.message||'Could not send reset email. Please try again.');
+    }
     setLoading(false);
   }
 
@@ -1100,13 +1107,26 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
       if(error) throw error;
       if(data?.user) {
         await sb.from('profiles').upsert({id:data.user.id,email:addEmail.trim(),full_name:addName.trim(),role:addRole},{onConflict:'id'});
-        await sb.auth.resetPasswordForEmail(addEmail.trim(), {redirectTo:'https://wcfplanner.com'});
-        setUmMsg('✅ User created! A password reset email was sent to '+addEmail.trim()+'. They should use it to set their own password.');
+        // Send branded welcome email via our own edge function (which generates a password reset link)
+        await sb.functions.invoke('rapid-processor', {
+          body: { type: 'user_welcome', data: { email: addEmail.trim(), name: addName.trim(), role: addRole } }
+        }).catch(e=>console.warn('Welcome email failed:', e));
+        setUmMsg('✅ User created! A branded welcome email with a password setup link was sent to '+addEmail.trim()+'.');
         setAddEmail(''); setAddName(''); setAddPass(''); setAddRole('farm_team');
         loadUsers(); setUmTab('users');
       }
     } catch(e){ setUmErr('Error: '+(e.message||'Unknown error')); }
     setUmLoading(false);
+  }
+
+  async function sendPasswordReset(email, name){
+    if(!window.confirm('Send a password reset email to '+email+'?')) return;
+    try {
+      await sb.functions.invoke('rapid-processor', {
+        body: { type: 'password_reset', data: { email, name: name||'' } }
+      });
+      alert('✅ Password reset email sent to '+email);
+    } catch(e){ alert('Error sending reset email: '+(e.message||'Unknown error')); }
   }
 
   async function updateRole(userId, newRole){
@@ -1208,7 +1228,11 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
                     </select>
                   </div>
                   {u.id!==authState?.user?.id&&(
-                    <div style={{padding:'5px 14px',borderTop:'1px solid #f3f4f6',display:'flex',justifyContent:'flex-end',background:'#fafafa'}}>
+                    <div style={{padding:'5px 14px',borderTop:'1px solid #f3f4f6',display:'flex',justifyContent:'space-between',alignItems:'center',background:'#fafafa',gap:8}}>
+                      {u.role!=='inactive'
+                        ? <button onClick={()=>sendPasswordReset(u.email,u.full_name)} style={{fontSize:11,color:'#1d4ed8',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>🔑 Send password reset</button>
+                        : <span></span>
+                      }
                       {u.role!=='inactive'
                         ? <button onClick={()=>deactivateUser(u.id,u.email)} style={{fontSize:11,color:'#b91c1c',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>Deactivate</button>
                         : <button onClick={()=>updateRole(u.id,'farm_team')} style={{fontSize:11,color:'#085041',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>Reactivate</button>
