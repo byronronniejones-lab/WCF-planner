@@ -243,25 +243,29 @@ const BROODER_CLEANOUT  = 3;
 const SCHOONER_CLEANOUT = 4;
 const WEEKS_SHOWN       = 52;
 const STORAGE_KEY       = "ppp-data-v1";
-const FEED_BIRDS        = 750;
-const STARTER_TOTAL_LBS = 1500;                          // fixed for both breeds
-const STARTER_PER_BIRD  = STARTER_TOTAL_LBS / FEED_BIRDS; // 1.6 lbs/bird
+const FEED_BIRDS        = 700;                           // target processed count (order 750, expect ~700 to processor)
+const STARTER_TOTAL_LBS = 1500;                          // fixed cap per batch for both breeds
+const STARTER_PER_BIRD  = STARTER_TOTAL_LBS / FEED_BIRDS; // 2.14 lbs/bird (1500/700)
 // Split starter 30/70 across weeks 1-2 (matches chick growth pattern)
-const STARTER_W1 = STARTER_PER_BIRD * 0.30; // ~0.48 lbs/bird
-const STARTER_W2 = STARTER_PER_BIRD * 0.70; // ~1.12 lbs/bird
+const STARTER_W1 = STARTER_PER_BIRD * 0.30;
+const STARTER_W2 = STARTER_PER_BIRD * 0.70;
 
-// CC grower weeks 3-7 (5 weeks): scale chart weekly increments to fill remaining lbs/bird
-const CC_TOTAL_TARGET   = 15;
-const CC_GROWER_TARGET  = CC_TOTAL_TARGET - STARTER_PER_BIRD; // 13.4 lbs/bird
-const CC_GROWER_CHART   = [2.482,4.535,7.24,10.485,14.129]; // cumulative at wks 3-7 from chart
+// CC grower weeks 3-7 (5 weeks): derived from WCF historical data (2026-04 analysis)
+// CC avg 14.29 lbs/bird at 7 weeks processing (7 data points, combining actual 7w batches +
+// 8w batches back-calculated using 26.4% week 7→8 growth rate from Aviagen chart)
+const CC_TOTAL_TARGET   = 14.29;
+const CC_GROWER_TARGET  = CC_TOTAL_TARGET - STARTER_PER_BIRD; // 12.15 lbs/bird
+const CC_GROWER_CHART   = [2.482,4.535,7.24,10.485,14.129]; // cumulative at wks 3-7 from chart (shape only — scaled to WCF target)
 const CC_GROWER_WEEKLY_CHART = CC_GROWER_CHART.map((c,i) => c - (i===0 ? 1.109 : CC_GROWER_CHART[i-1]));
 const CC_GROWER_CHART_TOTAL  = CC_GROWER_WEEKLY_CHART.reduce((a,b)=>a+b,0);
 const CC_GROWER_SCALE        = CC_GROWER_TARGET / CC_GROWER_CHART_TOTAL;
 const CC_GROWER_WEEKLY       = CC_GROWER_WEEKLY_CHART.map(w => w * CC_GROWER_SCALE);
 
-// WR grower weeks 3-8 (6 weeks): same approach
-const WR_TOTAL_TARGET   = 17.5;
-const WR_GROWER_TARGET  = WR_TOTAL_TARGET - STARTER_PER_BIRD; // 15.9 lbs/bird
+// WR grower weeks 3-8 (6 weeks): derived from WCF historical data (2026-04 analysis)
+// WR avg 16.26 lbs/bird at 8 weeks processing (3 data points, combining actual 8w batches +
+// 9w batches back-calculated using 23.5% week 8→9 growth rate from White Ranger Hatchery chart)
+const WR_TOTAL_TARGET   = 16.26;
+const WR_GROWER_TARGET  = WR_TOTAL_TARGET - STARTER_PER_BIRD; // 14.12 lbs/bird
 const WR_GROWER_CHART   = [2.3048,3.975,5.9292,8.1483,10.58,13.365]; // cumulative wks 3-8
 const WR_GROWER_WEEKLY_CHART = WR_GROWER_CHART.map((c,i) => c - (i===0 ? 1.1193 : WR_GROWER_CHART[i-1]));
 const WR_GROWER_CHART_TOTAL  = WR_GROWER_WEEKLY_CHART.reduce((a,b)=>a+b,0);
