@@ -2650,8 +2650,9 @@ function App(){
       const store={};
       data.forEach(row=>store[row.key]=row.data);
       if(store['ppp-v4']) {
-        // Migrate: archived → processed, and fix brooderIn=hatchDate → hatchDate+1 for active/planned batches
+        // Migrate: archived → processed, brooderIn=hatchDate → hatchDate+1, FR breed for B-24-02..B-25-01
         let changed=false;
+        const frBatchNames=['B-24-02','B-24-03','B-24-04','B-25-01'];
         const migrated = store['ppp-v4'].map(b=>{
           let nb=b;
           if(b.status==='archived'){nb={...nb,status:'processed'};changed=true;}
@@ -2662,6 +2663,12 @@ function App(){
               nb={...nb,brooderIn:newBrooderIn};
               changed=true;
             } catch(e){}
+          }
+          // Hard-code Freedom Ranger breed/hatchery for legacy B-24-02..B-25-01 batches
+          const nameUpper=String(nb.name||'').toUpperCase();
+          if(frBatchNames.includes(nameUpper)){
+            if(nb.breed!=='FR'){nb={...nb,breed:'FR'};changed=true;}
+            if(nb.hatchery!=='Freedom Ranger Hatchery'){nb={...nb,hatchery:'Freedom Ranger Hatchery'};changed=true;}
           }
           return nb;
         });
@@ -5090,14 +5097,21 @@ function App(){
                   </div>
                   {/* Stats grid */}
                   <div style={{padding:"10px 14px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8,fontSize:11}}>
-                    {[
+                    {(()=>{
+                      const tofDays=(b.hatchDate&&b.processingDate)?Math.round((new Date(b.processingDate+'T12:00:00')-new Date(b.hatchDate+'T12:00:00'))/86400000):null;
+                      const tofStr=tofDays!=null?`${Math.floor(tofDays/7)}w ${tofDays%7}d`:"—";
+                      const lbsPerBird=(b.totalToProcessor>0&&totalFeed>0)?(totalFeed/b.totalToProcessor).toFixed(1):null;
+                      return [
                       {l:"Hatch Date",     v:fmt(b.hatchDate)},
                       {l:"Process Date",   v:fmt(b.processingDate)},
+                      {l:"Time on Farm",   v:tofStr},
                       {l:"Birds Ordered",  v:(b.birdCount||0).toLocaleString()},
                       {l:"Birds Arrived",  v:b.birdCountActual?parseInt(b.birdCountActual).toLocaleString():"—"},
                       {l:"To Processor",   v:(b.totalToProcessor||0).toLocaleString()},
                       {l:"Mortality",      v:`${mortality} (${mortalityPct}%)`, warn:mortality>20},
-                    ].map(({l,v,warn})=>(
+                      {l:"Lbs / Bird",     v:lbsPerBird?`${lbsPerBird} lbs`:"—"},
+                      ];
+                    })().map(({l,v,warn})=>(
                       <div key={l} style={{background:"#f9fafb",borderRadius:6,padding:"6px 8px"}}>
                         <div style={{color:"#9ca3af",marginBottom:2,fontSize:10,textTransform:"uppercase",letterSpacing:.3}}>{l}</div>
                         <div style={{fontWeight:700,color:warn?"#b91c1c":"#111827",fontSize:12}}>{v||"\u2014"}</div>
