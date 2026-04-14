@@ -23,17 +23,23 @@ async function sendEmail(payload: object): Promise<Response> {
 // SHARED BRANDED TEMPLATE — all emails use this wrapper
 // ═══════════════════════════════════════════════════════════════════
 function brandedEmail(opts: {
-  title: string;        // e.g. "🥚 Egg Report"
-  subtitle?: string;    // e.g. date or tagline
-  bodyHtml: string;     // inner content
+  title: string;
+  subtitle?: string;
+  bodyHtml: string;
   isTest?: boolean;
 }): string {
+  const testBanner = opts.isTest
+    ? '<div style="background:#c46904;color:white;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;">TEST EMAIL - NOT SENT TO REAL RECIPIENTS</div>'
+    : '';
+  const subtitle = opts.subtitle
+    ? `<div style="color:rgba(255,255,255,0.8);font-size:13px;font-family:Arial,sans-serif;">${opts.subtitle}</div>`
+    : '';
   return `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f5f5f0;font-family:Georgia,serif;">
-  ${opts.isTest ? '<div style="background:#c46904;color:white;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;">⚠ TEST EMAIL — NOT SENT TO REAL RECIPIENTS</div>' : ''}
+  ${testBanner}
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f0;padding:32px 16px;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
@@ -42,7 +48,7 @@ function brandedEmail(opts: {
         <tr><td style="background:#566542;border-radius:8px 8px 0 0;padding:28px 36px;text-align:center;">
           <div style="color:#ffffff;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;font-family:Arial,sans-serif;">White Creek Farm</div>
           <div style="color:#ffffff;font-size:22px;font-weight:700;font-family:Georgia,serif;margin-bottom:4px;">${opts.title}</div>
-          ${opts.subtitle ? `<div style="color:rgba(255,255,255,0.8);font-size:13px;font-family:Arial,sans-serif;">${opts.subtitle}</div>` : ''}
+          ${subtitle}
         </td></tr>
 
         <!-- Body -->
