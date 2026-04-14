@@ -707,4 +707,43 @@ None open at end of session. All bugs surfaced during color swap were fixed and 
 
 ---
 
+## Outstanding Cattle Design Questions (captured evening of Apr 14)
+
+### Answered this evening (second round of cattle Q&A)
+
+1. **Batch naming** — confirmed `C-26-**` (and `B-26-**` for backgrounders if/when that split matters).
+2. **Backgrounders threshold** — manual judgment call, roughly **500 lbs or 9 months**.
+3. **Breeding timeline constants** —
+   - 65-day bull exposure
+   - 30 days after bull exposure → preg check
+   - 9-month gestation
+   - 65-day calving window
+   - 7-month nursing → wean
+4. **Calving cross-link deep design** — SKIP. Too complicated, revisit later.
+5. **Feed test PDF + hay cost inputs** — PDF upload only, **no parser**. Fields required per feed test: `Moisture`, `NFC`, `Protein`, `Bale weight`. Also need landed-cost math per feed type (hay, citrus pellets, molasses): `cost per bale` + `freight per truck` + `bales per truck` → derived landed $/lb.
+6. **DNA PDF parser** — deferred. Add to reminders, revisit after everything else is built.
+7. **Weather API integration** — YES, and design it cross-program (benefits broilers, pigs, layers too, not just cattle). Think through the integration before building.
+8. **Cattle feed admin panel** — admin must be able to **add/remove** feed types in the cattle feed panel. Fully integrated with webform + dailys. Webform MUST ship first — daily reports are daily, Ronnie can't wait on the rest.
+9. **Webform math model** — webform captures **raw inputs only**. All calculations happen in the app. Webform stays simple.
+10. **Maternal issue flag** — checkbox with a **mandatory description field** that only appears (and is required) when the flag is checked.
+11. **Color confirmation** — cattle = **red** (matches the palette committed in `524b4c2`).
+
+**Scope decision**: build all 3 phases at once (webform + dailys → weigh-ins → directory/tracker) rather than phasing deploys.
+
+### Still open — to resolve before code starts
+
+- **Full Podio status list** — Ronnie said "go by Podio statuses" but the exported field dump only tells us a `Status` category field exists, not its option values. Need the full list + confirmation of where `Backgrounders` inserts.
+- **Status transition rules** — calf → weaned → backgrounders → finishers → processed. Are transitions manual per animal, auto-triggered by age/weight, or a mix?
+- **"Cattle Group" field on the webform** — maps to status category? Physical paddock? Named herd? Needs to be clear before the dropdown is built.
+- **Nutrition targets** — the recommendation engine can't recommend amounts without target DM / NFC / Protein lbs per 1000-lb cow unit per life phase. Need the target table from Ronnie.
+- **Pasture tracking data model** — still undesigned. Paddock registry? Move log per group? Rest-day countdown? Ronnie asked for help configuring this.
+- **Hay-needs formula** — "based on herd weights" → exact formula (DM lbs/day per 1000-lb unit × total unit count × projection window − on-hand = order qty?).
+- **Streamlined webform field list** — Podio cattle-dailys app has 20+ fields (DM inputs per hay type, pellets, calculated %s, waterer, fence voltage, comments). We need the exact subset that goes on the simplified webform vs what gets computed server-side in the app.
+- **Day-one cattle feed types** — answer 5 implies hay, citrus pellets, molasses. Any others on launch (alfalfa pellets? mineral blocks?)?
+- **Podio export files** — 469 animals + 1,930 weigh-ins + 1,525 dailys. Delivery timing and format (CSV? Excel?) not yet confirmed.
+- **Cut pricing website URL + inventory report format** — needed for per-head cost rollup. Sample file needed.
+- **Weather API integration plan** — no API provider chosen. Need: which data points (temp, precip, humidity, forecasts?), which program features key off it (pasture growth projections? brood heat? pig heat stress?), display locations.
+
+---
+
 *End of Handover Document — Updated April 14, 2026*
