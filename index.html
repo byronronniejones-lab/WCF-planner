@@ -1441,13 +1441,13 @@ const AddFeedWebform = ({sb}) => {
 
   function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setErr('');setDone(false);}
 
-  var wfBg={minHeight:'100vh',background:'linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%)',padding:'1rem',fontFamily:'inherit'};
+  var wfBg={minHeight:'100vh',background:'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)',padding:'1rem',fontFamily:'inherit'};
   var cardS={background:'white',borderRadius:12,padding:'20px',marginBottom:12,boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
   var inpS={fontFamily:'inherit',fontSize:14,padding:'10px 12px',border:'1px solid #d1d5db',borderRadius:8,width:'100%',outline:'none',background:'white',color:'#111827',boxSizing:'border-box'};
   var lblS={display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500};
   var logoEl=(
     <div style={{textAlign:'center',marginBottom:20}}>
-      <div style={{fontSize:18,fontWeight:800,color:'#92400e',letterSpacing:-.3}}>{'\ud83c\udf3e WCF Planner'}</div>
+      <div style={{fontSize:18,fontWeight:800,color:'#085041',letterSpacing:-.3}}>{'\ud83c\udf3e WCF Planner'}</div>
       <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>Quick Feed Log</div>
     </div>
   );
@@ -1462,7 +1462,7 @@ const AddFeedWebform = ({sb}) => {
           {batchLabel+' \u2014 '+feedLbs+' lbs'+(feedType?' ('+feedType+')':'')}
           {extraGroups.filter(function(g){return g.batchLabel;}).length>0?(' + '+extraGroups.filter(function(g){return g.batchLabel;}).length+' more'):''}
         </div>
-        <button onClick={resetForm} style={{width:'100%',padding:14,borderRadius:10,border:'none',background:'#92400e',color:'white',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:10}}>
+        <button onClick={resetForm} style={{width:'100%',padding:14,borderRadius:10,border:'none',background:'#085041',color:'white',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:10}}>
           Log Another
         </button>
         <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{width:'100%',padding:14,borderRadius:10,border:'1px solid #d1d5db',background:'white',color:'#374151',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
@@ -1478,7 +1478,7 @@ const AddFeedWebform = ({sb}) => {
     return React.createElement('div',{key:idx!=null?'eg'+idx:'main'},
       React.createElement('div',{style:cardS},
         idx!=null&&React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
-          React.createElement('div',{style:{fontSize:13,fontWeight:600,color:'#92400e'}},getLabel('batch_label','Batch / Group')+' '+(idx+2)),
+          React.createElement('div',{style:{fontSize:13,fontWeight:600,color:'#085041'}},getLabel('batch_label','Batch / Group')+' '+(idx+2)),
           React.createElement('button',{type:'button',onClick:function(){setExtraGroups(function(p){return p.filter(function(_,i){return i!==idx;});});},style:{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}},'\u00d7')
         ),
         idx==null&&React.createElement('label',{style:lblS},getLabel('batch_label',program==='pig'?'Pig Group':program==='broiler'?'Broiler Batch':'Layer Group'),reqStar('batch_label')),
@@ -1492,7 +1492,7 @@ const AddFeedWebform = ({sb}) => {
         React.createElement('label',{style:lblS},getLabel('feed_type','Feed Type'),idx==null&&reqStar('feed_type')),
         React.createElement('div',{style:{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid #d1d5db'}},
           (program==='layer'?['STARTER','GROWER','LAYER']:['STARTER','GROWER']).map(function(f,fi,arr){
-            return React.createElement('button',{key:f,type:'button',onClick:function(){onChange('feedType',ft===f?'':f);},style:{flex:1,padding:'10px 0',border:'none',borderRight:fi<arr.length-1?'1px solid #d1d5db':'none',fontFamily:'inherit',fontSize:12,fontWeight:600,cursor:'pointer',background:ft===f?'#92400e':'white',color:ft===f?'white':'#6b7280'}},f);
+            return React.createElement('button',{key:f,type:'button',onClick:function(){onChange('feedType',ft===f?'':f);},style:{flex:1,padding:'10px 0',border:'none',borderRight:fi<arr.length-1?'1px solid #d1d5db':'none',fontFamily:'inherit',fontSize:12,fontWeight:600,cursor:'pointer',background:ft===f?'#085041':'white',color:ft===f?'white':'#6b7280'}},f);
           })
         )
       ),
@@ -1508,7 +1508,7 @@ const AddFeedWebform = ({sb}) => {
       <div style={{maxWidth:480,margin:'0 auto',paddingTop:'1rem'}}>
         {logoEl}
 
-        <div style={{background:'#fef3c7',border:'1px solid #fde68a',borderRadius:10,fontSize:12,color:'#92400e',padding:'10px 16px',marginBottom:16}}>
+        <div style={{background:'#ecfdf5',border:'1px solid #a7f3d0',borderRadius:10,fontSize:12,color:'#085041',padding:'10px 16px',marginBottom:16}}>
           For quick feed logging only. For full daily reports including mortality and care checks, use the Daily Report forms.
         </div>
 
@@ -1531,9 +1531,9 @@ const AddFeedWebform = ({sb}) => {
           <label style={lblS}>Program</label>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
             {[
-              {key:'pig',icon:'\ud83d\udc37',label:'Pig',color:'#7c3aed',bg:'#f5f3ff'},
-              {key:'broiler',icon:'\ud83d\udc14',label:'Broiler',color:'#1e3a5f',bg:'#eff6ff'},
-              {key:'layer',icon:'\ud83d\udc13',label:'Layer',color:'#b45309',bg:'#fffbeb'},
+              {key:'pig',icon:'\ud83d\udc37',label:'Pig',color:'#1e40af',bg:'#eff6ff'},
+              {key:'broiler',icon:'\ud83d\udc14',label:'Broiler',color:'#a16207',bg:'#fef9c3'},
+              {key:'layer',icon:'\ud83d\udc13',label:'Layer',color:'#78350f',bg:'#fffbeb'},
             ].map(function(p){return (
               <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);}} style={{
                 padding:'16px 8px',borderRadius:12,cursor:'pointer',fontFamily:'inherit',
@@ -1561,7 +1561,7 @@ const AddFeedWebform = ({sb}) => {
         })}
 
         {program&&allowAddGroup()&&(
-          <button type="button" onClick={function(){setExtraGroups(function(p){return p.concat([{batchLabel:'',feedType:'',feedLbs:''}]);});}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#92400e',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
+          <button type="button" onClick={function(){setExtraGroups(function(p){return p.concat([{batchLabel:'',feedType:'',feedLbs:''}]);});}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #a7f3d0',background:'transparent',color:'#085041',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
         )}
 
         {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
@@ -1569,7 +1569,7 @@ const AddFeedWebform = ({sb}) => {
         {program&&(
           <button onClick={handleSubmit} disabled={submitting} style={{
             width:'100%',padding:14,border:'none',borderRadius:10,
-            background:'#92400e',color:'white',fontSize:15,fontWeight:600,
+            background:'#085041',color:'white',fontSize:15,fontWeight:600,
             cursor:submitting?'not-allowed':'pointer',opacity:submitting?.6:1,
             fontFamily:'inherit',marginBottom:16
           }}>
@@ -1578,7 +1578,7 @@ const AddFeedWebform = ({sb}) => {
         )}
 
         <div style={{textAlign:'center',marginTop:12}}>
-          <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{background:'none',border:'none',color:'#92400e',fontSize:13,cursor:'pointer',fontFamily:'inherit',textDecoration:'underline'}}>
+          <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{background:'none',border:'none',color:'#085041',fontSize:13,cursor:'pointer',fontFamily:'inherit',textDecoration:'underline'}}>
             {'\u2190 Back to Daily Reports'}
           </button>
         </div>
@@ -2025,7 +2025,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
                 </div>
               </div>
             ))}
-            <button type="button" onClick={()=>setExtraBroilerGroups(p=>[...p,{batchLabel:'',feedLbs:'',gritLbs:'',mortalityCount:'',comments:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#b45309',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
+            <button type="button" onClick={()=>setExtraBroilerGroups(p=>[...p,{batchLabel:'',feedLbs:'',gritLbs:'',mortalityCount:'',comments:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#78350f',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
           </div>
         )}
         {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
@@ -2042,7 +2042,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
       <div style={{maxWidth:480,margin:'0 auto'}}>
         {logo}
         <button onClick={()=>setActiveForm(null)} style={{background:'none',border:'none',color:'#6b7280',fontSize:13,cursor:'pointer',marginBottom:12,padding:0,fontFamily:'inherit'}}>‹ Back</button>
-        <div style={{fontSize:17,fontWeight:700,color:'#b45309',marginBottom:16}}>🐓 Layer Daily Report</div>
+        <div style={{fontSize:17,fontWeight:700,color:'#78350f',marginBottom:16}}>🐓 Layer Daily Report</div>
         <div style={sectionStyle}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Date{reqStar('layer-dailys','date')}</label><input type="date" value={lForm.date} onChange={e=>setLForm(f=>({...f,date:e.target.value}))} style={inputStyle}/></div>
@@ -2084,7 +2084,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
             {extraLayerGroups.map((eg,ei)=>(
               <div key={ei} style={{...sectionStyle,border:'1px solid #fde68a',marginTop:0}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                  <div style={{fontSize:13,fontWeight:600,color:'#b45309'}}>Additional Group {ei+2}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:'#78350f'}}>Additional Group {ei+2}</div>
                   <button type="button" onClick={()=>setExtraLayerGroups(p=>p.filter((_,i)=>i!==ei))} style={{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}}>×</button>
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
@@ -2105,7 +2105,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
                 </div>
               </div>
             ))}
-            <button type="button" onClick={()=>setExtraLayerGroups(p=>[...p,{batchLabel:'',feedLbs:'',gritLbs:'',layerCount:'',mortalityCount:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#b45309',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
+            <button type="button" onClick={()=>setExtraLayerGroups(p=>[...p,{batchLabel:'',feedLbs:'',gritLbs:'',layerCount:'',mortalityCount:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#78350f',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
           </div>
         )}
         {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
@@ -2126,7 +2126,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
         <div style={{maxWidth:480,margin:'0 auto'}}>
           {logo}
           <button onClick={()=>setActiveForm(null)} style={{background:'none',border:'none',color:'#6b7280',fontSize:13,cursor:'pointer',marginBottom:12,padding:0,fontFamily:'inherit'}}>‹ Back</button>
-          <div style={{fontSize:17,fontWeight:700,color:'#7c3aed',marginBottom:16}}>🐷 Pig Daily Report</div>
+          <div style={{fontSize:17,fontWeight:700,color:'#1e40af',marginBottom:16}}>🐷 Pig Daily Report</div>
           <div style={sectionStyle}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
               <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Date{reqStar('pig-dailys','date')}</label><input type="date" value={pForm.date} onChange={e=>setPForm(f=>({...f,date:e.target.value}))} style={inputStyle}/></div>
@@ -2162,9 +2162,9 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
           {allowAddGroup('pig-dailys')&&(
             <div>
               {extraPigGroups.map((eg,ei)=>(
-                <div key={ei} style={{...sectionStyle,border:'1px solid #ddd6fe',marginTop:0}}>
+                <div key={ei} style={{...sectionStyle,border:'1px solid #bfdbfe',marginTop:0}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                    <div style={{fontSize:13,fontWeight:600,color:'#7c3aed'}}>Additional Group {ei+2}</div>
+                    <div style={{fontSize:13,fontWeight:600,color:'#1e40af'}}>Additional Group {ei+2}</div>
                     <button type="button" onClick={()=>setExtraPigGroups(p=>p.filter((_,i)=>i!==ei))} style={{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}}>×</button>
                   </div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
@@ -2186,7 +2186,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
                   </div>
                 </div>
               ))}
-              <button type="button" onClick={()=>setExtraPigGroups(p=>[...p,{batchLabel:'',feedLbs:'',pigCount:'',fenceVoltage:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,issues:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#b45309',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
+              <button type="button" onClick={()=>setExtraPigGroups(p=>[...p,{batchLabel:'',feedLbs:'',pigCount:'',fenceVoltage:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,issues:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#78350f',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
             </div>
           )}
           {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
@@ -2204,7 +2204,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
       <div style={{maxWidth:480,margin:'0 auto'}}>
         {logo}
         <button onClick={()=>setActiveForm(null)} style={{background:'none',border:'none',color:'#6b7280',fontSize:13,cursor:'pointer',marginBottom:12,padding:0,fontFamily:'inherit'}}>‹ Back</button>
-        <div style={{fontSize:17,fontWeight:700,color:'#b45309',marginBottom:16}}>🥚 Egg Collection Report</div>
+        <div style={{fontSize:17,fontWeight:700,color:'#78350f',marginBottom:16}}>🥚 Egg Collection Report</div>
         <div style={sectionStyle}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Date{reqStar('egg-dailys','date')}</label><input type="date" value={eForm.date} onChange={e=>setEForm(f=>({...f,date:e.target.value}))} style={inputStyle}/></div>
@@ -2261,10 +2261,10 @@ const FeedCostsPanel = ({feedCosts, saveFeedCosts}) => {
 
   const inpS={fontSize:13,padding:"7px 10px",border:"1px solid #d1d5db",borderRadius:6,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
   const fields = [
-    {key:'starter', label:'Poultry Starter', icon:'\ud83d\udc14', color:'#1e3a5f'},
+    {key:'starter', label:'Poultry Starter', icon:'\ud83d\udc14', color:'#a16207'},
     {key:'grower',  label:'Poultry Grower',  icon:'\ud83d\udc14', color:'#085041'},
-    {key:'layer',   label:'Layer Feed',      icon:'\ud83d\udc13', color:'#b45309'},
-    {key:'pig',     label:'Pig Feed',        icon:'\ud83d\udc37', color:'#7c3aed'},
+    {key:'layer',   label:'Layer Feed',      icon:'\ud83d\udc13', color:'#78350f'},
+    {key:'pig',     label:'Pig Feed',        icon:'\ud83d\udc37', color:'#1e40af'},
     {key:'grit',    label:'Grit',            icon:'\ud83c\udf3e', color:'#78350f'},
   ];
 
@@ -3412,20 +3412,20 @@ function App(){
       if(live.brooderIn >= todayStr && live.brooderIn <= in30)
         weekEvents.push({type:'brooder-in', label:`${b.name} enters brooder`, date:live.brooderIn, color:'#065f46', icon:'🐣'});
       if(live.schoonerIn >= todayStr && live.schoonerIn <= in30)
-        weekEvents.push({type:'schooner-in', label:`${b.name} moves to schooner`, date:live.schoonerIn, color:'#1e3a5f', icon:'🐔'});
+        weekEvents.push({type:'schooner-in', label:`${b.name} moves to schooner`, date:live.schoonerIn, color:'#a16207', icon:'🐔'});
       if(b.processingDate >= todayStr && b.processingDate <= in30)
         weekEvents.push({type:'processing', label:`${b.name} processing day`, date:b.processingDate, color:'#7f1d1d', icon:'📅'});
       // 4-week weight reminder
       if(b.hatchDate){
         const wk4date = toISO(addDays(new Date(b.hatchDate+'T12:00:00'), 28));
         if(wk4date >= todayStr && wk4date <= in30 && !(parseFloat(b.week4Lbs)>0))
-          weekEvents.push({type:'wt-4wk', label:`${b.name} — record 4-week weights`, date:wk4date, color:'#0369a1', icon:'⚖️', reminder:true});
+          weekEvents.push({type:'wt-4wk', label:`${b.name} — record 4-week weights`, date:wk4date, color:'#854d0e', icon:'⚖️', reminder:true});
       }
       // 6-week weight reminder
       if(b.hatchDate){
         const wk6date = toISO(addDays(new Date(b.hatchDate+'T12:00:00'), 42));
         if(wk6date >= todayStr && wk6date <= in30 && !(parseFloat(b.week6Lbs)>0))
-          weekEvents.push({type:'wt-6wk', label:`${b.name} — record 6-week weights`, date:wk6date, color:'#0369a1', icon:'⚖️', reminder:true});
+          weekEvents.push({type:'wt-6wk', label:`${b.name} — record 6-week weights`, date:wk6date, color:'#854d0e', icon:'⚖️', reminder:true});
       }
     });
 
@@ -3434,7 +3434,7 @@ function App(){
       const tl = calcBreedingTimeline(c.exposureStart);
       if(!tl) return;
       if(tl.farrowingStart >= todayStr && tl.farrowingStart <= in30)
-        weekEvents.push({type:'farrow-open', label:`Group ${c.group} farrowing window opens`, date:tl.farrowingStart, color:'#7c3aed', icon:'🐷'});
+        weekEvents.push({type:'farrow-open', label:`Group ${c.group} farrowing window opens`, date:tl.farrowingStart, color:'#1e40af', icon:'🐷'});
       if(tl.farrowingEnd >= todayStr && tl.farrowingEnd <= in30)
         weekEvents.push({type:'farrow-close', label:`Group ${c.group} farrowing window closes`, date:tl.farrowingEnd, color:'#be185d', icon:'🐷'});
       // Sows due in window
@@ -3444,7 +3444,7 @@ function App(){
         const farrowed = new Set(farrowingRecs.filter(r=>r.group===c.group).map(r=>r.sow.trim()));
         const pending = expected.filter(t=>!farrowed.has(t));
         if(pending.length>0)
-          weekEvents.push({type:'farrow-due', label:`${pending.length} sow${pending.length>1?'s':''} due to farrow (Group ${c.group})`, date:tl.farrowingStart, color:'#7c3aed', icon:'🌱'});
+          weekEvents.push({type:'farrow-due', label:`${pending.length} sow${pending.length>1?'s':''} due to farrow (Group ${c.group})`, date:tl.farrowingStart, color:'#1e40af', icon:'🌱'});
       }
     });
 
@@ -3572,9 +3572,9 @@ function App(){
           {/* Nav cards */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
             {[
-              {label:"Broilers", icon:"🐔", desc:`${activeBatches.length} active · ${birdsOnFarm.toLocaleString()} on farm \u2192 ${projectedBirds.toLocaleString()} projected · ${plannedBatches.length} planned`, view:"broilerHome", color:"#1e3a5f", bg:"#eff6ff"},
-              {label:"Layers", icon:"🥚", desc:`${(layerGroups||[]).filter(g=>g.status==='active').length} active groups · ${(layerGroups||[]).filter(g=>g.status==='active').reduce((s,g)=>s+(g.currentCount||0),0)} hens`, view:"layersHome", color:"#b45309", bg:"#fffbeb"},
-              {label:"Pigs", icon:"🐷", desc:`${activeCycles.length} active cycles · ${totalSows} sows tracked · ${feederGroups.filter(g=>g.status==="active").length} active batches`, view:"pigsHome", color:"#7c3aed", bg:"#f5f3ff"},
+              {label:"Broilers", icon:"🐔", desc:`${activeBatches.length} active · ${birdsOnFarm.toLocaleString()} on farm \u2192 ${projectedBirds.toLocaleString()} projected · ${plannedBatches.length} planned`, view:"broilerHome", color:"#a16207", bg:"#fef9c3"},
+              {label:"Layers", icon:"🥚", desc:`${(layerGroups||[]).filter(g=>g.status==='active').length} active groups · ${(layerGroups||[]).filter(g=>g.status==='active').reduce((s,g)=>s+(g.currentCount||0),0)} hens`, view:"layersHome", color:"#78350f", bg:"#fffbeb"},
+              {label:"Pigs", icon:"🐷", desc:`${activeCycles.length} active cycles · ${totalSows} sows tracked · ${feederGroups.filter(g=>g.status==="active").length} active batches`, view:"pigsHome", color:"#1e40af", bg:"#eff6ff"},
             ].map(c=>(
               <div key={c.view} onClick={()=>setView(c.view)}
                 style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:14,padding:"20px 22px",cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.06)",transition:"transform .1s",display:"flex",alignItems:"center",gap:16}}>
@@ -3619,7 +3619,7 @@ function App(){
                 <div style={{fontSize:12,fontWeight:600,color:'#4b5563',letterSpacing:.3,marginBottom:12}}>ANIMALS ON FARM</div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:16,alignItems:'center'}}>
                   <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:28,fontWeight:700,color:'#1e3a5f'}}>{projectedBirds.toLocaleString()}</div>
+                    <div style={{fontSize:28,fontWeight:700,color:'#a16207'}}>{projectedBirds.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc14 Broilers'}</div>
                   </div>
                   <div style={{textAlign:'center'}}>
@@ -3627,7 +3627,7 @@ function App(){
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc13 Layer Hens'}</div>
                   </div>
                   <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:28,fontWeight:700,color:'#7c3aed'}}>{totalPigs.toLocaleString()}</div>
+                    <div style={{fontSize:28,fontWeight:700,color:'#1e40af'}}>{totalPigs.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc37 Pigs'}</div>
                   </div>
                   <div style={{textAlign:'center',borderLeft:'1px solid #e5e7eb',paddingLeft:16}}>
@@ -3707,8 +3707,8 @@ function App(){
                 // Group by date, then within each date group by animal type
                 const dates = [...new Set(allRecentReports.map(r=>r.date))].sort().reverse();
                 const typeOrder = {'🐔 Broiler':0,'🐷 Pig':1,'🐓 Layer':2,'🥚 Layer':2,'🥚 Egg':3};
-                const typeColors = {'🐔 Broiler':'#1e3a5f','🐷 Pig':'#5b21b6','🐓 Layer':'#92400e','🥚 Layer':'#92400e','🥚 Egg':'#b45309'};
-                const typeBg = {'🐔 Broiler':'#eff6ff','🐷 Pig':'#f5f3ff','🐓 Layer':'#fffbeb','🥚 Layer':'#fffbeb','🥚 Egg':'#fefce8'};
+                const typeColors = {'🐔 Broiler':'#a16207','🐷 Pig':'#1e3a8a','🐓 Layer':'#92400e','🥚 Layer':'#92400e','🥚 Egg':'#78350f'};
+                const typeBg = {'🐔 Broiler':'#fef9c3','🐷 Pig':'#eff6ff','🐓 Layer':'#fffbeb','🥚 Layer':'#fffbeb','🥚 Egg':'#fefce8'};
                 return dates.map((date, di)=>{
                   const dayRecs = allRecentReports.filter(r=>r.date===date).sort((a,b)=>(typeOrder[a.type]??9)-(typeOrder[b.type]??9));
                   const types = [...new Set(dayRecs.map(r=>r.type))];
@@ -3788,7 +3788,7 @@ function App(){
                                             <span style={{fontWeight:700,color:'#111827',minWidth:100,flexShrink:0,fontSize:12}}>{d.batch_label||'—'}</span>
                                             <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
                                             <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:90}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
-                                            <span style={{color:'#7c3aed',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
+                                            <span style={{color:'#1e40af',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
                                             <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,minWidth:60}}>{hasVolt?`⚡ ${d.fence_voltage} kV`:'no voltage'}</span>
                                             <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
                                             <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.nipple_drinker_working===false?'#fef2f2':'#f0fdf4',color:d.nipple_drinker_working===false?'#b91c1c':'#065f46',border:d.nipple_drinker_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Nipple: '+(d.nipple_drinker_working===false?'No':'Yes')}</span>
@@ -3803,7 +3803,7 @@ function App(){
                                         const comment=d.comments&&String(d.comments).trim().length>2?String(d.comments).trim():'';
                                         return (<>
                                           <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-                                            <span style={{fontWeight:700,color:'#b45309',fontSize:12,flexShrink:0}}>🥚 {total} eggs</span>
+                                            <span style={{fontWeight:700,color:'#78350f',fontSize:12,flexShrink:0}}>🥚 {total} eggs</span>
                                             <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
                                             {groups.map(([n,c])=><span key={n} style={{color:'#374151',fontSize:11}}>{n}: <strong>{c}</strong></span>)}
                                             {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12}}>📦 {d.dozens_on_hand} doz</span>}
@@ -4447,7 +4447,7 @@ function App(){
           {/* Key stats */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
             <StatTile label="Active Batches" val={activeBr.length}/>
-            <StatTile label="Birds on Farm" val={activeBr.reduce((s,b)=>s+(parseInt(b.birdCountActual)||0),0).toLocaleString()} color="#1e3a5f"/>
+            <StatTile label="Birds on Farm" val={activeBr.reduce((s,b)=>s+(parseInt(b.birdCountActual)||0),0).toLocaleString()} color="#a16207"/>
             <StatTile label="Projected Birds" val={activeBr.reduce((s,b)=>{const stats=calcBroilerStatsFromDailys(b,broilerDailys);return s+stats.projectedBirds;},0).toLocaleString()} color="#085041"/>
             {(function(){var yrBirds=procBrThisYear.reduce(function(s,b){return s+(parseInt(b.totalToProcessor)||0);},0);return React.createElement(StatTile,{label:'Processed Birds '+currentYear,val:yrBirds.toLocaleString(),color:'#374151',sub:procBrThisYear.length+' batch'+(procBrThisYear.length!==1?'es':'')});})()}
             {(function(){var yrWhole=procBrThisYear.reduce(function(s,b){return s+(parseFloat(b.totalLbsWhole)||0);},0);var yrCuts=procBrThisYear.reduce(function(s,b){return s+(parseFloat(b.totalLbsCuts)||0);},0);var yrTotal=yrWhole+yrCuts;return React.createElement(StatTile,{label:'Total Lbs '+currentYear,val:yrTotal>0?Math.round(yrTotal).toLocaleString()+' lbs':'\u2014',color:'#065f46',sub:yrWhole>0?'Whole: '+Math.round(yrWhole).toLocaleString()+' \u00b7 Cuts: '+Math.round(yrCuts).toLocaleString():''});})()}
@@ -4465,7 +4465,7 @@ function App(){
                       <strong style={{fontSize:13,whiteSpace:'nowrap'}}>{b.name}</strong>
                       <span style={{...S.badge(B2.bg,B2.tx),whiteSpace:'nowrap'}}>{b.breed}</span>
                       <span style={{...S.badge('#f3f4f6','#374151'),whiteSpace:'nowrap'}}>{'Sch '+b.schooner}</span>
-                      <span style={{fontSize:10,fontWeight:700,color:inBrooder?'#065f46':'#1e3a5f',background:inBrooder?'#ecfdf5':'#eff6ff',padding:'2px 8px',borderRadius:10,whiteSpace:'nowrap'}}>{inBrooder?'BROODER':'SCHOONER'}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:inBrooder?'#065f46':'#a16207',background:inBrooder?'#ecfdf5':'#fef9c3',padding:'2px 8px',borderRadius:10,whiteSpace:'nowrap'}}>{inBrooder?'BROODER':'SCHOONER'}</span>
                     </div>
                     {(()=>{
                       const stats = calcBroilerStatsFromDailys(b, broilerDailys);
@@ -4567,7 +4567,7 @@ function App(){
                 <StatTile label="Total Cost" val={totalAllCost>0?'$'+Math.round(totalAllCost).toLocaleString():'\u2014'} color="#7f1d1d" sub="Feed + processing"/>
                 <StatTile label="Avg Cost / Bird" val={totalProc>0&&totalAllCost>0?'$'+(totalAllCost/totalProc).toFixed(2):'\u2014'} color="#374151"/>
                 {totalLbsWhole>0&&<StatTile label="Total Lbs \u2014 Whole" val={Math.round(totalLbsWhole).toLocaleString()+' lbs'+(wholePct!=null?' ('+wholePct+'%)':'')} color="#065f46"/>}
-                {totalLbsCuts>0&&<StatTile label="Total Lbs \u2014 Cuts" val={Math.round(totalLbsCuts).toLocaleString()+' lbs'+(cutsPct!=null?' ('+cutsPct+'%)':'')} color="#1e3a5f"/>}
+                {totalLbsCuts>0&&<StatTile label="Total Lbs \u2014 Cuts" val={Math.round(totalLbsCuts).toLocaleString()+' lbs'+(cutsPct!=null?' ('+cutsPct+'%)':'')} color="#a16207"/>}
               </div>
             </div>
           )}
@@ -5026,7 +5026,7 @@ function App(){
                           <td style={{padding:'7px 10px',fontWeight:700,whiteSpace:'nowrap',color:'#111827'}}>{b.name}</td>
                           <td style={{padding:'7px 10px'}}>{b.breed?<span style={S.badge(B2.bg,B2.tx)}>{b.breed}</span>:<span style={{color:'#9ca3af'}}>—</span>}</td>
                           {cell(timeOnFarm)}
-                          <td style={{padding:'7px 10px'}}>{sch?<span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:'#e0f2fe',color:'#0369a1'}}>{sch}</span>:<span style={{color:'#9ca3af'}}>\u2014</span>}</td>
+                          <td style={{padding:'7px 10px'}}>{sch?<span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:'#fef9c3',color:'#854d0e'}}>{sch}</span>:<span style={{color:'#9ca3af'}}>\u2014</span>}</td>
                           {cell(b.birdCountActual?parseInt(b.birdCountActual).toLocaleString():null)}
                           {cell(n(b.week4Lbs)>0?`${n(b.week4Lbs)} lbs`:null)}
                           {cell(n(b.week6Lbs)>0?`${n(b.week6Lbs)} lbs`:null)}
@@ -5087,7 +5087,7 @@ function App(){
                     <strong style={{fontSize:13,color:"#111827"}}>{b.name}</strong>
                     {b.breed&&<span style={S.badge(B2.bg,B2.tx)}>{breedLabel(b.breed)}</span>}
                     {b.hatchery&&<span style={{color:"#6b7280",fontSize:12}}>{b.hatchery}</span>}
-                    {b.schooner&&<span style={{padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:600,background:"#e0f2fe",color:"#0369a1"}}>Sch {b.schooner}</span>}
+                    {b.schooner&&<span style={{padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:600,background:"#fef9c3",color:"#854d0e"}}>Sch {b.schooner}</span>}
                     <span style={{marginLeft:"auto",display:"flex",gap:6}}>
                       <button onClick={e=>{e.stopPropagation();const nb=batches.map(x=>{
                         if(x.id!==b.id) return x;
@@ -5366,7 +5366,7 @@ function App(){
                 {[
                   {label:'Starter',key:'starter',color:'#1d4ed8',aoh:pActualOnHand?pActualOnHand.starter:null,eom:pEndOfMonth?pEndOfMonth.starter:null,sug:pSugOrder?pSugOrder.starter:null,need:pSugOrder?pSugOrder.sNeed:null,m1:pOrderTargetMD?pOrderTargetMD.starter:0,m2:pMonthAfterMD?pMonthAfterMD.starter:0,countAdj:curLgS&&curLgS.countMonth?curLgS.countAdj:null,countDate:pInv&&pInv.starter?pInv.starter.date:null},
                   {label:'Grower',key:'grower',color:'#085041',aoh:pActualOnHand?pActualOnHand.grower:null,eom:pEndOfMonth?pEndOfMonth.grower:null,sug:pSugOrder?pSugOrder.grower:null,need:pSugOrder?pSugOrder.gNeed:null,m1:pOrderTargetMD?pOrderTargetMD.grower:0,m2:pMonthAfterMD?pMonthAfterMD.grower:0,countAdj:curLgG&&curLgG.countMonth?curLgG.countAdj:null,countDate:pInv&&pInv.grower?pInv.grower.date:null},
-                  {label:'Layer Feed',key:'layer',color:'#b45309',aoh:pActualOnHand?pActualOnHand.layer:null,eom:pEndOfMonth?pEndOfMonth.layer:null,sug:pSugOrder?pSugOrder.layer:null,need:pSugOrder?pSugOrder.lNeed:null,m1:pOrderTargetMD?pOrderTargetMD.layerFeed:0,m2:pMonthAfterMD?pMonthAfterMD.layerFeed:0,countAdj:curLgL&&curLgL.countMonth?curLgL.countAdj:null,countDate:pInv&&pInv.layer?pInv.layer.date:null},
+                  {label:'Layer Feed',key:'layer',color:'#78350f',aoh:pActualOnHand?pActualOnHand.layer:null,eom:pEndOfMonth?pEndOfMonth.layer:null,sug:pSugOrder?pSugOrder.layer:null,need:pSugOrder?pSugOrder.lNeed:null,m1:pOrderTargetMD?pOrderTargetMD.layerFeed:0,m2:pMonthAfterMD?pMonthAfterMD.layerFeed:0,countAdj:curLgL&&curLgL.countMonth?curLgL.countAdj:null,countDate:pInv&&pInv.layer?pInv.layer.date:null},
                 ].map(function(ft){
                   return React.createElement('tr',{key:ft.label,style:{borderBottom:'1px solid #f3f4f6'}},
                     React.createElement('td',{style:{padding:'10px 16px',fontWeight:700,color:ft.color,fontSize:13}},
@@ -5430,7 +5430,7 @@ function App(){
               var types=[
                 {key:'starter',label:'Starter',color:'#1d4ed8',ordKey:'starter',lg:lgS,proj:md.starter,actual:md.actualStarter},
                 {key:'grower',label:'Grower',color:'#085041',ordKey:'grower',lg:lgG,proj:md.grower,actual:md.actualGrover},
-                {key:'layer',label:'Layer Feed',color:'#b45309',ordKey:'layerfeed',lg:lgL,proj:md.layerFeed,actual:md.actualLayer},
+                {key:'layer',label:'Layer Feed',color:'#78350f',ordKey:'layerfeed',lg:lgL,proj:md.layerFeed,actual:md.actualLayer},
               ];
               var daysElapsed=md.isFuture?0:md.isCurrent?today.getDate():md.daysInMonth;
               return React.createElement('div',{key:md.ym,style:{background:'white',border:md.isCurrent?'2px solid #085041':'1px solid #e5e7eb',borderRadius:12,overflow:'hidden'}},
@@ -5642,7 +5642,7 @@ function App(){
           <div style={{...S.card}}>
             <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
               onClick={()=>setCollapsedBatches(s=>{const n=new Set(s); n.has('layers')?n.delete('layers'):n.add('layers'); return n;})}>
-              <div style={{fontWeight:600,fontSize:14,color:"#b45309"}}>{'\ud83d\udc13 Layer Feed Estimate Per Batch'}</div>
+              <div style={{fontWeight:600,fontSize:14,color:"#78350f"}}>{'\ud83d\udc13 Layer Feed Estimate Per Batch'}</div>
               <span style={{fontSize:12,color:"#9ca3af"}}>{collapsedBatches.has('layers')?'\u25b6 expand':'\u25bc collapse'}</span>
             </div>
             {!collapsedBatches.has('layers')&&<>
@@ -5691,7 +5691,7 @@ function App(){
                       </div>
                       <div style={{textAlign:'center'}}>
                         <div style={{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5}}>Layer / Year</div>
-                        <div style={{fontSize:15,fontWeight:700,color:'#b45309'}}>{Math.round(totalLayer).toLocaleString()} lbs</div>
+                        <div style={{fontSize:15,fontWeight:700,color:'#78350f'}}>{Math.round(totalLayer).toLocaleString()} lbs</div>
                       </div>
                     </div>
                   </div>
@@ -6291,7 +6291,7 @@ function App(){
 
     const recentPigDailys = [...pigDailys].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
 
-    const StatTile = ({label,val,sub,color='#7c3aed'}) => (
+    const StatTile = ({label,val,sub,color='#1e40af'}) => (
       <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
         <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>{label}</div>
         <div style={{fontSize:24,fontWeight:700,color,lineHeight:1}}>{val}</div>
@@ -6319,11 +6319,11 @@ function App(){
 
 
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
-            <StatTile label="Pigs on Farm" val={pigsOnFarm>0?pigsOnFarm.toLocaleString():'\u2014'} color="#7c3aed"/>
-            <StatTile label="Active Sows" val={activeSows} sub={activeBoars+' boar'+(activeBoars!==1?'s':'')} color="#7c3aed"/>
+            <StatTile label="Pigs on Farm" val={pigsOnFarm>0?pigsOnFarm.toLocaleString():'\u2014'} color="#1e40af"/>
+            <StatTile label="Active Sows" val={activeSows} sub={activeBoars+' boar'+(activeBoars!==1?'s':'')} color="#1e40af"/>
             <StatTile label="Active Cycles" val={activeCycles2.length}/>
             <StatTile label="Active Batches" val={activeFeeders.length} color="#92400e"/>
-            <StatTile label="Avg Born / Litter" val={avgLitterBorn!=null?fmtN(avgLitterBorn,1):'\u2014'} color="#7c3aed"/>
+            <StatTile label="Avg Born / Litter" val={avgLitterBorn!=null?fmtN(avgLitterBorn,1):'\u2014'} color="#1e40af"/>
             <StatTile label="Avg Alive / Litter" val={avgLitterAlive!=null?fmtN(avgLitterAlive,1):'\u2014'} color="#065f46"/>
             <StatTile label="Overall Survival" val={survivalRate!=null?survivalRate+'%':'\u2014'} color={survivalRate!=null?(survivalRate>=80?'#065f46':survivalRate>=65?'#92400e':'#b91c1c'):'#374151'} sub={totalFarrowed+' records'}/>
             <StatTile label={'Processed '+currentYear} val={totalProcessed>0?totalProcessed.toLocaleString():'\u2014'} color="#374151" sub={avgYield!=null?'Avg yield: '+avgYield+'%':null}/>
@@ -6340,7 +6340,7 @@ function App(){
                 }).map(([name,count])=>(
                   <div key={name} style={{background:'white',border:'1px solid #e5e7eb',borderRadius:10,padding:'10px 14px',textAlign:'center'}}>
                     <div style={{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.4,marginBottom:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</div>
-                    <div style={{fontSize:20,fontWeight:700,color:'#7c3aed'}}>{count}</div>
+                    <div style={{fontSize:20,fontWeight:700,color:'#1e40af'}}>{count}</div>
                   </div>
                 ))}
               </div>
@@ -6447,7 +6447,7 @@ function App(){
                     <div style={{padding:'12px 18px'}}>
                       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
                         {[
-                          {l:'Current',v:currentCount>0?currentCount.toString():'\u2014',c:'#7c3aed'},
+                          {l:'Current',v:currentCount>0?currentCount.toString():'\u2014',c:'#1e40af'},
                           {l:'Original',v:originalCount>0?originalCount.toString():'\u2014'},
                           {l:'Total Feed',v:totalFeed>0?Math.round(totalFeed).toLocaleString()+' lbs':'\u2014',c:'#92400e'},
                           {l:'Feed / Pig',v:feedPerPig?feedPerPig+' lbs':'\u2014'},
@@ -6490,7 +6490,7 @@ function App(){
                   <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
                     {yieldTrend.map((t,i)=>(
                       <div key={i}><div style={{fontSize:10,color:'#6b7280',marginBottom:1}}>{t.batch} {'\u00b7'} {fmt(t.date)}</div>
-                        {trendBar(t.yield,100,'#7c3aed')}
+                        {trendBar(t.yield,100,'#1e40af')}
                       </div>
                     ))}
                   </div>
@@ -7253,7 +7253,7 @@ function App(){
                 <div style={{padding:"12px 16px",background:C?C.boar:"#f9f9f9",display:"flex",flexWrap:"wrap",gap:"6px 16px",alignItems:"center"}}>
                   <strong style={{fontSize:14}}>{g.batchName}</strong>
                   <span style={S.badge("#065f46","white")}>Gilts: {g.giltCount}</span>
-                  <span style={S.badge("#1e3a5f","white")}>Boars: {g.boarCount}</span>
+                  <span style={S.badge("#1e40af","white")}>Boars: {g.boarCount}</span>
                   {currentPigCount!==null
                     ? <span style={{color:"#111827",fontWeight:500}}>Current: <strong>{currentPigCount}</strong></span>
                     : originalPigCount>0&&<span style={{color:"#6b7280"}}>Started: {originalPigCount}</span>
@@ -7369,7 +7369,7 @@ function App(){
                         <strong style={{fontSize:12,color:"#111827"}}>{sb.name}</strong>
                         <span style={S.badge(sbSc.bg,sbSc.tx)}>{sb.status}</span>
                         {sb.giltCount>0&&<span style={{fontSize:11,color:"#065f46"}}>Gilts: {sb.giltCount}</span>}
-                        {sb.boarCount>0&&<span style={{fontSize:11,color:"#1e3a5f"}}>Boars: {sb.boarCount}</span>}
+                        {sb.boarCount>0&&<span style={{fontSize:11,color:"#1e40af"}}>Boars: {sb.boarCount}</span>}
                         {sft.feedTotal>0&&<span style={{fontSize:11,color:"#92400e",fontWeight:600}}>🌾 {Math.round(sft.feedTotal).toLocaleString()} lbs feed</span>}
                         {sft.feedTotal>0&&(parseInt(sb.originalPigCount)||0)>0&&<span style={{fontSize:11,color:"#78350f"}}>({Math.round(sft.feedTotal/(parseInt(sb.originalPigCount)||1))} lbs/pig)</span>}
                         {sft.currentCount!=null&&<span style={{fontSize:11,color:"#111827"}}>🐷 {sft.currentCount} current</span>}
@@ -7501,7 +7501,7 @@ function App(){
     };
     const TYPE_COLOR = {
       text:"#374151",textarea:"#374151",number:"#1d4ed8",
-      yes_no:"#085041",button_toggle:"#7c3aed",date:"#92400e",
+      yes_no:"#085041",button_toggle:"#1e40af",date:"#92400e",
       team_picker:"#0369a1",group_picker:"#be185d",egg_group:"#d97706"
     };
 
@@ -8840,7 +8840,7 @@ function App(){
           {/* Boars section */}
           {activeBoars.length>0&&(
             <div style={{border:"1px solid #e5e7eb",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,.05)"}}>
-              <div style={{padding:"10px 16px",background:"#1e3a5f",display:"flex",alignItems:"center",gap:10}}>
+              <div style={{padding:"10px 16px",background:"#1e40af",display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontWeight:700,fontSize:13,color:"white"}}>Boars</span>
                 <span style={{fontSize:12,color:"rgba(255,255,255,.75)"}}>{activeBoars.length} boar{activeBoars.length!==1?"s":""}</span>
               </div>
@@ -9062,7 +9062,7 @@ function App(){
     const latestEggReport = (allEggDailys||[])[0];
     const dozensOnHand = latestEggReport?.dozens_on_hand||0;
 
-    const StatTile = ({label,val,sub,color='#b45309'}) => (
+    const StatTile = ({label,val,sub,color='#78350f'}) => (
       <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
         <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>{label}</div>
         <div style={{fontSize:24,fontWeight:700,color,lineHeight:1}}>{val}</div>
@@ -9079,7 +9079,7 @@ function App(){
           {l:'Starter', v:s.starterFeed>0?Math.round(s.starterFeed).toLocaleString()+' lbs':'\u2014', color:'#1e40af'},
           {l:'Grower', v:s.growerFeed>0?Math.round(s.growerFeed).toLocaleString()+' lbs':'\u2014', color:'#065f46'},
         ]),
-        {l:'Layer', v:s.layerFeed>0?Math.round(s.layerFeed).toLocaleString()+' lbs':'\u2014', color:'#b45309'},
+        {l:'Layer', v:s.layerFeed>0?Math.round(s.layerFeed).toLocaleString()+' lbs':'\u2014', color:'#78350f'},
         {l:'Feed cost', v:hasFeed?fmt$0(s.cost):'\u2014', color:'#92400e'},
         {l:'Dozens', v:s.dozens>0?Math.floor(s.dozens).toLocaleString():'\u2014', color:'#065f46'},
         {l:'Eggs/hen/day', v:s.epd!=null?s.epd.toFixed(2):'\u2014', good:s.epd>=0.7, trend:prev?trendArrow(s.epd,prev.epd,true):null},
@@ -9117,8 +9117,8 @@ function App(){
 
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
             <StatTile label="Active Flocks" val={activeHousings.length}/>
-            <StatTile label="Total Hens" val={totalHens.toLocaleString()} color="#1e3a5f"/>
-            <StatTile label="Dozens Last 7 Days" val={Math.floor(totalEggsLast7/12).toLocaleString()} color="#b45309"/>
+            <StatTile label="Total Hens" val={totalHens.toLocaleString()} color="#a16207"/>
+            <StatTile label="Dozens Last 7 Days" val={Math.floor(totalEggsLast7/12).toLocaleString()} color="#78350f"/>
             <StatTile label="Dozens on Hand" val={dozensOnHand||'\u2014'} color="#065f46" sub={latestEggReport?'as of '+fmt(latestEggReport.date):''}/>
           </div>
 
@@ -9426,7 +9426,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                     </div>
                   </div>
                 ))}
-                <button type="button" onClick={()=>setExtraB(p=>[...p,{batchLabel:'',feedType:'',feedLbs:'',gritLbs:'',mortalityCount:'',mortalityReason:'',comments:'',groupMoved:true,watererChecked:true}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#b45309',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>+ Add Another Group</button>
+                <button type="button" onClick={()=>setExtraB(p=>[...p,{batchLabel:'',feedType:'',feedLbs:'',gritLbs:'',mortalityCount:'',mortalityReason:'',comments:'',groupMoved:true,watererChecked:true}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#78350f',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>+ Add Another Group</button>
               </div>}
             </div>
           )}
@@ -9455,7 +9455,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
               {allowAddGroup('layer-dailys')&&<div>
                 {extraL.map((eg,ei)=>(
                   <div key={ei} style={{...sec,border:'2px dashed #a7f3d0'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><div style={{fontSize:13,fontWeight:600,color:'#b45309'}}>Additional Group {ei+2}</div><button type="button" onClick={()=>setExtraL(p=>p.filter((_,i)=>i!==ei))} style={{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}}>×</button></div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><div style={{fontSize:13,fontWeight:600,color:'#78350f'}}>Additional Group {ei+2}</div><button type="button" onClick={()=>setExtraL(p=>p.filter((_,i)=>i!==ei))} style={{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}}>×</button></div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                       <div style={{gridColumn:'1/-1'}}><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Layer Group *</label><select value={eg.batchLabel||''} onChange={e=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,batchLabel:e.target.value}:g))} style={inp}><option value=''>Select group...</option>{layerGroupNames.map(g=><option key={g} value={g}>{g}</option>)}</select></div>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Feed (lbs)</label><input type="number" min="0" step="0.1" value={eg.feedLbs||''} onChange={e=>setExtraL(p=>p.map((g,i)=>i===ei?{...g,feedLbs:e.target.value}:g))} placeholder="0" style={inp}/></div>
@@ -9469,7 +9469,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                     </div>
                   </div>
                 ))}
-                <button type="button" onClick={()=>setExtraL(p=>[...p,{batchLabel:'',feedLbs:'',gritLbs:'',layerCount:'',mortalityCount:'',mortalityReason:'',comments:'',groupMoved:true,watererChecked:true}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#b45309',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>+ Add Another Group</button>
+                <button type="button" onClick={()=>setExtraL(p=>[...p,{batchLabel:'',feedLbs:'',gritLbs:'',layerCount:'',mortalityCount:'',mortalityReason:'',comments:'',groupMoved:true,watererChecked:true}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#78350f',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>+ Add Another Group</button>
               </div>}
             </div>
           )}
@@ -9486,7 +9486,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                 if(!isEnabled('egg-dailys',fid)) return null;
                 return (
                   <div key={n} style={sec}>
-                    <div style={{fontSize:12,fontWeight:600,color:'#b45309',marginBottom:8}}>Group {n}{isRequired('egg-dailys',fid)&&<span style={{color:'#b91c1c'}}> *</span>}</div>
+                    <div style={{fontSize:12,fontWeight:600,color:'#78350f',marginBottom:8}}>Group {n}{isRequired('egg-dailys',fid)&&<span style={{color:'#b91c1c'}}> *</span>}</div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Group name</label><select value={eForm[`g${n}n`]} onChange={e=>setEForm(f=>({...f,[`g${n}n`]:e.target.value}))} style={inp}><option value=''>—</option>{layerGroupNames.map(g=><option key={g} value={g}>{g}</option>)}</select></div>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Eggs collected</label><input type="number" min="0" value={eForm[`g${n}c`]} onChange={e=>setEForm(f=>({...f,[`g${n}c`]:e.target.value}))} placeholder="0" style={inp}/></div>
@@ -9525,7 +9525,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
               {allowAddGroup('pig-dailys')&&<div>
                 {extraP.map((eg,ei)=>(
                   <div key={ei} style={{...sec,border:'2px dashed #a7f3d0'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><div style={{fontSize:13,fontWeight:600,color:'#7c3aed'}}>Additional Group {ei+2}</div><button type="button" onClick={()=>setExtraP(p=>p.filter((_,i)=>i!==ei))} style={{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}}>×</button></div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}><div style={{fontSize:13,fontWeight:600,color:'#1e40af'}}>Additional Group {ei+2}</div><button type="button" onClick={()=>setExtraP(p=>p.filter((_,i)=>i!==ei))} style={{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}}>×</button></div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                       <div style={{gridColumn:'1/-1'}}><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Pig Group *</label><select value={eg.batchLabel||''} onChange={e=>setExtraP(p=>p.map((g,i)=>i===ei?{...g,batchLabel:e.target.value}:g))} style={inp}><option value=''>Select group...</option>{pigGroups.map(g=><option key={g.value||g} value={g.value||g}>{g.label||g}</option>)}</select></div>
                       <div><label style={{display:'block',fontSize:13,color:'#374151',marginBottom:5,fontWeight:500}}>Feed (lbs)</label><input type="number" min="0" step="0.1" value={eg.feedLbs||''} onChange={e=>setExtraP(p=>p.map((g,i)=>i===ei?{...g,feedLbs:e.target.value}:g))} placeholder="0" style={inp}/></div>
@@ -9537,7 +9537,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                     </div>
                   </div>
                 ))}
-                <button type="button" onClick={()=>setExtraP(p=>[...p,{batchLabel:'',feedLbs:'',pigCount:'',fenceVoltage:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,issues:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#b45309',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>+ Add Another Group</button>
+                <button type="button" onClick={()=>setExtraP(p=>[...p,{batchLabel:'',feedLbs:'',pigCount:'',fenceVoltage:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,issues:''}])} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fde68a',background:'transparent',color:'#78350f',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>+ Add Another Group</button>
               </div>}
             </div>
           )}
@@ -10276,7 +10276,7 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                   {[['Total Feed'+(isRetHome?' ('+periodLabel+')':''),s.totalFeed>0?Math.round(s.totalFeed).toLocaleString()+' lbs':'\u2014','#92400e'],
                     ...(isRetHome?[]:[['Starter Feed',s.starterFeed>0?Math.round(s.starterFeed).toLocaleString()+' lbs':'\u2014',s.starterFeed>=1400?'#b91c1c':'#1e40af']]),
                     ...(isRetHome?[]:[['Grower Feed',s.growerFeed>0?Math.round(s.growerFeed).toLocaleString()+' lbs':'\u2014','#065f46']]),
-                    ['Layer Feed',s.layerFeed>0?Math.round(s.layerFeed).toLocaleString()+' lbs':'\u2014','#b45309'],
+                    ['Layer Feed',s.layerFeed>0?Math.round(s.layerFeed).toLocaleString()+' lbs':'\u2014','#78350f'],
                     ['Mortality'+(isRetHome?' ('+periodLabel+')':''),s.totalMort||'0',s.totalMort>10?'#b91c1c':'#374151'],
                     ...(isRetHome?[]:[['Total Dozens',s.totalEggs>0?Math.floor(s.totalEggs/12).toLocaleString():'\u2014','#065f46']]),
                     ...(isRetHome?[]:[['Feed Cost',feedCost!=null?fmt$(feedCost):'\u2014','#92400e']]),
@@ -10324,10 +10324,10 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
               const costPerHen=(feedCost!=null&&orig>0)?feedCost/orig:null;
               const fmt$=v=>'$'+v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
               const tiles=[
-                {l:'Batch Age',v:batchAgeStr,c:'#1e3a5f'},
+                {l:'Batch Age',v:batchAgeStr,c:'#78350f'},
                 {l:'Days in Housing',v:daysInHousing>0?daysInHousing+' days':'\u2014',c:'#374151'},
-                {l:'Original \u2192 Current',v:orig>0?(orig.toLocaleString()+' \u2192 '+currentHens.toLocaleString()):'\u2014',c:'#1e3a5f'},
-                {l:'Dozens / Hen (lifetime)',v:eggsPerHen!=null?(eggsPerHen/12).toFixed(1)+' doz':'\u2014',c:'#b45309'},
+                {l:'Original \u2192 Current',v:orig>0?(orig.toLocaleString()+' \u2192 '+currentHens.toLocaleString()):'\u2014',c:'#78350f'},
+                {l:'Dozens / Hen (lifetime)',v:eggsPerHen!=null?(eggsPerHen/12).toFixed(1)+' doz':'\u2014',c:'#78350f'},
                 {l:'Eggs / Hen / Day (housing)',v:eggsPerHenPerDay!=null?eggsPerHenPerDay.toFixed(3):'\u2014',c:eggsPerHenPerDay!=null&&eggsPerHenPerDay>=0.7?'#065f46':'#b45309'},
                 {l:'Feed / Hen (lifetime)',v:feedPerHen!=null?feedPerHen.toFixed(1)+' lbs':'\u2014',c:'#92400e'},
                 {l:'Feed / Dozen (lifetime)',v:feedPerDozen!=null?feedPerDozen.toFixed(2)+' lbs':'\u2014',c:'#92400e'},
@@ -10411,9 +10411,9 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                         <StatPill label="Total Feed" val={hs.totalFeed>0?Math.round(hs.totalFeed)+' lbs':'\u2014'} color="#92400e"/>
                         {selectedBatch&&selectedBatch.name!=='Retirement Home'&&<StatPill label="Starter" val={hs.starterFeed>0?Math.round(hs.starterFeed)+' lbs':'\u2014'} color="#1e40af"/>}
                         {selectedBatch&&selectedBatch.name!=='Retirement Home'&&<StatPill label="Grower" val={hs.growerFeed>0?Math.round(hs.growerFeed)+' lbs':'\u2014'} color="#065f46"/>}
-                        <StatPill label="Layer" val={hs.layerFeed>0?Math.round(hs.layerFeed)+' lbs':'\u2014'} color="#b45309"/>
+                        <StatPill label="Layer" val={hs.layerFeed>0?Math.round(hs.layerFeed)+' lbs':'\u2014'} color="#78350f"/>
                         <StatPill label="Mort." val={hs.totalMort||'0'} color={hs.totalMort>5?'#b91c1c':'#374151'}/>
-                        <StatPill label="Eggs" val={hs.totalEggs>0?hs.totalEggs.toLocaleString():'\u2014'} color="#b45309"/>
+                        <StatPill label="Eggs" val={hs.totalEggs>0?hs.totalEggs.toLocaleString():'\u2014'} color="#78350f"/>
                       </div>
                       <div style={{display:'flex',gap:6,flexShrink:0}}>
                         <button onClick={()=>{setHForm({...EMPTY_HOUSING,...h,current_count:h.current_count!=null?h.current_count:''});setEditHousingId(h.id);setShowHousingForm(true);}} style={{padding:'5px 10px',borderRadius:6,border:'1px solid #d1d5db',background:'white',fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Edit</button>
@@ -10435,7 +10435,7 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
           <div onClick={closeBatchForm} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
             <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:540,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{fontSize:15,fontWeight:600,color:'#b45309'}}>{editBatchId?'Edit Layer Batch':'New Layer Batch'} <span style={{fontSize:11,color:'#9ca3af',fontWeight:400,marginLeft:6}}>Auto-saves as you type</span></div>
+                <div style={{fontSize:15,fontWeight:600,color:'#78350f'}}>{editBatchId?'Edit Layer Batch':'New Layer Batch'} <span style={{fontSize:11,color:'#9ca3af',fontWeight:400,marginLeft:6}}>Auto-saves as you type</span></div>
                 <div style={{display:'flex',alignItems:'center',gap:10}}>
                   {batchSaving?<span style={{fontSize:11,color:'#9ca3af'}}>{'Saving\u2026'}</span>:batchPending?<span style={{fontSize:11,color:'#9ca3af'}}>{'Unsaved\u2026'}</span>:editBatchId?<span style={{fontSize:11,color:'#065f46'}}>{'\u2713 Saved'}</span>:null}
                   <button onClick={closeBatchForm} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>{'\u00d7'}</button>
@@ -10557,7 +10557,7 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
           <div onClick={closeHousingForm} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
             <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:440,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{fontSize:15,fontWeight:600,color:'#b45309'}}>{editHousingId?'Edit Housing':'Add Housing'}</div>
+                <div style={{fontSize:15,fontWeight:600,color:'#78350f'}}>{editHousingId?'Edit Housing':'Add Housing'}</div>
                 <div style={{display:'flex',alignItems:'center',gap:10}}>
                   {housingSaving?<span style={{fontSize:11,color:'#9ca3af'}}>{'Saving\u2026'}</span>:housingPending?<span style={{fontSize:11,color:'#9ca3af'}}>{'Unsaved\u2026'}</span>:editHousingId?<span style={{fontSize:11,color:'#065f46'}}>{'\u2713 Saved'}</span>:null}
                   <button onClick={closeHousingForm} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>{'\u00d7'}</button>
@@ -10727,7 +10727,7 @@ const LayersView = ({sb, layerGroups, persistLayerGroups, fmt, Header, layerBatc
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:520,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
             <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
               <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <div style={{fontSize:15,fontWeight:600,color:'#b45309'}}>{editId?'Edit Layer Group':'New Layer Group'}</div>
+                <div style={{fontSize:15,fontWeight:600,color:'#78350f'}}>{editId?'Edit Layer Group':'New Layer Group'}</div>
                 {editId&&<div style={{marginLeft:8,fontSize:11,color:'#9ca3af'}}>Auto-saves as you type</div>}
                 {editId&&(()=>{
                   const idx=sorted.findIndex(g=>g.id===editId);
@@ -10958,7 +10958,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
         <div onClick={()=>setShowForm(false)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:480,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
             <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
-              <div style={{fontSize:15,fontWeight:600,color:'#b45309'}}>{editId?(editSource==='add_feed_webform'?'Edit Layer Add Feed Report':'Edit Layer Daily Report'):'Add Layer Daily Report'}</div>
+              <div style={{fontSize:15,fontWeight:600,color:'#78350f'}}>{editId?(editSource==='add_feed_webform'?'Edit Layer Add Feed Report':'Edit Layer Daily Report'):'Add Layer Daily Report'}</div>
               <button onClick={()=>setShowForm(false)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>×</button>
             </div>
             <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,maxHeight:'70vh',overflowY:'auto'}}>
@@ -11091,7 +11091,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div>
             <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>Egg Daily Reports</div>
-            <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · <strong style={{color:'#b45309'}}>{totalEggs.toLocaleString()} eggs</strong> ({Math.round(totalEggs/12).toLocaleString()} doz) in view</div>
+            <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · <strong style={{color:'#78350f'}}>{totalEggs.toLocaleString()} eggs</strong> ({Math.round(totalEggs/12).toLocaleString()} doz) in view</div>
           </div>
           <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
         </div>
@@ -11119,7 +11119,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
                 }} className="hoverable-tile">
                   <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
                     <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
-                    <span style={{fontWeight:700,color:'#b45309',minWidth:80,flexShrink:0}}>🥚 {total} eggs</span>
+                    <span style={{fontWeight:700,color:'#78350f',minWidth:80,flexShrink:0}}>🥚 {total} eggs</span>
                     <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
                     {groups.map(([n,c])=><span key={n} style={{color:'#374151',fontSize:12,minWidth:100}}>{n}: <strong>{c}</strong></span>)}
                     {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12}}>📦 {d.dozens_on_hand} doz on hand</span>}
@@ -11136,7 +11136,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
         <div onClick={()=>setShowForm(false)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:480,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
             <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
-              <div style={{fontSize:15,fontWeight:600,color:'#b45309'}}>{editId?'Edit':'Add'} Egg Report</div>
+              <div style={{fontSize:15,fontWeight:600,color:'#78350f'}}>{editId?'Edit':'Add'} Egg Report</div>
               <button onClick={()=>setShowForm(false)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>×</button>
             </div>
             <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,maxHeight:'70vh',overflowY:'auto'}}>
@@ -11156,7 +11156,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
               <div style={{gridColumn:'1/-1'}}><label style={S.label}>Dozens on Hand</label><input type="number" min="0" step="0.5" value={form.dozensOnHand||''} onChange={e=>setForm(f=>({...f,dozensOnHand:e.target.value}))}/></div>
               <div style={{gridColumn:'1/-1'}}>
                 <label style={S.label}>Collected Today (calculated)</label>
-                <div style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:6,padding:'8px 12px',fontSize:14,fontWeight:700,color:'#b45309'}}>
+                <div style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:6,padding:'8px 12px',fontSize:14,fontWeight:700,color:'#78350f'}}>
                   {(()=>{
                     const g1=form.group1Count!==''?parseInt(form.group1Count)||0:0;
                     const g2=form.group2Count!==''?parseInt(form.group2Count)||0:0;
@@ -11295,7 +11295,7 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
                       {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
                       <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
                       <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:100}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
-                      <span style={{color:'#7c3aed',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
+                      <span style={{color:'#1e40af',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
                       <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,minWidth:70}}>{hasVolt?`⚡ ${d.fence_voltage} kV`:'no voltage'}</span>
                       <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
                       <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.nipple_drinker_working===false?'#fef2f2':'#f0fdf4',color:d.nipple_drinker_working===false?'#b91c1c':'#065f46',border:d.nipple_drinker_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Nipple: '+(d.nipple_drinker_working===false?'No':'Yes')}</span>
@@ -11313,7 +11313,7 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
         <div onClick={()=>setShowForm(false)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:500,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:480,boxShadow:'0 8px 32px rgba(0,0,0,.2)',marginTop:40}}>
             <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
-              <div style={{fontSize:15,fontWeight:600,color:'#7c3aed'}}>{editId?(editSource==='add_feed_webform'?'Edit Pig Add Feed Report':'Edit Pig Daily Report'):'Add Pig Daily Report'}</div>
+              <div style={{fontSize:15,fontWeight:600,color:'#1e40af'}}>{editId?(editSource==='add_feed_webform'?'Edit Pig Add Feed Report':'Edit Pig Daily Report'):'Add Pig Daily Report'}</div>
               <button onClick={()=>setShowForm(false)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af'}}>×</button>
             </div>
             <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,maxHeight:'70vh',overflowY:'auto'}}>
