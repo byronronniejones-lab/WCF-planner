@@ -5015,7 +5015,7 @@ function App(){
             <div style={{fontSize:13,fontWeight:600,color:"#9ca3af",marginBottom:8,letterSpacing:.3}}>
               PROCESSED ({batches.filter(b=>b.status==="processed").length})
             </div>
-            {batches.filter(b=>b.status==="processed").map((b,i)=>{
+            {batches.filter(b=>b.status==="processed").sort((a,b)=>(b.processingDate||b.hatchDate||'').localeCompare(a.processingDate||a.hatchDate||'')).map((b,i)=>{
               const B2=BREED_STYLE[b.breed]||BREED_STYLE.CC;
               // B-24-* batches: always use manually entered feed totals (legacy)
               const isB24=(/^b-24-/i).test(b.name);
