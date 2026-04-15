@@ -816,18 +816,34 @@ Bug #8 (nursing sow calc using cycle weaningEnd instead of per-sow) was NOT fixe
 9. ✅ **Routing:** `view==="cattledailys"` renders the real `CattleDailysView`. The other 6 cattle views render a clean "Coming soon" placeholder that lists which features ARE working — no blank screens.
 10. ✅ **Home Dashboard** — 4th Cattle nav card. Grid is now 2×2 instead of 3×1.
 
-### What's NOT yet built (remaining Phase 1)
-- **Herds tab** (`cattleherds`) — cattle tiles per herd with cow list, sorting, add/remove/transfer
-- **Breeding tab** (`cattlebreeding`) — Gantt timeline + cycle cards + outstanding cows
-- **Calving records** — inline form + history under Mommas cows
-- **Cattle Home Dashboard** (`cattleHome`) — stats tiles + rolling nutrition panel
-- **Animals on Farm** — currently 4 columns, needs expansion to 5 (Broilers / Layers / Pigs / Cattle / Total)
+### Phase 1 — COMPLETE
+All steps from CATTLE_DESIGN.md §9 are now built. Calving record add/edit form lands inline in the Mommas cow detail (`+ Add Calving` button).
 
-### Phase 2 (not started)
-- Weigh-Ins webform + session autosave model + broiler/pig/cattle flows + WeighInsView tabs
+### Phase 2 — COMPLETE (for cattle, pig, broiler)
+- ✅ `WeighInsWebform` (public, route `#weighins`) — species picker → setup screen with draft session resume → entry screen with autosave to `weigh_in_sessions` + `weigh_ins`
+- ✅ Cattle session: diminishing tag dropdown (sorted asc) + weight + note. "+ New Tag" button for unknown tags. Note auto-publishes to `cattle_comments`.
+- ✅ Pig session: per-row weight + note. (Send-to-trip wiring deferred — pigs aren't tagged so a future Trip view can pull recent session entries.)
+- ✅ Broiler session: pick batch + week (4/6) → enter individual weights → on Complete the average auto-fills `batch.week4Lbs` / `batch.week6Lbs` in `app_store.ppp-v4`.
+- ✅ `CattleWeighInsView` (auth, route `#cattleweighins`) — list past sessions with status filter, expand to see entries, reopen complete sessions, reconcile new-tag entries to known cows.
+- ✅ Webforms hub gets a new ⚖️ Weigh-Ins card alongside Add Feed.
 
-### Phase 3 (not started)
-- Directory (full `cattle` table browsing), processing batches, sales, deceased, per-head cost rollup, Podio import
+### Phase 3 — Directory MERGED INTO HERDS (per Ronnie's call Apr 15)
+- The Directory tab was cut. Its functionality (search, sort, filter across all cattle including outcomes, add/edit/transfer/delete) is now built into the Herds tab. Default view = per-herd tiles. When user types in search box or picks a non-active filter, view switches to flat sortable list. Outcome herds appear collapsed at bottom of tile view.
+- Per-head cost rollup deferred
+- Podio import deferred (waiting for fresh export after webform goes live)
+
+## April 15 evening session — large code drop
+
+Built the rest of Phase 1 + Phase 3 directory functionality (merged into Herds):
+
+11. ✅ **Cattle Home Dashboard** — stat tiles (cattle on farm, total live weight, cow units, mortality 30d, reports 30d, feed cost 30d) + per-herd breakdown cards
+12. ✅ **Cattle Herds** (merged Directory) — search bar + status filter + sort dropdown at top. Per-herd tiles by default with cow lists; flat list when search/filter active. Outcome herds collapsed at bottom. Add Cow modal with all Podio fields. Per-cow expand shows Identity / Lineage / Weigh-in history / Calving history (Mommas) / Notes / Comments timeline + Edit / Transfer / Delete actions
+13. ✅ **Cattle Breeding** — list of cycles with auto-computed timeline (65/30/9mo/65/7mo). Status pill (planned/exposure/pregcheck/calving/nursing/complete). Outstanding cows highlighted. Add/edit/delete cycles
+14. ✅ **Cattle Processing Batches** — list of batches with linked cow tags + total live weight + hanging weight + yield % + cost. Marking complete auto-moves linked cows to Processed herd + logs transfer
+15. ✅ **Animals on Farm tile** — extended to 5 columns (added Cattle)
+16. ✅ **Cattle comments** — quick "Add Comment" inside cow detail. Writes to `cattle_comments` table
+
+**Migration to apply:** `supabase-migrations/002_cattle_comments.sql` (one new table for the unified comments timeline). Until applied, the comments section in cow detail will silently show empty. Apply when ready — same idempotent pattern as the first migration.
 
 ## Open items for next session
 
@@ -844,4 +860,161 @@ Bug #8 (nursing sow calc using cycle weaningEnd instead of per-sow) was NOT fixe
 
 ---
 
-*End of April 15 Session*
+---
+
+# 14. April 15 — End-of-Day Session Wrap-Up (read this first)
+
+This is the canonical summary for anyone (Claude or human) picking up where we left off. It supersedes the partial updates in §13 above when there's any conflict.
+
+## 14.1 What got built today (commit timeline)
+
+| Commit | What |
+|---|---|
+| `47eb531` | **6 bug fixes** in `index.html` — committed locally, not pushed. Arrow literal `"2192"` → `\u2192` in 4 places (timeline tooltip + batch list); `wfCfgFields` path fix in renderWebform; AdminAddReportModal conditional validation; Babel cache double-render guard via `window._wcfAppRoot`; dead `batch_id==='breeding-sows'` filter branch removed; `feedOrders` init shape `{pig,broiler}` → `{pig,starter,grower,layerfeed}`. |
+| `d8a4a67` | **Cattle module Phase 1 scaffold** — Admin Feed tab restructure (FeedCostsPanel + LivestockFeedInputsPanel + NutritionTargetsPanel); test PDF upload + version history; Cattle Daily webform; Add Feed with Cattle as 4th program; CattleDailysView; cattle constants + breeding helpers; routing + Header section label; Home Dashboard Cattle card. |
+| `<this commit>` | **Cattle Phase 1 finish + Phase 2 weigh-ins + Phase 3 directory merge** — see §14.2. |
+
+## 14.2 Code state at end-of-day (what's now in `index.html`)
+
+### Admin → Feed tab (renamed from "Feed Costs")
+- Existing `FeedCostsPanel` (simple $/lb per poultry/pig feed) — top section, unchanged.
+- `LivestockFeedInputsPanel` — card grid of every feed/mineral with category filter chips. Each card has **📎 Upload Test** + **Edit** buttons. Cards show name, category badge, unit + landed $/lb (computed), nutrition values, herd scope chips. Inactive feeds dimmed.
+- Edit modal: identity / unit / cost (with computed landed $/lb preview) / nutrition (manual + via test PDFs) / herd scope chips / status / notes. **Test history** section inside (only when editing): list of past tests with **CURRENT** badge on latest, Edit + Delete per test, "+ Upload New Test" inline form. Replacing a test PDF cleans up the old file in storage. **Delete Feed** in modal footer (cascades to tests + PDFs). Historical `cattle_dailys` snapshots are preserved on feed delete because nutrition is stored by-value in JSONB.
+- `NutritionTargetsPanel` — per-herd inline-editable table for `target_dm_pct_body` / `target_cp_pct_dm` / `target_nfc_pct_dm` + Notes. Per-row autosave with debounce. **`fallback_cow_weight_lbs` is hidden from the UI** but kept in the DB for the recommendation engine.
+
+### Public webforms (`#webforms`)
+Hub now has 7 cards: 2 quick-action cards at top (🌾 Add Feed, ⚖️ Weigh-Ins) + 5 daily report cards (Broiler / Layer / Egg / Pig / Cattle).
+- **Cattle Daily Report** — Date / Team / Herd dropdown / dynamic Feed rows (filtered by herd_scope, with `is_creep` toggle on Mommas) / dynamic Mineral rows (all minerals available to all herds) / Fence Voltage / Water Y/N / Mortality + reason / Issues. Nutrition values **snapshotted into the `feeds` jsonb at submit time** so retroactive feed edits don't rewrite history.
+- **Add Feed** — now 4 programs (Pig / Broiler / Layer / **Cattle**). Cattle path has herd picker + per-row creep toggle. Inserts to `cattle_dailys` with `source='add_feed_webform'`.
+- **Weigh-Ins** (`#weighins`, separate top-level component `WeighInsWebform`) — species picker → draft-session resume screen + new-session setup → entry screen. Each entry persists to `weigh_in_sessions` + `weigh_ins` immediately. Cattle: diminishing tag dropdown sorted ascending with "+ New Tag" fallback for unknown/replacement tags + per-entry note that auto-publishes a comment. Pig: per-row weights for active feeder batch. Broiler: pick batch + week (4/6) → enter individual weights → on Complete the average auto-fills `batch.week4Lbs` / `batch.week6Lbs` in `app_store.ppp-v4`.
+
+### Authenticated cattle program
+- **Home Dashboard** (`cattleHome`) — stat tiles (cattle on farm, total live weight, cow units, mortality 30d, reports 30d, feed cost 30d) + per-herd breakdown cards.
+- **Herds** (`cattleherds`, **merged with the killed Directory tab**) — search bar + status filter (active/all/per-herd/per-outcome) + sort dropdown at top. Default: per-herd tiles for the 4 active herds with cow lists, outcome herds (Processed/Deceased/Sold) collapsed at bottom. Switches to flat sortable list when search has text or status filter is non-active. Per-cow expand row shows Identity / Lineage / Weigh-In History (latest 10) / Calving History (Mommas only, with **+ Add Calving** form inline) / Notes / Comments Timeline + actions (Edit / Transfer / Delete). Add/edit cow modal has all Podio fields including dam/sire, % wagyu, breeding blacklist (with required reason), maternal issue (with required description), purchase/sale/death dates.
+- **Dailys** (`cattledailys`) — list with date/herd/team/source filters; full edit modal with dynamic feed/mineral rows.
+- **Weigh-Ins** (`cattleweighins`, `CattleWeighInsView`) — list past sessions with status filter (all/draft/complete). Expand to see entries. Reopen complete sessions. Reconcile new-tag entries to known cows via dropdown. Delete sessions (cascades to entries).
+- **Breeding** (`cattlebreeding`) — list of cycles with auto-computed timeline (65/30/9mo/65/7mo). Status pill (planned/exposure/pregcheck/calving/nursing/complete). Outstanding cows highlighted on each cycle. Add/edit/delete.
+- **Batches** (`cattlebatches`) — processing batches list. Linked cow tags + total live weight (from latest weigh-ins) + hanging weight + yield % + cost. **Marking complete auto-moves linked cattle to Processed herd + logs `cattle_transfers` rows.** Auto-naming `C-26-NN`.
+
+### Home Dashboard
+- 4 program nav cards (Broilers / Layers / Pigs / **Cattle**) in 2×2 grid.
+- Animals on Farm tile extended to **5 columns** (Broilers / Layer Hens / Pigs / **Cattle** / Total).
+
+## 14.3 Database state
+
+### Applied to production Supabase by Ronnie today
+- ✅ Migration `001_cattle_module.sql` — 11 new tables: `cattle_feed_inputs`, `cattle_feed_tests`, `cattle_nutrition_targets`, `cattle_dailys`, `weigh_in_sessions`, `weigh_ins`, `cattle`, `cattle_calving_records`, `cattle_breeding_cycles`, `cattle_processing_batches`, `cattle_transfers`. All RLS enabled; anon INSERT for the daily/session/weigh-in tables (so public webforms work); anon SELECT for config tables (so webforms can read feed/nutrition lists).
+- ✅ Seed data: 13 feeds (rye baleage, alfalfa hay, clover hay, alfalfa pellets, citrus pellets, molasses, sugar, salt, bicarb, conditioner, calcium, biochar, colostrum) + 4 nutrition target rows (mommas/backgrounders/finishers/bulls).
+- ✅ Storage buckets `cattle-feed-pdfs` + `cattle-directory-docs`. Both **public** (badge confirmed). 3 policies each (INSERT/UPDATE/DELETE) for `authenticated` role.
+
+### NOT YET applied — apply before testing comments / new-tag reconcile / weigh-in notes
+- ⚠️ Migration `002_cattle_comments.sql` — adds the `cattle_comments` table (unified per-cow timeline). Without this, the `addQuickComment`, weigh-in note auto-publish, and calving note auto-publish all silently no-op (wrapped in try/catch). The Comments Timeline section in cow detail will show "No comments yet." Apply via SQL Editor when ready — same idempotent pattern.
+
+## 14.4 Critical context for the next session
+
+**Read this FIRST when picking up.**
+
+1. **Deployment SOP is absolute.** Never run `git commit`, `git push`, or any deploy command without explicit user approval IN THE CURRENT SESSION TURN. See §1. This applies even to the bug fix path. "Authorized to fix" ≠ "authorized to commit."
+2. **Local commits are at `47eb531`, `d8a4a67`, and `<this commit>`** — Ronnie's branch is N commits ahead of `origin/main`. Nothing has been pushed/deployed unless he's done so manually after this session.
+3. **The cattle module reads from production Supabase** even when running locally. Any test action you take affects real data. Be careful with delete/cascade operations.
+4. **Migration 002 is the one outstanding migration.** Some features will silently fail until it's applied. Tell Ronnie to apply it before testing comment-related flows.
+5. **`index.html` is 14,748 lines** — single-file app. No bundler. Babel-in-browser with localStorage cache. After local edits, the user MUST clear `wcf-babel-*` keys from localStorage or open in incognito to see the new code.
+6. **WebformHub uses `const {useState, useEffect} = React;` destructuring** — that's OK because WebformHub is its own function scope. The "no destructuring near App" rule from `feedback_working_rules.md` applies to standalone components defined RIGHT NEXT TO App in source order.
+7. **The cattle module added ~3,200 lines to `index.html` today.** Spread across:
+   - Top of file: cattle constants + breeding helpers (~70 lines)
+   - Mid-file: WeighInsWebform component (before WebformHub) (~360 lines)
+   - Mid-file: LivestockFeedInputsPanel + NutritionTargetsPanel (after FeedCostsPanel) (~700 lines)
+   - Within WebformHub: cattle daily form branch + cattle add-feed branch + cattle weigh-in form (~500 lines)
+   - Bottom of file: CattleDailysView + CattleHomeView + CattleHerdsView + CattleBreedingView + CattleBatchesView + CattleWeighInsView + CowDetail + CollapsibleOutcomeSections (~1,500 lines)
+
+## 14.5 Lessons learned today
+
+1. **Read the WHOLE handover doc before drafting questions.** I asked Ronnie to re-answer the cattle design questions early in the session — he had to remind me they were already answered in PROJECT.md §12 from the previous day. Cost two round-trips. Lesson: when the handover doc is long, finish reading every section (including late-night addenda) before composing follow-up questions.
+2. **When proposing a data model, propose the simplest version first.** I initially designed a separate `cattle_creep_batches` table + standalone "Mix Creep Batch" form. Ronnie wanted ingredients tracked like everything else, with no compound-feed concept. The simpler model won — `is_creep` per-line flag on `cattle_dailys.feeds` jsonb. Lesson: don't engineer abstractions before confirming the user actually wants them.
+3. **Storage policy creation in Supabase Studio defaults to "all public roles"** — that lets anonymous users do operations you probably didn't intend. Ronnie caught this on the first INSERT policy. Always set `Target roles` to `authenticated` explicitly.
+4. **Bucket public toggle is a SEPARATE step from policies.** Ronnie made the buckets but they didn't show the PUBLIC badge initially. Without the toggle on, `getPublicUrl()` returns URLs that don't actually serve files. Always confirm the badge in the bucket list view.
+5. **Splitting commits after the fact is awkward.** I authorized 6 bug fixes but had also written cattle scaffolding on top. Had to back up the working tree with `cp`, `git checkout HEAD --` to revert, re-apply only the bug fixes, commit, then `cp` back. Worked but clunky. Lesson: when more than one logical change is queued, commit each as soon as it's authorized rather than batching.
+6. **Webform field path: `(wf.sections||[]).flatMap(s => s.fields||[])`, NOT `wf.fields`.** This was bug #2 of today's fixes — the legacy `renderWebform` function (`#pigdailys` route) was reading `.fields` directly, which doesn't exist on webform config objects. The correct path is to flatten the sections.
+7. **When updating `app_store` JSONB, fetch + mutate + upsert.** Direct UPDATE on a JSONB cell isn't worth the complexity. The broiler weigh-in completion handler does this: select `ppp-v4`, map the array to update one batch's `week4Lbs`/`week6Lbs`, upsert back with `{onConflict:'key'}`.
+8. **Babel cache retry can call `ReactDOM.createRoot()` twice** if the cached version throws and the boot script clears cache + re-executes. Fix: cache the root on `window._wcfAppRoot` and re-use it on second execution. Bug #5 fix.
+9. **Don't expose tech-detail fields to users.** I initially put `fallback_cow_weight_lbs` in the Nutrition Targets UI. Ronnie asked "what is this for?" and we agreed to hide it. The DB column stays for the recommendation engine but admin doesn't have to think about it. Lesson: every visible field competes for the user's attention; default to hiding things that don't help daily ops.
+
+## 14.6 Things to watch out for (pitfalls)
+
+1. **`cattle_comments` table doesn't exist yet.** Until migration 002 is applied, `addQuickComment` / weigh-in note auto-publish / calving note auto-publish all silently fail. The features render fine, but no data persists. Comments timeline always shows empty.
+2. **`is_creep` toggle is per-line, not per-feed.** A daily report's Mommas feed line can mark "this lbs of alfalfa pellets was creep feed." That line is excluded from Mommas nutrition math but still counted for cost. The `cattle_feed_inputs.exclude_from_nutrition` column was REMOVED — that approach didn't work because the same ingredient is used for both creep and direct feed.
+3. **The cattle directory was REMOVED as a separate tab.** Its functionality (search/filter/sort across all cattle including outcomes, add/edit/transfer/delete) is built into the Herds tab. Don't re-propose Directory as a separate tab without checking with Ronnie.
+4. **Weigh-in `note` auto-publishes to `cattle_comments` only when tag is set AND species is cattle.** Pig and broiler weigh-in notes stay in `weigh_ins.note` only.
+5. **Cow weights for the herd live-weight calc fall back to `fallback_cow_weight_lbs`** when no weigh-in exists. Once Phase 2 weigh-ins start hitting prod, this fallback rarely triggers. But it's the safety net for empty data.
+6. **Processing batch "Send to" flow:** selecting cows for a Planned batch sets `cattle.processing_batch_id` but does NOT change herd. Only when admin marks the batch `complete` do all linked cattle auto-flip to the Processed herd + get a `cattle_transfers` row. Don't accidentally mark a batch complete prematurely.
+7. **`delete-feed` cascades to `cattle_feed_tests` via FK ON DELETE CASCADE,** but PDF files in storage are NOT auto-deleted by Postgres. The app-side `deleteFeedPermanently` handler manually calls `sb.storage.from('cattle-feed-pdfs').remove(pdfPaths)` first. Don't bypass the handler.
+8. **Cattle constants live near pig breeding constants** at the TOP of the JSX source (around line 540). They're accessible to all later components in the same `<script type="text/jsx-source">`. Don't try to import them — top-level const is the pattern.
+9. **The `fmt` and `addDays` helpers are defined once near line 740** and used everywhere. Don't redefine them inside components.
+10. **Status filter on Herds tab uses string equality** (`'active' | 'all' | herd-name`). When `'active'`, shows the 4 active herds via tile mode. When `'all'`, shows everything in flat-list mode. When a specific herd, filters flat list to that one.
+
+## 14.7 Mistakes I made today (be honest so future me doesn't repeat)
+
+1. Asked Ronnie to re-answer cattle questions that were already answered in §12. Lost ~half a session-turn.
+2. Proposed separate Mix Creep Batch form/table when ingredients-only was simpler. Lost ~half a session-turn negotiating model.
+3. Incomplete first storage policy guidance (didn't mention setting Target roles to `authenticated`). Caught quickly by Ronnie.
+4. Forgot to mention the bucket Public toggle in initial setup. Caught after first round.
+5. Initially put `fallback_cow_weight_lbs` in admin UI when it doesn't need to be there.
+6. Initially designed a "Mark Inactive" pattern for feed deletion when Ronnie wanted real Delete with confirmation. Replaced after one round.
+
+## 14.8 Architecture decisions worth knowing
+
+1. **Cattle uses dedicated tables, not `app_store`.** Same pattern as `pig_dailys`, `layer_dailys`. App_store stays for the legacy poultry/pig blobs.
+2. **Daily reports snapshot nutrition values at submit time.** The `feeds` jsonb on `cattle_dailys` includes `{feed_input_id, feed_name, qty, unit, lbs_as_fed, is_creep, nutrition_snapshot:{moisture_pct, nfc_pct, protein_pct}}` per feed line. Editing the parent feed in admin doesn't rewrite history. This was Ronnie's explicit choice (option A from PROJECT.md §12 Q5).
+3. **Comments timeline is unified into a single table** (`cattle_comments`) with a `source` discriminator (`manual` / `weigh_in` / `daily_report` / `calving`). Each source's write path inserts a row with the right source tag and a `reference_id` linking back to the originating record.
+4. **Sessions are parent + entries.** `weigh_in_sessions` row per session (per species, per herd-or-batch, with status='draft'|'complete'). `weigh_ins` rows are children. Sessions persist immediately on every entry insert — so a phone drop is fully recoverable.
+5. **Storage path convention:** `<feedId>/<timestamp>-<safeName>.<ext>` for cattle-feed-pdfs. Timestamp prevents collisions; safeName strips problematic chars.
+6. **Webform autosave pattern:** debounce 1.5s, save on input. Save-on-close flushes pending. See LayerBatchesView for the canonical model.
+7. **`React.useState()` direct, NOT destructured** in components defined "near App" in source order. WebformHub is OK because it's clearly its own function scope. New top-level standalone components: pick one and stick with it. We used `React.useState()` direct in the new cattle components for safety.
+8. **`var` inside conditional blocks** (`if(view==='X') { var foo = ... }`) — `const` and `let` may crash in this Babel setup inside nested conditionals. New cattle components avoid this by using top-level state hooks.
+9. **Cattle herd colors:** red family (no purple). Mommas red, Backgrounders orange, Finishers rose, Bulls wine. Constants in `CATTLE_HERD_COLORS` near line 540.
+10. **`fmt` is a date formatter that takes ISO strings, returns "Mon DD, YYYY".** Use throughout new code.
+
+## 14.9 What's still outstanding
+
+- **Migration 002** to apply when ready (Ronnie).
+- **Per-head cost rollup** — analytical metric, deferred. Would aggregate feed cost (from snapshots) + processing cost (from `cattle_processing_batches.processing_cost`) per cow, with attribution rules for shared inputs. Not blocking ops.
+- **Podio import** — 469 cattle, 1,930 weigh-ins, 1,525 daily reports. Pending fresh export from Ronnie after the webforms have been live in the field for ≥1 day (so daily entries don't go stale). Will need a one-shot import script. Decide format (CSV / JSON) when Ronnie is ready.
+- **Send-to-trip wiring on pig weigh-ins** — pigs aren't tagged so a Trip view that pulls recent session entries by checkbox is the right UX. Deferred.
+- **Sheep module** — entire program. Wait until cattle is stable in production for ≥2 weeks before starting. Will reuse `cattle_feed_inputs` / `cattle_nutrition_targets` model with a sheep-scoped `herd_scope` array (the seed feeds already have `herd_scope`).
+- **Cattle Home Dashboard rolling-window nutrition panel** — currently shows totals only. Adding the 30/90/120-day comparison vs target (per CATTLE_DESIGN.md §6.2) is a stretch goal.
+- **Weather API integration** — multi-program scope (cattle pasture, pig heat stress, broiler brood heat). Q7 from PROJECT.md §12. No provider chosen yet. Defer until Ronnie picks one.
+- **Cut pricing spreadsheet upload** — for cattle first, then extend to broilers/pigs. Defer.
+- **DNA test PDF parser** — admin uploads PDF, system extracts data. Manual entry is the workaround for v1.
+
+## 14.10 First steps for the next session
+
+1. **Read PROJECT.md from the top.** Especially §1 (deployment SOP) and §14 (this).
+2. **Ask Ronnie what he wants to work on** — don't assume. Could be Podio import, sheep, weather API, per-head cost, polish, or bug reports from real-world use.
+3. **Check `git log --oneline -10`** to see if anything's happened since this session — the deploy may have happened, or Ronnie may have tweaked things directly.
+4. **Check whether migration 002 was applied** with: `SELECT to_regclass('cattle_comments');` — if it returns NULL, the table doesn't exist yet and comment features will silently no-op.
+5. **If Ronnie reports a bug in production**, ask for the exact reproduction steps (which view, what data, what action) before diving into code. The cattle module is large and isolating the right component matters.
+6. **If Ronnie is starting a new feature**, push back if the design isn't crisp. He values "thorough planning before building" — better to spend a turn confirming scope than build the wrong thing.
+
+## 14.11 Files modified or added today
+
+| Path | Change |
+|---|---|
+| `index.html` | +3,200 lines (bug fixes + entire cattle module + weigh-ins) |
+| `PROJECT.md` | +200 lines (SOP + multiple session updates + this wrap-up) |
+| `CATTLE_DESIGN.md` | New file (~600 lines), then progressively updated |
+| `supabase-migrations/001_cattle_module.sql` | New file — 11 tables + RLS + seed data |
+| `supabase-migrations/002_cattle_comments.sql` | New file — 1 table + RLS, NOT YET APPLIED |
+| `.claude/projects/.../memory/feedback_deployment_sop.md` | New memory file — encodes the no-commit-without-approval rule |
+| `.claude/projects/.../memory/MEMORY.md` | Updated index to include the new feedback memory |
+
+## 14.12 SOP reminders for the AI that's reading this
+
+- **Never** run `git commit`, `git push`, `git push --force`, or any deploy command without explicit approval in the current turn.
+- **Never** run destructive Supabase operations (DROP TABLE, TRUNCATE, etc.) without explicit approval.
+- **Never** push to origin/main even after a commit unless the user says "deploy" or "push."
+- **Always** show the diff and propose a commit message before asking for commit approval.
+- **Always** match the scope of action to what was explicitly asked. If Ronnie says "fix X," fix X — don't bundle in Y.
+
+---
+
+*End of April 15 wrap-up. Future Claude: you've got this.*

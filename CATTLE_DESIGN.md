@@ -278,6 +278,29 @@ Processing batch records. Naming: `C-26-01`, etc. Parallels broiler batches.
 | status | text | `planned` \| `complete` |
 | created_at | timestamptz | |
 
+## 3.10a `cattle_comments` (per-cow comment timeline)
+
+Added April 15 evening per Ronnie's clarification on the weigh-in flow. Every weigh-in entry with a note auto-publishes a comment on this cow's timeline. Cow profile also has an explicit "Add Comment" button for ad-hoc entries any time. Future sources (daily reports, calving observations) can also write to this table.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | text (PK) | |
+| cattle_id | text (FK → cattle, ON DELETE CASCADE) | Resolved at write time |
+| cattle_tag | text | Denormalized so the comment survives if the cattle row is deleted (or in case of unknown-tag edge cases) |
+| comment | text NOT NULL | The actual comment body |
+| team_member | text | Author |
+| source | text NOT NULL | `manual` \| `weigh_in` \| `daily_report` \| `calving` |
+| reference_id | text | Optional FK back to the source row (weigh_ins.id, calving_records.id, etc.) so we can link back |
+| created_at | timestamptz | |
+
+Index on `(cattle_id, created_at DESC)` and `(cattle_tag, created_at DESC)`.
+
+**Auto-publish rules:**
+- When a weigh-in entry is saved with a non-empty `note`: insert a `cattle_comments` row with `source='weigh_in'`, `reference_id=weigh_in.id`, `cattle_id` resolved from the tag.
+- When a tag entered during a weigh-in is unknown (new tag flag), the comment still gets written with `cattle_id=null` + `cattle_tag=<entered>`. Admin reconciles the cattle_id later in Directory.
+
+**Cow profile timeline (Phase 3):** unified list pulling from `cattle_comments` ordered by `created_at DESC`, with each row showing date / source badge / team member / comment text. "Add Comment" button at top opens a small form.
+
 ## 3.10 `cattle_transfers` (audit log)
 
 Every herd change (manual or auto) gets logged.
@@ -430,7 +453,9 @@ New top-level program next to Broilers / Layers / Pigs on the Home Dashboard.
 Sub-nav (matches existing pig/layer nav pattern):
 
 ```
-Cattle → [ Dashboard · Herds · Dailys · Weigh-Ins · Breeding · Directory · Processing Batches ]
+Cattle → [ Dashboard · Herds · Dailys · Weigh-Ins · Breeding · Batches ]
+
+(Directory tab merged into Herds per Ronnie's call on April 15. The Herds view defaults to per-herd tiles for active herds and switches to a flat sortable list when you search or pick a non-active filter. Outcome herds (Processed / Deceased / Sold) appear collapsed at the bottom of the tile view, or in the flat list when their filter is active.)
 ```
 
 ### Dashboard

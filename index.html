@@ -1787,6 +1787,421 @@ const AddFeedWebform = ({sb}) => {
 };
 
 
+// ── WEIGH-INS WEBFORM ──────────────────────────────────────────────────────
+// Public webform for weigh-in sessions. Three species flows:
+//   - Cattle: session-based with autosave + diminishing tag dropdown + new-tag flag
+//   - Pig: per-row weights for an active feeder batch (no tag); send-to-trip later
+//   - Broiler: 4-week / 6-week weighings, ~15 birds, average auto-fills batch
+// All entries persist to weigh_in_sessions + weigh_ins immediately. Phone drop
+// recoverable: re-open the form, pick "Resume" on a draft session.
+const WeighInsWebform = ({sb}) => {
+  const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'
+  const [species, setSpecies] = React.useState('');
+  const [date, setDate] = React.useState('');
+  const [teamMember, setTeamMember] = React.useState(localStorage.getItem('wcf_team')||'');
+  const [allTeamMembers, setAllTeamMembers] = React.useState([]);
+  // Draft + session state
+  const [drafts, setDrafts] = React.useState([]);
+  const [session, setSession] = React.useState(null); // current session row
+  const [entries, setEntries] = React.useState([]);   // weigh_ins for current session
+  // Cattle
+  const [cattleHerd, setCattleHerd] = React.useState('');
+  const [cattleList, setCattleList] = React.useState([]);
+  const [tagInput, setTagInput] = React.useState('');
+  const [weightInput, setWeightInput] = React.useState('');
+  const [noteInput, setNoteInput] = React.useState('');
+  const [showNewTag, setShowNewTag] = React.useState(false);
+  // Pig / Broiler
+  const [pigBatches, setPigBatches] = React.useState([]);
+  const [broilerBatches, setBroilerBatches] = React.useState([]);
+  const [pigBatchId, setPigBatchId] = React.useState('');
+  const [broilerBatchId, setBroilerBatchId] = React.useState('');
+  const [broilerBatchLabel, setBroilerBatchLabel] = React.useState('');
+  const [broilerWeek, setBroilerWeek] = React.useState(4);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  React.useEffect(() => {
+    const d = new Date();
+    setDate(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+  }, []);
+
+  // Load team members + species-relevant lookups
+  React.useEffect(() => {
+    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data})=>{
+      if(data && Array.isArray(data.data)) setAllTeamMembers(data.data);
+    });
+  }, []);
+
+  // When species picked, prefetch what's needed
+  React.useEffect(() => {
+    if(!species) return;
+    setErr('');
+    if(species === 'cattle') {
+      sb.from('cattle').select('id, tag, herd, birth_date, sex').then(({data}) => {
+        if(data) setCattleList(data);
+      });
+    } else if(species === 'pig') {
+      sb.from('webform_config').select('data').eq('key','active_groups').maybeSingle().then(({data}) => {
+        if(data && Array.isArray(data.data)) {
+          // filter out SOWS/BOARS — pig weigh-ins are for feeder batches only
+          setPigBatches(data.data.filter(n => n && n.toUpperCase() !== 'SOWS' && n.toUpperCase() !== 'BOARS'));
+        }
+      });
+    } else if(species === 'broiler') {
+      sb.from('webform_config').select('data').eq('key','broiler_groups').maybeSingle().then(({data}) => {
+        if(data && Array.isArray(data.data)) setBroilerBatches(data.data);
+      });
+    }
+    // Look for existing draft sessions in the last 7 days
+    const cutoff = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+    sb.from('weigh_in_sessions').select('*').eq('species', species).eq('status','draft').gte('date', cutoff).order('started_at',{ascending:false}).then(({data}) => {
+      if(data) setDrafts(data);
+    });
+  }, [species]);
+
+  // Load entries when session is set
+  React.useEffect(() => {
+    if(!session) { setEntries([]); return; }
+    sb.from('weigh_ins').select('*').eq('session_id', session.id).order('entered_at',{ascending:true}).then(({data}) => {
+      if(data) setEntries(data);
+    });
+  }, [session]);
+
+  async function startNewSession(extra) {
+    if(!teamMember) { setErr('Please pick a team member.'); return; }
+    setErr(''); setBusy(true);
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    const rec = {
+      id, date, team_member: teamMember, species, status:'draft',
+      ...extra,
+    };
+    const {error} = await sb.from('weigh_in_sessions').insert(rec);
+    setBusy(false);
+    if(error) { setErr('Could not start session: '+error.message); return; }
+    if(teamMember) localStorage.setItem('wcf_team', teamMember);
+    setSession(rec);
+    setEntries([]);
+    setStage('session');
+  }
+  async function resumeSession(s) {
+    setSession(s);
+    if(s.team_member) setTeamMember(s.team_member);
+    setStage('session');
+  }
+  async function completeSession() {
+    if(!session) return;
+    setBusy(true);
+    const completedAt = new Date().toISOString();
+    await sb.from('weigh_in_sessions').update({status:'complete', completed_at: completedAt}).eq('id', session.id);
+    // Broiler: write avg back to batch
+    if(species === 'broiler' && entries.length > 0 && broilerBatchLabel && broilerWeek) {
+      const avg = entries.reduce((s,e) => s + (parseFloat(e.weight)||0), 0) / entries.length;
+      // Find the batch in app_store ppp-v4 by name
+      const {data: store} = await sb.from('app_store').select('data').eq('key','ppp-v4').maybeSingle();
+      if(store && Array.isArray(store.data)) {
+        const updated = store.data.map(b => b.name === broilerBatchLabel ? {...b, [broilerWeek===4?'week4Lbs':'week6Lbs']: Math.round(avg*100)/100} : b);
+        await sb.from('app_store').upsert({key:'ppp-v4', data:updated, updated_at:new Date().toISOString()},{onConflict:'key'});
+      }
+    }
+    setBusy(false);
+    setStage('done');
+  }
+  async function saveEntry({tag, weight, note}) {
+    if(!session) return;
+    if(!weight || parseFloat(weight) <= 0) { setErr('Weight is required.'); return; }
+    setErr(''); setBusy(true);
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    const isNewTag = species === 'cattle' && tag && !cattleList.find(c => c.tag === tag);
+    const rec = {
+      id, session_id: session.id,
+      tag: tag || null,
+      weight: parseFloat(weight),
+      note: note || null,
+      new_tag_flag: !!isNewTag,
+    };
+    const {error} = await sb.from('weigh_ins').insert(rec);
+    if(error) { setBusy(false); setErr('Save failed: '+error.message); return; }
+    // Auto-publish a comment if this is cattle and a note was provided
+    if(species === 'cattle' && note && note.trim() && tag) {
+      const cow = cattleList.find(c => c.tag === tag);
+      try {
+        await sb.from('cattle_comments').insert({
+          id: String(Date.now())+Math.random().toString(36).slice(2,6),
+          cattle_id: cow ? cow.id : null,
+          cattle_tag: tag,
+          comment: note.trim(),
+          team_member: teamMember || null,
+          source: 'weigh_in',
+          reference_id: id,
+        });
+      } catch(e){ /* table may not exist yet — silently skip */ }
+    }
+    setEntries(prev => [...prev, rec]);
+    setTagInput(''); setWeightInput(''); setNoteInput(''); setShowNewTag(false);
+    setBusy(false);
+  }
+
+  // Cattle: list of remaining tags (sorted asc, weighed already removed)
+  const remainingTags = (() => {
+    if(species !== 'cattle' || !cattleHerd) return [];
+    const weighed = new Set(entries.map(e => e.tag).filter(Boolean));
+    return cattleList
+      .filter(c => c.herd === cattleHerd && c.tag && !weighed.has(c.tag))
+      .map(c => c.tag)
+      .sort((a,b) => (parseFloat(a)||0) - (parseFloat(b)||0) || (a||'').localeCompare(b||''));
+  })();
+  const expectedTags = species === 'cattle' && cattleHerd
+    ? cattleList.filter(c => c.herd === cattleHerd && c.tag).length
+    : 0;
+
+  const wfBg = {minHeight:'100vh', background:'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)', padding:'1rem', fontFamily:'inherit'};
+  const cardS = {background:'white', borderRadius:12, padding:'20px', marginBottom:12, boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
+  const inpS = {fontFamily:'inherit', fontSize:14, padding:'10px 12px', border:'1px solid #d1d5db', borderRadius:8, width:'100%', outline:'none', background:'white', color:'#111827', boxSizing:'border-box'};
+  const lblS = {display:'block', fontSize:13, color:'#374151', marginBottom:5, fontWeight:500};
+  const logoEl = (
+    <div style={{textAlign:'center', marginBottom:20}}>
+      <div style={{fontSize:18, fontWeight:800, color:'#1e40af', letterSpacing:-.3}}>{'\u2696\ufe0f WCF Planner'}</div>
+      <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>Weigh-Ins</div>
+    </div>
+  );
+
+  // ── DONE SCREEN ──
+  if(stage === 'done') return (
+    <div style={wfBg}>
+      <div style={{maxWidth:480, margin:'0 auto', paddingTop:'2rem', textAlign:'center'}}>
+        {logoEl}
+        <div style={{fontSize:56, marginBottom:12}}>{'\u2705'}</div>
+        <div style={{fontSize:20, fontWeight:700, color:'#1e40af', marginBottom:8}}>Session Complete</div>
+        <div style={{fontSize:14, color:'#4b5563', marginBottom:28, lineHeight:1.6}}>
+          {entries.length} {entries.length===1?'entry':'entries'} saved.
+          {species === 'cattle' && cattleHerd && expectedTags > 0 && entries.length < expectedTags && (
+            <div style={{marginTop:8, color:'#92400e'}}>{(expectedTags - entries.length) + ' tags in this herd were not weighed.'}</div>
+          )}
+        </div>
+        <button onClick={() => { setStage('species'); setSpecies(''); setSession(null); setEntries([]); setCattleHerd(''); setPigBatchId(''); setBroilerBatchId(''); setBroilerBatchLabel(''); }} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', marginBottom:10}}>
+          New Session
+        </button>
+        <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{width:'100%', padding:14, borderRadius:10, border:'1px solid #d1d5db', background:'white', color:'#374151', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>
+          Back to Forms
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── SPECIES PICKER ──
+  if(stage === 'species') return (
+    <div style={wfBg}>
+      <div style={{maxWidth:480, margin:'0 auto', paddingTop:'1rem'}}>
+        {logoEl}
+        <div style={{fontSize:13, color:'#6b7280', textAlign:'center', marginBottom:20}}>Pick what you{'\u2019're weighing</div>
+        {[
+          {key:'cattle', icon:'\ud83d\udc04', color:'#991b1b', bg:'#fef2f2', label:'Cattle', desc:'Per-cow weigh-in with session autosave'},
+          {key:'pig',    icon:'\ud83d\udc37', color:'#1e40af', bg:'#eff6ff', label:'Pig',    desc:'Feeder batch \u2014 weigh several pigs at once'},
+          {key:'broiler',icon:'\ud83d\udc14', color:'#a16207', bg:'#fef9c3', label:'Broiler',desc:'4-week or 6-week weighings, ~15 birds'},
+        ].map(s => (
+          <div key={s.key} onClick={() => { setSpecies(s.key); setStage('select'); }} style={{background:s.bg, borderRadius:12, padding:'18px 20px', marginBottom:10, cursor:'pointer', boxShadow:'0 1px 3px rgba(0,0,0,.08)', display:'flex', alignItems:'center', gap:14, border:'1px solid '+s.color+'33'}}>
+            <div style={{fontSize:32}}>{s.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:16, fontWeight:700, color:s.color}}>{s.label}</div>
+              <div style={{fontSize:12, color:s.color, opacity:.8}}>{s.desc}</div>
+            </div>
+            <div style={{color:s.color, fontSize:18}}>{'\u203a'}</div>
+          </div>
+        ))}
+        <div style={{textAlign:'center', marginTop:16}}>
+          <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{background:'none', border:'none', color:'#1e40af', fontSize:13, cursor:'pointer', fontFamily:'inherit', textDecoration:'underline'}}>{'\u2190 Back to Daily Reports'}</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── SETUP / RESUME SCREEN — shown for all species ──
+  if(stage === 'select') return (
+    <div style={wfBg}>
+      <div style={{maxWidth:480, margin:'0 auto', paddingTop:'1rem'}}>
+        {logoEl}
+        <button onClick={() => { setStage('species'); setSpecies(''); }} style={{background:'none', border:'none', color:'#6b7280', fontSize:13, cursor:'pointer', marginBottom:12, padding:0, fontFamily:'inherit'}}>{'\u2039 Back'}</button>
+        <div style={{fontSize:17, fontWeight:700, color:'#1e40af', marginBottom:16}}>{species==='cattle'?'\ud83d\udc04 Cattle':species==='pig'?'\ud83d\udc37 Pig':'\ud83d\udc14 Broiler'} Weigh-In</div>
+
+        {drafts.length > 0 && (
+          <div style={cardS}>
+            <div style={{fontSize:13, fontWeight:700, color:'#374151', marginBottom:8}}>Resume a draft session</div>
+            {drafts.map(d => (
+              <div key={d.id} onClick={() => resumeSession(d)} style={{background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8, padding:'10px 12px', marginBottom:6, cursor:'pointer'}} className="hoverable-tile">
+                <div style={{fontSize:13, fontWeight:600, color:'#111827'}}>{d.species==='cattle'?(d.herd||'?'):d.species==='broiler'?(d.batch_id||'?')+(d.broiler_week?' \u00b7 wk '+d.broiler_week:''):d.batch_id||'?'}</div>
+                <div style={{fontSize:11, color:'#6b7280'}}>{d.date} {'\u00b7'} {d.team_member} {'\u00b7'} started {(d.started_at||'').slice(11,16)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={cardS}>
+          <div style={{fontSize:13, fontWeight:700, color:'#374151', marginBottom:8}}>Start a new session</div>
+          <div style={{marginBottom:10}}>
+            <label style={lblS}>Date</label>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inpS}/>
+          </div>
+          <div style={{marginBottom:10}}>
+            <label style={lblS}>Team Member *</label>
+            <select value={teamMember} onChange={e=>setTeamMember(e.target.value)} style={inpS}>
+              <option value=''>Select...</option>
+              {allTeamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+
+          {species === 'cattle' && (
+            <React.Fragment>
+              <div style={{marginBottom:10}}>
+                <label style={lblS}>Herd *</label>
+                <select value={cattleHerd} onChange={e=>setCattleHerd(e.target.value)} style={inpS}>
+                  <option value=''>Select herd...</option>
+                  <option value='mommas'>Mommas</option>
+                  <option value='backgrounders'>Backgrounders</option>
+                  <option value='finishers'>Finishers</option>
+                  <option value='bulls'>Bulls</option>
+                </select>
+                {cattleHerd && expectedTags > 0 && (
+                  <div style={{fontSize:11, color:'#1e40af', marginTop:4}}>{expectedTags + ' cows in this herd to weigh'}</div>
+                )}
+              </div>
+              <button onClick={() => startNewSession({herd: cattleHerd})} disabled={busy || !teamMember || !cattleHerd} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!teamMember||!cattleHerd)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!teamMember||!cattleHerd)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy ? 'Starting\u2026' : 'Start Session'}</button>
+            </React.Fragment>
+          )}
+
+          {species === 'pig' && (
+            <React.Fragment>
+              <div style={{marginBottom:10}}>
+                <label style={lblS}>Pig Batch *</label>
+                <select value={pigBatchId} onChange={e=>setPigBatchId(e.target.value)} style={inpS}>
+                  <option value=''>Select batch...</option>
+                  {pigBatches.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <button onClick={() => startNewSession({batch_id: pigBatchId})} disabled={busy || !teamMember || !pigBatchId} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!teamMember||!pigBatchId)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!teamMember||!pigBatchId)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy ? 'Starting\u2026' : 'Start Session'}</button>
+            </React.Fragment>
+          )}
+
+          {species === 'broiler' && (
+            <React.Fragment>
+              <div style={{marginBottom:10}}>
+                <label style={lblS}>Broiler Batch *</label>
+                <select value={broilerBatchLabel} onChange={e=>{setBroilerBatchLabel(e.target.value); setBroilerBatchId(e.target.value);}} style={inpS}>
+                  <option value=''>Select batch...</option>
+                  {broilerBatches.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div style={{marginBottom:10}}>
+                <label style={lblS}>Week *</label>
+                <div style={{display:'flex', borderRadius:8, overflow:'hidden', border:'1px solid #d1d5db'}}>
+                  {[4,6].map(w => (
+                    <button key={w} type="button" onClick={()=>setBroilerWeek(w)} style={{flex:1, padding:'10px 0', border:'none', fontFamily:'inherit', fontSize:13, fontWeight:600, cursor:'pointer', background:broilerWeek===w?'#1e40af':'white', color:broilerWeek===w?'white':'#6b7280'}}>{'Week '+w}</button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={() => startNewSession({batch_id: broilerBatchLabel, broiler_week: broilerWeek})} disabled={busy || !teamMember || !broilerBatchLabel} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!teamMember||!broilerBatchLabel)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!teamMember||!broilerBatchLabel)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy ? 'Starting\u2026' : 'Start Session'}</button>
+            </React.Fragment>
+          )}
+
+          {err && <div style={{color:'#b91c1c', fontSize:13, marginTop:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── SESSION SCREEN — adding entries ──
+  if(stage === 'session' && session) return (
+    <div style={wfBg}>
+      <div style={{maxWidth:480, margin:'0 auto', paddingTop:'1rem'}}>
+        {logoEl}
+        <div style={cardS}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+            <div>
+              <div style={{fontSize:14, fontWeight:700, color:'#111827'}}>
+                {species==='cattle'?(session.herd||'?'):species==='broiler'?(session.batch_id||'?')+' \u00b7 wk '+session.broiler_week:session.batch_id||'?'}
+              </div>
+              <div style={{fontSize:11, color:'#6b7280'}}>{session.date} {'\u00b7'} {session.team_member}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:18, fontWeight:700, color:'#1e40af'}}>{entries.length}</div>
+              <div style={{fontSize:10, color:'#6b7280'}}>{species==='cattle'?'of '+expectedTags:'entries'}</div>
+            </div>
+          </div>
+        </div>
+
+        {species === 'cattle' && (
+          <div style={cardS}>
+            {!showNewTag && (
+              <React.Fragment>
+                <div style={{marginBottom:10}}>
+                  <label style={lblS}>Tag #</label>
+                  <select value={tagInput} onChange={e=>setTagInput(e.target.value)} style={inpS}>
+                    <option value=''>Select tag... ({remainingTags.length} remaining)</option>
+                    {remainingTags.map(t => <option key={t} value={t}>{'#'+t}</option>)}
+                  </select>
+                </div>
+                <button type="button" onClick={()=>setShowNewTag(true)} style={{width:'100%', padding:8, marginBottom:10, borderRadius:8, border:'1px dashed #fca5a5', background:'transparent', color:'#991b1b', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New Tag (cow not in directory or got new tag)</button>
+              </React.Fragment>
+            )}
+            {showNewTag && (
+              <div style={{marginBottom:10}}>
+                <label style={lblS}>New Tag # <span style={{fontSize:10, color:'#9ca3af'}}>(admin reconciles later)</span></label>
+                <input type="text" value={tagInput} onChange={e=>setTagInput(e.target.value)} placeholder="e.g. 99" style={inpS}/>
+                <button type="button" onClick={()=>{setShowNewTag(false); setTagInput('');}} style={{marginTop:4, fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer'}}>Cancel new tag</button>
+              </div>
+            )}
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Weight (lbs) *</label>
+              <input type="number" min="0" step="0.1" value={weightInput} onChange={e=>setWeightInput(e.target.value)} placeholder="0" style={inpS}/>
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Note <span style={{fontSize:10, color:'#9ca3af'}}>(saves to cow{'\u2019'}s comment timeline)</span></label>
+              <textarea value={noteInput} onChange={e=>setNoteInput(e.target.value)} rows={2} placeholder="Optional" style={{...inpS, resize:'vertical'}}/>
+            </div>
+            {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
+            <button onClick={()=>saveEntry({tag:tagInput, weight:weightInput, note:noteInput})} disabled={busy || !tagInput || !weightInput} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!tagInput||!weightInput)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!tagInput||!weightInput)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Entry'}</button>
+          </div>
+        )}
+
+        {(species === 'pig' || species === 'broiler') && (
+          <div style={cardS}>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>{species==='broiler'?'Bird ':'Pig '}weight (lbs) *</label>
+              <input type="number" min="0" step="0.1" value={weightInput} onChange={e=>setWeightInput(e.target.value)} placeholder="0" style={inpS}/>
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Note</label>
+              <input type="text" value={noteInput} onChange={e=>setNoteInput(e.target.value)} placeholder="Optional" style={inpS}/>
+            </div>
+            {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
+            <button onClick={()=>saveEntry({tag:null, weight:weightInput, note:noteInput})} disabled={busy || !weightInput} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!weightInput)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!weightInput)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Entry'}</button>
+          </div>
+        )}
+
+        {/* Recent entries */}
+        {entries.length > 0 && (
+          <div style={cardS}>
+            <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
+            {entries.slice(-10).reverse().map(e => (
+              <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', gap:8, alignItems:'center'}}>
+                {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50}}>#{e.tag}</span>}
+                <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                {e.new_tag_flag && <span style={{fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
+                {e.note && <span style={{fontSize:11, color:'#6b7280', fontStyle:'italic', flex:1}}>{e.note}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={completeSession} disabled={busy} style={{width:'100%', padding:14, borderRadius:10, border:'1px solid #1e40af', background:'white', color:'#1e40af', fontSize:14, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit', marginTop:8}}>{busy?'Completing\u2026':'Complete Session ('+entries.length+' entries)'}</button>
+      </div>
+    </div>
+  );
+
+  return null;
+};
+
+
 const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig}) => {
   const {useState, useEffect} = React;
   const [loadedConfig, setLoadedConfig] = useState(null); // loaded from Supabase full_config
@@ -2211,14 +2626,23 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
       <div style={{maxWidth:480,margin:'0 auto',paddingTop:'1rem'}}>
         {logo}
         <div style={{fontSize:13,color:'#6b7280',textAlign:'center',marginBottom:20}}>Select a report type to fill out</div>
-        <div onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{background:'#fef3c7',borderRadius:12,padding:'16px 18px',marginBottom:16,cursor:'pointer',boxShadow:'0 1px 3px rgba(0,0,0,.08)',display:'flex',alignItems:'center',gap:14,border:'1px solid #fde68a'}}>
+        <div onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{background:'#fef3c7',borderRadius:12,padding:'16px 18px',marginBottom:10,cursor:'pointer',boxShadow:'0 1px 3px rgba(0,0,0,.08)',display:'flex',alignItems:'center',gap:14,border:'1px solid #fde68a'}}>
           <div style={{fontSize:32}}>{'\ud83c\udf3e'}</div>
           <div style={{flex:1}}>
             <div style={{fontSize:16,fontWeight:700,color:'#92400e'}}>Add Feed</div>
             <div style={{fontSize:12,color:'#92400e',opacity:.8}}>Quick log feed added in the field</div>
-            <div style={{fontSize:11,color:'#92400e',opacity:.6,marginTop:2}}>{'Pig \u00b7 Broiler \u00b7 Layer'}</div>
+            <div style={{fontSize:11,color:'#92400e',opacity:.6,marginTop:2}}>{'Pig \u00b7 Broiler \u00b7 Layer \u00b7 Cattle'}</div>
           </div>
           <div style={{color:'#92400e',fontSize:18}}>{'\u203a'}</div>
+        </div>
+        <div onClick={function(){window.location.hash='#weighins';window.location.reload();}} style={{background:'#eff6ff',borderRadius:12,padding:'16px 18px',marginBottom:16,cursor:'pointer',boxShadow:'0 1px 3px rgba(0,0,0,.08)',display:'flex',alignItems:'center',gap:14,border:'1px solid #bfdbfe'}}>
+          <div style={{fontSize:32}}>{'\u2696\ufe0f'}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:16,fontWeight:700,color:'#1e40af'}}>Weigh-Ins</div>
+            <div style={{fontSize:12,color:'#1e40af',opacity:.8}}>Record weights for cattle, pigs, or broilers</div>
+            <div style={{fontSize:11,color:'#1e40af',opacity:.6,marginTop:2}}>{'Sessions auto-save \u00b7 resume on any device'}</div>
+          </div>
+          <div style={{color:'#1e40af',fontSize:18}}>{'\u203a'}</div>
         </div>
         {[
           {id:'broiler',label:'🐔 Broiler Daily Report'},
@@ -3480,6 +3904,7 @@ function App(){
     const h = window.location.hash;
     if(h==='#webforms'||h==='#/webforms') return 'webformhub';
     if(h==='#addfeed'||h==='#/addfeed') return 'addfeed';
+    if(h==='#weighins'||h==='#/weighins') return 'weighins';
     if(h==='#pigdailys'||h==='#/pigdailys') return 'webform';
     return 'home';
   });
@@ -3597,6 +4022,7 @@ function App(){
   });
   const [pigDailys,        setPigDailys]        = useState([]);
   const [broilerDailys,    setBroilerDailys]    = useState([]);
+  const [cattleOnFarmCount, setCattleOnFarmCount] = useState(0);
   const [showAllComparison, setShowAllComparison] = useState(false);
   const [missedCleared,    setMissedCleared]    = useState(new Set());
   const [layerDailysRecent,setLayerDailysRecent]= useState([]);
@@ -3644,6 +4070,14 @@ function App(){
       }
     });
   },[view]);
+
+  // Load cattle count for Home page Animals on Farm tile
+  useEffect(()=>{
+    if(!authState) return;
+    sb.from('cattle').select('*',{count:'exact', head:true}).in('herd',['mommas','backgrounders','finishers','bulls']).then(({count})=>{
+      if(count!=null) setCattleOnFarmCount(count);
+    }).catch(()=>{});
+  },[authState]);
 
   // Load broiler dailys after auth is confirmed — same pattern as BroilerDailysView
   useEffect(()=>{
@@ -3708,7 +4142,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattledirectory','cattlebatches'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   useEffect(()=>{
@@ -4390,7 +4824,7 @@ function App(){
   const Header=()=>{
     const poultryViews = ['broilerHome','timeline','list','feed','broilerdailys'];
     const pigViews     = ['pigsHome','breeding','farrowing','sows','pigbatches','pigs','pigdailys'];
-    const cattleViews  = ['cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattledirectory','cattlebatches'];
+    const cattleViews  = ['cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches'];
     const inPoultry    = poultryViews.includes(view) || showForm;
     const inPigs       = pigViews.includes(view) || showBreedForm || showFarrowForm || showDailyForm;
     const inLayers     = ['layersHome','layerbatches','layerdailys','eggdailys'].includes(view);
@@ -4475,7 +4909,7 @@ function App(){
           {inLayers&&[["layersHome","Dashboard"],["layerbatches","Layer Batches"],["layerdailys","Layer Dailys"],["eggdailys","Egg Dailys"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
-          {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattledailys","Dailys"],["cattleweighins","Weigh-Ins"],["cattlebreeding","Breeding"],["cattledirectory","Directory"],["cattlebatches","Batches"]].map(([v,l])=>(
+          {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattledailys","Dailys"],["cattleweighins","Weigh-Ins"],["cattlebreeding","Breeding"],["cattlebatches","Batches"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
         </div>
@@ -4491,6 +4925,7 @@ function App(){
   // ── WEBFORM BYPASS — no auth required ──
   if(view==="webform") return renderWebform();
   if(view==="addfeed") return React.createElement(AddFeedWebform, {sb});
+  if(view==="weighins") return React.createElement(WeighInsWebform, {sb});
   if(view==="webformhub") return React.createElement(WebformHub, {sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig});
 
   // ── AUTH GATES ──
@@ -4741,25 +5176,29 @@ function App(){
               }
             });
             const totalPigs=Object.values(pigCounts).reduce((s,v)=>s+v,0);
-            const totalAll=projectedBirds+totalHens+totalPigs;
+            const totalAll=projectedBirds+totalHens+totalPigs+cattleOnFarmCount;
             return (
               <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:14,padding:'16px 24px'}}>
                 <div style={{fontSize:12,fontWeight:600,color:'#4b5563',letterSpacing:.3,marginBottom:12}}>ANIMALS ON FARM</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:16,alignItems:'center'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:16,alignItems:'center'}}>
                   <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:28,fontWeight:700,color:'#a16207'}}>{projectedBirds.toLocaleString()}</div>
+                    <div style={{fontSize:26,fontWeight:700,color:'#a16207'}}>{projectedBirds.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc14 Broilers'}</div>
                   </div>
                   <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:28,fontWeight:700,color:'#92400e'}}>{totalHens.toLocaleString()}</div>
+                    <div style={{fontSize:26,fontWeight:700,color:'#92400e'}}>{totalHens.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc13 Layer Hens'}</div>
                   </div>
                   <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:28,fontWeight:700,color:'#1e40af'}}>{totalPigs.toLocaleString()}</div>
+                    <div style={{fontSize:26,fontWeight:700,color:'#1e40af'}}>{totalPigs.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc37 Pigs'}</div>
                   </div>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:26,fontWeight:700,color:'#991b1b'}}>{cattleOnFarmCount.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc04 Cattle'}</div>
+                  </div>
                   <div style={{textAlign:'center',borderLeft:'1px solid #e5e7eb',paddingLeft:16}}>
-                    <div style={{fontSize:28,fontWeight:700,color:'#085041'}}>{totalAll.toLocaleString()}</div>
+                    <div style={{fontSize:26,fontWeight:700,color:'#085041'}}>{totalAll.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>Total Animals</div>
                   </div>
                 </div>
@@ -5980,6 +6419,11 @@ function App(){
   if(view==="broilerdailys") return React.createElement(BroilerDailysView, {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
   if(view==="pigdailys")     return React.createElement(PigDailysView,     {sb, fmt, Header, authState, pigDailys, setPigDailys, feederGroups, pendingEdit, setPendingEdit, refreshDailys});
   if(view==="cattledailys")  return React.createElement(CattleDailysView,  {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
+  if(view==="cattleHome")    return React.createElement(CattleHomeView,    {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if(view==="cattleherds")   return React.createElement(CattleHerdsView,   {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit});
+  if(view==="cattlebreeding")return React.createElement(CattleBreedingView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if(view==="cattlebatches") return React.createElement(CattleBatchesView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if(view==="cattleweighins")return React.createElement(CattleWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
 
   // ── LIST VIEW ──
   if(view==="list") return (
@@ -10356,29 +10800,6 @@ function App(){
 
   // ── Cattle views ──
   // cattledailys is fully built; others are placeholder stubs until Phase 1 steps 10-13 land.
-  if(['cattleHome','cattleherds','cattleweighins','cattlebreeding','cattledirectory','cattlebatches'].includes(view)){
-    const cattleLabels = {cattleHome:'Cattle Dashboard',cattleherds:'Herds',cattleweighins:'Weigh-Ins',cattlebreeding:'Breeding Timeline',cattledirectory:'Cattle Directory',cattlebatches:'Processing Batches'};
-    return (
-      <div style={{minHeight:'100vh',background:'#f1f3f2'}}>
-        {showUsers&&<UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
-        <Header/>
-        <div style={{padding:'2rem 1rem',textAlign:'center',maxWidth:560,margin:'0 auto'}}>
-          <div style={{fontSize:48,marginBottom:12}}>{'\ud83d\udc04'}</div>
-          <div style={{fontSize:20,fontWeight:700,color:'#991b1b',marginBottom:6}}>{cattleLabels[view]||'Cattle'}</div>
-          <div style={{fontSize:13,color:'#6b7280',marginBottom:20}}>This tab is scaffolded but not yet built. See CATTLE_DESIGN.md for the build order.</div>
-          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:10,padding:'14px 18px',textAlign:'left',fontSize:12,color:'#4b5563'}}>
-            <div style={{fontWeight:600,color:'#111827',marginBottom:8}}>Working cattle features:</div>
-            <ul style={{margin:'0 0 0 20px',padding:0}}>
-              <li>Admin {'\u2192'} Feed panel: add/edit feeds, upload test PDFs, nutrition targets</li>
-              <li>Public webform ({'#webforms'}): cattle daily report + add feed webform with cattle option</li>
-              <li>Cattle Dailys tab: list, filter, edit, delete reports</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Unknown view - return null safely
   return null;
 };
@@ -12898,6 +13319,1325 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+
+// ── CATTLE HOME DASHBOARD ───────────────────────────────────────────────────
+// Stats tiles + per-herd live weight / cow units / mortality.
+const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
+  const {useState, useEffect} = React;
+  const [cattle, setCattle] = useState([]);
+  const [dailys, setDailys] = useState([]);
+  const [weighIns, setWeighIns] = useState([]);
+  const [calving, setCalving] = useState([]);
+  const [targets, setTargets] = useState({});
+  const [loading, setLoading] = useState(true);
+  const HERDS = ['mommas','backgrounders','finishers','bulls'];
+  const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls'};
+  const HERD_COLORS = {mommas:'#dc2626', backgrounders:'#ea580c', finishers:'#e11d48', bulls:'#991b1b'};
+  const cutoff30 = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
+
+  useEffect(()=>{
+    Promise.all([
+      sb.from('cattle').select('*'),
+      sb.from('cattle_dailys').select('*').gte('date', cutoff30),
+      sb.from('weigh_ins').select('*'),
+      sb.from('cattle_calving_records').select('*'),
+      sb.from('cattle_nutrition_targets').select('*'),
+    ]).then(([cR, dR, wR, calvR, tR])=>{
+      if(cR.data) setCattle(cR.data);
+      if(dR.data) setDailys(dR.data);
+      if(wR.data) setWeighIns(wR.data);
+      if(calvR.data) setCalving(calvR.data);
+      if(tR.data) {
+        const m = {};
+        tR.data.forEach(r => { m[r.herd] = r; });
+        setTargets(m);
+      }
+      setLoading(false);
+    });
+  },[]);
+
+  // Per-cow last weigh-in lookup
+  const lastWeights = (() => {
+    const map = {};
+    [...weighIns].sort((a,b)=>(a.entered_at||'').localeCompare(b.entered_at||'')).forEach(w => {
+      if(w.tag) map[w.tag] = parseFloat(w.weight)||0;
+    });
+    return map;
+  })();
+
+  function herdLiveWeight(herd) {
+    return cattle.filter(c => c.herd === herd).reduce((s,c) => {
+      const w = lastWeights[c.tag];
+      if(w > 0) return s + w;
+      const t = targets[herd];
+      const fb = t && t.fallback_cow_weight_lbs ? parseFloat(t.fallback_cow_weight_lbs) : 0;
+      return s + fb;
+    }, 0);
+  }
+
+  const totalCattle = cattle.filter(c => HERDS.includes(c.herd)).length;
+  const totalLiveWeight = HERDS.reduce((s,h) => s + herdLiveWeight(h), 0);
+  const totalMort30 = dailys.reduce((s,d) => s + (parseInt(d.mortality_count)||0), 0);
+  const totalFeedCost30 = dailys.reduce((s,d) => {
+    const feeds = Array.isArray(d.feeds) ? d.feeds : [];
+    return s + feeds.reduce((ss,f) => ss + ((parseFloat(f.lbs_as_fed)||0) * (f.nutrition_snapshot && f.nutrition_snapshot.landed_per_lb ? parseFloat(f.nutrition_snapshot.landed_per_lb) : 0)), 0);
+  }, 0);
+
+  const StatTile = ({label, val, sub, color='#991b1b'}) => (
+    <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 16px'}}>
+      <div style={{fontSize:11, color:'#6b7280', textTransform:'uppercase', letterSpacing:.8, marginBottom:4}}>{label}</div>
+      <div style={{fontSize:24, fontWeight:700, color, lineHeight:1}}>{val}</div>
+      {sub && <div style={{fontSize:11, color:'#9ca3af', marginTop:3}}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1.25rem', maxWidth:1200, margin:'0 auto', display:'flex', flexDirection:'column', gap:'1.5rem'}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:10}}>
+          <StatTile label="Cattle on Farm" val={totalCattle.toLocaleString()}/>
+          <StatTile label="Total Live Weight" val={totalLiveWeight > 0 ? Math.round(totalLiveWeight).toLocaleString()+' lbs' : '\u2014'} color="#991b1b"/>
+          <StatTile label="Cow Units (1,000 lb)" val={totalLiveWeight > 0 ? (totalLiveWeight/1000).toFixed(1) : '\u2014'} color="#7f1d1d"/>
+          <StatTile label="Mortality 30d" val={totalMort30.toString()} color={totalMort30>0?'#b91c1c':'#374151'}/>
+          <StatTile label="Reports 30d" val={dailys.length.toString()} color="#374151"/>
+          <StatTile label="Feed Cost 30d" val={totalFeedCost30 > 0 ? '$'+Math.round(totalFeedCost30).toLocaleString() : '\u2014'} color="#92400e"/>
+        </div>
+
+        {/* Per-herd breakdown */}
+        <div>
+          <div style={{fontSize:13, fontWeight:600, color:'#4b5563', marginBottom:8, letterSpacing:.3}}>HERD BREAKDOWN</div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:10}}>
+            {HERDS.map(h => {
+              const cows = cattle.filter(c => c.herd === h);
+              const lw = herdLiveWeight(h);
+              const cu = lw / 1000;
+              const t = targets[h];
+              return (
+                <div key={h} onClick={()=>setView('cattleherds')} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 16px', cursor:'pointer'}} className="hoverable-tile">
+                  <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:6}}>
+                    <span style={{fontSize:14, fontWeight:700, color:HERD_COLORS[h]}}>{HERD_LABELS[h]}</span>
+                    <span style={{fontSize:11, color:'#6b7280'}}>{cows.length} {cows.length===1?'cow':'cows'}</span>
+                  </div>
+                  <div style={{fontSize:12, color:'#374151'}}>Live wt: <strong>{lw>0 ? Math.round(lw).toLocaleString()+' lbs' : '\u2014'}</strong></div>
+                  <div style={{fontSize:12, color:'#374151'}}>Cow units: <strong>{cu>0 ? cu.toFixed(1) : '\u2014'}</strong></div>
+                  {t && <div style={{fontSize:11, color:'#9ca3af', marginTop:4}}>Target: DM {t.target_dm_pct_body}% \u00b7 CP {t.target_cp_pct_dm}% \u00b7 NFC {t.target_nfc_pct_dm}%</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af', fontSize:13}}>Loading{'\u2026'}</div>}
+
+        {!loading && totalCattle === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'24px', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No cattle on file yet. Click <strong>Herds</strong> in the sub-nav to add your first cow, or wait for the Podio import after the daily report flow is live in the field.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+// ── CATTLE HERDS VIEW (merged with Directory) ──────────────────────────────
+// Single tab combining per-herd tiles + global search/filter across all cattle.
+// Add/edit/transfer/delete happen here. Cow detail expands inline with weigh
+// history, calving history (Mommas), comments timeline.
+const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit}) => {
+  const {useState, useEffect} = React;
+  const [cattle, setCattle] = useState([]);
+  const [weighIns, setWeighIns] = useState([]);
+  const [calvingRecs, setCalvingRecs] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active'); // active | all | mommas | backgrounders | finishers | bulls | processed | deceased | sold
+  const [sortBy, setSortBy] = useState('tag-asc');
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [expandedCow, setExpandedCow] = useState(null);
+
+  const HERDS = ['mommas','backgrounders','finishers','bulls'];
+  const OUTCOMES = ['processed','deceased','sold'];
+  const ALL_HERDS = [...HERDS, ...OUTCOMES];
+  const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls', processed:'Processed', deceased:'Deceased', sold:'Sold'};
+  const HERD_COLORS = {mommas:{bg:'#fef2f2',tx:'#991b1b',bd:'#fca5a5'}, backgrounders:{bg:'#ffedd5',tx:'#9a3412',bd:'#fdba74'}, finishers:{bg:'#fff1f2',tx:'#9f1239',bd:'#fda4af'}, bulls:{bg:'#fee2e2',tx:'#7f1d1d',bd:'#fca5a5'}, processed:{bg:'#f3f4f6',tx:'#374151',bd:'#d1d5db'}, deceased:{bg:'#f9fafb',tx:'#6b7280',bd:'#e5e7eb'}, sold:{bg:'#eff6ff',tx:'#1e40af',bd:'#bfdbfe'}};
+
+  const EMPTY_COW = {
+    tag:'', sex:'cow', herd:'mommas', breed:'', breeding_blacklist:false, breeding_blacklist_reason:'',
+    pct_wagyu:'', origin:'', birth_date:'', purchase_date:'', receiving_weight:'', purchase_amount:'',
+    dam_tag:'', sire_tag:'', sire_reg_num:'', registration_num:'',
+    maternal_issue_flag:false, maternal_issue_desc:'',
+    sale_date:'', sale_amount:'', death_date:'', death_reason:'',
+    notes:''
+  };
+
+  async function loadAll() {
+    const [cR, wR, calR, comR] = await Promise.all([
+      sb.from('cattle').select('*').order('tag'),
+      sb.from('weigh_ins').select('*').order('entered_at',{ascending:false}),
+      sb.from('cattle_calving_records').select('*').order('calving_date',{ascending:false}),
+      sb.from('cattle_comments').select('*').order('created_at',{ascending:false}),
+    ]);
+    if(cR.data) setCattle(cR.data);
+    if(wR.data) setWeighIns(wR.data);
+    if(calR.data) setCalvingRecs(calR.data);
+    if(comR.data) setComments(comR.data);
+    setLoading(false);
+  }
+  useEffect(()=>{ loadAll(); }, []);
+
+  function age(birth) {
+    if(!birth) return null;
+    const ms = Date.now() - new Date(birth+'T12:00:00').getTime();
+    const days = Math.floor(ms/86400000);
+    if(days < 0) return null;
+    const y = Math.floor(days/365);
+    const m = Math.floor((days%365)/30);
+    if(y > 0) return y+'y '+m+'m';
+    return m+'m';
+  }
+  function lastWeight(tag) {
+    if(!tag) return null;
+    const w = weighIns.find(x => x.tag === tag);
+    return w ? parseFloat(w.weight) : null;
+  }
+  function lastCalving(tag) {
+    if(!tag) return null;
+    return calvingRecs.find(r => r.dam_tag === tag);
+  }
+  function calfCount(tag) {
+    return cattle.filter(c => c.dam_tag === tag).length;
+  }
+
+  // Filter + sort
+  const filtered = cattle.filter(c => {
+    if(statusFilter === 'active' && !HERDS.includes(c.herd)) return false;
+    if(statusFilter !== 'all' && statusFilter !== 'active' && c.herd !== statusFilter) return false;
+    if(search) {
+      const s = search.toLowerCase().trim();
+      const fields = [c.tag, c.dam_tag, c.sire_tag, c.breed, c.notes, c.origin].map(x => (x||'').toLowerCase());
+      if(!fields.some(f => f.includes(s))) return false;
+    }
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a,b) => {
+    if(sortBy === 'tag-asc') return (parseFloat(a.tag)||0) - (parseFloat(b.tag)||0) || (a.tag||'').localeCompare(b.tag||'');
+    if(sortBy === 'tag-desc') return (parseFloat(b.tag)||0) - (parseFloat(a.tag)||0) || (b.tag||'').localeCompare(a.tag||'');
+    if(sortBy === 'age-asc') return (a.birth_date||'9999').localeCompare(b.birth_date||'9999');
+    if(sortBy === 'age-desc') return (b.birth_date||'').localeCompare(a.birth_date||'');
+    if(sortBy === 'weight-desc') return (lastWeight(b.tag)||0) - (lastWeight(a.tag)||0);
+    if(sortBy === 'weight-asc') return (lastWeight(a.tag)||0) - (lastWeight(b.tag)||0);
+    return 0;
+  });
+
+  function openAdd() {
+    setForm({...EMPTY_COW});
+    setEditId(null);
+    setShowAddForm(true);
+  }
+  function openEdit(cow) {
+    setForm({...EMPTY_COW, ...cow,
+      pct_wagyu: cow.pct_wagyu != null ? String(cow.pct_wagyu) : '',
+      receiving_weight: cow.receiving_weight != null ? String(cow.receiving_weight) : '',
+      purchase_amount: cow.purchase_amount != null ? String(cow.purchase_amount) : '',
+      sale_amount: cow.sale_amount != null ? String(cow.sale_amount) : '',
+      birth_date: cow.birth_date || '',
+      purchase_date: cow.purchase_date || '',
+      sale_date: cow.sale_date || '',
+      death_date: cow.death_date || '',
+      breeding_blacklist_reason: cow.breeding_blacklist_reason || '',
+      maternal_issue_desc: cow.maternal_issue_desc || '',
+      notes: cow.notes || '',
+    });
+    setEditId(cow.id);
+    setShowAddForm(true);
+  }
+  async function saveCow() {
+    if(!form.tag.trim() && form.herd !== 'mommas') {
+      // Allow tagless calves only when herd is mommas
+    }
+    if(!form.tag.trim()) {
+      if(!confirm('Save cow without a tag? (For unweaned calves; admin can tag later.)')) return;
+    }
+    setSaving(true);
+    const rec = {
+      tag: form.tag.trim() || null,
+      sex: form.sex,
+      herd: form.herd,
+      breed: form.breed || null,
+      breeding_blacklist: !!form.breeding_blacklist,
+      breeding_blacklist_reason: form.breeding_blacklist_reason || null,
+      pct_wagyu: form.pct_wagyu !== '' ? parseInt(form.pct_wagyu) : null,
+      origin: form.origin || null,
+      birth_date: form.birth_date || null,
+      purchase_date: form.purchase_date || null,
+      receiving_weight: form.receiving_weight !== '' ? parseFloat(form.receiving_weight) : null,
+      purchase_amount: form.purchase_amount !== '' ? parseFloat(form.purchase_amount) : null,
+      dam_tag: form.dam_tag || null,
+      sire_tag: form.sire_tag || null,
+      sire_reg_num: form.sire_reg_num || null,
+      registration_num: form.registration_num || null,
+      maternal_issue_flag: !!form.maternal_issue_flag,
+      maternal_issue_desc: form.maternal_issue_desc || null,
+      sale_date: form.sale_date || null,
+      sale_amount: form.sale_amount !== '' ? parseFloat(form.sale_amount) : null,
+      death_date: form.death_date || null,
+      death_reason: form.death_reason || null,
+      notes: form.notes || null,
+    };
+    if(form.maternal_issue_flag && !(form.maternal_issue_desc||'').trim()) {
+      alert('Maternal issue description is required when the flag is set.');
+      setSaving(false); return;
+    }
+    if(form.breeding_blacklist && !(form.breeding_blacklist_reason||'').trim()) {
+      alert('Blacklist reason is required when the cow is blacklisted.');
+      setSaving(false); return;
+    }
+    let newId = editId;
+    if(editId) {
+      const {error} = await sb.from('cattle').update(rec).eq('id', editId);
+      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
+    } else {
+      newId = (rec.tag ? 'c-'+rec.tag : 'c-'+Date.now()) + '-' + Math.random().toString(36).slice(2,5);
+      const {error} = await sb.from('cattle').insert({id:newId, ...rec});
+      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
+    }
+    setSaving(false);
+    await loadAll();
+    setShowAddForm(false);
+    setEditId(null);
+    setForm(null);
+  }
+  async function deleteCow(id) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Permanently delete this cow record? Weigh-ins, calving records, comments, and transfer history will also be deleted (cascade).', async () => {
+      await sb.from('cattle').delete().eq('id', id);
+      await loadAll();
+      setShowAddForm(false);
+      setEditId(null);
+      setForm(null);
+      setExpandedCow(null);
+    });
+  }
+  async function transferCow(id, newHerd) {
+    const cow = cattle.find(c => c.id === id);
+    if(!cow) return;
+    const oldHerd = cow.herd;
+    const updates = {herd: newHerd};
+    if(newHerd === 'deceased' && !cow.death_date) updates.death_date = new Date().toISOString().slice(0,10);
+    if(newHerd === 'sold' && !cow.sale_date) updates.sale_date = new Date().toISOString().slice(0,10);
+    await sb.from('cattle').update(updates).eq('id', id);
+    await sb.from('cattle_transfers').insert({
+      id: String(Date.now())+Math.random().toString(36).slice(2,6),
+      cattle_id: id,
+      from_herd: oldHerd,
+      to_herd: newHerd,
+      reason: 'manual',
+      team_member: authState && authState.name ? authState.name : null,
+    });
+    await loadAll();
+  }
+  async function addQuickComment(cattleId, cattleTag, text) {
+    if(!text.trim()) return;
+    await sb.from('cattle_comments').insert({
+      id: String(Date.now())+Math.random().toString(36).slice(2,6),
+      cattle_id: cattleId,
+      cattle_tag: cattleTag,
+      comment: text.trim(),
+      team_member: authState && authState.name ? authState.name : null,
+      source: 'manual',
+    });
+    await loadAll();
+  }
+  async function addCalvingRecord(cow, formData) {
+    if(!formData.calving_date) { alert('Calving date required.'); return false; }
+    if(formData.complications_flag && !(formData.complications_desc||'').trim()) {
+      alert('Complications description required when complications flag is set.'); return false;
+    }
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    const rec = {
+      id,
+      dam_tag: cow.tag,
+      calving_date: formData.calving_date,
+      calf_tag: formData.calf_tag || null,
+      sire_tag: formData.sire_tag || null,
+      total_born: parseInt(formData.total_born) || 0,
+      deaths: parseInt(formData.deaths) || 0,
+      complications_flag: !!formData.complications_flag,
+      complications_desc: formData.complications_desc || null,
+      notes: formData.notes || null,
+    };
+    const {error} = await sb.from('cattle_calving_records').insert(rec);
+    if(error) { alert('Save failed: '+error.message); return false; }
+    // Auto-publish a comment on the dam's timeline
+    try {
+      const note = rec.total_born+' born'+(rec.deaths>0?', '+rec.deaths+' died':'')+(rec.calf_tag?', calf #'+rec.calf_tag:'')+(rec.complications_flag?' [complications: '+rec.complications_desc+']':'');
+      await sb.from('cattle_comments').insert({
+        id: String(Date.now())+Math.random().toString(36).slice(2,6),
+        cattle_id: cow.id,
+        cattle_tag: cow.tag,
+        comment: note,
+        team_member: authState && authState.name ? authState.name : null,
+        source: 'calving',
+        reference_id: id,
+      });
+    } catch(e){ /* table may not exist */ }
+    await loadAll();
+    return true;
+  }
+  async function deleteCalvingRecord(recId) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this calving record?', async () => {
+      await sb.from('cattle_calving_records').delete().eq('id', recId);
+      await loadAll();
+    });
+  }
+
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const lbl = {fontSize:11, color:'#6b7280', display:'block', marginBottom:3, fontWeight:500};
+
+  // Determine if we're in flat-list mode (filtered/searched) or per-herd-tile mode
+  const isFlatMode = search || (statusFilter !== 'active');
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
+        {/* Top toolbar */}
+        <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+          <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by tag, dam, sire, breed, origin..." style={{...inpS, flex:1, minWidth:200}}/>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{...inpS, width:'auto'}}>
+            <option value='active'>All Active Herds</option>
+            <option value='all'>All (including outcomes)</option>
+            <option disabled>{'\u2500\u2500\u2500'}</option>
+            {HERDS.map(h => <option key={h} value={h}>{HERD_LABELS[h]}</option>)}
+            <option disabled>{'\u2500\u2500\u2500'}</option>
+            {OUTCOMES.map(h => <option key={h} value={h}>{HERD_LABELS[h]}</option>)}
+          </select>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...inpS, width:'auto'}}>
+            <option value='tag-asc'>Tag {'\u2191'}</option>
+            <option value='tag-desc'>Tag {'\u2193'}</option>
+            <option value='age-asc'>Age (youngest first)</option>
+            <option value='age-desc'>Age (oldest first)</option>
+            <option value='weight-desc'>Weight {'\u2193'}</option>
+            <option value='weight-asc'>Weight {'\u2191'}</option>
+          </select>
+          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap'}}>+ Add Cow</button>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'3rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && cattle.length === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No cattle records yet. Click <strong>+ Add Cow</strong> to add your first one, or wait for the Podio import.
+          </div>
+        )}
+
+        {/* FLAT MODE — search or non-active filter */}
+        {!loading && isFlatMode && cattle.length > 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
+            <div style={{padding:'10px 16px', borderBottom:'1px solid #e5e7eb', background:'#f9fafb', fontSize:12, fontWeight:600, color:'#4b5563'}}>{sorted.length} cattle match</div>
+            {sorted.length === 0 && <div style={{padding:'2rem', textAlign:'center', color:'#9ca3af', fontSize:13}}>No cattle match the current filter.</div>}
+            {sorted.map((c, i) => {
+              const hc = HERD_COLORS[c.herd] || HERD_COLORS.mommas;
+              const lw = lastWeight(c.tag);
+              return (
+                <div key={c.id} onClick={()=>openEdit(c)} style={{padding:'10px 16px', borderBottom:i<sorted.length-1?'1px solid #f3f4f6':'none', display:'flex', alignItems:'center', gap:12, cursor:'pointer', flexWrap:'wrap'}} className="hoverable-tile">
+                  <span style={{fontWeight:700, fontSize:13, color:'#111827', minWidth:60}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
+                  <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, fontWeight:600}}>{HERD_LABELS[c.herd]}</span>
+                  <span style={{fontSize:11, color:'#6b7280', minWidth:50}}>{c.sex||'\u2014'}</span>
+                  <span style={{fontSize:11, color:'#6b7280', minWidth:80}}>{c.breed||'\u2014'}</span>
+                  <span style={{fontSize:11, color:'#6b7280', minWidth:60}}>{age(c.birth_date)||'\u2014'}</span>
+                  <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400, minWidth:80}}>{lw ? lw.toLocaleString()+' lb' : 'no weigh-in'}</span>
+                  {c.dam_tag && <span style={{fontSize:11, color:'#9ca3af'}}>dam #{c.dam_tag}</span>}
+                  {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL ISSUE</span>}
+                  {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* HERD TILES MODE — default view */}
+        {!loading && !isFlatMode && cattle.length > 0 && (
+          <div style={{display:'flex', flexDirection:'column', gap:12}}>
+            {HERDS.map(h => {
+              const cows = sorted.filter(c => c.herd === h);
+              const totalWt = cows.reduce((s,c) => s + (lastWeight(c.tag)||0), 0);
+              const hc = HERD_COLORS[h];
+              return (
+                <div key={h} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
+                  <div style={{padding:'12px 18px', background:hc.bg, borderBottom:'1px solid '+hc.bd, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+                    <span style={{fontSize:15, fontWeight:700, color:hc.tx}}>{'\ud83d\udc04 '+HERD_LABELS[h]}</span>
+                    <span style={{fontSize:12, color:hc.tx, opacity:.8}}>{cows.length} {cows.length===1?'cow':'cows'}</span>
+                    {totalWt > 0 && <span style={{fontSize:12, color:hc.tx, opacity:.8}}>{'\u00b7 '+Math.round(totalWt).toLocaleString()+' lbs total'}</span>}
+                  </div>
+                  {cows.length === 0 && <div style={{padding:'1rem 18px', color:'#9ca3af', fontSize:12, fontStyle:'italic'}}>No cows in this herd yet.</div>}
+                  {cows.map(c => {
+                    const lw = lastWeight(c.tag);
+                    const lc = lastCalving(c.tag);
+                    const cc = calfCount(c.tag);
+                    const isExpanded = expandedCow === c.id;
+                    const cowWeighIns = weighIns.filter(w => w.tag === c.tag).slice(0, 10);
+                    const cowCalving = calvingRecs.filter(r => r.dam_tag === c.tag);
+                    const cowComments = comments.filter(cm => cm.cattle_id === c.id || cm.cattle_tag === c.tag).slice(0, 20);
+                    return (
+                      <div key={c.id} style={{borderBottom:'1px solid #f3f4f6'}}>
+                        <div onClick={()=>setExpandedCow(isExpanded?null:c.id)} style={{padding:'10px 18px', display:'flex', alignItems:'center', gap:10, cursor:'pointer', flexWrap:'wrap'}} className="hoverable-tile">
+                          <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
+                          <span style={{fontWeight:700, fontSize:13, color:'#111827', minWidth:60}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
+                          <span style={{fontSize:11, color:'#6b7280', minWidth:50}}>{c.sex||'\u2014'}</span>
+                          <span style={{fontSize:11, color:'#6b7280', minWidth:90}}>{c.breed||'\u2014'}</span>
+                          <span style={{fontSize:11, color:'#6b7280', minWidth:50}}>{age(c.birth_date)||'\u2014'}</span>
+                          <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400, minWidth:80}}>{lw ? lw.toLocaleString()+' lb' : '\u2014'}</span>
+                          {h === 'mommas' && cc > 0 && <span style={{fontSize:11, color:'#7f1d1d', fontWeight:600}}>{cc} {cc===1?'calf':'calves'}</span>}
+                          {h === 'mommas' && lc && <span style={{fontSize:11, color:'#9ca3af'}}>last calved {fmt(lc.calving_date)}</span>}
+                          {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL</span>}
+                          {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
+                        </div>
+                        {isExpanded && <CowDetail
+                          cow={c}
+                          weighIns={cowWeighIns}
+                          calving={cowCalving}
+                          comments={cowComments}
+                          calves={cattle.filter(x => x.dam_tag === c.tag)}
+                          dam={cattle.find(x => x.tag === c.dam_tag)}
+                          fmt={fmt}
+                          HERDS={ALL_HERDS}
+                          HERD_LABELS={HERD_LABELS}
+                          onEdit={()=>openEdit(c)}
+                          onTransfer={(newHerd)=>transferCow(c.id, newHerd)}
+                          onDelete={()=>deleteCow(c.id)}
+                          onComment={(text)=>addQuickComment(c.id, c.tag, text)}
+                          onAddCalving={(data)=>addCalvingRecord(c, data)}
+                          onDeleteCalving={(id)=>deleteCalvingRecord(id)}
+                        />}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            {/* Outcome herds shown collapsed at the bottom */}
+            <CollapsibleOutcomeSections cattle={cattle} weighIns={weighIns} HERD_COLORS={HERD_COLORS} HERD_LABELS={HERD_LABELS} OUTCOMES={OUTCOMES} fmt={fmt} setStatusFilter={setStatusFilter}/>
+          </div>
+        )}
+      </div>
+
+      {/* Add/Edit cow modal */}
+      {showAddForm && form && (
+        <div onClick={()=>{setShowAddForm(false); setEditId(null); setForm(null);}} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'1rem', overflowY:'auto'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white', borderRadius:12, width:'100%', maxWidth:640, boxShadow:'0 8px 32px rgba(0,0,0,.2)', marginTop:40}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div style={{fontSize:15, fontWeight:600, color:'#991b1b'}}>{editId ? 'Edit Cow' : 'Add Cow'}</div>
+              <button onClick={()=>{setShowAddForm(false); setEditId(null); setForm(null);}} style={{background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9ca3af'}}>{'\u00d7'}</button>
+            </div>
+            <div style={{padding:'16px 20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, maxHeight:'70vh', overflowY:'auto'}}>
+              <div><label style={lbl}>Tag #</label><input value={form.tag} onChange={e=>setForm({...form, tag:e.target.value})} placeholder="Required (or blank for unweaned calf)" style={inpS}/></div>
+              <div><label style={lbl}>Sex</label>
+                <select value={form.sex} onChange={e=>setForm({...form, sex:e.target.value})} style={inpS}>
+                  <option value='cow'>Cow</option><option value='heifer'>Heifer</option><option value='bull'>Bull</option><option value='steer'>Steer</option>
+                </select>
+              </div>
+              <div><label style={lbl}>Herd *</label>
+                <select value={form.herd} onChange={e=>setForm({...form, herd:e.target.value})} style={inpS}>
+                  {ALL_HERDS.map(h => <option key={h} value={h}>{HERD_LABELS[h]}</option>)}
+                </select>
+              </div>
+              <div><label style={lbl}>Breed</label><input value={form.breed} onChange={e=>setForm({...form, breed:e.target.value})} placeholder="e.g. Wagyu/Angus" style={inpS}/></div>
+              <div><label style={lbl}>% Wagyu</label><input type="number" min="0" max="100" value={form.pct_wagyu} onChange={e=>setForm({...form, pct_wagyu:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Origin</label><input value={form.origin} onChange={e=>setForm({...form, origin:e.target.value})} placeholder="e.g. Born on farm" style={inpS}/></div>
+              <div><label style={lbl}>Birth Date</label><input type="date" value={form.birth_date} onChange={e=>setForm({...form, birth_date:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Purchase Date</label><input type="date" value={form.purchase_date} onChange={e=>setForm({...form, purchase_date:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Receiving Weight (lb)</label><input type="number" min="0" value={form.receiving_weight} onChange={e=>setForm({...form, receiving_weight:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Purchase Amount ($)</label><input type="number" min="0" step="0.01" value={form.purchase_amount} onChange={e=>setForm({...form, purchase_amount:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Dam Tag #</label><input value={form.dam_tag} onChange={e=>setForm({...form, dam_tag:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Sire Tag # / Reg #</label><input value={form.sire_tag} onChange={e=>setForm({...form, sire_tag:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Sire Reg #</label><input value={form.sire_reg_num} onChange={e=>setForm({...form, sire_reg_num:e.target.value})} style={inpS}/></div>
+              <div><label style={lbl}>Registration #</label><input value={form.registration_num} onChange={e=>setForm({...form, registration_num:e.target.value})} style={inpS}/></div>
+
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
+                <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600}}>
+                  <input type="checkbox" checked={!!form.maternal_issue_flag} onChange={e=>setForm({...form, maternal_issue_flag:e.target.checked})}/>
+                  Maternal issue flag
+                </label>
+                {form.maternal_issue_flag && (
+                  <div style={{marginTop:6}}>
+                    <label style={lbl}>Description *</label>
+                    <textarea value={form.maternal_issue_desc} onChange={e=>setForm({...form, maternal_issue_desc:e.target.value})} rows={2} style={{...inpS, resize:'vertical'}}/>
+                  </div>
+                )}
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600}}>
+                  <input type="checkbox" checked={!!form.breeding_blacklist} onChange={e=>setForm({...form, breeding_blacklist:e.target.checked})}/>
+                  Breeding blacklist
+                </label>
+                {form.breeding_blacklist && (
+                  <div style={{marginTop:6}}>
+                    <label style={lbl}>Reason *</label>
+                    <input value={form.breeding_blacklist_reason} onChange={e=>setForm({...form, breeding_blacklist_reason:e.target.value})} style={inpS}/>
+                  </div>
+                )}
+              </div>
+
+              {(form.herd === 'sold' || form.sale_date) && (
+                <React.Fragment>
+                  <div><label style={lbl}>Sale Date</label><input type="date" value={form.sale_date} onChange={e=>setForm({...form, sale_date:e.target.value})} style={inpS}/></div>
+                  <div><label style={lbl}>Sale Amount ($)</label><input type="number" min="0" step="0.01" value={form.sale_amount} onChange={e=>setForm({...form, sale_amount:e.target.value})} style={inpS}/></div>
+                </React.Fragment>
+              )}
+              {(form.herd === 'deceased' || form.death_date) && (
+                <React.Fragment>
+                  <div><label style={lbl}>Death Date</label><input type="date" value={form.death_date} onChange={e=>setForm({...form, death_date:e.target.value})} style={inpS}/></div>
+                  <div><label style={lbl}>Death Reason</label><input value={form.death_reason} onChange={e=>setForm({...form, death_reason:e.target.value})} style={inpS}/></div>
+                </React.Fragment>
+              )}
+
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={lbl}>Notes</label>
+                <textarea value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})} rows={3} style={{...inpS, resize:'vertical'}}/>
+              </div>
+            </div>
+            <div style={{padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8}}>
+              <button onClick={saveCow} disabled={saving} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:13, cursor:saving?'not-allowed':'pointer', fontFamily:'inherit', opacity:saving?.6:1}}>{saving ? 'Saving\u2026' : (editId ? 'Save' : 'Add Cow')}</button>
+              {editId && <button onClick={()=>deleteCow(editId)} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Delete</button>}
+              <button onClick={()=>{setShowAddForm(false); setEditId(null); setForm(null);}} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Helper component — outcome (Processed/Deceased/Sold) sections collapsed at bottom of Herds view
+const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS, OUTCOMES, fmt, setStatusFilter}) => {
+  const [expanded, setExpanded] = React.useState({});
+  return (
+    <div style={{marginTop:8}}>
+      {OUTCOMES.map(h => {
+        const cows = cattle.filter(c => c.herd === h);
+        if(cows.length === 0) return null;
+        const hc = HERD_COLORS[h];
+        const isExpanded = expanded[h];
+        return (
+          <div key={h} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, marginBottom:8, overflow:'hidden'}}>
+            <div onClick={()=>setExpanded({...expanded, [h]:!isExpanded})} style={{padding:'10px 16px', background:hc.bg, cursor:'pointer', display:'flex', alignItems:'center', gap:10}}>
+              <span style={{fontSize:11, color:hc.tx}}>{isExpanded?'\u25bc':'\u25b6'}</span>
+              <span style={{fontSize:13, fontWeight:700, color:hc.tx}}>{HERD_LABELS[h]}</span>
+              <span style={{fontSize:11, color:hc.tx, opacity:.7}}>{cows.length}</span>
+              <button onClick={(e)=>{e.stopPropagation(); setStatusFilter(h);}} style={{marginLeft:'auto', fontSize:11, color:hc.tx, background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>View all</button>
+            </div>
+            {isExpanded && (
+              <div>
+                {cows.slice(0, 50).map(c => (
+                  <div key={c.id} style={{padding:'8px 16px', borderTop:'1px solid #f3f4f6', fontSize:12, color:'#4b5563', display:'flex', gap:10, flexWrap:'wrap'}}>
+                    <span style={{fontWeight:600, color:'#111827', minWidth:60}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
+                    <span>{c.sex||'\u2014'}</span>
+                    <span>{c.breed||'\u2014'}</span>
+                    {c.death_date && <span>{'died '+fmt(c.death_date)}</span>}
+                    {c.sale_date && <span>{'sold '+fmt(c.sale_date)}</span>}
+                  </div>
+                ))}
+                {cows.length > 50 && <div style={{padding:'8px 16px', fontSize:11, color:'#9ca3af'}}>{cows.length-50} more {'\u2014'} click "View all" above to filter to this section.</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Helper component — cow detail body shown when expanded inside the herd tile
+const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, HERD_LABELS, onEdit, onTransfer, onDelete, onComment, onAddCalving, onDeleteCalving}) => {
+  const [commentText, setCommentText] = React.useState('');
+  const [showTransfer, setShowTransfer] = React.useState(false);
+  const [showCalvingForm, setShowCalvingForm] = React.useState(false);
+  const [calvingForm, setCalvingForm] = React.useState({calving_date:new Date().toISOString().slice(0,10), calf_tag:'', sire_tag:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''});
+  const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:6};
+  const isMomma = cow.herd === 'mommas';
+  async function submitCalving() {
+    const ok = await onAddCalving(calvingForm);
+    if(ok) { setShowCalvingForm(false); setCalvingForm({calving_date:new Date().toISOString().slice(0,10), calf_tag:'', sire_tag:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''}); }
+  }
+  const inpC = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const lblC = {fontSize:10, color:'#6b7280', display:'block', marginBottom:2, fontWeight:500};
+
+  return (
+    <div style={{background:'#fafafa', padding:'14px 18px', borderTop:'1px solid #f3f4f6'}}>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+        {/* Identity */}
+        <div>
+          <div style={sectionTitle}>Identity</div>
+          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'auto 1fr', gap:'2px 8px'}}>
+            {cow.registration_num && <><span style={{color:'#9ca3af'}}>Reg #:</span><span>{cow.registration_num}</span></>}
+            {cow.pct_wagyu != null && <><span style={{color:'#9ca3af'}}>% Wagyu:</span><span>{cow.pct_wagyu}%</span></>}
+            {cow.origin && <><span style={{color:'#9ca3af'}}>Origin:</span><span>{cow.origin}</span></>}
+            {cow.birth_date && <><span style={{color:'#9ca3af'}}>Birth:</span><span>{fmt(cow.birth_date)}</span></>}
+            {cow.purchase_date && <><span style={{color:'#9ca3af'}}>Purchased:</span><span>{fmt(cow.purchase_date)} {cow.purchase_amount?('\u00b7 $'+cow.purchase_amount):''}</span></>}
+            {cow.receiving_weight && <><span style={{color:'#9ca3af'}}>Recv weight:</span><span>{cow.receiving_weight} lb</span></>}
+          </div>
+        </div>
+        {/* Lineage */}
+        <div>
+          <div style={sectionTitle}>Lineage</div>
+          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'auto 1fr', gap:'2px 8px'}}>
+            <span style={{color:'#9ca3af'}}>Dam:</span><span>{cow.dam_tag ? '#'+cow.dam_tag+(dam?' ('+(dam.breed||'?')+')':' (not in directory)') : '\u2014'}</span>
+            <span style={{color:'#9ca3af'}}>Sire:</span><span>{cow.sire_tag||cow.sire_reg_num||'\u2014'}</span>
+            {calves && calves.length > 0 && <><span style={{color:'#9ca3af'}}>Calves:</span><span>{calves.map(c => '#'+(c.tag||'?')).join(', ')}</span></>}
+          </div>
+        </div>
+      </div>
+
+      {/* Weigh-in history */}
+      {weighIns && weighIns.length > 0 && (
+        <div style={{marginTop:12}}>
+          <div style={sectionTitle}>Weigh-In History (latest 10)</div>
+          <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+            {weighIns.map(w => (
+              <div key={w.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'4px 10px', fontSize:11}}>
+                <strong style={{color:'#111827'}}>{w.weight} lb</strong>
+                <span style={{color:'#9ca3af', marginLeft:6}}>{fmt((w.entered_at||'').slice(0,10))}</span>
+                {w.note && <div style={{fontSize:10, color:'#6b7280', maxWidth:200}}>{w.note}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Calving history + add (Mommas only) */}
+      {isMomma && (
+        <div style={{marginTop:12}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+            <div style={sectionTitle}>Calving History</div>
+            {!showCalvingForm && <button type="button" onClick={()=>setShowCalvingForm(true)} style={{fontSize:11, color:'#991b1b', background:'none', border:'1px solid #fca5a5', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add Calving</button>}
+          </div>
+          {showCalvingForm && (
+            <div style={{background:'#fef2f2', border:'1px solid #fca5a5', borderRadius:8, padding:'10px 12px', marginBottom:8}}>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:6}}>
+                <div><label style={lblC}>Calving date *</label><input type="date" value={calvingForm.calving_date} onChange={e=>setCalvingForm({...calvingForm, calving_date:e.target.value})} style={inpC}/></div>
+                <div><label style={lblC}>Calf tag (optional)</label><input value={calvingForm.calf_tag} onChange={e=>setCalvingForm({...calvingForm, calf_tag:e.target.value})} placeholder="e.g. 92" style={inpC}/></div>
+                <div><label style={lblC}>Sire tag</label><input value={calvingForm.sire_tag} onChange={e=>setCalvingForm({...calvingForm, sire_tag:e.target.value})} style={inpC}/></div>
+                <div></div>
+                <div><label style={lblC}>Total born</label><input type="number" min="0" value={calvingForm.total_born} onChange={e=>setCalvingForm({...calvingForm, total_born:e.target.value})} placeholder="0" style={inpC}/></div>
+                <div><label style={lblC}>Deaths</label><input type="number" min="0" value={calvingForm.deaths} onChange={e=>setCalvingForm({...calvingForm, deaths:e.target.value})} placeholder="0" style={inpC}/></div>
+                <div style={{gridColumn:'1/-1'}}>
+                  <label style={{display:'flex', alignItems:'center', gap:6, fontSize:11, color:'#7f1d1d', cursor:'pointer'}}>
+                    <input type="checkbox" checked={calvingForm.complications_flag} onChange={e=>setCalvingForm({...calvingForm, complications_flag:e.target.checked})}/>
+                    Complications flag
+                  </label>
+                  {calvingForm.complications_flag && (
+                    <textarea value={calvingForm.complications_desc} onChange={e=>setCalvingForm({...calvingForm, complications_desc:e.target.value})} placeholder="Required: describe complications" rows={2} style={{...inpC, marginTop:4, resize:'vertical'}}/>
+                  )}
+                </div>
+                <div style={{gridColumn:'1/-1'}}>
+                  <label style={lblC}>Notes</label>
+                  <textarea value={calvingForm.notes} onChange={e=>setCalvingForm({...calvingForm, notes:e.target.value})} rows={2} style={{...inpC, resize:'vertical'}}/>
+                </div>
+              </div>
+              <div style={{display:'flex', gap:6}}>
+                <button type="button" onClick={submitCalving} style={{padding:'6px 14px', borderRadius:6, border:'none', background:'#991b1b', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Save Calving</button>
+                <button type="button" onClick={()=>setShowCalvingForm(false)} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {calving && calving.length > 0 && calving.map(r => (
+            <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+              <strong style={{color:'#111827'}}>{fmt(r.calving_date)}</strong>
+              <span>{r.total_born} born, {r.deaths} died</span>
+              {r.calf_tag && <span style={{color:'#7f1d1d'}}>calf #{r.calf_tag}</span>}
+              {r.complications_flag && <span style={{color:'#b91c1c', fontWeight:600}}>{'\u26a0 complications'}</span>}
+              {r.notes && <span style={{color:'#6b7280', fontStyle:'italic'}}>{r.notes}</span>}
+              {onDeleteCalving && <button type="button" onClick={()=>onDeleteCalving(r.id)} style={{marginLeft:'auto', fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Delete</button>}
+            </div>
+          ))}
+          {(!calving || calving.length === 0) && !showCalvingForm && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No calving records yet.</div>}
+        </div>
+      )}
+      {!isMomma && calving && calving.length > 0 && (
+        <div style={{marginTop:12}}>
+          <div style={sectionTitle}>Calving History (historical)</div>
+          {calving.map(r => (
+            <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap'}}>
+              <strong style={{color:'#111827'}}>{fmt(r.calving_date)}</strong>
+              <span>{r.total_born} born, {r.deaths} died</span>
+              {r.calf_tag && <span style={{color:'#7f1d1d'}}>calf #{r.calf_tag}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Notes */}
+      {cow.notes && (
+        <div style={{marginTop:12}}>
+          <div style={sectionTitle}>Notes</div>
+          <div style={{fontSize:12, color:'#374151', background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'8px 12px', whiteSpace:'pre-wrap'}}>{cow.notes}</div>
+        </div>
+      )}
+
+      {/* Comments timeline + add */}
+      <div style={{marginTop:12}}>
+        <div style={sectionTitle}>Comments Timeline</div>
+        <div style={{display:'flex', gap:6, marginBottom:6}}>
+          <input type="text" value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder="Add a comment..." style={{flex:1, fontSize:12, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit'}}/>
+          <button onClick={()=>{onComment(commentText); setCommentText('');}} disabled={!commentText.trim()} style={{padding:'6px 14px', borderRadius:6, border:'none', background:commentText.trim()?'#991b1b':'#d1d5db', color:'white', fontSize:12, fontWeight:600, cursor:commentText.trim()?'pointer':'not-allowed', fontFamily:'inherit'}}>Add</button>
+        </div>
+        {comments && comments.length > 0 ? (
+          <div style={{maxHeight:200, overflowY:'auto'}}>
+            {comments.map(c => (
+              <div key={c.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11}}>
+                <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:2}}>
+                  <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:c.source==='weigh_in'?'#eff6ff':c.source==='calving'?'#fef2f2':c.source==='daily_report'?'#ecfdf5':'#f3f4f6', color:c.source==='weigh_in'?'#1e40af':c.source==='calving'?'#991b1b':c.source==='daily_report'?'#065f46':'#374151'}}>{c.source}</span>
+                  <span style={{color:'#9ca3af'}}>{fmt((c.created_at||'').slice(0,10))}</span>
+                  {c.team_member && <span style={{color:'#9ca3af'}}>{'\u00b7 '+c.team_member}</span>}
+                </div>
+                <div style={{color:'#374151'}}>{c.comment}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No comments yet.</div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div style={{marginTop:12, display:'flex', gap:6, flexWrap:'wrap', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
+        <button onClick={onEdit} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#374151', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
+        {!showTransfer && <button onClick={()=>setShowTransfer(true)} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Transfer</button>}
+        {showTransfer && (
+          <select onChange={e=>{if(e.target.value){onTransfer(e.target.value); setShowTransfer(false);}}} style={{fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit'}}>
+            <option value=''>Select target herd...</option>
+            {HERDS.filter(h => h !== cow.herd).map(h => <option key={h} value={h}>Move to {HERD_LABELS[h]}</option>)}
+          </select>
+        )}
+        {showTransfer && <button onClick={()=>setShowTransfer(false)} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>}
+        <button onClick={onDelete} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginLeft:'auto'}}>Delete</button>
+      </div>
+    </div>
+  );
+};
+
+
+// ── CATTLE BREEDING VIEW ────────────────────────────────────────────────────
+// Lists breeding cycles with computed dates, status, outstanding cows.
+const CattleBreedingView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
+  const {useState, useEffect} = React;
+  const [cycles, setCycles] = useState([]);
+  const [calving, setCalving] = useState([]);
+  const [cattle, setCattle] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(null);
+
+  async function loadAll() {
+    const [cR, calR, ctR] = await Promise.all([
+      sb.from('cattle_breeding_cycles').select('*').order('bull_exposure_start',{ascending:false}),
+      sb.from('cattle_calving_records').select('*'),
+      sb.from('cattle').select('id,tag,herd'),
+    ]);
+    if(cR.data) setCycles(cR.data);
+    if(calR.data) setCalving(calR.data);
+    if(ctR.data) setCattle(ctR.data);
+    setLoading(false);
+  }
+  useEffect(()=>{ loadAll(); }, []);
+
+  const seqMap = buildCattleCycleSeqMap(cycles);
+
+  function openAdd() {
+    setForm({herd:'mommas', bull_exposure_start:new Date().toISOString().slice(0,10), bull_tags:'', cow_tags:'', notes:''});
+    setEditId(null);
+    setShowForm(true);
+  }
+  function openEdit(c) {
+    setForm({herd:c.herd||'mommas', bull_exposure_start:c.bull_exposure_start, bull_tags:c.bull_tags||'', cow_tags:c.cow_tags||'', notes:c.notes||''});
+    setEditId(c.id);
+    setShowForm(true);
+  }
+  async function saveCycle() {
+    if(!form.bull_exposure_start) { alert('Bull exposure start date is required.'); return; }
+    const rec = {herd:form.herd, bull_exposure_start:form.bull_exposure_start, bull_tags:form.bull_tags||null, cow_tags:form.cow_tags||null, notes:form.notes||null};
+    if(editId) {
+      await sb.from('cattle_breeding_cycles').update(rec).eq('id', editId);
+    } else {
+      const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+      await sb.from('cattle_breeding_cycles').insert({id, ...rec});
+    }
+    await loadAll();
+    setShowForm(false); setEditId(null); setForm(null);
+  }
+  async function deleteCycle(id) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this breeding cycle?', async () => {
+      await sb.from('cattle_breeding_cycles').delete().eq('id', id);
+      await loadAll();
+      setShowForm(false); setEditId(null); setForm(null);
+    });
+  }
+
+  function cycleStatus(c, tl) {
+    if(!tl) return 'planned';
+    const today = new Date().toISOString().slice(0,10);
+    if(today < c.bull_exposure_start) return 'planned';
+    if(today <= tl.exposureEnd) return 'exposure';
+    if(today < tl.calvingStart) return 'pregcheck';
+    if(today <= tl.calvingEnd) return 'calving';
+    if(today <= tl.weaningDate) return 'nursing';
+    return 'complete';
+  }
+  const STATUS_COLORS = {planned:'#6b7280', exposure:'#1d4ed8', pregcheck:'#7c3aed', calving:'#991b1b', nursing:'#ea580c', complete:'#374151'};
+
+  function outstandingCows(c) {
+    const expectedTags = (c.cow_tags||'').split(/[\n,]+/).map(t=>t.trim()).filter(Boolean);
+    if(expectedTags.length === 0) return [];
+    const farrowed = new Set(calving.filter(r => r.cycle_id === c.id || (
+      r.dam_tag && expectedTags.includes(r.dam_tag) && r.calving_date && c.bull_exposure_start &&
+      new Date(r.calving_date) >= new Date(c.bull_exposure_start)
+    )).map(r => r.dam_tag));
+    return expectedTags.filter(t => !farrowed.has(t));
+  }
+
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const lbl = {fontSize:11, color:'#6b7280', display:'block', marginBottom:3, fontWeight:500};
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1100, margin:'0 auto'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+          <div style={{fontSize:16, fontWeight:700, color:'#111827'}}>Breeding Cycles <span style={{fontSize:13, fontWeight:400, color:'#6b7280'}}>({cycles.length})</span></div>
+          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Cycle</button>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && cycles.length === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No breeding cycles yet. Click <strong>+ New Cycle</strong> to record one.
+          </div>
+        )}
+
+        <div style={{display:'flex', flexDirection:'column', gap:10}}>
+          {cycles.map(c => {
+            const tl = calcCattleBreedingTimeline(c.bull_exposure_start);
+            const status = cycleStatus(c, tl);
+            const sc = STATUS_COLORS[status];
+            const outstanding = outstandingCows(c);
+            const cowList = (c.cow_tags||'').split(/[\n,]+/).map(t=>t.trim()).filter(Boolean);
+            const bullList = (c.bull_tags||'').split(/[\n,]+/).map(t=>t.trim()).filter(Boolean);
+            return (
+              <div key={c.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 18px'}}>
+                <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap'}}>
+                  <span style={{fontSize:14, fontWeight:700, color:'#111827'}}>{cattleCycleLabel(c, seqMap)}</span>
+                  <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:sc, color:'white', textTransform:'uppercase'}}>{status}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{cowList.length} {cowList.length===1?'cow':'cows'} {bullList.length>0?('\u00b7 bulls: '+bullList.join(', ')):''}</span>
+                  <button onClick={()=>openEdit(c)} style={{marginLeft:'auto', fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer'}}>Edit</button>
+                </div>
+                {tl && (
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:8, fontSize:11, color:'#4b5563'}}>
+                    <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Bull Exposure</div><div style={{fontWeight:600}}>{fmt(c.bull_exposure_start)} {'\u2014'} {fmt(tl.exposureEnd)}</div></div>
+                    <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Preg Check</div><div style={{fontWeight:600}}>{fmt(tl.pregCheckDate)}</div></div>
+                    <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Calving Window</div><div style={{fontWeight:600}}>{fmt(tl.calvingStart)} {'\u2014'} {fmt(tl.calvingEnd)}</div></div>
+                    <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Wean By</div><div style={{fontWeight:600}}>{fmt(tl.weaningDate)}</div></div>
+                  </div>
+                )}
+                {outstanding.length > 0 && (
+                  <div style={{marginTop:10, padding:'8px 12px', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8}}>
+                    <div style={{fontSize:11, fontWeight:700, color:'#991b1b', marginBottom:4}}>{'\u26a0 Outstanding cows ('+outstanding.length+')'}</div>
+                    <div style={{fontSize:11, color:'#7f1d1d'}}>{outstanding.map(t => '#'+t).join(', ')}</div>
+                  </div>
+                )}
+                {c.notes && <div style={{marginTop:8, fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{c.notes}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Cycle form modal */}
+      {showForm && form && (
+        <div onClick={()=>{setShowForm(false); setEditId(null); setForm(null);}} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'1rem', overflowY:'auto'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white', borderRadius:12, width:'100%', maxWidth:520, boxShadow:'0 8px 32px rgba(0,0,0,.2)', marginTop:40}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div style={{fontSize:15, fontWeight:600, color:'#991b1b'}}>{editId ? 'Edit Cycle' : 'New Breeding Cycle'}</div>
+              <button onClick={()=>{setShowForm(false); setEditId(null); setForm(null);}} style={{background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9ca3af'}}>{'\u00d7'}</button>
+            </div>
+            <div style={{padding:'16px 20px'}}>
+              <div style={{marginBottom:10}}>
+                <label style={lbl}>Bull Exposure Start *</label>
+                <input type="date" value={form.bull_exposure_start} onChange={e=>setForm({...form, bull_exposure_start:e.target.value})} style={inpS}/>
+                <div style={{fontSize:11, color:'#9ca3af', marginTop:3}}>All other dates auto-compute: 65d exposure {'\u2192'} 30d preg check {'\u2192'} 9mo gestation {'\u2192'} 65d calving {'\u2192'} 7mo nursing.</div>
+              </div>
+              <div style={{marginBottom:10}}>
+                <label style={lbl}>Bull tag(s)</label>
+                <input value={form.bull_tags} onChange={e=>setForm({...form, bull_tags:e.target.value})} placeholder="comma or newline separated" style={inpS}/>
+              </div>
+              <div style={{marginBottom:10}}>
+                <label style={lbl}>Cow tags in cycle</label>
+                <textarea value={form.cow_tags} onChange={e=>setForm({...form, cow_tags:e.target.value})} placeholder="One per line or comma-separated" rows={5} style={{...inpS, fontFamily:'monospace'}}/>
+                <div style={{fontSize:11, color:'#085041', marginTop:3}}>{(form.cow_tags||'').split(/[\n,]+/).map(t=>t.trim()).filter(Boolean).length} cows</div>
+              </div>
+              <div style={{marginBottom:10}}>
+                <label style={lbl}>Notes</label>
+                <textarea value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})} rows={2} style={{...inpS, resize:'vertical'}}/>
+              </div>
+            </div>
+            <div style={{padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8}}>
+              <button onClick={saveCycle} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Save</button>
+              {editId && <button onClick={()=>deleteCycle(editId)} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Delete</button>}
+              <button onClick={()=>{setShowForm(false); setEditId(null); setForm(null);}} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ── CATTLE PROCESSING BATCHES VIEW ─────────────────────────────────────────
+// Lists processing batches (C-26-01 etc.) with cow lists and yield data.
+const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
+  const {useState, useEffect} = React;
+  const [batches, setBatches] = useState([]);
+  const [cattle, setCattle] = useState([]);
+  const [weighIns, setWeighIns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(null);
+
+  async function loadAll() {
+    const [bR, cR, wR] = await Promise.all([
+      sb.from('cattle_processing_batches').select('*').order('planned_process_date',{ascending:false}),
+      sb.from('cattle').select('*'),
+      sb.from('weigh_ins').select('*'),
+    ]);
+    if(bR.data) setBatches(bR.data);
+    if(cR.data) setCattle(cR.data);
+    if(wR.data) setWeighIns(wR.data);
+    setLoading(false);
+  }
+  useEffect(()=>{ loadAll(); }, []);
+
+  function lastWeight(tag) {
+    if(!tag) return null;
+    const sorted = [...weighIns].filter(w => w.tag === tag).sort((a,b)=>(b.entered_at||'').localeCompare(a.entered_at||''));
+    return sorted[0] ? parseFloat(sorted[0].weight) : null;
+  }
+
+  function openAdd() {
+    const yr = new Date().getFullYear().toString().slice(-2);
+    const existing = batches.filter(b => b.name && b.name.startsWith('C-'+yr+'-')).map(b => parseInt(b.name.slice(5))||0);
+    const next = (Math.max(0, ...existing)+1).toString().padStart(2,'0');
+    setForm({name:'C-'+yr+'-'+next, planned_process_date:'', actual_process_date:'', total_hanging_weight:'', processing_cost:'', notes:'', status:'planned'});
+    setEditId(null);
+    setShowForm(true);
+  }
+  function openEdit(b) {
+    setForm({
+      name: b.name,
+      planned_process_date: b.planned_process_date || '',
+      actual_process_date: b.actual_process_date || '',
+      total_hanging_weight: b.total_hanging_weight != null ? String(b.total_hanging_weight) : '',
+      processing_cost: b.processing_cost != null ? String(b.processing_cost) : '',
+      notes: b.notes || '',
+      status: b.status || 'planned',
+    });
+    setEditId(b.id);
+    setShowForm(true);
+  }
+  async function saveBatch() {
+    if(!form.name.trim()) { alert('Batch name required.'); return; }
+    const rec = {
+      name: form.name.trim(),
+      planned_process_date: form.planned_process_date || null,
+      actual_process_date: form.actual_process_date || null,
+      total_hanging_weight: form.total_hanging_weight !== '' ? parseFloat(form.total_hanging_weight) : null,
+      processing_cost: form.processing_cost !== '' ? parseFloat(form.processing_cost) : null,
+      notes: form.notes || null,
+      status: form.status || 'planned',
+    };
+    if(editId) {
+      await sb.from('cattle_processing_batches').update(rec).eq('id', editId);
+      // If marking complete, auto-move all linked cattle to 'processed'
+      if(rec.status === 'complete') {
+        const linked = cattle.filter(c => c.processing_batch_id === editId);
+        for(const c of linked) {
+          if(c.herd !== 'processed') {
+            await sb.from('cattle').update({herd:'processed'}).eq('id', c.id);
+            await sb.from('cattle_transfers').insert({
+              id: String(Date.now())+Math.random().toString(36).slice(2,6),
+              cattle_id: c.id,
+              from_herd: c.herd,
+              to_herd: 'processed',
+              reason: 'processing_batch',
+              reference_id: editId,
+              team_member: authState && authState.name ? authState.name : null,
+            });
+          }
+        }
+      }
+    } else {
+      const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+      await sb.from('cattle_processing_batches').insert({id, ...rec});
+    }
+    await loadAll();
+    setShowForm(false); setEditId(null); setForm(null);
+  }
+  async function deleteBatch(id) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this processing batch? Linked cattle will keep their processed_batch_id set to NULL.', async () => {
+      await sb.from('cattle_processing_batches').delete().eq('id', id);
+      await loadAll();
+      setShowForm(false); setEditId(null); setForm(null);
+    });
+  }
+
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const lbl = {fontSize:11, color:'#6b7280', display:'block', marginBottom:3, fontWeight:500};
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1100, margin:'0 auto'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+          <div style={{fontSize:16, fontWeight:700, color:'#111827'}}>Processing Batches <span style={{fontSize:13, fontWeight:400, color:'#6b7280'}}>({batches.length})</span></div>
+          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Batch</button>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && batches.length === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No processing batches yet. Click <strong>+ New Batch</strong> to plan one. Once created, you can attach cattle from the Herds tab.
+          </div>
+        )}
+
+        <div style={{display:'flex', flexDirection:'column', gap:10}}>
+          {batches.map(b => {
+            const linked = cattle.filter(c => c.processing_batch_id === b.id);
+            const totalLive = linked.reduce((s,c) => s + (lastWeight(c.tag)||0), 0);
+            const yieldPct = totalLive > 0 && b.total_hanging_weight > 0 ? Math.round((b.total_hanging_weight/totalLive)*1000)/10 : null;
+            return (
+              <div key={b.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 18px'}}>
+                <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap'}}>
+                  <span style={{fontSize:14, fontWeight:700, color:'#111827'}}>{b.name}</span>
+                  <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:b.status==='complete'?'#374151':'#1d4ed8', color:'white', textTransform:'uppercase'}}>{b.status}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{linked.length} {linked.length===1?'cow':'cows'}</span>
+                  {b.planned_process_date && <span style={{fontSize:11, color:'#6b7280'}}>planned {fmt(b.planned_process_date)}</span>}
+                  {b.actual_process_date && <span style={{fontSize:11, color:'#065f46'}}>processed {fmt(b.actual_process_date)}</span>}
+                  <button onClick={()=>openEdit(b)} style={{marginLeft:'auto', fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer'}}>Edit</button>
+                </div>
+                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:8, fontSize:11, color:'#4b5563', marginBottom:8}}>
+                  <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Live wt total</div><div style={{fontWeight:600}}>{totalLive>0?Math.round(totalLive).toLocaleString()+' lb':'\u2014'}</div></div>
+                  <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Hanging wt</div><div style={{fontWeight:600}}>{b.total_hanging_weight?b.total_hanging_weight.toLocaleString()+' lb':'\u2014'}</div></div>
+                  <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Yield</div><div style={{fontWeight:600, color:yieldPct?'#065f46':'#9ca3af'}}>{yieldPct?yieldPct+'%':'\u2014'}</div></div>
+                  <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Cost</div><div style={{fontWeight:600}}>{b.processing_cost?'$'+b.processing_cost.toLocaleString():'\u2014'}</div></div>
+                </div>
+                {linked.length > 0 && (
+                  <div style={{fontSize:11, color:'#6b7280'}}>
+                    Cows: {linked.map(c => '#'+(c.tag||'?')).join(', ')}
+                  </div>
+                )}
+                {b.notes && <div style={{marginTop:6, fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{b.notes}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Batch form modal */}
+      {showForm && form && (
+        <div onClick={()=>{setShowForm(false); setEditId(null); setForm(null);}} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'1rem', overflowY:'auto'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white', borderRadius:12, width:'100%', maxWidth:480, boxShadow:'0 8px 32px rgba(0,0,0,.2)', marginTop:40}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div style={{fontSize:15, fontWeight:600, color:'#991b1b'}}>{editId ? 'Edit Batch' : 'New Processing Batch'}</div>
+              <button onClick={()=>{setShowForm(false); setEditId(null); setForm(null);}} style={{background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9ca3af'}}>{'\u00d7'}</button>
+            </div>
+            <div style={{padding:'16px 20px'}}>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                <div style={{gridColumn:'1/-1'}}><label style={lbl}>Name *</label><input value={form.name} onChange={e=>setForm({...form, name:e.target.value})} style={inpS}/></div>
+                <div><label style={lbl}>Status</label>
+                  <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} style={inpS}>
+                    <option value='planned'>Planned</option><option value='complete'>Complete</option>
+                  </select>
+                </div>
+                <div><label style={lbl}>Planned Process Date</label><input type="date" value={form.planned_process_date} onChange={e=>setForm({...form, planned_process_date:e.target.value})} style={inpS}/></div>
+                <div><label style={lbl}>Actual Process Date</label><input type="date" value={form.actual_process_date} onChange={e=>setForm({...form, actual_process_date:e.target.value})} style={inpS}/></div>
+                <div><label style={lbl}>Total Hanging Weight (lb)</label><input type="number" min="0" step="0.1" value={form.total_hanging_weight} onChange={e=>setForm({...form, total_hanging_weight:e.target.value})} style={inpS}/></div>
+                <div><label style={lbl}>Processing Cost ($)</label><input type="number" min="0" step="0.01" value={form.processing_cost} onChange={e=>setForm({...form, processing_cost:e.target.value})} style={inpS}/></div>
+                <div style={{gridColumn:'1/-1'}}><label style={lbl}>Notes</label><textarea value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})} rows={2} style={{...inpS, resize:'vertical'}}/></div>
+              </div>
+              {form.status === 'complete' && editId && (
+                <div style={{marginTop:10, padding:'8px 12px', background:'#fef3c7', border:'1px solid #fde68a', borderRadius:6, fontSize:11, color:'#92400e'}}>
+                  {'\u26a0 Marking this batch complete will auto-move all linked cattle to the Processed herd.'}
+                </div>
+              )}
+            </div>
+            <div style={{padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8}}>
+              <button onClick={saveBatch} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Save</button>
+              {editId && <button onClick={()=>deleteBatch(editId)} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Delete</button>}
+              <button onClick={()=>{setShowForm(false); setEditId(null); setForm(null);}} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ── CATTLE WEIGH-INS VIEW ───────────────────────────────────────────────────
+// Authenticated review of past weigh-in sessions. Drill into a session to see
+// individual entries. Highlights new-tag flags for admin reconciliation.
+const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
+  const {useState, useEffect} = React;
+  const [sessions, setSessions] = useState([]);
+  const [entries, setEntries] = useState({}); // session_id -> [entries]
+  const [cattle, setCattle] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedSession, setExpandedSession] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all'); // all | draft | complete
+
+  async function loadAll() {
+    const [sR, eR, cR] = await Promise.all([
+      sb.from('weigh_in_sessions').select('*').eq('species','cattle').order('started_at',{ascending:false}),
+      sb.from('weigh_ins').select('*').order('entered_at',{ascending:true}),
+      sb.from('cattle').select('id, tag, herd'),
+    ]);
+    if(sR.data) setSessions(sR.data);
+    if(eR.data) {
+      const m = {};
+      eR.data.forEach(e => { if(!m[e.session_id]) m[e.session_id] = []; m[e.session_id].push(e); });
+      setEntries(m);
+    }
+    if(cR.data) setCattle(cR.data);
+    setLoading(false);
+  }
+  useEffect(() => { loadAll(); }, []);
+
+  async function reopenSession(s) {
+    await sb.from('weigh_in_sessions').update({status:'draft', completed_at:null}).eq('id', s.id);
+    await loadAll();
+  }
+  async function deleteSession(s) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this weigh-in session and all its entries? This cannot be undone.', async () => {
+      await sb.from('weigh_in_sessions').delete().eq('id', s.id);
+      await loadAll();
+    });
+  }
+  async function reconcileNewTag(entry, knownCowId) {
+    if(!knownCowId) return;
+    const cow = cattle.find(c => c.id === knownCowId);
+    if(!cow) return;
+    // Update the weigh-in row to point to the known cow's tag, clear new_tag_flag
+    await sb.from('weigh_ins').update({tag:cow.tag, new_tag_flag:false}).eq('id', entry.id);
+    await loadAll();
+  }
+
+  const filtered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
+  const totalEntries = filtered.reduce((s,sess) => s + (entries[sess.id]?entries[sess.id].length:0), 0);
+  const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls'};
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1100, margin:'0 auto'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8}}>
+          <div>
+            <div style={{fontSize:16, fontWeight:700, color:'#111827'}}>Cattle Weigh-In Sessions</div>
+            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>{filtered.length} sessions {'\u00b7'} {totalEntries} total entries</div>
+          </div>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+              {[{k:'all',l:'All'},{k:'draft',l:'Drafts'},{k:'complete',l:'Complete'}].map((o,oi) => (
+                <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+              ))}
+            </div>
+            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Session'}</button>
+          </div>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && filtered.length === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No weigh-in sessions yet. Click <strong>{'\u2696\ufe0f New Session'}</strong> to start one.
+          </div>
+        )}
+
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          {filtered.map(s => {
+            const isExpanded = expandedSession === s.id;
+            const sEntries = entries[s.id] || [];
+            const newTagCount = sEntries.filter(e => e.new_tag_flag).length;
+            const avgWeight = sEntries.length > 0 ? sEntries.reduce((sum,e)=>sum+(parseFloat(e.weight)||0),0) / sEntries.length : 0;
+            return (
+              <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
+                <div onClick={()=>setExpandedSession(isExpanded?null:s.id)} style={{padding:'10px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className="hoverable-tile">
+                  <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
+                  <span style={{fontSize:13, fontWeight:700, color:'#111827', minWidth:120}}>{HERD_LABELS[s.herd]||s.herd||'Unknown herd'}</span>
+                  <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:s.status==='complete'?'#d1fae5':'#fef3c7', color:s.status==='complete'?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
+                  <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>{sEntries.length} {sEntries.length===1?'entry':'entries'}</span>
+                  {avgWeight > 0 && <span style={{fontSize:11, color:'#065f46', fontWeight:600}}>avg {Math.round(avgWeight)} lb</span>}
+                  {newTagCount > 0 && <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>{newTagCount + ' new tags'}</span>}
+                </div>
+                {isExpanded && (
+                  <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
+                    <div style={{display:'flex', gap:8, marginBottom:10}}>
+                      {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Session</button>}
+                      {s.status === 'draft' && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Resume in Webform</button>}
+                      <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Session</button>
+                    </div>
+                    {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No entries in this session.</div>}
+                    {sEntries.map(e => {
+                      const cow = cattle.find(c => c.tag === e.tag);
+                      return (
+                        <div key={e.id} style={{background:'white', border:'1px solid '+(e.new_tag_flag?'#fca5a5':'#e5e7eb'), borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:12, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                          {e.tag ? <span style={{fontWeight:700, color:'#111827', minWidth:60}}>#{e.tag}</span> : <span style={{color:'#9ca3af', minWidth:60}}>(no tag)</span>}
+                          <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                          {e.new_tag_flag && (
+                            <React.Fragment>
+                              <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>
+                              <select onChange={ev=>{if(ev.target.value){reconcileNewTag(e, ev.target.value);}}} defaultValue='' style={{fontSize:11, padding:'3px 6px', border:'1px solid #d1d5db', borderRadius:4, fontFamily:'inherit'}}>
+                                <option value=''>Reconcile to known cow...</option>
+                                {cattle.filter(c => c.tag).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(c => <option key={c.id} value={c.id}>{'#'+c.tag+' ('+(c.herd||'?')+')'}</option>)}
+                              </select>
+                            </React.Fragment>
+                          )}
+                          {!e.new_tag_flag && cow && <span style={{fontSize:11, color:'#6b7280'}}>{HERD_LABELS[cow.herd]||cow.herd}</span>}
+                          {e.note && <span style={{fontSize:11, color:'#92400e', fontStyle:'italic', flex:1}}>{e.note}</span>}
+                          <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };
