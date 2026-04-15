@@ -1015,6 +1015,71 @@ Hub now has 7 cards: 2 quick-action cards at top (🌾 Add Feed, ⚖️ Weigh-In
 - **Always** show the diff and propose a commit message before asking for commit approval.
 - **Always** match the scope of action to what was explicitly asked. If Ronnie says "fix X," fix X — don't bundle in Y.
 
+## 14.13 Post-deploy hotfixes (April 15 evening, after `be4525e` shipped)
+
+The big push (`be4525e`) deployed via Netlify and immediately surfaced two production-only bugs that hadn't shown during local writes. Both were latent JSX/JS issues that Babel-in-browser only caught at compile or runtime in the browser.
+
+### What broke and how it was fixed
+
+**Bug A — Babel compile error: missing `}` in unicode-escape JSX expression** (commit `05578a0`)
+
+The whole site failed to load with:
+```
+Compile error: unknown: Unexpected token, expected "}" (1789:111)
+> 1789 | Pick what you{'\u2019're weighing
+                                    ^
+```
+
+Cause: I wrote `you{'\u2019're weighing` — the closing `}` of the JSX expression was missing. The intended pattern is `you{'\u2019'}re weighing` (apostrophe rendered via expression, then plain text resumes). When Babel hit this it couldn't compile the entire file, so every URL rendered the boot error screen — not just the `#weighins` route where the broken code lived.
+
+Fix: 1-character — added the missing `}`.
+
+**Bug B — Pre-existing latent ReferenceError in PigTile** (commit `45756a5`)
+
+After the apostrophe was fixed, the Breeding Pigs (`#sows`) view threw:
+```
+ReferenceError: cycleSeqMap is not defined
+  at PigTile (...)
+```
+
+Cause: this was NOT introduced today. `PigTile` (defined inside `view==="sows"`) referenced `cycleSeqMap` from outer scope, but the variable was never defined inside the sows view scope. The other views that use `cycleSeqMap` (`farrowing`, `pigbatches`, `breeding`) each define it at the top with `const cycleSeqMap = buildCycleSeqMap(breedingCycles);`. The sows view never did. The bug just never tripped before because PigTile only references `cycleSeqMap` inside the cycle-linked branches of the sow farrowing-history map — if no expanded sow had cycle-linked records visible, the variable was never read. Today's testing happened to expand a tile that did.
+
+Fix: 1 line — added `const cycleSeqMap = buildCycleSeqMap(breedingCycles);` at the top of the sows view, matching the pattern used by sibling views.
+
+### Other 404s observed (not bugs to fix today)
+
+- `cattle_comments` 404 — expected. Migration `002_cattle_comments.sql` hadn't been applied. The app silently no-ops comments features (try/catch wrapped). Apply the migration to unblock.
+- `batches` 404 — pre-existing bug #4 (BroilerDailysView queries a non-existent `batches` table). Ronnie confirmed earlier "leave it" — silent, doesn't break anything visible. Still leaving.
+
+### Lessons (read these before the next deploy)
+
+1. **JSX template literals with unicode escapes are a footgun.** The pattern `text{'\u2019'}suffix` is correct (apostrophe-as-expression, then plain text). Variants like `text{'\u2019're text'}` or `text{'\u2019're` LOOK fine but are syntactically broken because `re` isn't valid JSX between `'\u2019'` and `}`. Always close the expression with `}` immediately after the closing `'`. When in doubt, search for `\\u2019'\w` or `\{'\\u2019'[a-z]` in the file before commit.
+
+2. **Babel-in-browser fails closed.** A single syntax error anywhere in the source file prevents ANY component from rendering — not just the broken view. The boot screen says "Failed to load" and shows the parse error location. Always re-test ALL top-level navs after a deploy that touches more than a few lines of JSX.
+
+3. **Latent reference errors only show at runtime in the browser.** No build step means no static analysis. JS variables referenced in scope-lifted closures or nested map callbacks don't error until execution. PigTile worked for months because the broken code path was conditional on data that wasn't present in the test cases.
+
+4. **Post-deploy verification checklist** (do this every time):
+   - Hit `/` (Home Dashboard) — should render with 4 program cards
+   - Hit `/#webforms` — all daily report cards visible + Add Feed + Weigh-Ins
+   - Hit each program's sub-nav: Broilers (Dashboard / Timeline / Batches / Dailys / Feed), Layers, Pigs (incl. **Breeding Pigs / Sows**), Cattle (all 6 tabs)
+   - Watch the browser console (F12) for any red errors. ReferenceError, TypeError, and 404s on Supabase tables are the common ones.
+   - If anything red, fix and push BEFORE walking away.
+
+5. **Test the deploy from a fresh browser/device, not your usual one.** Your usual browser may be serving cached Babel output. Incognito or a different browser confirms what real users see.
+
+### Updated commit list at end of session
+
+```
+45756a5  Hotfix: cycleSeqMap not defined in Breeding Pigs (sows) view
+05578a0  Hotfix: missing closing brace in WeighInsWebform JSX expression
+be4525e  Phase 1 finish + Phase 2 weigh-ins + Phase 3 directory merge + session log
+d8a4a67  Phase 1 cattle module: admin feed inputs, test PDFs, webforms, dailys view
+47eb531  Fix 6 bugs: arrow literal, webform field path, admin validation, Babel double-root, dead filters
+```
+
+All 5 are pushed to `origin/main` and live on `wcfplanner.com` (Netlify auto-deploy).
+
 ---
 
 *End of April 15 wrap-up. Future Claude: you've got this.*
