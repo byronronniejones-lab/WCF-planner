@@ -15,6 +15,16 @@ Updated April 13, 2026
 3. Read the relevant section(s) of `index.html` before writing any code.
 4. Check the "Open Items" section for pending work.
 
+### Deployment SOP — NEVER skip (added April 15, 2026)
+
+**NEVER run `git commit`, `git push`, or any deploy command without explicit user approval in the current session turn.**
+
+- Approval for one change does NOT imply approval for subsequent changes.
+- After completing code changes, pause and show Ronnie a summary of what was modified before asking for commit approval.
+- If Ronnie says "make change X," make the change and wait — do not commit.
+- If Ronnie says "commit and deploy X," do it for X only.
+- Background agents and worktrees follow the same rule — no commits without explicit approval.
+
 ### Ronnie's Working Style
 
 - Ask lots of questions before building. Never jump into code without fully understanding scope.
@@ -746,4 +756,92 @@ None open at end of session. All bugs surfaced during color swap were fixed and 
 
 ---
 
-*End of Handover Document — Updated April 14, 2026*
+*End of April 14 Session*
+
+---
+
+# 13. Session Update — April 15, 2026
+
+## Deployment SOP added (§1)
+
+No commit/deploy without explicit session approval. Documented at the top of the handover. This is the rule going forward.
+
+## Cattle module design locked
+
+Created `CATTLE_DESIGN.md` at repo root — full design doc for the cattle module across all 3 phases. Approved by Ronnie for implementation. Key decisions captured there:
+
+- 4 active herds (Mommas, Backgrounders, Finishers, Bulls) + 3 outcomes (Processed, Deceased, Sold). Hardcoded for launch.
+- Feed model: no standalone creep form. Ingredients (alfalfa pellets, citrus pellets, sugar, colostrum) tracked as regular feed entries. Mommas daily reports get a per-line `is_creep` toggle to exclude those lines from nutrition math while still counting for cost.
+- 11 new Supabase tables documented.
+- Phase 1 expanded to include the breeding cycle timeline tab (needed for the "missed cycle" filter on the Mommas herd).
+- Public webforms: cattle added to WebformHub (5 program cards now) + 4th program on Add Feed webform + new 5th card for Weigh-Ins (Phase 2).
+- Weigh-in session model: cattle sessions autosave to Supabase; mobile-safe draft resume; diminishing dropdown + `+ New Tag` button with admin reconciliation.
+- Nutrition targets: per-herd table (DM % body, CP % DM, NFC % DM) in Admin → Feed. Starter seed values subject to field calibration.
+- Admin panel: `FeedCostsPanel` tab renamed "Feed," split into Simple $/lb + Livestock Feed Inputs + Nutrition Targets subsections.
+- Real nutritional data extracted from provided PDFs (Rye Baleage, Citrus Pellets). Molasses landed cost from Biogreaux invoice: $0.389/lb (250-gal tote at 11.9 lb/gal, 3 totes + $575 freight).
+
+## Bugs fixed (awaiting Ronnie's approval to commit)
+
+All fixes landed locally; nothing committed.
+
+1. `"2192"` string literal replaced with `\u2192` arrow in timeline tooltip and batch list rows (4 locations).
+2. `renderWebform` `wfCfgFields` now correctly reads `sections[].fields` instead of the nonexistent top-level `.fields`. Admin-configured required-field flags on the legacy `#pigdailys` route now work.
+3. `AdminAddReportModal` gains the conditional-validation rules (feed_type required when feed_lbs>0; mortality_reason required when mortality_count>0) for broiler + layer forms including their extra-group rows. Matches WebformHub semantics.
+5. Babel cache retry no longer creates a second React root — root is cached on `window._wcfAppRoot` and reused on re-execution.
+6. Dead `batch_id === 'breeding-sows'` branch in the Sows/Boars feed-consumption panel removed (the ID never matched; the `batch_label` fallback was carrying the feature).
+7. `feedOrders` initial state now matches the actual schema shape `{pig, starter, grower, layerfeed}` instead of the stale `{pig, broiler}`.
+
+Bug #4 (`sb.from('batches')` in BroilerDailysView) was NOT fixed — Ronnie confirmed the view works fine. The 404 is silent and the unused state doesn't break anything.
+Bug #8 (nursing sow calc using cycle weaningEnd instead of per-sow) was NOT fixed — intentional per Ronnie: easier to let a late-farrowing sow over-eat than to separate her.
+
+## Cattle module build — Phase 1 mostly complete (April 15 session continued)
+
+### Infrastructure (applied by Ronnie)
+- ✅ `supabase-migrations/001_cattle_module.sql` applied via Supabase SQL Editor. 11 tables, RLS policies, seed feeds, seed nutrition targets.
+- ✅ Storage buckets created: `cattle-feed-pdfs` + `cattle-directory-docs`. Both public, 3 authenticated policies each (INSERT/UPDATE/DELETE). Matches `batch-documents` pattern.
+
+### Code (local only, not committed — Ronnie will review the bundle at the end)
+
+1. ✅ **Cattle constants** in index.html near pig breeding constants: `CATTLE_HERDS`, `CATTLE_OUTCOMES`, `CATTLE_HERD_LABELS`, `CATTLE_HERD_COLORS`, breeding-cycle constants (65/30/274/65/213 days), `calcCattleBreedingTimeline`, `buildCattleCycleSeqMap`, `cattleCycleLabel`.
+2. ✅ **`VALID_VIEWS`** extended with 7 cattle route IDs.
+3. ✅ **Admin Feed tab** — renamed from "Feed Costs" → "Feed". Now a stack of 3 panels:
+   - Existing `FeedCostsPanel` (unchanged, simple $/lb per poultry/pig feed)
+   - NEW `LivestockFeedInputsPanel` — master list of every feed/mineral with filter chips, card grid, add/edit modal with autosave. Full fields: name, category, unit, unit weight, cost + freight + units_per_truck → landed $/lb computed preview, moisture/NFC/CP%, herd scope chips, status, notes.
+   - NEW `NutritionTargetsPanel` — inline-editable per-herd table for DM/CP/NFC targets + fallback cow weight, with per-row autosave.
+4. ✅ **Test PDF upload + version history** inside the LivestockFeedInputsPanel edit modal. Upload to `cattle-feed-pdfs` bucket. Latest test's values auto-sync to parent feed's nutrition fields. Delete removes both the PDF and DB row.
+5. ✅ **Cattle Daily webform** added to WebformHub as 5th card on `#webforms`. Date + team + herd dropdown + dynamic feeds list (filtered by herd) + dynamic minerals list + fence voltage + water Y/N + mortality + issues. Per-line `is_creep` toggle on Mommas herd feeds. Nutrition values snapshotted at submit time.
+6. ✅ **Add Feed webform** — Cattle added as 4th program on `#addfeed`. Herd picker replaces batch picker. Dynamic feed rows (filtered by herd scope). Creep toggle on Mommas. Inserts into `cattle_dailys` with `source='add_feed_webform'`.
+7. ✅ **`CattleDailysView`** standalone component: list view with date/herd/team/source filters, row renderer with herd-colored pills + feed/mineral summary + mortality/voltage/water badges + issues highlight. Edit modal with add/remove dynamic feed & mineral rows, with nutrition snapshot refreshed on save. Delete confirmation via `DeleteModal`.
+8. ✅ **Header** component — cattle sub-nav added (Dashboard / Herds / Dailys / Weigh-Ins / Breeding / Directory / Batches). CATTLE label in top bar when in a cattle view.
+9. ✅ **Routing:** `view==="cattledailys"` renders the real `CattleDailysView`. The other 6 cattle views render a clean "Coming soon" placeholder that lists which features ARE working — no blank screens.
+10. ✅ **Home Dashboard** — 4th Cattle nav card. Grid is now 2×2 instead of 3×1.
+
+### What's NOT yet built (remaining Phase 1)
+- **Herds tab** (`cattleherds`) — cattle tiles per herd with cow list, sorting, add/remove/transfer
+- **Breeding tab** (`cattlebreeding`) — Gantt timeline + cycle cards + outstanding cows
+- **Calving records** — inline form + history under Mommas cows
+- **Cattle Home Dashboard** (`cattleHome`) — stats tiles + rolling nutrition panel
+- **Animals on Farm** — currently 4 columns, needs expansion to 5 (Broilers / Layers / Pigs / Cattle / Total)
+
+### Phase 2 (not started)
+- Weigh-Ins webform + session autosave model + broiler/pig/cattle flows + WeighInsView tabs
+
+### Phase 3 (not started)
+- Directory (full `cattle` table browsing), processing batches, sales, deceased, per-head cost rollup, Podio import
+
+## Open items for next session
+
+- **Ronnie** to review the uncommitted working-tree changes in `index.html` + `PROJECT.md`. Full diff: `git diff` (index.html +1,468 lines, PROJECT.md ~+110 lines).
+- **Claude** to resume Cattle Phase 1 build at step 10 (Herds tab).
+- Podio export freeze + import happens AFTER the cattle webform + daily reporting are live (since daily data will be moving from Podio to the planner at go-live).
+- Fresh Podio export needed once we're ready for import.
+- Test plan once enough is deployed: admin creates a cattle daily → reviews feed totals → checks nutrition targets math → uploads a feed test PDF → verifies values sync to parent feed.
+
+## Lessons for future Claude sessions
+
+16. **Read the full handover doc before summarizing "open questions."** During this session I asked Ronnie to re-answer questions that were already answered in PROJECT.md §12 from April 14. Ronnie had to push back. Always finish reading the entire doc — including late-night addenda — before drafting the question list.
+17. **The "no commit without approval" rule is absolute.** The old pattern of "edit + commit + push in one flow" is retired. Even trivial changes wait for Ronnie's explicit go-ahead in the same session turn. Background agents and worktrees follow the same rule.
+
+---
+
+*End of April 15 Session*

@@ -479,6 +479,72 @@ function cycleLabel(cycle, seqMap) {
   return 'Group ' + cycle.group + (suffix ? ' - ' + suffix : '');
 }
 
+// ── CATTLE CONSTANTS ───────────────────────────────────────────────────────
+// See CATTLE_DESIGN.md for full module design.
+const CATTLE_HERDS         = ['mommas','backgrounders','finishers','bulls'];
+const CATTLE_OUTCOMES      = ['processed','deceased','sold'];
+const CATTLE_ALL_HERDS     = [...CATTLE_HERDS, ...CATTLE_OUTCOMES];
+
+const CATTLE_HERD_LABELS = {
+  mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls',
+  processed:'Processed', deceased:'Deceased', sold:'Sold'
+};
+
+// Red family palette (matches program palette committed in 524b4c2).
+// No purple anywhere. Bulls is wine/deep red; outcomes are neutral.
+const CATTLE_HERD_COLORS = {
+  mommas:        {bg:'#fef2f2', bd:'#fca5a5', tx:'#991b1b', bar:'#dc2626'},   // red (primary)
+  backgrounders: {bg:'#ffedd5', bd:'#fdba74', tx:'#9a3412', bar:'#ea580c'},   // orange
+  finishers:     {bg:'#fff1f2', bd:'#fda4af', tx:'#9f1239', bar:'#e11d48'},   // rose
+  bulls:         {bg:'#fee2e2', bd:'#fca5a5', tx:'#7f1d1d', bar:'#991b1b'},   // wine
+  processed:     {bg:'#f3f4f6', bd:'#d1d5db', tx:'#374151', bar:'#6b7280'},
+  deceased:      {bg:'#f9fafb', bd:'#e5e7eb', tx:'#6b7280', bar:'#9ca3af'},
+  sold:          {bg:'#eff6ff', bd:'#bfdbfe', tx:'#1e40af', bar:'#2563eb'},
+};
+
+// ── CATTLE BREEDING CONSTANTS ──────────────────────────────────────────────
+const CATTLE_BULL_EXPOSURE_DAYS     = 65;
+const CATTLE_PREG_CHECK_OFFSET_DAYS = 30;   // days after bull_exposure_end
+const CATTLE_GESTATION_DAYS         = 274;  // ~9 months
+const CATTLE_CALVING_WINDOW_DAYS    = 65;
+const CATTLE_NURSING_DAYS           = 213;  // ~7 months
+
+// Given a bull exposure start date, return the full cycle timeline.
+// All dates ISO strings. Returns null if start not provided.
+function calcCattleBreedingTimeline(exposureStart) {
+  if(!exposureStart) return null;
+  const d0 = new Date(exposureStart+'T12:00:00');
+  const exposureEnd    = toISO(addDays(d0, CATTLE_BULL_EXPOSURE_DAYS - 1));
+  const pregCheckDate  = toISO(addDays(d0, CATTLE_BULL_EXPOSURE_DAYS - 1 + CATTLE_PREG_CHECK_OFFSET_DAYS));
+  const calvingStart   = toISO(addDays(d0, CATTLE_GESTATION_DAYS));
+  const calvingEnd     = toISO(addDays(d0, CATTLE_GESTATION_DAYS + CATTLE_CALVING_WINDOW_DAYS - 1));
+  const weaningDate    = toISO(addDays(d0, CATTLE_GESTATION_DAYS + CATTLE_NURSING_DAYS - 1));
+  return { exposureStart, exposureEnd, pregCheckDate, calvingStart, calvingEnd, weaningDate };
+}
+
+// Per-year global sequence map for cattle cycles. Format: "YY-NN".
+// Parallels buildCycleSeqMap for pigs but keyed off bull_exposure_start.
+function buildCattleCycleSeqMap(cycles) {
+  const seqMap = {};
+  const dated = (cycles||[]).filter(c => c && c.id && c.bull_exposure_start);
+  const sorted = [...dated].sort((a,b) => {
+    if(a.bull_exposure_start !== b.bull_exposure_start) return a.bull_exposure_start.localeCompare(b.bull_exposure_start);
+    return String(a.id).localeCompare(String(b.id));
+  });
+  const yearCounts = {};
+  sorted.forEach(c => {
+    const yr = c.bull_exposure_start.slice(2,4);
+    yearCounts[yr] = (yearCounts[yr]||0) + 1;
+    seqMap[c.id] = yr + '-' + String(yearCounts[yr]).padStart(2,'0');
+  });
+  return seqMap;
+}
+function cattleCycleLabel(cycle, seqMap) {
+  if(!cycle) return '';
+  const suffix = seqMap && seqMap[cycle.id];
+  return 'Cattle Cycle' + (suffix ? ' ' + suffix : '');
+}
+
 // ── AUTO-STATUS HELPERS ──────────────────────────────────────────────────
 function calcPoultryStatus(batch) {
   // Trust user's explicit status choice. Auto-compute only when not set.
@@ -1348,6 +1414,16 @@ const AddFeedWebform = ({sb}) => {
   const [submitting, setSubmitting] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [done, setDone] = React.useState(false);
+  // Cattle quick-log state (parallel to the poultry/pig fields above)
+  const [cattleFeedInputs, setCattleFeedInputs] = React.useState([]);
+  const [cattleHerd, setCattleHerd] = React.useState('');
+  const [cattleRows, setCattleRows] = React.useState([{feedId:'', qty:'', isCreep:false}]);
+
+  React.useEffect(function(){
+    sb.from('cattle_feed_inputs').select('*').eq('status','active').order('category').order('name').then(function(res){
+      if(res && res.data) setCattleFeedInputs(res.data);
+    });
+  },[]);
 
   React.useEffect(function(){
     var d=new Date();
@@ -1441,6 +1517,52 @@ const AddFeedWebform = ({sb}) => {
   function handleSubmit(){
     if(!date){setErr('Please enter a date.');return;}
     if(isRequired('team_member')&&!teamMember){setErr(getLabel('team_member','Team Member')+' is required.');return;}
+    // Cattle-specific submit path
+    if(program==='cattle'){
+      if(!cattleHerd){setErr('Please select a herd.');return;}
+      var filledRows=(cattleRows||[]).filter(function(r){return r.feedId && r.qty!=='' && r.qty!=null;});
+      if(filledRows.length===0){setErr('Please enter at least one feed.');return;}
+      var feedsJ=filledRows.map(function(r){
+        var fi=cattleFeedInputs.find(function(x){return x.id===r.feedId;});
+        if(!fi) return null;
+        var qty=parseFloat(r.qty)||0;
+        var unitWt=parseFloat(fi.unit_weight_lbs)||1;
+        return {
+          feed_input_id: fi.id,
+          feed_name: fi.name,
+          category: fi.category,
+          qty: qty,
+          unit: fi.unit,
+          lbs_as_fed: Math.round(qty*unitWt*100)/100,
+          is_creep: !!r.isCreep,
+          nutrition_snapshot: {
+            moisture_pct: fi.moisture_pct,
+            nfc_pct: fi.nfc_pct,
+            protein_pct: fi.protein_pct,
+          },
+        };
+      }).filter(Boolean);
+      setErr('');setSubmitting(true);
+      var cRec={
+        id: String(Date.now())+Math.random().toString(36).slice(2,6),
+        submitted_at: new Date().toISOString(),
+        date: date,
+        team_member: teamMember || null,
+        herd: cattleHerd,
+        feeds: feedsJ,
+        minerals: [],
+        mortality_count: 0,
+        source: 'add_feed_webform',
+      };
+      sb.from('cattle_dailys').insert(cRec).then(function(res){
+        setSubmitting(false);
+        if(res.error){setErr('Could not save: '+res.error.message);return;}
+        if(teamMember) localStorage.setItem('wcf_team',teamMember);
+        setDone(true);
+      });
+      return;
+    }
+    // Poultry/pig submit path
     if(!batchLabel){setErr('Please select a batch/group.');return;}
     if(isRequired('feed_lbs')&&(!feedLbs||parseFloat(feedLbs)<=0)){setErr(getLabel('feed_lbs','Feed (lbs)')+' is required.');return;}
     if(program!=='pig'&&isEnabled('feed_type')&&isRequired('feed_type')&&parseFloat(feedLbs)>0&&!feedType){setErr(getLabel('feed_type','Feed Type')+' is required when feed is entered.');return;}
@@ -1465,7 +1587,7 @@ const AddFeedWebform = ({sb}) => {
     });
   }
 
-  function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setErr('');setDone(false);}
+  function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setErr('');setDone(false);}
 
   var wfBg={minHeight:'100vh',background:'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)',padding:'1rem',fontFamily:'inherit'};
   var cardS={background:'white',borderRadius:12,padding:'20px',marginBottom:12,boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
@@ -1485,8 +1607,10 @@ const AddFeedWebform = ({sb}) => {
         <div style={{fontSize:56,marginBottom:12}}>{'\u2705'}</div>
         <div style={{fontSize:20,fontWeight:700,color:'#111827',marginBottom:8}}>Feed logged!</div>
         <div style={{fontSize:14,color:'#4b5563',marginBottom:28,lineHeight:1.6}}>
-          {batchLabel+' \u2014 '+feedLbs+' lbs'+(feedType?' ('+feedType+')':'')}
-          {extraGroups.filter(function(g){return g.batchLabel;}).length>0?(' + '+extraGroups.filter(function(g){return g.batchLabel;}).length+' more'):''}
+          {program==='cattle'
+            ? (cattleHerd+' \u2014 '+cattleRows.filter(function(r){return r.feedId&&r.qty;}).length+' feed entr'+(cattleRows.filter(function(r){return r.feedId&&r.qty;}).length===1?'y':'ies'))
+            : (batchLabel+' \u2014 '+feedLbs+' lbs'+(feedType?' ('+feedType+')':''))+(extraGroups.filter(function(g){return g.batchLabel;}).length>0?(' + '+extraGroups.filter(function(g){return g.batchLabel;}).length+' more'):'')
+          }
         </div>
         <button onClick={resetForm} style={{width:'100%',padding:14,borderRadius:10,border:'none',background:'#085041',color:'white',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:10}}>
           Log Another
@@ -1555,13 +1679,14 @@ const AddFeedWebform = ({sb}) => {
 
         <div style={cardS}>
           <label style={lblS}>Program</label>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:10}}>
             {[
               {key:'pig',icon:'\ud83d\udc37',label:'Pig',color:'#1e40af',bg:'#eff6ff'},
               {key:'broiler',icon:'\ud83d\udc14',label:'Broiler',color:'#a16207',bg:'#fef9c3'},
               {key:'layer',icon:'\ud83d\udc13',label:'Layer',color:'#78350f',bg:'#fffbeb'},
+              {key:'cattle',icon:'\ud83d\udc04',label:'Cattle',color:'#991b1b',bg:'#fef2f2'},
             ].map(function(p){return (
-              <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);}} style={{
+              <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);}} style={{
                 padding:'16px 8px',borderRadius:12,cursor:'pointer',fontFamily:'inherit',
                 border:program===p.key?'2px solid '+p.color:'2px solid #e5e7eb',
                 background:program===p.key?p.bg:'white',
@@ -1574,20 +1699,68 @@ const AddFeedWebform = ({sb}) => {
           </div>
         </div>
 
-        {program&&renderFeedGroup(batchLabel,feedType,feedLbs,function(k,v){
+        {program&&program!=='cattle'&&renderFeedGroup(batchLabel,feedType,feedLbs,function(k,v){
           if(k==='batchLabel') setBatchLabel(v);
           else if(k==='feedType') setFeedType(v);
           else if(k==='feedLbs') setFeedLbs(v);
         },null)}
 
-        {program&&extraGroups.map(function(eg,ei){
+        {program&&program!=='cattle'&&extraGroups.map(function(eg,ei){
           return renderFeedGroup(eg.batchLabel||'',eg.feedType||'',eg.feedLbs||'',function(k,v){
             setExtraGroups(function(p){return p.map(function(g,i){if(i!==ei)return g;var n={};for(var x in g)n[x]=g[x];n[k]=v;return n;});});
           },ei);
         })}
 
-        {program&&allowAddGroup()&&(
+        {program&&program!=='cattle'&&allowAddGroup()&&(
           <button type="button" onClick={function(){setExtraGroups(function(p){return p.concat([{batchLabel:'',feedType:'',feedLbs:''}]);});}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #a7f3d0',background:'transparent',color:'#085041',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
+        )}
+
+        {program==='cattle'&&(
+          <React.Fragment>
+            {/* Herd selector */}
+            <div style={cardS}>
+              <label style={lblS}>Herd<span style={{color:'#dc2626',marginLeft:2}}>*</span></label>
+              <select value={cattleHerd} onChange={function(e){setCattleHerd(e.target.value);setCattleRows([{feedId:'',qty:'',isCreep:false}]);}} style={inpS}>
+                <option value=''>Select herd...</option>
+                <option value='mommas'>Mommas</option>
+                <option value='backgrounders'>Backgrounders</option>
+                <option value='finishers'>Finishers</option>
+                <option value='bulls'>Bulls</option>
+              </select>
+            </div>
+
+            {/* Feed rows — one per feed */}
+            {cattleHerd&&(function(){
+              var feedsForHerd = cattleFeedInputs.filter(function(f){return (f.herd_scope||[]).includes(cattleHerd);});
+              var showCreep = cattleHerd==='mommas';
+              return cattleRows.map(function(row,ri){
+                var fi = cattleFeedInputs.find(function(x){return x.id===row.feedId;});
+                return React.createElement('div',{key:ri,style:cardS},
+                  cattleRows.length>1 && React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+                    React.createElement('div',{style:{fontSize:13,fontWeight:600,color:'#991b1b'}},'Feed '+(ri+1)),
+                    React.createElement('button',{type:'button',onClick:function(){setCattleRows(cattleRows.filter(function(_,i){return i!==ri;}));},style:{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}},'\u00d7')
+                  ),
+                  React.createElement('label',{style:lblS},'Feed Type'),
+                  React.createElement('select',{value:row.feedId,onChange:function(e){setCattleRows(cattleRows.map(function(r,i){return i===ri?Object.assign({},r,{feedId:e.target.value}):r;}));},style:inpS},
+                    React.createElement('option',{value:''},'Select feed...'),
+                    feedsForHerd.map(function(f){return React.createElement('option',{key:f.id,value:f.id},f.name);})
+                  ),
+                  React.createElement('div',{style:{marginTop:10}},
+                    React.createElement('label',{style:lblS},fi?'Qty ('+fi.unit+')':'Qty'),
+                    React.createElement('input',{type:'number',min:'0',step:'0.1',value:row.qty,onChange:function(e){setCattleRows(cattleRows.map(function(r,i){return i===ri?Object.assign({},r,{qty:e.target.value}):r;}));},placeholder:'0',style:inpS})
+                  ),
+                  showCreep && row.feedId && React.createElement('label',{style:{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#7f1d1d',cursor:'pointer',marginTop:8,userSelect:'none'}},
+                    React.createElement('input',{type:'checkbox',checked:!!row.isCreep,onChange:function(e){setCattleRows(cattleRows.map(function(r,i){return i===ri?Object.assign({},r,{isCreep:e.target.checked}):r;}));},style:{cursor:'pointer'}}),
+                    'This was creep feed (for calves)'
+                  )
+                );
+              });
+            })()}
+
+            {cattleHerd&&(
+              <button type="button" onClick={function(){setCattleRows(cattleRows.concat([{feedId:'',qty:'',isCreep:false}]));}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fca5a5',background:'transparent',color:'#991b1b',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Feed</button>
+            )}
+          </React.Fragment>
         )}
 
         {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
@@ -1668,6 +1841,24 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
   const activeLayerGroups = (layerGroups||[]).filter(g=>g.status==='active');
   const EMPTY_E = {date:todayStr(),teamMember:localStorage.getItem('wcf_team')||'',g1n:activeLayerGroups[0]?.name||'',g1c:'',g2n:activeLayerGroups[1]?.name||'',g2c:'',g3n:activeLayerGroups[2]?.name||'',g3c:'',g4n:activeLayerGroups[3]?.name||'',g4c:'',dozensOnHand:'',comments:''};
   const [eForm, setEForm] = useState(EMPTY_E);
+
+  // Cattle form state + active feeds list
+  const [cattleFeedInputs, setCattleFeedInputs] = useState([]);
+  const EMPTY_C = {
+    date: todayStr(),
+    teamMember: localStorage.getItem('wcf_team')||'',
+    herd: '',
+    feeds:    [{feedId:'', qty:'', isCreep:false}],
+    minerals: [{feedId:'', lbs:''}],
+    fenceVoltage:'', waterChecked:true,
+    mortalityCount:'', mortalityReason:'', issues:''
+  };
+  const [cForm, setCForm] = useState(EMPTY_C);
+  useEffect(()=>{
+    sb.from('cattle_feed_inputs').select('*').eq('status','active').order('category').order('name').then(({data})=>{
+      if(data) setCattleFeedInputs(data);
+    });
+  },[]);
 
   // CRITICAL: load from Supabase only — props are empty on mobile (no auth)
   const broilerGroups = (broilerGroupsFromDb.length>0 && broilerGroupsFromDb) || (loadedConfig?.broilerGroups?.length>0 && loadedConfig.broilerGroups) || [];
@@ -1915,6 +2106,64 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     wcfSendEmail('egg_report',{date:rec.date,team_member:rec.team_member,dozens_on_hand:rec.dozens_on_hand,daily_dozen_count:rec.daily_dozen_count});
     setDone(true);
   }
+  async function submitCattle(){
+    if(!cForm.date||!cForm.teamMember||!cForm.herd){setErr('Date, team member, and herd are required.');return;}
+    // Conditional: mortality reason required when count > 0
+    if(parseInt(cForm.mortalityCount)>0 && !(cForm.mortalityReason||'').trim()){setErr('Mortality reason is required when mortalities are reported.');return;}
+    setErr('');setSubmitting(true);
+    localStorage.setItem('wcf_team',cForm.teamMember);
+    // Build feeds jsonb with nutrition snapshots from the feed master list
+    const feedsJ = (cForm.feeds||[]).filter(f=>f.feedId && f.qty!=='' && f.qty!=null).map(f=>{
+      const fi = cattleFeedInputs.find(x=>x.id===f.feedId);
+      if(!fi) return null;
+      const qty = parseFloat(f.qty)||0;
+      const unitWt = parseFloat(fi.unit_weight_lbs)||1;
+      const lbsAsFed = qty * unitWt;
+      return {
+        feed_input_id: fi.id,
+        feed_name: fi.name,
+        category: fi.category,
+        qty: qty,
+        unit: fi.unit,
+        lbs_as_fed: Math.round(lbsAsFed*100)/100,
+        is_creep: !!f.isCreep,
+        nutrition_snapshot: {
+          moisture_pct: fi.moisture_pct,
+          nfc_pct: fi.nfc_pct,
+          protein_pct: fi.protein_pct,
+        },
+      };
+    }).filter(Boolean);
+    const mineralsJ = (cForm.minerals||[]).filter(m=>m.feedId && m.lbs!=='' && m.lbs!=null).map(m=>{
+      const fi = cattleFeedInputs.find(x=>x.id===m.feedId);
+      if(!fi) return null;
+      return {
+        feed_input_id: fi.id,
+        name: fi.name,
+        lbs: parseFloat(m.lbs)||0,
+      };
+    }).filter(Boolean);
+    const rec = {
+      id: String(Date.now())+Math.random().toString(36).slice(2,6),
+      submitted_at: new Date().toISOString(),
+      date: cForm.date,
+      team_member: cForm.teamMember,
+      herd: cForm.herd,
+      feeds: feedsJ,
+      minerals: mineralsJ,
+      fence_voltage: cForm.fenceVoltage!==''?parseFloat(cForm.fenceVoltage):null,
+      water_checked: cForm.waterChecked,
+      mortality_count: cForm.mortalityCount!==''?parseInt(cForm.mortalityCount):0,
+      mortality_reason: cForm.mortalityReason||null,
+      issues: cForm.issues||null,
+      source: 'daily_webform',
+    };
+    const {error} = await sb.from('cattle_dailys').insert(rec);
+    setSubmitting(false);
+    if(error){setErr('Could not save: '+error.message);return;}
+    setLastGroup(cForm.herd);
+    setDone(true);
+  }
 
   function resetAndAnother(){
     const team=localStorage.getItem('wcf_team')||'';
@@ -1922,6 +2171,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     if(activeForm==='broiler') setBForm({...EMPTY_B,date:today,teamMember:team,batchLabel:lastGroup});
     else if(activeForm==='layer') setLForm({...EMPTY_L,date:today,teamMember:team,batchLabel:lastGroup});
     else if(activeForm==='pig') setPForm({...EMPTY_P,date:today,teamMember:team,batchLabel:lastGroup});
+    else if(activeForm==='cattle') setCForm({...EMPTY_C,date:today,teamMember:team});
     else setEForm({...EMPTY_E,date:today,teamMember:team});
     setDone(false);setErr('');
   }
@@ -1935,6 +2185,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     else if(activeForm==='layer') setLForm(f => f.date===today ? f : {...f, date: today});
     else if(activeForm==='pig')  setPForm(f => f.date===today ? f : {...f, date: today});
     else if(activeForm==='egg')  setEForm(f => f.date===today ? f : {...f, date: today});
+    else if(activeForm==='cattle') setCForm(f => f.date===today ? f : {...f, date: today});
   }, [activeForm]);
 
   const wfBg = {minHeight:'100vh',background:'linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 100%)',padding:'1rem',fontFamily:'inherit'};
@@ -1974,6 +2225,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
           {id:'layer',label:'🐓 Layer Daily Report'},
           {id:'egg',label:'🥚 Egg Collection Report'},
           {id:'pig',label:'🐷 Pig Daily Report'},
+          {id:'cattle',label:'🐄 Cattle Daily Report'},
         ].map(f=>(
           <div key={f.id} onClick={()=>setActiveForm(f.id)} style={{background:'white',borderRadius:12,padding:'16px 18px',marginBottom:10,cursor:'pointer',boxShadow:'0 1px 3px rgba(0,0,0,.08)',display:'flex',alignItems:'center',gap:12,border:'1px solid #e5e7eb'}}>
             <div style={{flex:1,fontSize:15,fontWeight:600,color:'#111827'}}>{f.label}</div>
@@ -2224,6 +2476,177 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     );
   }
 
+  // ── CATTLE FORM ──
+  if(activeForm==='cattle'){
+    const CATTLE_HERD_OPTS = [
+      {v:'mommas',        l:'Mommas'},
+      {v:'backgrounders', l:'Backgrounders'},
+      {v:'finishers',     l:'Finishers'},
+      {v:'bulls',         l:'Bulls'},
+    ];
+    const herdSelected = cForm.herd;
+    // Feeds scoped to selected herd, minerals always shown for any herd
+    const feedsForHerd = herdSelected
+      ? cattleFeedInputs.filter(f => f.category !== 'mineral' && (f.herd_scope||[]).includes(herdSelected))
+      : [];
+    const mineralsAll = cattleFeedInputs.filter(f => f.category === 'mineral');
+    const unitFor = (feedId) => {
+      const fi = cattleFeedInputs.find(x => x.id === feedId);
+      return fi ? fi.unit : '';
+    };
+    const cgTeam = getFormTeamMembers('cattle-dailys');
+    const showCreepToggle = herdSelected === 'mommas';
+    return (
+      <div style={wfBg}>
+        <div style={{maxWidth:480,margin:'0 auto'}}>
+          {logo}
+          <button onClick={()=>setActiveForm(null)} style={{background:'none',border:'none',color:'#6b7280',fontSize:13,cursor:'pointer',marginBottom:12,padding:0,fontFamily:'inherit'}}>{'\u2039 Back'}</button>
+          <div style={{fontSize:17,fontWeight:700,color:'#991b1b',marginBottom:16}}>{'\ud83d\udc04 Cattle Daily Report'}</div>
+
+          {/* Report info */}
+          <div style={sectionStyle}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={labelStyle}>Date<span style={{color:'#b91c1c',marginLeft:2}}>*</span></label>
+                <input type="date" value={cForm.date} onChange={e=>setCForm(f=>({...f,date:e.target.value}))} style={inputStyle}/>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={labelStyle}>Team Member<span style={{color:'#b91c1c',marginLeft:2}}>*</span></label>
+                <select value={cForm.teamMember} onChange={e=>setCForm(f=>({...f,teamMember:e.target.value}))} style={inputStyle}>
+                  <option value=''>Select...</option>
+                  {cgTeam.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={labelStyle}>Cattle Group<span style={{color:'#b91c1c',marginLeft:2}}>*</span></label>
+                <select value={cForm.herd} onChange={e=>setCForm(f=>({...f,herd:e.target.value,feeds:[{feedId:'',qty:'',isCreep:false}],minerals:[{feedId:'',lbs:''}]}))} style={inputStyle}>
+                  <option value=''>Select herd...</option>
+                  {CATTLE_HERD_OPTS.map(h=><option key={h.v} value={h.v}>{h.l}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Feeds */}
+          {herdSelected && (
+            <div style={sectionStyle}>
+              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:10}}>Feed</div>
+              {cForm.feeds.map((row,ri)=>(
+                <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,marginBottom:showCreepToggle?4:10,alignItems:'end'}}>
+                  <div>
+                    {ri===0&&<label style={{...labelStyle,fontSize:12}}>Feed Type</label>}
+                    <select value={row.feedId} onChange={e=>setCForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inputStyle,fontSize:13,padding:'8px 10px'}}>
+                      <option value=''>Select feed...</option>
+                      {feedsForHerd.map(ff=><option key={ff.id} value={ff.id}>{ff.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {ri===0&&<label style={{...labelStyle,fontSize:12}}>{row.feedId?'Qty ('+unitFor(row.feedId)+')':'Qty'}</label>}
+                    <input type="number" min="0" step="0.1" value={row.qty} onChange={e=>setCForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,qty:e.target.value}:r)}))} placeholder="0" style={{...inputStyle,fontSize:13,padding:'8px 10px'}}/>
+                  </div>
+                  <div>
+                    {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
+                    {cForm.feeds.length>1?(
+                      <button type="button" onClick={()=>setCForm(f=>({...f,feeds:f.feeds.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'\u00d7'}</button>
+                    ):(
+                      <div style={{width:38}}/>
+                    )}
+                  </div>
+                  {showCreepToggle && row.feedId && (
+                    <label style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#7f1d1d',cursor:'pointer',marginBottom:6,userSelect:'none'}}>
+                      <input type="checkbox" checked={!!row.isCreep} onChange={e=>setCForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,isCreep:e.target.checked}:r)}))} style={{cursor:'pointer'}}/>
+                      This was creep feed (for calves) {'\u2014'} counts for cost, not Mommas nutrition
+                    </label>
+                  )}
+                </div>
+              ))}
+              <button type="button" onClick={()=>setCForm(f=>({...f,feeds:[...f.feeds,{feedId:'',qty:'',isCreep:false}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #fca5a5',background:'transparent',color:'#991b1b',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Feed</button>
+            </div>
+          )}
+
+          {/* Minerals */}
+          {herdSelected && (
+            <div style={sectionStyle}>
+              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:10}}>Minerals</div>
+              {cForm.minerals.map((row,ri)=>(
+                <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
+                  <div>
+                    {ri===0&&<label style={{...labelStyle,fontSize:12}}>Mineral</label>}
+                    <select value={row.feedId} onChange={e=>setCForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inputStyle,fontSize:13,padding:'8px 10px'}}>
+                      <option value=''>Select mineral...</option>
+                      {mineralsAll.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {ri===0&&<label style={{...labelStyle,fontSize:12}}>Lbs</label>}
+                    <input type="number" min="0" step="0.1" value={row.lbs} onChange={e=>setCForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,lbs:e.target.value}:r)}))} placeholder="0" style={{...inputStyle,fontSize:13,padding:'8px 10px'}}/>
+                  </div>
+                  <div>
+                    {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
+                    {cForm.minerals.length>1?(
+                      <button type="button" onClick={()=>setCForm(f=>({...f,minerals:f.minerals.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'\u00d7'}</button>
+                    ):(
+                      <div style={{width:38}}/>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <button type="button" onClick={()=>setCForm(f=>({...f,minerals:[...f.minerals,{feedId:'',lbs:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #fca5a5',background:'transparent',color:'#991b1b',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Mineral</button>
+            </div>
+          )}
+
+          {/* Daily checks */}
+          {herdSelected && (
+            <div style={sectionStyle}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                <div>
+                  <label style={labelStyle}>Fence Voltage (kV)</label>
+                  <input type="number" min="0" step="0.1" value={cForm.fenceVoltage} onChange={e=>setCForm(f=>({...f,fenceVoltage:e.target.value}))} placeholder="0.0" style={inputStyle}/>
+                </div>
+                <div>
+                  <label style={labelStyle}>Waterers checked?</label>
+                  <YN val={cForm.waterChecked} onChange={v=>setCForm(f=>({...f,waterChecked:v}))}/>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Mortality */}
+          {herdSelected && (
+            <div style={sectionStyle}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div>
+                  <label style={labelStyle}>Mortalities</label>
+                  <input type="number" min="0" value={cForm.mortalityCount} onChange={e=>setCForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inputStyle}/>
+                </div>
+                {parseInt(cForm.mortalityCount)>0 && (
+                  <div>
+                    <label style={labelStyle}>Reason <span style={{color:'#b91c1c'}}>*</span></label>
+                    <input value={cForm.mortalityReason} onChange={e=>setCForm(f=>({...f,mortalityReason:e.target.value}))} style={inputStyle}/>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Issues */}
+          {herdSelected && (
+            <div style={sectionStyle}>
+              <label style={labelStyle}>Issues / Comments</label>
+              <textarea value={cForm.issues} onChange={e=>setCForm(f=>({...f,issues:e.target.value}))} rows={3} placeholder="Type 0 if nothing to report" style={{...inputStyle,resize:'vertical'}}/>
+            </div>
+          )}
+
+          {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
+
+          <button onClick={submitCattle} disabled={submitting||!herdSelected} style={{width:'100%',padding:14,border:'none',borderRadius:10,background:'#991b1b',color:'white',fontSize:15,fontWeight:600,cursor:(submitting||!herdSelected)?'not-allowed':'pointer',opacity:(submitting||!herdSelected)?.5:1,fontFamily:'inherit',marginBottom:16}}>
+            {submitting?'Submitting\u2026':'Submit Report'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ── EGG FORM ──
   return (
     <div style={wfBg}>
@@ -2329,6 +2752,674 @@ const FeedCostsPanel = ({feedCosts, saveFeedCosts}) => {
         </div>
       </div>
 
+    </div>
+  );
+};
+
+
+// ── LIVESTOCK FEED INPUTS PANEL ─────────────────────────────────────────────
+// Admin → Feed sub-section. Full feed master list with nutrition, costs, herd
+// scoping. Reusable for cattle today, sheep later. Autosave on close.
+// Test PDF upload + version history is built out separately (Phase 1 step 5).
+const LivestockFeedInputsPanel = ({sb}) => {
+  const [feeds, setFeeds] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [categoryFilter, setCategoryFilter] = React.useState('all');
+  const [showForm, setShowForm] = React.useState(false);
+  const [editingId, setEditingId] = React.useState(null);
+  const [form, setForm] = React.useState(null);
+  const [originalForm, setOriginalForm] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
+  const autoSaveTimer = React.useRef(null);
+  // Test history state
+  const [feedTests, setFeedTests] = React.useState([]);
+  const [showTestForm, setShowTestForm] = React.useState(false);
+  const [testForm, setTestForm] = React.useState(null);
+  const [editingTestId, setEditingTestId] = React.useState(null);
+  const [uploadingTest, setUploadingTest] = React.useState(false);
+
+  const EMPTY_FEED = {
+    id:'', name:'', category:'hay', unit:'bale',
+    unit_weight_lbs:'', cost_per_unit:'', freight_per_truck:'', units_per_truck:'',
+    moisture_pct:'', nfc_pct:'', protein_pct:'',
+    status:'active',
+    herd_scope:['mommas','backgrounders','finishers','bulls'],
+    notes:''
+  };
+  const CATEGORIES = [
+    {v:'hay',     l:'Hay',     color:'#065f46', bg:'#ecfdf5'},
+    {v:'pellet',  l:'Pellet',  color:'#92400e', bg:'#fef3c7'},
+    {v:'liquid',  l:'Liquid',  color:'#1e40af', bg:'#dbeafe'},
+    {v:'mineral', l:'Mineral', color:'#6b21a8', bg:'#f3e8ff'},
+    {v:'other',   l:'Other',   color:'#374151', bg:'#f3f4f6'},
+  ];
+  const UNITS = ['bale','lb','tub','bag'];
+  const HERD_SCOPE_OPTIONS = [
+    {v:'mommas',        l:'Mommas'},
+    {v:'backgrounders', l:'Backgrounders'},
+    {v:'finishers',     l:'Finishers'},
+    {v:'bulls',         l:'Bulls'},
+  ];
+
+  async function loadFeeds() {
+    const {data, error} = await sb.from('cattle_feed_inputs').select('*').order('category').order('name');
+    if(!error && data) setFeeds(data);
+    setLoading(false);
+  }
+  React.useEffect(() => { loadFeeds(); }, []);
+
+  function landedPerLb(f) {
+    const cost = parseFloat(f.cost_per_unit) || 0;
+    const freight = parseFloat(f.freight_per_truck) || 0;
+    const units = parseFloat(f.units_per_truck) || 0;
+    const wt = parseFloat(f.unit_weight_lbs) || 0;
+    if(wt <= 0) return null;
+    if(cost === 0 && freight === 0) return null;
+    const perUnit = cost + (units > 0 ? freight / units : 0);
+    return perUnit / wt;
+  }
+
+  function openAdd() {
+    setForm({...EMPTY_FEED});
+    setOriginalForm({...EMPTY_FEED});
+    setEditingId(null);
+    setShowForm(true);
+  }
+  function openEdit(feed) {
+    const f = {...EMPTY_FEED, ...feed,
+      unit_weight_lbs:    feed.unit_weight_lbs != null ? String(feed.unit_weight_lbs) : '',
+      cost_per_unit:      feed.cost_per_unit != null ? String(feed.cost_per_unit) : '',
+      freight_per_truck:  feed.freight_per_truck != null ? String(feed.freight_per_truck) : '',
+      units_per_truck:    feed.units_per_truck != null ? String(feed.units_per_truck) : '',
+      moisture_pct:       feed.moisture_pct != null ? String(feed.moisture_pct) : '',
+      nfc_pct:            feed.nfc_pct != null ? String(feed.nfc_pct) : '',
+      protein_pct:        feed.protein_pct != null ? String(feed.protein_pct) : '',
+      herd_scope:         feed.herd_scope || [],
+      notes:              feed.notes || '',
+    };
+    setForm(f);
+    setOriginalForm({...f});
+    setEditingId(feed.id);
+    setShowForm(true);
+    loadTests(feed.id);
+  }
+
+  async function loadTests(feedId) {
+    if(!feedId) { setFeedTests([]); return; }
+    const {data} = await sb.from('cattle_feed_tests').select('*').eq('feed_input_id', feedId).order('effective_date', {ascending:false});
+    setFeedTests(data || []);
+  }
+  function openTestForm() {
+    const today = new Date().toISOString().slice(0,10);
+    setTestForm({effective_date: today, moisture_pct:'', nfc_pct:'', protein_pct:'', bale_weight_lbs:'', notes:'', file:null});
+    setEditingTestId(null);
+    setShowTestForm(true);
+  }
+  function openEditTest(t) {
+    setTestForm({
+      effective_date:  t.effective_date || '',
+      moisture_pct:    t.moisture_pct    != null ? String(t.moisture_pct)    : '',
+      nfc_pct:         t.nfc_pct         != null ? String(t.nfc_pct)         : '',
+      protein_pct:     t.protein_pct     != null ? String(t.protein_pct)     : '',
+      bale_weight_lbs: t.bale_weight_lbs != null ? String(t.bale_weight_lbs) : '',
+      notes:           t.notes || '',
+      file: null,
+      existingPdfPath: t.pdf_path || null,
+      existingPdfName: t.pdf_file_name || null,
+    });
+    setEditingTestId(t.id);
+    setShowTestForm(true);
+  }
+  // Open the edit modal AND the upload form in one click (used by the card's quick "Upload Test" button)
+  function openUploadForFeed(feed) {
+    openEdit(feed);
+    const today = new Date().toISOString().slice(0,10);
+    setTestForm({effective_date: today, moisture_pct:'', nfc_pct:'', protein_pct:'', bale_weight_lbs:'', notes:'', file:null});
+    setEditingTestId(null);
+    setShowTestForm(true);
+  }
+  async function saveTest() {
+    if(!testForm || !editingId) return;
+    if(!testForm.effective_date) { alert('Effective date is required.'); return; }
+    setUploadingTest(true);
+    let pdfPath = testForm.existingPdfPath || null;
+    let pdfFileName = testForm.existingPdfName || null;
+    // If a new file was provided, upload it (and if editing, remove the old one after successful upload)
+    if(testForm.file) {
+      const file = testForm.file;
+      if(file.size > 20*1024*1024) { alert('PDF exceeds 20 MB limit.'); setUploadingTest(false); return; }
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const path = editingId + '/' + Date.now() + '-' + safeName;
+      const {error:upErr} = await sb.storage.from('cattle-feed-pdfs').upload(path, file, {cacheControl:'3600', upsert:false});
+      if(upErr) { alert('Upload failed: '+upErr.message); setUploadingTest(false); return; }
+      // Remove the old PDF if this is an edit and there was a previous file
+      if(editingTestId && testForm.existingPdfPath) {
+        try { await sb.storage.from('cattle-feed-pdfs').remove([testForm.existingPdfPath]); } catch(e){}
+      }
+      pdfPath = path;
+      pdfFileName = file.name;
+    }
+    const payload = {
+      effective_date: testForm.effective_date,
+      moisture_pct:   testForm.moisture_pct   !== '' ? parseFloat(testForm.moisture_pct)   : null,
+      nfc_pct:        testForm.nfc_pct        !== '' ? parseFloat(testForm.nfc_pct)        : null,
+      protein_pct:    testForm.protein_pct    !== '' ? parseFloat(testForm.protein_pct)    : null,
+      bale_weight_lbs:testForm.bale_weight_lbs!== '' ? parseFloat(testForm.bale_weight_lbs): null,
+      pdf_path: pdfPath,
+      pdf_file_name: pdfFileName,
+      notes: testForm.notes || null,
+    };
+    let rec;
+    if(editingTestId) {
+      const {error} = await sb.from('cattle_feed_tests').update(payload).eq('id', editingTestId);
+      if(error) { alert('Could not save test: '+error.message); setUploadingTest(false); return; }
+      rec = {...payload, id: editingTestId, feed_input_id: editingId};
+    } else {
+      const testId = String(Date.now()) + Math.random().toString(36).slice(2,6);
+      rec = {id: testId, feed_input_id: editingId, ...payload};
+      const {error} = await sb.from('cattle_feed_tests').insert(rec);
+      if(error) { alert('Could not save test: '+error.message); setUploadingTest(false); return; }
+    }
+    // Re-sync parent feed's nutrition values if the freshly saved test is now the most recent
+    const others = feedTests.filter(t => t.id !== rec.id);
+    const all = [rec, ...others].sort((a,b) => (b.effective_date||'').localeCompare(a.effective_date||''));
+    if(all[0].id === rec.id) {
+      const feedUpdate = {};
+      if(rec.moisture_pct    != null) feedUpdate.moisture_pct    = rec.moisture_pct;
+      if(rec.nfc_pct         != null) feedUpdate.nfc_pct         = rec.nfc_pct;
+      if(rec.protein_pct     != null) feedUpdate.protein_pct     = rec.protein_pct;
+      if(rec.bale_weight_lbs != null) feedUpdate.unit_weight_lbs = rec.bale_weight_lbs;
+      if(Object.keys(feedUpdate).length > 0) {
+        await sb.from('cattle_feed_inputs').update(feedUpdate).eq('id', editingId);
+        const refreshed = {...form};
+        if(rec.moisture_pct    != null) refreshed.moisture_pct    = String(rec.moisture_pct);
+        if(rec.nfc_pct         != null) refreshed.nfc_pct         = String(rec.nfc_pct);
+        if(rec.protein_pct     != null) refreshed.protein_pct     = String(rec.protein_pct);
+        if(rec.bale_weight_lbs != null) refreshed.unit_weight_lbs = String(rec.bale_weight_lbs);
+        setForm(refreshed);
+        setOriginalForm(refreshed);
+      }
+    }
+    await loadTests(editingId);
+    await loadFeeds();
+    setShowTestForm(false);
+    setTestForm(null);
+    setEditingTestId(null);
+    setUploadingTest(false);
+  }
+  async function deleteTest(testId, pdfPath) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this test result? PDF will also be removed. This cannot be undone.', async () => {
+      if(pdfPath) {
+        try { await sb.storage.from('cattle-feed-pdfs').remove([pdfPath]); } catch(e){}
+      }
+      await sb.from('cattle_feed_tests').delete().eq('id', testId);
+      await loadTests(editingId);
+    });
+  }
+  // Permanent delete of the feed itself — cascades to tests and PDFs.
+  // Historical cattle_dailys snapshots remain intact (jsonb values, not FK).
+  async function deleteFeedPermanently(id) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Permanently delete this feed? All historical test results and PDFs will be removed. Daily reports already submitted keep their snapshot values. This cannot be undone.', async () => {
+      const {data: tests} = await sb.from('cattle_feed_tests').select('pdf_path').eq('feed_input_id', id);
+      const pdfPaths = (tests || []).map(t => t.pdf_path).filter(Boolean);
+      if(pdfPaths.length > 0) {
+        try { await sb.storage.from('cattle-feed-pdfs').remove(pdfPaths); } catch(e){}
+      }
+      const {error} = await sb.from('cattle_feed_inputs').delete().eq('id', id);
+      if(error) { alert('Could not delete: '+error.message); return; }
+      await loadFeeds();
+      cancelForm();
+    });
+  }
+
+  function upd(k, v) {
+    const next = {...form, [k]: v};
+    setForm(next);
+    if(editingId) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => saveFeed(next, editingId), 1500);
+    }
+  }
+  function toggleHerdScope(herd) {
+    const scope = form.herd_scope || [];
+    const next = scope.includes(herd) ? scope.filter(h => h !== herd) : [...scope, herd];
+    upd('herd_scope', next);
+  }
+
+  async function saveFeed(feedData, id) {
+    setSaving(true);
+    const rec = {
+      name: (feedData.name || '').trim(),
+      category: feedData.category,
+      unit: feedData.unit,
+      unit_weight_lbs:   feedData.unit_weight_lbs   !== '' ? parseFloat(feedData.unit_weight_lbs)   : null,
+      cost_per_unit:     feedData.cost_per_unit     !== '' ? parseFloat(feedData.cost_per_unit)     : null,
+      freight_per_truck: feedData.freight_per_truck !== '' ? parseFloat(feedData.freight_per_truck) : null,
+      units_per_truck:   feedData.units_per_truck   !== '' ? parseInt(feedData.units_per_truck)     : null,
+      moisture_pct:      feedData.moisture_pct      !== '' ? parseFloat(feedData.moisture_pct)      : null,
+      nfc_pct:           feedData.nfc_pct           !== '' ? parseFloat(feedData.nfc_pct)           : null,
+      protein_pct:       feedData.protein_pct       !== '' ? parseFloat(feedData.protein_pct)       : null,
+      status: feedData.status || 'active',
+      herd_scope: feedData.herd_scope || [],
+      notes: feedData.notes || null,
+    };
+    if(id) {
+      rec.id = id;
+    } else {
+      if(!rec.name) { setSaving(false); alert('Feed name is required.'); return null; }
+      rec.id = rec.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+      if(!rec.id) { setSaving(false); alert('Feed name must contain letters or numbers.'); return null; }
+    }
+    const {error} = await sb.from('cattle_feed_inputs').upsert(rec, {onConflict:'id'});
+    if(error) { setSaving(false); alert('Could not save: ' + error.message); return null; }
+    setSaving(false);
+    await loadFeeds();
+    if(!id) setEditingId(rec.id);
+    return rec.id;
+  }
+
+  async function closeForm() {
+    clearTimeout(autoSaveTimer.current);
+    if(editingId && form && originalForm) {
+      const changed = JSON.stringify(form) !== JSON.stringify(originalForm);
+      if(changed) await saveFeed(form, editingId);
+    } else if(!editingId && form && form.name && form.name.trim()) {
+      await saveFeed(form, null);
+    }
+    setShowForm(false);
+    setEditingId(null);
+    setForm(null);
+    setOriginalForm(null);
+  }
+  function cancelForm() {
+    clearTimeout(autoSaveTimer.current);
+    setShowForm(false);
+    setEditingId(null);
+    setForm(null);
+    setOriginalForm(null);
+  }
+  // (old Mark Inactive helper removed — replaced by deleteFeedPermanently below)
+
+  const filteredFeeds = categoryFilter === 'all'
+    ? feeds
+    : feeds.filter(f => f.category === categoryFilter);
+  const catMeta = (c) => CATEGORIES.find(x => x.v === c) || CATEGORIES[4];
+
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const lbl = {fontSize:11, color:'#6b7280', display:'block', marginBottom:3, fontWeight:500};
+
+  return (
+    <div style={{marginTop:16}}>
+      <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'20px'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4}}>
+          <div>
+            <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:2}}>Livestock Feed Inputs</div>
+            <div style={{fontSize:12, color:'#6b7280'}}>Master list of every hay, pellet, liquid, mineral, and supplement used on-farm. Nutrition values are snapshotted onto daily reports at submit time {'\u2014'} editing a feed here doesn{'\u2019'}t rewrite historical reports.</div>
+          </div>
+          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#085041', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap'}}>+ Add Feed</button>
+        </div>
+        <div style={{height:1, background:'#e5e7eb', margin:'14px 0'}}/>
+
+        {/* Filter chips */}
+        <div style={{display:'flex', gap:6, marginBottom:14, flexWrap:'wrap'}}>
+          {[{v:'all', l:'All'}, ...CATEGORIES].map(c => {
+            const active = categoryFilter === c.v;
+            const count = c.v === 'all' ? feeds.length : feeds.filter(f => f.category === c.v).length;
+            return (
+              <button key={c.v} onClick={() => setCategoryFilter(c.v)}
+                style={{padding:'5px 12px', borderRadius:16, border:'1px solid ' + (active?'#085041':'#d1d5db'), background:active?'#085041':'white', color:active?'white':'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>
+                {c.l} {count > 0 && <span style={{opacity:.7, marginLeft:4}}>({count})</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af', fontSize:13}}>Loading feeds{'\u2026'}</div>}
+        {!loading && filteredFeeds.length === 0 && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af', fontSize:13}}>No feeds in this category.</div>}
+
+        {/* Feed card grid */}
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:10}}>
+          {filteredFeeds.map(f => {
+            const cat = catMeta(f.category);
+            const lpl = landedPerLb(f);
+            const inactive = f.status === 'inactive';
+            return (
+              <div key={f.id}
+                style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 14px', opacity:inactive?0.55:1, display:'flex', flexDirection:'column'}}>
+                <div onClick={() => openEdit(f)} style={{cursor:'pointer'}} className="hoverable-tile">
+                  <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:6, flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{f.name}</span>
+                    <span style={{padding:'1px 7px', borderRadius:4, fontSize:10, fontWeight:700, background:cat.bg, color:cat.color, textTransform:'uppercase', letterSpacing:.4}}>{cat.l}</span>
+                    {inactive && <span style={{padding:'1px 7px', borderRadius:4, fontSize:10, fontWeight:700, background:'#fef2f2', color:'#b91c1c'}}>INACTIVE</span>}
+                  </div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'3px 10px', fontSize:11, color:'#6b7280', marginBottom:6}}>
+                    <span>Unit: <strong style={{color:'#374151'}}>{f.unit}{f.unit_weight_lbs ? ' \u00b7 ' + f.unit_weight_lbs + ' lb' : ''}</strong></span>
+                    <span>Landed: <strong style={{color:lpl?'#065f46':'#9ca3af'}}>{lpl != null ? '$' + lpl.toFixed(3) + '/lb' : '\u2014'}</strong></span>
+                  </div>
+                  {(f.moisture_pct != null || f.nfc_pct != null || f.protein_pct != null) && (
+                    <div style={{fontSize:11, color:'#4b5563', marginBottom:6}}>
+                      {f.moisture_pct != null && <>Moist {f.moisture_pct}% </>}
+                      {f.nfc_pct != null && <>{'\u00b7 NFC '}{f.nfc_pct}% DM </>}
+                      {f.protein_pct != null && <>{'\u00b7 CP '}{f.protein_pct}% DM</>}
+                    </div>
+                  )}
+                  {f.herd_scope && f.herd_scope.length > 0 && (
+                    <div style={{display:'flex', gap:3, flexWrap:'wrap', marginBottom:8}}>
+                      {f.herd_scope.map(h => (
+                        <span key={h} style={{padding:'1px 6px', borderRadius:10, fontSize:9, fontWeight:600, background:'#f3f4f6', color:'#4b5563'}}>{h}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{display:'flex', gap:6, marginTop:'auto', paddingTop:6, borderTop:'1px solid #f3f4f6'}}>
+                  <button onClick={(e)=>{e.stopPropagation(); openUploadForFeed(f);}} style={{flex:1, padding:'6px 8px', borderRadius:6, border:'1px solid #085041', background:'white', color:'#085041', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udcce Upload Test'}</button>
+                  <button onClick={(e)=>{e.stopPropagation(); openEdit(f);}} style={{flex:1, padding:'6px 8px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#4b5563', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Add/Edit modal */}
+      {showForm && form && (
+        <div onClick={closeForm} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'1rem', overflowY:'auto'}}>
+          <div onClick={e => e.stopPropagation()} style={{background:'white', borderRadius:12, width:'100%', maxWidth:560, boxShadow:'0 8px 32px rgba(0,0,0,.2)', marginTop:40}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div style={{fontSize:15, fontWeight:600, color:'#085041'}}>{editingId ? 'Edit Feed' : 'New Feed'}{editingId && <span style={{fontSize:11, fontWeight:400, color:'#9ca3af', marginLeft:8}}>Auto-saves as you type</span>}</div>
+              <div style={{display:'flex', alignItems:'center', gap:10}}>
+                {saving && <span style={{fontSize:11, color:'#9ca3af'}}>{'Saving\u2026'}</span>}
+                <button onClick={cancelForm} style={{background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9ca3af'}}>{'\u00d7'}</button>
+              </div>
+            </div>
+            <div style={{padding:'16px 20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, maxHeight:'70vh', overflowY:'auto'}}>
+              {/* Identity */}
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={lbl}>Name *</label>
+                <input value={form.name} onChange={e => upd('name', e.target.value)} placeholder="e.g. Rye Baleage" style={inpS}/>
+                {!editingId && form.name && <div style={{fontSize:10, color:'#9ca3af', marginTop:2}}>ID: {form.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}</div>}
+              </div>
+              <div>
+                <label style={lbl}>Category *</label>
+                <select value={form.category} onChange={e => upd('category', e.target.value)} style={inpS}>
+                  {CATEGORIES.map(c => <option key={c.v} value={c.v}>{c.l}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={lbl}>Unit *</label>
+                <select value={form.unit} onChange={e => upd('unit', e.target.value)} style={inpS}>
+                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={lbl}>Unit weight (lbs)</label>
+                <input type="number" min="0" step="0.01" value={form.unit_weight_lbs} onChange={e => upd('unit_weight_lbs', e.target.value)} placeholder="e.g. 1500 for a hay bale" style={inpS}/>
+              </div>
+
+              {/* Cost section */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5, marginBottom:8}}>{'\ud83d\udcb0 LANDED COST'}</div>
+              </div>
+              <div>
+                <label style={lbl}>Cost per unit ($)</label>
+                <input type="number" min="0" step="0.01" value={form.cost_per_unit} onChange={e => upd('cost_per_unit', e.target.value)} placeholder="0.00" style={inpS}/>
+              </div>
+              <div>
+                <label style={lbl}>Freight per truck ($)</label>
+                <input type="number" min="0" step="0.01" value={form.freight_per_truck} onChange={e => upd('freight_per_truck', e.target.value)} placeholder="0.00" style={inpS}/>
+              </div>
+              <div>
+                <label style={lbl}>Units per truck</label>
+                <input type="number" min="0" value={form.units_per_truck} onChange={e => upd('units_per_truck', e.target.value)} placeholder="e.g. 3" style={inpS}/>
+              </div>
+              <div>
+                <label style={lbl}>Landed $/lb (computed)</label>
+                <div style={{padding:'7px 10px', background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:6, fontSize:13, fontWeight:700, color:landedPerLb(form) ? '#065f46' : '#9ca3af'}}>
+                  {landedPerLb(form) != null ? '$' + landedPerLb(form).toFixed(4) + ' / lb' : '\u2014'}
+                </div>
+              </div>
+
+              {/* Nutrition */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5, marginBottom:4}}>{'\ud83e\uddea NUTRITION'} <span style={{fontWeight:400, color:'#9ca3af'}}>(manual entry for now; test PDF upload in next build step)</span></div>
+              </div>
+              <div>
+                <label style={lbl}>Moisture %</label>
+                <input type="number" min="0" max="100" step="0.1" value={form.moisture_pct} onChange={e => upd('moisture_pct', e.target.value)} placeholder="0.0" style={inpS}/>
+              </div>
+              <div>
+                <label style={lbl}>NFC % DM</label>
+                <input type="number" min="0" max="100" step="0.1" value={form.nfc_pct} onChange={e => upd('nfc_pct', e.target.value)} placeholder="0.0" style={inpS}/>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={lbl}>Crude Protein % DM</label>
+                <input type="number" min="0" max="100" step="0.1" value={form.protein_pct} onChange={e => upd('protein_pct', e.target.value)} placeholder="0.0" style={inpS}/>
+              </div>
+
+              {/* Test history — only for existing feeds */}
+              {editingId && (
+                <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                    <div style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5}}>{'\ud83d\udcc4 TEST RESULTS'} <span style={{fontWeight:400, color:'#9ca3af'}}>({feedTests.length} on file)</span></div>
+                    {!showTestForm && (
+                      <button type="button" onClick={openTestForm} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #085041', background:'white', color:'#085041', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Upload New Test</button>
+                    )}
+                  </div>
+
+                  {showTestForm && testForm && (
+                    <div style={{background:'#f0f7ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'12px 14px', marginBottom:10}}>
+                      <div style={{fontSize:12, fontWeight:600, color:'#1e40af', marginBottom:8}}>{editingTestId ? 'Edit Test Result' : 'New Test Result'}</div>
+                      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8}}>
+                        <div>
+                          <label style={lbl}>Effective Date *</label>
+                          <input type="date" value={testForm.effective_date} onChange={e => setTestForm({...testForm, effective_date:e.target.value})} style={inpS}/>
+                        </div>
+                        <div>
+                          <label style={lbl}>Bale weight (lbs)</label>
+                          <input type="number" min="0" step="0.1" value={testForm.bale_weight_lbs} onChange={e => setTestForm({...testForm, bale_weight_lbs:e.target.value})} placeholder="hay only" style={inpS}/>
+                        </div>
+                        <div>
+                          <label style={lbl}>Moisture %</label>
+                          <input type="number" min="0" max="100" step="0.1" value={testForm.moisture_pct} onChange={e => setTestForm({...testForm, moisture_pct:e.target.value})} style={inpS}/>
+                        </div>
+                        <div>
+                          <label style={lbl}>NFC % DM</label>
+                          <input type="number" min="0" max="100" step="0.1" value={testForm.nfc_pct} onChange={e => setTestForm({...testForm, nfc_pct:e.target.value})} style={inpS}/>
+                        </div>
+                        <div style={{gridColumn:'1/-1'}}>
+                          <label style={lbl}>Crude Protein % DM</label>
+                          <input type="number" min="0" max="100" step="0.1" value={testForm.protein_pct} onChange={e => setTestForm({...testForm, protein_pct:e.target.value})} style={inpS}/>
+                        </div>
+                        <div style={{gridColumn:'1/-1'}}>
+                          <label style={lbl}>PDF {editingTestId && testForm.existingPdfName ? '(leave blank to keep current)' : '(optional, max 20 MB)'}</label>
+                          {editingTestId && testForm.existingPdfName && (
+                            <div style={{fontSize:11, color:'#065f46', marginBottom:4}}>Current: {testForm.existingPdfName}</div>
+                          )}
+                          <input type="file" accept=".pdf" onChange={e => setTestForm({...testForm, file:(e.target.files && e.target.files[0]) || null})} style={{fontSize:12, fontFamily:'inherit'}}/>
+                        </div>
+                        <div style={{gridColumn:'1/-1'}}>
+                          <label style={lbl}>Notes</label>
+                          <input type="text" value={testForm.notes} onChange={e => setTestForm({...testForm, notes:e.target.value})} placeholder="Optional" style={inpS}/>
+                        </div>
+                      </div>
+                      <div style={{display:'flex', gap:6}}>
+                        <button type="button" onClick={saveTest} disabled={uploadingTest} style={{padding:'6px 14px', borderRadius:6, border:'none', background:'#085041', color:'white', fontSize:12, fontWeight:600, cursor:uploadingTest?'not-allowed':'pointer', opacity:uploadingTest?.6:1, fontFamily:'inherit'}}>
+                          {uploadingTest ? (editingTestId ? 'Saving\u2026' : 'Uploading\u2026') : 'Save Test'}
+                        </button>
+                        <button type="button" onClick={() => {setShowTestForm(false); setTestForm(null); setEditingTestId(null);}} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {feedTests.length === 0 && !showTestForm && (
+                    <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', padding:'4px 0'}}>No test results on file.</div>
+                  )}
+                  {feedTests.map(t => {
+                    const pdfUrl = t.pdf_path ? sb.storage.from('cattle-feed-pdfs').getPublicUrl(t.pdf_path).data.publicUrl : null;
+                    const isLatest = feedTests.length > 0 && feedTests[0].id === t.id;
+                    return (
+                      <div key={t.id} style={{background:isLatest?'#ecfdf5':'#f9fafb', border:'1px solid '+(isLatest?'#a7f3d0':'#e5e7eb'), borderRadius:8, padding:'8px 12px', marginBottom:6, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                        <span style={{fontSize:11, fontWeight:700, color:'#111827', minWidth:100}}>{t.effective_date || 'Unknown date'}</span>
+                        {isLatest && <span style={{fontSize:9, fontWeight:700, color:'#065f46', background:'#d1fae5', padding:'1px 6px', borderRadius:4, letterSpacing:.4}}>CURRENT</span>}
+                        {t.moisture_pct    != null && <span style={{fontSize:11, color:'#4b5563'}}>Moist {t.moisture_pct}%</span>}
+                        {t.nfc_pct         != null && <span style={{fontSize:11, color:'#4b5563'}}>NFC {t.nfc_pct}% DM</span>}
+                        {t.protein_pct     != null && <span style={{fontSize:11, color:'#4b5563'}}>CP {t.protein_pct}% DM</span>}
+                        {t.bale_weight_lbs != null && <span style={{fontSize:11, color:'#4b5563'}}>Bale {t.bale_weight_lbs} lb</span>}
+                        {pdfUrl && <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:11, color:'#1d4ed8', fontWeight:600, textDecoration:'none'}}>View PDF</a>}
+                        <div style={{marginLeft:'auto', display:'flex', gap:10}}>
+                          <button type="button" onClick={() => openEditTest(t)} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
+                          <button type="button" onClick={() => deleteTest(t.id, t.pdf_path)} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Delete</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Herd scope */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5, marginBottom:8}}>{'\ud83d\udc04 HERD SCOPE'} <span style={{fontWeight:400, color:'#9ca3af'}}>(which herds see this in webform dropdowns)</span></div>
+                <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                  {HERD_SCOPE_OPTIONS.map(h => {
+                    const on = (form.herd_scope || []).includes(h.v);
+                    return (
+                      <button key={h.v} type="button" onClick={() => toggleHerdScope(h.v)}
+                        style={{padding:'6px 14px', borderRadius:7, border:'1px solid '+(on?'#085041':'#d1d5db'), background:on?'#ecfdf5':'white', color:on?'#085041':'#6b7280', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>
+                        {on ? '\u2713 ' : ''}{h.l}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Status + notes */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
+                <label style={lbl}>Status</label>
+                <select value={form.status} onChange={e => upd('status', e.target.value)} style={{...inpS, maxWidth:160}}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={lbl}>Notes</label>
+                <textarea value={form.notes} onChange={e => upd('notes', e.target.value)} rows={2} style={{...inpS, resize:'vertical'}}/>
+              </div>
+            </div>
+            <div style={{padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8}}>
+              {!editingId && <button onClick={closeForm} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#085041', color:'white', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Add Feed</button>}
+              {editingId && <button onClick={() => deleteFeedPermanently(editingId)} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Delete Feed</button>}
+              <button onClick={cancelForm} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:13, cursor:'pointer', fontFamily:'inherit'}}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ── NUTRITION TARGETS PANEL ─────────────────────────────────────────────────
+// Admin → Feed sub-section. Per-herd DM/CP/NFC target percentages used by the
+// dashboard rolling-window comparison and the recommendation engine.
+const NutritionTargetsPanel = ({sb}) => {
+  const [rows, setRows] = React.useState({});
+  const [loading, setLoading] = React.useState(true);
+  const [savingHerd, setSavingHerd] = React.useState(null);
+  const saveTimers = React.useRef({});
+  const HERDS = ['mommas','backgrounders','finishers','bulls'];
+  const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls'};
+
+  async function loadTargets() {
+    const {data, error} = await sb.from('cattle_nutrition_targets').select('*');
+    if(!error && data) {
+      const m = {};
+      data.forEach(r => { m[r.herd] = r; });
+      setRows(m);
+    }
+    setLoading(false);
+  }
+  React.useEffect(() => { loadTargets(); }, []);
+
+  function upd(herd, field, value) {
+    const row = {...(rows[herd] || {herd}), [field]: value};
+    setRows({...rows, [herd]: row});
+    clearTimeout(saveTimers.current[herd]);
+    saveTimers.current[herd] = setTimeout(() => saveRow(row), 800);
+  }
+  async function saveRow(row) {
+    setSavingHerd(row.herd);
+    const rec = {
+      herd: row.herd,
+      target_dm_pct_body:      row.target_dm_pct_body      !== '' && row.target_dm_pct_body      != null ? parseFloat(row.target_dm_pct_body)      : 0,
+      target_cp_pct_dm:        row.target_cp_pct_dm        !== '' && row.target_cp_pct_dm        != null ? parseFloat(row.target_cp_pct_dm)        : 0,
+      target_nfc_pct_dm:       row.target_nfc_pct_dm       !== '' && row.target_nfc_pct_dm       != null ? parseFloat(row.target_nfc_pct_dm)       : 0,
+      fallback_cow_weight_lbs: row.fallback_cow_weight_lbs !== '' && row.fallback_cow_weight_lbs != null ? parseFloat(row.fallback_cow_weight_lbs) : 0,
+      notes: row.notes || null,
+    };
+    await sb.from('cattle_nutrition_targets').upsert(rec, {onConflict:'herd'});
+    setSavingHerd(null);
+  }
+
+  const inpS = {fontSize:13, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80, textAlign:'right', boxSizing:'border-box'};
+  const wideInp = {...inpS, width:100, textAlign:'left'};
+  const wideInpNotes = {...inpS, width:'100%', textAlign:'left'};
+
+  return (
+    <div style={{marginTop:16}}>
+      <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'20px'}}>
+        <div style={{marginBottom:4}}>
+          <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:2}}>Nutrition Targets</div>
+          <div style={{fontSize:12, color:'#6b7280'}}>Per-herd daily intake targets used by the dashboard rolling-window comparison and the recommendation engine.</div>
+        </div>
+        <div style={{height:1, background:'#e5e7eb', margin:'14px 0'}}/>
+
+        {loading && <div style={{textAlign:'center', padding:'1rem', color:'#9ca3af', fontSize:13}}>Loading targets{'\u2026'}</div>}
+        {!loading && (
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:700}}>
+              <thead>
+                <tr style={{background:'#f9fafb', borderBottom:'1px solid #e5e7eb'}}>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Herd</th>
+                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Target DM % body</th>
+                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Target CP % DM</th>
+                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Target NFC % DM</th>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Notes</th>
+                  <th style={{padding:'8px 10px', width:60}}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {HERDS.map((h, i) => {
+                  const r = rows[h] || {herd:h};
+                  return (
+                    <tr key={h} style={{borderBottom:'1px solid #f3f4f6', background:i%2===0?'white':'#fafafa'}}>
+                      <td style={{padding:'8px 10px', fontWeight:700, color:'#111827'}}>{HERD_LABELS[h]}</td>
+                      <td style={{padding:'8px 10px', textAlign:'right'}}>
+                        <input type="number" min="0" max="10" step="0.1" value={r.target_dm_pct_body != null ? r.target_dm_pct_body : ''} onChange={e => upd(h, 'target_dm_pct_body', e.target.value)} style={inpS}/>
+                      </td>
+                      <td style={{padding:'8px 10px', textAlign:'right'}}>
+                        <input type="number" min="0" max="50" step="0.1" value={r.target_cp_pct_dm != null ? r.target_cp_pct_dm : ''} onChange={e => upd(h, 'target_cp_pct_dm', e.target.value)} style={inpS}/>
+                      </td>
+                      <td style={{padding:'8px 10px', textAlign:'right'}}>
+                        <input type="number" min="0" max="80" step="0.1" value={r.target_nfc_pct_dm != null ? r.target_nfc_pct_dm : ''} onChange={e => upd(h, 'target_nfc_pct_dm', e.target.value)} style={inpS}/>
+                      </td>
+                      <td style={{padding:'8px 10px'}}>
+                        <input type="text" value={r.notes || ''} onChange={e => upd(h, 'notes', e.target.value)} placeholder="Optional" style={wideInpNotes}/>
+                      </td>
+                      <td style={{padding:'8px 10px', textAlign:'center', fontSize:10, color:savingHerd===h?'#065f46':'#9ca3af', fontWeight:600}}>
+                        {savingHerd === h ? 'Saving\u2026' : '\u2713'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -2617,7 +3708,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattledirectory','cattlebatches'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   useEffect(()=>{
@@ -3299,10 +4390,12 @@ function App(){
   const Header=()=>{
     const poultryViews = ['broilerHome','timeline','list','feed','broilerdailys'];
     const pigViews     = ['pigsHome','breeding','farrowing','sows','pigbatches','pigs','pigdailys'];
+    const cattleViews  = ['cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattledirectory','cattlebatches'];
     const inPoultry    = poultryViews.includes(view) || showForm;
     const inPigs       = pigViews.includes(view) || showBreedForm || showFarrowForm || showDailyForm;
     const inLayers     = ['layersHome','layerbatches','layerdailys','eggdailys'].includes(view);
-    const inSection    = inPoultry || inPigs || inLayers;
+    const inCattle     = cattleViews.includes(view);
+    const inSection    = inPoultry || inPigs || inLayers || inCattle;
     const nb = (active) => ({
       padding:'7px 16px', borderRadius:8, cursor:'pointer', fontFamily:'inherit',
       fontSize:12, fontWeight:active?700:500, whiteSpace:'nowrap',
@@ -3323,6 +4416,7 @@ function App(){
           {(['webforms'].includes(view))&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>ADMIN</span>}
           {inPigs&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>PIGS</span>}
           {inLayers&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>LAYERS</span>}
+          {inCattle&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>CATTLE</span>}
         </button>
         <div style={{fontSize:11,display:"flex",alignItems:"center",gap:5,opacity:.75}}>
           {saveStatus==='saving'&&<span style={{color:"#a7f3d0",fontWeight:500}}>Saving…</span>}
@@ -3379,6 +4473,9 @@ function App(){
             <button key={v} style={nb(view===v&&!showForm&&!showBreedForm&&!showFarrowForm)} onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView(v);}}>{l}</button>
           ))}
           {inLayers&&[["layersHome","Dashboard"],["layerbatches","Layer Batches"],["layerdailys","Layer Dailys"],["eggdailys","Egg Dailys"]].map(([v,l])=>(
+            <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
+          ))}
+          {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattledailys","Dailys"],["cattleweighins","Weigh-Ins"],["cattlebreeding","Breeding"],["cattledirectory","Directory"],["cattlebatches","Batches"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
         </div>
@@ -3600,11 +4697,12 @@ function App(){
         <div style={{padding:"1.25rem",maxWidth:1200,margin:"0 auto",display:"flex",flexDirection:"column",gap:"1.5rem"}}>
 
           {/* Nav cards */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             {[
               {label:"Broilers", icon:"🐔", desc:`${activeBatches.length} active · ${birdsOnFarm.toLocaleString()} on farm \u2192 ${projectedBirds.toLocaleString()} projected · ${plannedBatches.length} planned`, view:"broilerHome", color:"#a16207", bg:"#fef9c3"},
               {label:"Layers", icon:"🥚", desc:`${(layerGroups||[]).filter(g=>g.status==='active').length} active groups · ${(layerGroups||[]).filter(g=>g.status==='active').reduce((s,g)=>s+(g.currentCount||0),0)} hens`, view:"layersHome", color:"#78350f", bg:"#fffbeb"},
               {label:"Pigs", icon:"🐷", desc:`${activeCycles.length} active cycles · ${totalSows} sows tracked · ${feederGroups.filter(g=>g.status==="active").length} active batches`, view:"pigsHome", color:"#1e40af", bg:"#eff6ff"},
+              {label:"Cattle", icon:"🐄", desc:`Phase 1 in progress \u00b7 webforms + dailys live`, view:"cattleHome", color:"#991b1b", bg:"#fef2f2"},
             ].map(c=>(
               <div key={c.view} onClick={()=>setView(c.view)}
                 style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:14,padding:"20px 22px",cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.06)",transition:"transform .1s",display:"flex",alignItems:"center",gap:16}}>
@@ -4881,6 +5979,7 @@ function App(){
 
   if(view==="broilerdailys") return React.createElement(BroilerDailysView, {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
   if(view==="pigdailys")     return React.createElement(PigDailysView,     {sb, fmt, Header, authState, pigDailys, setPigDailys, feederGroups, pendingEdit, setPendingEdit, refreshDailys});
+  if(view==="cattledailys")  return React.createElement(CattleDailysView,  {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
 
   // ── LIST VIEW ──
   if(view==="list") return (
@@ -7608,7 +8707,7 @@ function App(){
         <div style={{background:"white",borderBottom:"1px solid #e5e7eb",padding:"8px 1.25rem",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setView('home')} style={{padding:'7px 12px',borderRadius:8,border:'1px solid #d1d5db',cursor:'pointer',fontSize:12,fontWeight:500,background:'white',color:'#6b7280',fontFamily:'inherit',whiteSpace:'nowrap'}}>⌂ Home</button>
           <div style={{width:1,height:20,background:"#e5e7eb",margin:"0 4px"}}/>
-          {[{id:'webforms',label:'Webforms'},{id:'feedcosts',label:'Feed Costs'}].map(t=>{
+          {[{id:'webforms',label:'Webforms'},{id:'feedcosts',label:'Feed'}].map(t=>{
             const active=adminTab===t.id&&!editWfId;
             return (
               <button key={t.id} onClick={()=>{setAdminTab(t.id);setEditWfId(null);setWfView('list');}}
@@ -7621,7 +8720,13 @@ function App(){
         <div style={{padding:"1rem",maxWidth:720,margin:"0 auto"}}>
           {showUsers&&<UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
 
-          {adminTab==='feedcosts'&&<FeedCostsPanel feedCosts={feedCosts} saveFeedCosts={saveFeedCosts}/>}
+          {adminTab==='feedcosts'&&(
+            <div style={{display:'flex',flexDirection:'column'}}>
+              <FeedCostsPanel feedCosts={feedCosts} saveFeedCosts={saveFeedCosts}/>
+              <LivestockFeedInputsPanel sb={sb}/>
+              <NutritionTargetsPanel sb={sb}/>
+            </div>
+          )}
 
           {adminTab==='webforms'&&<div>
 
@@ -9249,6 +10354,30 @@ function App(){
   if(view==="layerdailys") return React.createElement(LayerDailysView, {sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys});
   if(view==="eggdailys") return React.createElement(EggDailysView, {sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys});
 
+  // ── Cattle views ──
+  // cattledailys is fully built; others are placeholder stubs until Phase 1 steps 10-13 land.
+  if(['cattleHome','cattleherds','cattleweighins','cattlebreeding','cattledirectory','cattlebatches'].includes(view)){
+    const cattleLabels = {cattleHome:'Cattle Dashboard',cattleherds:'Herds',cattleweighins:'Weigh-Ins',cattlebreeding:'Breeding Timeline',cattledirectory:'Cattle Directory',cattlebatches:'Processing Batches'};
+    return (
+      <div style={{minHeight:'100vh',background:'#f1f3f2'}}>
+        {showUsers&&<UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+        <Header/>
+        <div style={{padding:'2rem 1rem',textAlign:'center',maxWidth:560,margin:'0 auto'}}>
+          <div style={{fontSize:48,marginBottom:12}}>{'\ud83d\udc04'}</div>
+          <div style={{fontSize:20,fontWeight:700,color:'#991b1b',marginBottom:6}}>{cattleLabels[view]||'Cattle'}</div>
+          <div style={{fontSize:13,color:'#6b7280',marginBottom:20}}>This tab is scaffolded but not yet built. See CATTLE_DESIGN.md for the build order.</div>
+          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:10,padding:'14px 18px',textAlign:'left',fontSize:12,color:'#4b5563'}}>
+            <div style={{fontWeight:600,color:'#111827',marginBottom:8}}>Working cattle features:</div>
+            <ul style={{margin:'0 0 0 20px',padding:0}}>
+              <li>Admin {'\u2192'} Feed panel: add/edit feeds, upload test PDFs, nutrition targets</li>
+              <li>Public webform ({'#webforms'}): cattle daily report + add feed webform with cattle option</li>
+              <li>Cattle Dailys tab: list, filter, edit, delete reports</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Unknown view - return null safely
   return null;
@@ -11405,6 +12534,374 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
     </div>
   );
 };
+
+// ── CATTLE DAILYS VIEW ─────────────────────────────────────────────────────
+// Admin list of cattle_dailys records with filters, edit, delete.
+// Parallels PigDailysView / LayerDailysView pattern.
+const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
+  const {useState,useEffect} = React;
+  const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+  const [records, setRecords] = useState([]);
+  const [feedInputs, setFeedInputs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editSource, setEditSource] = useState(null);
+  const [form, setForm] = useState(null);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [fHerd, setFHerd] = useState('');
+  const [fTeam, setFTeam] = useState('');
+  const [fFrom, setFFrom] = useState('');
+  const [fTo, setFTo] = useState('');
+  const [srcFilter, setSrcFilter] = useState('all');
+
+  const HERDS = ['mommas','backgrounders','finishers','bulls','processed','deceased','sold'];
+  const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls', processed:'Processed', deceased:'Deceased', sold:'Sold'};
+  const HERD_COLORS = {
+    mommas:{bg:'#fef2f2',tx:'#991b1b',bd:'#fca5a5'},
+    backgrounders:{bg:'#ffedd5',tx:'#9a3412',bd:'#fdba74'},
+    finishers:{bg:'#fff1f2',tx:'#9f1239',bd:'#fda4af'},
+    bulls:{bg:'#fee2e2',tx:'#7f1d1d',bd:'#fca5a5'},
+    processed:{bg:'#f3f4f6',tx:'#374151',bd:'#d1d5db'},
+    deceased:{bg:'#f9fafb',tx:'#6b7280',bd:'#e5e7eb'},
+    sold:{bg:'#eff6ff',tx:'#1e40af',bd:'#bfdbfe'},
+  };
+
+  const PAGE = 1000;
+  const [page,setPage] = useState(0);
+  const [hasMore,setHasMore] = useState(false);
+
+  useEffect(() => {
+    sb.from('cattle_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).range(0, PAGE-1).then(({data}) => {
+      if(data) {
+        setRecords(data);
+        setHasMore(data.length === PAGE);
+        if(pendingEdit && pendingEdit.viewName === 'cattledailys' && pendingEdit.id) {
+          const r = data.find(x => x.id === pendingEdit.id);
+          if(r) { openEdit(r); setPendingEdit && setPendingEdit(null); }
+        }
+      }
+      setLoading(false);
+    });
+    sb.from('cattle_feed_inputs').select('*').order('category').order('name').then(({data}) => { if(data) setFeedInputs(data); });
+    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => { if(data && data.data) setTeamMembers(data.data); });
+  }, []);
+
+  const pgLoading = React.useRef(false);
+  React.useEffect(() => {
+    if(hasMore && !pgLoading.current) {
+      pgLoading.current = true;
+      const next = page + 1;
+      sb.from('cattle_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).range(next*PAGE, (next+1)*PAGE - 1).then(({data}) => {
+        pgLoading.current = false;
+        if(data) {
+          setRecords(r => {
+            const ids = new Set(r.map(x => x.id));
+            return [...r, ...data.filter(x => !ids.has(x.id))];
+          });
+          setHasMore(data.length === PAGE);
+          setPage(next);
+        }
+      });
+    }
+  }, [hasMore, page]);
+
+  function openEdit(d) {
+    setForm({
+      date: d.date || todayStr(),
+      teamMember: d.team_member || '',
+      herd: d.herd || '',
+      feeds: Array.isArray(d.feeds) && d.feeds.length > 0 ? d.feeds.map(f => ({feedId:f.feed_input_id||'', qty:f.qty!=null?String(f.qty):'', isCreep:!!f.is_creep})) : [{feedId:'',qty:'',isCreep:false}],
+      minerals: Array.isArray(d.minerals) && d.minerals.length > 0 ? d.minerals.map(m => ({feedId:m.feed_input_id||'', lbs:m.lbs!=null?String(m.lbs):''})) : [{feedId:'',lbs:''}],
+      fenceVoltage: d.fence_voltage != null ? String(d.fence_voltage) : '',
+      waterChecked: d.water_checked !== false,
+      mortalityCount: d.mortality_count != null ? String(d.mortality_count) : '',
+      mortalityReason: d.mortality_reason || '',
+      issues: d.issues || '',
+    });
+    setEditId(d.id);
+    setEditSource(d.source || null);
+    setShowForm(true);
+  }
+
+  async function saveEdit() {
+    if(!form.date || !form.teamMember || !form.herd) { alert('Date, team member, and herd are required.'); return; }
+    if(parseInt(form.mortalityCount)>0 && !(form.mortalityReason||'').trim()) { alert('Mortality reason is required when mortalities are reported.'); return; }
+    // Build feeds/minerals jsonb with updated nutrition snapshots
+    const feedsJ = (form.feeds||[]).filter(r => r.feedId && r.qty!=='' && r.qty!=null).map(r => {
+      const fi = feedInputs.find(x => x.id === r.feedId);
+      if(!fi) return null;
+      const qty = parseFloat(r.qty) || 0;
+      const unitWt = parseFloat(fi.unit_weight_lbs) || 1;
+      return {
+        feed_input_id: fi.id, feed_name: fi.name, category: fi.category,
+        qty: qty, unit: fi.unit,
+        lbs_as_fed: Math.round(qty*unitWt*100)/100,
+        is_creep: !!r.isCreep,
+        nutrition_snapshot: {moisture_pct:fi.moisture_pct, nfc_pct:fi.nfc_pct, protein_pct:fi.protein_pct},
+      };
+    }).filter(Boolean);
+    const mineralsJ = (form.minerals||[]).filter(m => m.feedId && m.lbs!=='' && m.lbs!=null).map(m => {
+      const fi = feedInputs.find(x => x.id === m.feedId);
+      if(!fi) return null;
+      return {feed_input_id: fi.id, name: fi.name, lbs: parseFloat(m.lbs) || 0};
+    }).filter(Boolean);
+    const rec = {
+      date: form.date,
+      team_member: form.teamMember,
+      herd: form.herd,
+      feeds: feedsJ,
+      minerals: mineralsJ,
+      fence_voltage: form.fenceVoltage !== '' ? parseFloat(form.fenceVoltage) : null,
+      water_checked: form.waterChecked,
+      mortality_count: form.mortalityCount !== '' ? parseInt(form.mortalityCount) : 0,
+      mortality_reason: form.mortalityReason || null,
+      issues: form.issues || null,
+    };
+    const {error} = await sb.from('cattle_dailys').update(rec).eq('id', editId);
+    if(error) { alert('Save failed: ' + error.message); return; }
+    setRecords(p => p.map(r => r.id === editId ? {...r, ...rec} : r));
+    refreshDailys && refreshDailys('cattle');
+    setShowForm(false); setEditId(null); setForm(null);
+  }
+
+  function del(id) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this daily report? This cannot be undone.', async () => {
+      await sb.from('cattle_dailys').delete().eq('id', id);
+      setRecords(p => p.filter(r => r.id !== id));
+      refreshDailys && refreshDailys('cattle');
+      setShowForm(false); setEditId(null); setForm(null);
+    });
+  }
+
+  const filtered = records.filter(r =>
+    (!fHerd || r.herd === fHerd) &&
+    (!fTeam || r.team_member === fTeam) &&
+    (!fFrom || r.date >= fFrom) &&
+    (!fTo || r.date <= fTo) &&
+    (srcFilter === 'all' || (srcFilter === 'daily' && r.source !== 'add_feed_webform') || (srcFilter === 'addfeed' && r.source === 'add_feed_webform'))
+  );
+  const teamOpts = [...new Set(records.map(r => r.team_member).filter(Boolean))].sort();
+  const fi = {padding:'6px 10px', borderRadius:6, border:'1px solid #d1d5db', fontSize:12, fontFamily:'inherit', background:'white', width:'auto'};
+
+  // Summary metrics for filtered view
+  const totalMort = filtered.reduce((s,r) => s + (parseInt(r.mortality_count)||0), 0);
+  const totalFeedLbs = filtered.reduce((s,r) => s + (Array.isArray(r.feeds) ? r.feeds.reduce((ss,f) => ss + (parseFloat(f.lbs_as_fed)||0), 0) : 0), 0);
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8}}>
+          <div>
+            <div style={{fontSize:15, fontWeight:700, color:'#111827'}}>Cattle Daily Reports</div>
+            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>
+              {records.length} total {'\u00b7'} {filtered.length} shown {'\u00b7'} {Math.round(totalFeedLbs).toLocaleString()} lbs feed {'\u00b7'} <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span>
+            </div>
+          </div>
+          <div style={{display:'flex', gap:8}}>
+            <button onClick={() => { window.location.hash = '#addfeed'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'1px solid #fde68a', background:'#fef3c7', color:'#92400e', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
+            <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Report</button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div style={{display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'center'}}>
+          <input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} style={{...fi, width:130}}/>
+          <span style={{fontSize:12, color:'#6b7280'}}>to</span>
+          <input type="date" value={fTo} onChange={e => setFTo(e.target.value)} style={{...fi, width:130}}/>
+          <select value={fHerd} onChange={e => setFHerd(e.target.value)} style={fi}>
+            <option value=''>All herds</option>
+            {HERDS.map(h => <option key={h} value={h}>{HERD_LABELS[h]}</option>)}
+          </select>
+          <select value={fTeam} onChange={e => setFTeam(e.target.value)} style={fi}>
+            <option value=''>All team</option>
+            {teamOpts.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          {(fHerd||fTeam||fFrom||fTo||srcFilter!=='all') && <button onClick={() => { setFHerd(''); setFTeam(''); setFFrom(''); setFTo(''); setSrcFilter('all'); }} style={{...fi, color:'#6b7280', cursor:'pointer'}}>Clear</button>}
+          <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db', marginLeft:'auto'}}>
+            {[{k:'all',l:'All'},{k:'daily',l:'Daily Reports'},{k:'addfeed',l:'\ud83c\udf3e Add Feed'}].map((o,oi) => (
+              <button key={o.k} onClick={() => setSrcFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:srcFilter===o.k?'#991b1b':'white', color:srcFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+            ))}
+          </div>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'3rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && filtered.length === 0 && <div style={{textAlign:'center', padding:'3rem', color:'#9ca3af', fontSize:13}}>No records found</div>}
+        {!loading && filtered.length > 0 && (
+          <div style={{display:'flex', flexDirection:'column', gap:4}}>
+            {(() => {
+              const dates = [...new Set(filtered.map(r => r.date))];
+              return filtered.map((d,i) => {
+                const hasMort = parseInt(d.mortality_count) > 0;
+                const issues = d.issues && String(d.issues).trim().length > 2 ? String(d.issues).trim() : '';
+                const notable = hasMort || issues;
+                const prevDate = i > 0 ? filtered[i-1].date : null;
+                const showDivider = prevDate && prevDate !== d.date;
+                const dateIdx = dates.indexOf(d.date);
+                const shadeBg = dateIdx%2 === 0 ? 'white' : '#f8fafc';
+                const hc = HERD_COLORS[d.herd] || HERD_COLORS.mommas;
+                const feedSummary = Array.isArray(d.feeds) && d.feeds.length > 0
+                  ? d.feeds.map(f => (f.feed_name||'?') + (f.qty ? (' ' + f.qty + ' ' + (f.unit||'') + (f.is_creep?' \ud83c\udf7c':'')) : '')).join(', ')
+                  : '';
+                const mineralSummary = Array.isArray(d.minerals) && d.minerals.length > 0
+                  ? d.minerals.map(m => (m.name||'?') + (m.lbs ? (' ' + m.lbs + ' lb') : '')).join(', ')
+                  : '';
+                return (
+                  <React.Fragment key={d.id}>
+                    {showDivider && <div style={{height:2, background:'#9ca3af', margin:'6px 0', borderRadius:1}}/>}
+                    <div onClick={() => openEdit(d)} style={{
+                      background: d.source === 'add_feed_webform' ? '#fffbeb' : shadeBg,
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                      border: notable ? '1.5px solid #fca5a5' : d.source === 'add_feed_webform' ? '1px solid #fde68a' : '1px solid #e5e7eb',
+                      padding: '8px 14px',
+                      display: 'flex', flexDirection: 'column', gap: 4
+                    }} className="hoverable-tile">
+                      <div style={{display:'flex', alignItems:'center', gap:14, flexWrap:'wrap'}}>
+                        <span style={{fontSize:12, color:'#6b7280', minWidth:88, flexShrink:0}}>{fmt(d.date)}</span>
+                        <span style={{padding:'2px 8px', borderRadius:4, fontSize:11, fontWeight:700, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, minWidth:90, textAlign:'center'}}>{HERD_LABELS[d.herd] || d.herd}</span>
+                        {d.source === 'add_feed_webform' && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:6, background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
+                        <span style={{fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:4, background:'#f1f5f9', color:'#475569', border:'1px solid #e2e8f0', flexShrink:0}}>{d.team_member || '\u2014'}</span>
+                        {d.fence_voltage != null && <span style={{fontSize:11, color:(parseFloat(d.fence_voltage)<3?'#b91c1c':parseFloat(d.fence_voltage)<5?'#92400e':'#065f46'), fontWeight:600}}>{'\u26a1 ' + d.fence_voltage + ' kV'}</span>}
+                        <span style={{fontSize:10, fontWeight:600, padding:'2px 7px', borderRadius:4, background:d.water_checked===false?'#fef2f2':'#f0fdf4', color:d.water_checked===false?'#b91c1c':'#065f46', border:d.water_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>Water: {d.water_checked===false?'No':'Yes'}</span>
+                        {hasMort && <span style={{fontSize:11, fontWeight:600, padding:'2px 7px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca'}}>{'\ud83d\udc80 ' + d.mortality_count + ' mort.' + (d.mortality_reason ? ' \u2014 ' + d.mortality_reason : '')}</span>}
+                      </div>
+                      {feedSummary && <div style={{fontSize:11, color:'#92400e'}}>{'\ud83c\udf3e ' + feedSummary}</div>}
+                      {mineralSummary && <div style={{fontSize:11, color:'#6b21a8'}}>{'\ud83e\uddc2 ' + mineralSummary}</div>}
+                      {issues && <div style={{fontSize:11, color:'#92400e', padding:'4px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, fontStyle:'italic'}}>{'\ud83d\udcac ' + issues}</div>}
+                    </div>
+                  </React.Fragment>
+                );
+              });
+            })()}
+          </div>
+        )}
+        {hasMore && <div style={{textAlign:'center', padding:'0.5rem', fontSize:11, color:'#9ca3af'}}>Loading more records{'\u2026'}</div>}
+      </div>
+
+      {/* Edit modal */}
+      {showForm && form && (
+        <div onClick={() => { setShowForm(false); setEditId(null); setForm(null); }} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'1rem', overflowY:'auto'}}>
+          <div onClick={e => e.stopPropagation()} style={{background:'white', borderRadius:12, width:'100%', maxWidth:520, boxShadow:'0 8px 32px rgba(0,0,0,.2)', marginTop:40}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div style={{fontSize:15, fontWeight:600, color:'#991b1b'}}>{editSource === 'add_feed_webform' ? 'Edit Cattle Add Feed Report' : 'Edit Cattle Daily Report'}</div>
+              <button onClick={() => { setShowForm(false); setEditId(null); setForm(null); }} style={{background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9ca3af'}}>{'\u00d7'}</button>
+            </div>
+            <div style={{padding:'16px 20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, maxHeight:'70vh', overflowY:'auto'}}>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={S.label}>Date *</label>
+                <input type="date" value={form.date} onChange={e => setForm({...form, date:e.target.value})}/>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={S.label}>Team Member *</label>
+                <select value={form.teamMember} onChange={e => setForm({...form, teamMember:e.target.value})}>
+                  <option value=''>Select...</option>
+                  {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={S.label}>Herd *</label>
+                <select value={form.herd} onChange={e => setForm({...form, herd:e.target.value})}>
+                  <option value=''>Select herd...</option>
+                  {HERDS.map(h => <option key={h} value={h}>{HERD_LABELS[h]}</option>)}
+                </select>
+              </div>
+
+              {/* Feeds */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <span style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5}}>FEEDS</span>
+                  <button type="button" onClick={() => setForm({...form, feeds:[...(form.feeds||[]), {feedId:'', qty:'', isCreep:false}]})} style={{fontSize:11, color:'#991b1b', background:'none', border:'1px solid #fca5a5', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
+                </div>
+                {form.feeds.map((r,ri) => {
+                  const feedsForHerd = feedInputs.filter(f => f.category !== 'mineral' && (!form.herd || (f.herd_scope||[]).includes(form.herd)));
+                  const fiRow = feedInputs.find(x => x.id === r.feedId);
+                  return (
+                    <div key={ri} style={{display:'grid', gridTemplateColumns:'2fr 1fr auto', gap:6, marginBottom:6, alignItems:'center'}}>
+                      <select value={r.feedId} onChange={e => setForm({...form, feeds:form.feeds.map((x,i) => i===ri ? {...x, feedId:e.target.value} : x)})}>
+                        <option value=''>Select feed...</option>
+                        {feedsForHerd.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.1" value={r.qty} onChange={e => setForm({...form, feeds:form.feeds.map((x,i) => i===ri ? {...x, qty:e.target.value} : x)})} placeholder={fiRow ? fiRow.unit : 'qty'}/>
+                      <button type="button" onClick={() => setForm({...form, feeds:form.feeds.filter((_,i) => i!==ri)})} style={{padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, background:'white', color:'#9ca3af', cursor:'pointer'}}>{'\u00d7'}</button>
+                      {form.herd === 'mommas' && r.feedId && (
+                        <label style={{gridColumn:'1/-1', display:'flex', alignItems:'center', gap:6, fontSize:11, color:'#7f1d1d'}}>
+                          <input type="checkbox" checked={!!r.isCreep} onChange={e => setForm({...form, feeds:form.feeds.map((x,i) => i===ri ? {...x, isCreep:e.target.checked} : x)})}/>
+                          Creep feed (excluded from Mommas nutrition)
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Minerals */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <span style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5}}>MINERALS</span>
+                  <button type="button" onClick={() => setForm({...form, minerals:[...(form.minerals||[]), {feedId:'', lbs:''}]})} style={{fontSize:11, color:'#6b21a8', background:'none', border:'1px solid #d8b4fe', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
+                </div>
+                {form.minerals.map((r,ri) => {
+                  const minerals = feedInputs.filter(f => f.category === 'mineral');
+                  return (
+                    <div key={ri} style={{display:'grid', gridTemplateColumns:'2fr 1fr auto', gap:6, marginBottom:6, alignItems:'center'}}>
+                      <select value={r.feedId} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, feedId:e.target.value} : x)})}>
+                        <option value=''>Select mineral...</option>
+                        {minerals.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.1" value={r.lbs} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, lbs:e.target.value} : x)})} placeholder="lbs"/>
+                      <button type="button" onClick={() => setForm({...form, minerals:form.minerals.filter((_,i) => i!==ri)})} style={{padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, background:'white', color:'#9ca3af', cursor:'pointer'}}>{'\u00d7'}</button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Daily checks + mortality + issues — hide for add_feed source */}
+              {editSource !== 'add_feed_webform' && (
+                <React.Fragment>
+                  <div>
+                    <label style={S.label}>Fence Voltage (kV)</label>
+                    <input type="number" min="0" step="0.1" value={form.fenceVoltage} onChange={e => setForm({...form, fenceVoltage:e.target.value})}/>
+                  </div>
+                  <div>
+                    <label style={S.label}>Waterers checked?</label>
+                    <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+                      {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l}) => (
+                        <button key={l} type="button" onClick={() => setForm({...form, waterChecked:v})} style={{flex:1, padding:'7px 0', border:'none', fontFamily:'inherit', fontSize:12, cursor:'pointer', background:form.waterChecked===v?(v?'#085041':'#374151'):'#f9fafb', color:form.waterChecked===v?'white':'#6b7280'}}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={S.label}>Mortality count</label>
+                    <input type="number" min="0" value={form.mortalityCount} onChange={e => setForm({...form, mortalityCount:e.target.value})} placeholder="0"/>
+                  </div>
+                  {parseInt(form.mortalityCount)>0 && (
+                    <div>
+                      <label style={S.label}>Mortality reason *</label>
+                      <input value={form.mortalityReason} onChange={e => setForm({...form, mortalityReason:e.target.value})}/>
+                    </div>
+                  )}
+                  <div style={{gridColumn:'1/-1'}}>
+                    <label style={S.label}>Issues / Comments</label>
+                    <textarea value={form.issues} onChange={e => setForm({...form, issues:e.target.value})} rows={3} style={{resize:'vertical'}}/>
+                  </div>
+                </React.Fragment>
+              )}
+            </div>
+            <div style={{padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8}}>
+              <button onClick={saveEdit} style={{...S.btnPrimary, width:'auto', padding:'8px 20px'}}>Save</button>
+              {editId && <button onClick={() => del(editId)} style={S.btnDanger}>Delete</button>}
+              <button onClick={() => { setShowForm(false); setEditId(null); setForm(null); }} style={S.btnGhost}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 
 // Reuse existing root if present (prevents double-createRoot on Babel cache retry)
 if(!window._wcfAppRoot){
