@@ -2463,7 +2463,7 @@ function App(){
   const [showArchBatches,setShowArchBatches]= useState(false);
   const [wfGroups,      setWfGroups]      = useState([]);
   const [feedCosts,     setFeedCosts]     = useState({starter:0, grower:0, layer:0, pig:0, grit:0});
-  const [feedOrders,   setFeedOrders]    = useState({pig:{},broiler:{}});
+  const [feedOrders,   setFeedOrders]    = useState({pig:{},starter:{},grower:{},layerfeed:{}});
   const [pigFeedInventory, setPigFeedInventory] = useState(null); // {count, date} or null
   const [pigFeedExpandedMonths, setPigFeedExpandedMonths] = useState(new Set());
   const [poultryFeedInventory, setPoultryFeedInventory] = useState(null); // {starter:{count,date}, grower:{count,date}, layer:{count,date}}
@@ -4706,9 +4706,9 @@ function App(){
                       <span style={{color:"#9ca3af"}}>Birds:</span>
                       <span style={{color:"white"}}>{b.birdCount}</span>
                       {isBrooder&&<><span style={{color:"#9ca3af"}}>Brooder {b.brooder}:</span>
-                      <span style={{color:"white"}}>{fmtS(brooderIn)+" 2192 "+fmtS(brooderOut)}</span></>}
+                      <span style={{color:"white"}}>{fmtS(brooderIn)+" \u2192 "+fmtS(brooderOut)}</span></>}
                       {!isBrooder&&<><span style={{color:"#9ca3af"}}>Schooner {b.schooner}:</span>
-                      <span style={{color:"white"}}>{fmtS(schoonerIn)+" 2192 "+fmtS(schoonerOut)}</span></>}
+                      <span style={{color:"white"}}>{fmtS(schoonerIn)+" \u2192 "+fmtS(schoonerOut)}</span></>}
                       {b.processingDate&&<><span style={{color:"#9ca3af"}}>Processing:</span><span style={{color:"#a7f3d0"}}>{fmt(b.processingDate)}</span></>}
                     </div>
                   </div>
@@ -4940,8 +4940,8 @@ function App(){
                     <td style={{padding:"8px 10px"}}>
                       <span style={S.badge('#f3f4f6','#374151')}>{b.schooner}</span>
                     </td>
-                    <td style={{padding:"8px 10px",whiteSpace:"nowrap",color:"#4b5563"}}>{fmtS(brooderIn)+" 2192 "+fmtS(brooderOut)}</td>
-                    <td style={{padding:"8px 10px",whiteSpace:"nowrap",color:"#4b5563"}}>{fmtS(schoonerIn)+" 2192 "+fmtS(schoonerOut)}</td>
+                    <td style={{padding:"8px 10px",whiteSpace:"nowrap",color:"#4b5563"}}>{fmtS(brooderIn)+" \u2192 "+fmtS(brooderOut)}</td>
+                    <td style={{padding:"8px 10px",whiteSpace:"nowrap",color:"#4b5563"}}>{fmtS(schoonerIn)+" \u2192 "+fmtS(schoonerOut)}</td>
                     <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                       {b.processingDate?<span>{fmt(b.processingDate)}{pw?" ⚠":""}</span>:<span style={{color:"#9ca3af"}}>TBD</span>}
                     </td>
@@ -7910,7 +7910,11 @@ function App(){
       );
     }
 
-    const wfCfgFields = (webformsConfig?.webforms?.find(w=>w.id==='pig-dailys')?.fields)||[];
+    const wfCfgFields = (()=>{
+      const wf = webformsConfig?.webforms?.find(w=>w.id==='pig-dailys');
+      if(!wf) return [];
+      return (wf.sections||[]).flatMap(s=>s.fields||[]);
+    })();
     const isReq = id => { const f=wfCfgFields.find(f=>f.id===id); return f?f.required:['date','team_member','group'].includes(id); };
     const wfLbl = (text,id) => <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>{text}{isReq(id)&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>;
 
@@ -8905,8 +8909,8 @@ function App(){
           {/* ── FEED CONSUMPTION ── */}
           {(()=>{
             // Aggregate feed from pig_dailys for SOWS and BOARS by month
-            const sowDailys  = pigDailys.filter(d=>d.batch_id==='breeding-sows'||d.batch_label?.toUpperCase()==='SOWS');
-            const boarDailys = pigDailys.filter(d=>d.batch_id==='boars'||d.batch_label?.toUpperCase()==='BOARS');
+            const sowDailys  = pigDailys.filter(d=>d.batch_label?.toUpperCase()==='SOWS');
+            const boarDailys = pigDailys.filter(d=>d.batch_label?.toUpperCase()==='BOARS');
 
             function monthlyFeed(dailys){
               const byMonth = {};
@@ -9356,6 +9360,13 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   // Submit functions — all include client-generated id matching WebformHub pattern
   async function submitBroiler(){
     if(!bForm.date||!bForm.teamMember||!bForm.batchLabel){setErr('Please fill in all required fields.');return;}
+    // Conditional validation — mirror WebformHub rules
+    if(parseFloat(bForm.feedLbs)>0 && !bForm.feedType){setErr('Feed Type is required when Feed (lbs) is entered.');return;}
+    if(parseInt(bForm.mortalityCount)>0 && !(bForm.mortalityReason||'').trim()){setErr('Mortality reason is required when mortalities are reported.');return;}
+    for(const eg of extraB.filter(g=>g.batchLabel)){
+      if(parseFloat(eg.feedLbs)>0 && !eg.feedType){setErr('Feed Type is required for '+eg.batchLabel+' when Feed (lbs) is entered.');return;}
+      if(parseInt(eg.mortalityCount)>0 && !(eg.mortalityReason||'').trim()){setErr('Mortality reason is required for '+eg.batchLabel+' when mortalities are reported.');return;}
+    }
     setErr('');setSubmitting(true);
     const base={id:genId(),submitted_at:new Date().toISOString(),date:bForm.date,team_member:bForm.teamMember,batch_label:bForm.batchLabel,feed_type:bForm.feedType||null,feed_lbs:bForm.feedLbs!==''?parseFloat(bForm.feedLbs):null,grit_lbs:bForm.gritLbs!==''?parseFloat(bForm.gritLbs):null,group_moved:bForm.groupMoved,waterer_checked:bForm.watererChecked,mortality_count:bForm.mortalityCount!==''?parseInt(bForm.mortalityCount):0,mortality_reason:bForm.mortalityReason||null,comments:bForm.comments||null};
     const recs=[base,...extraB.filter(g=>g.batchLabel).map(g=>({...base,id:genId(),batch_label:g.batchLabel,feed_type:g.feedType||null,feed_lbs:g.feedLbs!==''?parseFloat(g.feedLbs):null,grit_lbs:g.gritLbs!==''?parseFloat(g.gritLbs):null,group_moved:g.groupMoved!==false,waterer_checked:g.watererChecked!==false,mortality_count:g.mortalityCount!==''?parseInt(g.mortalityCount):0,mortality_reason:g.mortalityReason||null,comments:g.comments||null}))];
@@ -9370,6 +9381,13 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   }
   async function submitLayer(){
     if(!lForm.date||!lForm.teamMember||!lForm.batchLabel){setErr('Please fill in all required fields.');return;}
+    // Conditional validation — mirror WebformHub rules
+    if(parseFloat(lForm.feedLbs)>0 && !lForm.feedType){setErr('Feed Type is required when Feed (lbs) is entered.');return;}
+    if(parseInt(lForm.mortalityCount)>0 && !(lForm.mortalityReason||'').trim()){setErr('Mortality reason is required when mortalities are reported.');return;}
+    for(const eg of extraL.filter(g=>g.batchLabel)){
+      if(parseFloat(eg.feedLbs)>0 && !eg.feedType){setErr('Feed Type is required for '+eg.batchLabel+' when Feed (lbs) is entered.');return;}
+      if(parseInt(eg.mortalityCount)>0 && !(eg.mortalityReason||'').trim()){setErr('Mortality reason is required for '+eg.batchLabel+' when mortalities are reported.');return;}
+    }
     setErr('');setSubmitting(true);
     const base={id:genId(),submitted_at:new Date().toISOString(),date:lForm.date,team_member:lForm.teamMember,batch_label:lForm.batchLabel,feed_type:lForm.feedType||null,feed_lbs:lForm.feedLbs!==''?parseFloat(lForm.feedLbs):null,grit_lbs:lForm.gritLbs!==''?parseFloat(lForm.gritLbs):null,layer_count:lForm.layerCount!==''?parseInt(lForm.layerCount):null,group_moved:lForm.groupMoved,waterer_checked:lForm.watererChecked,mortality_count:lForm.mortalityCount!==''?parseInt(lForm.mortalityCount):0,mortality_reason:lForm.mortalityReason||null,comments:lForm.comments||null};
     const recs=[base,...extraL.filter(g=>g.batchLabel).map(g=>({...base,id:genId(),batch_label:g.batchLabel,feed_type:g.feedType||null,feed_lbs:g.feedLbs!==''?parseFloat(g.feedLbs):null,grit_lbs:g.gritLbs!==''?parseFloat(g.gritLbs):null,layer_count:g.layerCount!==''?parseInt(g.layerCount):null,group_moved:g.groupMoved!==false,waterer_checked:g.watererChecked!==false,mortality_count:g.mortalityCount!==''?parseInt(g.mortalityCount):0,mortality_reason:g.mortalityReason||null,comments:g.comments||null}))];
@@ -11388,7 +11406,11 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
   );
 };
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+// Reuse existing root if present (prevents double-createRoot on Babel cache retry)
+if(!window._wcfAppRoot){
+  window._wcfAppRoot = ReactDOM.createRoot(document.getElementById("root"));
+}
+window._wcfAppRoot.render(<App/>);
 </script>
 <script>
 // ── BOOT: compile JSX (with localStorage cache) and execute ──
