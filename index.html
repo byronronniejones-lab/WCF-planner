@@ -10092,6 +10092,7 @@ function App(){
 
   // ── BREEDING PIGS TAB ──
   if(view==="sows") {
+    const cycleSeqMap = buildCycleSeqMap(breedingCycles);
     // ── Helpers ──
     function pigAge(birthDate) {
       if(!birthDate) return "—";
