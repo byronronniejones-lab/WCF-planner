@@ -2376,7 +2376,10 @@ const WeighInsWebform = ({sb}) => {
             )}
             {entryMode === 'new_cow' && (
               <div style={{marginBottom:10, padding:10, background:'#ecfdf5', borderRadius:8, border:'1px solid #a7f3d0'}}>
-                <div style={{fontSize:11, fontWeight:700, color:'#065f46', marginBottom:6}}>{'\u2795 New Cow'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 will be created in '+(cattleHerd||'this herd')}</span></div>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <div style={{fontSize:11, fontWeight:700, color:'#065f46'}}>{'\u2795 New Cow'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 will be created in '+(cattleHerd||'this herd')}</span></div>
+                  <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setPriorTagInput(''); setErr('');}} style={{padding:'3px 9px', borderRadius:6, border:'1px solid #6b7280', background:'white', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2715 Cancel'}</button>
+                </div>
                 <div style={{marginBottom:8}}>
                   <label style={lblS}>New tag # *</label>
                   <input type="text" value={tagInput} onChange={e=>setTagInput(e.target.value)} placeholder="e.g. 99" style={inpS}/>
@@ -2389,19 +2392,20 @@ const WeighInsWebform = ({sb}) => {
                     ))}
                   </div>
                 </div>
-                <div style={{marginBottom:8}}>
+                <div style={{marginBottom:0}}>
                   <label style={lblS}>Prior tag <span style={{fontSize:10, color:'#9ca3af'}}>(optional — e.g. tag from selling farm)</span></label>
                   <input type="text" value={priorTagInput} onChange={e=>setPriorTagInput(e.target.value)} placeholder="leave blank if none" style={inpS}/>
                 </div>
-                <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setPriorTagInput('');}} style={{fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer'}}>Cancel</button>
               </div>
             )}
             {entryMode === 'replacement' && (
               <div style={{marginBottom:10, padding:10, background:'#fffbeb', borderRadius:8, border:'1px solid #fde68a'}}>
-                <div style={{fontSize:11, fontWeight:700, color:'#92400e', marginBottom:6}}>{'\u26a0\ufe0f Replacement Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 must be reconciled before completing the weigh-in'}</span></div>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <div style={{fontSize:11, fontWeight:700, color:'#92400e'}}>{'\u26a0\ufe0f Replacement Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 must be reconciled before completing'}</span></div>
+                  <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setErr('');}} style={{padding:'3px 9px', borderRadius:6, border:'1px solid #6b7280', background:'white', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2715 Cancel'}</button>
+                </div>
                 <label style={lblS}>New tag # *</label>
                 <input type="text" value={tagInput} onChange={e=>setTagInput(e.target.value)} placeholder="e.g. 99" style={inpS}/>
-                <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput('');}} style={{marginTop:4, fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer'}}>Cancel</button>
               </div>
             )}
             <div style={{marginBottom:10}}>
@@ -15277,6 +15281,18 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   async function deleteSession(s) {
     if(!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this weigh-in session and all its entries? This cannot be undone.', async () => {
+      // Cattle weigh-ins auto-publish a row into cattle_comments whenever an
+      // entry has a note. cattle_comments has no FK to weigh_ins (reference_id
+      // is plain text), so the cascade on weigh_in_sessions doesn't reach them.
+      // Look up the session's weigh-in IDs first and wipe the matching comments
+      // before the session itself is deleted -- otherwise they linger as
+      // orphans on the cow's timeline.
+      const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
+      const wiIds = (wis && wis.data || []).map(r => r.id);
+      if(wiIds.length > 0) {
+        try { await sb.from('cattle_comments').delete().eq('source','weigh_in').in('reference_id', wiIds); }
+        catch(e){ /* table may not exist on legacy schemas — ok to skip */ }
+      }
       await sb.from('weigh_in_sessions').delete().eq('id', s.id);
       await loadAll();
     });
