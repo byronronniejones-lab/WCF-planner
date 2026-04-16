@@ -1139,6 +1139,30 @@ const DEFAULT_WEBFORMS_CONFIG = {
       {id:"s-comments",title:"Comments",system:false,fields:[
         {id:"comments",label:"Comments / Issues",type:"textarea",required:false,system:false,enabled:true}
       ]}
+    ]},
+    {id:"cattle-dailys",teamMembers:[],name:"Cattle Daily Report",description:"Daily care report for cattle herds",table:"cattle_dailys",allowAddGroup:false,sections:[
+      {id:"s-info",title:"Report Info",system:true,fields:[
+        {id:"date",label:"Date",type:"date",required:true,system:true,enabled:true},
+        {id:"team_member",label:"Team Member",type:"team_picker",required:true,system:true,enabled:true}
+      ]},
+      {id:"s-herd",title:"Cattle Herd",system:true,fields:[
+        {id:"herd",label:"Herd (mommas/backgrounders/finishers/bulls)",type:"herd_picker",required:true,system:true,enabled:true}
+      ]},
+      {id:"s-feeds",title:"Feeds & Minerals",system:true,fields:[
+        {id:"feeds",label:"Feeds (multi-line, with creep toggle)",type:"feed_lines",required:false,system:true,enabled:true},
+        {id:"minerals",label:"Minerals (multi-line)",type:"mineral_lines",required:false,system:true,enabled:true}
+      ]},
+      {id:"s-checks",title:"Daily Checks",system:false,fields:[
+        {id:"fence_voltage",label:"Fence voltage (kV)",type:"number",required:false,system:false,enabled:true},
+        {id:"water_checked",label:"Water source checked?",type:"yes_no",required:false,system:false,enabled:true}
+      ]},
+      {id:"s-mortality",title:"Mortality",system:false,fields:[
+        {id:"mortality_count",label:"# Mortalities",type:"number",required:false,system:false,enabled:true},
+        {id:"mortality_reason",label:"Reason",type:"text",required:false,system:false,enabled:true}
+      ]},
+      {id:"s-comments",title:"Comments",system:false,fields:[
+        {id:"issues",label:"Comments / Issues",type:"textarea",required:false,system:false,enabled:true}
+      ]}
     ]}
   ]
 };
@@ -1788,11 +1812,13 @@ const AddFeedWebform = ({sb}) => {
 
 
 // Recompute the broiler session's average and write it to the matching
-// batch's week4Lbs / week6Lbs in app_store.ppp-v4. Called from every path
-// that mutates broiler weigh-ins (form save/complete + admin edit/delete)
-// so the batch tile always reflects the current session avg.
+// batch's week4Lbs / week6Lbs in app_store.ppp-v4. ONLY runs for sessions
+// already marked complete -- draft saves never bleed into the batch tile.
+// Called from completeSession (webform), completeFromAdmin (admin), and
+// saveAdminGrid (admin in-place edits on already-complete sessions).
 async function writeBroilerBatchAvg(sb, sessionRow, sessionEntries) {
   if(!sb || !sessionRow || sessionRow.species !== 'broiler') return;
+  if(sessionRow.status !== 'complete') return;
   if(!sessionRow.batch_id || !(sessionRow.broiler_week === 4 || sessionRow.broiler_week === 6)) return;
   if(!sessionEntries || sessionEntries.length === 0) return;
   var sum = 0, n = 0;
@@ -1986,9 +2012,9 @@ const WeighInsWebform = ({sb}) => {
     const completedAt = new Date().toISOString();
     await sb.from('weigh_in_sessions').update({status:'complete', completed_at: completedAt}).eq('id', session.id);
     if(species === 'broiler') {
-      // Re-read latest entries since saveBatch just rewrote them
+      // Pass the just-completed status through so writeBroilerBatchAvg fires.
       const eR = await sb.from('weigh_ins').select('*').eq('session_id', session.id);
-      await writeBroilerBatchAvg(sb, session, (eR && eR.data) || []);
+      await writeBroilerBatchAvg(sb, {...session, status:'complete'}, (eR && eR.data) || []);
     }
     setBusy(false);
     setStage('done');
@@ -2065,9 +2091,8 @@ const WeighInsWebform = ({sb}) => {
       await sb.from('weigh_in_sessions').update({notes: noteInput.trim()}).eq('id', session.id);
     }
     setEntries(recs);
-    if(species === 'broiler') {
-      await writeBroilerBatchAvg(sb, session, recs);
-    }
+    // No batch-avg write here -- saveBatch only runs while status='draft',
+    // and writeBroilerBatchAvg requires status='complete' to fire.
     setBusy(false);
     return true;
   }
@@ -4429,6 +4454,33 @@ function App(){
               {id:'batch_label',label:'Batch / Group',type:'group_picker',required:true,system:true,enabled:true},
               {id:'feed_type',label:'Feed Type',type:'button_toggle',options:['STARTER','GROWER','LAYER'],required:true,system:false,enabled:true},
               {id:'feed_lbs',label:'Feed (lbs)',type:'number',required:true,system:false,enabled:true}
+            ]}
+          ]}]};
+        }
+        // Inject Cattle Daily webform entry if not already present (config may pre-date the cattle module)
+        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='cattle-dailys';})){
+          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'cattle-dailys',teamMembers:[],name:'Cattle Daily Report',description:'Daily care report for cattle herds',table:'cattle_dailys',allowAddGroup:false,sections:[
+            {id:'s-info',title:'Report Info',system:true,fields:[
+              {id:'date',label:'Date',type:'date',required:true,system:true,enabled:true},
+              {id:'team_member',label:'Team Member',type:'team_picker',required:true,system:true,enabled:true}
+            ]},
+            {id:'s-herd',title:'Cattle Herd',system:true,fields:[
+              {id:'herd',label:'Herd (mommas/backgrounders/finishers/bulls)',type:'herd_picker',required:true,system:true,enabled:true}
+            ]},
+            {id:'s-feeds',title:'Feeds & Minerals',system:true,fields:[
+              {id:'feeds',label:'Feeds (multi-line, with creep toggle)',type:'feed_lines',required:false,system:true,enabled:true},
+              {id:'minerals',label:'Minerals (multi-line)',type:'mineral_lines',required:false,system:true,enabled:true}
+            ]},
+            {id:'s-checks',title:'Daily Checks',system:false,fields:[
+              {id:'fence_voltage',label:'Fence voltage (kV)',type:'number',required:false,system:false,enabled:true},
+              {id:'water_checked',label:'Water source checked?',type:'yes_no',required:false,system:false,enabled:true}
+            ]},
+            {id:'s-mortality',title:'Mortality',system:false,fields:[
+              {id:'mortality_count',label:'# Mortalities',type:'number',required:false,system:false,enabled:true},
+              {id:'mortality_reason',label:'Reason',type:'text',required:false,system:false,enabled:true}
+            ]},
+            {id:'s-comments',title:'Comments',system:false,fields:[
+              {id:'issues',label:'Comments / Issues',type:'textarea',required:false,system:false,enabled:true}
             ]}
           ]}]};
         }
@@ -11419,6 +11471,7 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed · <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span></div>
           </div>
           <div style={{display:'flex',gap:8}}>
+            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
@@ -12671,6 +12724,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown</div>
           </div>
           <div style={{display:'flex',gap:8}}>
+            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
@@ -12870,7 +12924,10 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
             <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>Egg Daily Reports</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · <strong style={{color:'#78350f'}}>{totalEggs.toLocaleString()} eggs</strong> ({Math.round(totalEggs/12).toLocaleString()} doz) in view</div>
           </div>
-          <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
+            <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
+          </div>
         </div>
         {showAddModal&&<AdminAddReportModal sb={sb} formType="egg" onClose={()=>setShowAddModal(false)} onSaved={recs=>{setRecords(p=>[...recs,...p]);refreshDailys&&refreshDailys('egg');}}/>}
         <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
@@ -13028,6 +13085,7 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{pigDailys.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed in view</div>
           </div>
           <div style={{display:'flex',gap:8}}>
+            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
@@ -13294,6 +13352,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
             </div>
           </div>
           <div style={{display:'flex', gap:8}}>
+            <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={() => { window.location.hash = '#addfeed'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'1px solid #fde68a', background:'#fef3c7', color:'#92400e', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Report</button>
           </div>
@@ -14679,10 +14738,107 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
 // ── CATTLE WEIGH-INS VIEW ───────────────────────────────────────────────────
 // Authenticated review of past weigh-in sessions. Drill into a session to see
 // individual entries. Highlights new-tag flags for admin reconciliation.
+// Modal that creates a new draft weigh_in_sessions row from inside the admin
+// LivestockWeighInsView (broiler + pig only). Mirrors the AdminAddReportModal
+// pattern -- no navigate-away. After insert, the parent loadAll-then-expand
+// hook drops the user straight into the in-tile grid for that fresh session.
+const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
+  const {useState, useEffect} = React;
+  const todayStr = (() => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [team, setTeam] = useState(localStorage.getItem('wcf_team') || '');
+  const [date, setDate] = useState(todayStr);
+  const [batchOpts, setBatchOpts] = useState([]);
+  const [batchId, setBatchId] = useState('');
+  const [week, setWeek] = useState(4);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => {
+      if(data && Array.isArray(data.data)) setTeamMembers(data.data);
+    });
+    if(species === 'broiler') {
+      sb.from('webform_config').select('data').eq('key','broiler_groups').maybeSingle().then(({data}) => {
+        if(data && Array.isArray(data.data)) setBatchOpts(data.data);
+      });
+    } else if(species === 'pig') {
+      sb.from('webform_config').select('data').eq('key','active_groups').maybeSingle().then(({data}) => {
+        if(data && Array.isArray(data.data)) {
+          setBatchOpts(data.data.filter(n => n && n.toUpperCase() !== 'SOWS' && n.toUpperCase() !== 'BOARS'));
+        }
+      });
+    }
+  }, []);
+
+  async function create() {
+    if(!team) { setErr('Pick a team member.'); return; }
+    if(!batchId) { setErr('Pick a batch.'); return; }
+    setErr(''); setBusy(true);
+    const id = String(Date.now()) + Math.random().toString(36).slice(2,6);
+    const rec = {
+      id, date, team_member: team, species, status: 'draft',
+      batch_id: batchId,
+    };
+    if(species === 'broiler') rec.broiler_week = week;
+    const {error} = await sb.from('weigh_in_sessions').insert(rec);
+    setBusy(false);
+    if(error) { setErr('Could not create: '+error.message); return; }
+    if(team) localStorage.setItem('wcf_team', team);
+    onCreated && onCreated(rec);
+    onClose && onClose();
+  }
+
+  const lblS = {display:'block', fontSize:12, color:'#374151', marginBottom:4, fontWeight:600};
+  const inpS = {fontFamily:'inherit', fontSize:13, padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6, width:'100%', boxSizing:'border-box', background:'white', color:'#111827', outline:'none'};
+
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+      <div style={{background:'white', borderRadius:12, maxWidth:420, width:'100%', padding:'18px 20px', boxShadow:'0 12px 40px rgba(0,0,0,.25)'}}>
+        <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:14}}>New {species==='broiler'?'Broiler':'Pig'} Weigh-In</div>
+        <div style={{marginBottom:10}}>
+          <label style={lblS}>Team member *</label>
+          <select value={team} onChange={e=>setTeam(e.target.value)} style={inpS}>
+            <option value=''>Select team member...</option>
+            {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:10}}>
+          <label style={lblS}>Date</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inpS}/>
+        </div>
+        <div style={{marginBottom:10}}>
+          <label style={lblS}>{species==='broiler'?'Broiler batch *':'Pig batch *'}</label>
+          <select value={batchId} onChange={e=>setBatchId(e.target.value)} style={inpS}>
+            <option value=''>Select batch...</option>
+            {batchOpts.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </div>
+        {species === 'broiler' && (
+          <div style={{marginBottom:14}}>
+            <label style={lblS}>Week *</label>
+            <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+              {[4,6].map(w => (
+                <button key={w} type="button" onClick={()=>setWeek(w)} style={{flex:1, padding:'8px 0', border:'none', fontFamily:'inherit', fontSize:13, fontWeight:600, cursor:'pointer', background:week===w?'#1e40af':'white', color:week===w?'white':'#6b7280'}}>{'Week '+w}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        {err && <div style={{color:'#b91c1c', fontSize:12, marginBottom:10, padding:'6px 10px', background:'#fef2f2', borderRadius:6}}>{err}</div>}
+        <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+          <button onClick={onClose} disabled={busy} style={{padding:'8px 14px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>Cancel</button>
+          <button onClick={create} disabled={busy || !team || !batchId} style={{padding:'8px 16px', borderRadius:7, border:'none', background:(busy||!team||!batchId)?'#9ca3af':'#1e40af', color:'white', fontWeight:700, fontSize:12, cursor:(busy||!team||!batchId)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Creating\u2026':'Create Weigh-In'}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 // Admin weigh-ins view for broilers + pigs. Mirrors CattleWeighInsView but
 // drops cattle-specific bits (herd, new-tag reconciliation) and adds:
 //   • schooner grouping for broilers (reads schooner name from weigh_ins.tag)
-//   • inline weight edit + per-entry delete
+//   • in-place grid editing with edit lock on complete sessions
 const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species}) => {
   const {useState, useEffect} = React;
   const [sessions, setSessions] = useState([]);
@@ -14691,6 +14847,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
   const [expandedSession, setExpandedSession] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [broilerBatchRecs, setBroilerBatchRecs] = useState([]);
+  const [showNewModal, setShowNewModal] = useState(false);
   // Per-expanded-tile grid editing state. Only one tile is expanded at a time.
   const [gridLabels, setGridLabels] = useState([]);   // ['2','3'] for broiler etc.
   const [gridInputs, setGridInputs] = useState([]);   // weight strings, length = labels*15
@@ -14785,7 +14942,8 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     await sb.from('weigh_in_sessions').update({status:'complete', completed_at: new Date().toISOString()}).eq('id', s.id);
     if(species === 'broiler') {
       const eR = await sb.from('weigh_ins').select('*').eq('session_id', s.id);
-      await writeBroilerBatchAvg(sb, s, (eR && eR.data) || []);
+      // Override status locally so writeBroilerBatchAvg's complete-only gate fires.
+      await writeBroilerBatchAvg(sb, {...s, status:'complete'}, (eR && eR.data) || []);
     }
     await loadAll();
   }
@@ -14859,9 +15017,11 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                 <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
               ))}
             </div>
-            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
+            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 12px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udd17 Webform'}</button>
+            <button onClick={()=>setShowNewModal(true)} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
           </div>
         </div>
+        {showNewModal && <AdminNewWeighInModal sb={sb} species={species} onClose={()=>setShowNewModal(false)} onCreated={(rec)=>{ loadAll().then(()=>setExpandedSession(rec.id)); }}/>}
 
         {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
         {!loading && filtered.length === 0 && (
@@ -15022,6 +15182,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                 <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
               ))}
             </div>
+            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 12px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udd17 Webform'}</button>
             <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
           </div>
         </div>
