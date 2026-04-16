@@ -1860,7 +1860,15 @@ const WeighInsWebform = ({sb}) => {
   const [tagInput, setTagInput] = React.useState('');
   const [weightInput, setWeightInput] = React.useState('');
   const [noteInput, setNoteInput] = React.useState('');
-  const [showNewTag, setShowNewTag] = React.useState(false);
+  // Cattle entry mode: 'normal' = pick existing tag from herd dropdown,
+  //                    'new_cow' = staff is creating a brand-new cow inline (sex+tag),
+  //                    'replacement' = existing cow with a swapped tag — flagged
+  //                                    until someone reconciles it to a known cow.
+  const [entryMode, setEntryMode] = React.useState('normal');
+  const [newCowSex, setNewCowSex] = React.useState('cow');
+  // Optional prior tag for "+ New Cow" — captures the tag the cow was wearing
+  // when purchased from another farm so its history is recorded on arrival.
+  const [priorTagInput, setPriorTagInput] = React.useState('');
   // Pig/broiler grid: 30 weight slots (2 cols x 15 rows), single session note
   const [weightInputs, setWeightInputs] = React.useState(Array(30).fill(''));
   // Pig / Broiler
@@ -1893,7 +1901,7 @@ const WeighInsWebform = ({sb}) => {
     if(!species) return;
     setErr('');
     if(species === 'cattle') {
-      sb.from('cattle').select('id, tag, herd, birth_date, sex').then(({data}) => {
+      sb.from('cattle').select('id, tag, herd, birth_date, sex, breed, old_tags').then(({data}) => {
         if(data) setCattleList(data);
       });
     } else if(species === 'pig') {
@@ -2019,22 +2027,49 @@ const WeighInsWebform = ({sb}) => {
     setBusy(false);
     setStage('done');
   }
-  async function saveEntry({tag, weight, note}) {
+  // Cattle entry. mode is 'normal' (pick existing tag), 'new_cow' (also INSERT
+  // a fresh cattle row in the session's herd before saving the weigh-in), or
+  // 'replacement' (flag the entry so it can be reconciled to a known cow later
+  // — either inside this session via the pending-reconcile panel or by admin).
+  // priorTag (new_cow only) optionally seeds old_tags, e.g. the tag a purchased
+  // cow was wearing when it arrived from another farm.
+  async function saveEntry({tag, weight, note, mode, sex, priorTag}) {
     if(!session) return;
     if(!weight || parseFloat(weight) <= 0) { setErr('Weight is required.'); return; }
+    if(!tag) { setErr('Tag is required.'); return; }
+    if(mode === 'new_cow') {
+      if(!sex) { setErr('Pick sex for the new cow.'); return; }
+      if(cattleList.find(c => c.tag === tag)) { setErr('Tag #'+tag+' already exists in the directory.'); return; }
+      if(priorTag && priorTag.trim() === tag.trim()) { setErr('Prior tag and new tag cannot be the same.'); return; }
+    }
     setErr(''); setBusy(true);
     const id = String(Date.now())+Math.random().toString(36).slice(2,6);
-    const isNewTag = species === 'cattle' && tag && !cattleList.find(c => c.tag === tag);
+    const herd = (session && session.herd) || cattleHerd || null;
+    // For new_cow: create the cattle row first so the weigh-in references a real cow.
+    if(mode === 'new_cow' && herd) {
+      const cowId = String(Date.now()+1)+Math.random().toString(36).slice(2,6);
+      const oldTags = (priorTag && priorTag.trim())
+        ? [{tag: priorTag.trim(), changed_at: new Date().toISOString(), source: 'purchase'}]
+        : [];
+      const cowRec = { id: cowId, tag: tag, herd: herd, sex: sex, old_tags: oldTags };
+      const cowIns = await sb.from('cattle').insert(cowRec);
+      if(cowIns.error) { setBusy(false); setErr('Could not create cow: '+cowIns.error.message); return; }
+      // Reflect locally so subsequent dropdowns/list immediately include the new cow.
+      setCattleList(prev => prev.concat([cowRec]));
+    }
     const rec = {
       id, session_id: session.id,
       tag: tag || null,
       weight: parseFloat(weight),
       note: note || null,
-      new_tag_flag: !!isNewTag,
+      new_tag_flag: mode === 'replacement',
+      reconcile_intent: mode === 'replacement' ? 'replacement' : (mode === 'new_cow' ? 'new_cow' : null),
     };
     const {error} = await sb.from('weigh_ins').insert(rec);
     if(error) { setBusy(false); setErr('Save failed: '+error.message); return; }
-    // Auto-publish a comment if this is cattle and a note was provided
+    // Auto-publish a comment if this is cattle and a note was provided.
+    // For 'replacement' mode the cow won't be known yet — comment is tagged
+    // by tag string only and will get its cattle_id reconciled later.
     if(species === 'cattle' && note && note.trim() && tag) {
       const cow = cattleList.find(c => c.tag === tag);
       try {
@@ -2050,7 +2085,35 @@ const WeighInsWebform = ({sb}) => {
       } catch(e){ /* table may not exist yet — silently skip */ }
     }
     setEntries(prev => [...prev, rec]);
-    setTagInput(''); setWeightInput(''); setNoteInput(''); setShowNewTag(false);
+    setTagInput(''); setWeightInput(''); setNoteInput('');
+    setEntryMode('normal'); setNewCowSex('cow'); setPriorTagInput('');
+    setBusy(false);
+  }
+  // Reconcile a flagged Replacement-Tag entry to a known cow:
+  //   * Swap the cow's tag to the entry's new tag
+  //   * Append the cow's PRIOR tag to cattle.old_tags with today's date
+  //   * Clear new_tag_flag on the weigh-in entry (the entry's tag stays the new tag)
+  // Mirrored by the admin reconcile UI in CattleWeighInsView so behavior is identical.
+  async function reconcileEntryToCow(entry, cowId) {
+    if(!entry || !cowId) return;
+    const cow = cattleList.find(c => c.id === cowId);
+    if(!cow) { setErr('Cow not found.'); return; }
+    setErr(''); setBusy(true);
+    const priorTag = cow.tag;
+    const newTag = entry.tag;
+    const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : [])
+      .concat([{tag: priorTag, changed_at: new Date().toISOString()}]);
+    const cowUpd = await sb.from('cattle').update({tag: newTag, old_tags: updatedOldTags}).eq('id', cowId);
+    if(cowUpd.error) { setBusy(false); setErr('Could not swap tag: '+cowUpd.error.message); return; }
+    const wiUpd = await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
+    if(wiUpd.error) { setBusy(false); setErr('Could not clear flag: '+wiUpd.error.message); return; }
+    // Reflect locally so the dropdown narrows and the gate updates immediately.
+    setCattleList(prev => prev.map(c => c.id === cowId ? {...c, tag: newTag, old_tags: updatedOldTags} : c));
+    setEntries(prev => prev.map(e => e.id === entry.id ? {...e, new_tag_flag:false} : e));
+    // Best-effort: stitch the cattle_id onto any pre-existing comment for this entry.
+    try {
+      await sb.from('cattle_comments').update({cattle_id: cowId, cattle_tag: newTag}).eq('reference_id', entry.id);
+    } catch(e){ /* table may not exist yet */ }
     setBusy(false);
   }
   // Pig/broiler: the grid is the source of truth for the session.
@@ -2106,6 +2169,16 @@ const WeighInsWebform = ({sb}) => {
       .map(c => c.tag)
       .sort((a,b) => (parseFloat(a)||0) - (parseFloat(b)||0) || (a||'').localeCompare(b||''));
   })();
+  // Cows still un-accounted-for in this session (full records, not just tags) —
+  // used as the diminishing dropdown when reconciling Replacement Tag entries.
+  const remainingCows = (() => {
+    if(species !== 'cattle' || !cattleHerd) return [];
+    const weighed = new Set(entries.map(e => e.tag).filter(Boolean));
+    return cattleList
+      .filter(c => c.herd === cattleHerd && c.tag && !weighed.has(c.tag))
+      .sort((a,b) => (parseFloat(a.tag)||0) - (parseFloat(b.tag)||0) || (a.tag||'').localeCompare(b.tag||''));
+  })();
+  const pendingReconciles = entries.filter(e => e.new_tag_flag === true);
   const expectedTags = species === 'cattle' && cattleHerd
     ? cattleList.filter(c => c.herd === cattleHerd && c.tag).length
     : 0;
@@ -2286,7 +2359,7 @@ const WeighInsWebform = ({sb}) => {
 
         {species === 'cattle' && (
           <div style={cardS}>
-            {!showNewTag && (
+            {entryMode === 'normal' && (
               <React.Fragment>
                 <div style={{marginBottom:10}}>
                   <label style={lblS}>Tag #</label>
@@ -2295,14 +2368,40 @@ const WeighInsWebform = ({sb}) => {
                     {remainingTags.map(t => <option key={t} value={t}>{'#'+t}</option>)}
                   </select>
                 </div>
-                <button type="button" onClick={()=>setShowNewTag(true)} style={{width:'100%', padding:8, marginBottom:10, borderRadius:8, border:'1px dashed #fca5a5', background:'transparent', color:'#991b1b', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New Tag (cow not in directory or got new tag)</button>
+                <div style={{display:'flex', gap:6, marginBottom:10}}>
+                  <button type="button" onClick={()=>{setEntryMode('new_cow'); setTagInput(''); setNewCowSex('cow');}} style={{flex:1, padding:8, borderRadius:8, border:'1px dashed #047857', background:'transparent', color:'#065f46', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New Cow</button>
+                  <button type="button" onClick={()=>{setEntryMode('replacement'); setTagInput('');}} style={{flex:1, padding:8, borderRadius:8, border:'1px dashed #b45309', background:'transparent', color:'#92400e', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Replacement Tag</button>
+                </div>
               </React.Fragment>
             )}
-            {showNewTag && (
-              <div style={{marginBottom:10}}>
-                <label style={lblS}>New Tag # <span style={{fontSize:10, color:'#9ca3af'}}>(admin reconciles later)</span></label>
+            {entryMode === 'new_cow' && (
+              <div style={{marginBottom:10, padding:10, background:'#ecfdf5', borderRadius:8, border:'1px solid #a7f3d0'}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#065f46', marginBottom:6}}>{'\u2795 New Cow'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 will be created in '+(cattleHerd||'this herd')}</span></div>
+                <div style={{marginBottom:8}}>
+                  <label style={lblS}>New tag # *</label>
+                  <input type="text" value={tagInput} onChange={e=>setTagInput(e.target.value)} placeholder="e.g. 99" style={inpS}/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={lblS}>Sex *</label>
+                  <div style={{display:'flex', borderRadius:8, overflow:'hidden', border:'1px solid #d1d5db'}}>
+                    {['cow','heifer','bull','steer'].map(s => (
+                      <button key={s} type="button" onClick={()=>setNewCowSex(s)} style={{flex:1, padding:'8px 0', border:'none', fontFamily:'inherit', fontSize:12, fontWeight:600, cursor:'pointer', background:newCowSex===s?'#047857':'white', color:newCowSex===s?'white':'#6b7280', textTransform:'capitalize'}}>{s}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={lblS}>Prior tag <span style={{fontSize:10, color:'#9ca3af'}}>(optional — e.g. tag from selling farm)</span></label>
+                  <input type="text" value={priorTagInput} onChange={e=>setPriorTagInput(e.target.value)} placeholder="leave blank if none" style={inpS}/>
+                </div>
+                <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setPriorTagInput('');}} style={{fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer'}}>Cancel</button>
+              </div>
+            )}
+            {entryMode === 'replacement' && (
+              <div style={{marginBottom:10, padding:10, background:'#fffbeb', borderRadius:8, border:'1px solid #fde68a'}}>
+                <div style={{fontSize:11, fontWeight:700, color:'#92400e', marginBottom:6}}>{'\u26a0\ufe0f Replacement Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 must be reconciled before completing the weigh-in'}</span></div>
+                <label style={lblS}>New tag # *</label>
                 <input type="text" value={tagInput} onChange={e=>setTagInput(e.target.value)} placeholder="e.g. 99" style={inpS}/>
-                <button type="button" onClick={()=>{setShowNewTag(false); setTagInput('');}} style={{marginTop:4, fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer'}}>Cancel new tag</button>
+                <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput('');}} style={{marginTop:4, fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer'}}>Cancel</button>
               </div>
             )}
             <div style={{marginBottom:10}}>
@@ -2314,7 +2413,7 @@ const WeighInsWebform = ({sb}) => {
               <textarea value={noteInput} onChange={e=>setNoteInput(e.target.value)} rows={2} placeholder="Optional" style={{...inpS, resize:'vertical'}}/>
             </div>
             {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
-            <button onClick={()=>saveEntry({tag:tagInput, weight:weightInput, note:noteInput})} disabled={busy || !tagInput || !weightInput} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!tagInput||!weightInput)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!tagInput||!weightInput)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Entry'}</button>
+            <button onClick={()=>saveEntry({tag:tagInput, weight:weightInput, note:noteInput, mode:entryMode, sex:newCowSex, priorTag:priorTagInput})} disabled={busy || !tagInput || !weightInput} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!tagInput||!weightInput)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!tagInput||!weightInput)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Entry'}</button>
           </div>
         )}
 
@@ -2374,6 +2473,21 @@ const WeighInsWebform = ({sb}) => {
           </div>
         )}
 
+        {species === 'cattle' && pendingReconciles.length > 0 && (
+          <div style={{...cardS, border:'2px solid #f59e0b', background:'#fffbeb'}}>
+            <div style={{fontSize:13, fontWeight:700, color:'#92400e', marginBottom:6}}>{'\u26a0\ufe0f '+pendingReconciles.length+' '+(pendingReconciles.length===1?'replacement tag':'replacement tags')+' to reconcile'}</div>
+            <div style={{fontSize:11, color:'#92400e', marginBottom:10}}>Pick which cow each new tag belongs to. Pool narrows as more cows get weighed.</div>
+            {pendingReconciles.map(e => (
+              <div key={e.id} style={{padding:'8px 10px', background:'white', border:'1px solid #fde68a', borderRadius:8, marginBottom:6}}>
+                <div style={{fontSize:12, fontWeight:700, color:'#111827', marginBottom:5}}>{'New tag #'+e.tag+' \u00b7 '+e.weight+' lb'}{e.note ? <span style={{fontWeight:400, color:'#6b7280', fontStyle:'italic'}}>{' \u00b7 '+e.note}</span> : null}</div>
+                <select onChange={ev=>{ if(ev.target.value) reconcileEntryToCow(e, ev.target.value); }} defaultValue='' disabled={busy} style={{...inpS, fontSize:12, padding:'7px 10px'}}>
+                  <option value=''>{'Which cow is this? ('+remainingCows.length+' remaining)'}</option>
+                  {remainingCows.map(c => <option key={c.id} value={c.id}>{'#'+c.tag+(c.sex?' \u00b7 '+c.sex:'')+(c.breed?' \u00b7 '+c.breed:'')}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
         {entries.length > 0 && (
           <div style={{padding:'8px 12px', background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, fontSize:12, color:'#065f46', marginTop:8, marginBottom:6, textAlign:'center', fontWeight:600}}>
             {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' saved'}{species==='broiler' ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''}
@@ -2384,8 +2498,13 @@ const WeighInsWebform = ({sb}) => {
             ? weightInputs.filter(function(w){return w !== '' && !isNaN(parseFloat(w)) && parseFloat(w) > 0;}).length
             : entries.length;
           var isEmpty = filledCount === 0;
+          var hasPending = pendingReconciles.length > 0;
+          var disabled = busy || isEmpty || hasPending;
+          var label = busy ? 'Completing\u2026'
+            : hasPending ? 'Resolve '+pendingReconciles.length+' reconcile'+(pendingReconciles.length===1?'':'s')+' first'
+            : '\u2713 Complete Weigh-In ('+filledCount+' '+(filledCount===1?'entry':'entries')+')';
           return (
-            <button onClick={completeSession} disabled={busy || isEmpty} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:(busy||isEmpty)?'#9ca3af':'#047857', color:'white', fontSize:15, fontWeight:700, cursor:(busy||isEmpty)?'not-allowed':'pointer', fontFamily:'inherit', marginTop:6}}>{busy?'Completing\u2026':'\u2713 Complete Weigh-In ('+filledCount+' '+(filledCount===1?'entry':'entries')+')'}</button>
+            <button onClick={completeSession} disabled={disabled} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:disabled?'#9ca3af':'#047857', color:'white', fontSize:15, fontWeight:700, cursor:disabled?'not-allowed':'pointer', fontFamily:'inherit', marginTop:6}}>{label}</button>
           );
         })()}
       </div>
@@ -14222,6 +14341,15 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
             {cow.birth_date && <><span style={{color:'#9ca3af'}}>Birth:</span><span>{fmt(cow.birth_date)}</span></>}
             {cow.purchase_date && <><span style={{color:'#9ca3af'}}>Purchased:</span><span>{fmt(cow.purchase_date)} {cow.purchase_amount?('\u00b7 $'+cow.purchase_amount):''}</span></>}
             {cow.receiving_weight && <><span style={{color:'#9ca3af'}}>Recv weight:</span><span>{cow.receiving_weight} lb</span></>}
+            {Array.isArray(cow.old_tags) && cow.old_tags.length > 0 && (
+              <>
+                <span style={{color:'#9ca3af'}}>Previous tags:</span>
+                <span>{cow.old_tags.slice().reverse().map(function(t,i){
+                  var dateStr = t.changed_at ? (' (until '+fmt((t.changed_at||'').slice(0,10))+')') : '';
+                  return (i>0?', ':'') + '#'+t.tag + dateStr;
+                }).join('')}</span>
+              </>
+            )}
           </div>
         </div>
         {/* Lineage */}
@@ -15129,7 +15257,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     const [sR, eR, cR] = await Promise.all([
       sb.from('weigh_in_sessions').select('*').eq('species','cattle').order('started_at',{ascending:false}),
       sb.from('weigh_ins').select('*').order('entered_at',{ascending:true}),
-      sb.from('cattle').select('id, tag, herd'),
+      sb.from('cattle').select('id, tag, herd, old_tags'),
     ]);
     if(sR.data) setSessions(sR.data);
     if(eR.data) {
@@ -15157,8 +15285,16 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     if(!knownCowId) return;
     const cow = cattle.find(c => c.id === knownCowId);
     if(!cow) return;
-    // Update the weigh-in row to point to the known cow's tag, clear new_tag_flag
-    await sb.from('weigh_ins').update({tag:cow.tag, new_tag_flag:false}).eq('id', entry.id);
+    // Tag-swap pattern: the WEIGH-IN keeps its new tag (the entry IS the new tag),
+    // and the COW's tag gets updated to that new tag with the prior tag pushed to
+    // old_tags. Mirrors the webform's reconcileEntryToCow.
+    const priorTag = cow.tag;
+    const newTag = entry.tag;
+    const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : [])
+      .concat([{tag: priorTag, changed_at: new Date().toISOString()}]);
+    await sb.from('cattle').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownCowId);
+    await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
+    try { await sb.from('cattle_comments').update({cattle_id: knownCowId, cattle_tag: newTag}).eq('reference_id', entry.id); } catch(e){}
     await loadAll();
   }
 
