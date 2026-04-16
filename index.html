@@ -1811,6 +1811,8 @@ const WeighInsWebform = ({sb}) => {
   const [weightInput, setWeightInput] = React.useState('');
   const [noteInput, setNoteInput] = React.useState('');
   const [showNewTag, setShowNewTag] = React.useState(false);
+  // Pig/broiler grid: 30 weight slots (2 cols x 15 rows), single session note
+  const [weightInputs, setWeightInputs] = React.useState(Array(30).fill(''));
   // Pig / Broiler
   const [pigBatches, setPigBatches] = React.useState([]);
   const [broilerBatches, setBroilerBatches] = React.useState([]);
@@ -1887,6 +1889,7 @@ const WeighInsWebform = ({sb}) => {
   async function resumeSession(s) {
     setSession(s);
     if(s.team_member) setTeamMember(s.team_member);
+    if(s.notes) setNoteInput(s.notes);
     setStage('session');
   }
   async function completeSession() {
@@ -1939,6 +1942,37 @@ const WeighInsWebform = ({sb}) => {
     }
     setEntries(prev => [...prev, rec]);
     setTagInput(''); setWeightInput(''); setNoteInput(''); setShowNewTag(false);
+    setBusy(false);
+  }
+  // Pig/broiler: batch-save all non-empty weights from the 30-slot grid,
+  // and persist the single session-level note onto weigh_in_sessions.notes.
+  async function saveBatch() {
+    if(!session) return;
+    var rows = [];
+    for(var i=0;i<weightInputs.length;i++){
+      var w = weightInputs[i];
+      if(w !== '' && !isNaN(parseFloat(w)) && parseFloat(w) > 0) rows.push(parseFloat(w));
+    }
+    if(rows.length === 0) { setErr('Enter at least one weight.'); return; }
+    setErr(''); setBusy(true);
+    var t0 = Date.now();
+    var recs = rows.map(function(w, i){
+      return {
+        id: String(t0+i)+Math.random().toString(36).slice(2,6),
+        session_id: session.id,
+        tag: null,
+        weight: w,
+        note: null,
+        new_tag_flag: false,
+      };
+    });
+    var ins = await sb.from('weigh_ins').insert(recs);
+    if(ins.error) { setBusy(false); setErr('Save failed: '+ins.error.message); return; }
+    if(noteInput && noteInput.trim()) {
+      await sb.from('weigh_in_sessions').update({notes: noteInput.trim()}).eq('id', session.id);
+    }
+    setEntries(function(prev){ return prev.concat(recs); });
+    setWeightInputs(Array(30).fill(''));
     setBusy(false);
   }
 
@@ -2165,16 +2199,34 @@ const WeighInsWebform = ({sb}) => {
 
         {(species === 'pig' || species === 'broiler') && (
           <div style={cardS}>
-            <div style={{marginBottom:10}}>
-              <label style={lblS}>{species==='broiler'?'Bird ':'Pig '}weight (lbs) *</label>
-              <input type="number" min="0" step="0.1" value={weightInput} onChange={e=>setWeightInput(e.target.value)} placeholder="0" style={inpS}/>
+            <label style={lblS}>{species==='broiler'?'Bird':'Pig'} weights (lbs) <span style={{fontSize:10, color:'#9ca3af'}}>— fill any of the 30 slots, blanks are skipped</span></label>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:12}}>
+              {weightInputs.map((w, i) => (
+                <div key={i} style={{display:'flex', alignItems:'center', gap:6}}>
+                  <span style={{fontSize:11, color:'#9ca3af', minWidth:22, textAlign:'right', fontVariantNumeric:'tabular-nums'}}>{i+1}</span>
+                  <input
+                    type="number" min="0" step="0.1"
+                    value={w}
+                    onChange={e=>{
+                      var v = e.target.value;
+                      setWeightInputs(function(prev){
+                        var next = prev.slice();
+                        next[i] = v;
+                        return next;
+                      });
+                    }}
+                    placeholder="0"
+                    style={{...inpS, padding:'8px 10px', fontSize:13}}
+                  />
+                </div>
+              ))}
             </div>
             <div style={{marginBottom:10}}>
-              <label style={lblS}>Note</label>
-              <input type="text" value={noteInput} onChange={e=>setNoteInput(e.target.value)} placeholder="Optional" style={inpS}/>
+              <label style={lblS}>Session note <span style={{fontSize:10, color:'#9ca3af'}}>(one note for this whole session)</span></label>
+              <textarea value={noteInput} onChange={e=>setNoteInput(e.target.value)} rows={2} placeholder="Optional" style={{...inpS, resize:'vertical'}}/>
             </div>
             {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
-            <button onClick={()=>saveEntry({tag:null, weight:weightInput, note:noteInput})} disabled={busy || !weightInput} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!weightInput)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!weightInput)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Entry'}</button>
+            <button onClick={saveBatch} disabled={busy || weightInputs.every(function(w){return !w;})} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||weightInputs.every(function(w){return !w;}))?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||weightInputs.every(function(w){return !w;}))?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save All Entries'}</button>
           </div>
         )}
 
