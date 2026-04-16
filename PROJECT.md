@@ -1084,3 +1084,245 @@ All 5 are pushed to `origin/main` and live on `wcfplanner.com` (Netlify auto-dep
 ---
 
 *End of April 15 wrap-up. Future Claude: you've got this.*
+
+---
+
+# 13. Session Update — April 16, 2026 (Cattle Podio Data Import + UI Polish)
+
+This session took the cattle module from "built but empty" to "loaded with 393 cows, 2,121 weigh-ins, 72 comments — verified against Podio to the pound."
+
+**If you only read one thing below, read §13.6 "Lessons and what I wish I knew from the start."** It's the distillation of the bugs Ronnie caught that I almost shipped.
+
+## 13.1 What was built / executed
+
+### New SQL migrations (all applied to production)
+
+- **`002_cattle_comments.sql`** — was queued since April 15 but never applied. This session finally ran it. Table `cattle_comments` now exists in prod. PROJECT.md had flagged this but nobody acted on it; new Claude should **always grep for `IF NOT EXISTS` migrations and verify the table actually exists via a quick query before assuming the feature works.**
+
+- **`004_cattle_import_prep.sql`** — additive + destructive:
+  - Created `cattle_breeds` and `cattle_origins` lookup tables (id/label/active/created_at) with RLS + anon-select policies matching existing cattle tables
+  - Added `cattle.breeding_status text` (nullable, values Open/Pregnant/N/A, rendered only for sex in cow/heifer)
+  - Widened `cattle_comments.source` CHECK to allow `'import'` in addition to the four existing values
+  - Replaced `idx_cattle_tag_unique` with `idx_cattle_tag_active_unique` — tag uniqueness is now enforced **only for active herds** (mommas/backgrounders/finishers/bulls). Historical tag reuse across processed/deceased/sold records is permitted. **Ronnie explicitly chose this** over the "suffix older duplicate" approach.
+  - Dropped four deprecated columns: `breeding_blacklist_reason`, `sire_reg_num`, `receiving_weight`, `notes`. All are superseded by comment timeline / weigh-in / single sire field.
+
+### Data import (`scripts/import_cattle.js` — preview-then-commit pattern)
+
+Imported from `c:\Users\Ronni\OneDrive\Desktop\Cattle upload from Podio\Cattle Tracker - All Cattle Tracker.xlsx`:
+
+- **393 cattle rows** (from 469 xlsx rows — 76 were Podio template-stubs with no tag and were skipped; 3 duplicate tag collisions on outcome-herd cows were kept as separate records because the unique index no longer applies to outcome herds)
+- **8 breeds** seeded (3 active: WAGYU-ANGUS CROSS, FULL BLOOD WAGYU, ANGUS; 5 inactive because only outcome-herd cows hold them: WAGYU CROSS - OTHER, WAGYU-CHAROLAIS CROSS, CHAROLAIS, SOUTH POLL, CRACKER)
+- **10 origins** seeded (all active)
+- **10 `cattle_processing_batches`** — one per unique Podio "Processing Date" (9 with real dates, status=`complete`; 1 "Unknown Date" planned batch for cows with hanging/yield data but no processing date)
+- **195 receiving-weight weigh-ins** seeded (one synthetic session per cow with a Podio "Receiving Weight" field; later merged + reduced to 191)
+- **72 `cattle_comments`** from `podio_comments_29337625_2026-04-16.csv` with `source='import'`, `team_member='Import'`, original `created_at` timestamps preserved
+- Zero orphan tags. Zero unresolved dam/sire refs.
+
+### Weigh-ins import (`scripts/import_weighins.js`)
+
+Imported from `Weigh Ins - All Weigh Ins.xlsx`:
+
+- **1,930 weigh-ins across 69 sessions** (one session per unique date, `herd=null`, `team_member='Import'`, `status='complete'`, `notes='Imported from Podio'`)
+- Date range 2021-10-01 → 2026-03-18
+- Each weigh-in's `tag` = the xlsx `Tag #` (historical tag at time of weighing), preserving history across retags. `entered_at` = date-at-noon UTC (deterministic).
+- **Ronnie's directive was deliberately narrow:** "just match weight with tag number, status of the tag doesn't change." No session-herd attribution, no retag detection in the importer. Simple + honest.
+
+### Session merge (`scripts/merge_sessions_by_date.js`)
+
+Podio imports created the 69 date-sessions in parallel with 195 per-cow receiving-weight sessions. Merged all cattle sessions so there's exactly one per unique date:
+
+- Before: 264 cattle sessions
+- After: 92 cattle sessions (one per unique date)
+- Preference rule: if a `wsess-imp-<date>` existed for that date, it became canonical; otherwise the session with the most entries won
+- Canonical session has `herd=null` and `notes` reflects merge
+- 172 obsolete sessions deleted; 172 weigh_ins repointed
+
+### UI work in `index.html` (all in CattleHerdsView / CowDetail / CattleBatchesView / the five *DailysView components)
+
+CattleHerdsView / cow add-edit modal:
+- Breed → active-filtered dropdown with a "(historical)" option if the cow's current breed is inactive
+- Origin → dropdown + `+ Add new origin…` (inserts into `cattle_origins`, calls `sb.from('cattle_origins').insert`)
+- Breeding Status field, shown only for `sex ∈ ('cow','heifer')`
+- Removed from the form entirely: Receiving Weight input, Sire Reg # input, blacklist reason, flat Notes textarea
+- Maternal flag + Blacklist flag combined into a single vertical block with `display:inline-flex` + `alignSelf:flex-start` (previous grid + flex layout put the text at the right edge — see §13.4 bug 8)
+- Herd tiles collapsible via `expandedHerds[h]` state, **default collapsed** so the page loads compact
+- Cow rows switched from `display:flex; flexWrap:wrap` with `minWidth` to **fixed CSS grid columns** — long breeds / long ages no longer push later columns right
+- Darker-red background (`#fecaca`) for cow rows where `breeding_blacklist=true`
+- Search string now spans outcome cows too (was stuck in active-only view when the user had the default filter)
+
+CowDetail:
+- Removed flat-notes block, `receiving_weight` line, `sire_reg_num` fallback, the Calves: list in Lineage (redundant with Calving History)
+- Added Breeding Status row (female only)
+- Comments timeline: per-row Edit + Delete; `source='import'` gets a distinct amber color; team_member rendered bold
+- Pinned "BREEDING BLACKLIST" card at the bottom of the timeline when flagged (non-dated, sits beneath all dated comments)
+- Calving History **auto-synthesizes entries from `calves[].birth_date` when no explicit `cattle_calving_records` exist** (labeled "(from calf record)"). Explicit records take priority — adding a calving with `calf_tag=X` replaces the synthetic.
+
+CattleBatchesView:
+- Each batch tile displays its cow list as removable yellow chips (× to unlink)
+- `+ Add cow from finishers (N available)` dropdown per batch; adding a cow sets `processing_batch_id` AND moves the cow to `herd='processed'` with a `cattle_transfers` row
+
+All 5 Dailys views (Broiler / Layer / Egg / Pig / Cattle):
+- Switched from flex+minWidth to CSS grid with fixed column widths (date / batch / team / feed / etc.)
+- **Mortality moved out of the top-row trailing zone and relocated to a second line next to the comment** (Ronnie's idea — keeps top row compact and predictable even when mortality has a long reason string)
+- All conditional badges (Moved / Waterer / Fence / Nipple / Add-Feed 🌾) live in a trailing `1fr` flex zone so they can wrap without breaking core columns
+
+CattleWeighInsView:
+- Removed the "avg weight" pill per Ronnie
+- Session list sorted by `date DESC, started_at DESC` (was `started_at` only — put the entire import cluster at the top because `started_at` defaulted to commit time)
+
+Pagination:
+- Added `wcfSelectAll(buildRangeQuery)` helper at top of index.html; wraps the repeated `.range(0, 999)` + accumulate pattern
+- Applied to **all four cattle-view `weigh_ins` queries** (CattleHome dashboard, CattleHerdsView, CattleBatchesView, CattleWeighInsView). Without this, they silently cap at 1000 rows and most sessions showed "0 entries" after the import (see §13.4 bug 3).
+
+## 13.2 Migration artifacts
+
+### Scripts dropped in `scripts/` during this session (may be deleted after deploy or kept as reference):
+
+| File | Purpose |
+|---|---|
+| `orphan_count.js` | one-off audit: do all comment CSV tags match a cow? (answer: yes, 72/72) |
+| `tag_audit.js` | found the 76 blank-tag rows and 3 duplicate-tag pairs |
+| `blank_audit.js` | verified blank-tag rows have no real data (all Nick Santalucia placeholders) |
+| `inspect_weighins.js` / `weighin_audit.js` / `weighin_orphan_recheck.js` | weigh-in xlsx shape + cross-ref against DB cattle (0 truly orphaned once we fall back through Tag # → Cow → old_tags) |
+| `import_cattle.js` | **main cattle tracker importer** — preview-then-commit, idempotent |
+| `import_weighins.js` | **main weigh-in importer** — preview-then-commit, idempotent |
+| `merge_sessions_by_date.js` | collapsed 264 → 92 cattle sessions after the duplicate-per-date cleanup |
+| `zero_weight_audit.js` / `session_audit.js` / `show_0416.js` | diagnostics hunting for the "0 entries" bug |
+| `purge_0416.js` | deleted the 4 fallback-dated (2026-04-16) receiving-weight rows |
+| `fix_rcv_entered_at.js` | patched 191 receiving-weight `entered_at` values to their session's date |
+| `herd_weights_audit.js` / `herd_weights_audit_v2.js` / `cow_sanity.js` / `mommas_diff_check.js` / `mommas_rcv_only.js` | debugging herd-total discrepancies |
+| `compare_last_weight.js` | **the script Ronnie asked for** — row-by-row comparison of each cow's Podio "Last Recorded Weight" to our computed latest. Pinpointed cow #254 as the source of the 242 lb Mommas gap. Updated to match the app's `cowTagSet` logic (excludes `source='import'` tags). |
+| `xlsx_vs_db_diff.js` | multiset diff of xlsx rows vs DB weigh_ins. Found the 30 extra broiler weigh-ins leaking in. |
+| `cow254.js` | deep-dive on the specific cow with the 242 lb discrepancy |
+
+### `.env` handling
+
+- `scripts/.env` holds `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Already in `.gitignore` (line 69). **Safe to keep locally, MUST NOT be committed.**
+- **The live service-role key was pasted into the chat transcript** by Ronnie during onboarding. Value redacted here; see Outstanding items for rotation instructions. Supabase dashboard → API Keys → Secret keys → ⋮ → Rotate.
+
+## 13.3 Final verification — how we know the data is right
+
+Pixel-perfect comparison (see `scripts/compare_last_weight.js`):
+
+| Herd | Podio "Last Recorded Weight" sum | Our computed latest sum | Diff |
+|---|---|---|---|
+| Mommas (148 cows) | 82,823 lb | **82,823 lb** | **0** |
+| Finishers (59 cows) | 44,809 lb | **44,809 lb** | **0** |
+
+Row-level xlsx → DB diff (see `scripts/xlsx_vs_db_diff.js`):
+- xlsx: 1,930 valid rows
+- DB (excluding receiving-weight imports, scoped to cattle-species sessions): 1,930 rows
+- Zero missing, zero extra after filtering broiler contamination
+
+**Ronnie caught this.** I initially said "I'm 99% sure the numbers match" while the real answer was "I haven't actually verified row by row." When he asked "100%?" I had to stop and actually verify. **Don't claim confidence you haven't earned. Always verify before asserting.**
+
+## 13.4 Bugs found and fixed during this session (in chronological order)
+
+1. **Migration 002 never applied.** `cattle_comments` table didn't exist in production. Discovered when the first CHECK-constraint part of migration 004 failed with "relation cattle_comments does not exist." Fix: ran 002 inline followed by the remaining 004 pieces. **Takeaway: grep for unapplied migrations at session start and verify.**
+
+2. **Today-as-fallback for receiving-weight dates.** `import_cattle.js` had `date = purchase_date || birth_date || today`. Four cows with neither purchase_date nor birth_date got `entered_at = 2026-04-16`, polluting the Weigh-Ins view. Fix: `scripts/purge_0416.js` deleted the 4 rows. **Takeaway: if no valid date is available for historical data, skip the row — don't silently use today.**
+
+3. **Supabase's 1000-row default response cap** silently truncated unpaged queries. The Cattle Weigh-Ins view showed "92 sessions · 1000 total entries" but we'd imported 2,125. Sessions beyond the first 1000 appeared with "0 entries." Fix: `wcfSelectAll` paging helper applied to all four cattle-view weigh_ins queries. **Takeaway: always paginate tables that can grow past 1000.**
+
+4. **`entered_at` defaulted to `now()` on receiving-weight imports.** Import script set `weigh_in_sessions.date` correctly but forgot to set `weigh_ins.entered_at` — so it defaulted to the moment of import (2026-04-16T20:16:11). Sorting by `entered_at DESC` made every cow's "latest weigh-in" the receiving weight, not the real Podio weigh-ins. Herd totals were wildly off (finishers showed 33,241 instead of 44,809 — a 25% shortfall). Fix: `scripts/fix_rcv_entered_at.js` patched 191 rows. **Takeaway: always set explicit timestamps on historical imports. Never trust `DEFAULT now()` for backfill.**
+
+5. **Cross-species tag collision (the near-miss).** `weigh_ins` is a shared table across cattle/broiler/pig — `weigh_in_sessions.species` distinguishes. My cattle views filtered `weigh_ins` by `tag` alone. A cow tagged #3 (sold) was pulling a broiler's 2.6 lb weigh-in as her "latest" because broiler schooner labels happened to be "2" and "3" — same string as cattle tag numbers. Fix: all four cattle queries now fetch cattle session IDs first, then use `.in('session_id', cattleSessIds)` to filter weigh_ins. **Takeaway: any query against a multi-species shared table needs species scoping, always.**
+
+6. **Purchase-farm tag stored in `cattle.old_tags` caused false weight lookups.** `import_cattle.js` crammed `purchase_tag_id` (the tag from the selling farm — e.g., Jimmy Horn's tag #146 on cow #254) into `cattle.old_tags` with `source: 'import'`. The app's `cowTagSet(cow)` returned all old_tags regardless of source, so weight-history and last-weight lookups walked the full set. When cow #254's purchase tag "146" matched a completely unrelated WCF cow also currently tagged #146 (a finisher), she inherited his 878 lb latest weight instead of her own 1,120 lb. That single cow accounted for all 242 lb of the Mommas herd discrepancy. Fix: `cowTagSet` now excludes entries with `source === 'import'`. **Takeaway: semantically different "prior tags" must NOT share a lookup domain. Purchase tags are selling-farm numbers that can collide with WCF numbers; WCF retags cannot.**
+
+7. **Calving History empty for imported mommas.** We didn't import `cattle_calving_records` from Podio (Ronnie said there was no separate calving app). Cow profiles said "No calving records yet" while clearly showing "2 calves" in Lineage. Fix: CowDetail's Calving History now synthesizes entries from `calves[].birth_date` when no explicit record exists for that calf tag. Labels them "(from calf record)" so users know.
+
+8. **Checkbox layout breaking.** `<label style={{display:'flex', alignItems:'center', gap:8}}>` inside a full-width grid cell rendered with the text pushed to the right edge and the checkbox floating in the middle. Fix: switched to `display:'inline-flex'` + `alignSelf:'flex-start'` so the label sits at the left and sizes to content.
+
+9. **Dangling `c.notes` reference** in the flat-mode search filter after migration 004 dropped `cattle.notes`. Would have thrown if anyone searched while on the outcome filter.
+
+10. **Unicode-in-JSX-text gotcha.** Wrote `Flagged \u2014 do not breed.` as JSX text and the escape didn't apply — Babel treated it as literal backslash-u. Must write `{'Flagged \u2014 do not breed.'}` or escape differently. PROJECT.md §1 "Critical Codebase Constraints" already flags this but it's easy to regress.
+
+11. **CSS grid vs flex+minWidth for tabular rows.** Cow rows and dailys rows used `display:flex; flexWrap:wrap` with `minWidth:60` etc. When content exceeded `minWidth`, the row shifted right. Fix: `display:grid; gridTemplateColumns:'70px 110px 60px 180px 70px 90px 1fr'`. Columns now stay put. Applied to CattleHerdsView cow rows (both herd-tile and flat modes) and all five dailys views.
+
+## 13.5 Outstanding items
+
+1. **Service-role key rotation.** The active secret (value not repeated here) was pasted into the chat transcript during this session and is therefore exposed. Rotate via Supabase dashboard (Project Settings → API Keys → Secret keys → ⋮ → Rotate) before end of day. Update `scripts/.env` with the new value afterward.
+
+2. **Cattle Dailys xlsx import.** Ronnie has a `Cattle Daily's - All Cattle Daily's.xlsx` file on his Desktop. The pattern from `import_cattle.js` / `import_weighins.js` applies — preview, commit, idempotent IDs. Not yet written.
+
+3. **Processing batches still have raw dates as names.** All 10 imported batches are named "2025-12-19" / "Unknown Date" etc. Ronnie said he'll rename/renumber them himself after import.
+
+4. **25 Mommas have no weigh-in data at all** (tags mostly 700+). Expected — they're recently added. They'll show `—` in the weight column and contribute 0 to herd totals until their first weigh-in. Not a bug.
+
+5. **Imported weigh-in sessions all have `herd=null`.** The Weigh-Ins admin view shows "Unknown herd" for each of the 92 sessions. Expected — Podio didn't record which herd was targeted. Not a bug, but the UI text could be softer ("Imported session" instead of "Unknown herd"). Low priority.
+
+6. **Broiler + pig admin Weigh-Ins view still shows "avg weight" pill.** Only cattle was removed per Ronnie's request. For broilers, the avg IS load-bearing (gates the batch week4Lbs/week6Lbs write). Leave alone unless asked.
+
+7. **Scripts in `scripts/`.** All reference `c:/Users/Ronni/OneDrive/Desktop/...` paths. Fine for Ronnie's machine, useless on CI. Either commit them for posterity (good for future Claude) or gitignore the folder. My recommendation: commit them — they document exactly how the import worked, and reruns are idempotent so they can't do damage.
+
+## 13.6 Lessons and what I wish I knew from the start
+
+**If you're a fresh Claude reading this: read this section twice.** These are the traps I fell into. You'll hit many of them too.
+
+### About data imports specifically
+
+1. **Always set explicit timestamps on historical inserts.** `DEFAULT now()` is sensible for real-time rows and catastrophic for backfills. Every `entered_at`, `created_at`, `started_at` on imported data must be explicitly set to the historical value. I missed this on the cattle tracker receiving-weight import and it corrupted every cow's "latest weigh-in" until Ronnie noticed herd totals were way off.
+
+2. **Don't overload semantic meaning in one column.** I stuffed Podio's `Purchase Tag ID` (seller-farm tag, can collide with unrelated WCF tags) and prospective WCF retag history into the same `cattle.old_tags` jsonb array, using `source` only as metadata. Then the display code ignored `source` when doing weight-history lookups. Either: use separate columns for semantically different data, OR always filter by the discriminator wherever you use the column. Partial filtering is worse than none — it looks correct in the 99% case and fails silently for the 1%.
+
+3. **Multi-species shared tables are a trap.** `weigh_ins` is shared across cattle/broiler/pig via `weigh_in_sessions.species`. Every single query that filters weigh_ins by `tag` alone is a latent cross-species collision. The ONLY correct patterns are: (a) fetch species-scoped session IDs first, then `.in('session_id', ids)`, or (b) add a denormalized species column to `weigh_ins`. I chose (a) for now. If you add a third table that shares weigh_ins or if performance matters, reconsider (b).
+
+4. **Supabase's 1000-row default response cap is silent.** It doesn't error, doesn't warn, doesn't include a "truncated: true" header. It just gives you the first 1000. If you know a table can grow past that, always use `.range()` pagination. I built `wcfSelectAll` late — should have started with it.
+
+5. **Idempotent imports via deterministic IDs are worth it.** Every import script uses `shortHash(tag|date|weight|ordinal)` or similar for IDs, plus PostgREST's `Prefer: resolution=merge-duplicates`. A rerun after a partial failure is safe — no duplicates, no manual cleanup. Pay this cost up front.
+
+6. **Preview-then-commit is the right default for destructive work.** Every script this session had a `--commit` flag and printed a preview by default. Ronnie interrupted one run; others he approved after reviewing the preview. Zero accidents.
+
+7. **Verify imports row-by-row, not just aggregate.** Sum of weights matching ± 0.3% isn't proof of correctness — it's proof of luck. The row-by-row diff (`xlsx_vs_db_diff.js`) surfaced the broiler leak AND the purchase-tag bug AND the missing 0.3% all at once. A summary-only check would have missed two of three.
+
+### About the domain
+
+8. **Cattle retagging is a real thing, and `purchase_tag_id` is NOT a prior WCF tag.** Podio's "Purchase Tag ID" = the tag the cow arrived with from the selling farm. It should **display** on the cow's profile (Ronnie wants to see "previously #146") but must **not be used for weigh-in lookups** because numbering collisions with WCF's own tag range are common. Actual WCF retags (via the weigh-in reconcile flow) get stored with a different `source` marker and ARE valid for lookups.
+
+9. **Podio exports include computed / derived / stale fields.** Don't trust them uncritically:
+   - `Cow` column = reference to the cow's current tag (may differ from `Tag #`)
+   - `Last Recorded Weight` = cached computed field (mostly matches Weight History but can lag)
+   - `Age` = computed from Birth Date (shows "NaN" for placeholder rows)
+   - `Tags` column = usually empty, Podio-internal
+   - Placeholder rows created by the Podio app template (76 of 469 in the cattle tracker)
+   - Always explicitly filter / recompute / skip these rather than passing them through.
+
+10. **Weigh-in data fundamentally belongs to the tag, not the cow.** Ronnie was clear about this: "We only need to match weight with tag number. Status of the tag number doesn't change." Resist the urge to over-engineer session-by-herd attribution or cow-at-time-of-weighing tracking. The tag IS the identity at the moment of weighing. Retag display is a separate concern (the cow profile shows "Previous tags" and the weight-history filter spans all her WCF tags).
+
+11. **Ronnie's "we don't need X" means X, literally.** He said "we don't need average weight" and I removed it from CattleWeighInsView only (kept it in broiler/pig where it's load-bearing). He said "we don't need the calves displayed since we have the calving history" — I removed the Calves: line from CowDetail's Lineage section. Trust the terseness; ask only if ambiguous.
+
+### About collaboration
+
+12. **Honest uncertainty beats false confidence, every time.** When Ronnie asked "are you 100% that the data matches?" — the true answer was "I haven't verified row by row; let me do that now." Saying "yes, I'm 99% sure" is worse than "no, I haven't — let me check." He's sharp enough to catch fake confidence. Admit the gap and close it.
+
+13. **Ronnie verifies.** He spot-checks screenshots, he cross-references against Podio, he pushes back on numbers. When he pushes back, he's almost always right. Treat pushback as a gift — it prevents silent data corruption from shipping.
+
+14. **Deploy SOP is not optional.** `NEVER run git commit, git push, or any deploy command without explicit approval in the current session turn.` This applies to service-role SQL and data mutations too. Every destructive commit this session was preview-first, approval-second. **One-time approval doesn't carry forward.** Even when Ronnie just approved a commit, re-ask for the next one unless he explicitly said "go ahead on all of these."
+
+### About the codebase specifically
+
+15. **`index.html` is 15,500 lines. Use Grep to navigate, not Read.** Whole-file reads cost context. Grep for component names, known symbols, or the exact string you want to change, then Read a 50-line slice around it. PROJECT.md §4 has line-number approximations that drift but are still useful starting points.
+
+16. **Babel-in-browser has sharp edges.** PROJECT.md §1 lists them. The ones that bit me this session: (a) unicode in JSX text needs `{'\u2014'}`, not raw `\u2014`; (b) `const` inside nested conditional blocks can crash; (c) no React hook rules violations. I avoided a runtime crash by following these but almost regressed on (a).
+
+17. **CSS grid for tabular data, not flex+minWidth.** `display:flex; flexWrap:wrap` with `minWidth:60` looks OK on paper and breaks the moment any column's content exceeds minWidth — all subsequent columns shift right. CSS grid with fixed `gridTemplateColumns` keeps rows locked. Applied to every tabular list that had the problem this session.
+
+18. **The webform reconcile flow and the tag_unique partial index work together.** Migration 004 allows duplicate tags only across outcome-herd records (processed/deceased/sold). If someone tries to move a duplicate-tag cow back into an active herd, the insert/update will fail with a constraint violation — that's the system doing its job. Don't try to suppress the error; the user needs to rename first.
+
+### Updated commit list at end of session
+
+Nothing committed this session yet at time of writing — Ronnie asked for the PROJECT.md update and confirmed we'll deploy after. Expected commits:
+
+```
+(pending)  Cattle Podio data import — breeds/origins tables, breeding_status, tag index relax,
+           cattle tracker import + weigh-in import + session merge, receiving-weight entered_at fix,
+           cross-species weigh_ins scoping, purchase-tag exclusion from weight lookups, UI polish across
+           CattleHerdsView / CowDetail / CattleBatchesView / all 5 dailys views, pagination helper
+```
+
+All import scripts + audit scripts live in `scripts/`. Recommend committing them for posterity.
+
+---
+
+*End of April 16 session. Future Claude: the data is clean, the UI is tight, the schema is right. Your job is to keep it that way. Read §13.6 one more time. Good luck.*

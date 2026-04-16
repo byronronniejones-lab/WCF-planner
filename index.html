@@ -232,6 +232,23 @@ function wcfSendEmail(type, data) {
     .catch(e => console.warn('wcfSendEmail failed:', e));
 }
 
+// Supabase PostgREST caps responses at 1000 rows by default. Anywhere a table
+// can realistically grow past that (weigh_ins, cattle_dailys, etc.) use this
+// helper instead of plain .select(). Caller supplies a function that builds
+// a query for a given [from, to] range so ordering/filters stay intact.
+async function wcfSelectAll(buildRangeQuery, pageSize) {
+  const page = pageSize || 1000;
+  let all = [], from = 0;
+  while (true) {
+    const { data, error } = await buildRangeQuery(from, from + page - 1);
+    if (error || !data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < page) break;
+    from += page;
+  }
+  return all;
+}
+
 const { useState, useEffect, useCallback } = React;
 
 
@@ -11633,18 +11650,26 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
                     background:d.source==='add_feed_webform'?'#fffbeb':shadeBg,borderRadius:8,cursor:'pointer',
                     border:notable?'1.5px solid #fca5a5':d.source==='add_feed_webform'?'1px solid #fde68a':'1px solid #e5e7eb',
                     padding:'8px 14px',display:'flex',flexDirection:'column',gap:4}} className="hoverable-tile">
-                    <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-                      <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
-                      <span style={{fontWeight:700,color:'#111827',minWidth:80,flexShrink:0,fontSize:13}}>{d.batch_label||'—'}</span>
-                      {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
-                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
-                      <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:100}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':'#d1fae5',color:d.feed_type==='STARTER'?'#1e40af':'#065f46'}}>{d.feed_type}</span>}</span>
-                      <span style={{color:'#374151',fontSize:12,minWidth:80}}>{hasGrit?`grit ${parseFloat(d.grit_lbs)} lbs`:'no grit'}</span>
-                      <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none',minWidth:80}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
-                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
-                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
+                    <div style={{display:'grid',gridTemplateColumns:'90px 110px 90px 150px 90px 1fr',alignItems:'center',gap:12}}>
+                      <span style={{fontSize:12,color:'#6b7280'}}>{fmt(d.date)}</span>
+                      <span style={{display:'flex',alignItems:'center',gap:6,overflow:'hidden'}}>
+                        <span style={{fontWeight:700,color:'#111827',fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'\u2014'}</span>
+                        {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a',flexShrink:0}}>{'\ud83c\udf3e'}</span>}
+                      </span>
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.team_member||'\u2014'}</span>
+                      <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,display:'flex',alignItems:'center',gap:4,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{hasFeed?`\ud83c\udf3e ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':'#d1fae5',color:d.feed_type==='STARTER'?'#1e40af':'#065f46'}}>{d.feed_type}</span>}</span>
+                      <span style={{color:'#374151',fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hasGrit?`grit ${parseFloat(d.grit_lbs)} lbs`:'no grit'}</span>
+                      <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                        <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                        <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
+                      </span>
                     </div>
-                    {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
+                    {(hasMort||comment)&&(
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:2}}>
+                        {hasMort&&<span style={{fontSize:11,fontWeight:600,padding:'3px 8px',borderRadius:6,background:'#fef2f2',color:'#b91c1c',border:'1px solid #fecaca'}}>{'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:'')}</span>}
+                        {comment&&<span style={{fontSize:11,color:'#92400e',padding:'3px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</span>}
+                      </div>
+                    )}
                   </div>
                 </React.Fragment>
               );
@@ -12887,19 +12912,27 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
                     background:d.source==='add_feed_webform'?'#fffbeb':shadeBg,borderRadius:8,cursor:'pointer',
                     border:notable?'1.5px solid #fca5a5':d.source==='add_feed_webform'?'1px solid #fde68a':'1px solid #e5e7eb',
                     padding:'8px 14px',display:'flex',flexDirection:'column',gap:4}} className="hoverable-tile">
-                    <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-                      <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
-                      <span style={{fontWeight:700,color:'#111827',minWidth:110,flexShrink:0,fontSize:13}}>{d.batch_label||'—'}</span>
-                      {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
-                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
-                      <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:100}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':d.feed_type==='GROWER'?'#d1fae5':'#fef3c7',color:d.feed_type==='STARTER'?'#1e40af':d.feed_type==='GROWER'?'#065f46':'#92400e'}}>{d.feed_type}</span>}</span>
-                      <span style={{color:'#374151',fontSize:12,minWidth:80}}>{hasGrit?`grit ${parseFloat(d.grit_lbs)} lbs`:'no grit'}</span>
-                      <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasCount?`🐔 ${d.layer_count} hens`:'no count'}</span>
-                      <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none'}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
-                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
-                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
+                    <div style={{display:'grid',gridTemplateColumns:'90px 130px 90px 150px 90px 90px 1fr',alignItems:'center',gap:12}}>
+                      <span style={{fontSize:12,color:'#6b7280'}}>{fmt(d.date)}</span>
+                      <span style={{display:'flex',alignItems:'center',gap:6,overflow:'hidden'}}>
+                        <span style={{fontWeight:700,color:'#111827',fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'\u2014'}</span>
+                        {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a',flexShrink:0}}>{'\ud83c\udf3e'}</span>}
+                      </span>
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.team_member||'\u2014'}</span>
+                      <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,display:'flex',alignItems:'center',gap:4,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{hasFeed?`\ud83c\udf3e ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':d.feed_type==='GROWER'?'#d1fae5':'#fef3c7',color:d.feed_type==='STARTER'?'#1e40af':d.feed_type==='GROWER'?'#065f46':'#92400e'}}>{d.feed_type}</span>}</span>
+                      <span style={{color:'#374151',fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hasGrit?`grit ${parseFloat(d.grit_lbs)} lbs`:'no grit'}</span>
+                      <span style={{color:'#374151',fontSize:12,whiteSpace:'nowrap'}}>{hasCount?`\ud83d\udc14 ${d.layer_count} hens`:'no count'}</span>
+                      <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                        <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                        <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
+                      </span>
                     </div>
-                    {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
+                    {(hasMort||comment)&&(
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:2}}>
+                        {hasMort&&<span style={{fontSize:11,fontWeight:600,padding:'3px 8px',borderRadius:6,background:'#fef2f2',color:'#b91c1c',border:'1px solid #fecaca'}}>{'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:'')}</span>}
+                        {comment&&<span style={{fontSize:11,color:'#92400e',padding:'3px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</span>}
+                      </div>
+                    )}
                   </div>
                 </React.Fragment>
               );
@@ -13074,12 +13107,14 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
                   border:notable?'1.5px solid #fca5a5':'1px solid #e5e7eb',
                   padding:'8px 14px',display:'flex',flexDirection:'column',gap:4
                 }} className="hoverable-tile">
-                  <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-                    <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
-                    <span style={{fontWeight:700,color:'#78350f',minWidth:80,flexShrink:0}}>🥚 {total} eggs</span>
-                    <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
-                    {groups.map(([n,c])=><span key={n} style={{color:'#374151',fontSize:12,minWidth:100}}>{n}: <strong>{c}</strong></span>)}
-                    {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12}}>📦 {d.dozens_on_hand} doz on hand</span>}
+                  <div style={{display:'grid',gridTemplateColumns:'90px 100px 90px 1fr',alignItems:'center',gap:12}}>
+                    <span style={{fontSize:12,color:'#6b7280'}}>{fmt(d.date)}</span>
+                    <span style={{fontWeight:700,color:'#78350f',fontSize:13,whiteSpace:'nowrap'}}>{'\ud83e\udd5a '+total+' eggs'}</span>
+                    <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.team_member||'\u2014'}</span>
+                    <span style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
+                      {groups.map(([n,c])=><span key={n} style={{color:'#374151',fontSize:12,whiteSpace:'nowrap'}}>{n}: <strong>{c}</strong></span>)}
+                      {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12,whiteSpace:'nowrap'}}>{'\ud83d\udce6 '+d.dozens_on_hand+' doz on hand'}</span>}
+                    </span>
                   </div>
                   {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
                 </div>
@@ -13247,17 +13282,21 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
                     background:d.source==='add_feed_webform'?'#fffbeb':shadeBg,borderRadius:8,cursor:'pointer',
                     border:notable?'1.5px solid #fca5a5':d.source==='add_feed_webform'?'1px solid #fde68a':'1px solid #e5e7eb',
                     padding:'8px 14px',display:'flex',flexDirection:'column',gap:4}} className="hoverable-tile">
-                    <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-                      <span style={{fontSize:12,color:'#6b7280',minWidth:88,flexShrink:0}}>{fmt(d.date)}</span>
-                      <span style={{fontWeight:700,color:'#111827',minWidth:100,flexShrink:0,fontSize:13}}>{d.batch_label||'—'}</span>
-                      {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
-                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',minWidth:65,flexShrink:0}}>{d.team_member||'\u2014'}</span>
-                      <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:100}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
-                      <span style={{color:'#1e40af',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
-                      <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,minWidth:70}}>{hasVolt?`⚡ ${d.fence_voltage} kV`:'no voltage'}</span>
-                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
-                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.nipple_drinker_working===false?'#fef2f2':'#f0fdf4',color:d.nipple_drinker_working===false?'#b91c1c':'#065f46',border:d.nipple_drinker_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Nipple: '+(d.nipple_drinker_working===false?'No':'Yes')}</span>
-                      <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.fence_walked===false?'#fef2f2':'#f0fdf4',color:d.fence_walked===false?'#b91c1c':'#065f46',border:d.fence_walked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Fence: '+(d.fence_walked===false?'No':'Yes')}</span>
+                    <div style={{display:'grid',gridTemplateColumns:'90px 120px 90px 130px 90px 90px 1fr',alignItems:'center',gap:12}}>
+                      <span style={{fontSize:12,color:'#6b7280'}}>{fmt(d.date)}</span>
+                      <span style={{display:'flex',alignItems:'center',gap:6,overflow:'hidden'}}>
+                        <span style={{fontWeight:700,color:'#111827',fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'\u2014'}</span>
+                        {d.source==='add_feed_webform'&&<span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a',flexShrink:0}}>{'\ud83c\udf3e'}</span>}
+                      </span>
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.team_member||'\u2014'}</span>
+                      <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hasFeed?`\ud83c\udf3e ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
+                      <span style={{color:'#1e40af',fontSize:12,whiteSpace:'nowrap'}}>{hasCount?`\ud83d\udc37 ${d.pig_count} pigs`:'no count'}</span>
+                      <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasVolt?`\u26a1 ${d.fence_voltage} kV`:'no voltage'}</span>
+                      <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                        <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
+                        <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.nipple_drinker_working===false?'#fef2f2':'#f0fdf4',color:d.nipple_drinker_working===false?'#b91c1c':'#065f46',border:d.nipple_drinker_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Nipple: '+(d.nipple_drinker_working===false?'No':'Yes')}</span>
+                        <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.fence_walked===false?'#fef2f2':'#f0fdf4',color:d.fence_walked===false?'#b91c1c':'#065f46',border:d.fence_walked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Fence: '+(d.fence_walked===false?'No':'Yes')}</span>
+                      </span>
                     </div>
                     {issues&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+issues}</div>}
                   </div>
@@ -13534,18 +13573,26 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                       padding: '8px 14px',
                       display: 'flex', flexDirection: 'column', gap: 4
                     }} className="hoverable-tile">
-                      <div style={{display:'flex', alignItems:'center', gap:14, flexWrap:'wrap'}}>
-                        <span style={{fontSize:12, color:'#6b7280', minWidth:88, flexShrink:0}}>{fmt(d.date)}</span>
-                        <span style={{padding:'2px 8px', borderRadius:4, fontSize:11, fontWeight:700, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, minWidth:90, textAlign:'center'}}>{HERD_LABELS[d.herd] || d.herd}</span>
-                        {d.source === 'add_feed_webform' && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:6, background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a'}}>{'\ud83c\udf3e Feed'}</span>}
-                        <span style={{fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:4, background:'#f1f5f9', color:'#475569', border:'1px solid #e2e8f0', flexShrink:0}}>{d.team_member || '\u2014'}</span>
-                        {d.fence_voltage != null && <span style={{fontSize:11, color:(parseFloat(d.fence_voltage)<3?'#b91c1c':parseFloat(d.fence_voltage)<5?'#92400e':'#065f46'), fontWeight:600}}>{'\u26a1 ' + d.fence_voltage + ' kV'}</span>}
-                        <span style={{fontSize:10, fontWeight:600, padding:'2px 7px', borderRadius:4, background:d.water_checked===false?'#fef2f2':'#f0fdf4', color:d.water_checked===false?'#b91c1c':'#065f46', border:d.water_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>Water: {d.water_checked===false?'No':'Yes'}</span>
-                        {hasMort && <span style={{fontSize:11, fontWeight:600, padding:'2px 7px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca'}}>{'\ud83d\udc80 ' + d.mortality_count + ' mort.' + (d.mortality_reason ? ' \u2014 ' + d.mortality_reason : '')}</span>}
+                      <div style={{display:'grid', gridTemplateColumns:'90px 120px 90px 90px 1fr', alignItems:'center', gap:12}}>
+                        <span style={{fontSize:12, color:'#6b7280'}}>{fmt(d.date)}</span>
+                        <span style={{display:'flex', alignItems:'center', gap:6, overflow:'hidden'}}>
+                          <span style={{padding:'2px 8px', borderRadius:4, fontSize:11, fontWeight:700, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{HERD_LABELS[d.herd] || d.herd}</span>
+                          {d.source === 'add_feed_webform' && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:6, background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a', flexShrink:0}}>{'\ud83c\udf3e'}</span>}
+                        </span>
+                        <span style={{fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:4, background:'#f1f5f9', color:'#475569', border:'1px solid #e2e8f0', textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{d.team_member || '\u2014'}</span>
+                        <span style={{fontSize:11, color:(d.fence_voltage!=null?(parseFloat(d.fence_voltage)<3?'#b91c1c':parseFloat(d.fence_voltage)<5?'#92400e':'#065f46'):'#9ca3af'), fontWeight:600, whiteSpace:'nowrap'}}>{d.fence_voltage != null ? ('\u26a1 ' + d.fence_voltage + ' kV') : 'no voltage'}</span>
+                        <span style={{display:'flex', gap:6, flexWrap:'wrap', alignItems:'center'}}>
+                          <span style={{fontSize:10, fontWeight:600, padding:'2px 7px', borderRadius:4, background:d.water_checked===false?'#fef2f2':'#f0fdf4', color:d.water_checked===false?'#b91c1c':'#065f46', border:d.water_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Water: '+(d.water_checked===false?'No':'Yes')}</span>
+                        </span>
                       </div>
                       {feedSummary && <div style={{fontSize:11, color:'#92400e'}}>{'\ud83c\udf3e ' + feedSummary}</div>}
                       {mineralSummary && <div style={{fontSize:11, color:'#6b21a8'}}>{'\ud83e\uddc2 ' + mineralSummary}</div>}
-                      {issues && <div style={{fontSize:11, color:'#92400e', padding:'4px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, fontStyle:'italic'}}>{'\ud83d\udcac ' + issues}</div>}
+                      {(hasMort || issues) && (
+                        <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:2}}>
+                          {hasMort && <span style={{fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca'}}>{'\ud83d\udc80 ' + d.mortality_count + ' mort.' + (d.mortality_reason ? ' \u2014 ' + d.mortality_reason : '')}</span>}
+                          {issues && <span style={{fontSize:11, color:'#92400e', padding:'3px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, fontStyle:'italic'}}>{'\ud83d\udcac ' + issues}</span>}
+                        </div>
+                      )}
                     </div>
                   </React.Fragment>
                 );
@@ -13697,13 +13744,17 @@ const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShow
     Promise.all([
       sb.from('cattle').select('*'),
       sb.from('cattle_dailys').select('*').gte('date', cutoff30),
-      sb.from('weigh_ins').select('*'),
+      sb.from('weigh_in_sessions').select('id').eq('species','cattle').then(async ({data}) => {
+        const ids = (data||[]).map(s => s.id);
+        if(ids.length === 0) return [];
+        return wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', ids).range(from,to));
+      }),
       sb.from('cattle_calving_records').select('*'),
       sb.from('cattle_nutrition_targets').select('*'),
-    ]).then(([cR, dR, wR, calvR, tR])=>{
+    ]).then(([cR, dR, wAll, calvR, tR])=>{
       if(cR.data) setCattle(cR.data);
       if(dR.data) setDailys(dR.data);
-      if(wR.data) setWeighIns(wR.data);
+      setWeighIns(wAll);
       if(calvR.data) setCalving(calvR.data);
       if(tR.data) {
         const m = {};
@@ -13810,6 +13861,8 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   const [weighIns, setWeighIns] = useState([]);
   const [calvingRecs, setCalvingRecs] = useState([]);
   const [comments, setComments] = useState([]);
+  const [breedOpts, setBreedOpts] = useState([]);
+  const [originOpts, setOriginOpts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -13821,6 +13874,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [expandedCow, setExpandedCow] = useState(null);
+  const [expandedHerds, setExpandedHerds] = useState({});
 
   const HERDS = ['mommas','backgrounders','finishers','bulls'];
   const OUTCOMES = ['processed','deceased','sold'];
@@ -13829,25 +13883,30 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   const HERD_COLORS = {mommas:{bg:'#fef2f2',tx:'#991b1b',bd:'#fca5a5'}, backgrounders:{bg:'#ffedd5',tx:'#9a3412',bd:'#fdba74'}, finishers:{bg:'#fff1f2',tx:'#9f1239',bd:'#fda4af'}, bulls:{bg:'#fee2e2',tx:'#7f1d1d',bd:'#fca5a5'}, processed:{bg:'#f3f4f6',tx:'#374151',bd:'#d1d5db'}, deceased:{bg:'#f9fafb',tx:'#6b7280',bd:'#e5e7eb'}, sold:{bg:'#eff6ff',tx:'#1e40af',bd:'#bfdbfe'}};
 
   const EMPTY_COW = {
-    tag:'', sex:'cow', herd:'mommas', breed:'', breeding_blacklist:false, breeding_blacklist_reason:'',
-    pct_wagyu:'', origin:'', birth_date:'', purchase_date:'', receiving_weight:'', purchase_amount:'',
-    dam_tag:'', sire_tag:'', sire_reg_num:'', registration_num:'',
+    tag:'', sex:'cow', herd:'mommas', breed:'', breeding_blacklist:false,
+    pct_wagyu:'', origin:'', birth_date:'', purchase_date:'', purchase_amount:'',
+    dam_tag:'', sire_tag:'', registration_num:'',
+    breeding_status:'',
     maternal_issue_flag:false, maternal_issue_desc:'',
     sale_date:'', sale_amount:'', death_date:'', death_reason:'',
-    notes:''
   };
 
   async function loadAll() {
-    const [cR, wR, calR, comR] = await Promise.all([
+    const cattleSessIds = await sb.from('weigh_in_sessions').select('id').eq('species','cattle').then(({data}) => (data||[]).map(s => s.id));
+    const [cR, wAll, calR, comR, brR, orR] = await Promise.all([
       sb.from('cattle').select('*').order('tag'),
-      sb.from('weigh_ins').select('*').order('entered_at',{ascending:false}),
+      cattleSessIds.length === 0 ? Promise.resolve([]) : wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', cattleSessIds).order('entered_at',{ascending:false}).range(from,to)),
       sb.from('cattle_calving_records').select('*').order('calving_date',{ascending:false}),
       sb.from('cattle_comments').select('*').order('created_at',{ascending:false}),
+      sb.from('cattle_breeds').select('*').order('label'),
+      sb.from('cattle_origins').select('*').order('label'),
     ]);
     if(cR.data) setCattle(cR.data);
-    if(wR.data) setWeighIns(wR.data);
+    setWeighIns(wAll);
     if(calR.data) setCalvingRecs(calR.data);
     if(comR.data) setComments(comR.data);
+    if(brR.data) setBreedOpts(brR.data);
+    if(orR.data) setOriginOpts(orR.data);
     setLoading(false);
   }
   useEffect(()=>{ loadAll(); }, []);
@@ -13862,9 +13921,25 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     if(y > 0) return y+'y '+m+'m';
     return m+'m';
   }
-  function lastWeight(tag) {
-    if(!tag) return null;
-    const w = weighIns.find(x => x.tag === tag);
+  function cowTagSet(cow) {
+    // Includes current WCF tag + prior WCF tags (source='weigh_in' retags).
+    // Excludes purchase-farm tags (source='import') because those are the
+    // selling farm's numbers and can collide with other WCF cows' tags.
+    const set = new Set();
+    if(cow && cow.tag) set.add(cow.tag);
+    if(cow && Array.isArray(cow.old_tags)) {
+      for(const ot of cow.old_tags) {
+        if(!ot || !ot.tag) continue;
+        if(ot.source === 'import') continue;
+        set.add(ot.tag);
+      }
+    }
+    return set;
+  }
+  function lastWeight(cow) {
+    const tags = cowTagSet(cow);
+    if(tags.size === 0) return null;
+    const w = weighIns.find(x => tags.has(x.tag));
     return w ? parseFloat(w.weight) : null;
   }
   function lastCalving(tag) {
@@ -13875,13 +13950,16 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     return cattle.filter(c => c.dam_tag === tag).length;
   }
 
-  // Filter + sort
+  // Filter + sort. When the user is actively searching, relax the default
+  // 'active' restriction so outcome cows (processed/deceased/sold) match too.
+  // Explicit per-herd filters still apply.
   const filtered = cattle.filter(c => {
-    if(statusFilter === 'active' && !HERDS.includes(c.herd)) return false;
+    const searching = !!search;
+    if(!searching && statusFilter === 'active' && !HERDS.includes(c.herd)) return false;
     if(statusFilter !== 'all' && statusFilter !== 'active' && c.herd !== statusFilter) return false;
-    if(search) {
+    if(searching) {
       const s = search.toLowerCase().trim();
-      const fields = [c.tag, c.dam_tag, c.sire_tag, c.breed, c.notes, c.origin].map(x => (x||'').toLowerCase());
+      const fields = [c.tag, c.dam_tag, c.sire_tag, c.breed, c.origin].map(x => (x||'').toLowerCase());
       if(!fields.some(f => f.includes(s))) return false;
     }
     return true;
@@ -13892,8 +13970,8 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     if(sortBy === 'tag-desc') return (parseFloat(b.tag)||0) - (parseFloat(a.tag)||0) || (b.tag||'').localeCompare(a.tag||'');
     if(sortBy === 'age-asc') return (a.birth_date||'9999').localeCompare(b.birth_date||'9999');
     if(sortBy === 'age-desc') return (b.birth_date||'').localeCompare(a.birth_date||'');
-    if(sortBy === 'weight-desc') return (lastWeight(b.tag)||0) - (lastWeight(a.tag)||0);
-    if(sortBy === 'weight-asc') return (lastWeight(a.tag)||0) - (lastWeight(b.tag)||0);
+    if(sortBy === 'weight-desc') return (lastWeight(b)||0) - (lastWeight(a)||0);
+    if(sortBy === 'weight-asc') return (lastWeight(a)||0) - (lastWeight(b)||0);
     return 0;
   });
 
@@ -13905,16 +13983,14 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   function openEdit(cow) {
     setForm({...EMPTY_COW, ...cow,
       pct_wagyu: cow.pct_wagyu != null ? String(cow.pct_wagyu) : '',
-      receiving_weight: cow.receiving_weight != null ? String(cow.receiving_weight) : '',
       purchase_amount: cow.purchase_amount != null ? String(cow.purchase_amount) : '',
       sale_amount: cow.sale_amount != null ? String(cow.sale_amount) : '',
       birth_date: cow.birth_date || '',
       purchase_date: cow.purchase_date || '',
       sale_date: cow.sale_date || '',
       death_date: cow.death_date || '',
-      breeding_blacklist_reason: cow.breeding_blacklist_reason || '',
+      breeding_status: cow.breeding_status || '',
       maternal_issue_desc: cow.maternal_issue_desc || '',
-      notes: cow.notes || '',
     });
     setEditId(cow.id);
     setShowAddForm(true);
@@ -13927,37 +14003,31 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
       if(!confirm('Save cow without a tag? (For unweaned calves; admin can tag later.)')) return;
     }
     setSaving(true);
+    const isFemale = form.sex === 'cow' || form.sex === 'heifer';
     const rec = {
       tag: form.tag.trim() || null,
       sex: form.sex,
       herd: form.herd,
       breed: form.breed || null,
       breeding_blacklist: !!form.breeding_blacklist,
-      breeding_blacklist_reason: form.breeding_blacklist_reason || null,
       pct_wagyu: form.pct_wagyu !== '' ? parseInt(form.pct_wagyu) : null,
       origin: form.origin || null,
       birth_date: form.birth_date || null,
       purchase_date: form.purchase_date || null,
-      receiving_weight: form.receiving_weight !== '' ? parseFloat(form.receiving_weight) : null,
       purchase_amount: form.purchase_amount !== '' ? parseFloat(form.purchase_amount) : null,
       dam_tag: form.dam_tag || null,
       sire_tag: form.sire_tag || null,
-      sire_reg_num: form.sire_reg_num || null,
       registration_num: form.registration_num || null,
+      breeding_status: isFemale ? (form.breeding_status || null) : null,
       maternal_issue_flag: !!form.maternal_issue_flag,
       maternal_issue_desc: form.maternal_issue_desc || null,
       sale_date: form.sale_date || null,
       sale_amount: form.sale_amount !== '' ? parseFloat(form.sale_amount) : null,
       death_date: form.death_date || null,
       death_reason: form.death_reason || null,
-      notes: form.notes || null,
     };
     if(form.maternal_issue_flag && !(form.maternal_issue_desc||'').trim()) {
       alert('Maternal issue description is required when the flag is set.');
-      setSaving(false); return;
-    }
-    if(form.breeding_blacklist && !(form.breeding_blacklist_reason||'').trim()) {
-      alert('Blacklist reason is required when the cow is blacklisted.');
       setSaving(false); return;
     }
     let newId = editId;
@@ -14015,6 +14085,23 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
       source: 'manual',
     });
     await loadAll();
+  }
+  async function editComment(id, newText) {
+    if(!newText.trim()) return;
+    await sb.from('cattle_comments').update({comment: newText.trim()}).eq('id', id);
+    await loadAll();
+  }
+  async function deleteComment(id) {
+    if(!window._wcfConfirmDelete) {
+      if(!window.confirm('Delete this comment?')) return;
+      await sb.from('cattle_comments').delete().eq('id', id);
+      await loadAll();
+      return;
+    }
+    window._wcfConfirmDelete('Delete this comment?', async () => {
+      await sb.from('cattle_comments').delete().eq('id', id);
+      await loadAll();
+    });
   }
   async function addCalvingRecord(cow, formData) {
     if(!formData.calving_date) { alert('Calving date required.'); return false; }
@@ -14107,18 +14194,20 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
             {sorted.length === 0 && <div style={{padding:'2rem', textAlign:'center', color:'#9ca3af', fontSize:13}}>No cattle match the current filter.</div>}
             {sorted.map((c, i) => {
               const hc = HERD_COLORS[c.herd] || HERD_COLORS.mommas;
-              const lw = lastWeight(c.tag);
+              const lw = lastWeight(c);
               return (
-                <div key={c.id} onClick={()=>openEdit(c)} style={{padding:'10px 16px', borderBottom:i<sorted.length-1?'1px solid #f3f4f6':'none', display:'flex', alignItems:'center', gap:12, cursor:'pointer', flexWrap:'wrap'}} className="hoverable-tile">
-                  <span style={{fontWeight:700, fontSize:13, color:'#111827', minWidth:60}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
-                  <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, fontWeight:600}}>{HERD_LABELS[c.herd]}</span>
-                  <span style={{fontSize:11, color:'#6b7280', minWidth:50}}>{c.sex||'\u2014'}</span>
-                  <span style={{fontSize:11, color:'#6b7280', minWidth:80}}>{c.breed||'\u2014'}</span>
-                  <span style={{fontSize:11, color:'#6b7280', minWidth:60}}>{age(c.birth_date)||'\u2014'}</span>
-                  <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400, minWidth:80}}>{lw ? lw.toLocaleString()+' lb' : 'no weigh-in'}</span>
-                  {c.dam_tag && <span style={{fontSize:11, color:'#9ca3af'}}>dam #{c.dam_tag}</span>}
-                  {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL ISSUE</span>}
-                  {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
+                <div key={c.id} onClick={()=>openEdit(c)} style={{padding:'10px 16px', borderBottom:i<sorted.length-1?'1px solid #f3f4f6':'none', display:'grid', gridTemplateColumns:'70px 110px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'white'}} className="hoverable-tile">
+                  <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
+                  <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, fontWeight:600, textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{HERD_LABELS[c.herd]}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{c.sex||'\u2014'}</span>
+                  <span style={{fontSize:11, color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{c.breed||'\u2014'}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{age(c.birth_date)||'\u2014'}</span>
+                  <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400}}>{lw ? lw.toLocaleString()+' lb' : 'no weigh-in'}</span>
+                  <span style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                    {c.dam_tag && <span style={{fontSize:11, color:'#9ca3af'}}>{'dam #'+c.dam_tag}</span>}
+                    {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL ISSUE</span>}
+                    {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
+                  </span>
                 </div>
               );
             })}
@@ -14130,37 +14219,42 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
           <div style={{display:'flex', flexDirection:'column', gap:12}}>
             {HERDS.map(h => {
               const cows = sorted.filter(c => c.herd === h);
-              const totalWt = cows.reduce((s,c) => s + (lastWeight(c.tag)||0), 0);
+              const totalWt = cows.reduce((s,c) => s + (lastWeight(c)||0), 0);
               const hc = HERD_COLORS[h];
+              const herdOpen = !!expandedHerds[h];
               return (
                 <div key={h} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
-                  <div style={{padding:'12px 18px', background:hc.bg, borderBottom:'1px solid '+hc.bd, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+                  <div onClick={()=>setExpandedHerds({...expandedHerds, [h]:!herdOpen})} style={{padding:'12px 18px', background:hc.bg, borderBottom:herdOpen?'1px solid '+hc.bd:'none', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', cursor:'pointer'}}>
+                    <span style={{fontSize:12, color:hc.tx}}>{herdOpen?'\u25bc':'\u25b6'}</span>
                     <span style={{fontSize:15, fontWeight:700, color:hc.tx}}>{'\ud83d\udc04 '+HERD_LABELS[h]}</span>
                     <span style={{fontSize:12, color:hc.tx, opacity:.8}}>{cows.length} {cows.length===1?'cow':'cows'}</span>
                     {totalWt > 0 && <span style={{fontSize:12, color:hc.tx, opacity:.8}}>{'\u00b7 '+Math.round(totalWt).toLocaleString()+' lbs total'}</span>}
                   </div>
-                  {cows.length === 0 && <div style={{padding:'1rem 18px', color:'#9ca3af', fontSize:12, fontStyle:'italic'}}>No cows in this herd yet.</div>}
-                  {cows.map(c => {
-                    const lw = lastWeight(c.tag);
+                  {herdOpen && cows.length === 0 && <div style={{padding:'1rem 18px', color:'#9ca3af', fontSize:12, fontStyle:'italic'}}>No cows in this herd yet.</div>}
+                  {herdOpen && cows.map(c => {
+                    const lw = lastWeight(c);
                     const lc = lastCalving(c.tag);
                     const cc = calfCount(c.tag);
                     const isExpanded = expandedCow === c.id;
-                    const cowWeighIns = weighIns.filter(w => w.tag === c.tag).slice(0, 10);
+                    const cTags = cowTagSet(c);
+                    const cowWeighIns = weighIns.filter(w => cTags.has(w.tag)).slice(0, 10);
                     const cowCalving = calvingRecs.filter(r => r.dam_tag === c.tag);
                     const cowComments = comments.filter(cm => cm.cattle_id === c.id || cm.cattle_tag === c.tag).slice(0, 20);
                     return (
                       <div key={c.id} style={{borderBottom:'1px solid #f3f4f6'}}>
-                        <div onClick={()=>setExpandedCow(isExpanded?null:c.id)} style={{padding:'10px 18px', display:'flex', alignItems:'center', gap:10, cursor:'pointer', flexWrap:'wrap'}} className="hoverable-tile">
+                        <div onClick={()=>setExpandedCow(isExpanded?null:c.id)} style={{padding:'10px 18px', display:'grid', gridTemplateColumns:'16px 70px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'transparent'}} className="hoverable-tile">
                           <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
-                          <span style={{fontWeight:700, fontSize:13, color:'#111827', minWidth:60}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
-                          <span style={{fontSize:11, color:'#6b7280', minWidth:50}}>{c.sex||'\u2014'}</span>
-                          <span style={{fontSize:11, color:'#6b7280', minWidth:90}}>{c.breed||'\u2014'}</span>
-                          <span style={{fontSize:11, color:'#6b7280', minWidth:50}}>{age(c.birth_date)||'\u2014'}</span>
-                          <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400, minWidth:80}}>{lw ? lw.toLocaleString()+' lb' : '\u2014'}</span>
-                          {h === 'mommas' && cc > 0 && <span style={{fontSize:11, color:'#7f1d1d', fontWeight:600}}>{cc} {cc===1?'calf':'calves'}</span>}
-                          {h === 'mommas' && lc && <span style={{fontSize:11, color:'#9ca3af'}}>last calved {fmt(lc.calving_date)}</span>}
-                          {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL</span>}
-                          {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
+                          <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
+                          <span style={{fontSize:11, color:'#6b7280'}}>{c.sex||'\u2014'}</span>
+                          <span style={{fontSize:11, color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{c.breed||'\u2014'}</span>
+                          <span style={{fontSize:11, color:'#6b7280'}}>{age(c.birth_date)||'\u2014'}</span>
+                          <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400}}>{lw ? lw.toLocaleString()+' lb' : '\u2014'}</span>
+                          <span style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                            {h === 'mommas' && cc > 0 && <span style={{fontSize:11, color:'#7f1d1d', fontWeight:600}}>{cc+' '+(cc===1?'calf':'calves')}</span>}
+                            {h === 'mommas' && lc && <span style={{fontSize:11, color:'#9ca3af'}}>{'last calved '+fmt(lc.calving_date)}</span>}
+                            {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL</span>}
+                            {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
+                          </span>
                         </div>
                         {isExpanded && <CowDetail
                           cow={c}
@@ -14176,6 +14270,8 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                           onTransfer={(newHerd)=>transferCow(c.id, newHerd)}
                           onDelete={()=>deleteCow(c.id)}
                           onComment={(text)=>addQuickComment(c.id, c.tag, text)}
+                          onEditComment={editComment}
+                          onDeleteComment={deleteComment}
                           onAddCalving={(data)=>addCalvingRecord(c, data)}
                           onDeleteCalving={(id)=>deleteCalvingRecord(id)}
                         />}
@@ -14211,41 +14307,74 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                   {ALL_HERDS.map(h => <option key={h} value={h}>{HERD_LABELS[h]}</option>)}
                 </select>
               </div>
-              <div><label style={lbl}>Breed</label><input value={form.breed} onChange={e=>setForm({...form, breed:e.target.value})} placeholder="e.g. Wagyu/Angus" style={inpS}/></div>
+              <div><label style={lbl}>Breed</label>
+                <select value={form.breed||''} onChange={e=>setForm({...form, breed:e.target.value})} style={inpS}>
+                  <option value=''>{'\u2014 select \u2014'}</option>
+                  {breedOpts.filter(function(b){return b.active;}).map(function(b){return React.createElement('option',{key:b.id,value:b.label},b.label);})}
+                  {form.breed && !breedOpts.some(function(b){return b.active && b.label===form.breed;}) && (
+                    <option value={form.breed}>{form.breed+' (historical)'}</option>
+                  )}
+                </select>
+              </div>
               <div><label style={lbl}>% Wagyu</label><input type="number" min="0" max="100" value={form.pct_wagyu} onChange={e=>setForm({...form, pct_wagyu:e.target.value})} style={inpS}/></div>
-              <div><label style={lbl}>Origin</label><input value={form.origin} onChange={e=>setForm({...form, origin:e.target.value})} placeholder="e.g. Born on farm" style={inpS}/></div>
+              <div><label style={lbl}>Origin</label>
+                <select value={form.origin||''} onChange={function(e){
+                    var v=e.target.value;
+                    if(v==='__add__'){
+                      var name=(window.prompt('New origin name:')||'').trim();
+                      if(!name) return;
+                      var exists=originOpts.find(function(o){return o.label.toLowerCase()===name.toLowerCase();});
+                      if(exists){ setForm({...form, origin:exists.label}); return; }
+                      var id='origin-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+                      sb.from('cattle_origins').insert({id:id,label:name,active:true}).then(function(){
+                        setOriginOpts([...originOpts,{id:id,label:name,active:true}].sort(function(a,b){return a.label.localeCompare(b.label);}));
+                        setForm({...form, origin:name});
+                      });
+                      return;
+                    }
+                    setForm({...form, origin:v});
+                  }} style={inpS}>
+                  <option value=''>{'\u2014 select \u2014'}</option>
+                  {originOpts.filter(function(o){return o.active;}).map(function(o){return React.createElement('option',{key:o.id,value:o.label},o.label);})}
+                  {form.origin && !originOpts.some(function(o){return o.active && o.label===form.origin;}) && (
+                    <option value={form.origin}>{form.origin}</option>
+                  )}
+                  <option value='__add__'>{'+ Add new origin\u2026'}</option>
+                </select>
+              </div>
               <div><label style={lbl}>Birth Date</label><input type="date" value={form.birth_date} onChange={e=>setForm({...form, birth_date:e.target.value})} style={inpS}/></div>
               <div><label style={lbl}>Purchase Date</label><input type="date" value={form.purchase_date} onChange={e=>setForm({...form, purchase_date:e.target.value})} style={inpS}/></div>
-              <div><label style={lbl}>Receiving Weight (lb)</label><input type="number" min="0" value={form.receiving_weight} onChange={e=>setForm({...form, receiving_weight:e.target.value})} style={inpS}/></div>
               <div><label style={lbl}>Purchase Amount ($)</label><input type="number" min="0" step="0.01" value={form.purchase_amount} onChange={e=>setForm({...form, purchase_amount:e.target.value})} style={inpS}/></div>
               <div><label style={lbl}>Dam Tag #</label><input value={form.dam_tag} onChange={e=>setForm({...form, dam_tag:e.target.value})} style={inpS}/></div>
               <div><label style={lbl}>Sire Tag # / Reg #</label><input value={form.sire_tag} onChange={e=>setForm({...form, sire_tag:e.target.value})} style={inpS}/></div>
-              <div><label style={lbl}>Sire Reg #</label><input value={form.sire_reg_num} onChange={e=>setForm({...form, sire_reg_num:e.target.value})} style={inpS}/></div>
               <div><label style={lbl}>Registration #</label><input value={form.registration_num} onChange={e=>setForm({...form, registration_num:e.target.value})} style={inpS}/></div>
+              {(form.sex==='cow'||form.sex==='heifer') && (
+                <div><label style={lbl}>Breeding Status</label>
+                  <select value={form.breeding_status||''} onChange={e=>setForm({...form, breeding_status:e.target.value})} style={inpS}>
+                    <option value=''>{'\u2014 not set \u2014'}</option>
+                    <option value='OPEN'>Open</option>
+                    <option value='PREGNANT'>Pregnant</option>
+                    <option value='N/A'>N/A</option>
+                  </select>
+                </div>
+              )}
 
-              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
-                <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600}}>
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:12, marginTop:4, display:'flex', flexDirection:'column', gap:10}}>
+                <label style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, alignSelf:'flex-start'}}>
                   <input type="checkbox" checked={!!form.maternal_issue_flag} onChange={e=>setForm({...form, maternal_issue_flag:e.target.checked})}/>
-                  Maternal issue flag
+                  <span>Maternal issue flag</span>
                 </label>
                 {form.maternal_issue_flag && (
-                  <div style={{marginTop:6}}>
+                  <div style={{marginLeft:26}}>
                     <label style={lbl}>Description *</label>
                     <textarea value={form.maternal_issue_desc} onChange={e=>setForm({...form, maternal_issue_desc:e.target.value})} rows={2} style={{...inpS, resize:'vertical'}}/>
                   </div>
                 )}
-              </div>
-              <div style={{gridColumn:'1/-1'}}>
-                <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600}}>
+                <label style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, alignSelf:'flex-start'}}>
                   <input type="checkbox" checked={!!form.breeding_blacklist} onChange={e=>setForm({...form, breeding_blacklist:e.target.checked})}/>
-                  Breeding blacklist
+                  <span>Breeding blacklist</span>
                 </label>
-                {form.breeding_blacklist && (
-                  <div style={{marginTop:6}}>
-                    <label style={lbl}>Reason *</label>
-                    <input value={form.breeding_blacklist_reason} onChange={e=>setForm({...form, breeding_blacklist_reason:e.target.value})} style={inpS}/>
-                  </div>
-                )}
+                <div style={{fontSize:11, color:'#9ca3af', marginLeft:26, marginTop:-4}}>Use the comments timeline to record why.</div>
               </div>
 
               {(form.herd === 'sold' || form.sale_date) && (
@@ -14261,10 +14390,6 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                 </React.Fragment>
               )}
 
-              <div style={{gridColumn:'1/-1'}}>
-                <label style={lbl}>Notes</label>
-                <textarea value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})} rows={3} style={{...inpS, resize:'vertical'}}/>
-              </div>
             </div>
             <div style={{padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8}}>
               <button onClick={saveCow} disabled={saving} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:13, cursor:saving?'not-allowed':'pointer', fontFamily:'inherit', opacity:saving?.6:1}}>{saving ? 'Saving\u2026' : (editId ? 'Save' : 'Add Cow')}</button>
@@ -14318,10 +14443,12 @@ const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS,
 };
 
 // Helper component — cow detail body shown when expanded inside the herd tile
-const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, HERD_LABELS, onEdit, onTransfer, onDelete, onComment, onAddCalving, onDeleteCalving}) => {
+const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, HERD_LABELS, onEdit, onTransfer, onDelete, onComment, onEditComment, onDeleteComment, onAddCalving, onDeleteCalving}) => {
   const [commentText, setCommentText] = React.useState('');
   const [showTransfer, setShowTransfer] = React.useState(false);
   const [showCalvingForm, setShowCalvingForm] = React.useState(false);
+  const [editingCommentId, setEditingCommentId] = React.useState(null);
+  const [editingCommentText, setEditingCommentText] = React.useState('');
   const [calvingForm, setCalvingForm] = React.useState({calving_date:new Date().toISOString().slice(0,10), calf_tag:'', sire_tag:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''});
   const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:6};
   const isMomma = cow.herd === 'mommas';
@@ -14344,7 +14471,7 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
             {cow.origin && <><span style={{color:'#9ca3af'}}>Origin:</span><span>{cow.origin}</span></>}
             {cow.birth_date && <><span style={{color:'#9ca3af'}}>Birth:</span><span>{fmt(cow.birth_date)}</span></>}
             {cow.purchase_date && <><span style={{color:'#9ca3af'}}>Purchased:</span><span>{fmt(cow.purchase_date)} {cow.purchase_amount?('\u00b7 $'+cow.purchase_amount):''}</span></>}
-            {cow.receiving_weight && <><span style={{color:'#9ca3af'}}>Recv weight:</span><span>{cow.receiving_weight} lb</span></>}
+            {(cow.sex==='cow'||cow.sex==='heifer') && cow.breeding_status && <><span style={{color:'#9ca3af'}}>Breeding:</span><span style={{textTransform:'capitalize'}}>{String(cow.breeding_status).toLowerCase()}</span></>}
             {Array.isArray(cow.old_tags) && cow.old_tags.length > 0 && (
               <>
                 <span style={{color:'#9ca3af'}}>Previous tags:</span>
@@ -14361,8 +14488,7 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
           <div style={sectionTitle}>Lineage</div>
           <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'auto 1fr', gap:'2px 8px'}}>
             <span style={{color:'#9ca3af'}}>Dam:</span><span>{cow.dam_tag ? '#'+cow.dam_tag+(dam?' ('+(dam.breed||'?')+')':' (not in directory)') : '\u2014'}</span>
-            <span style={{color:'#9ca3af'}}>Sire:</span><span>{cow.sire_tag||cow.sire_reg_num||'\u2014'}</span>
-            {calves && calves.length > 0 && <><span style={{color:'#9ca3af'}}>Calves:</span><span>{calves.map(c => '#'+(c.tag||'?')).join(', ')}</span></>}
+            <span style={{color:'#9ca3af'}}>Sire:</span><span>{cow.sire_tag||'\u2014'}</span>
           </div>
         </div>
       </div>
@@ -14419,17 +14545,32 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
               </div>
             </div>
           )}
-          {calving && calving.length > 0 && calving.map(r => (
-            <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
-              <strong style={{color:'#111827'}}>{fmt(r.calving_date)}</strong>
-              <span>{r.total_born} born, {r.deaths} died</span>
-              {r.calf_tag && <span style={{color:'#7f1d1d'}}>calf #{r.calf_tag}</span>}
-              {r.complications_flag && <span style={{color:'#b91c1c', fontWeight:600}}>{'\u26a0 complications'}</span>}
-              {r.notes && <span style={{color:'#6b7280', fontStyle:'italic'}}>{r.notes}</span>}
-              {onDeleteCalving && <button type="button" onClick={()=>onDeleteCalving(r.id)} style={{marginLeft:'auto', fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Delete</button>}
-            </div>
-          ))}
-          {(!calving || calving.length === 0) && !showCalvingForm && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No calving records yet.</div>}
+          {(() => {
+            var recordedTags = new Set((calving||[]).map(function(r){return r.calf_tag;}).filter(Boolean));
+            var syntheticFromCalves = (calves||[]).filter(function(cf){return cf.tag && !recordedTags.has(cf.tag);}).map(function(cf){
+              return {id:'synthetic-'+cf.id, synthetic:true, calving_date:cf.birth_date||null, calf_tag:cf.tag, total_born:1, deaths:0};
+            });
+            var combined = [...(calving||[]), ...syntheticFromCalves].sort(function(a,b){
+              return (b.calving_date||'').localeCompare(a.calving_date||'');
+            });
+            if(combined.length === 0) {
+              if(showCalvingForm) return null;
+              return <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No calving records yet.</div>;
+            }
+            return combined.map(function(r){
+              return (
+                <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+                  <strong style={{color:'#111827'}}>{r.calving_date ? fmt(r.calving_date) : 'date unknown'}</strong>
+                  {!r.synthetic && <span>{r.total_born+' born, '+r.deaths+' died'}</span>}
+                  {r.calf_tag && <span style={{color:'#7f1d1d'}}>{'calf #'+r.calf_tag}</span>}
+                  {r.complications_flag && <span style={{color:'#b91c1c', fontWeight:600}}>{'\u26a0 complications'}</span>}
+                  {r.notes && <span style={{color:'#6b7280', fontStyle:'italic'}}>{r.notes}</span>}
+                  {r.synthetic && <span style={{fontSize:10, color:'#9ca3af', fontStyle:'italic'}}>{'(from calf record)'}</span>}
+                  {!r.synthetic && onDeleteCalving && <button type="button" onClick={function(){onDeleteCalving(r.id);}} style={{marginLeft:'auto', fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Delete</button>}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
       {!isMomma && calving && calving.length > 0 && (
@@ -14445,14 +14586,6 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
         </div>
       )}
 
-      {/* Notes */}
-      {cow.notes && (
-        <div style={{marginTop:12}}>
-          <div style={sectionTitle}>Notes</div>
-          <div style={{fontSize:12, color:'#374151', background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'8px 12px', whiteSpace:'pre-wrap'}}>{cow.notes}</div>
-        </div>
-      )}
-
       {/* Comments timeline + add */}
       <div style={{marginTop:12}}>
         <div style={sectionTitle}>Comments Timeline</div>
@@ -14461,20 +14594,45 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
           <button onClick={()=>{onComment(commentText); setCommentText('');}} disabled={!commentText.trim()} style={{padding:'6px 14px', borderRadius:6, border:'none', background:commentText.trim()?'#991b1b':'#d1d5db', color:'white', fontSize:12, fontWeight:600, cursor:commentText.trim()?'pointer':'not-allowed', fontFamily:'inherit'}}>Add</button>
         </div>
         {comments && comments.length > 0 ? (
-          <div style={{maxHeight:200, overflowY:'auto'}}>
-            {comments.map(c => (
-              <div key={c.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11}}>
-                <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:2}}>
-                  <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:c.source==='weigh_in'?'#eff6ff':c.source==='calving'?'#fef2f2':c.source==='daily_report'?'#ecfdf5':'#f3f4f6', color:c.source==='weigh_in'?'#1e40af':c.source==='calving'?'#991b1b':c.source==='daily_report'?'#065f46':'#374151'}}>{c.source}</span>
-                  <span style={{color:'#9ca3af'}}>{fmt((c.created_at||'').slice(0,10))}</span>
-                  {c.team_member && <span style={{color:'#9ca3af'}}>{'\u00b7 '+c.team_member}</span>}
+          <div style={{maxHeight:260, overflowY:'auto'}}>
+            {comments.map(c => {
+              const isEditing = editingCommentId === c.id;
+              return (
+                <div key={c.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11}}>
+                  <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:2, flexWrap:'wrap'}}>
+                    <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:c.source==='weigh_in'?'#eff6ff':c.source==='calving'?'#fef2f2':c.source==='daily_report'?'#ecfdf5':c.source==='import'?'#fef3c7':'#f3f4f6', color:c.source==='weigh_in'?'#1e40af':c.source==='calving'?'#991b1b':c.source==='daily_report'?'#065f46':c.source==='import'?'#92400e':'#374151'}}>{c.source}</span>
+                    <span style={{color:'#9ca3af'}}>{fmt((c.created_at||'').slice(0,10))}</span>
+                    {c.team_member && <span style={{color:'#9ca3af', fontWeight:600}}>{'\u00b7 '+c.team_member}</span>}
+                    {!isEditing && onEditComment && (
+                      <button type="button" onClick={()=>{setEditingCommentId(c.id); setEditingCommentText(c.comment||'');}} style={{marginLeft:'auto', fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 4px', fontFamily:'inherit'}}>Edit</button>
+                    )}
+                    {!isEditing && onDeleteComment && (
+                      <button type="button" onClick={()=>onDeleteComment(c.id)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 4px', fontFamily:'inherit'}}>Delete</button>
+                    )}
+                  </div>
+                  {isEditing ? (
+                    <div>
+                      <textarea value={editingCommentText} onChange={e=>setEditingCommentText(e.target.value)} rows={2} style={{width:'100%', fontSize:11, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', resize:'vertical'}}/>
+                      <div style={{display:'flex', gap:6, marginTop:4}}>
+                        <button type="button" onClick={()=>{onEditComment(c.id, editingCommentText); setEditingCommentId(null); setEditingCommentText('');}} disabled={!editingCommentText.trim()} style={{padding:'3px 10px', borderRadius:5, border:'none', background:editingCommentText.trim()?'#991b1b':'#d1d5db', color:'white', fontSize:10, fontWeight:600, cursor:editingCommentText.trim()?'pointer':'not-allowed', fontFamily:'inherit'}}>Save</button>
+                        <button type="button" onClick={()=>{setEditingCommentId(null); setEditingCommentText('');}} style={{padding:'3px 10px', borderRadius:5, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:10, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{color:'#374151'}}>{c.comment}</div>
+                  )}
                 </div>
-                <div style={{color:'#374151'}}>{c.comment}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No comments yet.</div>
+        )}
+        {cow.breeding_blacklist && (
+          <div style={{marginTop:8, background:'#fecaca', border:'1px solid #f87171', borderRadius:6, padding:'6px 10px', fontSize:11, display:'flex', gap:8, alignItems:'center'}}>
+            <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#991b1b', color:'white'}}>BREEDING BLACKLIST</span>
+            <span style={{color:'#7f1d1d', fontWeight:600}}>{'Flagged \u2014 do not breed.'}</span>
+          </div>
         )}
       </div>
 
@@ -14687,21 +14845,38 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
   const [form, setForm] = useState(null);
 
   async function loadAll() {
-    const [bR, cR, wR] = await Promise.all([
+    const cattleSessIds = await sb.from('weigh_in_sessions').select('id').eq('species','cattle').then(({data}) => (data||[]).map(s => s.id));
+    const [bR, cR, wAll] = await Promise.all([
       sb.from('cattle_processing_batches').select('*').order('planned_process_date',{ascending:false}),
       sb.from('cattle').select('*'),
-      sb.from('weigh_ins').select('*'),
+      cattleSessIds.length === 0 ? Promise.resolve([]) : wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', cattleSessIds).range(from,to)),
     ]);
     if(bR.data) setBatches(bR.data);
     if(cR.data) setCattle(cR.data);
-    if(wR.data) setWeighIns(wR.data);
+    setWeighIns(wAll);
     setLoading(false);
   }
   useEffect(()=>{ loadAll(); }, []);
 
-  function lastWeight(tag) {
-    if(!tag) return null;
-    const sorted = [...weighIns].filter(w => w.tag === tag).sort((a,b)=>(b.entered_at||'').localeCompare(a.entered_at||''));
+  function cowTagSet(cow) {
+    // Includes current WCF tag + prior WCF tags (source='weigh_in' retags).
+    // Excludes purchase-farm tags (source='import') because those are the
+    // selling farm's numbers and can collide with other WCF cows' tags.
+    const set = new Set();
+    if(cow && cow.tag) set.add(cow.tag);
+    if(cow && Array.isArray(cow.old_tags)) {
+      for(const ot of cow.old_tags) {
+        if(!ot || !ot.tag) continue;
+        if(ot.source === 'import') continue;
+        set.add(ot.tag);
+      }
+    }
+    return set;
+  }
+  function lastWeight(cow) {
+    const tags = cowTagSet(cow);
+    if(tags.size === 0) return null;
+    const sorted = [...weighIns].filter(w => tags.has(w.tag)).sort((a,b)=>(b.entered_at||'').localeCompare(a.entered_at||''));
     return sorted[0] ? parseFloat(sorted[0].weight) : null;
   }
 
@@ -14772,6 +14947,27 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
       setShowForm(false); setEditId(null); setForm(null);
     });
   }
+  async function addCowToBatch(batch, cowId) {
+    const cow = cattle.find(c => c.id === cowId);
+    if(!cow) return;
+    await sb.from('cattle').update({processing_batch_id: batch.id, herd: 'processed'}).eq('id', cowId);
+    if(cow.herd !== 'processed') {
+      await sb.from('cattle_transfers').insert({
+        id: String(Date.now())+Math.random().toString(36).slice(2,6),
+        cattle_id: cowId,
+        from_herd: cow.herd,
+        to_herd: 'processed',
+        reason: 'processing_batch',
+        reference_id: batch.id,
+        team_member: authState && authState.name ? authState.name : null,
+      });
+    }
+    await loadAll();
+  }
+  async function removeCowFromBatch(cow) {
+    await sb.from('cattle').update({processing_batch_id: null}).eq('id', cow.id);
+    await loadAll();
+  }
 
   const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
   const lbl = {fontSize:11, color:'#6b7280', display:'block', marginBottom:3, fontWeight:500};
@@ -14796,7 +14992,7 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
         <div style={{display:'flex', flexDirection:'column', gap:10}}>
           {batches.map(b => {
             const linked = cattle.filter(c => c.processing_batch_id === b.id);
-            const totalLive = linked.reduce((s,c) => s + (lastWeight(c.tag)||0), 0);
+            const totalLive = linked.reduce((s,c) => s + (lastWeight(c)||0), 0);
             const yieldPct = totalLive > 0 && b.total_hanging_weight > 0 ? Math.round((b.total_hanging_weight/totalLive)*1000)/10 : null;
             return (
               <div key={b.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 18px'}}>
@@ -14814,11 +15010,28 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
                   <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Yield</div><div style={{fontWeight:600, color:yieldPct?'#065f46':'#9ca3af'}}>{yieldPct?yieldPct+'%':'\u2014'}</div></div>
                   <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Cost</div><div style={{fontWeight:600}}>{b.processing_cost?'$'+b.processing_cost.toLocaleString():'\u2014'}</div></div>
                 </div>
-                {linked.length > 0 && (
-                  <div style={{fontSize:11, color:'#6b7280'}}>
-                    Cows: {linked.map(c => '#'+(c.tag||'?')).join(', ')}
-                  </div>
-                )}
+                <div style={{fontSize:11, color:'#6b7280', marginTop:6}}>
+                  <div style={{fontWeight:600, marginBottom:4, color:'#374151'}}>{'Cows in batch ('+linked.length+')'}</div>
+                  {linked.length > 0 && (
+                    <div style={{display:'flex', flexWrap:'wrap', gap:4, marginBottom:6}}>
+                      {linked.map(c => (
+                        <span key={c.id} style={{background:'#fef3c7', border:'1px solid #fde68a', borderRadius:4, padding:'2px 4px 2px 8px', fontSize:11, color:'#92400e', fontWeight:600, display:'inline-flex', alignItems:'center', gap:4}}>
+                          {'#'+(c.tag||'?')}
+                          <button onClick={()=>removeCowFromBatch(c)} title="Remove from batch" style={{background:'none', border:'none', color:'#92400e', cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 2px', fontFamily:'inherit'}}>{'\u00d7'}</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(() => {
+                    const available = cattle.filter(c => c.herd === 'finishers' && !c.processing_batch_id).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0));
+                    return (
+                      <select value="" onChange={e => { if(e.target.value) addCowToBatch(b, e.target.value); e.target.value=''; }} style={{fontSize:11, padding:'4px 8px', borderRadius:5, border:'1px solid #d1d5db', fontFamily:'inherit', maxWidth:280}}>
+                        <option value="">{'+ Add cow from finishers ('+available.length+' available)'}</option>
+                        {available.map(c => <option key={c.id} value={c.id}>{'#'+c.tag+(c.breed?' \u00b7 '+c.breed:'')+(lastWeight(c)?' \u00b7 '+Math.round(lastWeight(c))+' lb':'')}</option>)}
+                      </select>
+                    );
+                  })()}
+                </div>
                 {b.notes && <div style={{marginTop:6, fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{b.notes}</div>}
               </div>
             );
@@ -15018,7 +15231,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
 
   async function loadAll() {
     setLoading(true);
-    const sR = await sb.from('weigh_in_sessions').select('*').eq('species', species).order('started_at',{ascending:false});
+    const sR = await sb.from('weigh_in_sessions').select('*').eq('species', species).order('date',{ascending:false}).order('started_at',{ascending:false});
     if(sR.data) {
       setSessions(sR.data);
       if(sR.data.length > 0) {
@@ -15258,17 +15471,16 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   const [statusFilter, setStatusFilter] = useState('all'); // all | draft | complete
 
   async function loadAll() {
-    const [sR, eR, cR] = await Promise.all([
-      sb.from('weigh_in_sessions').select('*').eq('species','cattle').order('started_at',{ascending:false}),
-      sb.from('weigh_ins').select('*').order('entered_at',{ascending:true}),
+    const sR = await sb.from('weigh_in_sessions').select('*').eq('species','cattle').order('date',{ascending:false}).order('started_at',{ascending:false});
+    const cattleSessIds = (sR.data||[]).map(s => s.id);
+    const [eAll, cR] = await Promise.all([
+      cattleSessIds.length === 0 ? Promise.resolve([]) : wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', cattleSessIds).order('entered_at',{ascending:true}).range(from,to)),
       sb.from('cattle').select('id, tag, herd, old_tags'),
     ]);
     if(sR.data) setSessions(sR.data);
-    if(eR.data) {
-      const m = {};
-      eR.data.forEach(e => { if(!m[e.session_id]) m[e.session_id] = []; m[e.session_id].push(e); });
-      setEntries(m);
-    }
+    const m = {};
+    eAll.forEach(e => { if(!m[e.session_id]) m[e.session_id] = []; m[e.session_id].push(e); });
+    setEntries(m);
     if(cR.data) setCattle(cR.data);
     setLoading(false);
   }
@@ -15351,7 +15563,6 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
             const isExpanded = expandedSession === s.id;
             const sEntries = entries[s.id] || [];
             const newTagCount = sEntries.filter(e => e.new_tag_flag).length;
-            const avgWeight = sEntries.length > 0 ? sEntries.reduce((sum,e)=>sum+(parseFloat(e.weight)||0),0) / sEntries.length : 0;
             return (
               <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
                 <div onClick={()=>setExpandedSession(isExpanded?null:s.id)} style={{padding:'10px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className="hoverable-tile">
@@ -15361,7 +15572,6 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
                   <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>{sEntries.length} {sEntries.length===1?'entry':'entries'}</span>
-                  {avgWeight > 0 && <span style={{fontSize:11, color:'#065f46', fontWeight:600}}>avg {Math.round(avgWeight)} lb</span>}
                   {newTagCount > 0 && <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>{newTagCount + ' new tags'}</span>}
                 </div>
                 {isExpanded && (
