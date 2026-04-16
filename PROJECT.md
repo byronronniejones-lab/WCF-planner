@@ -768,7 +768,7 @@ No commit/deploy without explicit session approval. Documented at the top of the
 
 ## Cattle module design locked
 
-Created `CATTLE_DESIGN.md` at repo root — full design doc for the cattle module across all 3 phases. Approved by Ronnie for implementation. Key decisions captured there:
+Created `CATTLE_DESIGN.md` (subsequently deleted 2026-04-16; load-bearing decisions migrated to `DECISIONS.md` § 2026-04-15 — Cattle Module). Was the planning doc that drove the build. Key decisions captured there at the time:
 
 - 4 active herds (Mommas, Backgrounders, Finishers, Bulls) + 3 outcomes (Processed, Deceased, Sold). Hardcoded for launch.
 - Feed model: no standalone creep form. Ingredients (alfalfa pellets, citrus pellets, sugar, colostrum) tracked as regular feed entries. Mommas daily reports get a per-line `is_creep` toggle to exclude those lines from nutrition math while still counting for cost.
@@ -817,7 +817,7 @@ Bug #8 (nursing sow calc using cycle weaningEnd instead of per-sow) was NOT fixe
 10. ✅ **Home Dashboard** — 4th Cattle nav card. Grid is now 2×2 instead of 3×1.
 
 ### Phase 1 — COMPLETE
-All steps from CATTLE_DESIGN.md §9 are now built. Calving record add/edit form lands inline in the Mommas cow detail (`+ Add Calving` button).
+All planned Phase 1 steps are built. Calving record add/edit form lands inline in the Mommas cow detail (`+ Add Calving` button).
 
 ### Phase 2 — COMPLETE (for cattle, pig, broiler)
 - ✅ `WeighInsWebform` (public, route `#weighins`) — species picker → setup screen with draft session resume → entry screen with autosave to `weigh_in_sessions` + `weigh_ins`
@@ -981,7 +981,7 @@ Hub now has 7 cards: 2 quick-action cards at top (🌾 Add Feed, ⚖️ Weigh-In
 - **Podio import** — 469 cattle, 1,930 weigh-ins, 1,525 daily reports. Pending fresh export from Ronnie after the webforms have been live in the field for ≥1 day (so daily entries don't go stale). Will need a one-shot import script. Decide format (CSV / JSON) when Ronnie is ready.
 - **Send-to-trip wiring on pig weigh-ins** — pigs aren't tagged so a Trip view that pulls recent session entries by checkbox is the right UX. Deferred.
 - **Sheep module** — entire program. Wait until cattle is stable in production for ≥2 weeks before starting. Will reuse `cattle_feed_inputs` / `cattle_nutrition_targets` model with a sheep-scoped `herd_scope` array (the seed feeds already have `herd_scope`).
-- **Cattle Home Dashboard rolling-window nutrition panel** — currently shows totals only. Adding the 30/90/120-day comparison vs target (per CATTLE_DESIGN.md §6.2) is a stretch goal.
+- **Cattle Home Dashboard rolling-window nutrition panel** — currently shows totals only. Adding the 30/90/120-day comparison vs target is a stretch goal.
 - **Weather API integration** — multi-program scope (cattle pasture, pig heat stress, broiler brood heat). Q7 from PROJECT.md §12. No provider chosen yet. Defer until Ronnie picks one.
 - **Cut pricing spreadsheet upload** — for cattle first, then extend to broilers/pigs. Defer.
 - **DNA test PDF parser** — admin uploads PDF, system extracts data. Manual entry is the workaround for v1.
@@ -1001,7 +1001,8 @@ Hub now has 7 cards: 2 quick-action cards at top (🌾 Add Feed, ⚖️ Weigh-In
 |---|---|
 | `index.html` | +3,200 lines (bug fixes + entire cattle module + weigh-ins) |
 | `PROJECT.md` | +200 lines (SOP + multiple session updates + this wrap-up) |
-| `CATTLE_DESIGN.md` | New file (~600 lines), then progressively updated |
+| `CATTLE_DESIGN.md` | New file (~600 lines), progressively updated, then **deleted on 2026-04-16** as redundant once code shipped (load-bearing decisions moved to `DECISIONS.md`) |
+| `DECISIONS.md` | Existing file extended with `## 2026-04-15 — Cattle Module` entry capturing the 6 load-bearing design decisions + their rejected alternatives |
 | `supabase-migrations/001_cattle_module.sql` | New file — 11 tables + RLS + seed data |
 | `supabase-migrations/002_cattle_comments.sql` | New file — 1 table + RLS, NOT YET APPLIED |
 | `.claude/projects/.../memory/feedback_deployment_sop.md` | New memory file — encodes the no-commit-without-approval rule |

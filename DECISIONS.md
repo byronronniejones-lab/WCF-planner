@@ -123,3 +123,76 @@ DROP TABLE IF EXISTS feed_edit_log;  -- and dropped, doesn't exist
 Items 1-5 complete. Public Add Feed webform submits real rows to the dailys tables. Those rows show up badged in the Reports lists. Filter chip works. Edit modal hides irrelevant fields when editing an Add Feed row. Existing daily report functionality is unchanged. All existing feed totals include Add Feed rows automatically. Admin panel update (item 7) tracked separately. In-planner Add Feed button (item 6) tracked as nice-to-have.
 
 ---
+
+## 2026-04-15 — Cattle Module
+
+### Status
+**Designed, built, deployed.** Live on `wcfplanner.com` as of commit `45756a5`. Phase 1 + Phase 2 + Phase 3-minus-cost-rollup. All 11 cattle tables + 2 storage buckets in production Supabase. Migration `002_cattle_comments.sql` queued for application before comments features fully work.
+
+This entry captures the **load-bearing design decisions** with their rationale and rejected alternatives. The full as-built state lives in `PROJECT.md §14`. The data model is in `supabase-migrations/001_cattle_module.sql` + `002_cattle_comments.sql`. The code is in `index.html`.
+
+### Decision 1: Directory tab merged into Herds (no separate Directory)
+
+**Decided:** The cattle program has 6 sub-tabs (Dashboard / Herds / Dailys / Weigh-Ins / Breeding / Batches) — no Directory. Herds combines per-herd-tile operational view AND flat searchable directory view.
+
+**How it works:** Default = per-herd tiles for the 4 active herds, outcome herds (Processed / Deceased / Sold) collapsed at bottom. When the user types in the search box or picks a non-active status filter, the view switches to a flat sortable list across all matching cattle. Add / Edit / Transfer / Delete actions work in both modes.
+
+**Why:** A separate Directory tab duplicates UI. The unique value of "Directory" was (1) cross-herd search, (2) flat sortable table, (3) outcome animals as first-class records — all of which are achievable with a search box + status filter on top of Herds. One tab, less navigation, no confusion about "which tab do I edit a cow on."
+
+**Rejected: separate Directory tab** — would have added a 7th sub-tab with overlapping functionality. Users would have had to context-switch between "Herds for daily ops" and "Directory for lookups." Killed before any code was written.
+
+### Decision 2: `is_creep` as a per-line flag on `cattle_dailys.feeds` (not a feed-input attribute, not a separate compound feed)
+
+**Decided:** When a Mommas daily report includes creep-feed ingredients (alfalfa pellets, citrus pellets, sugar, colostrum supplement), the user can flag each feed line with an `is_creep` boolean. Creep lines are excluded from Mommas nutrition math (since the calves eat it, not the mommas) but included in cost totals. Stored inline in the `feeds` jsonb on each `cattle_dailys` row.
+
+**Why:** Creep feed ingredients are NOT unique to creep — alfalfa pellets are also eaten by Bulls, citrus pellets are also eaten by Backgrounders/Finishers. So we can't tag the FEED itself as "exclude from nutrition." We have to tag the USAGE.
+
+**Rejected #1: separate `cattle_creep_batches` table + standalone "Mix Creep Batch" form.** Original design had a compound-feed model where creep was its own feed entry made by mixing ingredients in batches. Rejected because Ronnie said "we don't need a creep feed standalone form, we just track ingredients and cost like everything else." Simpler = win.
+
+**Rejected #2: `exclude_from_nutrition` boolean on `cattle_feed_inputs`.** Would mark "alfalfa pellets" as always-excluded — but then you can't feed alfalfa pellets directly to bulls without it counting. Same ingredient, different usage. Per-line flag is the only model that works.
+
+**Rejected #3: count creep in Mommas nutrition (accept ~5% error).** Considered briefly as the "simpler, just absorb the inaccuracy" option. Ronnie said the toggle is the right call.
+
+### Decision 3: Comments unified into one `cattle_comments` table with a `source` discriminator
+
+**Decided:** All per-cow observations live in a single `cattle_comments` table. The `source` column distinguishes origin (`manual` / `weigh_in` / `daily_report` / `calving`). The `reference_id` links back to the originating row when applicable. Cow profile shows a unified timeline.
+
+**Why:** Comments naturally come from multiple sources — a weigh-in note, a calving observation, an ad-hoc note from the field. Unifying them into one table means the cow profile shows a single chronological timeline instead of stitching together fragments from `weigh_ins.note` + `cattle_calving_records.notes` + `cattle.notes`.
+
+**Rejected: comment fields scattered across source tables.** Would have required cow-profile views to query 4+ tables and merge client-side. Too much friction. Also harder to add new sources later (e.g., daily reports about a specific cow).
+
+**Rejected: cow.notes as the single text field.** Ronnie explicitly wanted a date-stamped timeline, not a single editable blob.
+
+### Decision 4: Snapshot nutrition values onto `cattle_dailys.feeds` at submit time (not by-reference lookup)
+
+**Decided:** Each feed line in a `cattle_dailys` row stores `nutrition_snapshot: {moisture_pct, nfc_pct, protein_pct}` captured at submit time from the feed's current values. Editing the parent feed in admin does NOT rewrite historical reports.
+
+**Why:** If we always looked up nutrition by `feed_input_id` at display time, then uploading a new test PDF for "Rye Baleage" would silently revise the calculated nutrition of every past daily report. That's misleading — the cow ate the hay that was in the field at the time, not the hay's current spec.
+
+**Rejected: by-reference lookup.** Considered as the "one source of truth" model. Ronnie picked option (a) snapshot at submit during the design Q&A. Locked into the data model from day one.
+
+### Decision 5: Cattle uses dedicated Supabase tables (not `app_store` JSONB)
+
+**Decided:** All cattle data lives in dedicated tables (`cattle_dailys`, `cattle`, `cattle_feed_inputs`, etc.). The `app_store` table is used only for the legacy poultry/pig blobs (`ppp-v4`, `ppp-feeders-v1`, etc.).
+
+**Why:** This matches the pattern used by `pig_dailys`, `layer_dailys`, `egg_dailys`, `poultry_dailys`, `layer_batches`, `layer_housings`. Dedicated tables have RLS policies, indexes, foreign keys, and SQL queryability. JSONB blobs are fine for a small handful of records but don't scale to 469+ cattle with weigh-ins and dailys.
+
+**No alternative seriously considered** — `app_store` was clearly not the right home for cattle.
+
+### Decision 6: Mark Inactive replaced by Delete Permanently for feed entries
+
+**Decided:** The Livestock Feed Inputs panel's edit modal has a "Delete Feed" button that permanently deletes the feed row + cascades to its tests + cleans up PDFs from storage. Historical `cattle_dailys` snapshots are preserved (nutrition is stored by-value in JSONB, not by-reference).
+
+**Why:** Ronnie explicitly asked for "I should be able to delete any feed tile." The "Mark Inactive" pattern was leftover from an earlier draft.
+
+**Safety:** The cascade is intentional — `cattle_feed_tests.feed_input_id` has `ON DELETE CASCADE`. PDFs in storage are removed by app code (NOT cascading from Postgres). Historical reports retain their snapshot values.
+
+### Open / deferred from cattle module
+
+- **Per-head cost rollup** — analytical metric. Would aggregate feed cost (from `cattle_dailys.feeds[].lbs_as_fed × landed_per_lb`) + processing cost (from `cattle_processing_batches`) per cow with attribution rules. Not blocking ops. Defer until Ronnie asks.
+- **Podio import** — 469 cattle, 1,930 weigh-ins, 1,525 daily reports. Pending fresh export from Ronnie after webforms have been live in the field for ≥1 day. Format TBD (CSV / JSON).
+- **Send-to-trip wiring on pig weigh-ins** — pigs aren't tagged so a future Trip view can pull recent session entries by checkbox. Not built.
+- **DNA test PDF parser** — manual entry is the workaround for v1.
+- **Weather API** — multi-program scope, no provider chosen yet.
+
+---
