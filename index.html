@@ -14690,10 +14690,42 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [editingId, setEditingId] = useState(null);
-  const [editVal, setEditVal] = useState('');
+  const [broilerBatchRecs, setBroilerBatchRecs] = useState([]);
+  // Per-expanded-tile grid editing state. Only one tile is expanded at a time.
+  const [gridLabels, setGridLabels] = useState([]);   // ['2','3'] for broiler etc.
+  const [gridInputs, setGridInputs] = useState([]);   // weight strings, length = labels*15
+  const [gridUnlocked, setGridUnlocked] = useState(false); // false locks fields on complete
+  const [gridNote, setGridNote] = useState('');
+  const [savingGrid, setSavingGrid] = useState(false);
+  const [gridErr, setGridErr] = useState('');
 
   const speciesLabel = species === 'broiler' ? 'Broiler' : 'Pig';
+
+  // Derive column labels for a session: broiler → split batch.schooner on '&'; pig → ['1','2'].
+  function deriveLabels(s) {
+    if(!s) return [];
+    if(s.species === 'broiler') {
+      const rec = broilerBatchRecs.find(b => (b.name||'') === s.batch_id);
+      const raw = rec && rec.schooner ? String(rec.schooner) : '';
+      const parts = raw.split('&').map(x => x.trim()).filter(Boolean);
+      return parts.length > 0 ? parts : ['(no schooner)'];
+    }
+    if(s.species === 'pig') return ['1','2'];
+    return [];
+  }
+  // Distribute a session's saved entries into a weights grid (mirrors the public webform).
+  function hydrateGrid(s, sEntries, labels) {
+    const grid = Array(labels.length * 15).fill('');
+    if(s.species === 'broiler') {
+      labels.forEach(function(label, colIdx){
+        const colE = sEntries.filter(function(e){ return (e.tag||'') === label; });
+        colE.slice(0, 15).forEach(function(e, i){ grid[colIdx*15 + i] = String(e.weight); });
+      });
+    } else {
+      sEntries.slice(0, labels.length * 15).forEach(function(e, i){ grid[i] = String(e.weight); });
+    }
+    return grid;
+  }
 
   async function loadAll() {
     setLoading(true);
@@ -14715,12 +14747,41 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     setLoading(false);
   }
   useEffect(() => { loadAll(); }, [species]);
+  // Broilers: load app_store ppp-v4 once so we can resolve schooner per batch.
+  useEffect(() => {
+    if(species !== 'broiler') return;
+    sb.from('app_store').select('data').eq('key','ppp-v4').maybeSingle().then(({data}) => {
+      if(data && Array.isArray(data.data)) setBroilerBatchRecs(data.data);
+    });
+  }, [species]);
+  // When the user expands a tile, derive labels + hydrate the grid + reset edit lock.
+  // Drafts are auto-unlocked; complete sessions stay locked until the user clicks Edit.
+  useEffect(() => {
+    if(!expandedSession) {
+      setGridLabels([]); setGridInputs([]); setGridUnlocked(false); setGridNote(''); setGridErr('');
+      return;
+    }
+    const s = sessions.find(x => x.id === expandedSession);
+    if(!s) return;
+    const labels = deriveLabels(s);
+    const sEntries = entries[s.id] || [];
+    setGridLabels(labels);
+    setGridInputs(hydrateGrid(s, sEntries, labels));
+    setGridUnlocked(s.status === 'draft');
+    setGridNote(s.notes || '');
+    setGridErr('');
+  }, [expandedSession, sessions, entries, broilerBatchRecs]);
 
   async function reopenSession(s) {
     await sb.from('weigh_in_sessions').update({status:'draft', completed_at:null}).eq('id', s.id);
     await loadAll();
   }
   async function completeFromAdmin(s) {
+    // If this session is the currently-expanded tile, flush any pending grid
+    // edits to DB first so what's on screen is what gets recorded as complete.
+    if(expandedSession === s.id && (s.species === 'broiler' || s.species === 'pig')) {
+      await saveAdminGrid(s);
+    }
     await sb.from('weigh_in_sessions').update({status:'complete', completed_at: new Date().toISOString()}).eq('id', s.id);
     if(species === 'broiler') {
       const eR = await sb.from('weigh_ins').select('*').eq('session_id', s.id);
@@ -14735,31 +14796,47 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       await loadAll();
     });
   }
-  async function recomputeBatchAvgFor(sessionId) {
-    if(species !== 'broiler') return;
-    const sRow = sessions.find(x => x.id === sessionId);
-    if(!sRow) return;
-    const eR = await sb.from('weigh_ins').select('*').eq('session_id', sessionId);
-    await writeBroilerBatchAvg(sb, sRow, (eR && eR.data) || []);
-  }
-  async function deleteEntry(e) {
-    if(!window._wcfConfirmDelete) return;
-    window._wcfConfirmDelete('Delete this weigh-in entry?', async () => {
-      await sb.from('weigh_ins').delete().eq('id', e.id);
-      await recomputeBatchAvgFor(e.session_id);
-      await loadAll();
-    });
-  }
-  function startEdit(e) {
-    setEditingId(e.id);
-    setEditVal(String(e.weight));
-  }
-  async function saveEdit(e) {
-    const v = parseFloat(editVal);
-    if(isNaN(v) || v <= 0) { setEditingId(null); return; }
-    await sb.from('weigh_ins').update({weight: v}).eq('id', e.id);
-    await recomputeBatchAvgFor(e.session_id);
-    setEditingId(null);
+  // Admin save: same wipe+rewrite semantics as the public webform's saveBatch.
+  // Reads the grid state for the expanded tile and replaces the session's
+  // weigh_ins rows. Keeps status as-is — Reopen / Complete are separate actions.
+  async function saveAdminGrid(s) {
+    if(!s) return;
+    const rows = [];
+    for(let i=0;i<gridInputs.length;i++){
+      const w = gridInputs[i];
+      if(w === '' || isNaN(parseFloat(w)) || parseFloat(w) <= 0) continue;
+      const colIdx = Math.floor(i / 15);
+      const tag = (s.species === 'broiler' && gridLabels[colIdx]) ? gridLabels[colIdx] : null;
+      rows.push({weight: parseFloat(w), tag: tag});
+    }
+    setSavingGrid(true); setGridErr('');
+    const del = await sb.from('weigh_ins').delete().eq('session_id', s.id);
+    if(del.error) { setSavingGrid(false); setGridErr('Save failed (clear): '+del.error.message); return; }
+    let recs = [];
+    if(rows.length > 0) {
+      const t0 = Date.now();
+      recs = rows.map(function(r, i){
+        return {
+          id: String(t0+i)+Math.random().toString(36).slice(2,6),
+          session_id: s.id,
+          tag: r.tag,
+          weight: r.weight,
+          note: null,
+          new_tag_flag: false,
+        };
+      });
+      const ins = await sb.from('weigh_ins').insert(recs);
+      if(ins.error) { setSavingGrid(false); setGridErr('Save failed (insert): '+ins.error.message); return; }
+    }
+    if(gridNote !== (s.notes || '')) {
+      await sb.from('weigh_in_sessions').update({notes: gridNote || null}).eq('id', s.id);
+    }
+    if(s.species === 'broiler') {
+      await writeBroilerBatchAvg(sb, s, recs);
+    }
+    setSavingGrid(false);
+    // Re-lock complete sessions after save so the field stays read-only by default.
+    if(s.status === 'complete') setGridUnlocked(false);
     await loadAll();
   }
 
@@ -14798,21 +14875,17 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
             const isExpanded = expandedSession === s.id;
             const sEntries = entries[s.id] || [];
             const avgWeight = sEntries.length > 0 ? sEntries.reduce((sum,e)=>sum+(parseFloat(e.weight)||0),0) / sEntries.length : 0;
-            // Group broiler entries by schooner (tag field). Pigs: single bucket.
-            const grouped = {};
-            sEntries.forEach(e => {
-              const k = species==='broiler' ? (e.tag||'(no schooner)') : 'all';
-              if(!grouped[k]) grouped[k] = [];
-              grouped[k].push(e);
-            });
-            const groupKeys = Object.keys(grouped).sort();
+            const isComplete = s.status === 'complete';
+            const fieldsLocked = isComplete && !gridUnlocked;
+            const inpEditableStyle = {fontFamily:'inherit', fontSize:13, padding:'6px 8px', border:'1px solid #d1d5db', borderRadius:6, width:'100%', boxSizing:'border-box', background:'white', color:'#111827', outline:'none'};
+            const inpLockedStyle = {...inpEditableStyle, background:'#f3f4f6', color:'#374151', cursor:'not-allowed'};
             return (
               <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
                 <div onClick={()=>setExpandedSession(isExpanded?null:s.id)} style={{padding:'10px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className="hoverable-tile">
                   <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
                   <span style={{fontSize:13, fontWeight:700, color:'#111827', minWidth:120}}>{s.batch_id||'Unknown batch'}</span>
                   {species==='broiler' && s.broiler_week && <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:'#fef3c7', color:'#92400e'}}>{'WK '+s.broiler_week}</span>}
-                  <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:s.status==='complete'?'#d1fae5':'#fef3c7', color:s.status==='complete'?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
+                  <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:isComplete?'#d1fae5':'#fef3c7', color:isComplete?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
                   <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>{sEntries.length} {sEntries.length===1?'entry':'entries'}</span>
@@ -14820,48 +14893,57 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                   {species==='broiler' && avgWeight > 0 && s.broiler_week && <span style={{fontSize:10, color:'#6b7280', fontStyle:'italic'}}>{'\u2192 batch wk'+s.broiler_week+'Lbs'}</span>}
                 </div>
                 {isExpanded && (
-                  <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
+                  <div style={{borderTop:'1px solid #f3f4f6', padding:'12px 16px', background:'#fafafa'}}>
                     <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap'}}>
-                      {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Weigh-In</button>}
-                      {s.status === 'draft' && <button onClick={()=>completeFromAdmin(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #047857', background:'#047857', color:'white', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2713 Complete Weigh-In'}</button>}
-                      {s.status === 'draft' && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Add More in Webform</button>}
+                      {isComplete && !gridUnlocked && <button onClick={()=>setGridUnlocked(true)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u270e Edit Weights'}</button>}
+                      {isComplete && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Weigh-In</button>}
+                      {!isComplete && <button onClick={()=>completeFromAdmin(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #047857', background:'#047857', color:'white', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2713 Complete Weigh-In'}</button>}
+                      {!isComplete && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Add More in Webform</button>}
                       <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Weigh-In</button>
                     </div>
-                    {s.notes && <div style={{fontSize:12, color:'#92400e', fontStyle:'italic', padding:'6px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, marginBottom:10}}>Note: {s.notes}</div>}
-                    {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No entries in this session.</div>}
-                    {groupKeys.map(gk => {
-                      const gEntries = grouped[gk];
-                      const gAvg = gEntries.reduce((s,e)=>s+(parseFloat(e.weight)||0),0) / gEntries.length;
-                      return (
-                        <div key={gk} style={{marginBottom:10}}>
-                          {species === 'broiler' && (
-                            <div style={{fontSize:11, fontWeight:700, color:'#374151', marginBottom:4, padding:'3px 8px', background:'#eef2ff', borderRadius:5, display:'inline-block'}}>{'Schooner '+gk}{' '}<span style={{color:'#6b7280', fontWeight:500}}>{'\u00b7 '+gEntries.length+' '+(gEntries.length===1?'entry':'entries')+' \u00b7 avg '+(Math.round(gAvg*100)/100)+' lb'}</span></div>
-                          )}
-                          {gEntries.map(e => {
-                            const isEditing = editingId === e.id;
+
+                    {gridLabels.length > 0 && (
+                      <React.Fragment>
+                        <div style={{display:'grid', gridTemplateColumns:'repeat('+gridLabels.length+', 1fr)', gap:8, marginBottom:10}}>
+                          {gridLabels.map(function(label, col){
                             return (
-                              <div key={e.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:12, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                                {isEditing ? (
-                                  <React.Fragment>
-                                    <input type="number" min="0" step="0.1" value={editVal} onChange={ev=>setEditVal(ev.target.value)} onKeyDown={ev=>{if(ev.key==='Enter') saveEdit(e); if(ev.key==='Escape') setEditingId(null);}} style={{fontSize:12, padding:'3px 6px', border:'1px solid #1e40af', borderRadius:4, fontFamily:'inherit', width:80}} autoFocus/>
-                                    <button onClick={()=>saveEdit(e)} style={{padding:'3px 8px', borderRadius:4, border:'1px solid #1e40af', background:'#1e40af', color:'white', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Save</button>
-                                    <button onClick={()=>setEditingId(null)} style={{padding:'3px 8px', borderRadius:4, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
-                                  </React.Fragment>
-                                ) : (
-                                  <React.Fragment>
-                                    <span style={{fontWeight:600, color:'#1e40af', minWidth:60}}>{e.weight} lb</span>
-                                    <button onClick={()=>startEdit(e)} style={{padding:'2px 8px', borderRadius:4, border:'1px solid #d1d5db', background:'white', color:'#374151', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
-                                  </React.Fragment>
-                                )}
-                                {e.note && <span style={{fontSize:11, color:'#92400e', fontStyle:'italic', flex:1}}>{e.note}</span>}
-                                <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
-                                <button onClick={()=>deleteEntry(e)} style={{padding:'2px 8px', borderRadius:4, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete</button>
+                              <div key={col}>
+                                <div style={{fontSize:11, fontWeight:700, color:'#374151', textAlign:'center', padding:'4px 0', marginBottom:4, background:'#eef2ff', borderRadius:6}}>{species==='broiler'?'Schooner '+label:'Col '+label}</div>
+                                {Array.from({length:15}).map(function(_, row){
+                                  var idx = col*15 + row;
+                                  return (
+                                    <div key={row} style={{display:'flex', alignItems:'center', gap:4, marginBottom:3}}>
+                                      <span style={{fontSize:10, color:'#9ca3af', minWidth:18, textAlign:'right', fontVariantNumeric:'tabular-nums'}}>{row+1}</span>
+                                      <input
+                                        type="number" min="0" step="0.1"
+                                        value={gridInputs[idx]||''}
+                                        disabled={fieldsLocked}
+                                        readOnly={fieldsLocked}
+                                        onChange={function(e){
+                                          var v = e.target.value;
+                                          setGridInputs(function(prev){ var next = prev.slice(); next[idx] = v; return next; });
+                                        }}
+                                        placeholder="0"
+                                        style={fieldsLocked?inpLockedStyle:inpEditableStyle}
+                                      />
+                                    </div>
+                                  );
+                                })}
                               </div>
                             );
                           })}
                         </div>
-                      );
-                    })}
+                        <div style={{marginBottom:10}}>
+                          <label style={{display:'block', fontSize:12, color:'#374151', marginBottom:4, fontWeight:600}}>Session note</label>
+                          <textarea value={gridNote} disabled={fieldsLocked} readOnly={fieldsLocked} onChange={ev=>setGridNote(ev.target.value)} rows={2} placeholder="Optional" style={{...(fieldsLocked?inpLockedStyle:inpEditableStyle), resize:'vertical'}}/>
+                        </div>
+                        {gridErr && <div style={{color:'#b91c1c', fontSize:12, marginBottom:8, padding:'6px 10px', background:'#fef2f2', borderRadius:6}}>{gridErr}</div>}
+                        {!fieldsLocked && (
+                          <button onClick={()=>saveAdminGrid(s)} disabled={savingGrid} style={{padding:'8px 16px', borderRadius:7, border:'none', background:savingGrid?'#9ca3af':'#1e40af', color:'white', fontSize:12, fontWeight:600, cursor:savingGrid?'not-allowed':'pointer', fontFamily:'inherit'}}>{savingGrid?'Saving\u2026':'Save Weights'}</button>
+                        )}
+                        {isComplete && !gridUnlocked && <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>Click <strong>{'\u270e Edit Weights'}</strong> above to make changes.</div>}
+                      </React.Fragment>
+                    )}
                   </div>
                 )}
               </div>
