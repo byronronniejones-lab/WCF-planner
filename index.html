@@ -1816,10 +1816,13 @@ const WeighInsWebform = ({sb}) => {
   // Pig / Broiler
   const [pigBatches, setPigBatches] = React.useState([]);
   const [broilerBatches, setBroilerBatches] = React.useState([]);
+  const [broilerBatchRecs, setBroilerBatchRecs] = React.useState([]); // full ppp-v4 records (for schooner lookup)
   const [pigBatchId, setPigBatchId] = React.useState('');
   const [broilerBatchId, setBroilerBatchId] = React.useState('');
   const [broilerBatchLabel, setBroilerBatchLabel] = React.useState('');
   const [broilerWeek, setBroilerWeek] = React.useState(4);
+  // Per-column labels (broiler: schooner names; pig: ['1','2']). Computed at session-start.
+  const [columnLabels, setColumnLabels] = React.useState(['1','2']);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
 
@@ -1854,6 +1857,10 @@ const WeighInsWebform = ({sb}) => {
       sb.from('webform_config').select('data').eq('key','broiler_groups').maybeSingle().then(({data}) => {
         if(data && Array.isArray(data.data)) setBroilerBatches(data.data);
       });
+      // Load full broiler batch records so we can resolve the schooner field at session-start.
+      sb.from('app_store').select('data').eq('key','ppp-v4').maybeSingle().then(({data}) => {
+        if(data && Array.isArray(data.data)) setBroilerBatchRecs(data.data);
+      });
     }
     // Look for existing draft sessions in the last 7 days
     const cutoff = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
@@ -1870,6 +1877,18 @@ const WeighInsWebform = ({sb}) => {
     });
   }, [session]);
 
+  // Resolve the column labels for a given session: broiler → split batch.schooner on "&";
+  // pig → fixed ['1','2']; cattle → ignored downstream.
+  function deriveColumnLabels(sp, batchId) {
+    if(sp === 'broiler') {
+      const rec = broilerBatchRecs.find(b => (b.name||'') === batchId);
+      const raw = rec && rec.schooner ? String(rec.schooner) : '';
+      const parts = raw.split('&').map(s => s.trim()).filter(Boolean);
+      return parts.length > 0 ? parts : ['(no schooner)'];
+    }
+    if(sp === 'pig') return ['1','2'];
+    return [];
+  }
   async function startNewSession(extra) {
     if(!teamMember) { setErr('Please pick a team member.'); return; }
     setErr(''); setBusy(true);
@@ -1882,6 +1901,12 @@ const WeighInsWebform = ({sb}) => {
     setBusy(false);
     if(error) { setErr('Could not start session: '+error.message); return; }
     if(teamMember) localStorage.setItem('wcf_team', teamMember);
+    if(species === 'broiler' || species === 'pig') {
+      const labels = deriveColumnLabels(species, extra && extra.batch_id);
+      const finalLabels = labels.length > 0 ? labels : ['1','2'];
+      setColumnLabels(finalLabels);
+      setWeightInputs(Array(finalLabels.length * 15).fill(''));
+    }
     setSession(rec);
     setEntries([]);
     setStage('session');
@@ -1890,6 +1915,12 @@ const WeighInsWebform = ({sb}) => {
     setSession(s);
     if(s.team_member) setTeamMember(s.team_member);
     if(s.notes) setNoteInput(s.notes);
+    if(s.species === 'broiler' || s.species === 'pig') {
+      const labels = deriveColumnLabels(s.species, s.batch_id);
+      const finalLabels = labels.length > 0 ? labels : ['1','2'];
+      setColumnLabels(finalLabels);
+      setWeightInputs(Array(finalLabels.length * 15).fill(''));
+    }
     setStage('session');
   }
   async function completeSession() {
@@ -1944,24 +1975,29 @@ const WeighInsWebform = ({sb}) => {
     setTagInput(''); setWeightInput(''); setNoteInput(''); setShowNewTag(false);
     setBusy(false);
   }
-  // Pig/broiler: batch-save all non-empty weights from the 30-slot grid,
+  // Pig/broiler: batch-save all non-empty weights from the dynamic grid,
   // and persist the single session-level note onto weigh_in_sessions.notes.
+  // For broilers, each row's `tag` carries the schooner name (column it came from);
+  // for pigs, tag stays null (columns have no schooner meaning).
   async function saveBatch() {
     if(!session) return;
     var rows = [];
     for(var i=0;i<weightInputs.length;i++){
       var w = weightInputs[i];
-      if(w !== '' && !isNaN(parseFloat(w)) && parseFloat(w) > 0) rows.push(parseFloat(w));
+      if(w === '' || isNaN(parseFloat(w)) || parseFloat(w) <= 0) continue;
+      var colIdx = Math.floor(i / 15);
+      var schooner = (species === 'broiler' && columnLabels[colIdx]) ? columnLabels[colIdx] : null;
+      rows.push({weight: parseFloat(w), schooner: schooner});
     }
     if(rows.length === 0) { setErr('Enter at least one weight.'); return; }
     setErr(''); setBusy(true);
     var t0 = Date.now();
-    var recs = rows.map(function(w, i){
+    var recs = rows.map(function(r, i){
       return {
         id: String(t0+i)+Math.random().toString(36).slice(2,6),
         session_id: session.id,
-        tag: null,
-        weight: w,
+        tag: r.schooner,
+        weight: r.weight,
         note: null,
         new_tag_flag: false,
       };
@@ -1972,7 +2008,7 @@ const WeighInsWebform = ({sb}) => {
       await sb.from('weigh_in_sessions').update({notes: noteInput.trim()}).eq('id', session.id);
     }
     setEntries(function(prev){ return prev.concat(recs); });
-    setWeightInputs(Array(30).fill(''));
+    setWeightInputs(Array(weightInputs.length).fill(''));
     setBusy(false);
   }
 
@@ -2199,25 +2235,33 @@ const WeighInsWebform = ({sb}) => {
 
         {(species === 'pig' || species === 'broiler') && (
           <div style={cardS}>
-            <label style={lblS}>{species==='broiler'?'Bird':'Pig'} weights (lbs) <span style={{fontSize:10, color:'#9ca3af'}}>— fill any of the 30 slots, blanks are skipped</span></label>
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:12}}>
-              {weightInputs.map((w, i) => (
-                <div key={i} style={{display:'flex', alignItems:'center', gap:6}}>
-                  <span style={{fontSize:11, color:'#9ca3af', minWidth:22, textAlign:'right', fontVariantNumeric:'tabular-nums'}}>{i+1}</span>
-                  <input
-                    type="number" min="0" step="0.1"
-                    value={w}
-                    onChange={e=>{
-                      var v = e.target.value;
-                      setWeightInputs(function(prev){
-                        var next = prev.slice();
-                        next[i] = v;
-                        return next;
-                      });
-                    }}
-                    placeholder="0"
-                    style={{...inpS, padding:'8px 10px', fontSize:13}}
-                  />
+            <label style={lblS}>{species==='broiler'?'Bird':'Pig'} weights (lbs) <span style={{fontSize:10, color:'#9ca3af'}}>— blanks are skipped</span></label>
+            <div style={{display:'grid', gridTemplateColumns:'repeat('+columnLabels.length+', 1fr)', gap:8, marginBottom:12}}>
+              {columnLabels.map((label, col) => (
+                <div key={col}>
+                  <div style={{fontSize:11, fontWeight:700, color:'#374151', textAlign:'center', padding:'4px 0', marginBottom:4, background:'#eef2ff', borderRadius:6}}>{species==='broiler'?'Schooner '+label:'Col '+label}</div>
+                  {Array.from({length:15}).map((_, row) => {
+                    var idx = col*15 + row;
+                    return (
+                      <div key={row} style={{display:'flex', alignItems:'center', gap:4, marginBottom:3}}>
+                        <span style={{fontSize:10, color:'#9ca3af', minWidth:18, textAlign:'right', fontVariantNumeric:'tabular-nums'}}>{row+1}</span>
+                        <input
+                          type="number" min="0" step="0.1"
+                          value={weightInputs[idx]||''}
+                          onChange={e=>{
+                            var v = e.target.value;
+                            setWeightInputs(function(prev){
+                              var next = prev.slice();
+                              next[idx] = v;
+                              return next;
+                            });
+                          }}
+                          placeholder="0"
+                          style={{...inpS, padding:'6px 8px', fontSize:13}}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -4874,8 +4918,8 @@ function App(){
 
   // ── HEADER ──
   const Header=()=>{
-    const poultryViews = ['broilerHome','timeline','list','feed','broilerdailys'];
-    const pigViews     = ['pigsHome','breeding','farrowing','sows','pigbatches','pigs','pigdailys'];
+    const poultryViews = ['broilerHome','timeline','list','feed','broilerdailys','broilerweighins'];
+    const pigViews     = ['pigsHome','breeding','farrowing','sows','pigbatches','pigs','pigdailys','pigweighins'];
     const cattleViews  = ['cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches'];
     const inPoultry    = poultryViews.includes(view) || showForm;
     const inPigs       = pigViews.includes(view) || showBreedForm || showFarrowForm || showDailyForm;
@@ -4952,10 +4996,10 @@ function App(){
             ⌂ Home
           </button>
           <div style={{width:1,height:20,background:"#e5e7eb",margin:"0 4px"}}/>
-          {inPoultry&&[["broilerHome","Dashboard"],["timeline","Timeline"],["list","Batches"],["broilerdailys","Dailys"],["feed","Poultry Feed"]].map(([v,l])=>(
+          {inPoultry&&[["broilerHome","Dashboard"],["timeline","Timeline"],["list","Batches"],["broilerdailys","Dailys"],["broilerweighins","Weigh-Ins"],["feed","Poultry Feed"]].map(([v,l])=>(
             <button key={v} style={nb(view===v&&!showForm)} onClick={()=>{setShowForm(false);setView(v);}}>{l}</button>
           ))}
-          {inPigs&&[["pigsHome","Dashboard"],["breeding","Timeline"],["farrowing","Farrowing"],["sows","Breeding Pigs"],["pigbatches","Batches"],["pigdailys","Dailys"],["pigs","Feed"]].map(([v,l])=>(
+          {inPigs&&[["pigsHome","Dashboard"],["breeding","Timeline"],["farrowing","Farrowing"],["sows","Breeding Pigs"],["pigbatches","Batches"],["pigdailys","Dailys"],["pigweighins","Weigh-Ins"],["pigs","Feed"]].map(([v,l])=>(
             <button key={v} style={nb(view===v&&!showForm&&!showBreedForm&&!showFarrowForm)} onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView(v);}}>{l}</button>
           ))}
           {inLayers&&[["layersHome","Dashboard"],["layerbatches","Layer Batches"],["layerdailys","Layer Dailys"],["eggdailys","Egg Dailys"]].map(([v,l])=>(
@@ -6476,6 +6520,8 @@ function App(){
   if(view==="cattlebreeding")return React.createElement(CattleBreedingView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
   if(view==="cattlebatches") return React.createElement(CattleBatchesView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
   if(view==="cattleweighins")return React.createElement(CattleWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if(view==="broilerweighins")return React.createElement(LivestockWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species:'broiler'});
+  if(view==="pigweighins")return React.createElement(LivestockWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species:'pig'});
 
   // ── LIST VIEW ──
   if(view==="list") return (
@@ -14560,6 +14606,182 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
 // ── CATTLE WEIGH-INS VIEW ───────────────────────────────────────────────────
 // Authenticated review of past weigh-in sessions. Drill into a session to see
 // individual entries. Highlights new-tag flags for admin reconciliation.
+// Admin weigh-ins view for broilers + pigs. Mirrors CattleWeighInsView but
+// drops cattle-specific bits (herd, new-tag reconciliation) and adds:
+//   • schooner grouping for broilers (reads schooner name from weigh_ins.tag)
+//   • inline weight edit + per-entry delete
+const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species}) => {
+  const {useState, useEffect} = React;
+  const [sessions, setSessions] = useState([]);
+  const [entries, setEntries] = useState({}); // session_id -> [entries]
+  const [loading, setLoading] = useState(true);
+  const [expandedSession, setExpandedSession] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [editingId, setEditingId] = useState(null);
+  const [editVal, setEditVal] = useState('');
+
+  const speciesLabel = species === 'broiler' ? 'Broiler' : 'Pig';
+
+  async function loadAll() {
+    setLoading(true);
+    const sR = await sb.from('weigh_in_sessions').select('*').eq('species', species).order('started_at',{ascending:false});
+    if(sR.data) {
+      setSessions(sR.data);
+      if(sR.data.length > 0) {
+        const ids = sR.data.map(s => s.id);
+        const eR = await sb.from('weigh_ins').select('*').in('session_id', ids).order('entered_at',{ascending:true});
+        if(eR.data) {
+          const m = {};
+          eR.data.forEach(e => { if(!m[e.session_id]) m[e.session_id] = []; m[e.session_id].push(e); });
+          setEntries(m);
+        }
+      } else {
+        setEntries({});
+      }
+    }
+    setLoading(false);
+  }
+  useEffect(() => { loadAll(); }, [species]);
+
+  async function reopenSession(s) {
+    await sb.from('weigh_in_sessions').update({status:'draft', completed_at:null}).eq('id', s.id);
+    await loadAll();
+  }
+  async function deleteSession(s) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this weigh-in session and all its entries? This cannot be undone.', async () => {
+      await sb.from('weigh_in_sessions').delete().eq('id', s.id);
+      await loadAll();
+    });
+  }
+  async function deleteEntry(e) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this weigh-in entry?', async () => {
+      await sb.from('weigh_ins').delete().eq('id', e.id);
+      await loadAll();
+    });
+  }
+  function startEdit(e) {
+    setEditingId(e.id);
+    setEditVal(String(e.weight));
+  }
+  async function saveEdit(e) {
+    const v = parseFloat(editVal);
+    if(isNaN(v) || v <= 0) { setEditingId(null); return; }
+    await sb.from('weigh_ins').update({weight: v}).eq('id', e.id);
+    setEditingId(null);
+    await loadAll();
+  }
+
+  const filtered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
+  const totalEntries = filtered.reduce((s,sess) => s + (entries[sess.id]?entries[sess.id].length:0), 0);
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1100, margin:'0 auto'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8}}>
+          <div>
+            <div style={{fontSize:16, fontWeight:700, color:'#111827'}}>{speciesLabel} Weigh-In Sessions</div>
+            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>{filtered.length} sessions {'\u00b7'} {totalEntries} total entries</div>
+          </div>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+              {[{k:'all',l:'All'},{k:'draft',l:'Drafts'},{k:'complete',l:'Complete'}].map((o,oi) => (
+                <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+              ))}
+            </div>
+            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Session'}</button>
+          </div>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && filtered.length === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No weigh-in sessions yet. Click <strong>{'\u2696\ufe0f New Session'}</strong> to start one.
+          </div>
+        )}
+
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          {filtered.map(s => {
+            const isExpanded = expandedSession === s.id;
+            const sEntries = entries[s.id] || [];
+            const avgWeight = sEntries.length > 0 ? sEntries.reduce((sum,e)=>sum+(parseFloat(e.weight)||0),0) / sEntries.length : 0;
+            // Group broiler entries by schooner (tag field). Pigs: single bucket.
+            const grouped = {};
+            sEntries.forEach(e => {
+              const k = species==='broiler' ? (e.tag||'(no schooner)') : 'all';
+              if(!grouped[k]) grouped[k] = [];
+              grouped[k].push(e);
+            });
+            const groupKeys = Object.keys(grouped).sort();
+            return (
+              <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
+                <div onClick={()=>setExpandedSession(isExpanded?null:s.id)} style={{padding:'10px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className="hoverable-tile">
+                  <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
+                  <span style={{fontSize:13, fontWeight:700, color:'#111827', minWidth:120}}>{s.batch_id||'Unknown batch'}</span>
+                  {species==='broiler' && s.broiler_week && <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:'#fef3c7', color:'#92400e'}}>{'WK '+s.broiler_week}</span>}
+                  <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:s.status==='complete'?'#d1fae5':'#fef3c7', color:s.status==='complete'?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
+                  <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>{sEntries.length} {sEntries.length===1?'entry':'entries'}</span>
+                  {avgWeight > 0 && <span style={{fontSize:11, color:'#065f46', fontWeight:600}}>avg {Math.round(avgWeight*100)/100} lb</span>}
+                </div>
+                {isExpanded && (
+                  <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
+                    <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap'}}>
+                      {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Session</button>}
+                      {s.status === 'draft' && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Resume in Webform</button>}
+                      <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Session</button>
+                    </div>
+                    {s.notes && <div style={{fontSize:12, color:'#92400e', fontStyle:'italic', padding:'6px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, marginBottom:10}}>Note: {s.notes}</div>}
+                    {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No entries in this session.</div>}
+                    {groupKeys.map(gk => {
+                      const gEntries = grouped[gk];
+                      const gAvg = gEntries.reduce((s,e)=>s+(parseFloat(e.weight)||0),0) / gEntries.length;
+                      return (
+                        <div key={gk} style={{marginBottom:10}}>
+                          {species === 'broiler' && (
+                            <div style={{fontSize:11, fontWeight:700, color:'#374151', marginBottom:4, padding:'3px 8px', background:'#eef2ff', borderRadius:5, display:'inline-block'}}>{'Schooner '+gk}{' '}<span style={{color:'#6b7280', fontWeight:500}}>{'\u00b7 '+gEntries.length+' '+(gEntries.length===1?'entry':'entries')+' \u00b7 avg '+(Math.round(gAvg*100)/100)+' lb'}</span></div>
+                          )}
+                          {gEntries.map(e => {
+                            const isEditing = editingId === e.id;
+                            return (
+                              <div key={e.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:12, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                                {isEditing ? (
+                                  <React.Fragment>
+                                    <input type="number" min="0" step="0.1" value={editVal} onChange={ev=>setEditVal(ev.target.value)} onKeyDown={ev=>{if(ev.key==='Enter') saveEdit(e); if(ev.key==='Escape') setEditingId(null);}} style={{fontSize:12, padding:'3px 6px', border:'1px solid #1e40af', borderRadius:4, fontFamily:'inherit', width:80}} autoFocus/>
+                                    <button onClick={()=>saveEdit(e)} style={{padding:'3px 8px', borderRadius:4, border:'1px solid #1e40af', background:'#1e40af', color:'white', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Save</button>
+                                    <button onClick={()=>setEditingId(null)} style={{padding:'3px 8px', borderRadius:4, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                                  </React.Fragment>
+                                ) : (
+                                  <React.Fragment>
+                                    <span style={{fontWeight:600, color:'#1e40af', minWidth:60}}>{e.weight} lb</span>
+                                    <button onClick={()=>startEdit(e)} style={{padding:'2px 8px', borderRadius:4, border:'1px solid #d1d5db', background:'white', color:'#374151', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
+                                  </React.Fragment>
+                                )}
+                                {e.note && <span style={{fontSize:11, color:'#92400e', fontStyle:'italic', flex:1}}>{e.note}</span>}
+                                <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
+                                <button onClick={()=>deleteEntry(e)} style={{padding:'2px 8px', borderRadius:4, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;
   const [sessions, setSessions] = useState([]);
