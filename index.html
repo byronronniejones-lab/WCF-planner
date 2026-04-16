@@ -1787,6 +1787,30 @@ const AddFeedWebform = ({sb}) => {
 };
 
 
+// Recompute the broiler session's average and write it to the matching
+// batch's week4Lbs / week6Lbs in app_store.ppp-v4. Called from every path
+// that mutates broiler weigh-ins (form save/complete + admin edit/delete)
+// so the batch tile always reflects the current session avg.
+async function writeBroilerBatchAvg(sb, sessionRow, sessionEntries) {
+  if(!sb || !sessionRow || sessionRow.species !== 'broiler') return;
+  if(!sessionRow.batch_id || !(sessionRow.broiler_week === 4 || sessionRow.broiler_week === 6)) return;
+  if(!sessionEntries || sessionEntries.length === 0) return;
+  var sum = 0, n = 0;
+  for(var i=0;i<sessionEntries.length;i++){
+    var w = parseFloat(sessionEntries[i].weight);
+    if(!isNaN(w) && w > 0) { sum += w; n++; }
+  }
+  if(n === 0) return;
+  var avg = Math.round((sum / n) * 100) / 100;
+  var fieldKey = sessionRow.broiler_week === 4 ? 'week4Lbs' : 'week6Lbs';
+  var resp = await sb.from('app_store').select('data').eq('key','ppp-v4').maybeSingle();
+  if(!resp || !resp.data || !Array.isArray(resp.data.data)) return;
+  var updated = resp.data.data.map(function(b){
+    return (b.name === sessionRow.batch_id) ? Object.assign({}, b, {[fieldKey]: avg}) : b;
+  });
+  await sb.from('app_store').upsert({key:'ppp-v4', data: updated, updated_at: new Date().toISOString()}, {onConflict:'key'});
+}
+
 // ── WEIGH-INS WEBFORM ──────────────────────────────────────────────────────
 // Public webform for weigh-in sessions. Three species flows:
 //   - Cattle: session-based with autosave + diminishing tag dropdown + new-tag flag
@@ -1928,15 +1952,9 @@ const WeighInsWebform = ({sb}) => {
     setBusy(true);
     const completedAt = new Date().toISOString();
     await sb.from('weigh_in_sessions').update({status:'complete', completed_at: completedAt}).eq('id', session.id);
-    // Broiler: write avg back to batch
-    if(species === 'broiler' && entries.length > 0 && broilerBatchLabel && broilerWeek) {
-      const avg = entries.reduce((s,e) => s + (parseFloat(e.weight)||0), 0) / entries.length;
-      // Find the batch in app_store ppp-v4 by name
-      const {data: store} = await sb.from('app_store').select('data').eq('key','ppp-v4').maybeSingle();
-      if(store && Array.isArray(store.data)) {
-        const updated = store.data.map(b => b.name === broilerBatchLabel ? {...b, [broilerWeek===4?'week4Lbs':'week6Lbs']: Math.round(avg*100)/100} : b);
-        await sb.from('app_store').upsert({key:'ppp-v4', data:updated, updated_at:new Date().toISOString()},{onConflict:'key'});
-      }
+    // Broiler: write avg back to batch (uses session row so it works on resumed drafts too)
+    if(species === 'broiler') {
+      await writeBroilerBatchAvg(sb, session, entries);
     }
     setBusy(false);
     setStage('done');
@@ -2007,8 +2025,12 @@ const WeighInsWebform = ({sb}) => {
     if(noteInput && noteInput.trim()) {
       await sb.from('weigh_in_sessions').update({notes: noteInput.trim()}).eq('id', session.id);
     }
-    setEntries(function(prev){ return prev.concat(recs); });
+    var nextEntries = entries.concat(recs);
+    setEntries(nextEntries);
     setWeightInputs(Array(weightInputs.length).fill(''));
+    if(species === 'broiler') {
+      await writeBroilerBatchAvg(sb, session, nextEntries);
+    }
     setBusy(false);
   }
 
@@ -4238,7 +4260,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   useEffect(()=>{
@@ -14654,10 +14676,18 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       await loadAll();
     });
   }
+  async function recomputeBatchAvgFor(sessionId) {
+    if(species !== 'broiler') return;
+    const sRow = sessions.find(x => x.id === sessionId);
+    if(!sRow) return;
+    const eR = await sb.from('weigh_ins').select('*').eq('session_id', sessionId);
+    await writeBroilerBatchAvg(sb, sRow, (eR && eR.data) || []);
+  }
   async function deleteEntry(e) {
     if(!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this weigh-in entry?', async () => {
       await sb.from('weigh_ins').delete().eq('id', e.id);
+      await recomputeBatchAvgFor(e.session_id);
       await loadAll();
     });
   }
@@ -14669,6 +14699,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     const v = parseFloat(editVal);
     if(isNaN(v) || v <= 0) { setEditingId(null); return; }
     await sb.from('weigh_ins').update({weight: v}).eq('id', e.id);
+    await recomputeBatchAvgFor(e.session_id);
     setEditingId(null);
     await loadAll();
   }
@@ -14726,7 +14757,8 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
                   <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>{sEntries.length} {sEntries.length===1?'entry':'entries'}</span>
-                  {avgWeight > 0 && <span style={{fontSize:11, color:'#065f46', fontWeight:600}}>avg {Math.round(avgWeight*100)/100} lb</span>}
+                  {avgWeight > 0 && <span style={{fontSize:12, fontWeight:700, color:'#065f46', padding:'2px 10px', borderRadius:10, background:'#d1fae5'}}>avg {Math.round(avgWeight*100)/100} lb</span>}
+                  {species==='broiler' && avgWeight > 0 && s.broiler_week && <span style={{fontSize:10, color:'#6b7280', fontStyle:'italic'}}>{'\u2192 batch wk'+s.broiler_week+'Lbs'}</span>}
                 </div>
                 {isExpanded && (
                   <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
