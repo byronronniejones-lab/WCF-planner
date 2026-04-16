@@ -1893,13 +1893,40 @@ const WeighInsWebform = ({sb}) => {
     });
   }, [species]);
 
-  // Load entries when session is set
+  // Load entries when session is set, and (for broiler/pig) hydrate the grid
+  // so previously-saved weights show up in the input cells they came from.
   React.useEffect(() => {
     if(!session) { setEntries([]); return; }
+    // Reset to [] first so the grid hydration effect doesn't briefly mix
+    // the previous session's entries with the new session's columnLabels.
+    setEntries([]);
     sb.from('weigh_ins').select('*').eq('session_id', session.id).order('entered_at',{ascending:true}).then(({data}) => {
       if(data) setEntries(data);
     });
   }, [session]);
+
+  // Hydrate the broiler/pig grid from saved entries whenever entries OR columnLabels change.
+  // Broiler: distribute by tag (=schooner name) into each schooner column, in order.
+  // Pig: distribute sequentially (no per-column identity preserved at save time).
+  React.useEffect(() => {
+    if(!session) return;
+    if(session.species !== 'broiler' && session.species !== 'pig') return;
+    if(!columnLabels || columnLabels.length === 0) return;
+    var grid = Array(columnLabels.length * 15).fill('');
+    if(session.species === 'broiler') {
+      columnLabels.forEach(function(label, colIdx){
+        var colEntries = entries.filter(function(e){ return (e.tag||'') === label; });
+        colEntries.slice(0, 15).forEach(function(e, i){
+          grid[colIdx * 15 + i] = String(e.weight);
+        });
+      });
+    } else {
+      entries.slice(0, columnLabels.length * 15).forEach(function(e, i){
+        grid[i] = String(e.weight);
+      });
+    }
+    setWeightInputs(grid);
+  }, [entries, columnLabels, session]);
 
   // Resolve the column labels for a given session: broiler → split batch.schooner on "&";
   // pig → fixed ['1','2']; cattle → ignored downstream.
@@ -1949,12 +1976,19 @@ const WeighInsWebform = ({sb}) => {
   }
   async function completeSession() {
     if(!session) return;
+    // For broiler/pig: flush any pending grid edits to DB before flipping status,
+    // so what the user sees in the grid is what gets recorded as "complete".
+    if(species === 'broiler' || species === 'pig') {
+      const ok = await saveBatch();
+      if(!ok) return;
+    }
     setBusy(true);
     const completedAt = new Date().toISOString();
     await sb.from('weigh_in_sessions').update({status:'complete', completed_at: completedAt}).eq('id', session.id);
-    // Broiler: write avg back to batch (uses session row so it works on resumed drafts too)
     if(species === 'broiler') {
-      await writeBroilerBatchAvg(sb, session, entries);
+      // Re-read latest entries since saveBatch just rewrote them
+      const eR = await sb.from('weigh_ins').select('*').eq('session_id', session.id);
+      await writeBroilerBatchAvg(sb, session, (eR && eR.data) || []);
     }
     setBusy(false);
     setStage('done');
@@ -1993,12 +2027,13 @@ const WeighInsWebform = ({sb}) => {
     setTagInput(''); setWeightInput(''); setNoteInput(''); setShowNewTag(false);
     setBusy(false);
   }
-  // Pig/broiler: batch-save all non-empty weights from the dynamic grid,
-  // and persist the single session-level note onto weigh_in_sessions.notes.
-  // For broilers, each row's `tag` carries the schooner name (column it came from);
-  // for pigs, tag stays null (columns have no schooner meaning).
+  // Pig/broiler: the grid is the source of truth for the session.
+  // Save = wipe existing weigh_ins for this session, then re-insert from the
+  // current grid state. Lets users edit/clear filled cells in place without
+  // creating duplicates. Empty cells are simply not written.
+  // Returns true on success, false on error (caller can chain Complete safely).
   async function saveBatch() {
-    if(!session) return;
+    if(!session) return false;
     var rows = [];
     for(var i=0;i<weightInputs.length;i++){
       var w = weightInputs[i];
@@ -2007,31 +2042,34 @@ const WeighInsWebform = ({sb}) => {
       var schooner = (species === 'broiler' && columnLabels[colIdx]) ? columnLabels[colIdx] : null;
       rows.push({weight: parseFloat(w), schooner: schooner});
     }
-    if(rows.length === 0) { setErr('Enter at least one weight.'); return; }
     setErr(''); setBusy(true);
-    var t0 = Date.now();
-    var recs = rows.map(function(r, i){
-      return {
-        id: String(t0+i)+Math.random().toString(36).slice(2,6),
-        session_id: session.id,
-        tag: r.schooner,
-        weight: r.weight,
-        note: null,
-        new_tag_flag: false,
-      };
-    });
-    var ins = await sb.from('weigh_ins').insert(recs);
-    if(ins.error) { setBusy(false); setErr('Save failed: '+ins.error.message); return; }
+    var del = await sb.from('weigh_ins').delete().eq('session_id', session.id);
+    if(del.error) { setBusy(false); setErr('Save failed (clear): '+del.error.message); return false; }
+    var recs = [];
+    if(rows.length > 0) {
+      var t0 = Date.now();
+      recs = rows.map(function(r, i){
+        return {
+          id: String(t0+i)+Math.random().toString(36).slice(2,6),
+          session_id: session.id,
+          tag: r.schooner,
+          weight: r.weight,
+          note: null,
+          new_tag_flag: false,
+        };
+      });
+      var ins = await sb.from('weigh_ins').insert(recs);
+      if(ins.error) { setBusy(false); setErr('Save failed (insert): '+ins.error.message); return false; }
+    }
     if(noteInput && noteInput.trim()) {
       await sb.from('weigh_in_sessions').update({notes: noteInput.trim()}).eq('id', session.id);
     }
-    var nextEntries = entries.concat(recs);
-    setEntries(nextEntries);
-    setWeightInputs(Array(weightInputs.length).fill(''));
+    setEntries(recs);
     if(species === 'broiler') {
-      await writeBroilerBatchAvg(sb, session, nextEntries);
+      await writeBroilerBatchAvg(sb, session, recs);
     }
     setBusy(false);
+    return true;
   }
 
   // Cattle: list of remaining tags (sorted asc, weighed already removed)
@@ -2292,12 +2330,12 @@ const WeighInsWebform = ({sb}) => {
               <textarea value={noteInput} onChange={e=>setNoteInput(e.target.value)} rows={2} placeholder="Optional" style={{...inpS, resize:'vertical'}}/>
             </div>
             {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
-            <button onClick={saveBatch} disabled={busy || weightInputs.every(function(w){return !w;})} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||weightInputs.every(function(w){return !w;}))?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||weightInputs.every(function(w){return !w;}))?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save All Entries'}</button>
+            <button onClick={saveBatch} disabled={busy} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:busy?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Weights'}</button>
           </div>
         )}
 
-        {/* Recent entries */}
-        {entries.length > 0 && (
+        {/* Recent entries — cattle only, since the broiler/pig grid already shows all weights inline */}
+        {species === 'cattle' && entries.length > 0 && (
           <div style={cardS}>
             <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
             {entries.slice(-10).reverse().map(e => (
@@ -2313,10 +2351,18 @@ const WeighInsWebform = ({sb}) => {
 
         {entries.length > 0 && (
           <div style={{padding:'8px 12px', background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, fontSize:12, color:'#065f46', marginTop:8, marginBottom:6, textAlign:'center', fontWeight:600}}>
-            {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' already saved'}{species==='broiler' ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''} {'\u00b7 grid blanks above are for adding more, not the saved weights'}
+            {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' saved'}{species==='broiler' ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''}
           </div>
         )}
-        <button onClick={completeSession} disabled={busy || entries.length===0} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:(busy||entries.length===0)?'#9ca3af':'#047857', color:'white', fontSize:15, fontWeight:700, cursor:(busy||entries.length===0)?'not-allowed':'pointer', fontFamily:'inherit', marginTop:6}}>{busy?'Completing\u2026':'\u2713 Complete Weigh-In ('+entries.length+' '+(entries.length===1?'entry':'entries')+')'}</button>
+        {(() => {
+          var filledCount = (species === 'broiler' || species === 'pig')
+            ? weightInputs.filter(function(w){return w !== '' && !isNaN(parseFloat(w)) && parseFloat(w) > 0;}).length
+            : entries.length;
+          var isEmpty = filledCount === 0;
+          return (
+            <button onClick={completeSession} disabled={busy || isEmpty} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:(busy||isEmpty)?'#9ca3af':'#047857', color:'white', fontSize:15, fontWeight:700, cursor:(busy||isEmpty)?'not-allowed':'pointer', fontFamily:'inherit', marginTop:6}}>{busy?'Completing\u2026':'\u2713 Complete Weigh-In ('+filledCount+' '+(filledCount===1?'entry':'entries')+')'}</button>
+          );
+        })()}
       </div>
     </div>
   );
