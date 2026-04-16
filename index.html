@@ -2072,7 +2072,7 @@ const WeighInsWebform = ({sb}) => {
           )}
         </div>
         <button onClick={() => { setStage('species'); setSpecies(''); setSession(null); setEntries([]); setCattleHerd(''); setPigBatchId(''); setBroilerBatchId(''); setBroilerBatchLabel(''); }} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', marginBottom:10}}>
-          New Session
+          New Weigh-In
         </button>
         <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{width:'100%', padding:14, borderRadius:10, border:'1px solid #d1d5db', background:'white', color:'#374151', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>
           Back to Forms
@@ -2311,7 +2311,12 @@ const WeighInsWebform = ({sb}) => {
           </div>
         )}
 
-        <button onClick={completeSession} disabled={busy} style={{width:'100%', padding:14, borderRadius:10, border:'1px solid #1e40af', background:'white', color:'#1e40af', fontSize:14, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit', marginTop:8}}>{busy?'Completing\u2026':'Complete Session ('+entries.length+' entries)'}</button>
+        {entries.length > 0 && (
+          <div style={{padding:'8px 12px', background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, fontSize:12, color:'#065f46', marginTop:8, marginBottom:6, textAlign:'center', fontWeight:600}}>
+            {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' already saved'}{species==='broiler' ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''} {'\u00b7 grid blanks above are for adding more, not the saved weights'}
+          </div>
+        )}
+        <button onClick={completeSession} disabled={busy || entries.length===0} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:(busy||entries.length===0)?'#9ca3af':'#047857', color:'white', fontSize:15, fontWeight:700, cursor:(busy||entries.length===0)?'not-allowed':'pointer', fontFamily:'inherit', marginTop:6}}>{busy?'Completing\u2026':'\u2713 Complete Weigh-In ('+entries.length+' '+(entries.length===1?'entry':'entries')+')'}</button>
       </div>
     </div>
   );
@@ -14669,6 +14674,14 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     await sb.from('weigh_in_sessions').update({status:'draft', completed_at:null}).eq('id', s.id);
     await loadAll();
   }
+  async function completeFromAdmin(s) {
+    await sb.from('weigh_in_sessions').update({status:'complete', completed_at: new Date().toISOString()}).eq('id', s.id);
+    if(species === 'broiler') {
+      const eR = await sb.from('weigh_ins').select('*').eq('session_id', s.id);
+      await writeBroilerBatchAvg(sb, s, (eR && eR.data) || []);
+    }
+    await loadAll();
+  }
   async function deleteSession(s) {
     if(!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this weigh-in session and all its entries? This cannot be undone.', async () => {
@@ -14723,14 +14736,14 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                 <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
               ))}
             </div>
-            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Session'}</button>
+            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
           </div>
         </div>
 
         {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
         {!loading && filtered.length === 0 && (
           <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
-            No weigh-in sessions yet. Click <strong>{'\u2696\ufe0f New Session'}</strong> to start one.
+            No weigh-in sessions yet. Click <strong>{'\u2696\ufe0f New Weigh-In'}</strong> to start one.
           </div>
         )}
 
@@ -14763,9 +14776,10 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                 {isExpanded && (
                   <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
                     <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap'}}>
-                      {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Session</button>}
-                      {s.status === 'draft' && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Resume in Webform</button>}
-                      <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Session</button>
+                      {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Weigh-In</button>}
+                      {s.status === 'draft' && <button onClick={()=>completeFromAdmin(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #047857', background:'#047857', color:'white', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2713 Complete Weigh-In'}</button>}
+                      {s.status === 'draft' && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Add More in Webform</button>}
+                      <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Weigh-In</button>
                     </div>
                     {s.notes && <div style={{fontSize:12, color:'#92400e', fontStyle:'italic', padding:'6px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, marginBottom:10}}>Note: {s.notes}</div>}
                     {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No entries in this session.</div>}
@@ -14880,14 +14894,14 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                 <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
               ))}
             </div>
-            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Session'}</button>
+            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
           </div>
         </div>
 
         {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
         {!loading && filtered.length === 0 && (
           <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
-            No weigh-in sessions yet. Click <strong>{'\u2696\ufe0f New Session'}</strong> to start one.
+            No weigh-in sessions yet. Click <strong>{'\u2696\ufe0f New Weigh-In'}</strong> to start one.
           </div>
         )}
 
