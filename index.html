@@ -4841,9 +4841,9 @@ function App(){
       // No data yet - init farrowing with historical records
       setFarrowingRecs(INITIAL_FARROWING);
     }
-    // Load pig dailys from dedicated table (no auth required for insert, auth required for read)
-    try {
-      // Load all pig_dailys in pages (Supabase caps at 1000/request)
+    // Load pig_dailys (paginated) and poultry_dailys in parallel. Both previously
+    // ran serially, blocking the app on every cold start — see PROJECT.md §14.5 #3.
+    const pigDailysPromise = (async () => {
       let allDailys = [];
       let from = 0;
       const pageSize = 1000;
@@ -4854,19 +4854,16 @@ function App(){
         if(page.length < pageSize) break;
         from += pageSize;
       }
-      const dailysRows = allDailys;
-      if(dailysRows) setPigDailys(dailysRows);
-    } catch(e){ console.warn('pig_dailys load error (table may not exist yet):', e.message); }
-    // Load broiler dailys from poultry_dailys table (same query pattern as BroilerDailysView)
-    try {
-      const {data:bdData, error:bdErr} = await sb.from('poultry_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).limit(2000);
-      if(bdErr){ console.warn('poultry_dailys load error:', bdErr.message); }
-      else {
-        setBroilerDailys(bdData||[]);
-        const labels=[...new Set((bdData||[]).map(d=>d.batch_label).filter(Boolean))].sort();
-        console.log(`[WCF] broilerDailys: ${(bdData||[]).length} records, labels:`, labels);
-      }
-    } catch(e){ console.warn('poultry_dailys load error:', e.message); }
+      return allDailys;
+    })().catch(e => { console.warn('pig_dailys load error:', e.message); return []; });
+    const poultryDailysPromise = sb.from('poultry_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).limit(2000)
+      .then(({data, error}) => { if(error) { console.warn('poultry_dailys load error:', error.message); return []; } return data || []; })
+      .catch(e => { console.warn('poultry_dailys load error:', e.message); return []; });
+    const [pigDailysRows, poultryDailysRows] = await Promise.all([pigDailysPromise, poultryDailysPromise]);
+    if(pigDailysRows) setPigDailys(pigDailysRows);
+    setBroilerDailys(poultryDailysRows);
+    const labels = [...new Set(poultryDailysRows.map(d=>d.batch_label).filter(Boolean))].sort();
+    console.log(`[WCF] broilerDailys: ${poultryDailysRows.length} records, labels:`, labels);
     setDataLoaded(true);
 
     } catch(e) {
@@ -11898,7 +11895,6 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
       setLoading(false);
     });
     sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data})=>{if(data?.data)setTeamMembers(data.data);});
-    sb.from('batches').select('name,status').order('name').then(({data})=>{if(data)setBatches(data);});
   },[]);
 
   // Auto-load all pages on mount (guarded to prevent duplicate fetches on re-render)
@@ -11954,7 +11950,6 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed · <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span></div>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
         </div>
@@ -13214,7 +13209,6 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown</div>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
         </div>
@@ -13583,7 +13577,6 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{pigDailys.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed in view</div>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
         </div>
@@ -13854,7 +13847,6 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
             </div>
           </div>
           <div style={{display:'flex', gap:8}}>
-            <button onClick={() => { window.location.hash = '#addfeed'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'1px solid #fde68a', background:'#fef3c7', color:'#92400e', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={() => setShowAddModal(true)} style={{padding:'8px 16px', borderRadius:8, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Report</button>
           </div>
         </div>
@@ -14078,12 +14070,15 @@ const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShow
   const HERDS = ['mommas','backgrounders','finishers','bulls'];
   const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls'};
   const HERD_COLORS = {mommas:'#dc2626', backgrounders:'#ea580c', finishers:'#e11d48', bulls:'#991b1b'};
+  // Pull 120 days of dailys so the nutrition panel can compute 30/90/120-day
+  // windows in a single pass without re-fetching.
+  const cutoff120 = new Date(Date.now() - 120*86400000).toISOString().slice(0,10);
   const cutoff30 = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
 
   useEffect(()=>{
     Promise.all([
       sb.from('cattle').select('*'),
-      sb.from('cattle_dailys').select('*').gte('date', cutoff30),
+      sb.from('cattle_dailys').select('*').gte('date', cutoff120),
       loadCattleWeighInsCached(sb),
       sb.from('cattle_calving_records').select('*'),
       sb.from('cattle_nutrition_targets').select('*'),
@@ -14138,11 +14133,51 @@ const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShow
 
   const totalCattle = cattle.filter(c => HERDS.includes(c.herd)).length;
   const totalLiveWeight = HERDS.reduce((s,h) => s + herdLiveWeight(h), 0);
-  const totalMort30 = dailys.reduce((s,d) => s + (parseInt(d.mortality_count)||0), 0);
-  const totalFeedCost30 = dailys.reduce((s,d) => {
+  const dailys30 = dailys.filter(d => (d.date||'') >= cutoff30);
+  const totalMort30 = dailys30.reduce((s,d) => s + (parseInt(d.mortality_count)||0), 0);
+  const totalFeedCost30 = dailys30.reduce((s,d) => {
     const feeds = Array.isArray(d.feeds) ? d.feeds : [];
     return s + feeds.reduce((ss,f) => ss + ((parseFloat(f.lbs_as_fed)||0) * (f.nutrition_snapshot && f.nutrition_snapshot.landed_per_lb ? parseFloat(f.nutrition_snapshot.landed_per_lb) : 0)), 0);
   }, 0);
+
+  // ── Rolling-window nutrition per herd ───────────────────────────────────
+  // Compares actual average daily DM / CP / NFC intake to target over
+  // 30/90/120-day windows. Target lbs/day = cow_units × target_pct × 10
+  // (since total body weight = cow_units × 1000 lb). Creep-flagged feed
+  // lines on Mommas are excluded from all three — they're consumed by
+  // calves, not the mommas themselves.
+  function nutritionForHerd(herd, windowDays) {
+    const cutoff = new Date(Date.now() - windowDays*86400000).toISOString().slice(0,10);
+    const rows = dailys.filter(d => d.herd === herd && (d.date||'') >= cutoff);
+    let dm = 0, cp = 0, nfc = 0;
+    for (const d of rows) {
+      const feeds = Array.isArray(d.feeds) ? d.feeds : [];
+      for (const f of feeds) {
+        if (herd === 'mommas' && f.is_creep) continue;
+        const lbs = parseFloat(f.lbs_as_fed) || 0;
+        const ns = f.nutrition_snapshot || {};
+        dm += lbs;
+        cp += lbs * (parseFloat(ns.protein_pct) || 0) / 100;
+        nfc += lbs * (parseFloat(ns.nfc_pct) || 0) / 100;
+      }
+    }
+    const perDay = { dm: dm / windowDays, cp: cp / windowDays, nfc: nfc / windowDays };
+    const cowUnits = herdLiveWeight(herd) / 1000;
+    const t = targets[herd];
+    if (!t || cowUnits <= 0) return { perDay, target: null, cowUnits };
+    const targetDmPerDay = cowUnits * (parseFloat(t.target_dm_pct_body) || 0) * 10;
+    const targetCpPerDay = targetDmPerDay * (parseFloat(t.target_cp_pct_dm) || 0) / 100;
+    const targetNfcPerDay = targetDmPerDay * (parseFloat(t.target_nfc_pct_dm) || 0) / 100;
+    return {
+      perDay,
+      target: { dm: targetDmPerDay, cp: targetCpPerDay, nfc: targetNfcPerDay },
+      cowUnits,
+    };
+  }
+  // Only show herds that actually have cows — empty herds just add noise.
+  const activeHerdsWithCows = HERDS.filter(h => cattle.some(c => c.herd === h));
+  const WINDOW_DAYS = [30, 90, 120];
+  const WINDOW_LABELS = { 30: '30-day', 90: '90-day', 120: '120-day' };
 
   const StatTile = ({label, val, sub, color='#991b1b'}) => (
     <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 16px'}}>
@@ -14189,6 +14224,76 @@ const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShow
             })}
           </div>
         </div>
+
+        {/* Rolling-window nutrition vs target — per herd that has cows */}
+        {activeHerdsWithCows.length > 0 && (
+          <div>
+            <div style={{fontSize:13, fontWeight:600, color:'#4b5563', marginBottom:8, letterSpacing:.3}}>NUTRITION VS TARGET (actual daily avg / target daily)</div>
+            <div style={{display:'flex', flexDirection:'column', gap:10}}>
+              {activeHerdsWithCows.map(h => {
+                const t = targets[h];
+                const cu = herdLiveWeight(h) / 1000;
+                return (
+                  <div key={h} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 16px'}}>
+                    <div style={{display:'flex', alignItems:'baseline', gap:10, marginBottom:8, flexWrap:'wrap'}}>
+                      <span style={{fontSize:14, fontWeight:700, color:HERD_COLORS[h]}}>{HERD_LABELS[h]}</span>
+                      <span style={{fontSize:11, color:'#6b7280'}}>{cu>0 ? cu.toFixed(1)+' cow units' : '\u2014 cow units'}</span>
+                      {t && <span style={{fontSize:11, color:'#9ca3af'}}>{'Target DM '+t.target_dm_pct_body+'% body \u00b7 CP '+t.target_cp_pct_dm+'% DM \u00b7 NFC '+t.target_nfc_pct_dm+'% DM'}</span>}
+                      {!t && <span style={{fontSize:11, color:'#b91c1c'}}>No target configured for this herd.</span>}
+                    </div>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%', fontSize:12, borderCollapse:'collapse', minWidth:520}}>
+                        <thead>
+                          <tr style={{background:'#f9fafb', borderBottom:'1px solid #e5e7eb'}}>
+                            <th style={{padding:'6px 10px', textAlign:'left', fontWeight:700, color:'#6b7280', fontSize:10, textTransform:'uppercase', letterSpacing:.5}}>Window</th>
+                            <th style={{padding:'6px 10px', textAlign:'right', fontWeight:700, color:'#6b7280', fontSize:10, textTransform:'uppercase', letterSpacing:.5}}>DM</th>
+                            <th style={{padding:'6px 10px', textAlign:'right', fontWeight:700, color:'#6b7280', fontSize:10, textTransform:'uppercase', letterSpacing:.5}}>CP</th>
+                            <th style={{padding:'6px 10px', textAlign:'right', fontWeight:700, color:'#6b7280', fontSize:10, textTransform:'uppercase', letterSpacing:.5}}>NFC</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {WINDOW_DAYS.map(wd => {
+                            const n = nutritionForHerd(h, wd);
+                            const cell = (actual, target) => {
+                              if (!target || target <= 0) return { display: actual > 0 ? actual.toFixed(1) + ' lb/day' : '\u2014', pct: null, color: '#6b7280' };
+                              const pct = (actual / target) * 100;
+                              const color = pct >= 90 && pct <= 110 ? '#065f46'
+                                         : pct >= 75 && pct < 90  ? '#92400e'
+                                         : pct > 110              ? '#1e40af'
+                                         :                          '#b91c1c';
+                              return {
+                                display: actual.toFixed(1) + ' / ' + target.toFixed(1) + ' lb',
+                                pct: Math.round(pct) + '%',
+                                color,
+                              };
+                            };
+                            const dm  = cell(n.perDay.dm,  n.target ? n.target.dm  : null);
+                            const cp  = cell(n.perDay.cp,  n.target ? n.target.cp  : null);
+                            const nfc = cell(n.perDay.nfc, n.target ? n.target.nfc : null);
+                            const cellRender = (c) => (
+                              <React.Fragment>
+                                <div style={{fontSize:11, color:'#374151', fontWeight:600}}>{c.display}</div>
+                                {c.pct && <div style={{fontSize:10, color:c.color, fontWeight:700}}>{c.pct + ' of target'}</div>}
+                              </React.Fragment>
+                            );
+                            return (
+                              <tr key={wd} style={{borderBottom:'1px solid #f3f4f6'}}>
+                                <td style={{padding:'8px 10px', fontWeight:600, color:'#111827'}}>{WINDOW_LABELS[wd]}</td>
+                                <td style={{padding:'8px 10px', textAlign:'right'}}>{cellRender(dm)}</td>
+                                <td style={{padding:'8px 10px', textAlign:'right'}}>{cellRender(cp)}</td>
+                                <td style={{padding:'8px 10px', textAlign:'right'}}>{cellRender(nfc)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af', fontSize:13}}>Loading{'\u2026'}</div>}
 
@@ -15194,6 +15299,9 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(null);
+  // Per-cow weight input local state keyed by `${batchId}|${cattleId}|${field}`
+  // so editing doesn't round-trip to Supabase on every keystroke.
+  const [cowDraft, setCowDraft] = useState({});
 
   async function loadAll() {
     const [bR, cR, wAll] = await Promise.all([
@@ -15230,11 +15338,23 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
     return sorted[0] ? parseFloat(sorted[0].weight) : null;
   }
 
+  function cowsDetailOf(batch) {
+    return Array.isArray(batch.cows_detail) ? batch.cows_detail : [];
+  }
+  function recomputeTotals(rows) {
+    const live = rows.reduce((s,r) => s + (parseFloat(r.live_weight)||0), 0);
+    const hang = rows.reduce((s,r) => s + (parseFloat(r.hanging_weight)||0), 0);
+    return {
+      total_live_weight: live > 0 ? Math.round(live*10)/10 : null,
+      total_hanging_weight: hang > 0 ? Math.round(hang*10)/10 : null,
+    };
+  }
+
   function openAdd() {
     const yr = new Date().getFullYear().toString().slice(-2);
     const existing = batches.filter(b => b.name && b.name.startsWith('C-'+yr+'-')).map(b => parseInt(b.name.slice(5))||0);
     const next = (Math.max(0, ...existing)+1).toString().padStart(2,'0');
-    setForm({name:'C-'+yr+'-'+next, planned_process_date:'', actual_process_date:'', total_hanging_weight:'', processing_cost:'', notes:'', status:'planned'});
+    setForm({name:'C-'+yr+'-'+next, planned_process_date:'', actual_process_date:'', processing_cost:'', notes:'', status:'planned', selectedCowIds:[]});
     setEditId(null);
     setShowForm(true);
   }
@@ -15243,10 +15363,10 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
       name: b.name,
       planned_process_date: b.planned_process_date || '',
       actual_process_date: b.actual_process_date || '',
-      total_hanging_weight: b.total_hanging_weight != null ? String(b.total_hanging_weight) : '',
       processing_cost: b.processing_cost != null ? String(b.processing_cost) : '',
       notes: b.notes || '',
       status: b.status || 'planned',
+      selectedCowIds: [],
     });
     setEditId(b.id);
     setShowForm(true);
@@ -15257,7 +15377,6 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
       name: form.name.trim(),
       planned_process_date: form.planned_process_date || null,
       actual_process_date: form.actual_process_date || null,
-      total_hanging_weight: form.total_hanging_weight !== '' ? parseFloat(form.total_hanging_weight) : null,
       processing_cost: form.processing_cost !== '' ? parseFloat(form.processing_cost) : null,
       notes: form.notes || null,
       status: form.status || 'planned',
@@ -15284,7 +15403,30 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
       }
     } else {
       const id = String(Date.now())+Math.random().toString(36).slice(2,6);
-      await sb.from('cattle_processing_batches').insert({id, ...rec});
+      // Build cows_detail from selected cows + wire processing_batch_id + transfers
+      const selected = (form.selectedCowIds||[]).map(cid => cattle.find(c => c.id === cid)).filter(Boolean);
+      const cows_detail = selected.map(c => ({
+        cattle_id: c.id,
+        tag: c.tag || null,
+        live_weight: lastWeight(c),
+        hanging_weight: null,
+      }));
+      const tots = recomputeTotals(cows_detail);
+      await sb.from('cattle_processing_batches').insert({id, ...rec, cows_detail, ...tots});
+      for(const c of selected) {
+        await sb.from('cattle').update({processing_batch_id: id, herd:'processed'}).eq('id', c.id);
+        if(c.herd !== 'processed') {
+          await sb.from('cattle_transfers').insert({
+            id: String(Date.now())+Math.random().toString(36).slice(2,6),
+            cattle_id: c.id,
+            from_herd: c.herd,
+            to_herd: 'processed',
+            reason: 'processing_batch',
+            reference_id: id,
+            team_member: authState && authState.name ? authState.name : null,
+          });
+        }
+      }
     }
     await loadAll();
     setShowForm(false); setEditId(null); setForm(null);
@@ -15292,6 +15434,8 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
   async function deleteBatch(id) {
     if(!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this processing batch? Linked cattle will keep their processed_batch_id set to NULL.', async () => {
+      // Clear processing_batch_id on all linked cows so they don't hold stale FKs.
+      await sb.from('cattle').update({processing_batch_id: null}).eq('processing_batch_id', id);
       await sb.from('cattle_processing_batches').delete().eq('id', id);
       await loadAll();
       setShowForm(false); setEditId(null); setForm(null);
@@ -15300,6 +15444,13 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
   async function addCowToBatch(batch, cowId) {
     const cow = cattle.find(c => c.id === cowId);
     if(!cow) return;
+    // Append to cows_detail if not already present
+    const rows = cowsDetailOf(batch);
+    if(!rows.some(r => r.cattle_id === cowId)) {
+      const newRows = [...rows, {cattle_id: cowId, tag: cow.tag || null, live_weight: lastWeight(cow), hanging_weight: null}];
+      const tots = recomputeTotals(newRows);
+      await sb.from('cattle_processing_batches').update({cows_detail: newRows, ...tots}).eq('id', batch.id);
+    }
     await sb.from('cattle').update({processing_batch_id: batch.id, herd: 'processed'}).eq('id', cowId);
     if(cow.herd !== 'processed') {
       await sb.from('cattle_transfers').insert({
@@ -15314,9 +15465,20 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
     }
     await loadAll();
   }
-  async function removeCowFromBatch(cow) {
+  async function removeCowFromBatch(batch, cow) {
+    const rows = cowsDetailOf(batch).filter(r => r.cattle_id !== cow.id);
+    const tots = recomputeTotals(rows);
+    await sb.from('cattle_processing_batches').update({cows_detail: rows, ...tots}).eq('id', batch.id);
     await sb.from('cattle').update({processing_batch_id: null}).eq('id', cow.id);
     await loadAll();
+  }
+  async function saveCowWeight(batch, cattleId, field, value) {
+    const rows = cowsDetailOf(batch).map(r => r.cattle_id === cattleId
+      ? {...r, [field]: value === '' || value == null ? null : parseFloat(value)}
+      : r);
+    const tots = recomputeTotals(rows);
+    await sb.from('cattle_processing_batches').update({cows_detail: rows, ...tots}).eq('id', batch.id);
+    setBatches(prev => prev.map(b => b.id === batch.id ? {...b, cows_detail: rows, ...tots} : b));
   }
 
   const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
@@ -15341,47 +15503,77 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
 
         <div style={{display:'flex', flexDirection:'column', gap:10}}>
           {batches.map(b => {
-            const linked = cattle.filter(c => c.processing_batch_id === b.id);
-            const totalLive = linked.reduce((s,c) => s + (lastWeight(c)||0), 0);
-            const yieldPct = totalLive > 0 && b.total_hanging_weight > 0 ? Math.round((b.total_hanging_weight/totalLive)*1000)/10 : null;
+            const rows = cowsDetailOf(b);
+            const totalLive = rows.reduce((s,r) => s + (parseFloat(r.live_weight)||0), 0);
+            const totalHang = rows.reduce((s,r) => s + (parseFloat(r.hanging_weight)||0), 0);
+            const yieldPct = totalLive > 0 && totalHang > 0 ? Math.round((totalHang/totalLive)*1000)/10 : null;
+            const draftKey = (cid, field) => `${b.id}|${cid}|${field}`;
+            const draftVal = (cid, field, curr) => {
+              const k = draftKey(cid, field);
+              return cowDraft[k] != null ? cowDraft[k] : (curr != null ? String(curr) : '');
+            };
             return (
               <div key={b.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 18px'}}>
                 <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap'}}>
                   <span style={{fontSize:14, fontWeight:700, color:'#111827'}}>{b.name}</span>
                   <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:b.status==='complete'?'#374151':'#1d4ed8', color:'white', textTransform:'uppercase'}}>{b.status}</span>
-                  <span style={{fontSize:11, color:'#6b7280'}}>{linked.length} {linked.length===1?'cow':'cows'}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{rows.length} {rows.length===1?'cow':'cows'}</span>
                   {b.planned_process_date && <span style={{fontSize:11, color:'#6b7280'}}>planned {fmt(b.planned_process_date)}</span>}
                   {b.actual_process_date && <span style={{fontSize:11, color:'#065f46'}}>processed {fmt(b.actual_process_date)}</span>}
                   <button onClick={()=>openEdit(b)} style={{marginLeft:'auto', fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer'}}>Edit</button>
                 </div>
-                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:8, fontSize:11, color:'#4b5563', marginBottom:8}}>
+                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:8, fontSize:11, color:'#4b5563', marginBottom:10}}>
                   <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Live wt total</div><div style={{fontWeight:600}}>{totalLive>0?Math.round(totalLive).toLocaleString()+' lb':'\u2014'}</div></div>
-                  <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Hanging wt</div><div style={{fontWeight:600}}>{b.total_hanging_weight?b.total_hanging_weight.toLocaleString()+' lb':'\u2014'}</div></div>
+                  <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Hanging wt</div><div style={{fontWeight:600}}>{totalHang>0?Math.round(totalHang).toLocaleString()+' lb':'\u2014'}</div></div>
                   <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Yield</div><div style={{fontWeight:600, color:yieldPct?'#065f46':'#9ca3af'}}>{yieldPct?yieldPct+'%':'\u2014'}</div></div>
                   <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Cost</div><div style={{fontWeight:600}}>{b.processing_cost?'$'+b.processing_cost.toLocaleString():'\u2014'}</div></div>
                 </div>
-                <div style={{fontSize:11, color:'#6b7280', marginTop:6}}>
-                  <div style={{fontWeight:600, marginBottom:4, color:'#374151'}}>{'Cows in batch ('+linked.length+')'}</div>
-                  {linked.length > 0 && (
-                    <div style={{display:'flex', flexWrap:'wrap', gap:4, marginBottom:6}}>
-                      {linked.map(c => (
-                        <span key={c.id} style={{background:'#fef3c7', border:'1px solid #fde68a', borderRadius:4, padding:'2px 4px 2px 8px', fontSize:11, color:'#92400e', fontWeight:600, display:'inline-flex', alignItems:'center', gap:4}}>
-                          {'#'+(c.tag||'?')}
-                          <button onClick={()=>removeCowFromBatch(c)} title="Remove from batch" style={{background:'none', border:'none', color:'#92400e', cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 2px', fontFamily:'inherit'}}>{'\u00d7'}</button>
-                        </span>
-                      ))}
+                {rows.length > 0 && (
+                  <div style={{border:'1px solid #f3f4f6', borderRadius:8, overflow:'hidden', marginBottom:8}}>
+                    <div style={{display:'grid', gridTemplateColumns:'70px 90px 1fr 1fr 60px 28px', gap:6, background:'#f9fafb', padding:'6px 10px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, alignItems:'center'}}>
+                      <div>Tag</div>
+                      <div>Breed</div>
+                      <div>Live wt (lb)</div>
+                      <div>Hanging wt (lb)</div>
+                      <div style={{textAlign:'right'}}>Yield</div>
+                      <div></div>
                     </div>
-                  )}
-                  {(() => {
-                    const available = cattle.filter(c => c.herd === 'finishers' && !c.processing_batch_id).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0));
-                    return (
-                      <select value="" onChange={e => { if(e.target.value) addCowToBatch(b, e.target.value); e.target.value=''; }} style={{fontSize:11, padding:'4px 8px', borderRadius:5, border:'1px solid #d1d5db', fontFamily:'inherit', maxWidth:280}}>
-                        <option value="">{'+ Add cow from finishers ('+available.length+' available)'}</option>
-                        {available.map(c => <option key={c.id} value={c.id}>{'#'+c.tag+(c.breed?' \u00b7 '+c.breed:'')+(lastWeight(c)?' \u00b7 '+Math.round(lastWeight(c))+' lb':'')}</option>)}
-                      </select>
-                    );
-                  })()}
-                </div>
+                    {rows.map(r => {
+                      const cow = cattle.find(c => c.id === r.cattle_id);
+                      const lv = parseFloat(r.live_weight);
+                      const hw = parseFloat(r.hanging_weight);
+                      const y = (lv > 0 && hw > 0) ? Math.round((hw/lv)*1000)/10 : null;
+                      return (
+                        <div key={r.cattle_id} style={{display:'grid', gridTemplateColumns:'70px 90px 1fr 1fr 60px 28px', gap:6, padding:'5px 10px', fontSize:12, borderTop:'1px solid #f3f4f6', alignItems:'center'}}>
+                          <div style={{fontWeight:700, color:'#111827'}}>{'#'+(r.tag||cow?.tag||'?')}</div>
+                          <div style={{fontSize:11, color:'#6b7280'}}>{cow?.breed||'\u2014'}</div>
+                          <input type="number" min="0" step="0.1" placeholder="\u2014"
+                            value={draftVal(r.cattle_id,'live',r.live_weight)}
+                            onChange={e => setCowDraft(p => ({...p, [draftKey(r.cattle_id,'live')]: e.target.value}))}
+                            onBlur={e => { saveCowWeight(b, r.cattle_id, 'live_weight', e.target.value); setCowDraft(p => { const x={...p}; delete x[draftKey(r.cattle_id,'live')]; return x; }); }}
+                            style={{fontSize:12, padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                          <input type="number" min="0" step="0.1" placeholder="\u2014"
+                            value={draftVal(r.cattle_id,'hanging',r.hanging_weight)}
+                            onChange={e => setCowDraft(p => ({...p, [draftKey(r.cattle_id,'hanging')]: e.target.value}))}
+                            onBlur={e => { saveCowWeight(b, r.cattle_id, 'hanging_weight', e.target.value); setCowDraft(p => { const x={...p}; delete x[draftKey(r.cattle_id,'hanging')]; return x; }); }}
+                            style={{fontSize:12, padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                          <div style={{textAlign:'right', fontSize:11, color:y?'#065f46':'#9ca3af', fontWeight:y?600:400}}>{y?y+'%':'\u2014'}</div>
+                          <button onClick={()=>removeCowFromBatch(b, cow||{id:r.cattle_id})} title="Remove from batch" style={{background:'none', border:'none', color:'#b91c1c', cursor:'pointer', fontSize:14, lineHeight:1, padding:'0 2px', fontFamily:'inherit'}}>{'\u00d7'}</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {(() => {
+                  const inBatch = new Set(rows.map(r => r.cattle_id));
+                  const available = cattle.filter(c => c.herd === 'finishers' && !c.processing_batch_id && !inBatch.has(c.id)).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0));
+                  return (
+                    <select value="" onChange={e => { if(e.target.value) addCowToBatch(b, e.target.value); e.target.value=''; }} style={{fontSize:11, padding:'4px 8px', borderRadius:5, border:'1px solid #d1d5db', fontFamily:'inherit', maxWidth:320}}>
+                      <option value="">{'+ Add cow from finishers ('+available.length+' available)'}</option>
+                      {available.map(c => <option key={c.id} value={c.id}>{'#'+c.tag+(c.breed?' \u00b7 '+c.breed:'')+(lastWeight(c)?' \u00b7 '+Math.round(lastWeight(c))+' lb':'')}</option>)}
+                    </select>
+                  );
+                })()}
                 {b.notes && <div style={{marginTop:6, fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{b.notes}</div>}
               </div>
             );
@@ -15405,12 +15597,46 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
                     <option value='planned'>Planned</option><option value='complete'>Complete</option>
                   </select>
                 </div>
+                <div><label style={lbl}>Processing Cost ($)</label><input type="number" min="0" step="0.01" value={form.processing_cost} onChange={e=>setForm({...form, processing_cost:e.target.value})} style={inpS}/></div>
                 <div><label style={lbl}>Planned Process Date</label><input type="date" value={form.planned_process_date} onChange={e=>setForm({...form, planned_process_date:e.target.value})} style={inpS}/></div>
                 <div><label style={lbl}>Actual Process Date</label><input type="date" value={form.actual_process_date} onChange={e=>setForm({...form, actual_process_date:e.target.value})} style={inpS}/></div>
-                <div><label style={lbl}>Total Hanging Weight (lb)</label><input type="number" min="0" step="0.1" value={form.total_hanging_weight} onChange={e=>setForm({...form, total_hanging_weight:e.target.value})} style={inpS}/></div>
-                <div><label style={lbl}>Processing Cost ($)</label><input type="number" min="0" step="0.01" value={form.processing_cost} onChange={e=>setForm({...form, processing_cost:e.target.value})} style={inpS}/></div>
                 <div style={{gridColumn:'1/-1'}}><label style={lbl}>Notes</label><textarea value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})} rows={2} style={{...inpS, resize:'vertical'}}/></div>
               </div>
+              {!editId && (() => {
+                const available = cattle.filter(c => c.herd === 'finishers' && !c.processing_batch_id).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0));
+                const selectedSet = new Set(form.selectedCowIds||[]);
+                const toggle = (cowId) => {
+                  const next = new Set(selectedSet);
+                  if(next.has(cowId)) next.delete(cowId); else next.add(cowId);
+                  setForm({...form, selectedCowIds:[...next]});
+                };
+                return (
+                  <div style={{marginTop:12}}>
+                    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6}}>
+                      <label style={{...lbl, margin:0}}>{'Add cows from finishers ('+available.length+' available, '+selectedSet.size+' selected)'}</label>
+                      {available.length > 0 && (
+                        <button type="button" onClick={()=>setForm({...form, selectedCowIds: selectedSet.size===available.length?[]:available.map(c=>c.id)})} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>{selectedSet.size===available.length?'Clear all':'Select all'}</button>
+                      )}
+                    </div>
+                    {available.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No unassigned finishers available.</div>}
+                    {available.length > 0 && (
+                      <div style={{maxHeight:220, overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:6, padding:6, display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(140px, 1fr))', gap:4}}>
+                        {available.map(c => {
+                          const selected = selectedSet.has(c.id);
+                          const lw = lastWeight(c);
+                          return (
+                            <label key={c.id} style={{display:'flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:5, background:selected?'#dbeafe':'transparent', cursor:'pointer', fontSize:12}}>
+                              <input type="checkbox" checked={selected} onChange={()=>toggle(c.id)} style={{margin:0}}/>
+                              <span style={{fontWeight:700, color:'#111827'}}>{'#'+c.tag}</span>
+                              {lw && <span style={{fontSize:11, color:'#6b7280', marginLeft:'auto'}}>{Math.round(lw)} lb</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {form.status === 'complete' && editId && (
                 <div style={{marginTop:10, padding:'8px 12px', background:'#fef3c7', border:'1px solid #fde68a', borderRadius:6, fontSize:11, color:'#92400e'}}>
                   {'\u26a0 Marking this batch complete will auto-move all linked cattle to the Processed herd.'}
@@ -15550,6 +15776,10 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
   const [gridNote, setGridNote] = useState('');
   const [savingGrid, setSavingGrid] = useState(false);
   const [gridErr, setGridErr] = useState('');
+  // Pig send-to-trip state (no-op for broilers)
+  const [feederGroups, setFeederGroups] = useState([]);
+  const [selectedEntryIds, setSelectedEntryIds] = useState(new Set());
+  const [tripModal, setTripModal] = useState(null); // {session, entries: []}
 
   const speciesLabel = species === 'broiler' ? 'Broiler' : 'Pig';
 
@@ -15566,15 +15796,18 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     return [];
   }
   // Distribute a session's saved entries into a weights grid (mirrors the public webform).
+  // Entries already sent to a processing trip are excluded here — they live in
+  // the Send-to-Trip panel below the grid so re-saves don't wipe them.
   function hydrateGrid(s, sEntries, labels) {
     const grid = Array(labels.length * 15).fill('');
+    const free = (sEntries||[]).filter(e => !e.sent_to_trip_id);
     if(s.species === 'broiler') {
       labels.forEach(function(label, colIdx){
-        const colE = sEntries.filter(function(e){ return (e.tag||'') === label; });
+        const colE = free.filter(function(e){ return (e.tag||'') === label; });
         colE.slice(0, 15).forEach(function(e, i){ grid[colIdx*15 + i] = String(e.weight); });
       });
     } else {
-      sEntries.slice(0, labels.length * 15).forEach(function(e, i){ grid[i] = String(e.weight); });
+      free.slice(0, labels.length * 15).forEach(function(e, i){ grid[i] = String(e.weight); });
     }
     return grid;
   }
@@ -15606,6 +15839,17 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       if(data && Array.isArray(data.data)) setBroilerBatchRecs(data.data);
     });
   }, [species]);
+  // Pigs: load feeder groups so the Send-to-Trip modal can list them.
+  useEffect(() => {
+    if(species !== 'pig') return;
+    sb.from('app_store').select('data').eq('key','ppp-feeders-v1').maybeSingle().then(({data}) => {
+      if(data && Array.isArray(data.data)) setFeederGroups(data.data);
+    });
+  }, [species]);
+  async function reloadFeederGroups() {
+    const {data} = await sb.from('app_store').select('data').eq('key','ppp-feeders-v1').maybeSingle();
+    if(data && Array.isArray(data.data)) setFeederGroups(data.data);
+  }
   // When the user expands a tile, derive labels + hydrate the grid + reset edit lock.
   // Drafts are auto-unlocked; complete sessions stay locked until the user clicks Edit.
   useEffect(() => {
@@ -15649,9 +15893,9 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       await loadAll();
     });
   }
-  // Admin save: same wipe+rewrite semantics as the public webform's saveBatch.
-  // Reads the grid state for the expanded tile and replaces the session's
-  // weigh_ins rows. Keeps status as-is — Reopen / Complete are separate actions.
+  // Admin save: wipe+rewrite semantics on the UNSENT pool. Entries with
+  // sent_to_trip_id set are protected — they stay in weigh_ins and continue
+  // referencing their trip in app_store.ppp-feeders-v1.
   async function saveAdminGrid(s) {
     if(!s) return;
     const rows = [];
@@ -15663,7 +15907,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       rows.push({weight: parseFloat(w), tag: tag});
     }
     setSavingGrid(true); setGridErr('');
-    const del = await sb.from('weigh_ins').delete().eq('session_id', s.id);
+    const del = await sb.from('weigh_ins').delete().eq('session_id', s.id).is('sent_to_trip_id', null);
     if(del.error) { setSavingGrid(false); setGridErr('Save failed (clear): '+del.error.message); return; }
     let recs = [];
     if(rows.length > 0) {
@@ -15693,6 +15937,86 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     await loadAll();
   }
 
+  // Send-to-Trip: merge the selected weigh-ins into a trip inside a feeder group.
+  // Trip's pigCount gets incremented by the selection count. liveWeights gets
+  // the weights space-appended (matches the existing liveWeights string format).
+  // Each weigh-in row is stamped with sent_to_trip_id + sent_to_group_id so it
+  // survives grid saves and shows up in the Sent panel.
+  async function sendEntriesToTrip({groupId, tripId, createNewWithDate}) {
+    if(!tripModal) return;
+    const { session, entries: selectedEntries } = tripModal;
+    if(!groupId || selectedEntries.length === 0) return;
+    const groups = feederGroups.slice();
+    const gi = groups.findIndex(g => g.id === groupId);
+    if(gi < 0) return;
+    const g = {...groups[gi]};
+    const trips = (g.processingTrips||[]).slice();
+    const addWeights = selectedEntries.map(e => parseFloat(e.weight)||0).filter(w => w > 0);
+    const addCount = selectedEntries.length;
+    let effectiveTripId = tripId;
+    if(!tripId && createNewWithDate) {
+      // Create a new trip with this selection seeded
+      effectiveTripId = String(Date.now())+Math.random().toString(36).slice(2,6);
+      trips.push({
+        id: effectiveTripId,
+        date: createNewWithDate,
+        pigCount: addCount,
+        liveWeights: addWeights.join(' '),
+        hangingWeight: 0,
+        notes: '',
+      });
+    } else {
+      const ti = trips.findIndex(t => t.id === tripId);
+      if(ti < 0) return;
+      const t = {...trips[ti]};
+      t.pigCount = (parseInt(t.pigCount)||0) + addCount;
+      const existing = (t.liveWeights||'').trim();
+      t.liveWeights = (existing ? existing + ' ' : '') + addWeights.join(' ');
+      trips[ti] = t;
+    }
+    trips.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+    g.processingTrips = trips;
+    groups[gi] = g;
+    await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: groups}, {onConflict:'key'});
+    // Mark the weigh_ins rows
+    for(const e of selectedEntries) {
+      await sb.from('weigh_ins').update({
+        sent_to_trip_id: effectiveTripId,
+        sent_to_group_id: groupId,
+      }).eq('id', e.id);
+    }
+    setFeederGroups(groups);
+    setSelectedEntryIds(new Set());
+    setTripModal(null);
+    await loadAll();
+  }
+  async function undoSendToTrip(entry) {
+    if(!entry || !entry.sent_to_trip_id || !entry.sent_to_group_id) return;
+    const groups = feederGroups.slice();
+    const gi = groups.findIndex(g => g.id === entry.sent_to_group_id);
+    if(gi >= 0) {
+      const g = {...groups[gi]};
+      const trips = (g.processingTrips||[]).map(t => {
+        if(t.id !== entry.sent_to_trip_id) return t;
+        const nt = {...t};
+        nt.pigCount = Math.max(0, (parseInt(nt.pigCount)||0) - 1);
+        // Remove one occurrence of the weight from the liveWeights string
+        const targetW = parseFloat(entry.weight);
+        const parts = (nt.liveWeights||'').split(/\s+/).filter(Boolean);
+        const idx = parts.findIndex(p => parseFloat(p) === targetW);
+        if(idx >= 0) parts.splice(idx, 1);
+        nt.liveWeights = parts.join(' ');
+        return nt;
+      });
+      g.processingTrips = trips;
+      groups[gi] = g;
+      await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: groups}, {onConflict:'key'});
+      setFeederGroups(groups);
+    }
+    await sb.from('weigh_ins').update({sent_to_trip_id: null, sent_to_group_id: null}).eq('id', entry.id);
+    await loadAll();
+  }
+
   const filtered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
   const totalEntries = filtered.reduce((s,sess) => s + (entries[sess.id]?entries[sess.id].length:0), 0);
 
@@ -15712,7 +16036,6 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                 <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
               ))}
             </div>
-            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 12px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udd17 Webform'}</button>
             <button onClick={()=>setShowNewModal(true)} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
           </div>
         </div>
@@ -15797,11 +16120,149 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                         {isComplete && !gridUnlocked && <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>Click <strong>{'\u270e Edit Weights'}</strong> above to make changes.</div>}
                       </React.Fragment>
                     )}
+                    {species === 'pig' && (() => {
+                      const unsent = sEntries.filter(e => !e.sent_to_trip_id);
+                      const sent = sEntries.filter(e => e.sent_to_trip_id);
+                      const lookupTrip = (e) => {
+                        const g = feederGroups.find(x => x.id === e.sent_to_group_id);
+                        if(!g) return null;
+                        const t = (g.processingTrips||[]).find(x => x.id === e.sent_to_trip_id);
+                        return t ? { group: g, trip: t } : null;
+                      };
+                      const toggle = (id) => setSelectedEntryIds(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; });
+                      const sel = unsent.filter(e => selectedEntryIds.has(e.id));
+                      return (
+                        <div style={{marginTop:16, paddingTop:12, borderTop:'1px dashed #d1d5db'}}>
+                          <div style={{fontSize:12, fontWeight:700, color:'#374151', marginBottom:8, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                            <span>{'\ud83d\ude9a Send to Processing Trip'}</span>
+                            <span style={{fontSize:11, color:'#6b7280', fontWeight:400}}>Select individual weigh-ins to ship to a trip. Sent entries are locked from the grid above.</span>
+                          </div>
+                          {unsent.length > 0 && (
+                            <div style={{marginBottom:10}}>
+                              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(120px, 1fr))', gap:4, marginBottom:8}}>
+                                {unsent.map(e => {
+                                  const checked = selectedEntryIds.has(e.id);
+                                  return (
+                                    <label key={e.id} style={{display:'flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:5, background:checked?'#dbeafe':'white', border:'1px solid '+(checked?'#bfdbfe':'#e5e7eb'), cursor:'pointer', fontSize:12}}>
+                                      <input type="checkbox" checked={checked} onChange={()=>toggle(e.id)} style={{margin:0}}/>
+                                      <span style={{fontWeight:700, color:'#1e40af'}}>{e.weight} lb</span>
+                                      {e.tag && <span style={{fontSize:11, color:'#6b7280', marginLeft:'auto'}}>{'Col '+e.tag}</span>}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                                <button onClick={()=>setSelectedEntryIds(new Set(unsent.map(e=>e.id)))} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Select all unsent</button>
+                                {selectedEntryIds.size > 0 && <button onClick={()=>setSelectedEntryIds(new Set())} style={{fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Clear</button>}
+                                <button disabled={sel.length===0} onClick={()=>setTripModal({session:s, entries:sel})} style={{marginLeft:'auto', padding:'6px 14px', borderRadius:6, border:'none', background:sel.length>0?'#047857':'#d1d5db', color:'white', fontSize:12, fontWeight:600, cursor:sel.length>0?'pointer':'not-allowed', fontFamily:'inherit'}}>{'\u2192 Send '+sel.length+' to Trip'}</button>
+                              </div>
+                            </div>
+                          )}
+                          {sent.length > 0 && (
+                            <div style={{background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:6, padding:'8px 10px'}}>
+                              <div style={{fontSize:11, fontWeight:700, color:'#065f46', marginBottom:6, textTransform:'uppercase', letterSpacing:.5}}>{'Sent to trip ('+sent.length+')'}</div>
+                              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:4}}>
+                                {sent.map(e => {
+                                  const link = lookupTrip(e);
+                                  return (
+                                    <div key={e.id} style={{display:'flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:5, background:'white', border:'1px solid #bbf7d0', fontSize:11}}>
+                                      <span style={{fontWeight:700, color:'#047857'}}>{e.weight} lb</span>
+                                      {link && <span style={{color:'#065f46'}}>{link.group.batchName+' \u00b7 '+link.trip.date}</span>}
+                                      {!link && <span style={{color:'#b91c1c', fontStyle:'italic'}}>(missing trip)</span>}
+                                      <button onClick={()=>undoSendToTrip(e)} title="Remove from trip" style={{marginLeft:'auto', background:'none', border:'none', color:'#b91c1c', cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 2px', fontFamily:'inherit'}}>{'\u00d7'}</button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          {unsent.length === 0 && sent.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No entries in this session yet.</div>}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      </div>
+      {tripModal && <PigSendToTripModal
+        session={tripModal.session}
+        selectedEntries={tripModal.entries}
+        feederGroups={feederGroups}
+        onClose={()=>setTripModal(null)}
+        onConfirm={sendEntriesToTrip}
+      />}
+    </div>
+  );
+};
+
+// Modal for "Send to Trip" — pick a feeder group + existing trip or create new.
+// Totally stateless wrt Supabase; just collects inputs and hands them back.
+const PigSendToTripModal = ({session, selectedEntries, feederGroups, onClose, onConfirm}) => {
+  const {useState} = React;
+  const [groupId, setGroupId] = useState('');
+  const [mode, setMode] = useState('existing'); // existing | new
+  const [tripId, setTripId] = useState('');
+  const [newDate, setNewDate] = useState((session && session.date) || new Date().toISOString().slice(0,10));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const active = feederGroups.filter(g => g.status === 'active');
+  const group = feederGroups.find(g => g.id === groupId);
+  const trips = group ? [...(group.processingTrips||[])].sort((a,b)=>(b.date||'').localeCompare(a.date||'')) : [];
+  const totalWeight = selectedEntries.reduce((s,e)=>s+(parseFloat(e.weight)||0), 0);
+  async function go() {
+    if(!groupId) { setErr('Pick a feeder group.'); return; }
+    if(mode === 'existing' && !tripId) { setErr('Pick an existing trip or switch to New.'); return; }
+    if(mode === 'new' && !newDate) { setErr('Pick a date for the new trip.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await onConfirm({
+        groupId,
+        tripId: mode === 'existing' ? tripId : null,
+        createNewWithDate: mode === 'new' ? newDate : null,
+      });
+    } catch(e){ setErr(e.message||'Failed'); setBusy(false); }
+  }
+  const lblS = {display:'block', fontSize:12, color:'#374151', marginBottom:4, fontWeight:600};
+  const inpS = {fontFamily:'inherit', fontSize:13, padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6, width:'100%', boxSizing:'border-box', background:'white'};
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+      <div style={{background:'white', borderRadius:12, maxWidth:460, width:'100%', padding:'18px 20px', boxShadow:'0 12px 40px rgba(0,0,0,.25)'}}>
+        <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:10}}>{'\ud83d\ude9a Send '+selectedEntries.length+' weigh-ins to Trip'}</div>
+        <div style={{fontSize:11, color:'#6b7280', marginBottom:14}}>{'Total live weight: '+totalWeight.toFixed(1)+' lb'}</div>
+        <div style={{marginBottom:10}}>
+          <label style={lblS}>Feeder group *</label>
+          <select value={groupId} onChange={e=>{setGroupId(e.target.value); setTripId(''); setMode('existing');}} style={inpS}>
+            <option value=''>Select group...</option>
+            {active.map(g => <option key={g.id} value={g.id}>{g.batchName+' ('+(g.processingTrips||[]).length+' trips)'}</option>)}
+          </select>
+        </div>
+        {groupId && (
+          <div style={{marginBottom:10}}>
+            <div style={{display:'flex', gap:6, marginBottom:6}}>
+              <button type="button" onClick={()=>setMode('existing')} disabled={trips.length===0} style={{flex:1, padding:'6px 10px', borderRadius:6, border:'1px solid '+(mode==='existing'?'#1e40af':'#d1d5db'), background:mode==='existing'?'#1e40af':'white', color:mode==='existing'?'white':(trips.length===0?'#d1d5db':'#374151'), fontSize:12, fontWeight:600, cursor:trips.length===0?'not-allowed':'pointer', fontFamily:'inherit'}}>{'Existing trip ('+trips.length+')'}</button>
+              <button type="button" onClick={()=>setMode('new')} style={{flex:1, padding:'6px 10px', borderRadius:6, border:'1px solid '+(mode==='new'?'#1e40af':'#d1d5db'), background:mode==='new'?'#1e40af':'white', color:mode==='new'?'white':'#374151', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New trip</button>
+            </div>
+            {mode === 'existing' && (
+              <select value={tripId} onChange={e=>setTripId(e.target.value)} style={inpS}>
+                <option value=''>Select trip...</option>
+                {trips.map(t => <option key={t.id} value={t.id}>{t.date+' \u00b7 '+((t.pigCount||0))+' pigs'}</option>)}
+              </select>
+            )}
+            {mode === 'new' && (
+              <div>
+                <label style={lblS}>Trip date *</label>
+                <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={inpS}/>
+              </div>
+            )}
+          </div>
+        )}
+        {err && <div style={{color:'#b91c1c', fontSize:12, marginBottom:10, padding:'6px 10px', background:'#fef2f2', borderRadius:6}}>{err}</div>}
+        <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+          <button onClick={onClose} disabled={busy} style={{padding:'8px 14px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>Cancel</button>
+          <button onClick={go} disabled={busy || !groupId || (mode==='existing' && !tripId)} style={{padding:'8px 16px', borderRadius:7, border:'none', background:(busy||!groupId||(mode==='existing'&&!tripId))?'#9ca3af':'#047857', color:'white', fontWeight:700, fontSize:12, cursor:(busy||!groupId||(mode==='existing'&&!tripId))?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Sending\u2026':'Send'}</button>
         </div>
       </div>
     </div>
@@ -16002,42 +16463,52 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                       <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Session</button>
                     </div>
                     {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No entries in this session.</div>}
-                    {sEntries.map(e => {
-                      const cow = cattle.find(c => c.tag === e.tag);
-                      const isEditing = editingEntryId === e.id;
-                      return (
-                        <div key={e.id} style={{background:'white', border:'1px solid '+(e.new_tag_flag?'#fca5a5':'#e5e7eb'), borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:12}}>
-                          {isEditing ? (
-                            <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                              <input type="text" placeholder="Tag #" value={editForm.tag} onChange={ev=>setEditForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
-                              <input type="number" min="0" step="0.1" placeholder="lb" value={editForm.weight} onChange={ev=>setEditForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
-                              <input type="text" placeholder="Note (optional)" value={editForm.note} onChange={ev=>setEditForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:120}}/>
-                              <button onClick={()=>saveEntryEdit(e)} disabled={!(parseFloat(editForm.weight)>0)} style={{padding:'3px 10px', borderRadius:5, border:'none', background:(parseFloat(editForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(editForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>Save</button>
-                              <button onClick={()=>setEditingEntryId(null)} style={{padding:'3px 10px', borderRadius:5, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
-                            </div>
-                          ) : (
-                            <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                              {e.tag ? <span style={{fontWeight:700, color:'#111827', minWidth:60}}>#{e.tag}</span> : <span style={{color:'#9ca3af', minWidth:60}}>(no tag)</span>}
-                              <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
-                              {e.new_tag_flag && (
-                                <React.Fragment>
-                                  <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>
-                                  <select onChange={ev=>{if(ev.target.value){reconcileNewTag(e, ev.target.value);}}} defaultValue='' style={{fontSize:11, padding:'3px 6px', border:'1px solid #d1d5db', borderRadius:4, fontFamily:'inherit'}}>
-                                    <option value=''>Reconcile to known cow...</option>
-                                    {cattle.filter(c => c.tag).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(c => <option key={c.id} value={c.id}>{'#'+c.tag+' ('+(c.herd||'?')+')'}</option>)}
-                                  </select>
-                                </React.Fragment>
+                    {sEntries.length > 0 && (
+                      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:6, marginBottom:8}}>
+                        {sEntries.map(e => {
+                          const cow = cattle.find(c => c.tag === e.tag);
+                          const isEditing = editingEntryId === e.id;
+                          return (
+                            <div key={e.id} style={{background:'white', border:'1px solid '+(e.new_tag_flag?'#fca5a5':'#e5e7eb'), borderRadius:6, padding:'6px 10px', fontSize:12}}>
+                              {isEditing ? (
+                                <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                                  <div style={{display:'flex', gap:4}}>
+                                    <input type="text" placeholder="Tag #" value={editForm.tag} onChange={ev=>setEditForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:'0 0 80px', minWidth:0}}/>
+                                    <input type="number" min="0" step="0.1" placeholder="lb" value={editForm.weight} onChange={ev=>setEditForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:0}}/>
+                                  </div>
+                                  <input type="text" placeholder="Note (optional)" value={editForm.note} onChange={ev=>setEditForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit'}}/>
+                                  <div style={{display:'flex', gap:4, justifyContent:'flex-end'}}>
+                                    <button onClick={()=>setEditingEntryId(null)} style={{padding:'3px 10px', borderRadius:5, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                                    <button onClick={()=>saveEntryEdit(e)} disabled={!(parseFloat(editForm.weight)>0)} style={{padding:'3px 10px', borderRadius:5, border:'none', background:(parseFloat(editForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(editForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>Save</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                                  <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                                    {e.tag ? <span style={{fontWeight:700, color:'#111827'}}>{'#'+e.tag}</span> : <span style={{color:'#9ca3af'}}>(no tag)</span>}
+                                    <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                                    {e.new_tag_flag && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
+                                    {!e.new_tag_flag && cow && <span style={{fontSize:11, color:'#6b7280'}}>{HERD_LABELS[cow.herd]||cow.herd}</span>}
+                                    <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
+                                  </div>
+                                  {e.note && <div style={{fontSize:11, color:'#92400e', fontStyle:'italic'}}>{e.note}</div>}
+                                  {e.new_tag_flag && (
+                                    <select onChange={ev=>{if(ev.target.value){reconcileNewTag(e, ev.target.value);}}} defaultValue='' style={{fontSize:11, padding:'3px 6px', border:'1px solid #d1d5db', borderRadius:4, fontFamily:'inherit', width:'100%'}}>
+                                      <option value=''>Reconcile to known cow...</option>
+                                      {cattle.filter(c => c.tag).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(c => <option key={c.id} value={c.id}>{'#'+c.tag+' ('+(c.herd||'?')+')'}</option>)}
+                                    </select>
+                                  )}
+                                  <div style={{display:'flex', gap:4, justifyContent:'flex-end'}}>
+                                    <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
+                                    <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
+                                  </div>
+                                </div>
                               )}
-                              {!e.new_tag_flag && cow && <span style={{fontSize:11, color:'#6b7280'}}>{HERD_LABELS[cow.herd]||cow.herd}</span>}
-                              {e.note && <span style={{fontSize:11, color:'#92400e', fontStyle:'italic', flex:1}}>{e.note}</span>}
-                              <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
-                              <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
-                              <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
                     {/* Add entry row */}
                     <div style={{marginTop:8, background:'#eff6ff', border:'1px dashed #bfdbfe', borderRadius:6, padding:'8px 10px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                       <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>+ Add entry:</span>
