@@ -14349,6 +14349,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     breeding_status:'',
     maternal_issue_flag:false, maternal_issue_desc:'',
     sale_date:'', sale_amount:'', death_date:'', death_reason:'',
+    old_tags:[],  // [{tag, changed_at, source}] — source ∈ 'import'|'weigh_in'|'manual'
   };
 
   async function loadAll() {
@@ -14494,6 +14495,14 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
       death_date: cow.death_date || '',
       breeding_status: cow.breeding_status || '',
       maternal_issue_desc: cow.maternal_issue_desc || '',
+      old_tags: Array.isArray(cow.old_tags) ? cow.old_tags.map(function(t){
+        return {
+          tag: t.tag || '',
+          // changed_at can be a full ISO string or just YYYY-MM-DD; strip to date for the picker.
+          changed_at: (t.changed_at||'').slice(0,10),
+          source: t.source || 'manual',
+        };
+      }) : [],
     });
     setEditId(cow.id);
     setShowAddForm(true);
@@ -14528,6 +14537,18 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
       sale_amount: form.sale_amount !== '' ? parseFloat(form.sale_amount) : null,
       death_date: form.death_date || null,
       death_reason: form.death_reason || null,
+      // Clean + persist prior-tag entries. Drop empty tags; keep date + source
+      // so the original import stamp survives intact when admin edits other fields.
+      old_tags: (Array.isArray(form.old_tags) ? form.old_tags : [])
+        .map(function(t){
+          var tag = String(t.tag||'').trim();
+          if(!tag) return null;
+          var out = { tag: tag };
+          if(t.changed_at) out.changed_at = t.changed_at.length === 10 ? (t.changed_at + 'T12:00:00.000Z') : t.changed_at;
+          if(t.source) out.source = t.source;
+          return out;
+        })
+        .filter(Boolean),
     };
     if(form.maternal_issue_flag && !(form.maternal_issue_desc||'').trim()) {
       alert('Maternal issue description is required when the flag is set.');
@@ -14903,6 +14924,45 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                 </div>
               )}
 
+              {/* Prior Tags — purchase tag + any replacement-tag history */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:12, marginTop:4}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <label style={{...lbl, margin:0, fontSize:12, fontWeight:600, color:'#374151', textTransform:'uppercase', letterSpacing:.5}}>Prior Tags</label>
+                  <button type="button" onClick={()=>setForm({...form, old_tags:[...(form.old_tags||[]), {tag:'', changed_at:'', source:'manual'}]})} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'1px dashed #bfdbfe', borderRadius:5, padding:'3px 10px', cursor:'pointer', fontFamily:'inherit'}}>+ Add Prior Tag</button>
+                </div>
+                <div style={{fontSize:11, color:'#6b7280', marginBottom:8}}>Tags this cow had before her current one. Purchase tag from the selling farm, replacement tags from retags over time. Multiple entries supported.</div>
+                {(form.old_tags||[]).length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', padding:'4px 0'}}>No prior tags recorded.</div>}
+                {(form.old_tags||[]).map(function(t, ti){
+                  return (
+                    <div key={ti} style={{display:'grid', gridTemplateColumns:'100px 140px 1fr 30px', gap:8, marginBottom:6, alignItems:'center'}}>
+                      <input type="text" placeholder="Tag #" value={t.tag||''} onChange={function(e){
+                        var next = (form.old_tags||[]).slice();
+                        next[ti] = {...next[ti], tag:e.target.value};
+                        setForm({...form, old_tags:next});
+                      }} style={{...inpS, fontSize:12, padding:'6px 8px'}}/>
+                      <input type="date" value={t.changed_at||''} onChange={function(e){
+                        var next = (form.old_tags||[]).slice();
+                        next[ti] = {...next[ti], changed_at:e.target.value};
+                        setForm({...form, old_tags:next});
+                      }} style={{...inpS, fontSize:12, padding:'6px 8px'}}/>
+                      <select value={t.source||'manual'} onChange={function(e){
+                        var next = (form.old_tags||[]).slice();
+                        next[ti] = {...next[ti], source:e.target.value};
+                        setForm({...form, old_tags:next});
+                      }} style={{...inpS, fontSize:12, padding:'6px 8px'}}>
+                        <option value='import'>Purchase tag (selling farm)</option>
+                        <option value='weigh_in'>Replacement tag (retag)</option>
+                        <option value='manual'>Other / manual entry</option>
+                      </select>
+                      <button type="button" title="Remove" onClick={function(){
+                        var next = (form.old_tags||[]).filter(function(_,i){return i!==ti;});
+                        setForm({...form, old_tags:next});
+                      }} style={{background:'none', border:'1px solid #F09595', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:14, lineHeight:1, padding:'4px 6px', fontFamily:'inherit'}}>{'\u00d7'}</button>
+                    </div>
+                  );
+                })}
+              </div>
+
               <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:12, marginTop:4, display:'flex', flexDirection:'column', gap:10}}>
                 <label style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, alignSelf:'flex-start'}}>
                   <input type="checkbox" checked={!!form.maternal_issue_flag} onChange={e=>setForm({...form, maternal_issue_flag:e.target.checked})}/>
@@ -15041,10 +15101,13 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, f
             {(cow.sex==='cow'||cow.sex==='heifer') && cow.breeding_status && <><span style={{color:'#9ca3af'}}>Breeding:</span><span style={{textTransform:'capitalize'}}>{String(cow.breeding_status).toLowerCase()}</span></>}
             {Array.isArray(cow.old_tags) && cow.old_tags.length > 0 && (
               <>
-                <span style={{color:'#9ca3af'}}>Previous tags:</span>
+                <span style={{color:'#9ca3af'}}>Prior tags:</span>
                 <span>{cow.old_tags.slice().reverse().map(function(t,i){
-                  var dateStr = t.changed_at ? (' (until '+fmt((t.changed_at||'').slice(0,10))+')') : '';
-                  return (i>0?', ':'') + '#'+t.tag + dateStr;
+                  var dateStr = t.changed_at ? (' ' + fmt((t.changed_at||'').slice(0,10))) : '';
+                  var srcLabel = t.source === 'import' ? ' (purchase)'
+                               : t.source === 'weigh_in' ? ' (retag)'
+                               : '';
+                  return (i>0?', ':'') + '#' + t.tag + dateStr + srcLabel;
                 }).join('')}</span>
               </>
             )}
