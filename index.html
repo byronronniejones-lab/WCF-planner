@@ -15013,7 +15013,7 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, f
     return <button type="button" onClick={(e)=>{e.stopPropagation(); onNavigateToCow(t);}} style={linkStyle}>{(prefix||'')+(label||('#'+tag))}</button>;
   };
   return (
-    <div style={{background:'#ffffff', padding:'14px 18px', borderTop:'1px solid '+accentColor, borderLeft:'4px solid '+accentColor, borderRight:'1px solid #e5e7eb', borderBottom:'1px solid #e5e7eb', boxShadow:'inset 0 1px 0 rgba(0,0,0,.02), 0 1px 3px rgba(0,0,0,.04)', margin:'0 -1px'}}>
+    <div style={{background:'#ffffff', padding:'14px 18px', border:'2px solid '+accentColor, borderRadius:8, boxShadow:'0 2px 6px rgba(0,0,0,.06)', margin:'8px 12px 14px'}}>
       {canNavigateBack && onNavigateBack && (
         <div style={{marginBottom:10, padding:'6px 10px', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:6, display:'flex', alignItems:'center', gap:8}}>
           <button type="button" onClick={(e)=>{e.stopPropagation(); onNavigateBack();}} style={{...linkStyle, fontWeight:600}}>{'\u2190 Back'+(backToTag?(' to #'+backToTag):'')}</button>
@@ -16532,6 +16532,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   const [expandedSession, setExpandedSession] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all'); // all | draft | complete
   const [showNewModal, setShowNewModal] = useState(false);
+  const [tagSearch, setTagSearch] = useState('');
   // Inline entry editing
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [editForm, setEditForm] = useState({tag:'', weight:'', note:''});
@@ -16661,8 +16662,18 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     setShowNewModal(false);
   }
 
-  const filtered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
-  const totalEntries = filtered.reduce((s,sess) => s + (entries[sess.id]?entries[sess.id].length:0), 0);
+  // Tag search: filter both sessions and the entries-within-session. When a
+  // search is active, sessions with zero matching entries drop out, and within
+  // each surviving session only the matching entries render.
+  const tagQ = tagSearch.trim().toLowerCase();
+  const entryMatchesTag = (e) => !tagQ || (e.tag||'').toLowerCase().includes(tagQ);
+  const statusFiltered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
+  const filtered = tagQ
+    ? statusFiltered.filter(s => (entries[s.id]||[]).some(entryMatchesTag))
+    : statusFiltered;
+  const visibleEntriesFor = (sid) => (entries[sid]||[]).filter(entryMatchesTag);
+  const totalEntries = filtered.reduce((s,sess) => s + visibleEntriesFor(sess.id).length, 0);
+  const matchedSessionCount = tagQ ? filtered.length : null;
   const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls'};
 
   return (
@@ -16673,9 +16684,23 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8}}>
           <div>
             <div style={{fontSize:16, fontWeight:700, color:'#111827'}}>Cattle Weigh-In Sessions</div>
-            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>{filtered.length} sessions {'\u00b7'} {totalEntries} total entries</div>
+            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>
+              {tagQ
+                ? <span>Search <strong>{'#'+tagSearch}</strong>: {matchedSessionCount} session{matchedSessionCount===1?'':'s'} {'\u00b7'} {totalEntries} matching {totalEntries===1?'entry':'entries'}</span>
+                : <span>{filtered.length} sessions {'\u00b7'} {totalEntries} total entries</span>}
+            </div>
           </div>
-          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+          <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+            <div style={{position:'relative'}}>
+              <input
+                type="search"
+                value={tagSearch}
+                onChange={e=>{ setTagSearch(e.target.value); if(e.target.value) setExpandedSession(null); }}
+                placeholder="Search by tag #..."
+                style={{fontFamily:'inherit', fontSize:12, padding:'6px 28px 6px 10px', border:'1px solid #d1d5db', borderRadius:6, width:160, boxSizing:'border-box', background:'white', color:'#111827', outline:'none'}}
+              />
+              {tagSearch && <button type="button" onClick={()=>setTagSearch('')} title="Clear search" style={{position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', fontSize:16, lineHeight:1, color:'#9ca3af', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>{'\u00d7'}</button>}
+            </div>
             <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
               {[{k:'all',l:'All'},{k:'draft',l:'Drafts'},{k:'complete',l:'Complete'}].map((o,oi) => (
                 <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
@@ -16694,19 +16719,25 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
 
         <div style={{display:'flex', flexDirection:'column', gap:8}}>
           {filtered.map(s => {
-            const isExpanded = expandedSession === s.id;
-            const sEntries = entries[s.id] || [];
-            const newTagCount = sEntries.filter(e => e.new_tag_flag).length;
+            const sEntriesAll = entries[s.id] || [];
+            // When searching, each session row auto-expands to just the matches,
+            // so the user doesn't have to click through each session to find tags.
+            const isExpanded = tagQ ? true : (expandedSession === s.id);
+            const sEntries = tagQ ? sEntriesAll.filter(entryMatchesTag) : sEntriesAll;
+            const newTagCount = sEntriesAll.filter(e => e.new_tag_flag).length;
+            const countLabel = tagQ
+              ? (sEntries.length + ' of ' + sEntriesAll.length + ' match')
+              : (sEntriesAll.length + ' ' + (sEntriesAll.length===1?'entry':'entries'));
             return (
               <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
-                <div onClick={()=>setExpandedSession(isExpanded?null:s.id)} style={{padding:'10px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className="hoverable-tile">
-                  <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
+                <div onClick={()=>{ if(tagQ) return; setExpandedSession(isExpanded?null:s.id); }} style={{padding:'10px 16px', cursor:tagQ?'default':'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className={tagQ?'':'hoverable-tile'}>
+                  {!tagQ && <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>}
                   <span style={{fontSize:13, fontWeight:700, color:'#111827', minWidth:120}}>{HERD_LABELS[s.herd]||s.herd||'Unknown herd'}</span>
                   <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:s.status==='complete'?'#d1fae5':'#fef3c7', color:s.status==='complete'?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
-                  <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>{sEntries.length} {sEntries.length===1?'entry':'entries'}</span>
-                  {newTagCount > 0 && <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>{newTagCount + ' new tags'}</span>}
+                  <span style={{fontSize:11, fontWeight:600, color:tagQ?'#065f46':'#1e40af'}}>{countLabel}</span>
+                  {newTagCount > 0 && !tagQ && <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>{newTagCount + ' new tags'}</span>}
                 </div>
                 {isExpanded && (
                   <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
