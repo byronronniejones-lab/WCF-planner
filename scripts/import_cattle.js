@@ -43,7 +43,16 @@ const OUTCOME_HERDS = new Set(['processed','deceased','sold']);
 // ───── helpers ───────────────────────────────────────────────────────────────
 const shortHash = s => crypto.createHash('sha1').update(s).digest('hex').slice(0, 12);
 const normStr = v => { if (v == null) return null; const s = String(v).trim(); return s === '' ? null : s; };
-const normNum = v => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+const normNum = v => {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  // Strip currency symbols, commas, and whitespace — Podio exports amounts
+  // like "$ 1,523.50" which Number() can't parse directly.
+  const cleaned = String(v).replace(/[$,\s]/g, '').replace(/[^0-9.\-]/g, '');
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+};
 function xlsxDate(v) {
   if (v == null || v === '') return null;
   if (v instanceof Date) {
@@ -100,7 +109,9 @@ function parseCattle() {
       birth_date:        xlsxDate(r['Birth Date']),
       purchase_date:     xlsxDate(r['Purchase Date']),
       receiving_weight:  normNum(r['Receiving Weight']),
-      purchase_amount:   normNum(r['Purchase Amount']),
+      // Podio splits Purchase Amount into two columns: "- amount" and "- currency".
+      // Original code read the non-existent combined "Purchase Amount" field.
+      purchase_amount:   normNum(r['Purchase Amount - amount']),
       breeding_status:   normStr(r['Breeding Status']),
       sire_tag:          normStr(r['Sire']),
       dam_tag:           normStr(r['Dam']),
