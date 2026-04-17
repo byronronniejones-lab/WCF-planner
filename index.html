@@ -2073,12 +2073,29 @@ const WeighInsWebform = ({sb}) => {
     setBusy(false);
     setStage('done');
   }
-  // Cattle entry. mode is 'normal' (pick existing tag), 'new_cow' (also INSERT
-  // a fresh cattle row in the session's herd before saving the weigh-in), or
-  // 'replacement' (flag the entry so it can be reconciled to a known cow later
-  // — either inside this session via the pending-reconcile panel or by admin).
-  // priorTag (new_cow only) optionally seeds old_tags, e.g. the tag a purchased
-  // cow was wearing when it arrived from another farm.
+  // Find a cow by prior tag, walking through current tag → import old_tags →
+  // weigh_in old_tags, in that order (per the retag spec from Ronnie).
+  function findCowByPriorTag(priorTag) {
+    if(!priorTag) return null;
+    const pt = String(priorTag).trim();
+    const byCurrent = cattleList.find(c => c.tag === pt);
+    if(byCurrent) return byCurrent;
+    const byImport = cattleList.find(c => Array.isArray(c.old_tags) && c.old_tags.some(ot => ot && ot.tag === pt && ot.source === 'import'));
+    if(byImport) return byImport;
+    const byWeighIn = cattleList.find(c => Array.isArray(c.old_tags) && c.old_tags.some(ot => ot && ot.tag === pt && ot.source === 'weigh_in'));
+    return byWeighIn || null;
+  }
+  // Cattle entry modes:
+  //   'normal'      — pick existing tag, weigh in
+  //   'new_cow'     — create a fresh cattle row in the session's herd (for
+  //                   never-tagged calves etc). priorTag optional.
+  //   'replacement' — flag the entry; reconcile to a known cow later
+  //                   (when we don't know which cow lost its tag yet).
+  //   'retag'       — NEW: retag a known cow on the spot. Caller supplies
+  //                   priorTag (her current or prior tag). System swaps her
+  //                   tag to the new one + appends an old_tags entry. Useful
+  //                   for bulk retag of a 20-head buy where reconciling
+  //                   after the fact would be a nightmare.
   async function saveEntry({tag, weight, note, mode, sex, priorTag}) {
     if(!session) return;
     if(!weight || parseFloat(weight) <= 0) { setErr('Weight is required.'); return; }
@@ -2088,14 +2105,24 @@ const WeighInsWebform = ({sb}) => {
       if(cattleList.find(c => c.tag === tag)) { setErr('Tag #'+tag+' already exists in the directory.'); return; }
       if(priorTag && priorTag.trim() === tag.trim()) { setErr('Prior tag and new tag cannot be the same.'); return; }
     }
+    let retagCow = null;
+    if(mode === 'retag') {
+      if(!priorTag || !priorTag.trim()) { setErr('Prior tag is required for a retag.'); return; }
+      if(priorTag.trim() === tag.trim()) { setErr('Prior tag and new tag cannot be the same.'); return; }
+      if(cattleList.find(c => c.tag === tag.trim())) { setErr('Tag #'+tag+' is already assigned to another cow.'); return; }
+      retagCow = findCowByPriorTag(priorTag);
+      if(!retagCow) { setErr('No cow found with prior tag #'+priorTag+'. Check the number or use + Replacement Tag instead.'); return; }
+    }
     setErr(''); setBusy(true);
     const id = String(Date.now())+Math.random().toString(36).slice(2,6);
     const herd = (session && session.herd) || cattleHerd || null;
     // For new_cow: create the cattle row first so the weigh-in references a real cow.
     if(mode === 'new_cow' && herd) {
       const cowId = String(Date.now()+1)+Math.random().toString(36).slice(2,6);
+      // Known at entry time → labeled as "Purchase tag" (source='import') per
+      // the workflow-based convention Ronnie picked for auto-select.
       const oldTags = (priorTag && priorTag.trim())
-        ? [{tag: priorTag.trim(), changed_at: new Date().toISOString(), source: 'purchase'}]
+        ? [{tag: priorTag.trim(), changed_at: new Date().toISOString(), source: 'import'}]
         : [];
       const cowRec = { id: cowId, tag: tag, herd: herd, sex: sex, old_tags: oldTags };
       const cowIns = await sb.from('cattle').insert(cowRec);
@@ -2103,13 +2130,28 @@ const WeighInsWebform = ({sb}) => {
       // Reflect locally so subsequent dropdowns/list immediately include the new cow.
       setCattleList(prev => prev.concat([cowRec]));
     }
+    // For retag: swap the known cow's tag on the spot + stamp old_tags with the
+    // prior value. Weigh-in lands with new_tag_flag=false (already resolved).
+    if(mode === 'retag' && retagCow) {
+      // Tag known at entry → "Purchase tag" (source='import'). Matches the
+      // common case of bulk-retagging a newly-purchased group whose prior
+      // tag was the selling-farm number.
+      const updatedOldTags = (Array.isArray(retagCow.old_tags) ? retagCow.old_tags : [])
+        .concat([{tag: priorTag.trim(), changed_at: new Date().toISOString(), source: 'import'}]);
+      const cowUpd = await sb.from('cattle').update({tag: tag.trim(), old_tags: updatedOldTags}).eq('id', retagCow.id);
+      if(cowUpd.error) { setBusy(false); setErr('Could not retag cow: '+cowUpd.error.message); return; }
+      setCattleList(prev => prev.map(c => c.id === retagCow.id ? {...c, tag: tag.trim(), old_tags: updatedOldTags} : c));
+    }
     const rec = {
       id, session_id: session.id,
       tag: tag || null,
       weight: parseFloat(weight),
       note: note || null,
       new_tag_flag: mode === 'replacement',
-      reconcile_intent: mode === 'replacement' ? 'replacement' : (mode === 'new_cow' ? 'new_cow' : null),
+      reconcile_intent: mode === 'replacement' ? 'replacement'
+                       : mode === 'new_cow'     ? 'new_cow'
+                       : mode === 'retag'       ? 'retag'
+                       : null,
     };
     const {error} = await sb.from('weigh_ins').insert(rec);
     if(error) { setBusy(false); setErr('Save failed: '+error.message); return; }
@@ -2117,7 +2159,8 @@ const WeighInsWebform = ({sb}) => {
     // For 'replacement' mode the cow won't be known yet — comment is tagged
     // by tag string only and will get its cattle_id reconciled later.
     if(species === 'cattle' && note && note.trim() && tag) {
-      const cow = cattleList.find(c => c.tag === tag);
+      // For retag we already know the cow (we just updated her).
+      const cow = mode === 'retag' ? retagCow : cattleList.find(c => c.tag === tag);
       try {
         await sb.from('cattle_comments').insert({
           id: String(Date.now())+Math.random().toString(36).slice(2,6),
@@ -2147,8 +2190,9 @@ const WeighInsWebform = ({sb}) => {
     setErr(''); setBusy(true);
     const priorTag = cow.tag;
     const newTag = entry.tag;
+    // Reconciled after entry → labeled "Retag" (source='weigh_in').
     const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : [])
-      .concat([{tag: priorTag, changed_at: new Date().toISOString()}]);
+      .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'weigh_in'}]);
     const cowUpd = await sb.from('cattle').update({tag: newTag, old_tags: updatedOldTags}).eq('id', cowId);
     if(cowUpd.error) { setBusy(false); setErr('Could not swap tag: '+cowUpd.error.message); return; }
     const wiUpd = await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
@@ -2414,9 +2458,10 @@ const WeighInsWebform = ({sb}) => {
                     {remainingTags.map(t => <option key={t} value={t}>{'#'+t}</option>)}
                   </select>
                 </div>
-                <div style={{display:'flex', gap:6, marginBottom:10}}>
-                  <button type="button" onClick={()=>{setEntryMode('new_cow'); setTagInput(''); setNewCowSex('cow');}} style={{flex:1, padding:8, borderRadius:8, border:'1px dashed #047857', background:'transparent', color:'#065f46', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New Cow</button>
-                  <button type="button" onClick={()=>{setEntryMode('replacement'); setTagInput('');}} style={{flex:1, padding:8, borderRadius:8, border:'1px dashed #b45309', background:'transparent', color:'#92400e', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Replacement Tag</button>
+                <div style={{display:'flex', gap:6, marginBottom:10, flexWrap:'wrap'}}>
+                  <button type="button" onClick={()=>{setEntryMode('new_cow'); setTagInput(''); setNewCowSex('cow'); setPriorTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #047857', background:'transparent', color:'#065f46', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New Cow</button>
+                  <button type="button" onClick={()=>{setEntryMode('retag'); setTagInput(''); setPriorTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #1d4ed8', background:'transparent', color:'#1e40af', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u21bb Retag'}</button>
+                  <button type="button" onClick={()=>{setEntryMode('replacement'); setTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #b45309', background:'transparent', color:'#92400e', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Replacement Tag</button>
                 </div>
               </React.Fragment>
             )}
@@ -2444,10 +2489,26 @@ const WeighInsWebform = ({sb}) => {
                 </div>
               </div>
             )}
+            {entryMode === 'retag' && (
+              <div style={{marginBottom:10, padding:10, background:'#eff6ff', borderRadius:8, border:'1px solid #bfdbfe'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <div style={{fontSize:11, fontWeight:700, color:'#1e40af'}}>{'\u21bb Retag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 swap a known cow\u2019s tag on the spot'}</span></div>
+                  <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setPriorTagInput(''); setErr('');}} style={{padding:'3px 9px', borderRadius:6, border:'1px solid #6b7280', background:'white', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2715 Cancel'}</button>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={lblS}>Prior tag # *<span style={{fontSize:10, color:'#9ca3af', fontWeight:400}}>{' \u00b7 selling-farm or older WCF tag'}</span></label>
+                  <input type="text" value={priorTagInput} onChange={e=>setPriorTagInput(e.target.value)} placeholder="e.g. 59" style={inpS}/>
+                </div>
+                <div style={{marginBottom:0}}>
+                  <label style={lblS}>New tag # *</label>
+                  <input type="text" value={tagInput} onChange={e=>setTagInput(e.target.value)} placeholder="e.g. 354" style={inpS}/>
+                </div>
+              </div>
+            )}
             {entryMode === 'replacement' && (
               <div style={{marginBottom:10, padding:10, background:'#fffbeb', borderRadius:8, border:'1px solid #fde68a'}}>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-                  <div style={{fontSize:11, fontWeight:700, color:'#92400e'}}>{'\u26a0\ufe0f Replacement Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 must be reconciled before completing'}</span></div>
+                  <div style={{fontSize:11, fontWeight:700, color:'#92400e'}}>{'\u26a0\ufe0f Replacement Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 reconcile later if cow is unknown now'}</span></div>
                   <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setErr('');}} style={{padding:'3px 9px', borderRadius:6, border:'1px solid #6b7280', background:'white', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2715 Cancel'}</button>
                 </div>
                 <label style={lblS}>New tag # *</label>
@@ -16602,7 +16663,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [editForm, setEditForm] = useState({tag:'', weight:'', note:''});
   // Add-entry form per session
-  const [addEntryForm, setAddEntryForm] = useState({tag:'', weight:'', note:''});
+  const [addEntryForm, setAddEntryForm] = useState({tag:'', weight:'', note:'', priorTag:''});
 
   async function loadAll() {
     const [sR, eAll, cR] = await Promise.all([
@@ -16651,11 +16712,12 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     if(!cow) return;
     // Tag-swap pattern: the WEIGH-IN keeps its new tag (the entry IS the new tag),
     // and the COW's tag gets updated to that new tag with the prior tag pushed to
-    // old_tags. Mirrors the webform's reconcileEntryToCow.
+    // old_tags. Mirrors the webform's reconcileEntryToCow. Reconciled after
+    // entry → labeled "Retag" (source='weigh_in').
     const priorTag = cow.tag;
     const newTag = entry.tag;
     const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : [])
-      .concat([{tag: priorTag, changed_at: new Date().toISOString()}]);
+      .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'weigh_in'}]);
     await sb.from('cattle').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownCowId);
     await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
     try { await sb.from('cattle_comments').update({cattle_id: knownCowId, cattle_tag: newTag}).eq('reference_id', entry.id); } catch(e){}
@@ -16697,10 +16759,49 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
       await loadAll();
     });
   }
+  // Same walk as the webform's findCowByPriorTag: current tag →
+  // import old_tags → weigh_in old_tags.
+  function findCowByPriorTagAdmin(priorTag) {
+    if(!priorTag) return null;
+    const pt = String(priorTag).trim();
+    const byCurrent = cattle.find(c => c.tag === pt);
+    if(byCurrent) return byCurrent;
+    const byImport = cattle.find(c => Array.isArray(c.old_tags) && c.old_tags.some(ot => ot && ot.tag === pt && ot.source === 'import'));
+    if(byImport) return byImport;
+    const byWeighIn = cattle.find(c => Array.isArray(c.old_tags) && c.old_tags.some(ot => ot && ot.tag === pt && ot.source === 'weigh_in'));
+    return byWeighIn || null;
+  }
   async function addEntryToSession(s) {
     const tag = (addEntryForm.tag||'').trim() || null;
     const weight = parseFloat(addEntryForm.weight);
     if(!Number.isFinite(weight) || weight <= 0) return;
+    const priorTag = (addEntryForm.priorTag||'').trim();
+    // Retag flow in admin: if a prior tag was supplied, swap the matching cow's
+    // tag on the spot and stamp her old_tags. Mirrors the webform's retag mode.
+    if(priorTag) {
+      if(!tag) { alert('Enter a New tag # for the retag.'); return; }
+      if(priorTag === tag) { alert('Prior tag and new tag cannot be the same.'); return; }
+      const existingAtNewTag = cattle.find(c => c.tag === tag);
+      if(existingAtNewTag) { alert('Tag #'+tag+' is already assigned to another cow.'); return; }
+      const cow = findCowByPriorTagAdmin(priorTag);
+      if(!cow) { alert('No cow found with prior tag #'+priorTag+'.'); return; }
+      const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : [])
+        .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'import'}]);
+      const cowUpd = await sb.from('cattle').update({tag, old_tags: updatedOldTags}).eq('id', cow.id);
+      if(cowUpd.error) { alert('Retag failed: '+cowUpd.error.message); return; }
+      const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+      await sb.from('weigh_ins').insert({
+        id, session_id: s.id, tag, weight,
+        note: addEntryForm.note || null,
+        new_tag_flag: false,
+        reconcile_intent: 'retag',
+        entered_at: new Date().toISOString(),
+      });
+      invalidateCattleWeighInsCache();
+      setAddEntryForm({tag:'', weight:'', note:'', priorTag:''});
+      await loadAll();
+      return;
+    }
     const cowWithTag = tag ? cattle.find(c => c.tag === tag) : null;
     const newTagFlag = tag && !cowWithTag;
     const id = String(Date.now())+Math.random().toString(36).slice(2,6);
@@ -16711,7 +16812,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
       entered_at: new Date().toISOString(),
     });
     invalidateCattleWeighInsCache();
-    setAddEntryForm({tag:'', weight:'', note:''});
+    setAddEntryForm({tag:'', weight:'', note:'', priorTag:''});
     await loadAll();
   }
   async function createNewSession(opts) {
@@ -16858,13 +16959,15 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                         })}
                       </div>
                     )}
-                    {/* Add entry row */}
+                    {/* Add entry row. Prior tag # triggers the on-the-spot retag
+                        flow (swaps matching cow's tag + stamps her old_tags). */}
                     <div style={{marginTop:8, background:'#eff6ff', border:'1px dashed #bfdbfe', borderRadius:6, padding:'8px 10px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                       <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>+ Add entry:</span>
-                      <input type="text" placeholder="Tag #" value={addEntryForm.tag} onChange={ev=>setAddEntryForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
-                      <input type="number" min="0" step="0.1" placeholder="lb" value={addEntryForm.weight} onChange={ev=>setAddEntryForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
-                      <input type="text" placeholder="Note (optional)" value={addEntryForm.note} onChange={ev=>setAddEntryForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:120}}/>
-                      <button onClick={()=>addEntryToSession(s)} disabled={!(parseFloat(addEntryForm.weight)>0)} style={{padding:'4px 12px', borderRadius:5, border:'none', background:(parseFloat(addEntryForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(addEntryForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>Add</button>
+                      <input type="text" placeholder="Prior tag (retag)" title="Optional. Fill to retag a known cow on the spot." value={addEntryForm.priorTag} onChange={ev=>setAddEntryForm(f=>({...f, priorTag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:130, background:addEntryForm.priorTag?'#dbeafe':'white'}}/>
+                      <input type="text" placeholder={addEntryForm.priorTag?'New tag #':'Tag #'} value={addEntryForm.tag} onChange={ev=>setAddEntryForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:90}}/>
+                      <input type="number" min="0" step="0.1" placeholder="lb" value={addEntryForm.weight} onChange={ev=>setAddEntryForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:70}}/>
+                      <input type="text" placeholder="Note (optional)" value={addEntryForm.note} onChange={ev=>setAddEntryForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:100}}/>
+                      <button onClick={()=>addEntryToSession(s)} disabled={!(parseFloat(addEntryForm.weight)>0)} style={{padding:'4px 12px', borderRadius:5, border:'none', background:(parseFloat(addEntryForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(addEntryForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>{addEntryForm.priorTag?'Retag + Add':'Add'}</button>
                     </div>
                   </div>
                 )}
