@@ -14332,6 +14332,9 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   const [saving, setSaving] = useState(false);
   const [expandedCow, setExpandedCow] = useState(null);
   const [expandedHerds, setExpandedHerds] = useState({});
+  // Navigation stack for clicking into calving/dam/sire links — lets the
+  // cow detail panel show a "← Back to #X" button to return to the prior cow.
+  const [cowNavStack, setCowNavStack] = useState([]);
 
   const HERDS = ['mommas','backgrounders','finishers','bulls'];
   const OUTCOMES = ['processed','deceased','sold'];
@@ -14397,6 +14400,50 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     if(tags.size === 0) return null;
     const w = weighIns.find(x => tags.has(x.tag));
     return w ? parseFloat(w.weight) : null;
+  }
+  // Jump to another cow's detail (called from calving / dam / sire links).
+  // Pushes the currently-open cow onto a back stack so the detail panel can
+  // render a "← Back" button. Handles both tile mode (active herds) and
+  // flat mode (outcome herds) by adjusting filter + ensuring the target's
+  // herd tile is expanded.
+  function navigateToCow(target, fromCowId) {
+    if(!target || !target.id) return;
+    if(fromCowId && fromCowId !== target.id) setCowNavStack(s => [...s, fromCowId]);
+    if(HERDS.includes(target.herd)) {
+      setSearch('');
+      setStatusFilter('active');
+      setExpandedHerds(prev => ({...prev, [target.herd]: true}));
+    } else {
+      // Outcome herd — put the cow in flat-list view filtered to that outcome
+      setSearch('');
+      setStatusFilter(target.herd);
+    }
+    setExpandedCow(target.id);
+    setTimeout(() => {
+      const el = document.getElementById('cow-'+target.id);
+      if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+    }, 80);
+  }
+  function navigateBack() {
+    if(cowNavStack.length === 0) { setExpandedCow(null); return; }
+    const prevId = cowNavStack[cowNavStack.length-1];
+    const prev = cattle.find(c => c.id === prevId);
+    setCowNavStack(s => s.slice(0, -1));
+    if(prev) {
+      if(HERDS.includes(prev.herd)) {
+        setStatusFilter('active');
+        setExpandedHerds(p => ({...p, [prev.herd]: true}));
+      } else {
+        setStatusFilter(prev.herd);
+      }
+      setExpandedCow(prev.id);
+      setTimeout(() => {
+        const el = document.getElementById('cow-'+prev.id);
+        if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+      }, 80);
+    } else {
+      setExpandedCow(null);
+    }
   }
   function lastCalving(tag) {
     if(!tag) return null;
@@ -14651,19 +14698,52 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
             {sorted.map((c, i) => {
               const hc = HERD_COLORS[c.herd] || HERD_COLORS.mommas;
               const lw = lastWeight(c);
+              const isExpanded = expandedCow === c.id;
+              const cTags = cowTagSet(c);
+              const cowWeighIns = weighIns.filter(w => cTags.has(w.tag));
+              const cowCalving = calvingRecs.filter(r => r.dam_tag === c.tag);
+              const cowComments = comments.filter(cm => cm.cattle_id === c.id || cm.cattle_tag === c.tag).slice(0, 20);
               return (
-                <div key={c.id} onClick={()=>openEdit(c)} style={{padding:'10px 16px', borderBottom:i<sorted.length-1?'1px solid #f3f4f6':'none', display:'grid', gridTemplateColumns:'70px 110px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'white'}} className="hoverable-tile">
-                  <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
-                  <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, fontWeight:600, textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{HERD_LABELS[c.herd]}</span>
-                  <span style={{fontSize:11, color:'#6b7280'}}>{c.sex||'\u2014'}</span>
-                  <span style={{fontSize:11, color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{c.breed||'\u2014'}</span>
-                  <span style={{fontSize:11, color:'#6b7280'}}>{age(c.birth_date)||'\u2014'}</span>
-                  <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400}}>{lw ? lw.toLocaleString()+' lb' : 'no weigh-in'}</span>
-                  <span style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-                    {c.dam_tag && <span style={{fontSize:11, color:'#9ca3af'}}>{'dam #'+c.dam_tag}</span>}
-                    {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL ISSUE</span>}
-                    {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
-                  </span>
+                <div key={c.id} id={'cow-'+c.id} style={{borderBottom:i<sorted.length-1?'1px solid #f3f4f6':'none'}}>
+                  <div onClick={()=>setExpandedCow(isExpanded?null:c.id)} style={{padding:'10px 16px', display:'grid', gridTemplateColumns:'16px 70px 110px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'white'}} className="hoverable-tile">
+                    <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
+                    <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
+                    <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:hc.bg, color:hc.tx, border:'1px solid '+hc.bd, fontWeight:600, textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{HERD_LABELS[c.herd]}</span>
+                    <span style={{fontSize:11, color:'#6b7280'}}>{c.sex||'\u2014'}</span>
+                    <span style={{fontSize:11, color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{c.breed||'\u2014'}</span>
+                    <span style={{fontSize:11, color:'#6b7280'}}>{age(c.birth_date)||'\u2014'}</span>
+                    <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400}}>{lw ? lw.toLocaleString()+' lb' : 'no weigh-in'}</span>
+                    <span style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                      {c.dam_tag && <span style={{fontSize:11, color:'#9ca3af'}}>{'dam #'+c.dam_tag}</span>}
+                      {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL ISSUE</span>}
+                      {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
+                    </span>
+                  </div>
+                  {isExpanded && <CowDetail
+                    cow={c}
+                    weighIns={cowWeighIns}
+                    calving={cowCalving}
+                    comments={cowComments}
+                    calves={cattle.filter(x => x.dam_tag === c.tag)}
+                    dam={cattle.find(x => x.tag === c.dam_tag)}
+                    cattleList={cattle}
+                    fmt={fmt}
+                    HERDS={ALL_HERDS}
+                    HERD_LABELS={HERD_LABELS}
+                    HERD_COLORS={HERD_COLORS}
+                    onEdit={()=>openEdit(c)}
+                    onTransfer={(newHerd)=>transferCow(c.id, newHerd)}
+                    onDelete={()=>deleteCow(c.id)}
+                    onComment={(text)=>addQuickComment(c.id, c.tag, text)}
+                    onEditComment={editComment}
+                    onDeleteComment={deleteComment}
+                    onAddCalving={(data)=>addCalvingRecord(c, data)}
+                    onDeleteCalving={(id)=>deleteCalvingRecord(id)}
+                    onNavigateToCow={(target)=>navigateToCow(target, c.id)}
+                    onNavigateBack={navigateBack}
+                    canNavigateBack={cowNavStack.length > 0}
+                    backToTag={cowNavStack.length > 0 ? (cattle.find(x => x.id === cowNavStack[cowNavStack.length-1])||{}).tag : null}
+                  />}
                 </div>
               );
             })}
@@ -14693,11 +14773,11 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                     const cc = calfCount(c.tag);
                     const isExpanded = expandedCow === c.id;
                     const cTags = cowTagSet(c);
-                    const cowWeighIns = weighIns.filter(w => cTags.has(w.tag)).slice(0, 10);
+                    const cowWeighIns = weighIns.filter(w => cTags.has(w.tag));
                     const cowCalving = calvingRecs.filter(r => r.dam_tag === c.tag);
                     const cowComments = comments.filter(cm => cm.cattle_id === c.id || cm.cattle_tag === c.tag).slice(0, 20);
                     return (
-                      <div key={c.id} style={{borderBottom:'1px solid #f3f4f6'}}>
+                      <div key={c.id} id={'cow-'+c.id} style={{borderBottom:'1px solid #f3f4f6'}}>
                         <div onClick={()=>setExpandedCow(isExpanded?null:c.id)} style={{padding:'10px 18px', display:'grid', gridTemplateColumns:'16px 70px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'transparent'}} className="hoverable-tile">
                           <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
                           <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
@@ -14719,9 +14799,11 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                           comments={cowComments}
                           calves={cattle.filter(x => x.dam_tag === c.tag)}
                           dam={cattle.find(x => x.tag === c.dam_tag)}
+                          cattleList={cattle}
                           fmt={fmt}
                           HERDS={ALL_HERDS}
                           HERD_LABELS={HERD_LABELS}
+                          HERD_COLORS={HERD_COLORS}
                           onEdit={()=>openEdit(c)}
                           onTransfer={(newHerd)=>transferCow(c.id, newHerd)}
                           onDelete={()=>deleteCow(c.id)}
@@ -14730,6 +14812,10 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                           onDeleteComment={deleteComment}
                           onAddCalving={(data)=>addCalvingRecord(c, data)}
                           onDeleteCalving={(id)=>deleteCalvingRecord(id)}
+                          onNavigateToCow={(target)=>navigateToCow(target, c.id)}
+                          onNavigateBack={navigateBack}
+                          canNavigateBack={cowNavStack.length > 0}
+                          backToTag={cowNavStack.length > 0 ? (cattle.find(x => x.id === cowNavStack[cowNavStack.length-1])||{}).tag : null}
                         />}
                       </div>
                     );
@@ -14899,13 +14985,15 @@ const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS,
 };
 
 // Helper component — cow detail body shown when expanded inside the herd tile
-const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, HERD_LABELS, onEdit, onTransfer, onDelete, onComment, onEditComment, onDeleteComment, onAddCalving, onDeleteCalving}) => {
+const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, fmt, HERDS, HERD_LABELS, HERD_COLORS, onEdit, onTransfer, onDelete, onComment, onEditComment, onDeleteComment, onAddCalving, onDeleteCalving, onNavigateToCow, onNavigateBack, canNavigateBack, backToTag}) => {
   const [commentText, setCommentText] = React.useState('');
   const [showTransfer, setShowTransfer] = React.useState(false);
   const [showCalvingForm, setShowCalvingForm] = React.useState(false);
   const [editingCommentId, setEditingCommentId] = React.useState(null);
   const [editingCommentText, setEditingCommentText] = React.useState('');
   const [calvingForm, setCalvingForm] = React.useState({calving_date:new Date().toISOString().slice(0,10), calf_tag:'', sire_tag:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''});
+  const [weightView, setWeightView] = React.useState('table'); // 'table' | 'chart'
+  const [chartHover, setChartHover] = React.useState(null);   // {idx, x, y}
   const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:6};
   const isMomma = cow.herd === 'mommas';
   async function submitCalving() {
@@ -14915,8 +15003,29 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
   const inpC = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
   const lblC = {fontSize:10, color:'#6b7280', display:'block', marginBottom:2, fontWeight:500};
 
+  // Tag lookup helper for cross-cow navigation (calving → calf, lineage → dam/sire)
+  const findByTag = (t) => t && Array.isArray(cattleList) ? cattleList.find(x => x.tag === t) : null;
+  const accentColor = (HERD_COLORS && HERD_COLORS[cow.herd] && HERD_COLORS[cow.herd].tx) || '#991b1b';
+  const linkStyle = {color:'#1d4ed8', cursor:'pointer', textDecoration:'underline', background:'none', border:'none', padding:0, font:'inherit'};
+  const TagLink = ({tag, prefix, label}) => {
+    const t = findByTag(tag);
+    if(!t || !onNavigateToCow) return <span>{(prefix||'')+(label||('#'+tag))}</span>;
+    return <button type="button" onClick={(e)=>{e.stopPropagation(); onNavigateToCow(t);}} style={linkStyle}>{(prefix||'')+(label||('#'+tag))}</button>;
+  };
   return (
-    <div style={{background:'#fafafa', padding:'14px 18px', borderTop:'1px solid #f3f4f6'}}>
+    <div style={{background:'#ffffff', padding:'14px 18px', borderTop:'1px solid '+accentColor, borderLeft:'4px solid '+accentColor, borderRight:'1px solid #e5e7eb', borderBottom:'1px solid #e5e7eb', boxShadow:'inset 0 1px 0 rgba(0,0,0,.02), 0 1px 3px rgba(0,0,0,.04)', margin:'0 -1px'}}>
+      {canNavigateBack && onNavigateBack && (
+        <div style={{marginBottom:10, padding:'6px 10px', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:6, display:'flex', alignItems:'center', gap:8}}>
+          <button type="button" onClick={(e)=>{e.stopPropagation(); onNavigateBack();}} style={{...linkStyle, fontWeight:600}}>{'\u2190 Back'+(backToTag?(' to #'+backToTag):'')}</button>
+          <span style={{fontSize:11, color:'#6b7280'}}>— you navigated here from another cow</span>
+        </div>
+      )}
+      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6'}}>
+        <span style={{fontSize:16, fontWeight:700, color:accentColor}}>{cow.tag ? '#'+cow.tag : '(no tag)'}</span>
+        <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#f3f4f6', color:'#374151', fontWeight:600}}>{HERD_LABELS[cow.herd]||cow.herd}</span>
+        {cow.sex && <span style={{fontSize:11, color:'#6b7280', textTransform:'capitalize'}}>{cow.sex}</span>}
+        {cow.breed && <span style={{fontSize:11, color:'#6b7280'}}>{cow.breed}</span>}
+      </div>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
         {/* Identity */}
         <div>
@@ -14943,27 +15052,167 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
         <div>
           <div style={sectionTitle}>Lineage</div>
           <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'auto 1fr', gap:'2px 8px'}}>
-            <span style={{color:'#9ca3af'}}>Dam:</span><span>{cow.dam_tag ? '#'+cow.dam_tag+(dam?' ('+(dam.breed||'?')+')':' (not in directory)') : '\u2014'}</span>
-            <span style={{color:'#9ca3af'}}>Sire:</span><span>{cow.sire_tag||'\u2014'}</span>
+            <span style={{color:'#9ca3af'}}>Dam:</span>
+            <span>{cow.dam_tag
+              ? (findByTag(cow.dam_tag)
+                  ? <><TagLink tag={cow.dam_tag}/> <span style={{color:'#9ca3af'}}>{'('+(findByTag(cow.dam_tag).breed||'?')+')'}</span></>
+                  : <span>{'#'+cow.dam_tag+' (not in directory)'}</span>)
+              : '\u2014'}</span>
+            <span style={{color:'#9ca3af'}}>Sire:</span>
+            <span>{cow.sire_tag
+              ? (findByTag(cow.sire_tag)
+                  ? <><TagLink tag={cow.sire_tag}/> <span style={{color:'#9ca3af'}}>{'('+(findByTag(cow.sire_tag).breed||'?')+')'}</span></>
+                  : <span>{'#'+cow.sire_tag+' (not in directory)'}</span>)
+              : '\u2014'}</span>
           </div>
         </div>
       </div>
 
-      {/* Weigh-in history */}
-      {weighIns && weighIns.length > 0 && (
-        <div style={{marginTop:12}}>
-          <div style={sectionTitle}>Weigh-In History (latest 10)</div>
-          <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
-            {weighIns.map(w => (
-              <div key={w.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'4px 10px', fontSize:11}}>
-                <strong style={{color:'#111827'}}>{w.weight} lb</strong>
-                <span style={{color:'#9ca3af', marginLeft:6}}>{fmt((w.entered_at||'').slice(0,10))}</span>
-                {w.note && <div style={{fontSize:10, color:'#6b7280', maxWidth:200}}>{w.note}</div>}
+      {/* Weigh-in history — table / chart toggle with per-row ADG + lifetime footer */}
+      {weighIns && weighIns.length > 0 && (() => {
+        // Build chronological (oldest→newest) records so per-row deltas compare
+        // each weigh-in to the previous one. We flip to newest-first for display.
+        const asc = [...weighIns].sort((a,b) => (a.entered_at||'').localeCompare(b.entered_at||''));
+        const rows = asc.map((w, i) => {
+          const d = (w.entered_at||'').slice(0,10);
+          const wt = parseFloat(w.weight) || 0;
+          const prev = i > 0 ? asc[i-1] : null;
+          const prevD = prev ? (prev.entered_at||'').slice(0,10) : null;
+          const prevW = prev ? parseFloat(prev.weight) || 0 : 0;
+          const dDays = prev ? Math.round((new Date(d+'T12:00:00') - new Date(prevD+'T12:00:00')) / 86400000) : null;
+          const dWt   = prev ? Math.round((wt - prevW) * 10) / 10 : null;
+          const lbDay = (prev && dDays > 0) ? Math.round((dWt / dDays) * 100) / 100 : null;
+          const isReceiving = i === 0 && (
+            (w.session_id||'').startsWith('wsess-rcv-') ||
+            (w.note||'').toLowerCase().includes('receiving')
+          );
+          return { ...w, date: d, wt, dDays, dWt, lbDay, isReceiving };
+        });
+        const desc = [...rows].reverse();
+        const first = rows[0], last = rows[rows.length-1];
+        const lifetimeDays = first && last && first.date && last.date
+          ? Math.round((new Date(last.date+'T12:00:00') - new Date(first.date+'T12:00:00')) / 86400000)
+          : 0;
+        const lifetimeWt  = last && first ? Math.round((last.wt - first.wt) * 10) / 10 : 0;
+        const lifetimeADG = lifetimeDays > 0 ? Math.round((lifetimeWt / lifetimeDays) * 100) / 100 : null;
+        const colorFor = v => v == null ? '#9ca3af' : v < 0 ? '#b91c1c' : v >= 0.3 ? '#065f46' : '#a16207';
+        const fmtSigned = (v, suffix) => v == null ? '\u2014' : (v > 0 ? '+' : '') + v + (suffix||'');
+
+        // Sparkline: plot asc series on a fixed viewBox, normalize to weight range
+        const W = 620, H = 120, padT = 14, padB = 22, padL = 8, padR = 40;
+        const chartW = W - padL - padR, chartH = H - padT - padB;
+        const weights = rows.map(r => r.wt);
+        const minW = Math.min(...weights), maxW = Math.max(...weights);
+        const spanW = Math.max(1, maxW - minW);
+        const dates = rows.map(r => new Date(r.date+'T12:00:00').getTime());
+        const minT = Math.min(...dates), maxT = Math.max(...dates);
+        const spanT = Math.max(1, maxT - minT);
+        const pts = rows.map((r, i) => {
+          const x = padL + (rows.length === 1 ? chartW/2 : ((new Date(r.date+'T12:00:00').getTime() - minT) / spanT) * chartW);
+          const y = padT + (1 - (r.wt - minW) / spanW) * chartH;
+          return { x, y, row: r, i };
+        });
+        const linePath = pts.map((p,i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
+
+        return (
+          <div style={{marginTop:12}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+              <div style={{...sectionTitle, marginBottom:0}}>Weight History ({rows.length})</div>
+              <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+                {[{k:'table', l:'Table'}, {k:'chart', l:'Chart'}].map((o, oi) => (
+                  <button key={o.k} onClick={()=>setWeightView(o.k)} style={{padding:'3px 10px', border:'none', borderRight:oi<1?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:10, fontWeight:600, cursor:'pointer', background:weightView===o.k?'#1e40af':'white', color:weightView===o.k?'white':'#6b7280'}}>{o.l}</button>
+                ))}
               </div>
-            ))}
+            </div>
+
+            {weightView === 'table' && (
+              <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:8, overflow:'hidden', maxWidth:640}}>
+                <div style={{display:'grid', gridTemplateColumns:'120px 80px 80px 80px 90px', gap:0, background:'#f9fafb', padding:'6px 12px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, borderBottom:'1px solid #e5e7eb'}}>
+                  <div>Date</div>
+                  <div style={{textAlign:'right'}}>Weight</div>
+                  <div style={{textAlign:'right'}}>Days Since</div>
+                  <div style={{textAlign:'right'}}>Change</div>
+                  <div style={{textAlign:'right'}}>Lb / Day</div>
+                </div>
+                {desc.map((r, i) => {
+                  const isBaseline = r.isReceiving || (r.dDays == null);
+                  return (
+                    <div key={r.id} style={{display:'grid', gridTemplateColumns:'120px 80px 80px 80px 90px', gap:0, padding:'6px 12px', fontSize:12, borderBottom:i < desc.length-1 ? '1px solid #f3f4f6' : 'none', fontVariantNumeric:'tabular-nums', background:isBaseline?'#fafafa':'white'}}>
+                      <div style={{color:'#111827'}}>
+                        {fmt(r.date)}
+                        {r.isReceiving && <div style={{fontSize:9, color:'#92400e', marginTop:2, padding:'1px 5px', borderRadius:3, background:'#fef3c7', fontWeight:600, display:'inline-block'}}>RECEIVING</div>}
+                      </div>
+                      <div style={{textAlign:'right', fontWeight:700, color:'#111827'}}>{r.wt.toLocaleString()} lb</div>
+                      <div style={{textAlign:'right', color:'#6b7280'}}>{r.dDays != null ? r.dDays : '\u2014'}</div>
+                      <div style={{textAlign:'right', color:colorFor(r.dWt != null && r.dDays > 0 ? r.dWt / r.dDays : null), fontWeight:600}}>{fmtSigned(r.dWt)}</div>
+                      <div style={{textAlign:'right', color:colorFor(r.lbDay), fontWeight:700}}>{r.lbDay != null ? fmtSigned(r.lbDay) : '\u2014'}</div>
+                    </div>
+                  );
+                })}
+                {rows.length > 1 && (
+                  <div style={{padding:'8px 12px', fontSize:11, background:'#f3f4f6', borderTop:'2px solid #d1d5db', color:'#374151', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+                    <div style={{fontWeight:700, textTransform:'uppercase', letterSpacing:.5, fontSize:10, color:'#6b7280'}}>Lifetime</div>
+                    <strong>{first.wt} {'\u2192'} {last.wt} lb</strong>
+                    <span style={{color:colorFor(lifetimeWt / Math.max(1, lifetimeDays))}}>{fmtSigned(lifetimeWt, ' lb')}</span>
+                    <span>{'over '+lifetimeDays.toLocaleString()+'d'}</span>
+                    <strong style={{color:colorFor(lifetimeADG)}}>{lifetimeADG != null ? fmtSigned(lifetimeADG, ' lb/day') : '\u2014'}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {weightView === 'chart' && (
+              <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:8, padding:'10px 12px'}}>
+                <svg viewBox={'0 0 '+W+' '+H} preserveAspectRatio="none" style={{width:'100%', height:140, display:'block', overflow:'visible'}} onMouseLeave={()=>setChartHover(null)}>
+                  {/* baseline */}
+                  <line x1={padL} y1={padT+chartH} x2={padL+chartW} y2={padT+chartH} stroke="#e5e7eb" strokeWidth="1"/>
+                  {/* area fill under line */}
+                  {pts.length > 1 && (
+                    <path d={linePath + ' L '+pts[pts.length-1].x+','+(padT+chartH)+' L '+pts[0].x+','+(padT+chartH)+' Z'} fill="#eff6ff" opacity="0.8"/>
+                  )}
+                  {/* line */}
+                  {pts.length > 1 && <path d={linePath} fill="none" stroke="#1e40af" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
+                  {/* points */}
+                  {pts.map(p => (
+                    <g key={p.row.id}>
+                      <circle cx={p.x} cy={p.y} r={chartHover && chartHover.idx === p.i ? 5 : 3} fill={p.row.isReceiving ? '#a16207' : '#1e40af'} stroke="white" strokeWidth="1.5"/>
+                      <circle cx={p.x} cy={p.y} r="12" fill="transparent" style={{cursor:'pointer'}} onMouseEnter={()=>setChartHover({idx:p.i, x:p.x, y:p.y})}/>
+                    </g>
+                  ))}
+                  {/* min/max labels on right */}
+                  <text x={padL+chartW+4} y={padT+4} fontSize="10" fill="#6b7280" fontFamily="inherit">{maxW+' lb'}</text>
+                  <text x={padL+chartW+4} y={padT+chartH+4} fontSize="10" fill="#6b7280" fontFamily="inherit">{minW+' lb'}</text>
+                  {/* first / last date labels */}
+                  <text x={padL} y={H-6} fontSize="10" fill="#9ca3af" fontFamily="inherit">{fmt(rows[0].date)}</text>
+                  <text x={padL+chartW} y={H-6} fontSize="10" fill="#9ca3af" fontFamily="inherit" textAnchor="end">{fmt(rows[rows.length-1].date)}</text>
+                  {/* hover tooltip */}
+                  {chartHover && (() => {
+                    const p = pts[chartHover.idx];
+                    if(!p) return null;
+                    const tx = Math.min(Math.max(p.x, padL+60), padL+chartW-60);
+                    const ty = Math.max(p.y - 30, padT+10);
+                    return (
+                      <g pointerEvents="none">
+                        <rect x={tx-55} y={ty-14} width="110" height="30" rx="4" fill="#111827" opacity="0.92"/>
+                        <text x={tx} y={ty-1} fontSize="11" fontWeight="700" fill="white" fontFamily="inherit" textAnchor="middle">{p.row.wt + ' lb'}</text>
+                        <text x={tx} y={ty+11} fontSize="9" fill="#d1d5db" fontFamily="inherit" textAnchor="middle">{fmt(p.row.date)}{p.row.lbDay != null ? ('  '+fmtSigned(p.row.lbDay, ' lb/d')) : ''}</text>
+                      </g>
+                    );
+                  })()}
+                </svg>
+                {rows.length > 1 && (
+                  <div style={{marginTop:6, paddingTop:8, borderTop:'1px solid #f3f4f6', fontSize:11, color:'#374151', textAlign:'center'}}>
+                    <strong>{first.wt} {'\u2192'} {last.wt} lb</strong>
+                    {'  \u00b7  '}<span style={{color:colorFor(lifetimeWt / Math.max(1, lifetimeDays))}}>{fmtSigned(lifetimeWt, ' lb')}</span>
+                    {'  over '+lifetimeDays.toLocaleString()+' days  \u00b7  '}
+                    <strong style={{color:colorFor(lifetimeADG)}}>{lifetimeADG != null ? fmtSigned(lifetimeADG, ' lb/day') : '\u2014'} lifetime ADG</strong>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Calving history + add (Mommas only) */}
       {isMomma && (
@@ -15014,11 +15263,15 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, fmt, HERDS, H
               return <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No calving records yet.</div>;
             }
             return combined.map(function(r){
+              var calfCow = r.calf_tag ? findByTag(r.calf_tag) : null;
               return (
                 <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
                   <strong style={{color:'#111827'}}>{r.calving_date ? fmt(r.calving_date) : 'date unknown'}</strong>
                   {!r.synthetic && <span>{r.total_born+' born, '+r.deaths+' died'}</span>}
-                  {r.calf_tag && <span style={{color:'#7f1d1d'}}>{'calf #'+r.calf_tag}</span>}
+                  {r.calf_tag && (calfCow && onNavigateToCow
+                    ? <button type="button" onClick={function(){onNavigateToCow(calfCow);}} style={{color:'#1d4ed8', cursor:'pointer', textDecoration:'underline', background:'none', border:'none', padding:0, font:'inherit', fontWeight:600}}>{'calf #'+r.calf_tag}</button>
+                    : <span style={{color:'#7f1d1d'}}>{'calf #'+r.calf_tag}</span>)}
+                  {calfCow && <span style={{fontSize:10, color:'#6b7280'}}>{'\u00b7 '+(HERD_LABELS[calfCow.herd]||calfCow.herd)+(calfCow.breed?' \u00b7 '+calfCow.breed:'')}</span>}
                   {r.complications_flag && <span style={{color:'#b91c1c', fontWeight:600}}>{'\u26a0 complications'}</span>}
                   {r.notes && <span style={{color:'#6b7280', fontStyle:'italic'}}>{r.notes}</span>}
                   {r.synthetic && <span style={{fontSize:10, color:'#9ca3af', fontStyle:'italic'}}>{'(from calf record)'}</span>}
