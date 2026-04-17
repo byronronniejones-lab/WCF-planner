@@ -1489,4 +1489,254 @@ Next Claude: **proactively ask Ronnie about each of these at session start** bef
 
 ---
 
-*End of April 17 session. Commit + push is the very first thing to do next session, before any new changes. Ronnie runs a working farm and needs what's in the repo to match what's in production.*
+*End of April 17 morning session. Commit + push is the very first thing to do next session, before any new changes. Ronnie runs a working farm and needs what's in the repo to match what's in production.*
+
+---
+
+# 15. Session Update — April 17, 2026 (Evening) — Cattle UX deep dive, data cleanups, retag flow
+
+This session ran the entire afternoon/evening and focused on:
+- Polishing the cow detail panel into something Ronnie actually wants to use day-to-day
+- Cleaning up legacy data quirks from the Podio import (duplicate weigh-ins, missing purchase amounts, missing herd assignments on imported sessions)
+- Building the on-the-spot retag flow so bulk-buying 20+ cows doesn't require a reconcile-after nightmare
+- Lots of small UX adjustments based on Ronnie iterating live
+
+Six commits landed locally (`618125c` was already pushed at the start; the next six are committed but **NOT pushed** at session wrap — see §15.10).
+
+## 15.1 Farm coordinates (note for future Weather API work)
+
+**WCF lat/lon: `30.84175647927683, -86.43686683451689`**
+
+Hardcode this in any future weather/climate fetches. Single physical site, no need for a location picker. Recorded mid-session per Ronnie's request; also lives in memory at `feedback_*/project_farm_location.md`.
+
+## 15.2 Code shipped this session (in commit order, oldest first)
+
+### `618125c` — big cattle batch (already pushed)
+Was the morning session's wrap commit, but worth restating since the rest builds on it:
+- Cattle Batches: per-cow `cows_detail` jsonb editing with auto-yield, multi-select cow picker on the New Batch modal, totals computed from per-cow sums
+- Cattle Weigh-Ins entries rendered as auto-fill grid (3–4 per row) with inline edit
+- Removed all webform-redirect buttons from 4 dailys views + admin Weigh-Ins
+- Cattle Home Dashboard nutrition panel (30/90/120-day windows, per herd with cows, DM/CP/NFC actuals vs target with color coding)
+- Pig weigh-in **Send-to-Trip** (checkbox-select entries → modal → existing trip or new; updates `ppp-feeders-v1`; `sent_to_trip_id` flag protects sent rows from grid wipe)
+- `loadAllData` runs pig + poultry dailys in parallel (cold-load ≈ 50% faster on that phase)
+- Deleted dead `sb.from('batches')` 404 fetch in BroilerDailysView
+- New scripts: `fix_feed_herd_scope`, `infer_session_herds`, `seed_batch_cows_detail`
+- Migrations applied: **005** (`cows_detail` jsonb + `total_live_weight` on `cattle_processing_batches`), **006** (`sent_to_trip_id` + `sent_to_group_id` on `weigh_ins`)
+
+### `e8ca425` — Cow detail panel polish + clickable lineage + back nav
+- **Weight history view toggle** Table / Chart. Table: `Date | Weight | Days Since | Change | Lb/Day` with color-coded ADG (green ≥0.3, yellow 0–0.3, red <0). Chart: SVG sparkline with hover tooltip per point. Lifetime ADG footer in both views.
+- **Receiving-weight detection** via `session_id` starting with `wsess-rcv-` OR note containing "receiving" — gets a `RECEIVING` badge in table and amber dot in chart.
+- **Calving history calf tag → clickable link** that navigates to that calf's detail (via the new nav stack, see below).
+- **Lineage dam/sire → clickable** when the target cow exists in the directory.
+- **Navigation stack** (`cowNavStack`): jumping into a calf/dam/sire pushes the current cow's id; the target shows `← Back to #X` banner that pops the stack. Handles outcome-herd cows by switching to flat-mode + their status filter.
+- Flat-list mode now **expands inline on row click** (was: opened the edit modal). This makes drill-down navigation work uniformly across modes.
+- Parent passes full `cowWeighIns` (no `.slice(0,10)`) so lifetime ADG covers her whole history, not just the last 10 entries.
+
+### `3874dca` — Cow detail balanced borders + tag search in Cattle Weigh-Ins
+- **Cow detail card border:** changed from asymmetric (4px left + 1px other sides) → **2px equal all sides in herd accent color, rounded 8px, subtle drop shadow, margin inset**. Ronnie flagged the asymmetry as "right side looks cut off" — equal borders fixed it. Card now visually contained within the herd tile.
+- **Cattle Weigh-Ins tag search:** new `Search by tag #...` input with clear-× button. When active:
+  - Sessions without any matching entries drop out of the list
+  - Surviving sessions auto-expand and show only matching entries (no click required)
+  - Expand chevron is hidden during search
+  - Entry count reads `N of M match`; header reads `Search #247: 3 sessions · 5 matching entries`
+  - Case-insensitive substring match (`24` matches `247` and `#24`)
+
+### `4adfcd7` — Cow row index numbers + purchase amount import fix
+- **Index numbers** (`1, 2, 3 …`) on each cow row, indexed relative to the current view (flat mode = position in filtered+sorted result; tile mode = position within that herd). Sort by weight desc → row 5 = your fifth-heaviest cow. Makes "how many over X lb after I sort" answerable visually.
+- **Purchase amount import bug fixes** in `scripts/import_cattle.js`:
+  - `normNum` now strips `$ / , / whitespace` before `Number()` (Podio formats amounts like `"$ 1,523.50"` which the previous parser returned `null` for).
+  - **Column name was wrong all along.** The xlsx column is split as `Purchase Amount - amount` + `Purchase Amount - currency` (two cols), not `Purchase Amount`. This bug caused EVERY purchase amount to import as null — 163 cows lost their amounts from day one. See §15.5 for the full story.
+- New script `scripts/fix_purchase_amounts.js` — preview-then-commit backfill that re-reads the xlsx with the corrected column name.
+
+### `428c827` — Index moved to far left + vertical divider
+- Per Ronnie: the index column moved from "right of the expand arrow" → **far left of the row, with a vertical divider** running the full row height. Used `alignSelf:'stretch' + margin:-10px 0` on the cell to extend the border past the row's vertical padding.
+- Applied to both flat mode and tile mode. Order is now `[ # ] | [ ▶ ] [ tag ] [ herd/sex ] [ breed ] [ age ] [ weight ] [ extras ]`.
+
+### `6ccd1ec` — Prior Tags editor in cow edit modal + source-labeled detail
+- **Prior Tags section** in the cow add/edit modal — multi-entry list with `tag #` + `date` + `source dropdown` (Purchase tag (selling farm) / Replacement tag (retag) / Other / manual entry) + remove button. `+ Add Prior Tag` appends blank rows. Multiple entries supported (designed for cows that get retagged more than once over time).
+- Reads from / writes to `cattle.old_tags` jsonb. Dates round-trip `YYYY-MM-DD` for the picker, ISO for storage.
+- **Detail view label** changed from "Previous tags" → "Prior tags" with annotated source per entry: `(purchase)` for `source='import'`, `(retag)` for `source='weigh_in'`.
+- No migration — `old_tags` jsonb already existed; this just surfaces it.
+
+### `ac40fd8` — On-the-spot retag flow + source-label consistency (LATEST)
+**The big functional addition.** Previously the only way to handle bulk-purchased cattle (20+ at a time) was to enter them with selling-farm tags, weigh them in with new tags as Replacement Tags, then **reconcile every single entry one-by-one after the fact**. Ronnie pointed out this is impossible at scale because by reconcile time the cows are no longer in front of you and you can't remember which new tag replaced which old one. The new flow lets you swap tags AT entry time when you know both numbers.
+
+- **Public webform `WeighInsWebform`** gains a third entry mode `⟳ Retag` alongside `+ New Cow` and `+ Replacement Tag`. Inputs: `Prior tag #` + `New tag #`. On submit:
+  - Looks up the cow via `findCowByPriorTag()` walking **current tag → import old_tags → weigh_in old_tags** (the order Ronnie picked).
+  - Hard-errors if no match (per Ronnie's #2: "yes hard error so prior tag is an explicit claim the cow should exist").
+  - Swaps `cattle.tag` → new tag, appends an `old_tags` entry stamped with `source: 'import'`.
+  - Inserts the weigh-in already resolved (`new_tag_flag: false`, `reconcile_intent: 'retag'`).
+- **Admin `CattleWeighInsView`** add-entry row gains a `Prior tag (retag)` field. When filled, runs the same on-the-spot retag flow inline. Button label flips to **`Retag + Add`**. Field tints blue when populated.
+- **Source labeling normalized across all four write paths.** Was inconsistent before this session (some paths used `'purchase'`, some used `'weigh_in'`, some omitted the field entirely). New convention is **workflow-based, not data-origin**:
+  - Known at entry time → `'import'` (renders as **"Purchase tag"**)
+    - new_cow priorTag, retag mode (both webform + admin)
+  - Reconciled after entry → `'weigh_in'` (renders as **"Retag"**)
+    - public `reconcileEntryToCow`, admin `reconcileNewTag` — both previously missing the source field entirely
+  - Admin typed manually → `'manual'`
+
+## 15.3 Database changes (all applied to prod)
+
+Ronnie ran every SQL block in the Supabase SQL Editor. Confirmed at end of session.
+
+### Migrations applied
+- **005_batch_cows_detail.sql** — `ALTER TABLE cattle_processing_batches ADD COLUMN cows_detail jsonb NOT NULL DEFAULT '[]'::jsonb` + `total_live_weight numeric`.
+- **006_weigh_ins_sent_to_trip.sql** — `ALTER TABLE weigh_ins ADD COLUMN sent_to_trip_id TEXT, sent_to_group_id TEXT` + partial index on `sent_to_trip_id WHERE NOT NULL`.
+
+### One-off backfill SQL run by Ronnie
+- **`herd_scope` fix** for the 12 imported cattle_feed_inputs (previously `[]` → never rendered in the herd-filtered dropdown):
+  ```sql
+  UPDATE cattle_feed_inputs
+  SET herd_scope = ARRAY['mommas','backgrounders','finishers','bulls']::text[]
+  WHERE herd_scope IS NULL OR cardinality(herd_scope) = 0;
+  ```
+  **Note for future Claude: `herd_scope` is `text[]`, NOT `jsonb`.** Migration 001 used Postgres array there, inconsistent with `cattle_dailys.feeds` (jsonb). Use `cardinality()` + `ARRAY[]::text[]` for any future updates to that column.
+- **Session herd backfill** via majority-tag vote — 76 of 83 imported `wsess-imp-*` and `wsess-rcv-*` sessions got a herd. 7 had no matching tags (stay null = "Unknown herd"). Zero ties.
+- **Batch `cows_detail` backfill** — populated per-cow live (latest cattle weigh-in on or before processing date) + hanging (from `cattle.hanging_weight`) for every cow with `processing_batch_id IS NOT NULL`.
+- **Duplicate weigh-in cleanup.** The Podio import created two rows for many cows' first weigh-in: one in a `wsess-rcv-cattle-*` session (from cattle_tracker.Receiving Weight) and one in a `wsess-imp-YYYY-MM-DD` session (from the weigh-ins xlsx). For pairs with same tag + same weight + dates within ±1 day, the rcv copy was deleted (the imp copy has more context). Then a third query dropped any now-empty `wsess-rcv-*` sessions.
+- **Purchase amount backfill — three buckets.** All three ran successfully.
+  - 117 cows from xlsx via `scripts/purchase_amounts_backfill.sql` (long VALUES list — 117 rows).
+  - 19 Story Farms cows × $2,036.64 (`tag IN ('334'..'352')`).
+  - 6 Hufeisen Ranch cows mapped by their prior tag (54/57/59/61/66/78 → $2000/$2750/$2750/$2250/$2250/$2000).
+  - Ronnie also manually fixed cow #372 (mis-origined; actually Woodham, $4,500).
+  - 6 Woodham calves (tags 710, 712, 713, 715, 718, 719) intentionally stay null — they came free with the mommas purchase.
+  - 14 cows from "UNKNOWN" origin (pre-2022 records) and 2 from "LOTUS HILL (LORA)" remain null — likely unrecoverable.
+
+## 15.4 Outstanding — what to ask Ronnie at start of next session
+
+**THE TOP ITEM.** A new cattle import is queued and parked on Ronnie's answers to 12 questions:
+
+### New Momma Planner Import — `c:\Users\Ronni\OneDrive\Desktop\New Momma Planner Import.xlsx`
+
+**Two sheets, 41 cows total:**
+- **Sheet 1 "A to Z"** — 17 heifers, tags `M 1`..`M 27` (gaps), DOB Apr–Jun 2024, all $4,800, breed `DNA FB Wagyu`, all Pregnant, weights present (732–1,220 lb). SIRE REG # populated for M 8 onward (`FB19880`–`FB19890`).
+- **Sheet 2 "Wright Farms"** — 24 cows. Mix of COW (Akaushi/Angus, with Last Calve Date) + Heifer (Red Angus, no Last Calve Date). All Pregnant, Preg Check Date `2/28/25`, all $4,500. SIRE REG # `FB BCWF23U425L` for the whole sheet. No weights.
+
+**12 open questions** (next Claude must NOT start writing the importer until Ronnie answers each):
+
+1. **Origin name for Sheet 1 "A to Z"** — what farm/seller? Sheet 2 is obviously Wright Farms.
+2. **Purchase date** — xlsx has none. Today (or session date) for both sheets, or specific dates per sheet?
+3. **Confirm herd = `mommas`** for all 41.
+4. **Tag format** — keep `M 1` with the literal space, or strip to `M1`? Wright's `IR###` is unambiguous either way.
+5. **SIRE REG # column** — migration 004 dropped `sire_reg_num` from `cattle`. Three options:
+   - (a) Add the column back via migration 007 (recommended; Ronnie said in Apr 14 Q&A "track sire by tag # or reg #")
+   - (b) Stuff into existing `sire_tag` column (mushes tag + reg)
+   - (c) Publish as a comment per cow
+6. **Sheet 1 weights → weigh-in session?** Create a `wsess-rcv-*` session at purchase date with the 17 heifer weights? Wright sheet has no weights so no-op.
+7. **Wright Last Calve Date (16 of 24 cows)** — create `cattle_calving_records` rows with just the date (no calf_tag, no total_born) so the Calving History UI shows the event?
+8. **Wright Preg Check Date `2/28/25`** — comment on each cow ("Preg check 2/28/25 — Pregnant"), or skip since `breeding_status='PREGNANT'` already captures it?
+9. **% Wagyu defaults** — Sheet 1 "DNA FB Wagyu" → 100? Sheet 2 mixed → null? Or specific values from Ronnie?
+10. **Breed normalization** — `DNA FB Wagyu` → `FULL BLOOD WAGYU` (existing in `cattle_breeds`). `Akaushi/Angus` and `Red Angus` — add as new breed options, or normalize to existing (e.g., `WAGYU-ANGUS CROSS`)?
+11. **IR553 edge case** — Last Calve Date `"10/08"` (no year). Safe to assume 2025 like the others?
+12. **Pre-check for tag collisions** before insert — want me to verify, or assume all 41 tags are new?
+
+### Other parked items (lower priority but should be flagged)
+
+- **Service-role key rotation.** Ronnie pasted a fresh key `sb_secret_1SlkN…` mid-session into chat (the previous key had been deleted). The current key is exposed in the transcript. He committed to rotating again at session wrap. **Confirm the key in `scripts/.env` is fresh before running anything.**
+- **Cow #2269999999 in Lotus Hill (LORA)** — 10-digit tag is almost certainly a Podio paste/parse artifact, not a real tag. Worth investigating.
+- **Imported processing batches still named as raw dates** (e.g. `2025-12-19`). Ronnie owns renaming via the Batches tab.
+- **Imported weigh-in sessions show "Unknown herd" for the 7 sessions where majority-vote couldn't resolve.** Could soften the label to "Imported session" — low priority.
+- **Cattle feed cost fill-in** — Ronnie owns. Until `cost_per_unit` is populated in Livestock Feed Inputs, the Feed Cost by Month tab cattle column is `—`.
+- **Loading slowness diagnostic phase 2** — phase 1 (parallelize pig + poultry dailys) shipped. Bigger fix would be unblocking initial render before dailys load — see PROJECT.md §14.5 #3 / morning session diagnosis.
+- **Browser back-button / pushState** — still parked.
+- **Per-head cost rollup** — analytical metric, deferred.
+- **Sheep module** — wait until cattle is stable in prod for ≥2 weeks.
+- **Weather API** — design + provider choice still open. Open-Meteo recommended (no key needed).
+- **DNA test PDF parser** — manual entry is v1.
+- **Cut pricing spreadsheet upload** — deferred.
+
+## 15.5 The purchase amount detective story (so future Claude doesn't repeat this)
+
+The diagnostic SQL showed **163 cows with `purchase_date` but `purchase_amount IS NULL`**. Initial hypothesis: `import_cattle.js`'s `normNum` couldn't handle Podio's currency formatting (`"$ 1,523.50"`), so every dollar-prefixed amount returned `null`. **That hypothesis was partially correct but wrong about the root cause.**
+
+The actual bug: `import_cattle.js` was reading `r['Purchase Amount']` — but Podio splits that field into TWO columns: `Purchase Amount - amount` and `Purchase Amount - currency`. The combined `Purchase Amount` field doesn't exist in the xlsx. So every row got `undefined` for the amount, fed through `normNum`, and returned `null`. The currency-formatting issue was secondary — it would have bitten us once we read the right column.
+
+**Confirmed the column name discrepancy** by inspecting `Object.keys(rows[0])` on the xlsx — should be the FIRST step on any new xlsx import. Wasted the first preview run looking for the wrong column.
+
+**Fix landed in two places:**
+- `import_cattle.js` now reads `r['Purchase Amount - amount']` AND has a `normNum` that strips `$ / , / whitespace` (defensive, in case Excel-as-text formatting trips on a re-import).
+- `scripts/fix_purchase_amounts.js` — one-off backfill targeting cows with `purchase_amount IS NULL OR = 0`, matching xlsx Tag # → cow via current tag (primary) or `old_tags[].tag` where `source='weigh_in'` (post-import retag fallback).
+
+**Lesson:** every Podio xlsx may have these "compound field" splits. Sale Amount, Carcass Yield, anything monetary or unit-suffixed could be split into N columns. Inspect first.
+
+## 15.6 Mistakes I made this session
+
+1. **Asked Ronnie for re-approval after every commit.** He told me explicitly: "After I tell you to commit you should just fully commit. I don't need to approve anything else beside the push." Saved as memory `feedback_commit_vs_push.md`. The rule: word "commit" = full commit + status line, no follow-up question. Word "push" / "deploy" still required separately.
+2. **Initial cow detail border was 4px-left / 1px-others.** Looked unbalanced; right side appeared "cut off." Ronnie flagged. Equal 2px borders all four sides + rounded corners + shadow fixed it.
+3. **Used Δ symbols in weight history headers.** Ronnie didn't recognize them. Replaced with English: `Days Since`, `Change`, `Lb / Day`.
+4. **Index column placed in middle of row** (between expand arrow and tag). Ronnie wanted far-left + vertical divider. Re-did.
+5. **First purchase-amount preview ran with wrong column name** → 0 rows. Should have inspected xlsx columns first. Cost ~5 min of wasted run + investigation.
+6. **Initial herd_scope SQL used `'[]'::jsonb` casting** when the column is `text[]`. Failed with type error. Fix: `cardinality()` + `ARRAY[...]::text[]`. **Standardize: future Claude should always check column type via `information_schema.columns` if uncertain.**
+7. **Node oneliner shadowed global `URL` constructor** with `const URL = process.env.SUPABASE_URL` → `TypeError: URL is not a constructor`. Renamed to `SB`.
+8. **Said "39 cows remaining unaccounted"** when actual was 41. Eyeballing math wrong. Trust the query.
+9. **Reconcile flows historically didn't set the `source` field on old_tags entries.** This had been a latent bug since the cattle module shipped. Caught + fixed this session, but it means **historical retag entries in production have unsourced old_tags entries** and the edit modal defaults them to "Manual." Not data corruption, just imperfect source labeling.
+10. **`new_cow` priorTag was writing `source: 'purchase'`** while the Podio importer wrote `source: 'import'`. Inconsistent. Normalized everything to the workflow-based convention this session.
+
+## 15.7 What I wish I knew at session start (would have saved time)
+
+1. **Podio splits compound-typed fields into multiple xlsx columns.** Currency: `X - amount` + `X - currency`. Likely also for any other typed field. Always `Object.keys(rows[0])` before assuming a clean column name.
+2. **`cattle_feed_inputs.herd_scope` is `text[]`, not jsonb.** All other jsonb-shaped fields in the cattle module ARE jsonb. This one is the outlier. Migration 001 deserves a future cleanup pass for consistency.
+3. **`weigh_in_sessions.id` follows three patterns:** `wsess-imp-YYYY-MM-DD` (Podio weigh-ins import), `wsess-rcv-cattle-<hash>` (Podio cattle_tracker receiving weights, one per cow), `wsess-<timestamp><rand>` (sessions created by users via the planner). Pattern matters for filtering.
+4. **The "first weigh-in for many cows" was duplicated** between `wsess-rcv-*` and `wsess-imp-*` sessions because Podio's cattle_tracker stored the receiving weight AND the weigh-ins xlsx included the same data point. This would silently inflate weight history. Cleaned up this session via SQL DELETE.
+5. **Ronnie's source-label convention is workflow-based.** Not "where did the data come from" but "how was the mapping made." Known at entry time → `'import'` (Purchase tag). Reconciled after entry → `'weigh_in'` (Retag). Manual admin entry → `'manual'`. Important to keep consistent across any new write paths.
+6. **The retag flow is the recommended path for bulk new cattle.** When Ronnie or a future Claude is asked "how do I bring in 20 new cows from a purchase," the answer is:
+   1. Add each cow via Add Cow form using her selling-farm tag as her current `tag`
+   2. At first weigh-in, use **`⟳ Retag` mode** (public webform) or fill the **Prior Tag** field in the admin add-entry row
+   3. The system swaps her tag to the new WCF number and stamps the prior tag in `old_tags`
+7. **Ronnie's farm coordinates** for any future weather API: `30.84175647927683, -86.43686683451689`.
+8. **Service-role key in `scripts/.env`** is gitignored. Ronnie rotates it manually because he's pasted it into chat transcripts twice now. Always confirm it's fresh before running scripts.
+9. **PROJECT.md is the source of truth for handover.** §14 (morning Apr 17) and §15 (this section) are the most recent context. If the next session opens with an interrupt-style question from Ronnie, scan §15.4 for context before responding.
+
+## 15.8 Things to make next Claude's life easier
+
+1. **Run `git log --oneline -10` first thing.** This session ended with **6 unpushed commits**. If you don't push them before doing new work, you'll create merge conflicts when you eventually do push.
+2. **Check the working tree:** `git status` should be clean except for `.claude/` (the memory dir). Anything else is leftover from this session.
+3. **Verify Ronnie's service-role key is current.** Ask him directly if you need it: "Have you rotated the service-role key since last session? Paste me the new one if so."
+4. **Inspect xlsx columns before any import.** Use the one-liner pattern from §15.5: `node -e "const XLSX=require('xlsx'); const wb=XLSX.readFile('PATH'); console.log(Object.keys(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null})[0]||{}));"`
+5. **The `findCowByPriorTag()` lookup pattern is now standard.** Walk: current tag → import old_tags → weigh_in old_tags. Implemented in both webform (line ~2080) and admin view (line ~16780). If you add a third location that needs this lookup, **extract it into a shared helper** rather than copy-pasting a third time.
+6. **Tag matching is case-sensitive and string-based.** WCF tags are typically numeric-but-stored-as-text. Selling-farm tags often have prefixes (`IR508`, `M 1`). Don't `parseInt` on tags — keep as strings.
+7. **Babel-in-browser still has the `\u` JSX trap.** Use `{'\u00b7'}` form for any unicode in JSX text. Never raw `\u00b7` in JSX children.
+8. **The cow detail panel is now content-dense.** New additions should respect the existing layout — Identity / Lineage / Weight History / Calving History / Comments Timeline. Adding a 6th section means re-thinking column widths.
+9. **`scripts/.env` contains the SERVICE-ROLE key** (not anon). Anything you run with it bypasses RLS. Be careful with `DELETE` operations.
+10. **All scripts follow preview-then-`--commit` pattern.** Default behavior is read-only preview. Add `--commit` flag to apply. Idempotent re-runs are safe.
+
+## 15.9 Architecture decisions worth knowing
+
+1. **`cattle.old_tags` jsonb shape** is `[{tag: string, changed_at: ISO8601 string, source: 'import'|'weigh_in'|'manual'}]`. Sourced inconsistently before this session — now consistent across all four write paths.
+2. **`cattle_processing_batches.cows_detail` jsonb shape** is `[{cattle_id: string, tag: string, live_weight: number|null, hanging_weight: number|null}]`. Per-cow weights edited inline; batch-level totals (`total_live_weight`, `total_hanging_weight`) recompute on every per-cow save. `cattle.processing_batch_id` is also kept in sync (added/removed from cow on add/remove).
+3. **`weigh_ins.sent_to_trip_id`** points to a trip inside `app_store['ppp-feeders-v1'][group].processingTrips[]`. `sent_to_group_id` is the group id (denormalized to avoid scanning all groups to find a trip). Weigh-ins with `sent_to_trip_id IS NOT NULL` are protected from the grid wipe-and-rewrite save flow in the admin pig view.
+4. **`weigh_ins.reconcile_intent`** can be one of `'replacement'` (flagged for after-the-fact reconcile), `'new_cow'` (created a fresh cattle row at entry), `'retag'` (swapped a known cow's tag at entry — NEW this session), or `null` (normal weigh-in matching an existing cow's current tag).
+5. **Cattle Home Dashboard nutrition window math:**
+   - `cow_units = herd_total_live_weight / 1000`
+   - `target_dm_lbs_per_day = cow_units × target_dm_pct_body × 10` (since total weight = cow_units × 1000)
+   - `actual_dm_lbs_per_day = sum(feeds[].lbs_as_fed) over window / window_days`
+   - Same shape for CP and NFC, scaled off DM.
+   - Creep-flagged feed lines on Mommas excluded from all three.
+6. **Cow detail navigation stack** (`cowNavStack`) is a simple array of cow ids. Pushing on link click, popping on back-button click. State lives in `CattleHerdsView` and is passed down to `CowDetail` via props (`onNavigateToCow`, `onNavigateBack`, `canNavigateBack`, `backToTag`). Scrolls target into view via `document.getElementById('cow-'+id).scrollIntoView`.
+
+## 15.10 Commit list — six commits sitting unpushed at session end
+
+```
+ac40fd8  On-the-spot retag flow + source-label consistency
+6ccd1ec  Prior Tags editor in cow edit modal + source-labeled detail view
+428c827  Cow row index: move to far left + vertical divider
+4adfcd7  Cow row index numbers + purchase_amount import fix
+3874dca  Cow detail balanced borders + tag search in Cattle Weigh-Ins
+e8ca425  Cow detail: weight history table polish, clickable lineage, back nav
+```
+(Plus `618125c` which was pushed at start of session.)
+
+**`git push origin main`** before any new work next session. Same Netlify auto-deploy as always; tell Ronnie to clear `wcf-babel-*` localStorage keys after deploy.
+
+## 15.11 SOP reminders for the AI reading this
+
+- **`commit` = commit fully** — don't ask "ready to push?" or any other follow-up. Status line only. The `feedback_commit_vs_push.md` memory rule is durable.
+- **`push` / `deploy` still requires explicit approval** in the same turn. The new commit-no-prompt rule does NOT extend to push.
+- **Never run destructive Supabase ops** (DROP, TRUNCATE, large DELETEs without WHERE) without explicit approval.
+- **Always show the diff and propose a commit message** before committing.
+- **Match the scope of action to what was asked.** If Ronnie says "fix X," fix X — don't bundle Y.
+- **Inspect xlsx column names before importing.** This bit us this session.
+- **Ronnie verifies.** When he pushes back on numbers or design, listen. He's almost always right.
+
+---
+
+*End of April 17 evening session. The work-tree state at session end: clean. 6 commits sitting locally awaiting push. Next session should: (1) push the 6 commits, (2) get answers to the 12 cattle-import questions in §15.4, (3) build the importer for the 41 new mommas. Good luck.*
