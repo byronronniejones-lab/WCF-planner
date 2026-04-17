@@ -1173,10 +1173,6 @@ const DEFAULT_WEBFORMS_CONFIG = {
         {id:"fence_voltage",label:"Fence voltage (kV)",type:"number",required:false,system:false,enabled:true},
         {id:"water_checked",label:"Water source checked?",type:"yes_no",required:false,system:false,enabled:true}
       ]},
-      {id:"s-mortality",title:"Mortality",system:false,fields:[
-        {id:"mortality_count",label:"# Mortalities",type:"number",required:false,system:false,enabled:true},
-        {id:"mortality_reason",label:"Reason",type:"text",required:false,system:false,enabled:true}
-      ]},
       {id:"s-comments",title:"Comments",system:false,fields:[
         {id:"issues",label:"Comments / Issues",type:"textarea",required:false,system:false,enabled:true}
       ]}
@@ -3515,6 +3511,145 @@ const FeedCostsPanel = ({feedCosts, saveFeedCosts}) => {
 };
 
 
+// ── FEED COST BY MONTH PANEL ────────────────────────────────────────────────
+// Admin \u2192 Cost by Month. Aggregates feed spend across programs by month.
+// Pig/Broiler/Layer multiply feed_lbs by the per-lb rates in FeedCostsPanel.
+// Cattle multiplies each daily's feed-line qty by the matching feed-input
+// cost_per_unit from the Livestock Feed Inputs panel.
+// Current costs are used for all rows (no per-month historical cost ledger),
+// so retroactive price changes affect historical totals.
+const FeedCostByMonthPanel = ({sb, feedCosts}) => {
+  const {useState, useEffect} = React;
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const [pd, ld, pg, cd, cfiRes] = await Promise.all([
+        wcfSelectAll((f,t) => sb.from('poultry_dailys').select('date,feed_lbs,feed_type').range(f,t)),
+        wcfSelectAll((f,t) => sb.from('layer_dailys').select('date,feed_lbs,feed_type').range(f,t)),
+        wcfSelectAll((f,t) => sb.from('pig_dailys').select('date,feed_lbs').range(f,t)),
+        wcfSelectAll((f,t) => sb.from('cattle_dailys').select('date,feeds').range(f,t)),
+        sb.from('cattle_feed_inputs').select('name,cost_per_unit,freight_per_truck,units_per_truck'),
+      ]);
+      const cfi = (cfiRes && cfiRes.data) || [];
+      const feedCostMap = {};
+      for (const f of cfi) {
+        const base = parseFloat(f.cost_per_unit) || 0;
+        const fpt = parseFloat(f.freight_per_truck) || 0;
+        const upt = parseInt(f.units_per_truck) || 0;
+        const perUnit = base + (upt > 0 ? fpt / upt : 0);
+        feedCostMap[f.name] = perUnit;
+      }
+
+      const months = new Map();
+      const bump = (ym, prog, amt) => {
+        if (!months.has(ym)) months.set(ym, {broiler:0, layer:0, pig:0, cattle:0});
+        months.get(ym)[prog] += amt;
+      };
+
+      for (const d of (pd||[])) {
+        const ym = (d.date||'').slice(0,7); if (!ym) continue;
+        const lbs = parseFloat(d.feed_lbs) || 0;
+        const t = String(d.feed_type||'').toLowerCase();
+        const cost = (t === 'starter' || t === 'grower') ? (parseFloat(feedCosts[t])||0) : 0;
+        if (cost > 0 && lbs > 0) bump(ym, 'broiler', lbs * cost);
+      }
+      for (const d of (ld||[])) {
+        const ym = (d.date||'').slice(0,7); if (!ym) continue;
+        const lbs = parseFloat(d.feed_lbs) || 0;
+        const t = String(d.feed_type||'').toLowerCase();
+        const cost = (t === 'starter' || t === 'grower') ? (parseFloat(feedCosts[t])||0)
+                   : (parseFloat(feedCosts.layer)||0);
+        if (cost > 0 && lbs > 0) bump(ym, 'layer', lbs * cost);
+      }
+      const pigCost = parseFloat(feedCosts.pig) || 0;
+      for (const d of (pg||[])) {
+        const ym = (d.date||'').slice(0,7); if (!ym) continue;
+        const lbs = parseFloat(d.feed_lbs) || 0;
+        if (pigCost > 0 && lbs > 0) bump(ym, 'pig', lbs * pigCost);
+      }
+      for (const d of (cd||[])) {
+        const ym = (d.date||'').slice(0,7); if (!ym) continue;
+        const feeds = Array.isArray(d.feeds) ? d.feeds : [];
+        for (const f of feeds) {
+          const qty = parseFloat(f.qty) || 0;
+          const perUnit = feedCostMap[f.feed_name] || 0;
+          if (qty > 0 && perUnit > 0) bump(ym, 'cattle', qty * perUnit);
+        }
+      }
+
+      const out = [...months.entries()]
+        .sort((a,b) => b[0].localeCompare(a[0]))
+        .map(([month, v]) => ({month, ...v, total: v.broiler + v.layer + v.pig + v.cattle}));
+      setRows(out);
+      setLoading(false);
+    })();
+  }, [feedCosts.starter, feedCosts.grower, feedCosts.layer, feedCosts.pig]);
+
+  const fmtCost = n => n > 0 ? '$' + n.toLocaleString(undefined, {maximumFractionDigits:0}) : '\u2014';
+  const fmtMonth = ym => {
+    const [y, m] = ym.split('-');
+    return new Date(parseInt(y), parseInt(m)-1, 1).toLocaleString('en-US', {month:'short', year:'numeric'});
+  };
+
+  const totals = rows.reduce((s, r) => ({
+    broiler: s.broiler + r.broiler, layer: s.layer + r.layer,
+    pig: s.pig + r.pig, cattle: s.cattle + r.cattle, total: s.total + r.total,
+  }), {broiler:0, layer:0, pig:0, cattle:0, total:0});
+
+  return (
+    <div style={{marginTop:8}}>
+      <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'20px'}}>
+        <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:4}}>Feed Cost by Month</div>
+        <div style={{fontSize:12, color:'#6b7280', marginBottom:14}}>
+          Aggregated from daily reports. Broiler / Layer / Pig rates come from <strong>Feed Costs</strong> above. Cattle cost per feed comes from the <strong>Livestock Feed Inputs</strong> panel (cost per unit + freight amortized across units per truck). Current costs apply to all months \u2014 no per-month historical ledger.
+        </div>
+        {loading && <div style={{padding:'2rem', textAlign:'center', color:'#9ca3af'}}>{'Loading\u2026'}</div>}
+        {!loading && rows.length === 0 && <div style={{padding:'2rem', textAlign:'center', color:'#9ca3af', fontSize:13}}>No daily reports with matching feed costs yet. Fill in feed costs above and in Livestock Feed Inputs to populate this view.</div>}
+        {!loading && rows.length > 0 && (
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%', fontSize:12, borderCollapse:'collapse'}}>
+              <thead>
+                <tr style={{background:'#f9fafb', borderBottom:'2px solid #e5e7eb'}}>
+                  <th style={{padding:'10px', textAlign:'left', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Month</th>
+                  <th style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#a16207', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>{'\ud83d\udc14 Broiler'}</th>
+                  <th style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#78350f', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>{'\ud83d\udc13 Layer'}</th>
+                  <th style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#1e40af', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>{'\ud83d\udc37 Pig'}</th>
+                  <th style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#991b1b', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>{'\ud83d\udc04 Cattle'}</th>
+                  <th style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#111827', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.month} style={{borderBottom:'1px solid #f3f4f6', background:i%2?'#fafafa':'white'}}>
+                    <td style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#111827'}}>{fmtMonth(r.month)}</td>
+                    <td style={{padding:'8px 10px', textAlign:'right', color:r.broiler>0?'#a16207':'#9ca3af'}}>{fmtCost(r.broiler)}</td>
+                    <td style={{padding:'8px 10px', textAlign:'right', color:r.layer>0?'#78350f':'#9ca3af'}}>{fmtCost(r.layer)}</td>
+                    <td style={{padding:'8px 10px', textAlign:'right', color:r.pig>0?'#1e40af':'#9ca3af'}}>{fmtCost(r.pig)}</td>
+                    <td style={{padding:'8px 10px', textAlign:'right', color:r.cattle>0?'#991b1b':'#9ca3af'}}>{fmtCost(r.cattle)}</td>
+                    <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color:'#111827'}}>{fmtCost(r.total)}</td>
+                  </tr>
+                ))}
+                <tr style={{borderTop:'2px solid #111827', background:'#f3f4f6'}}>
+                  <td style={{padding:'10px', textAlign:'left', fontWeight:700, color:'#111827', fontSize:12}}>All-time total</td>
+                  <td style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#a16207'}}>{fmtCost(totals.broiler)}</td>
+                  <td style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#78350f'}}>{fmtCost(totals.layer)}</td>
+                  <td style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#1e40af'}}>{fmtCost(totals.pig)}</td>
+                  <td style={{padding:'10px', textAlign:'right', fontWeight:700, color:'#991b1b'}}>{fmtCost(totals.cattle)}</td>
+                  <td style={{padding:'10px', textAlign:'right', fontWeight:800, color:'#111827', fontSize:13}}>{fmtCost(totals.total)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
 // ── LIVESTOCK FEED INPUTS PANEL ─────────────────────────────────────────────
 // Admin → Feed sub-section. Full feed master list with nutrition, costs, herd
 // scoping. Reusable for cattle today, sheep later. Autosave on close.
@@ -3855,6 +3990,12 @@ const LivestockFeedInputsPanel = ({sb}) => {
                   <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'3px 10px', fontSize:11, color:'#6b7280', marginBottom:6}}>
                     <span>Unit: <strong style={{color:'#374151'}}>{f.unit}{f.unit_weight_lbs ? ' \u00b7 ' + f.unit_weight_lbs + ' lb' : ''}</strong></span>
                     <span>Landed: <strong style={{color:lpl?'#065f46':'#9ca3af'}}>{lpl != null ? '$' + lpl.toFixed(3) + '/lb' : '\u2014'}</strong></span>
+                    {(() => {
+                      const wt = parseFloat(f.unit_weight_lbs);
+                      const mp = parseFloat(f.moisture_pct);
+                      const dm = (Number.isFinite(wt) && wt > 0 && Number.isFinite(mp) && mp >= 0 && mp < 100) ? wt * (1 - mp/100) : null;
+                      return dm != null ? <span>DM: <strong style={{color:'#065f46'}}>{Math.round(dm*10)/10 + ' lb'}</strong></span> : null;
+                    })()}
                   </div>
                   {(f.moisture_pct != null || f.nfc_pct != null || f.protein_pct != null) && (
                     <div style={{fontSize:11, color:'#4b5563', marginBottom:6}}>
@@ -3911,9 +4052,22 @@ const LivestockFeedInputsPanel = ({sb}) => {
                   {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
-              <div style={{gridColumn:'1/-1'}}>
-                <label style={lbl}>Unit weight (lbs)</label>
+              <div>
+                <label style={lbl}>Unit weight (lbs, as-fed)</label>
                 <input type="number" min="0" step="0.01" value={form.unit_weight_lbs} onChange={e => upd('unit_weight_lbs', e.target.value)} placeholder="e.g. 1500 for a hay bale" style={inpS}/>
+              </div>
+              <div>
+                <label style={lbl}>DM per unit (computed)</label>
+                {(() => {
+                  const wt = parseFloat(form.unit_weight_lbs);
+                  const mp = parseFloat(form.moisture_pct);
+                  const dm = (Number.isFinite(wt) && wt > 0 && Number.isFinite(mp) && mp >= 0 && mp < 100) ? wt * (1 - mp/100) : null;
+                  return (
+                    <div style={{padding:'7px 10px', background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:6, fontSize:13, fontWeight:700, color:dm != null ? '#065f46' : '#9ca3af'}}>
+                      {dm != null ? Math.round(dm*10)/10 + ' lbs DM' : '\u2014'}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Cost section */}
@@ -4615,15 +4769,17 @@ function App(){
               {id:'fence_voltage',label:'Fence voltage (kV)',type:'number',required:false,system:false,enabled:true},
               {id:'water_checked',label:'Water source checked?',type:'yes_no',required:false,system:false,enabled:true}
             ]},
-            {id:'s-mortality',title:'Mortality',system:false,fields:[
-              {id:'mortality_count',label:'# Mortalities',type:'number',required:false,system:false,enabled:true},
-              {id:'mortality_reason',label:'Reason',type:'text',required:false,system:false,enabled:true}
-            ]},
             {id:'s-comments',title:'Comments',system:false,fields:[
               {id:'issues',label:'Comments / Issues',type:'textarea',required:false,system:false,enabled:true}
             ]}
           ]}]};
         }
+        // Cattle-only: strip s-mortality section from any previously-saved config
+        // (mortality is handled via the cow record now, not the webform).
+        wfCfg = {...wfCfg, webforms: (wfCfg.webforms||[]).map(function(w){
+          if(w.id !== 'cattle-dailys') return w;
+          return {...w, sections: (w.sections||[]).filter(function(s){ return s.id !== 's-mortality'; })};
+        })};
         setWebformsConfig(wfCfg);
         // Per-form team members for logged-in users
         const allMembers=[...new Set((wfCfg.webforms||[]).flatMap(w=>w.teamMembers||[]))].sort();
@@ -4816,7 +4972,16 @@ function App(){
   }
   async function syncWebformConfig(wfConfig, feeders, batchData, lgData, lhData){
     try {
-      const cfg = wfConfig || webformsConfig;
+      // Normalize: strip s-mortality from the cattle webform before sync.
+      // Mortality is handled via the cow record, not the daily webform.
+      function normalizeWebforms(webforms){
+        return (webforms||[]).map(function(w){
+          if(w.id !== 'cattle-dailys') return w;
+          return {...w, sections: (w.sections||[]).filter(function(s){ return s.id !== 's-mortality'; })};
+        });
+      }
+      const rawCfg = wfConfig || webformsConfig;
+      const cfg = {...rawCfg, webforms: normalizeWebforms(rawCfg.webforms)};
       const fgs = feeders || feederGroups;
       const pigGroups = [
         'SOWS', 'BOARS',
@@ -6567,7 +6732,7 @@ function App(){
                 return (
                   <div style={{position:"fixed",left:tooltip.vx,top:tooltip.vy,transform:"translate(-50%,-100%)",zIndex:9999,pointerEvents:"none",display:"flex",flexDirection:"column",alignItems:"center"}}>
                     <div style={{background:"#1a1a1a",color:"white",borderRadius:10,padding:"9px 12px",fontSize:12,boxShadow:"0 4px 16px rgba(0,0,0,.35)",minWidth:180,maxWidth:240}}>
-                      <div style={{fontWeight:700,fontSize:13,marginBottom:5,color:"#fde68a"}}>{lb.name} \u00b7 {bar.label}</div>
+                      <div style={{fontWeight:700,fontSize:13,marginBottom:5,color:"#fde68a"}}>{lb.name}{' \u00b7 '}{bar.label}</div>
                       <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 10px"}}>
                         {lb.original_count&&<><span style={{color:"#9ca3af"}}>Birds:</span><span style={{color:"white"}}>{lb.original_count.toLocaleString()}</span></>}
                         <span style={{color:"#9ca3af"}}>{bar.label}:</span>
@@ -6962,7 +7127,7 @@ function App(){
                           <td style={{padding:'7px 10px',fontWeight:700,whiteSpace:'nowrap',color:'#111827'}}>{b.name}</td>
                           <td style={{padding:'7px 10px'}}>{b.breed?<span style={S.badge(B2.bg,B2.tx)}>{b.breed}</span>:<span style={{color:'#9ca3af'}}>—</span>}</td>
                           {cell(timeOnFarm)}
-                          <td style={{padding:'7px 10px'}}>{sch?<span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:'#fef9c3',color:'#854d0e'}}>{sch}</span>:<span style={{color:'#9ca3af'}}>\u2014</span>}</td>
+                          <td style={{padding:'7px 10px'}}>{sch?<span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:'#fef9c3',color:'#854d0e'}}>{sch}</span>:<span style={{color:'#9ca3af'}}>{'\u2014'}</span>}</td>
                           {cell(b.birdCountActual?parseInt(b.birdCountActual).toLocaleString():null)}
                           {cell(n(b.week4Lbs)>0?`${n(b.week4Lbs)} lbs`:null)}
                           {cell(n(b.week6Lbs)>0?`${n(b.week6Lbs)} lbs`:null)}
@@ -9514,7 +9679,7 @@ function App(){
         <div style={{background:"white",borderBottom:"1px solid #e5e7eb",padding:"8px 1.25rem",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setView('home')} style={{padding:'7px 12px',borderRadius:8,border:'1px solid #d1d5db',cursor:'pointer',fontSize:12,fontWeight:500,background:'white',color:'#6b7280',fontFamily:'inherit',whiteSpace:'nowrap'}}>⌂ Home</button>
           <div style={{width:1,height:20,background:"#e5e7eb",margin:"0 4px"}}/>
-          {[{id:'webforms',label:'Webforms'},{id:'feedcosts',label:'Feed'}].map(t=>{
+          {[{id:'webforms',label:'Webforms'},{id:'feedcosts',label:'Feed'},{id:'costsbymonth',label:'Cost by Month'}].map(t=>{
             const active=adminTab===t.id&&!editWfId;
             return (
               <button key={t.id} onClick={()=>{setAdminTab(t.id);setEditWfId(null);setWfView('list');}}
@@ -9533,6 +9698,10 @@ function App(){
               <LivestockFeedInputsPanel sb={sb}/>
               <NutritionTargetsPanel sb={sb}/>
             </div>
+          )}
+
+          {adminTab==='costsbymonth'&&(
+            <FeedCostByMonthPanel sb={sb} feedCosts={feedCosts}/>
           )}
 
           {adminTab==='webforms'&&<div>
@@ -12545,7 +12714,7 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                 <div style={{gridColumn:'1/-1'}}>
                   <label style={S.label}>Housing (Layer Group) *</label>
                   <select value={hForm.housing_name} onChange={e=>updHousing(f=>({...f,housing_name:e.target.value}))}>
-                    <option value="">Select housing\u2026</option>
+                    <option value="">{'Select housing\u2026'}</option>
                     {layerGroups.map(g=>{
                       const isRetiredBatch=selectedBatch&&selectedBatch.status==='retired';
                       const locked=!isRetiredBatch&&lockedHousings.has(g.name)&&!(editHousingId&&layerHousings.find(h=>h.id===editHousingId)?.housing_name===g.name);
@@ -13765,23 +13934,39 @@ const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShow
     });
   },[]);
 
-  // Per-cow last weigh-in lookup
-  const lastWeights = (() => {
-    const map = {};
-    [...weighIns].sort((a,b)=>(a.entered_at||'').localeCompare(b.entered_at||'')).forEach(w => {
-      if(w.tag) map[w.tag] = parseFloat(w.weight)||0;
-    });
-    return map;
-  })();
+  // Weigh-ins sorted newest-first so .find() returns the globally latest
+  // matching entry across whatever tags a cow has had (current + old).
+  const weighInsDesc = React.useMemo(
+    () => [...weighIns].sort((a,b) => (b.entered_at||'').localeCompare(a.entered_at||'')),
+    [weighIns]
+  );
 
+  // Tags to probe for a given cow: current tag + any non-purchase old tags.
+  // source='import' entries are selling-farm tags that can collide with
+  // unrelated WCF cows and must NOT be used for weight lookups.
+  function cowTagSet(c) {
+    const s = new Set();
+    if(c.tag) s.add(c.tag);
+    if(Array.isArray(c.old_tags)) {
+      for(const ot of c.old_tags) {
+        if(!ot || !ot.tag || ot.source === 'import') continue;
+        s.add(ot.tag);
+      }
+    }
+    return s;
+  }
+
+  function cowLastWeight(c) {
+    const tags = cowTagSet(c);
+    if(tags.size === 0) return 0;
+    const w = weighInsDesc.find(x => tags.has(x.tag));
+    return w ? (parseFloat(w.weight)||0) : 0;
+  }
+
+  // Herd live weight = sum of actual latest weigh-ins. Unweighed cows
+  // contribute 0 (matches Podio's Last Recorded Weight sum behavior).
   function herdLiveWeight(herd) {
-    return cattle.filter(c => c.herd === herd).reduce((s,c) => {
-      const w = lastWeights[c.tag];
-      if(w > 0) return s + w;
-      const t = targets[herd];
-      const fb = t && t.fallback_cow_weight_lbs ? parseFloat(t.fallback_cow_weight_lbs) : 0;
-      return s + fb;
-    }, 0);
+    return cattle.filter(c => c.herd === herd).reduce((s,c) => s + cowLastWeight(c), 0);
   }
 
   const totalCattle = cattle.filter(c => HERDS.includes(c.herd)).length;
@@ -13831,7 +14016,7 @@ const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShow
                   </div>
                   <div style={{fontSize:12, color:'#374151'}}>Live wt: <strong>{lw>0 ? Math.round(lw).toLocaleString()+' lbs' : '\u2014'}</strong></div>
                   <div style={{fontSize:12, color:'#374151'}}>Cow units: <strong>{cu>0 ? cu.toFixed(1) : '\u2014'}</strong></div>
-                  {t && <div style={{fontSize:11, color:'#9ca3af', marginTop:4}}>Target: DM {t.target_dm_pct_body}% \u00b7 CP {t.target_cp_pct_dm}% \u00b7 NFC {t.target_nfc_pct_dm}%</div>}
+                  {t && <div style={{fontSize:11, color:'#9ca3af', marginTop:4}}>{'Target: DM '+t.target_dm_pct_body+'% \u00b7 CP '+t.target_cp_pct_dm+'% \u00b7 NFC '+t.target_nfc_pct_dm+'%'}</div>}
                 </div>
               );
             })}
