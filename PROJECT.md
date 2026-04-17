@@ -1326,3 +1326,167 @@ All import scripts + audit scripts live in `scripts/`. Recommend committing them
 ---
 
 *End of April 16 session. Future Claude: the data is clean, the UI is tight, the schema is right. Your job is to keep it that way. Read §13.6 one more time. Good luck.*
+
+---
+
+# 14. Session Update — April 17, 2026 (Cattle Dailys Import, UX Polish, Bug Sweep)
+
+This session picked up the morning after the §13 deploy. Started with the Cattle Dailys Podio import, then moved into a round of UX tweaks Ronnie surfaced while smoke-testing. Two bugs he caught mid-session that weren't on the list (mortality ghost on the public cattle webform + admin required-field designations being ignored on cattle) are also in here.
+
+**Start here if you're a fresh Claude:** §14.5 "Outstanding — what to surface at the start of next session" tells you exactly what to ask Ronnie first.
+
+## 14.1 What was done (deployed in commit `bc2cc24`)
+
+Delivered + pushed to production:
+
+- **Cattle Dailys import** (`scripts/import_cattle_dailys.js`, preview-first + idempotent)
+  - 1,515 rows inserted into `cattle_dailys` (from 1,534 source: -4 blank-date, -4 OTHER-group per Ronnie's "skip" directive, -11 strict duplicates)
+  - 12 `cattle_feed_inputs` seeded with computed Protein/NFC % from per-row DM/Protein/NFC lbs (hay types + Citrus Pellets + Alfalfa Pellets)
+  - Each daily's `feeds` jsonb carries a per-row `nutrition_snapshot` (honest — the hay nutrition varied batch-to-batch in Podio's data)
+  - Source tagged `podio_import` so the filter chips in the Dailys view can distinguish it
+  - `water_checked` populated from `Waterers checked?` column (new in the re-export)
+  - `mortality_count` left at 0 for all imported rows (narrative preserved in `issues`); "None" normalized to null
+  - Audit scripts: `inspect_dailys.js`, `dailys_audit.js`, `dailys_feed_types.js`, `dailys_feeds_by_herd.js`, `dailys_strict_dupes.js`
+
+- **Feed-input nutrition seed from real lab values** (`scripts/seed_feed_inputs.js`)
+  - Ronnie supplied per-hay-type Bale Weight (as-fed lbs), Moisture %, Protein %, NFC %. Script back-calculated as-fed bale weight from DM / (1 - moisture/100) since Podio gave DM per bale rather than as-fed, and wrote through PATCH for all 12 feed rows.
+  - Never touches `cost_per_unit`, `freight_per_truck`, `units_per_truck` — Ronnie fills those himself.
+  - Baleage values (RYE BALEAGE 1,450 lb/bale, CRABGRASS 1,465 lb/bale) **verified by Ronnie personally weighing them** — leave these alone.
+
+- **Livestock Feed Inputs form — DM per unit (computed) field**
+  - Read-only display in the edit modal that updates live as user types bale weight + moisture.
+  - Companion DM chip on each feed card so DM is visible at a glance.
+
+- **CattleHomeView dashboard weight fix**
+  - Dropped `fallback_cow_weight_lbs` phantom weight (was adding 30,000 lb to Mommas for 25 unweighed cows). Mommas dashboard now reads exactly 82,823 matching Podio.
+  - Weight lookup now goes through `cowTagSet(cow)` with `old_tags` fallback (excluding `source='import'` purchase tags — same partial-lookup issue from §13.6 that could bite here too).
+
+- **Four JSX `\u` literal regressions fixed** (dashboard Target line, pig breeding tooltip, broiler batches table, layer housing dropdown). Babel still treats `\u0000` in raw JSX text as literal — must be `{'\u0000'}`.
+
+- **Mortality removed from cattle daily webform (config-layer)**
+  - Stripped `s-mortality` section from `DEFAULT_WEBFORMS_CONFIG`, the cattle-dailys injection block, the load-time strip in `loadAllData`, and the sync normalization in `syncWebformConfig` so `webform_config.full_config` (the anon public feed) also stays clean.
+  - Broiler / Layer / Pig webforms left untouched — mortality IS still captured there.
+
+- **Feed Cost by Month admin tab** (`FeedCostByMonthPanel`)
+  - New tab added to the admin panel sub-nav (`Webforms · Feed · Cost by Month`). Table aggregates monthly feed spend across all four programs.
+  - Broiler / Layer / Pig use flat $/lb rates from `ppp-feed-costs-v1`; Cattle uses per-feed `cost_per_unit + freight_per_truck/units_per_truck` from `cattle_feed_inputs` × `qty`.
+  - Uses current costs for all months (no historical per-month ledger). Retroactive price edits re-calculate the whole table.
+  - Most cattle cells will show `—` until Ronnie fills in cost per feed in the Livestock Feed Inputs panel.
+
+## 14.2 What was done (built this session, NOT yet committed)
+
+Everything below is sitting in the working tree. **These need to be committed + pushed.** See §14.5 item 1.
+
+- **Cattle sub-nav reorder** — `Dashboard · Herds · Breeding · Weigh-Ins · Dailys · Batches` (per Ronnie's request). One-line change at line 5471.
+
+- **Livestock Feed Inputs panel: collapsible + 1-line-per-item table**
+  - Default collapsed, header shows `(12)` count and click-to-expand hint.
+  - Card grid replaced with a tight 8-column table: Name · Category · Unit/Weight · DM · Moist · P%/NFC% · Landed $/lb · Actions (📎 / Edit). Row click still opens the edit modal.
+
+- **Cattle weigh_ins module-level cache** (`loadCattleWeighInsCached(sb)`, 30s TTL)
+  - All 4 cattle views (Home / Herds / Batches / Weigh-Ins) now share a single sorted weigh_ins payload instead of each re-fetching 2,125 rows across 3 paginated round-trips. Nav between sub-tabs is now instant.
+  - Cache auto-invalidates after writes (`reconcileNewTag`, `deleteSession`, and every new write path in the new admin functionality below).
+  - Does NOT help cold start (still 3 round-trips on first open); see §14.5 item 4.
+
+- **Cattle Weigh-In tab is now fully functional admin-side**
+  - `CattleNewWeighInModal` — in-page modal for date + team + herd → creates a draft session without touching the public webform (no more hash-reload pattern).
+  - Per-session actions: `✓ Complete Session` (drafts) · `Reopen Session` (complete ones) · `Delete Session`. All previous webform-navigating buttons (`Resume in Webform`, `Reopen`, `Add More in Webform`) removed.
+  - Per-entry admin actions: `Edit` (inline form with tag/weight/note) · `Delete`. Saves invalidate cache + reload. Edit recomputes `new_tag_flag` based on whether the tag matches any current cow.
+  - `+ Add entry` row at the bottom of each expanded session for in-page entry creation without leaving the tab.
+  - Sets stage for Ronnie's "we should never go to webforms from dailys or weigh-in" directive.
+
+- **Public cattle webform — hardcoded mortality block removed from render**
+  - `index.html` around the old line 3401. Config-level strip (from §13) wasn't enough because the public webform's cattle render had mortality hardcoded in the JSX, independent of the config. Now gone.
+
+- **Public cattle `submitCattle` now honors admin required-field designations**
+  - Before: only date / teamMember / herd were validated on the cattle webform, so toggling a field "required" in the admin panel did nothing for cattle.
+  - After: builds a `valuesByFieldId` object (with `'filled'` placeholder for `feeds` / `minerals` when any row has a qty) and calls `validateRequiredFields('cattle-dailys', valuesByFieldId)`. Broiler / Layer / Pig / Egg already used this pattern — cattle was the odd one out.
+
+- **AdminAddReportModal now supports cattle**
+  - `formType="cattle"` opens the full cattle form inline (date/team/herd + feeds with creep toggle for Mommas + minerals + fence voltage + waterers + issues). No mortality.
+  - Loads `cattle_feed_inputs` on mount when cattle is the active formType.
+  - Saves as `source:'admin_add_report'`.
+
+- **CattleDailysView `+ New Report` → opens modal in-page**
+  - Previously navigated to the public `#webforms` flow (broken back-button UX per Ronnie). Now uses `AdminAddReportModal` like the other 4 dailys views.
+
+- **All `🔗 Webforms` top-bar links removed from the 5 dailys views**
+  - Broiler / Layer / Egg / Pig / Cattle. No more dead-end hash navigation that broke the browser back button.
+
+- **Batches tab: total_hanging_weight seeded** (script already run)
+  - `scripts/seed_batch_hanging_weights.js` summed linked-cow `hanging_weight` per batch and PATCHed 8 `cattle_processing_batches` rows.
+  - Script ran successfully — but the index.html changes above are still pending a commit.
+
+## 14.3 Bugs caught + fixed this session
+
+Four of these were Ronnie-caught (good), not self-caught. Most important ones first:
+
+1. **Mortality ghost on public cattle webform** (Ronnie flagged mid-session). Config strip was in place, but the public webform render had the mortality block hardcoded in JSX. Removed the block. **Lesson:** config-driven rendering is only honored where the render code actually reads the config. Always grep the render code too, not just the config.
+
+2. **Admin required-field designations ignored by cattle webform** (Ronnie flagged same turn). `submitCattle` was doing hardcoded required checks (date / team / herd only) instead of calling `validateRequiredFields()` like the other 4 program submitters. **Lesson:** the 5 program submit functions need parity with the config-driven validation pattern. When a new program is added, check it uses `validateRequiredFields`.
+
+3. **CattleHomeView dashboard over-counting** — `fallback_cow_weight_lbs` was adding phantom weight for unweighed cows (Mommas target has 1,200 lb fallback × 25 unweighed cows = 30,000 lb). Removed the fallback; unweighed cows now contribute 0 (matches Podio's own "Last Recorded Weight" sum behavior).
+
+4. **JSX text regression on the `\u` escape** — four separate spots shipped with raw `\u00b7` or `\u2014` in JSX children text. Babel leaves those literal. Must use `{'\u00b7'}` form. This is in PROJECT.md §1 but is easy to regress.
+
+5. **Public webform hash navigation breaks the browser back button** — Ronnie explicitly called this out. Mitigated by removing the dead-end `Webforms` top-bar links from dailys views AND by adding in-page modals for the cattle "New Report" and "New Weigh-In" flows. Full pushState/popstate back-button support is still deferred (see §14.5 item 3).
+
+## 14.4 Artifacts added this session
+
+Under `scripts/` (all idempotent, preview-first, safe to rerun):
+
+| File | Purpose |
+|---|---|
+| `inspect_dailys.js` / `dailys_audit.js` / `dailys_feed_types.js` / `dailys_feeds_by_herd.js` / `dailys_strict_dupes.js` | Pre-import audits for the Podio cattle dailys xlsx |
+| `import_cattle_dailys.js` | Main importer — 1,515 dailys + 12 feed inputs |
+| `seed_feed_inputs.js` | Update the 12 feed inputs with Ronnie-supplied bale weights + moisture + P% + NFC% |
+| `strip_mortality_from_webform_config.js` | One-time patch of `webform_config.full_config` to remove s-mortality (already ran successfully during §13 sync; left for future reference) |
+| `seed_batch_hanging_weights.js` | Sum per-cow hanging_weight per batch → PATCH `cattle_processing_batches.total_hanging_weight`. **Ran successfully** — 8 batches updated. |
+
+## 14.5 Outstanding — what to surface at the start of the next session
+
+Next Claude: **proactively ask Ronnie about each of these at session start** before diving into new work. Numbered in priority order.
+
+1. **Commit + push the pending in-flight changes.** Everything in §14.2 is sitting in the working tree uncommitted. Run:
+   ```
+   git status
+   ```
+   You should see `index.html` modified plus the new scripts. Draft a commit message covering the 14.2 bullet list. Confirm with Ronnie, then commit + push. Netlify auto-deploys from `main`.
+
+2. **Rotate the service-role key.** Ronnie rotated once yesterday after §13, then rotated a second time mid-session today because he needed to paste the new key into the chat transcript to unblock a script run. The current secret is in `scripts/.env` (gitignored). He committed to rotating it again after session wrap-up. Confirm rotation is done and `scripts/.env` has the new value before running any scripts.
+
+3. **Loading slowness on ALL screens.** Ronnie flagged that initial page loads are noticeably slower on every view, not just cattle. Didn't diagnose. Possible causes, in priority order:
+   - Cumulative `index.html` size (now ~16.1k lines — Babel in-browser transpile is longer)
+   - Something regressed in one of the grid-layout dailys refactors from §13 causing extra renders
+   - Module-level cache preload adding a blocking fetch (shouldn't — it's lazy)
+   - The `FeedCostByMonthPanel` effect depending on `feedCosts.*` primitives — might be firing repeatedly
+   
+   First pass: open DevTools Network tab on a cold load and see what's taking time. Then check Performance profile for render hotspots. If it's Babel transpile, the localStorage cache should kick in on second+ load — verify the cache key is stable.
+
+4. **Browser back-button support** (deferred). Ronnie parked this explicitly. The minimum-scoped version (back-button fix for webforms → dailys) was solved differently this session (removing the dead-end links). The broader "pushState on tab change" design he asked about is still open. Design note: hash is already used for public-auth bridge and requires reload; use a prefix like `#view=<name>` to avoid collision. Scope it small — only top-level view changes, not modals/expansions.
+
+5. **Cattle Dailys import quality audit** — before building on this data further, have Ronnie spot-check:
+   - Does the Mommas / Finishers / Bulls split look right in the Dailys tab (669 / 658 / 188)?
+   - Do the historical reports render feed lines with correct hay names + bale quantities?
+   - Does the Feed Cost by Month table now populate for cattle once he fills in `cost_per_unit` for a few feeds?
+
+6. **Feed Cost by Month cattle side is blank until feed costs are populated.** Ronnie owns filling in `cost_per_unit`, `freight_per_truck`, `units_per_truck` per feed via the Livestock Feed Inputs panel. Surface this if he asks "why doesn't cattle show any cost."
+
+7. **Outstanding items from §13.5 that are still open:**
+   - Imported processing batches are still named as raw dates (e.g. `2025-12-19`). Ronnie owns renaming via the Batches tab.
+   - 25 Mommas remain with no weigh-in data (tags mostly 700+). Expected.
+   - Imported weigh-in sessions show "Unknown herd" in the admin view (herd=null on purpose). Could soften the label to "Imported session" if he asks. Low priority.
+   - Broiler/pig admin Weigh-Ins view still shows `avg weight` pill (intentional — gates `week4Lbs` / `week6Lbs` batch write).
+
+8. **Hard-won lessons from this session** (don't re-learn):
+   - **Render-side hardcodes override config-driven behavior.** The mortality bug bit because the strip logic was all at the config layer, but the public webform had mortality hardcoded in JSX. Always check both sides.
+   - **Parity across submit functions matters.** 4 of 5 program submitters used `validateRequiredFields`; cattle was the odd one. When adding a new program or changing one, verify validation is wired the same way across all of them.
+   - **Module-level caches are easy wins for read-heavy nav patterns.** One module-level variable + 30s TTL + invalidate-on-write covers the "user clicking between sub-tabs" use case. No React Context required.
+   - **Back-button fixes can often be dodged by removing the dead-end links instead of adding pushState plumbing.** If the only reason the back button matters is a link that users shouldn't click, remove the link.
+   - **Don't trust `fallback_*` fields in dashboard calculations.** If a fallback is applied silently, aggregates drift from reality and you get "why is my herd total 30k lb heavier than Podio" questions later. Better to show honest zeros.
+
+9. **Context budget note for next session.** This session was long (2 days of continuous work on cattle migration + polish). By the end I was being more deliberate about grep vs read, re-verifying line numbers before edits, and watching context. That's fine — but if Ronnie opens session with more than one big chunk of work queued, suggest breaking it across sessions. PROJECT.md §13 + §14 give a fresh Claude everything needed to resume cleanly.
+
+---
+
+*End of April 17 session. Commit + push is the very first thing to do next session, before any new changes. Ronnie runs a working farm and needs what's in the repo to match what's in production.*

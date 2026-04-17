@@ -249,6 +249,39 @@ async function wcfSelectAll(buildRangeQuery, pageSize) {
   return all;
 }
 
+// ── Cattle weigh_ins cache ──────────────────────────────────────────────────
+// Each cattle sub-view (Home / Herds / Batches / Weigh-Ins) needs the full
+// species-scoped weigh_ins list. Fetching ~2k rows across 3 paginated round-
+// trips PER view every time the user navigates is wasteful. Module-level
+// cache with a short TTL lets sub-tab navigation reuse the data.
+// Invalidate after any write (tag reconcile, session delete, etc.) to stay
+// correct. Sorted descending by entered_at so .find() returns the latest match.
+let _cattleWeighInsCache = null;
+let _cattleWeighInsCacheAt = 0;
+const CATTLE_WEIGH_INS_TTL_MS = 30000;  // 30s — fresh enough for nav, short enough to catch recent writes
+async function loadCattleWeighInsCached(sb) {
+  if (_cattleWeighInsCache && Date.now() - _cattleWeighInsCacheAt < CATTLE_WEIGH_INS_TTL_MS) {
+    return _cattleWeighInsCache;
+  }
+  const sR = await sb.from('weigh_in_sessions').select('id').eq('species','cattle');
+  const ids = (sR.data||[]).map(s=>s.id);
+  if (ids.length === 0) {
+    _cattleWeighInsCache = [];
+    _cattleWeighInsCacheAt = Date.now();
+    return _cattleWeighInsCache;
+  }
+  const rows = await wcfSelectAll((f,t) => sb.from('weigh_ins').select('*').in('session_id', ids).range(f,t));
+  rows.sort((a,b) => (b.entered_at||'').localeCompare(a.entered_at||''));
+  _cattleWeighInsCache = rows;
+  _cattleWeighInsCacheAt = Date.now();
+  return _cattleWeighInsCache;
+}
+function invalidateCattleWeighInsCache() {
+  _cattleWeighInsCache = null;
+  _cattleWeighInsCacheAt = 0;
+}
+window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache;  // expose for webform flows
+
 const { useState, useEffect, useCallback } = React;
 
 
@@ -2852,9 +2885,22 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     setDone(true);
   }
   async function submitCattle(){
-    if(!cForm.date||!cForm.teamMember||!cForm.herd){setErr('Date, team member, and herd are required.');return;}
-    // Conditional: mortality reason required when count > 0
-    if(parseInt(cForm.mortalityCount)>0 && !(cForm.mortalityReason||'').trim()){setErr('Mortality reason is required when mortalities are reported.');return;}
+    // Build values-by-field-id so admin-configured "required" toggles are honored.
+    // For jsonb arrays (feeds, minerals) we flag 'filled' when at least one row has a qty/lbs.
+    const anyFeed = (cForm.feeds||[]).some(r => r.feedId && r.qty !== '' && r.qty != null && parseFloat(r.qty) > 0);
+    const anyMineral = (cForm.minerals||[]).some(r => r.feedId && r.lbs !== '' && r.lbs != null && parseFloat(r.lbs) > 0);
+    const valuesByFieldId = {
+      date: cForm.date,
+      team_member: cForm.teamMember,
+      herd: cForm.herd,
+      feeds: anyFeed ? 'filled' : '',
+      minerals: anyMineral ? 'filled' : '',
+      fence_voltage: cForm.fenceVoltage,
+      water_checked: cForm.waterChecked,
+      issues: cForm.issues,
+    };
+    const reqErr = validateRequiredFields('cattle-dailys', valuesByFieldId);
+    if(reqErr){ setErr(reqErr); return; }
     setErr('');setSubmitting(true);
     localStorage.setItem('wcf_team',cForm.teamMember);
     // Build feeds jsonb with nutrition snapshots from the feed master list
@@ -3365,24 +3411,6 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
             </div>
           )}
 
-          {/* Mortality */}
-          {herdSelected && (
-            <div style={sectionStyle}>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                <div>
-                  <label style={labelStyle}>Mortalities</label>
-                  <input type="number" min="0" value={cForm.mortalityCount} onChange={e=>setCForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inputStyle}/>
-                </div>
-                {parseInt(cForm.mortalityCount)>0 && (
-                  <div>
-                    <label style={labelStyle}>Reason <span style={{color:'#b91c1c'}}>*</span></label>
-                    <input value={cForm.mortalityReason} onChange={e=>setCForm(f=>({...f,mortalityReason:e.target.value}))} style={inputStyle}/>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Issues */}
           {herdSelected && (
             <div style={sectionStyle}>
@@ -3657,6 +3685,7 @@ const FeedCostByMonthPanel = ({sb, feedCosts}) => {
 const LivestockFeedInputsPanel = ({sb}) => {
   const [feeds, setFeeds] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [expanded, setExpanded] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState('all');
   const [showForm, setShowForm] = React.useState(false);
   const [editingId, setEditingId] = React.useState(null);
@@ -3946,80 +3975,79 @@ const LivestockFeedInputsPanel = ({sb}) => {
   return (
     <div style={{marginTop:16}}>
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'20px'}}>
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4}}>
-          <div>
-            <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:2}}>Livestock Feed Inputs</div>
-            <div style={{fontSize:12, color:'#6b7280'}}>Master list of every hay, pellet, liquid, mineral, and supplement used on-farm. Nutrition values are snapshotted onto daily reports at submit time {'\u2014'} editing a feed here doesn{'\u2019'}t rewrite historical reports.</div>
+        <div onClick={()=>setExpanded(!expanded)} style={{display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', gap:10}}>
+          <div style={{display:'flex', alignItems:'center', gap:8, flex:1}}>
+            <span style={{fontSize:12, color:'#6b7280'}}>{expanded?'\u25bc':'\u25b6'}</span>
+            <div>
+              <div style={{fontSize:15, fontWeight:700, color:'#111827'}}>{'Livestock Feed Inputs '}<span style={{fontSize:12, fontWeight:400, color:'#6b7280'}}>{'('+feeds.length+')'}</span></div>
+              {!expanded && <div style={{fontSize:11, color:'#9ca3af', marginTop:2}}>Click to expand the master feed list.</div>}
+            </div>
           </div>
-          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#085041', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap'}}>+ Add Feed</button>
-        </div>
-        <div style={{height:1, background:'#e5e7eb', margin:'14px 0'}}/>
-
-        {/* Filter chips */}
-        <div style={{display:'flex', gap:6, marginBottom:14, flexWrap:'wrap'}}>
-          {[{v:'all', l:'All'}, ...CATEGORIES].map(c => {
-            const active = categoryFilter === c.v;
-            const count = c.v === 'all' ? feeds.length : feeds.filter(f => f.category === c.v).length;
-            return (
-              <button key={c.v} onClick={() => setCategoryFilter(c.v)}
-                style={{padding:'5px 12px', borderRadius:16, border:'1px solid ' + (active?'#085041':'#d1d5db'), background:active?'#085041':'white', color:active?'white':'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>
-                {c.l} {count > 0 && <span style={{opacity:.7, marginLeft:4}}>({count})</span>}
-              </button>
-            );
-          })}
+          {expanded && <button onClick={(e)=>{e.stopPropagation(); openAdd();}} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#085041', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap'}}>+ Add Feed</button>}
         </div>
 
-        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af', fontSize:13}}>Loading feeds{'\u2026'}</div>}
-        {!loading && filteredFeeds.length === 0 && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af', fontSize:13}}>No feeds in this category.</div>}
+        {expanded && <>
+          <div style={{fontSize:12, color:'#6b7280', marginTop:8}}>Master list of every hay, pellet, liquid, mineral, and supplement used on-farm. Nutrition values are snapshotted onto daily reports at submit time {'\u2014'} editing a feed here doesn{'\u2019'}t rewrite historical reports.</div>
+          <div style={{height:1, background:'#e5e7eb', margin:'14px 0'}}/>
 
-        {/* Feed card grid */}
-        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:10}}>
-          {filteredFeeds.map(f => {
-            const cat = catMeta(f.category);
-            const lpl = landedPerLb(f);
-            const inactive = f.status === 'inactive';
-            return (
-              <div key={f.id}
-                style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 14px', opacity:inactive?0.55:1, display:'flex', flexDirection:'column'}}>
-                <div onClick={() => openEdit(f)} style={{cursor:'pointer'}} className="hoverable-tile">
-                  <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:6, flexWrap:'wrap'}}>
-                    <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{f.name}</span>
-                    <span style={{padding:'1px 7px', borderRadius:4, fontSize:10, fontWeight:700, background:cat.bg, color:cat.color, textTransform:'uppercase', letterSpacing:.4}}>{cat.l}</span>
-                    {inactive && <span style={{padding:'1px 7px', borderRadius:4, fontSize:10, fontWeight:700, background:'#fef2f2', color:'#b91c1c'}}>INACTIVE</span>}
-                  </div>
-                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'3px 10px', fontSize:11, color:'#6b7280', marginBottom:6}}>
-                    <span>Unit: <strong style={{color:'#374151'}}>{f.unit}{f.unit_weight_lbs ? ' \u00b7 ' + f.unit_weight_lbs + ' lb' : ''}</strong></span>
-                    <span>Landed: <strong style={{color:lpl?'#065f46':'#9ca3af'}}>{lpl != null ? '$' + lpl.toFixed(3) + '/lb' : '\u2014'}</strong></span>
-                    {(() => {
-                      const wt = parseFloat(f.unit_weight_lbs);
-                      const mp = parseFloat(f.moisture_pct);
-                      const dm = (Number.isFinite(wt) && wt > 0 && Number.isFinite(mp) && mp >= 0 && mp < 100) ? wt * (1 - mp/100) : null;
-                      return dm != null ? <span>DM: <strong style={{color:'#065f46'}}>{Math.round(dm*10)/10 + ' lb'}</strong></span> : null;
-                    })()}
-                  </div>
-                  {(f.moisture_pct != null || f.nfc_pct != null || f.protein_pct != null) && (
-                    <div style={{fontSize:11, color:'#4b5563', marginBottom:6}}>
-                      {f.moisture_pct != null && <>Moist {f.moisture_pct}% </>}
-                      {f.nfc_pct != null && <>{'\u00b7 NFC '}{f.nfc_pct}% DM </>}
-                      {f.protein_pct != null && <>{'\u00b7 CP '}{f.protein_pct}% DM</>}
-                    </div>
-                  )}
-                  {f.herd_scope && f.herd_scope.length > 0 && (
-                    <div style={{display:'flex', gap:3, flexWrap:'wrap', marginBottom:8}}>
-                      {f.herd_scope.map(h => (
-                        <span key={h} style={{padding:'1px 6px', borderRadius:10, fontSize:9, fontWeight:600, background:'#f3f4f6', color:'#4b5563'}}>{h}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div style={{display:'flex', gap:6, marginTop:'auto', paddingTop:6, borderTop:'1px solid #f3f4f6'}}>
-                  <button onClick={(e)=>{e.stopPropagation(); openUploadForFeed(f);}} style={{flex:1, padding:'6px 8px', borderRadius:6, border:'1px solid #085041', background:'white', color:'#085041', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udcce Upload Test'}</button>
-                  <button onClick={(e)=>{e.stopPropagation(); openEdit(f);}} style={{flex:1, padding:'6px 8px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#4b5563', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
-                </div>
+          {/* Filter chips */}
+          <div style={{display:'flex', gap:6, marginBottom:10, flexWrap:'wrap'}}>
+            {[{v:'all', l:'All'}, ...CATEGORIES].map(c => {
+              const active = categoryFilter === c.v;
+              const count = c.v === 'all' ? feeds.length : feeds.filter(f => f.category === c.v).length;
+              return (
+                <button key={c.v} onClick={() => setCategoryFilter(c.v)}
+                  style={{padding:'4px 10px', borderRadius:14, border:'1px solid ' + (active?'#085041':'#d1d5db'), background:active?'#085041':'white', color:active?'white':'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>
+                  {c.l} {count > 0 && <span style={{opacity:.7, marginLeft:4}}>({count})</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {loading && <div style={{textAlign:'center', padding:'1.5rem', color:'#9ca3af', fontSize:13}}>Loading feeds{'\u2026'}</div>}
+          {!loading && filteredFeeds.length === 0 && <div style={{textAlign:'center', padding:'1.5rem', color:'#9ca3af', fontSize:13}}>No feeds in this category.</div>}
+
+          {/* One-line-per-feed table */}
+          {!loading && filteredFeeds.length > 0 && (
+            <div style={{border:'1px solid #e5e7eb', borderRadius:8, overflow:'hidden'}}>
+              <div style={{display:'grid', gridTemplateColumns:'2fr 80px 80px 70px 60px 60px 70px 120px', gap:0, background:'#f9fafb', borderBottom:'1px solid #e5e7eb', padding:'6px 10px', fontSize:10, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5}}>
+                <span>Name</span>
+                <span>Category</span>
+                <span style={{textAlign:'right'}}>Unit / wt</span>
+                <span style={{textAlign:'right'}}>DM</span>
+                <span style={{textAlign:'right'}}>Moist</span>
+                <span style={{textAlign:'right'}}>P% / NFC%</span>
+                <span style={{textAlign:'right'}}>Landed $/lb</span>
+                <span style={{textAlign:'right'}}>Actions</span>
               </div>
-            );
-          })}
-        </div>
+              {filteredFeeds.map((f, i) => {
+                const cat = catMeta(f.category);
+                const lpl = landedPerLb(f);
+                const inactive = f.status === 'inactive';
+                const wt = parseFloat(f.unit_weight_lbs);
+                const mp = parseFloat(f.moisture_pct);
+                const dm = (Number.isFinite(wt) && wt > 0 && Number.isFinite(mp) && mp >= 0 && mp < 100) ? wt * (1 - mp/100) : null;
+                return (
+                  <div key={f.id} onClick={()=>openEdit(f)}
+                    style={{display:'grid', gridTemplateColumns:'2fr 80px 80px 70px 60px 60px 70px 120px', gap:0, padding:'8px 10px', fontSize:12, alignItems:'center', borderBottom:i<filteredFeeds.length-1?'1px solid #f3f4f6':'none', cursor:'pointer', background:i%2?'#fafafa':'white', opacity:inactive?0.55:1}}
+                    className="hoverable-tile">
+                    <span style={{fontWeight:700, color:'#111827', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{f.name}{inactive && <span style={{marginLeft:6, fontSize:10, padding:'1px 5px', borderRadius:3, background:'#fef2f2', color:'#b91c1c', fontWeight:700}}>INACTIVE</span>}</span>
+                    <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:cat.bg, color:cat.color, fontWeight:700, textAlign:'center', textTransform:'uppercase', justifySelf:'start'}}>{cat.l}</span>
+                    <span style={{textAlign:'right', color:'#374151'}}>{f.unit}{f.unit_weight_lbs?' \u00b7 '+f.unit_weight_lbs+' lb':''}</span>
+                    <span style={{textAlign:'right', color:dm!=null?'#065f46':'#9ca3af', fontWeight:dm!=null?600:400}}>{dm!=null ? (Math.round(dm*10)/10)+' lb' : '\u2014'}</span>
+                    <span style={{textAlign:'right', color:'#4b5563'}}>{f.moisture_pct!=null?f.moisture_pct+'%':'\u2014'}</span>
+                    <span style={{textAlign:'right', color:'#4b5563'}}>{f.protein_pct!=null||f.nfc_pct!=null?((f.protein_pct??'\u2014')+'/'+(f.nfc_pct??'\u2014')):'\u2014'}</span>
+                    <span style={{textAlign:'right', color:lpl?'#065f46':'#9ca3af', fontWeight:lpl?600:400}}>{lpl!=null?'$'+lpl.toFixed(3):'\u2014'}</span>
+                    <span style={{display:'flex', gap:4, justifyContent:'flex-end'}}>
+                      <button onClick={(e)=>{e.stopPropagation(); openUploadForFeed(f);}} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #085041', background:'white', color:'#085041', fontSize:10, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udcce'}</button>
+                      <button onClick={(e)=>{e.stopPropagation(); openEdit(f);}} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #d1d5db', background:'white', color:'#4b5563', fontSize:10, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>}
       </div>
 
       {/* Add/Edit modal */}
@@ -5435,7 +5463,7 @@ function App(){
           {inLayers&&[["layersHome","Dashboard"],["layerbatches","Layer Batches"],["layerdailys","Layer Dailys"],["eggdailys","Egg Dailys"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
-          {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattledailys","Dailys"],["cattleweighins","Weigh-Ins"],["cattlebreeding","Breeding"],["cattlebatches","Batches"]].map(([v,l])=>(
+          {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattlebreeding","Breeding"],["cattleweighins","Weigh-Ins"],["cattledailys","Dailys"],["cattlebatches","Batches"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
         </div>
@@ -11437,6 +11465,13 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   const [eForm,setEForm]=React.useState({date:todayStr(),teamMember:'',g1n:'',g1c:'',g2n:'',g2c:'',g3n:'',g3c:'',g4n:'',g4c:'',dozensOnHand:'',comments:''});
   const [pForm,setPForm]=React.useState({date:todayStr(),teamMember:'',batchLabel:'',feedLbs:'',pigCount:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''});
   const [extraP,setExtraP]=React.useState([]);
+  // Cattle: feeds + minerals are jsonb arrays; feed inputs come from cattle_feed_inputs.
+  const [cForm,setCForm]=React.useState({date:todayStr(),teamMember:'',herd:'',feeds:[{feedId:'',qty:'',isCreep:false}],minerals:[{feedId:'',lbs:''}],fenceVoltage:'',waterChecked:true,issues:''});
+  const [cattleFeedInputs,setCattleFeedInputs]=React.useState([]);
+  React.useEffect(()=>{
+    if(formType!=='cattle') return;
+    sb.from('cattle_feed_inputs').select('*').eq('status','active').then(({data})=>{ if(data) setCattleFeedInputs(data); });
+  },[formType]);
 
   React.useEffect(()=>{ if(layerGroupNames.length>0&&!eForm.g1n) setEForm(f=>({...f,g1n:layerGroupNames[0]||'',g2n:layerGroupNames[1]||'',g3n:layerGroupNames[2]||'',g4n:layerGroupNames[3]||''})); },[layerGroupNames.join(',')]);
 
@@ -11514,9 +11549,44 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
     if(data) onSaved(data); onClose();
   }
 
+  async function submitCattle(){
+    if(!cForm.date||!cForm.teamMember||!cForm.herd){setErr('Date, team member, and herd are required.');return;}
+    setErr('');setSubmitting(true);
+    const feedsJ=(cForm.feeds||[]).filter(f=>f.feedId&&f.qty!==''&&f.qty!=null).map(f=>{
+      const fi=cattleFeedInputs.find(x=>x.id===f.feedId); if(!fi) return null;
+      const qty=parseFloat(f.qty)||0;
+      const unitWt=parseFloat(fi.unit_weight_lbs)||1;
+      return {
+        feed_input_id:fi.id, feed_name:fi.name, category:fi.category,
+        qty, unit:fi.unit,
+        lbs_as_fed: Math.round(qty*unitWt*100)/100,
+        is_creep: !!f.isCreep,
+        nutrition_snapshot:{moisture_pct:fi.moisture_pct, nfc_pct:fi.nfc_pct, protein_pct:fi.protein_pct},
+      };
+    }).filter(Boolean);
+    const mineralsJ=(cForm.minerals||[]).filter(m=>m.feedId&&m.lbs!==''&&m.lbs!=null).map(m=>{
+      const fi=cattleFeedInputs.find(x=>x.id===m.feedId); if(!fi) return null;
+      return {feed_input_id:fi.id, name:fi.name, lbs:parseFloat(m.lbs)||0};
+    }).filter(Boolean);
+    const rec={
+      id:genId(), submitted_at:new Date().toISOString(),
+      date:cForm.date, team_member:cForm.teamMember, herd:cForm.herd,
+      feeds:feedsJ, minerals:mineralsJ,
+      fence_voltage: cForm.fenceVoltage!==''?parseFloat(cForm.fenceVoltage):null,
+      water_checked: cForm.waterChecked,
+      mortality_count: 0, mortality_reason: null,
+      issues: cForm.issues||null,
+      source: 'admin_add_report',
+    };
+    const {data,error} = await sb.from('cattle_dailys').insert(rec).select();
+    setSubmitting(false);
+    if(error){setErr('Could not save: '+error.message); return;}
+    if(data) onSaved(data); onClose();
+  }
+
   const totalRecs=(formType==='broiler'?1+extraB.filter(g=>g.batchLabel).length:formType==='layer'?1+extraL.filter(g=>g.batchLabel).length:formType==='pig'?1+extraP.filter(g=>g.batchLabel).length:1);
-  const submitFn=formType==='broiler'?submitBroiler:formType==='layer'?submitLayer:formType==='egg'?submitEgg:submitPig;
-  const titles={broiler:'🐔 Add Broiler Report',layer:'🐓 Add Layer Report',egg:'🥚 Add Egg Report',pig:'🐷 Add Pig Report'};
+  const submitFn=formType==='broiler'?submitBroiler:formType==='layer'?submitLayer:formType==='egg'?submitEgg:formType==='cattle'?submitCattle:submitPig;
+  const titles={broiler:'🐔 Add Broiler Report',layer:'🐓 Add Layer Report',egg:'🥚 Add Egg Report',pig:'🐷 Add Pig Report',cattle:'🐄 Add Cattle Report'};
 
   return (
     <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.5)',zIndex:600,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'1rem',overflowY:'auto'}}>
@@ -11680,6 +11750,110 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
             </div>
           )}
 
+          {/* ── CATTLE ── */}
+          {formType==='cattle'&&(() => {
+            const CATTLE_HERDS = [{v:'mommas',l:'Mommas'},{v:'backgrounders',l:'Backgrounders'},{v:'finishers',l:'Finishers'},{v:'bulls',l:'Bulls'}];
+            const herdSel = cForm.herd;
+            const feedsForHerd = herdSel ? cattleFeedInputs.filter(f=>f.category!=='mineral'&&(f.herd_scope||[]).includes(herdSel)) : [];
+            const mineralsAll = cattleFeedInputs.filter(f=>f.category==='mineral');
+            const unitFor = id => { const fi=cattleFeedInputs.find(x=>x.id===id); return fi?fi.unit:''; };
+            const showCreep = herdSel === 'mommas';
+            const teamOpts = getFormTeamMembers('cattle-dailys');
+            return (
+              <div>
+                <div style={sec}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                    <div style={{gridColumn:'1/-1'}}><label style={lbl}>{getFieldLabel('cattle-dailys','date','Date')}{reqStar('cattle-dailys','date')}</label><input type="date" value={cForm.date} onChange={e=>setCForm(f=>({...f,date:e.target.value}))} style={inp}/></div>
+                    <div style={{gridColumn:'1/-1'}}><label style={lbl}>{getFieldLabel('cattle-dailys','team_member','Team Member')}{reqStar('cattle-dailys','team_member')}</label><select value={cForm.teamMember} onChange={e=>setCForm(f=>({...f,teamMember:e.target.value}))} style={inp}><option value=''>Select...</option>{teamOpts.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+                    <div style={{gridColumn:'1/-1'}}><label style={lbl}>Cattle Herd <span style={{color:'#b91c1c'}}>*</span></label><select value={cForm.herd} onChange={e=>setCForm(f=>({...f,herd:e.target.value,feeds:[{feedId:'',qty:'',isCreep:false}],minerals:[{feedId:'',lbs:''}]}))} style={inp}><option value=''>Select herd...</option>{CATTLE_HERDS.map(h=><option key={h.v} value={h.v}>{h.l}</option>)}</select></div>
+                  </div>
+                </div>
+
+                {herdSel&&(
+                  <div style={sec}>
+                    <div style={{fontSize:13,fontWeight:600,color:'#991b1b',marginBottom:10}}>Feed</div>
+                    {cForm.feeds.map((row,ri)=>(
+                      <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,marginBottom:showCreep?4:10,alignItems:'end'}}>
+                        <div>
+                          {ri===0&&<label style={{...lbl,fontSize:12}}>Feed</label>}
+                          <select value={row.feedId} onChange={e=>setCForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inp,fontSize:13,padding:'8px 10px'}}>
+                            <option value=''>Select feed...</option>
+                            {feedsForHerd.map(ff=><option key={ff.id} value={ff.id}>{ff.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          {ri===0&&<label style={{...lbl,fontSize:12}}>{row.feedId?('Qty ('+unitFor(row.feedId)+')'):'Qty'}</label>}
+                          <input type="number" min="0" step="0.1" value={row.qty} onChange={e=>setCForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,qty:e.target.value}:r)}))} placeholder="0" style={{...inp,fontSize:13,padding:'8px 10px'}}/>
+                        </div>
+                        <div>
+                          {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
+                          {cForm.feeds.length>1?(
+                            <button type="button" onClick={()=>setCForm(f=>({...f,feeds:f.feeds.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'\u00d7'}</button>
+                          ):(
+                            <div style={{width:38}}/>
+                          )}
+                        </div>
+                        {showCreep&&row.feedId&&(
+                          <label style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#7f1d1d',cursor:'pointer',marginBottom:6,userSelect:'none'}}>
+                            <input type="checkbox" checked={!!row.isCreep} onChange={e=>setCForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,isCreep:e.target.checked}:r)}))} style={{cursor:'pointer'}}/>
+                            {'Creep feed (for calves) \u2014 counts for cost, not Mommas nutrition'}
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                    <button type="button" onClick={()=>setCForm(f=>({...f,feeds:[...f.feeds,{feedId:'',qty:'',isCreep:false}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #fca5a5',background:'transparent',color:'#991b1b',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Feed</button>
+                  </div>
+                )}
+
+                {herdSel&&(
+                  <div style={sec}>
+                    <div style={{fontSize:13,fontWeight:600,color:'#991b1b',marginBottom:10}}>Minerals</div>
+                    {cForm.minerals.map((row,ri)=>(
+                      <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
+                        <div>
+                          {ri===0&&<label style={{...lbl,fontSize:12}}>Mineral</label>}
+                          <select value={row.feedId} onChange={e=>setCForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inp,fontSize:13,padding:'8px 10px'}}>
+                            <option value=''>Select mineral...</option>
+                            {mineralsAll.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          {ri===0&&<label style={{...lbl,fontSize:12}}>Lbs</label>}
+                          <input type="number" min="0" step="0.1" value={row.lbs} onChange={e=>setCForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,lbs:e.target.value}:r)}))} placeholder="0" style={{...inp,fontSize:13,padding:'8px 10px'}}/>
+                        </div>
+                        <div>
+                          {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
+                          {cForm.minerals.length>1?(
+                            <button type="button" onClick={()=>setCForm(f=>({...f,minerals:f.minerals.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'\u00d7'}</button>
+                          ):(
+                            <div style={{width:38}}/>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <button type="button" onClick={()=>setCForm(f=>({...f,minerals:[...f.minerals,{feedId:'',lbs:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #fca5a5',background:'transparent',color:'#991b1b',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Mineral</button>
+                  </div>
+                )}
+
+                {herdSel&&(
+                  <div style={sec}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                      <div><label style={lbl}>Fence Voltage (kV)</label><input type="number" min="0" step="0.1" value={cForm.fenceVoltage} onChange={e=>setCForm(f=>({...f,fenceVoltage:e.target.value}))} placeholder="0.0" style={inp}/></div>
+                      <div><label style={lbl}>Waterers checked?</label><WcfYN val={cForm.waterChecked} onChange={v=>setCForm(f=>({...f,waterChecked:v}))}/></div>
+                    </div>
+                  </div>
+                )}
+
+                {herdSel&&(
+                  <div style={sec}>
+                    <label style={lbl}>Issues / Comments</label>
+                    <textarea value={cForm.issues} onChange={e=>setCForm(f=>({...f,issues:e.target.value}))} rows={3} placeholder="Type 0 if nothing to report" style={{...inp,resize:'vertical'}}/>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {err&&<div style={{color:'#b91c1c',fontSize:13,marginTop:8,padding:'8px 12px',background:'#fef2f2',borderRadius:8,borderLeft:'3px solid #fca5a5'}}>{err}</div>}
           <button onClick={submitFn} disabled={submitting} style={{width:'100%',marginTop:14,padding:'13px 0',border:'none',borderRadius:10,background:'#085041',color:'white',fontSize:14,fontWeight:600,cursor:submitting?'not-allowed':'pointer',opacity:submitting?.65:1,fontFamily:'inherit'}}>
             {submitting?'Saving...':totalRecs>1?`Save ${totalRecs} Reports`:'Save Report'}
@@ -11780,7 +11954,6 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed · <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span></div>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
@@ -13041,7 +13214,6 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown</div>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
@@ -13250,7 +13422,6 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · <strong style={{color:'#78350f'}}>{totalEggs.toLocaleString()} eggs</strong> ({Math.round(totalEggs/12).toLocaleString()} doz) in view</div>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
         </div>
@@ -13412,7 +13583,6 @@ const PigDailysView = ({sb, fmt, Header, authState, pigDailys, setPigDailys, fee
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{pigDailys.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed in view</div>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={function(){window.location.hash='#webforms';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={function(){window.location.hash='#addfeed';window.location.reload();}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #fde68a',background:'#fef3c7',color:'#92400e',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>
           </div>
@@ -13527,6 +13697,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
   const [feedInputs, setFeedInputs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [editSource, setEditSource] = useState(null);
   const [form, setForm] = useState(null);
@@ -13683,11 +13854,11 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
             </div>
           </div>
           <div style={{display:'flex', gap:8}}>
-            <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udd17 Webforms'}</button>
             <button onClick={() => { window.location.hash = '#addfeed'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'1px solid #fde68a', background:'#fef3c7', color:'#92400e', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83c\udf3e Add Feed'}</button>
-            <button onClick={() => { window.location.hash = '#webforms'; window.location.reload(); }} style={{padding:'8px 16px', borderRadius:8, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Report</button>
+            <button onClick={() => setShowAddModal(true)} style={{padding:'8px 16px', borderRadius:8, border:'none', background:'#991b1b', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Report</button>
           </div>
         </div>
+        {showAddModal && <AdminAddReportModal sb={sb} formType="cattle" onClose={() => setShowAddModal(false)} onSaved={recs => { setRecords(p => [...(Array.isArray(recs)?recs:[recs]), ...p]); refreshDailys && refreshDailys('cattle'); }}/>}
 
         {/* Filters */}
         <div style={{display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'center'}}>
@@ -13913,11 +14084,7 @@ const CattleHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShow
     Promise.all([
       sb.from('cattle').select('*'),
       sb.from('cattle_dailys').select('*').gte('date', cutoff30),
-      sb.from('weigh_in_sessions').select('id').eq('species','cattle').then(async ({data}) => {
-        const ids = (data||[]).map(s => s.id);
-        if(ids.length === 0) return [];
-        return wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', ids).range(from,to));
-      }),
+      loadCattleWeighInsCached(sb),
       sb.from('cattle_calving_records').select('*'),
       sb.from('cattle_nutrition_targets').select('*'),
     ]).then(([cR, dR, wAll, calvR, tR])=>{
@@ -14077,10 +14244,9 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   };
 
   async function loadAll() {
-    const cattleSessIds = await sb.from('weigh_in_sessions').select('id').eq('species','cattle').then(({data}) => (data||[]).map(s => s.id));
     const [cR, wAll, calR, comR, brR, orR] = await Promise.all([
       sb.from('cattle').select('*').order('tag'),
-      cattleSessIds.length === 0 ? Promise.resolve([]) : wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', cattleSessIds).order('entered_at',{ascending:false}).range(from,to)),
+      loadCattleWeighInsCached(sb),  // already sorted entered_at desc
       sb.from('cattle_calving_records').select('*').order('calving_date',{ascending:false}),
       sb.from('cattle_comments').select('*').order('created_at',{ascending:false}),
       sb.from('cattle_breeds').select('*').order('label'),
@@ -15030,11 +15196,10 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
   const [form, setForm] = useState(null);
 
   async function loadAll() {
-    const cattleSessIds = await sb.from('weigh_in_sessions').select('id').eq('species','cattle').then(({data}) => (data||[]).map(s => s.id));
     const [bR, cR, wAll] = await Promise.all([
       sb.from('cattle_processing_batches').select('*').order('planned_process_date',{ascending:false}),
       sb.from('cattle').select('*'),
-      cattleSessIds.length === 0 ? Promise.resolve([]) : wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', cattleSessIds).range(from,to)),
+      loadCattleWeighInsCached(sb),
     ]);
     if(bR.data) setBatches(bR.data);
     if(cR.data) setCattle(cR.data);
@@ -15586,9 +15751,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                   <div style={{borderTop:'1px solid #f3f4f6', padding:'12px 16px', background:'#fafafa'}}>
                     <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap'}}>
                       {isComplete && !gridUnlocked && <button onClick={()=>setGridUnlocked(true)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u270e Edit Weights'}</button>}
-                      {isComplete && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Weigh-In</button>}
                       {!isComplete && <button onClick={()=>completeFromAdmin(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #047857', background:'#047857', color:'white', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2713 Complete Weigh-In'}</button>}
-                      {!isComplete && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Add More in Webform</button>}
                       <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Weigh-In</button>
                     </div>
 
@@ -15654,17 +15817,24 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all'); // all | draft | complete
+  const [showNewModal, setShowNewModal] = useState(false);
+  // Inline entry editing
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [editForm, setEditForm] = useState({tag:'', weight:'', note:''});
+  // Add-entry form per session
+  const [addEntryForm, setAddEntryForm] = useState({tag:'', weight:'', note:''});
 
   async function loadAll() {
-    const sR = await sb.from('weigh_in_sessions').select('*').eq('species','cattle').order('date',{ascending:false}).order('started_at',{ascending:false});
-    const cattleSessIds = (sR.data||[]).map(s => s.id);
-    const [eAll, cR] = await Promise.all([
-      cattleSessIds.length === 0 ? Promise.resolve([]) : wcfSelectAll((from,to) => sb.from('weigh_ins').select('*').in('session_id', cattleSessIds).order('entered_at',{ascending:true}).range(from,to)),
+    const [sR, eAll, cR] = await Promise.all([
+      sb.from('weigh_in_sessions').select('*').eq('species','cattle').order('date',{ascending:false}).order('started_at',{ascending:false}),
+      loadCattleWeighInsCached(sb),
       sb.from('cattle').select('id, tag, herd, old_tags'),
     ]);
     if(sR.data) setSessions(sR.data);
+    // Group cache rows by session_id; entries within a session display oldest-first.
     const m = {};
     eAll.forEach(e => { if(!m[e.session_id]) m[e.session_id] = []; m[e.session_id].push(e); });
+    for(const k in m) m[k].sort((a,b) => (a.entered_at||'').localeCompare(b.entered_at||''));
     setEntries(m);
     if(cR.data) setCattle(cR.data);
     setLoading(false);
@@ -15691,6 +15861,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
         catch(e){ /* table may not exist on legacy schemas — ok to skip */ }
       }
       await sb.from('weigh_in_sessions').delete().eq('id', s.id);
+      invalidateCattleWeighInsCache();
       await loadAll();
     });
   }
@@ -15708,7 +15879,72 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     await sb.from('cattle').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownCowId);
     await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
     try { await sb.from('cattle_comments').update({cattle_id: knownCowId, cattle_tag: newTag}).eq('reference_id', entry.id); } catch(e){}
+    invalidateCattleWeighInsCache();
     await loadAll();
+  }
+
+  async function completeSession(s) {
+    await sb.from('weigh_in_sessions').update({status:'complete', completed_at:new Date().toISOString()}).eq('id', s.id);
+    await loadAll();
+  }
+  function startEditEntry(e) {
+    setEditingEntryId(e.id);
+    setEditForm({tag: e.tag || '', weight: String(e.weight ?? ''), note: e.note || ''});
+  }
+  async function saveEntryEdit(e) {
+    const newTag = (editForm.tag||'').trim() || null;
+    const newWeight = parseFloat(editForm.weight);
+    if(!Number.isFinite(newWeight) || newWeight <= 0) return;
+    // If the tag changes, recompute new_tag_flag (true if no cow currently holds that tag)
+    const cowWithTag = newTag ? cattle.find(c => c.tag === newTag) : null;
+    const newTagFlag = newTag && !cowWithTag;
+    await sb.from('weigh_ins').update({tag: newTag, weight: newWeight, note: editForm.note || null, new_tag_flag: newTagFlag}).eq('id', e.id);
+    invalidateCattleWeighInsCache();
+    setEditingEntryId(null);
+    await loadAll();
+  }
+  async function deleteEntry(e) {
+    if(!window._wcfConfirmDelete) {
+      if(!window.confirm('Delete this weigh-in entry?')) return;
+      await sb.from('weigh_ins').delete().eq('id', e.id);
+      invalidateCattleWeighInsCache();
+      await loadAll();
+      return;
+    }
+    window._wcfConfirmDelete('Delete this weigh-in entry? This cannot be undone.', async () => {
+      await sb.from('weigh_ins').delete().eq('id', e.id);
+      invalidateCattleWeighInsCache();
+      await loadAll();
+    });
+  }
+  async function addEntryToSession(s) {
+    const tag = (addEntryForm.tag||'').trim() || null;
+    const weight = parseFloat(addEntryForm.weight);
+    if(!Number.isFinite(weight) || weight <= 0) return;
+    const cowWithTag = tag ? cattle.find(c => c.tag === tag) : null;
+    const newTagFlag = tag && !cowWithTag;
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    await sb.from('weigh_ins').insert({
+      id, session_id: s.id, tag, weight,
+      note: addEntryForm.note || null,
+      new_tag_flag: !!newTagFlag,
+      entered_at: new Date().toISOString(),
+    });
+    invalidateCattleWeighInsCache();
+    setAddEntryForm({tag:'', weight:'', note:''});
+    await loadAll();
+  }
+  async function createNewSession(opts) {
+    const id = 'wsess-' + String(Date.now()) + Math.random().toString(36).slice(2,6);
+    const rec = {
+      id, date: opts.date, team_member: opts.team_member,
+      species: 'cattle', herd: opts.herd,
+      status: 'draft', started_at: new Date().toISOString(),
+    };
+    await sb.from('weigh_in_sessions').insert(rec);
+    await loadAll();
+    setExpandedSession(id);
+    setShowNewModal(false);
   }
 
   const filtered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
@@ -15731,8 +15967,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                 <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#1e40af':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
               ))}
             </div>
-            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 12px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\ud83d\udd17 Webform'}</button>
-            <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
+            <button onClick={()=>setShowNewModal(true)} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#1e40af', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'\u2696\ufe0f New Weigh-In'}</button>
           </div>
         </div>
 
@@ -15761,38 +15996,121 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                 </div>
                 {isExpanded && (
                   <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
-                    <div style={{display:'flex', gap:8, marginBottom:10}}>
+                    <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap'}}>
+                      {s.status === 'draft' && <button onClick={()=>completeSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #047857', background:'#047857', color:'white', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2713 Complete Session'}</button>}
                       {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Session</button>}
-                      {s.status === 'draft' && <button onClick={()=>{window.location.hash='#weighins'; window.location.reload();}} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #1e40af', background:'#eff6ff', color:'#1e40af', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Resume in Webform</button>}
                       <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Session</button>
                     </div>
-                    {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No entries in this session.</div>}
+                    {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No entries in this session.</div>}
                     {sEntries.map(e => {
                       const cow = cattle.find(c => c.tag === e.tag);
+                      const isEditing = editingEntryId === e.id;
                       return (
-                        <div key={e.id} style={{background:'white', border:'1px solid '+(e.new_tag_flag?'#fca5a5':'#e5e7eb'), borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:12, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                          {e.tag ? <span style={{fontWeight:700, color:'#111827', minWidth:60}}>#{e.tag}</span> : <span style={{color:'#9ca3af', minWidth:60}}>(no tag)</span>}
-                          <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
-                          {e.new_tag_flag && (
-                            <React.Fragment>
-                              <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>
-                              <select onChange={ev=>{if(ev.target.value){reconcileNewTag(e, ev.target.value);}}} defaultValue='' style={{fontSize:11, padding:'3px 6px', border:'1px solid #d1d5db', borderRadius:4, fontFamily:'inherit'}}>
-                                <option value=''>Reconcile to known cow...</option>
-                                {cattle.filter(c => c.tag).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(c => <option key={c.id} value={c.id}>{'#'+c.tag+' ('+(c.herd||'?')+')'}</option>)}
-                              </select>
-                            </React.Fragment>
+                        <div key={e.id} style={{background:'white', border:'1px solid '+(e.new_tag_flag?'#fca5a5':'#e5e7eb'), borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:12}}>
+                          {isEditing ? (
+                            <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                              <input type="text" placeholder="Tag #" value={editForm.tag} onChange={ev=>setEditForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
+                              <input type="number" min="0" step="0.1" placeholder="lb" value={editForm.weight} onChange={ev=>setEditForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
+                              <input type="text" placeholder="Note (optional)" value={editForm.note} onChange={ev=>setEditForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:120}}/>
+                              <button onClick={()=>saveEntryEdit(e)} disabled={!(parseFloat(editForm.weight)>0)} style={{padding:'3px 10px', borderRadius:5, border:'none', background:(parseFloat(editForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(editForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>Save</button>
+                              <button onClick={()=>setEditingEntryId(null)} style={{padding:'3px 10px', borderRadius:5, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                            </div>
+                          ) : (
+                            <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                              {e.tag ? <span style={{fontWeight:700, color:'#111827', minWidth:60}}>#{e.tag}</span> : <span style={{color:'#9ca3af', minWidth:60}}>(no tag)</span>}
+                              <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                              {e.new_tag_flag && (
+                                <React.Fragment>
+                                  <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>
+                                  <select onChange={ev=>{if(ev.target.value){reconcileNewTag(e, ev.target.value);}}} defaultValue='' style={{fontSize:11, padding:'3px 6px', border:'1px solid #d1d5db', borderRadius:4, fontFamily:'inherit'}}>
+                                    <option value=''>Reconcile to known cow...</option>
+                                    {cattle.filter(c => c.tag).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(c => <option key={c.id} value={c.id}>{'#'+c.tag+' ('+(c.herd||'?')+')'}</option>)}
+                                  </select>
+                                </React.Fragment>
+                              )}
+                              {!e.new_tag_flag && cow && <span style={{fontSize:11, color:'#6b7280'}}>{HERD_LABELS[cow.herd]||cow.herd}</span>}
+                              {e.note && <span style={{fontSize:11, color:'#92400e', fontStyle:'italic', flex:1}}>{e.note}</span>}
+                              <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
+                              <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
+                              <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
+                            </div>
                           )}
-                          {!e.new_tag_flag && cow && <span style={{fontSize:11, color:'#6b7280'}}>{HERD_LABELS[cow.herd]||cow.herd}</span>}
-                          {e.note && <span style={{fontSize:11, color:'#92400e', fontStyle:'italic', flex:1}}>{e.note}</span>}
-                          <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
                         </div>
                       );
                     })}
+                    {/* Add entry row */}
+                    <div style={{marginTop:8, background:'#eff6ff', border:'1px dashed #bfdbfe', borderRadius:6, padding:'8px 10px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                      <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>+ Add entry:</span>
+                      <input type="text" placeholder="Tag #" value={addEntryForm.tag} onChange={ev=>setAddEntryForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
+                      <input type="number" min="0" step="0.1" placeholder="lb" value={addEntryForm.weight} onChange={ev=>setAddEntryForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80}}/>
+                      <input type="text" placeholder="Note (optional)" value={addEntryForm.note} onChange={ev=>setAddEntryForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:120}}/>
+                      <button onClick={()=>addEntryToSession(s)} disabled={!(parseFloat(addEntryForm.weight)>0)} style={{padding:'4px 12px', borderRadius:5, border:'none', background:(parseFloat(addEntryForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(addEntryForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>Add</button>
+                    </div>
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      </div>
+      {showNewModal && <CattleNewWeighInModal sb={sb} onClose={()=>setShowNewModal(false)} onCreate={createNewSession}/>}
+    </div>
+  );
+};
+
+// Modal: start a new cattle weigh-in session inline (no webform nav).
+const CattleNewWeighInModal = ({sb, onClose, onCreate}) => {
+  const {useState, useEffect} = React;
+  const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [team, setTeam] = useState(localStorage.getItem('wcf_team') || '');
+  const [date, setDate] = useState(todayStr());
+  const [herd, setHerd] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const HERD_OPTS = [{v:'mommas',l:'Mommas'},{v:'backgrounders',l:'Backgrounders'},{v:'finishers',l:'Finishers'},{v:'bulls',l:'Bulls'}];
+  useEffect(() => {
+    sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle().then(({data}) => {
+      const perForm = data && data.data || {};
+      if(Array.isArray(perForm['cattle-weighins']) && perForm['cattle-weighins'].length > 0) { setTeamMembers(perForm['cattle-weighins']); return; }
+      sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data:d2}) => {
+        if(d2 && Array.isArray(d2.data)) setTeamMembers(d2.data);
+      });
+    });
+  }, []);
+  async function create() {
+    if(!team) { setErr('Pick a team member.'); return; }
+    if(!herd) { setErr('Pick a herd.'); return; }
+    setErr(''); setBusy(true);
+    localStorage.setItem('wcf_team', team);
+    await onCreate({date, team_member: team, herd});
+    setBusy(false);
+  }
+  const inpS = {fontFamily:'inherit', fontSize:13, padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6, width:'100%', boxSizing:'border-box', background:'white'};
+  const lblS = {display:'block', fontSize:12, color:'#374151', marginBottom:4, fontWeight:600};
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+      <div style={{background:'white', borderRadius:12, maxWidth:420, width:'100%', padding:'18px 20px', boxShadow:'0 12px 40px rgba(0,0,0,.25)'}}>
+        <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:14}}>{'\ud83d\udc04 New Cattle Weigh-In'}</div>
+        <div style={{marginBottom:10}}><label style={lblS}>Team member *</label>
+          <select value={team} onChange={e=>setTeam(e.target.value)} style={inpS}>
+            <option value=''>Select team member...</option>
+            {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:10}}><label style={lblS}>Date</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inpS}/>
+        </div>
+        <div style={{marginBottom:14}}><label style={lblS}>Herd *</label>
+          <select value={herd} onChange={e=>setHerd(e.target.value)} style={inpS}>
+            <option value=''>Select herd...</option>
+            {HERD_OPTS.map(h => <option key={h.v} value={h.v}>{h.l}</option>)}
+          </select>
+        </div>
+        {err && <div style={{color:'#b91c1c', fontSize:12, marginBottom:10, padding:'6px 10px', background:'#fef2f2', borderRadius:6}}>{err}</div>}
+        <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+          <button onClick={onClose} disabled={busy} style={{padding:'8px 14px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>Cancel</button>
+          <button onClick={create} disabled={busy || !team || !herd} style={{padding:'8px 16px', borderRadius:7, border:'none', background:(busy||!team||!herd)?'#9ca3af':'#1e40af', color:'white', fontWeight:700, fontSize:12, cursor:(busy||!team||!herd)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Creating\u2026':'Create Session'}</button>
         </div>
       </div>
     </div>
