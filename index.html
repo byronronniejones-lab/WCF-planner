@@ -1035,18 +1035,43 @@ function SetPasswordScreen({onDone, prefilledEmail}) {
   React.useEffect(() => {
     let mounted = true;
     let timeoutId;
-    function checkSession() {
-      sb.auth.getSession().then(({data:{session}}) => {
-        if(mounted && session) { setSessionReady(true); clearTimeout(timeoutId); }
-      });
+
+    // The supabase client is initialized with detectSessionInUrl:false (see
+    // top of file) so the auto-exchange that would normally run on init is
+    // disabled. We have to manually pick up the recovery tokens from the
+    // URL and call setSession ourselves, otherwise updateUser fails with
+    // "Auth session missing".
+    async function tryEstablishSession() {
+      try {
+        const {data:{session: existing}} = await sb.auth.getSession();
+        if(mounted && existing) { setSessionReady(true); clearTimeout(timeoutId); return; }
+        // Implicit-flow tokens land in the URL hash
+        const hash = (window.location.hash || '').replace(/^#/, '');
+        if(hash) {
+          const params = new URLSearchParams(hash);
+          const at = params.get('access_token');
+          const rt = params.get('refresh_token');
+          if(at && rt) {
+            const {error: sErr} = await sb.auth.setSession({access_token: at, refresh_token: rt});
+            if(!sErr && mounted) { setSessionReady(true); clearTimeout(timeoutId); return; }
+          }
+        }
+        // PKCE-flow code lands in the query string
+        const code = new URLSearchParams(window.location.search).get('code');
+        if(code) {
+          const {error: cErr} = await sb.auth.exchangeCodeForSession(code);
+          if(!cErr && mounted) { setSessionReady(true); clearTimeout(timeoutId); return; }
+        }
+      } catch(e) { /* fall through to timeout */ }
     }
-    checkSession();
+    tryEstablishSession();
+
     const {data:{subscription}} = sb.auth.onAuthStateChange((event, session) => {
       if(mounted && session) { setSessionReady(true); clearTimeout(timeoutId); }
     });
-    // If Supabase still hasn't given us a session after 8s, the recovery
-    // link is almost certainly expired or already used. Surface a clear
-    // error rather than letting the user submit into the void.
+    // If we still haven't established a session after 8s, the recovery
+    // link is expired or already used. Surface a clear error rather than
+    // letting the user submit into the void.
     timeoutId = setTimeout(() => { if(mounted && !sessionReady) setLinkInvalid(true); }, 8000);
     return () => { mounted = false; subscription.unsubscribe(); clearTimeout(timeoutId); };
   }, []);
