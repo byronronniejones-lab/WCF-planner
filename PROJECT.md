@@ -1959,4 +1959,30 @@ Three iterations to get this right.
 
 ---
 
-*End of April 18 session. Work-tree state at session end: clean. All commits pushed. Next session should: (1) apply migration 009, (2) smoke-test the sheep module, (3) verify weigh_in_sessions.species CHECK allows 'sheep', (4) build the sheep import seeder for Ronnie's 67-row tracker file. Good luck.*
+## 16.11 Follow-up — home tile compaction + Equipment + cross-program coverage on home
+
+After the §16 commit, Ronnie flagged that the program tiles were eating too much real estate and asked to add Equipment as the 6th program. Same turn covered three other home-page issues he'd noticed.
+
+### Changes
+
+- **Home program tiles**: 2-col grid → **3-col × 2-row grid**. Padding 20px→12px, icon 36px→26px, label 18px→15px, desc 12px→11px. Fits all 6 tiles in roughly the same vertical space the original 4 took.
+- **🚜 Equipment tile** added (color `#57534e`, bg `#fafaf9`). Routes to new `equipmentHome` placeholder view that renders a "coming in a future build" card. Wired into VALID_VIEWS, VIEW_TO_PROGRAM (`equipment` key), per-program access pills (now 6 of 6), and the canAccessProgram filter.
+- **Cattle + sheep dailys loaded at App level** — `cattleDailysRecent` + `sheepDailysRecent` (14-day window) added to App state, plus lightweight `cattleForHome` ([{id,herd}]) and `sheepForHome` ([{id,flock}]) directories so the missed-report check knows which flocks have animals.
+- **Missed Daily Reports section** now flags missing cattle dailys per herd (mommas/backgrounders/finishers/bulls) and sheep dailys per flock (rams/ewes/feeders) — only when there are animals in that herd/flock. Skip rule: `cattleForHome.some(c=>c.herd===h)` (or sheep equivalent). Same 7-day backwards window, same Clear/Clear-all UX.
+- **Last 5 Days — All Daily Reports** now includes 🐄 Cattle + 🐑 Sheep entries alongside broiler/pig/layer/egg, with the same date-grouped layout.
+- **Tile rendering refactored for parity with admin daily-report views.** Was: flex-wrapped first row with mort jammed inline. Now: grid layout per type (matching each admin DailysView's column template) + mort and comment chips moved to a SECOND row when notable. Affects all six type branches (broiler/layer/pig/egg/cattle/sheep). Helper consts at the top of each tile (`chipBase`, `teamChip`, `chipYes(label,ok)`, `mortChip(n,reason)`, `commentChip(text)`) keep markup short and consistent.
+
+### Things to verify next session
+
+1. Sheep module is still untested in prod. The new home-page integration ASSUMES `sheep_dailys.flock` is one of `rams/ewes/feeders` and `cattle_dailys.herd` is one of the four standard herds. If real data has anything else (legacy/typos), the missed-report keys won't match and the per-flock flagging may be off.
+2. The Equipment view is a stub. When the actual module is built, replace the placeholder render at the `if(view==="equipmentHome")` branch.
+3. The `cattleForHome` + `sheepForHome` queries are unfiltered — they pull every row in `cattle` (up to 469 rows) and `sheep`. Fine at current scale, but if either grows past several thousand, switch to a count-by-flock query (or just query distinct flocks/herds).
+
+### What did NOT need to change
+
+- Layers and pigs already had per-batch missed-report flagging from the original code — those still work.
+- The home tile filter uses `canAccessProgram(VIEW_TO_PROGRAM[c.view])` so per-user restrictions still hide whole programs (including Equipment) cleanly.
+
+---
+
+*End of April 18 session. Work-tree state at session end: clean. All commits pushed. Next session should: (1) apply migration 009, (2) smoke-test the sheep module, (3) verify weigh_in_sessions.species CHECK allows 'sheep', (4) build the sheep import seeder for Ronnie's 67-row tracker file, (5) verify the new home-page cross-program coverage works once cattle/sheep dailys are flowing in. Good luck.*

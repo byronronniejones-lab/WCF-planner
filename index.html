@@ -1555,13 +1555,13 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
                     <div style={{padding:'5px 14px',borderTop:'1px solid #f3f4f6',background:'#fafafa'}}>
                       <div style={{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:4,fontWeight:600}}>Program access</div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {[['broiler','\ud83d\udc14 Broiler'],['layer','\ud83e\udd5a Layer'],['pig','\ud83d\udc37 Pig'],['cattle','\ud83d\udc04 Cattle'],['sheep','\ud83d\udc11 Sheep']].map(([k,l])=>{
+                        {[['broiler','\ud83d\udc14 Broiler'],['layer','\ud83e\udd5a Layer'],['pig','\ud83d\udc37 Pig'],['cattle','\ud83d\udc04 Cattle'],['sheep','\ud83d\udc11 Sheep'],['equipment','\ud83d\ude9c Equipment']].map(([k,l])=>{
                           const list = Array.isArray(u.program_access) ? u.program_access : null;
                           const allAccess = !list || list.length === 0;
                           const has = allAccess || list.includes(k);
                           return (
                             <button key={k} type="button" onClick={()=>{
-                              const cur = Array.isArray(u.program_access) && u.program_access.length > 0 ? u.program_access : ['broiler','layer','pig','cattle','sheep'];
+                              const cur = Array.isArray(u.program_access) && u.program_access.length > 0 ? u.program_access : ['broiler','layer','pig','cattle','sheep','equipment'];
                               const next = has ? cur.filter(x=>x!==k) : Array.from(new Set([...cur, k]));
                               updateProgramAccess(u.id, next);
                             }} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid '+(has?'#085041':'#d1d5db'),background:has?'#085041':'white',color:has?'white':'#9ca3af',fontFamily:'inherit',fontWeight:600,cursor:'pointer'}}>{l}</button>
@@ -1569,7 +1569,7 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
                         })}
                       </div>
                       <div style={{fontSize:10,color:'#9ca3af',marginTop:4}}>
-                        {(!Array.isArray(u.program_access) || u.program_access.length === 0) ? 'All programs' : u.program_access.length+' of 5 programs'}
+                        {(!Array.isArray(u.program_access) || u.program_access.length === 0) ? 'All programs' : u.program_access.length+' of 6 programs'}
                       </div>
                     </div>
                   )}
@@ -4790,6 +4790,10 @@ function App(){
   const [missedCleared,    setMissedCleared]    = useState(new Set());
   const [layerDailysRecent,setLayerDailysRecent]= useState([]);
   const [eggDailysRecent,  setEggDailysRecent]  = useState([]);
+  const [cattleDailysRecent,setCattleDailysRecent] = useState([]);
+  const [sheepDailysRecent, setSheepDailysRecent]  = useState([]);
+  const [cattleForHome,    setCattleForHome]    = useState([]); // [{id,herd}] for missed-report flock-presence check
+  const [sheepForHome,     setSheepForHome]     = useState([]); // [{id,flock}]
   const [allLayerDailys,   setAllLayerDailys]   = useState([]);
   const [allEggDailys,     setAllEggDailys]     = useState([]);
   const [layerDashPeriod,  setLayerDashPeriod]  = useState(30);
@@ -4861,6 +4865,13 @@ function App(){
     const cutoff = toISO(addDays(new Date(), -45));
     sb.from('layer_dailys').select('*').gte('date',cutoff).order('date',{ascending:false}).then(({data})=>{ if(data) setLayerDailysRecent(data); });
     sb.from('egg_dailys').select('*').gte('date',cutoff).order('date',{ascending:false}).then(({data})=>{ if(data) setEggDailysRecent(data); });
+    // Cattle + sheep dailys (last 14 days) — drives missed-report check + Last 5 Days tiles on home
+    const cutoff14 = toISO(addDays(new Date(), -14));
+    sb.from('cattle_dailys').select('*').gte('date',cutoff14).order('date',{ascending:false}).then(({data})=>{ if(data) setCattleDailysRecent(data); });
+    sb.from('sheep_dailys').select('*').gte('date',cutoff14).order('date',{ascending:false}).then(({data})=>{ if(data) setSheepDailysRecent(data); });
+    // Lightweight cattle + sheep directory (id + flock/herd only) for the missed-report active-flock check
+    sb.from('cattle').select('id,herd').then(({data})=>{ if(data) setCattleForHome(data); });
+    sb.from('sheep').select('id,flock').then(({data})=>{ if(data) setSheepForHome(data); });
     // Full paginated fetch for layer dashboard period comparisons
     (async()=>{
       const fetchAll=async(table)=>{const PAGE=1000;let all=[],off=0;while(true){const{data}=await sb.from(table).select('*').order('date',{ascending:false}).range(off,off+PAGE-1);if(!data||data.length===0)break;all=all.concat(data);if(data.length<PAGE)break;off+=PAGE;}return all;};
@@ -4905,7 +4916,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepdailys','sheepweighins'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepdailys','sheepweighins','equipmentHome'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   // Per-program access. profiles.program_access is null/empty = full access,
@@ -4918,6 +4929,7 @@ function App(){
     pigsHome:'pig',       breeding:'pig', farrowing:'pig', sows:'pig', pigbatches:'pig', pigs:'pig', pigfeed:'pig', pigdailys:'pig', pigweighins:'pig',
     cattleHome:'cattle',  cattleherds:'cattle', cattledailys:'cattle', cattleweighins:'cattle', cattlebreeding:'cattle', cattlebatches:'cattle',
     sheepHome:'sheep',    sheepflocks:'sheep', sheepdailys:'sheep', sheepweighins:'sheep',
+    equipmentHome:'equipment',
   };
   function canAccessProgram(prog) {
     if(!prog) return true;
@@ -5908,6 +5920,22 @@ function App(){
         if(!layerCheck.has((g.name||'').toLowerCase().trim())&&!missedCleared.has(key))
           allMissed.push({key,label:g.name,icon:'🥚',type:'Layer',date:checkDate});
       });
+      // Cattle — flag any active herd that has cattle but no daily report on this date
+      const cattleCheck = new Set(cattleDailysRecent.filter(d=>d.date===checkDate).map(d=>d.herd));
+      ['mommas','backgrounders','finishers','bulls'].forEach(h=>{
+        if(!cattleForHome.some(c=>c.herd===h)) return;
+        const key=`cattle-${h}|${checkDate}`;
+        if(!cattleCheck.has(h)&&!missedCleared.has(key))
+          allMissed.push({key,label:h.charAt(0).toUpperCase()+h.slice(1),icon:'🐄',type:'Cattle',date:checkDate});
+      });
+      // Sheep — flag any active flock that has sheep but no daily report on this date
+      const sheepCheck = new Set(sheepDailysRecent.filter(d=>d.date===checkDate).map(d=>d.flock));
+      ['rams','ewes','feeders'].forEach(f=>{
+        if(!sheepForHome.some(s=>s.flock===f)) return;
+        const key=`sheep-${f}|${checkDate}`;
+        if(!sheepCheck.has(f)&&!missedCleared.has(key))
+          allMissed.push({key,label:f.charAt(0).toUpperCase()+f.slice(1),icon:'🐑',type:'Sheep',date:checkDate});
+      });
     }
     // Sort newest first
     allMissed.sort((a,b)=>b.date.localeCompare(a.date));
@@ -5923,6 +5951,8 @@ function App(){
       ...pigDailys.filter(d=>d.date>=weekAgo).map(d=>({id:d.id,view:'pigdailys',date:d.date,type:'🐷 Pig',raw:d})),
       ...layerDailysRecent.filter(d=>d.date>=weekAgo).map(d=>({id:d.id,view:'layerdailys',date:d.date,type:'🐓 Layer',raw:d})),
       ...eggDailysRecent.filter(d=>d.date>=weekAgo).map(d=>({id:d.id,view:'eggdailys',date:d.date,type:'🥚 Egg',raw:d})),
+      ...cattleDailysRecent.filter(d=>d.date>=weekAgo).map(d=>({id:d.id,view:'cattledailys',date:d.date,type:'🐄 Cattle',raw:d})),
+      ...sheepDailysRecent.filter(d=>d.date>=weekAgo).map(d=>({id:d.id,view:'sheepdailys',date:d.date,type:'🐑 Sheep',raw:d})),
     ].sort((a,b)=>b.date.localeCompare(a.date)||a.type.localeCompare(b.type));
 
     // Active pig breeding cycles
@@ -5968,21 +5998,22 @@ function App(){
         <Header/>
         <div style={{padding:"1.25rem",maxWidth:1200,margin:"0 auto",display:"flex",flexDirection:"column",gap:"1.5rem"}}>
 
-          {/* Nav cards */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          {/* Nav cards — 3 cols × 2 rows fits all 6 programs without bloating the page */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:10}}>
             {[
-              {label:"Broilers", icon:"🐔", desc:`${activeBatches.length} active · ${birdsOnFarm.toLocaleString()} on farm \u2192 ${projectedBirds.toLocaleString()} projected · ${plannedBatches.length} planned`, view:"broilerHome", color:"#a16207", bg:"#fef9c3"},
-              {label:"Layers", icon:"🥚", desc:`${(layerGroups||[]).filter(g=>g.status==='active').length} active groups · ${(layerGroups||[]).filter(g=>g.status==='active').reduce((s,g)=>s+(g.currentCount||0),0)} hens`, view:"layersHome", color:"#78350f", bg:"#fffbeb"},
-              {label:"Pigs", icon:"🐷", desc:`${activeCycles.length} active cycles · ${totalSows} sows tracked · ${feederGroups.filter(g=>g.status==="active").length} active batches`, view:"pigsHome", color:"#1e40af", bg:"#eff6ff"},
-              {label:"Cattle", icon:"🐄", desc:`Phase 1 in progress \u00b7 webforms + dailys live`, view:"cattleHome", color:"#991b1b", bg:"#fef2f2"},
-              {label:"Sheep", icon:"🐑", desc:`Hair sheep for meat \u00b7 ${'rams + ewes + feeders'}`, view:"sheepHome", color:"#0f766e", bg:"#f0fdfa"},
+              {label:"Broilers", icon:"🐔", desc:`${activeBatches.length} active \u00b7 ${birdsOnFarm.toLocaleString()} on farm`, view:"broilerHome", color:"#a16207", bg:"#fef9c3"},
+              {label:"Layers", icon:"🥚", desc:`${(layerGroups||[]).filter(g=>g.status==='active').length} active groups \u00b7 ${(layerGroups||[]).filter(g=>g.status==='active').reduce((s,g)=>s+(g.currentCount||0),0)} hens`, view:"layersHome", color:"#78350f", bg:"#fffbeb"},
+              {label:"Pigs", icon:"🐷", desc:`${activeCycles.length} cycles \u00b7 ${totalSows} sows \u00b7 ${feederGroups.filter(g=>g.status==="active").length} batches`, view:"pigsHome", color:"#1e40af", bg:"#eff6ff"},
+              {label:"Cattle", icon:"🐄", desc:`Mommas \u00b7 backgrounders \u00b7 finishers \u00b7 bulls`, view:"cattleHome", color:"#991b1b", bg:"#fef2f2"},
+              {label:"Sheep", icon:"🐑", desc:`Hair sheep for meat \u00b7 rams + ewes + feeders`, view:"sheepHome", color:"#0f766e", bg:"#f0fdfa"},
+              {label:"Equipment", icon:"🚜", desc:`Tractors \u00b7 implements \u00b7 maintenance (coming soon)`, view:"equipmentHome", color:"#57534e", bg:"#fafaf9"},
             ].filter(c => canAccessProgram(VIEW_TO_PROGRAM[c.view])).map(c=>(
               <div key={c.view} onClick={()=>setView(c.view)}
-                style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:14,padding:"20px 22px",cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.06)",transition:"transform .1s",display:"flex",alignItems:"center",gap:16}}>
-                <div style={{fontSize:36}}>{c.icon}</div>
-                <div>
-                  <div style={{fontSize:18,fontWeight:700,color:c.color,marginBottom:4}}>{c.label}</div>
-                  <div style={{fontSize:12,color:"#6b7280"}}>{c.desc}</div>
+                style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:12,padding:"12px 14px",cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,.05)",transition:"transform .1s",display:"flex",alignItems:"center",gap:12,minWidth:0}}>
+                <div style={{fontSize:26,flexShrink:0}}>{c.icon}</div>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontSize:15,fontWeight:700,color:c.color,marginBottom:2}}>{c.label}</div>
+                  <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.desc}</div>
                 </div>
               </div>
             ))}
@@ -6111,9 +6142,9 @@ function App(){
               {(()=>{
                 // Group by date, then within each date group by animal type
                 const dates = [...new Set(allRecentReports.map(r=>r.date))].sort().reverse();
-                const typeOrder = {'🐔 Broiler':0,'🐷 Pig':1,'🐓 Layer':2,'🥚 Layer':2,'🥚 Egg':3};
-                const typeColors = {'🐔 Broiler':'#a16207','🐷 Pig':'#1e3a8a','🐓 Layer':'#92400e','🥚 Layer':'#92400e','🥚 Egg':'#78350f'};
-                const typeBg = {'🐔 Broiler':'#fef9c3','🐷 Pig':'#eff6ff','🐓 Layer':'#fffbeb','🥚 Layer':'#fffbeb','🥚 Egg':'#fefce8'};
+                const typeOrder = {'🐔 Broiler':0,'🐷 Pig':1,'🐓 Layer':2,'🥚 Layer':2,'🥚 Egg':3,'🐄 Cattle':4,'🐑 Sheep':5};
+                const typeColors = {'🐔 Broiler':'#a16207','🐷 Pig':'#1e3a8a','🐓 Layer':'#92400e','🥚 Layer':'#92400e','🥚 Egg':'#78350f','🐄 Cattle':'#991b1b','🐑 Sheep':'#0f766e'};
+                const typeBg = {'🐔 Broiler':'#fef9c3','🐷 Pig':'#eff6ff','🐓 Layer':'#fffbeb','🥚 Layer':'#fffbeb','🥚 Egg':'#fefce8','🐄 Cattle':'#fef2f2','🐑 Sheep':'#f0fdfa'};
                 return dates.map((date, di)=>{
                   const dayRecs = allRecentReports.filter(r=>r.date===date).sort((a,b)=>(typeOrder[a.type]??9)-(typeOrder[b.type]??9));
                   const types = [...new Set(dayRecs.map(r=>r.type))];
@@ -6148,58 +6179,77 @@ function App(){
                                   }} className="hoverable-tile">
                                     {(()=>{
                                       const d=r.raw;
+                                      // Shared chip styles — match the admin daily-report tiles exactly.
+                                      const chipBase = {fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4};
+                                      const chipYes = (label,ok)=> <span style={{...chipBase,background:ok===false?'#fef2f2':'#f0fdf4',color:ok===false?'#b91c1c':'#065f46',border:ok===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{label+': '+(ok===false?'No':'Yes')}</span>;
+                                      const teamChip = <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.team_member||'\u2014'}</span>;
+                                      const mortChip = (n,reason)=> <span style={{fontSize:11,fontWeight:600,padding:'3px 8px',borderRadius:6,background:'#fef2f2',color:'#b91c1c',border:'1px solid #fecaca'}}>{'\ud83d\udc80 '+n+' mort.'+(reason?' \u2014 '+reason:'')}</span>;
+                                      const commentChip = (txt)=> <span style={{fontSize:11,color:'#92400e',padding:'3px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+txt}</span>;
+
                                       if(r.type==='🐔 Broiler'){
-                                        const hasFeed=parseFloat(d.feed_lbs)>0;const hasGrit=parseFloat(d.grit_lbs)>0;
-                                        const hasMort=parseInt(d.mortality_count)>0;
+                                        const hasFeed=parseFloat(d.feed_lbs)>0,hasGrit=parseFloat(d.grit_lbs)>0,hasMort=parseInt(d.mortality_count)>0;
                                         const comment=d.comments&&String(d.comments).trim().length>2?String(d.comments).trim():'';
                                         return (<>
-                                          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-                                            <span style={{fontWeight:700,color:'#111827',minWidth:80,flexShrink:0,fontSize:12}}>{d.batch_label||'—'}</span>
-                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
-                                            <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:90}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':'#d1fae5',color:d.feed_type==='STARTER'?'#1e40af':'#065f46'}}>{d.feed_type}</span>}</span>
-                                            <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasGrit?`grit ${d.grit_lbs} lbs`:'no grit'}</span>
-                                            <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none'}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
-                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
-                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
+                                          <div style={{display:'grid',gridTemplateColumns:'110px 90px 150px 90px 1fr',alignItems:'center',gap:12}}>
+                                            <span style={{fontWeight:700,color:'#111827',fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'\u2014'}</span>
+                                            {teamChip}
+                                            <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,display:'flex',alignItems:'center',gap:4,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{hasFeed?`\ud83c\udf3e ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':'#d1fae5',color:d.feed_type==='STARTER'?'#1e40af':'#065f46'}}>{d.feed_type}</span>}</span>
+                                            <span style={{color:'#374151',fontSize:12,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{hasGrit?`grit ${parseFloat(d.grit_lbs)} lbs`:'no grit'}</span>
+                                            <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                                              {chipYes('Moved',d.group_moved!==false)}
+                                              {chipYes('Waterer',d.waterer_checked!==false)}
+                                            </span>
                                           </div>
-                                          {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
+                                          {(hasMort||comment)&&<div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:2}}>
+                                            {hasMort&&mortChip(d.mortality_count,d.mortality_reason)}
+                                            {comment&&commentChip(comment)}
+                                          </div>}
                                         </>);
                                       }
                                       if(r.type==='🐓 Layer'){
-                                        const hasFeed=parseFloat(d.feed_lbs)>0;const hasGrit=parseFloat(d.grit_lbs)>0;
-                                        const hasCount=parseInt(d.layer_count)>0;const hasMort=parseInt(d.mortality_count)>0;
+                                        const hasFeed=parseFloat(d.feed_lbs)>0,hasGrit=parseFloat(d.grit_lbs)>0,hasCount=parseInt(d.layer_count)>0,hasMort=parseInt(d.mortality_count)>0;
                                         const comment=d.comments&&String(d.comments).trim().length>2?String(d.comments).trim():'';
                                         return (<>
-                                          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-                                            <span style={{fontWeight:700,color:'#111827',minWidth:110,flexShrink:0,fontSize:12}}>{d.batch_label||'—'}</span>
-                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
-                                            <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:90}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{marginLeft:4,fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':d.feed_type==='GROWER'?'#d1fae5':'#fef3c7',color:d.feed_type==='STARTER'?'#1e40af':d.feed_type==='GROWER'?'#065f46':'#92400e'}}>{d.feed_type}</span>}</span>
-                                            <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasGrit?`grit ${d.grit_lbs} lbs`:'no grit'}</span>
-                                            <span style={{color:'#374151',fontSize:12,minWidth:70}}>{hasCount?`🐔 ${d.layer_count} hens`:'no count'}</span>
-                                            <span style={{fontSize:11,fontWeight:600,padding:hasMort?'2px 7px':'0',borderRadius:4,background:hasMort?'#fef2f2':'none',color:hasMort?'#b91c1c':'#d1d5db',border:hasMort?'1px solid #fecaca':'none'}}>{hasMort?'\ud83d\udc80 '+d.mortality_count+' mort.'+(d.mortality_reason?' \u2014 '+d.mortality_reason:''):'no mort.'}</span>
-                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
-                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.waterer_checked===false?'#fef2f2':'#f0fdf4',color:d.waterer_checked===false?'#b91c1c':'#065f46',border:d.waterer_checked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Waterer: '+(d.waterer_checked===false?'No':'Yes')}</span>
+                                          <div style={{display:'grid',gridTemplateColumns:'110px 90px 150px 80px 80px 1fr',alignItems:'center',gap:12}}>
+                                            <span style={{fontWeight:700,color:'#111827',fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'\u2014'}</span>
+                                            {teamChip}
+                                            <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,display:'flex',alignItems:'center',gap:4,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{hasFeed?`\ud83c\udf3e ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}{hasFeed&&d.feed_type&&<span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,background:d.feed_type==='STARTER'?'#dbeafe':d.feed_type==='GROWER'?'#d1fae5':'#fef3c7',color:d.feed_type==='STARTER'?'#1e40af':d.feed_type==='GROWER'?'#065f46':'#92400e'}}>{d.feed_type}</span>}</span>
+                                            <span style={{color:'#374151',fontSize:12,whiteSpace:'nowrap'}}>{hasGrit?`grit ${d.grit_lbs} lbs`:'no grit'}</span>
+                                            <span style={{color:'#374151',fontSize:12,whiteSpace:'nowrap'}}>{hasCount?`\ud83d\udc14 ${d.layer_count} hens`:'no count'}</span>
+                                            <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                                              {chipYes('Moved',d.group_moved!==false)}
+                                              {chipYes('Waterer',d.waterer_checked!==false)}
+                                            </span>
                                           </div>
-                                          {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
+                                          {(hasMort||comment)&&<div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:2}}>
+                                            {hasMort&&mortChip(d.mortality_count,d.mortality_reason)}
+                                            {comment&&commentChip(comment)}
+                                          </div>}
                                         </>);
                                       }
                                       if(r.type==='🐷 Pig'){
-                                        const hasFeed=parseFloat(d.feed_lbs)>0;const hasCount=parseInt(d.pig_count)>0;
+                                        const hasFeed=parseFloat(d.feed_lbs)>0,hasCount=parseInt(d.pig_count)>0;
                                         const hasVolt=d.fence_voltage!=null&&String(d.fence_voltage).trim()!=='';
                                         const voltColor=v=>v<3?'#b91c1c':v<5?'#92400e':'#065f46';
+                                        const hasMort=parseInt(d.mortality_count)>0;
                                         const issues=d.issues&&String(d.issues).trim().length>2?String(d.issues).trim():'';
                                         return (<>
-                                          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-                                            <span style={{fontWeight:700,color:'#111827',minWidth:100,flexShrink:0,fontSize:12}}>{d.batch_label||'—'}</span>
-                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
-                                            <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,minWidth:90}}>{hasFeed?`🌾 ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
-                                            <span style={{color:'#1e40af',fontSize:12,minWidth:60}}>{hasCount?`🐷 ${d.pig_count} pigs`:'no count'}</span>
-                                            <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,minWidth:60}}>{hasVolt?`⚡ ${d.fence_voltage} kV`:'no voltage'}</span>
-                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.group_moved===false?'#fef2f2':'#f0fdf4',color:d.group_moved===false?'#b91c1c':'#065f46',border:d.group_moved===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Moved: '+(d.group_moved===false?'No':'Yes')}</span>
-                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.nipple_drinker_working===false?'#fef2f2':'#f0fdf4',color:d.nipple_drinker_working===false?'#b91c1c':'#065f46',border:d.nipple_drinker_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Nipple: '+(d.nipple_drinker_working===false?'No':'Yes')}</span>
-                                            <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:4,background:d.fence_walked===false?'#fef2f2':'#f0fdf4',color:d.fence_walked===false?'#b91c1c':'#065f46',border:d.fence_walked===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Fence: '+(d.fence_walked===false?'No':'Yes')}</span>
+                                          <div style={{display:'grid',gridTemplateColumns:'110px 90px 130px 80px 80px 1fr',alignItems:'center',gap:12}}>
+                                            <span style={{fontWeight:700,color:'#111827',fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.batch_label||'\u2014'}</span>
+                                            {teamChip}
+                                            <span style={{color:hasFeed?'#92400e':'#9ca3af',fontWeight:hasFeed?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasFeed?`\ud83c\udf3e ${parseFloat(d.feed_lbs).toLocaleString()} lbs`:'no feed'}</span>
+                                            <span style={{color:'#1e40af',fontSize:12,whiteSpace:'nowrap'}}>{hasCount?`\ud83d\udc37 ${d.pig_count} pigs`:'no count'}</span>
+                                            <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasVolt?`\u26a1 ${d.fence_voltage} kV`:'no voltage'}</span>
+                                            <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                                              {chipYes('Moved',d.group_moved!==false)}
+                                              {chipYes('Nipple',d.nipple_drinker_working!==false)}
+                                              {chipYes('Fence',d.fence_walked!==false)}
+                                            </span>
                                           </div>
-                                          {issues&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+issues}</div>}
+                                          {(hasMort||issues)&&<div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:2}}>
+                                            {hasMort&&mortChip(d.mortality_count,d.mortality_reason)}
+                                            {issues&&commentChip(issues)}
+                                          </div>}
                                         </>);
                                       }
                                       if(r.type==='🥚 Egg'){
@@ -6208,12 +6258,66 @@ function App(){
                                         const comment=d.comments&&String(d.comments).trim().length>2?String(d.comments).trim():'';
                                         return (<>
                                           <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-                                            <span style={{fontWeight:700,color:'#78350f',fontSize:12,flexShrink:0}}>🥚 {total} eggs</span>
-                                            <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:4,background:'#f1f5f9',color:'#475569',border:'1px solid #e2e8f0',flexShrink:0}}>{d.team_member||'\u2014'}</span>
+                                            <span style={{fontWeight:700,color:'#78350f',fontSize:13,flexShrink:0}}>{'\ud83e\udd5a '+total+' eggs'}</span>
+                                            {teamChip}
                                             {groups.map(([n,c])=><span key={n} style={{color:'#374151',fontSize:11}}>{n}: <strong>{c}</strong></span>)}
-                                            {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12}}>📦 {d.dozens_on_hand} doz</span>}
+                                            {parseFloat(d.dozens_on_hand)>0&&<span style={{color:'#065f46',fontWeight:600,fontSize:12}}>{'\ud83d\udce6 '+d.dozens_on_hand+' doz'}</span>}
                                           </div>
-                                          {comment&&<div style={{fontSize:11,color:'#92400e',marginTop:2,padding:'4px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,fontStyle:'italic'}}>{'\ud83d\udcac '+comment}</div>}
+                                          {comment&&<div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:2}}>{commentChip(comment)}</div>}
+                                        </>);
+                                      }
+                                      if(r.type==='🐄 Cattle'){
+                                        const HERD_LBL={mommas:'Mommas',backgrounders:'Backgrounders',finishers:'Finishers',bulls:'Bulls'};
+                                        const HERD_C={mommas:{bg:'#fef2f2',tx:'#991b1b',bd:'#fca5a5'},backgrounders:{bg:'#ffedd5',tx:'#9a3412',bd:'#fdba74'},finishers:{bg:'#fff1f2',tx:'#9f1239',bd:'#fda4af'},bulls:{bg:'#fee2e2',tx:'#7f1d1d',bd:'#fca5a5'}};
+                                        const hc=HERD_C[d.herd]||HERD_C.mommas;
+                                        const feedSummary=Array.isArray(d.feeds)&&d.feeds.length>0?d.feeds.map(f=>(f.feed_name||'?')+(f.qty?(' '+f.qty+' '+(f.unit||'')+(f.is_creep?' \ud83c\udf7c':'')):'')).join(', '):'';
+                                        const mineralSummary=Array.isArray(d.minerals)&&d.minerals.length>0?d.minerals.map(m=>(m.name||'?')+(m.lbs?(' '+m.lbs+' lb'):'')).join(', '):'';
+                                        const hasMort=parseInt(d.mortality_count)>0;
+                                        const issues=d.issues&&String(d.issues).trim().length>2?String(d.issues).trim():'';
+                                        const hasVolt=d.fence_voltage!=null&&String(d.fence_voltage).trim()!=='';
+                                        return (<>
+                                          <div style={{display:'grid',gridTemplateColumns:'120px 90px 90px 1fr',alignItems:'center',gap:12}}>
+                                            <span style={{padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,background:hc.bg,color:hc.tx,border:'1px solid '+hc.bd,textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{HERD_LBL[d.herd]||d.herd||'\u2014'}</span>
+                                            {teamChip}
+                                            <span style={{fontSize:11,color:hasVolt?(parseFloat(d.fence_voltage)<3?'#b91c1c':parseFloat(d.fence_voltage)<5?'#92400e':'#065f46'):'#9ca3af',fontWeight:600,whiteSpace:'nowrap'}}>{hasVolt?'\u26a1 '+d.fence_voltage+' kV':'no voltage'}</span>
+                                            <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                                              {chipYes('Water',d.water_checked!==false)}
+                                            </span>
+                                          </div>
+                                          {feedSummary&&<div style={{fontSize:11,color:'#92400e'}}>{'\ud83c\udf3e '+feedSummary}</div>}
+                                          {mineralSummary&&<div style={{fontSize:11,color:'#6b21a8'}}>{'\ud83e\uddc2 '+mineralSummary}</div>}
+                                          {(hasMort||issues)&&<div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:2}}>
+                                            {hasMort&&mortChip(d.mortality_count,d.mortality_reason)}
+                                            {issues&&commentChip(issues)}
+                                          </div>}
+                                        </>);
+                                      }
+                                      if(r.type==='🐑 Sheep'){
+                                        const FLOCK_LBL={rams:'Rams',ewes:'Ewes',feeders:'Feeders'};
+                                        const FLOCK_C={rams:{bg:'#f0fdfa',tx:'#0f766e',bd:'#5eead4'},ewes:{bg:'#fdf4ff',tx:'#86198f',bd:'#f0abfc'},feeders:{bg:'#fefce8',tx:'#854d0e',bd:'#fde047'}};
+                                        const fc=FLOCK_C[d.flock]||FLOCK_C.ewes;
+                                        const hasHay=d.bales_of_hay!=null;
+                                        const hasAlfalfa=d.lbs_of_alfalfa!=null&&parseFloat(d.lbs_of_alfalfa)>0;
+                                        const hasMort=(d.mortality_count||0)>0;
+                                        const comment=d.comments&&String(d.comments).trim().length>2?String(d.comments).trim():'';
+                                        const hasVolt=d.fence_voltage_kv!=null;
+                                        const voltColor=v=>v<2?'#b91c1c':v<4?'#92400e':'#065f46';
+                                        return (<>
+                                          <div style={{display:'grid',gridTemplateColumns:'120px 90px 90px 90px 90px 1fr',alignItems:'center',gap:12}}>
+                                            <span style={{padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,background:fc.bg,color:fc.tx,border:'1px solid '+fc.bd,textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{FLOCK_LBL[d.flock]||d.flock||'\u2014'}</span>
+                                            {teamChip}
+                                            <span style={{color:hasHay?'#92400e':'#9ca3af',fontWeight:hasHay?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasHay?`\ud83c\udf3e ${d.bales_of_hay} bales`:'no hay'}</span>
+                                            <span style={{color:hasAlfalfa?'#92400e':'#9ca3af',fontWeight:hasAlfalfa?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasAlfalfa?`alfalfa ${d.lbs_of_alfalfa} lb`:'no alfalfa'}</span>
+                                            <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage_kv)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasVolt?`\u26a1 ${d.fence_voltage_kv} kV`:'no voltage'}</span>
+                                            <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                                              {d.minerals_given!=null&&<span style={{...chipBase,background:d.minerals_given?'#f0fdf4':'#f3f4f6',color:d.minerals_given?'#065f46':'#6b7280',border:'1px solid '+(d.minerals_given?'#bbf7d0':'#e5e7eb')}}>{d.minerals_given?(d.minerals_pct_eaten!=null?'Min '+d.minerals_pct_eaten+'%':'Minerals: Yes'):'Minerals: No'}</span>}
+                                              {chipYes('Waterers',d.waterers_working!==false)}
+                                            </span>
+                                          </div>
+                                          {(hasMort||comment)&&<div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:2}}>
+                                            {hasMort&&mortChip(d.mortality_count,null)}
+                                            {comment&&commentChip(comment)}
+                                          </div>}
                                         </>);
                                       }
                                       return null;
@@ -7268,6 +7372,20 @@ function App(){
   if(view==="sheepflocks")   return React.createElement(SheepFlocksView,   {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit});
   if(view==="sheepdailys")   return React.createElement(SheepDailysView,   {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
   if(view==="sheepweighins") return React.createElement(SheepWeighInsView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if(view==="equipmentHome") return (
+    <div style={{minHeight:'100vh',background:'#f1f3f2'}}>
+      {showUsers&&<UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1.25rem',maxWidth:1200,margin:'0 auto'}}>
+        <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'2rem',textAlign:'center'}}>
+          <div style={{fontSize:48,marginBottom:12}}>{'\ud83d\ude9c'}</div>
+          <div style={{fontSize:18,fontWeight:700,color:'#57534e',marginBottom:6}}>Equipment Tracking</div>
+          <div style={{fontSize:13,color:'#6b7280',marginBottom:18}}>Tractors, implements, maintenance schedules \u2014 coming in a future build.</div>
+          <button onClick={()=>setView('home')} style={{padding:'8px 20px',borderRadius:7,border:'1px solid #d1d5db',background:'white',color:'#374151',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{'\u2190 Back to Home'}</button>
+        </div>
+      </div>
+    </div>
+  );
 
   // ── LIST VIEW ──
   if(view==="list") return (
