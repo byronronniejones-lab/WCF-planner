@@ -1555,13 +1555,13 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
                     <div style={{padding:'5px 14px',borderTop:'1px solid #f3f4f6',background:'#fafafa'}}>
                       <div style={{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:4,fontWeight:600}}>Program access</div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {[['broiler','\ud83d\udc14 Broiler'],['layer','\ud83e\udd5a Layer'],['pig','\ud83d\udc37 Pig'],['cattle','\ud83d\udc04 Cattle']].map(([k,l])=>{
+                        {[['broiler','\ud83d\udc14 Broiler'],['layer','\ud83e\udd5a Layer'],['pig','\ud83d\udc37 Pig'],['cattle','\ud83d\udc04 Cattle'],['sheep','\ud83d\udc11 Sheep']].map(([k,l])=>{
                           const list = Array.isArray(u.program_access) ? u.program_access : null;
                           const allAccess = !list || list.length === 0;
                           const has = allAccess || list.includes(k);
                           return (
                             <button key={k} type="button" onClick={()=>{
-                              const cur = Array.isArray(u.program_access) && u.program_access.length > 0 ? u.program_access : ['broiler','layer','pig','cattle'];
+                              const cur = Array.isArray(u.program_access) && u.program_access.length > 0 ? u.program_access : ['broiler','layer','pig','cattle','sheep'];
                               const next = has ? cur.filter(x=>x!==k) : Array.from(new Set([...cur, k]));
                               updateProgramAccess(u.id, next);
                             }} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid '+(has?'#085041':'#d1d5db'),background:has?'#085041':'white',color:has?'white':'#9ca3af',fontFamily:'inherit',fontWeight:600,cursor:'pointer'}}>{l}</button>
@@ -1569,7 +1569,7 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
                         })}
                       </div>
                       <div style={{fontSize:10,color:'#9ca3af',marginTop:4}}>
-                        {(!Array.isArray(u.program_access) || u.program_access.length === 0) ? 'All programs' : u.program_access.length+' of 4 programs'}
+                        {(!Array.isArray(u.program_access) || u.program_access.length === 0) ? 'All programs' : u.program_access.length+' of 5 programs'}
                       </div>
                     </div>
                   )}
@@ -4905,7 +4905,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepdailys','sheepweighins'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   // Per-program access. profiles.program_access is null/empty = full access,
@@ -4917,6 +4917,7 @@ function App(){
     layersHome:'layer',   layerbatches:'layer', layerdailys:'layer', eggdailys:'layer', layers:'layer',
     pigsHome:'pig',       breeding:'pig', farrowing:'pig', sows:'pig', pigbatches:'pig', pigs:'pig', pigfeed:'pig', pigdailys:'pig', pigweighins:'pig',
     cattleHome:'cattle',  cattleherds:'cattle', cattledailys:'cattle', cattleweighins:'cattle', cattlebreeding:'cattle', cattlebatches:'cattle',
+    sheepHome:'sheep',    sheepflocks:'sheep', sheepdailys:'sheep', sheepweighins:'sheep',
   };
   function canAccessProgram(prog) {
     if(!prog) return true;
@@ -5652,11 +5653,13 @@ function App(){
     const poultryViews = ['broilerHome','timeline','list','feed','broilerdailys','broilerweighins'];
     const pigViews     = ['pigsHome','breeding','farrowing','sows','pigbatches','pigs','pigdailys','pigweighins'];
     const cattleViews  = ['cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches'];
+    const sheepViews   = ['sheepHome','sheepflocks','sheepdailys','sheepweighins'];
     const inPoultry    = poultryViews.includes(view) || showForm;
     const inPigs       = pigViews.includes(view) || showBreedForm || showFarrowForm || showDailyForm;
     const inLayers     = ['layersHome','layerbatches','layerdailys','eggdailys'].includes(view);
     const inCattle     = cattleViews.includes(view);
-    const inSection    = inPoultry || inPigs || inLayers || inCattle;
+    const inSheep      = sheepViews.includes(view);
+    const inSection    = inPoultry || inPigs || inLayers || inCattle || inSheep;
     const nb = (active) => ({
       padding:'7px 16px', borderRadius:8, cursor:'pointer', fontFamily:'inherit',
       fontSize:12, fontWeight:active?700:500, whiteSpace:'nowrap',
@@ -5678,6 +5681,7 @@ function App(){
           {inPigs&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>PIGS</span>}
           {inLayers&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>LAYERS</span>}
           {inCattle&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>CATTLE</span>}
+          {inSheep&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>SHEEP</span>}
         </button>
         <div style={{fontSize:11,display:"flex",alignItems:"center",gap:5,opacity:.75}}>
           {saveStatus==='saving'&&<span style={{color:"#a7f3d0",fontWeight:500}}>Saving…</span>}
@@ -5737,6 +5741,9 @@ function App(){
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
           {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattlebreeding","Breeding"],["cattleweighins","Weigh-Ins"],["cattledailys","Dailys"],["cattlebatches","Batches"]].map(([v,l])=>(
+            <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
+          ))}
+          {inSheep&&[["sheepHome","Dashboard"],["sheepflocks","Flocks"],["sheepweighins","Weigh-Ins"],["sheepdailys","Dailys"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
         </div>
@@ -5968,6 +5975,7 @@ function App(){
               {label:"Layers", icon:"🥚", desc:`${(layerGroups||[]).filter(g=>g.status==='active').length} active groups · ${(layerGroups||[]).filter(g=>g.status==='active').reduce((s,g)=>s+(g.currentCount||0),0)} hens`, view:"layersHome", color:"#78350f", bg:"#fffbeb"},
               {label:"Pigs", icon:"🐷", desc:`${activeCycles.length} active cycles · ${totalSows} sows tracked · ${feederGroups.filter(g=>g.status==="active").length} active batches`, view:"pigsHome", color:"#1e40af", bg:"#eff6ff"},
               {label:"Cattle", icon:"🐄", desc:`Phase 1 in progress \u00b7 webforms + dailys live`, view:"cattleHome", color:"#991b1b", bg:"#fef2f2"},
+              {label:"Sheep", icon:"🐑", desc:`Hair sheep for meat \u00b7 ${'rams + ewes + feeders'}`, view:"sheepHome", color:"#0f766e", bg:"#f0fdfa"},
             ].filter(c => canAccessProgram(VIEW_TO_PROGRAM[c.view])).map(c=>(
               <div key={c.view} onClick={()=>setView(c.view)}
                 style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:14,padding:"20px 22px",cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.06)",transition:"transform .1s",display:"flex",alignItems:"center",gap:16}}>
@@ -7256,6 +7264,10 @@ function App(){
   if(view==="cattleweighins")return React.createElement(CattleWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
   if(view==="broilerweighins")return React.createElement(LivestockWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species:'broiler'});
   if(view==="pigweighins")return React.createElement(LivestockWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species:'pig'});
+  if(view==="sheepHome")     return React.createElement(SheepHomeView,     {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if(view==="sheepflocks")   return React.createElement(SheepFlocksView,   {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit});
+  if(view==="sheepdailys")   return React.createElement(SheepDailysView,   {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
+  if(view==="sheepweighins") return React.createElement(SheepWeighInsView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
 
   // ── LIST VIEW ──
   if(view==="list") return (
@@ -15110,6 +15122,1398 @@ const CattleBulkImport = ({sb, breedOpts, originOpts, existingCattle, onClose, o
 
           {busy && stage !== 'committing' && <div style={{textAlign:'center', padding:14, color:'#6b7280', fontSize:13}}>Working{'\u2026'}</div>}
         </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ── SHEEP BULK IMPORT ──────────────────────────────────────────────────────
+// Same shape as CattleBulkImport but adapted to sheep schema (no pct_wagyu,
+// flock instead of herd, lambing instead of calving, sex enum is
+// ewe/ram/wether). Auto-creates new breeds/origins on commit.
+const SHEEP_IMPORT_COLUMNS = [
+  'tag','sex','flock','breed','origin',
+  'purchase_date','purchase_amount','birth_date',
+  'dam_tag','dam_reg_num','sire_tag','sire_reg_num','registration_num',
+  'breeding_status','last_lambing_date','total_born','receiving_weight','comment'
+];
+const SHEEP_IMPORT_INSTRUCTIONS = [
+  ['Column','Required','Notes'],
+  ['tag','yes','WCF tag #. Must be unique among active flocks.'],
+  ['sex','yes','ewe | ram | wether'],
+  ['flock','yes','rams | ewes | feeders (or processed/deceased/sold)'],
+  ['breed','no','Free text. Auto-creates new breed if not in the dropdown.'],
+  ['origin','no','Selling farm. Auto-creates new origin if not in the dropdown.'],
+  ['purchase_date','no','YYYY-MM-DD or M/D/YY.'],
+  ['purchase_amount','no','Number. No $ or commas.'],
+  ['birth_date','no','YYYY-MM-DD or M/D/YY.'],
+  ['dam_tag','no','Mother\u2019s tag # (text).'],
+  ['dam_reg_num','no','Mother\u2019s registration #.'],
+  ['sire_tag','no','Father\u2019s tag # (text).'],
+  ['sire_reg_num','no','Father\u2019s registration #.'],
+  ['registration_num','no','This sheep\u2019s own registration #.'],
+  ['breeding_status','no','Open | Pregnant | N/A. Ewes only.'],
+  ['last_lambing_date','no','If set, creates a lambing record on this date.'],
+  ['total_born','no','Lambs born in the last_lambing_date event (default 0).'],
+  ['receiving_weight','no','If set, creates a wsess-rcv-* session at purchase_date with this weight.'],
+  ['comment','no','If set, creates a comment on the sheep\u2019s timeline (source=import).'],
+];
+const VALID_SHEEP_SEX = ['ewe','ram','wether'];
+const VALID_SHEEP_FLOCK = ['rams','ewes','feeders','processed','deceased','sold'];
+
+function validateSheepImportRow(raw, rowIdx, existingTags) {
+  var errors = [], warnings = [];
+  var get = function(k){ return raw[k]; };
+  var tag = normTagStr(get('tag'));
+  if(!tag) errors.push('tag is required');
+  else if(existingTags.has(tag)) errors.push('tag #'+tag+' already exists in an active flock');
+  var sex = (get('sex')||'').toString().toLowerCase().trim();
+  if(!sex) errors.push('sex is required');
+  else if(VALID_SHEEP_SEX.indexOf(sex) < 0) errors.push('sex must be one of: '+VALID_SHEEP_SEX.join(', '));
+  var flock = (get('flock')||'').toString().toLowerCase().trim();
+  if(!flock) errors.push('flock is required');
+  else if(VALID_SHEEP_FLOCK.indexOf(flock) < 0) errors.push('flock must be one of: '+VALID_SHEEP_FLOCK.join(', '));
+  var pdate = parseImportDate(get('purchase_date'));
+  if(pdate.error) errors.push('purchase_date: '+pdate.error);
+  var bdate = parseImportDate(get('birth_date'));
+  if(bdate.error) errors.push('birth_date: '+bdate.error);
+  var ldate = parseImportDate(get('last_lambing_date'));
+  if(ldate.error) errors.push('last_lambing_date: '+ldate.error);
+  var pamt = parseImportNumber(get('purchase_amount'));
+  if(pamt.error) errors.push('purchase_amount: '+pamt.error);
+  var rwt = parseImportNumber(get('receiving_weight'));
+  if(rwt.error) errors.push('receiving_weight: '+rwt.error);
+  if(rwt.value != null && !pdate.value) warnings.push('receiving_weight set but no purchase_date \u2014 weigh-in will be dated today');
+  var tborn = parseImportNumber(get('total_born'));
+  if(tborn.error) errors.push('total_born: '+tborn.error);
+  var bstatus = (get('breeding_status')||'').toString().trim();
+  if(bstatus && VALID_BREED_STATUS.indexOf(bstatus) < 0) {
+    var match = VALID_BREED_STATUS.find(x => x.toLowerCase() === bstatus.toLowerCase());
+    if(match) bstatus = match;
+    else errors.push('breeding_status must be one of: '+VALID_BREED_STATUS.join(', ')+' (or blank)');
+  }
+  if(bstatus && sex && sex !== 'ewe') warnings.push('breeding_status set but sex is '+sex+' \u2014 will be dropped');
+  return {
+    rowIdx: rowIdx, raw: raw,
+    parsed: {
+      tag: tag, sex: sex, flock: flock,
+      breed: get('breed') ? String(get('breed')).trim() : null,
+      origin: get('origin') ? String(get('origin')).trim() : null,
+      purchase_date: pdate.value || null,
+      purchase_amount: pamt.value != null ? pamt.value : null,
+      birth_date: bdate.value || null,
+      dam_tag: get('dam_tag') ? String(get('dam_tag')).trim() : null,
+      dam_reg_num: get('dam_reg_num') ? String(get('dam_reg_num')).trim() : null,
+      sire_tag: get('sire_tag') ? String(get('sire_tag')).trim() : null,
+      sire_reg_num: get('sire_reg_num') ? String(get('sire_reg_num')).trim() : null,
+      registration_num: get('registration_num') ? String(get('registration_num')).trim() : null,
+      breeding_status: bstatus || null,
+      last_lambing_date: ldate.value || null,
+      total_born: tborn.value != null ? Math.round(tborn.value) : null,
+      receiving_weight: rwt.value != null ? rwt.value : null,
+      comment: get('comment') ? String(get('comment')).trim() : null,
+    },
+    errors: errors, warnings: warnings,
+  };
+}
+
+const SheepBulkImport = ({sb, breedOpts, originOpts, existingSheep, onClose, onComplete}) => {
+  const {useState} = React;
+  const [stage, setStage] = useState('start');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [rows, setRows] = useState([]);
+  const [progress, setProgress] = useState({done:0, total:0});
+  const [results, setResults] = useState(null);
+
+  const ACTIVE = ['rams','ewes','feeders'];
+  const existingTags = new Set();
+  (existingSheep||[]).forEach(s => { if(s.tag && ACTIVE.indexOf(s.flock) >= 0) existingTags.add(s.tag); });
+
+  async function downloadTemplate() {
+    setErr('');
+    try {
+      if(typeof XLSX === 'undefined') await window._wcfLoadXLSX();
+      const wb = XLSX.utils.book_new();
+      const blank = [SHEEP_IMPORT_COLUMNS.reduce((a,k)=>(a[k]='',a),{})];
+      const ws = XLSX.utils.json_to_sheet(blank, {header: SHEEP_IMPORT_COLUMNS});
+      SHEEP_IMPORT_COLUMNS.forEach((c, i) => {
+        const addr = XLSX.utils.encode_cell({r:1, c:i});
+        if(ws[addr]) delete ws[addr];
+      });
+      ws['!ref'] = 'A1:'+XLSX.utils.encode_col(SHEEP_IMPORT_COLUMNS.length-1)+'1';
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheep');
+      const wsInst = XLSX.utils.aoa_to_sheet(SHEEP_IMPORT_INSTRUCTIONS);
+      XLSX.utils.book_append_sheet(wb, wsInst, 'Instructions');
+      const buf = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+      const blob = new Blob([buf], {type:'application/octet-stream'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'WCF Sheep Import Template.xlsx';
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 100);
+    } catch(e) { setErr('Could not build template: '+e.message); }
+  }
+
+  async function handleFile(file) {
+    setErr('');
+    if(!file) return;
+    setBusy(true);
+    try {
+      if(typeof XLSX === 'undefined') await window._wcfLoadXLSX();
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, {type:'array', cellDates:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if(!ws) throw new Error('First sheet is empty');
+      const raw = XLSX.utils.sheet_to_json(ws, {defval:null});
+      if(raw.length === 0) throw new Error('No data rows found in the first sheet');
+      const validated = raw.map((r, i) => validateSheepImportRow(r, i+2, existingTags));
+      const seen = {};
+      validated.forEach(v => { const t = v.parsed.tag; if(t) seen[t] = (seen[t]||0) + 1; });
+      validated.forEach(v => { if(v.parsed.tag && seen[v.parsed.tag] > 1) v.errors.push('duplicate tag inside this file'); });
+      setRows(validated);
+      setStage('preview');
+    } catch(e) { setErr('Could not read file: '+e.message); } finally { setBusy(false); }
+  }
+
+  async function commit() {
+    const ready = rows.filter(r => r.errors.length === 0);
+    if(ready.length === 0) { setErr('No rows are ready to commit. Fix errors first.'); return; }
+    setBusy(true);
+    setStage('committing');
+    setProgress({done:0, total:ready.length});
+
+    const knownBreeds = new Set((breedOpts||[]).map(b => (b.label||'').toUpperCase()));
+    const knownOrigins = new Set((originOpts||[]).map(o => (o.label||'').toUpperCase()));
+    const newBreeds = new Set(), newOrigins = new Set();
+    ready.forEach(r => {
+      if(r.parsed.breed && !knownBreeds.has(r.parsed.breed.toUpperCase())) newBreeds.add(r.parsed.breed);
+      if(r.parsed.origin && !knownOrigins.has(r.parsed.origin.toUpperCase())) newOrigins.add(r.parsed.origin);
+    });
+    for(const b of newBreeds) {
+      const id = 'breed-' + b.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+      try { await sb.from('sheep_breeds').insert({id, label: b, active: true}); } catch(e){}
+    }
+    for(const o of newOrigins) {
+      const id = 'origin-' + o.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+      try { await sb.from('sheep_origins').insert({id, label: o, active: true}); } catch(e){}
+    }
+
+    const log = [];
+    let okCount = 0, failCount = 0;
+    for(let i = 0; i < ready.length; i++) {
+      const r = ready[i];
+      const p = r.parsed;
+      const sheepId = 's-' + p.tag + '-' + Math.random().toString(36).slice(2,6);
+      const isEwe = p.sex === 'ewe';
+      const sheepRec = {
+        id: sheepId,
+        tag: p.tag, sex: p.sex, flock: p.flock,
+        breed: p.breed, origin: p.origin,
+        purchase_date: p.purchase_date, purchase_amount: p.purchase_amount,
+        birth_date: p.birth_date,
+        dam_tag: p.dam_tag, dam_reg_num: p.dam_reg_num,
+        sire_tag: p.sire_tag, sire_reg_num: p.sire_reg_num,
+        registration_num: p.registration_num,
+        breeding_status: isEwe ? p.breeding_status : null,
+        old_tags: [],
+      };
+      let rowOk = true, rowMsg = '';
+      const ins = await sb.from('sheep').insert(sheepRec);
+      if(ins.error) { rowOk = false; rowMsg = 'sheep insert: '+ins.error.message; }
+
+      if(rowOk && p.last_lambing_date) {
+        const lambIns = await sb.from('sheep_lambing_records').insert({
+          id: String(Date.now())+Math.random().toString(36).slice(2,6),
+          dam_tag: p.tag, lambing_date: p.last_lambing_date,
+          total_born: p.total_born != null ? p.total_born : 0,
+          deaths: 0, complications_flag: false,
+        });
+        if(lambIns.error) rowMsg += (rowMsg?' | ':'') + 'lambing: '+lambIns.error.message;
+      }
+
+      if(rowOk && p.comment) {
+        const cmtIns = await sb.from('sheep_comments').insert({
+          id: String(Date.now())+Math.random().toString(36).slice(2,6),
+          sheep_id: sheepId, sheep_tag: p.tag, comment: p.comment,
+          team_member: 'Import', source: 'import',
+        });
+        if(cmtIns.error) rowMsg += (rowMsg?' | ':'') + 'comment: '+cmtIns.error.message;
+      }
+
+      if(rowOk && p.receiving_weight != null) {
+        const wsessId = 'wsess-rcv-' + sheepId;
+        const sessIns = await sb.from('weigh_in_sessions').insert({
+          id: wsessId,
+          date: p.purchase_date || new Date().toISOString().slice(0,10),
+          team_member: 'Import', species: 'sheep', herd: p.flock,
+          status: 'complete', notes: 'Receiving weight (bulk import)',
+        });
+        if(!sessIns.error) {
+          const wiIns = await sb.from('weigh_ins').insert({
+            id: 'win-rcv-' + sheepId, session_id: wsessId, tag: p.tag,
+            weight: p.receiving_weight, note: 'Receiving weight (bulk import)',
+          });
+          if(wiIns.error) rowMsg += (rowMsg?' | ':'') + 'weigh-in: '+wiIns.error.message;
+        } else { rowMsg += (rowMsg?' | ':'') + 'wsess: '+sessIns.error.message; }
+      }
+
+      if(rowOk) okCount++; else failCount++;
+      log.push({tag: p.tag, ok: rowOk, msg: rowMsg});
+      setProgress({done: i+1, total: ready.length});
+    }
+    setResults({okCount, failCount, log, skipped: rows.length - ready.length});
+    setStage('done');
+    setBusy(false);
+  }
+
+  const btnPrimary = {padding:'9px 18px', borderRadius:8, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'inherit'};
+  const btnSecondary = {padding:'9px 18px', borderRadius:8, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'inherit'};
+
+  const readyCount = rows.filter(r => r.errors.length === 0).length;
+  const errorCount = rows.filter(r => r.errors.length > 0).length;
+  const warnCount = rows.filter(r => r.warnings.length > 0 && r.errors.length === 0).length;
+
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'2rem 1rem', overflowY:'auto'}}>
+      <div style={{background:'white', borderRadius:12, maxWidth:1100, width:'100%', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', overflow:'hidden'}}>
+        <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          <h2 style={{margin:0, fontSize:16, color:'#0f766e', fontWeight:700}}>{'\ud83d\udce5'} Bulk Import Sheep</h2>
+          <button onClick={onClose} style={{background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#6b7280'}} aria-label="Close">{'\u00d7'}</button>
+        </div>
+        <div style={{padding:'20px'}}>
+          {err && <div style={{background:'#fef2f2', border:'1px solid #fecaca', color:'#991b1b', padding:'10px 14px', borderRadius:8, marginBottom:14, fontSize:13}}>{err}</div>}
+
+          {stage === 'start' && (
+            <div>
+              <p style={{fontSize:13, color:'#4b5563', marginTop:0}}>Upload an xlsx with one row per sheep. Use the WCF template (download below). The Instructions sheet documents every column.</p>
+              <ol style={{fontSize:13, color:'#4b5563', paddingLeft:20, lineHeight:1.7}}>
+                <li>Download the template (or use a pre-seeded one).</li>
+                <li>Fill one row per sheep. Required: tag, sex, flock.</li>
+                <li>Upload it back. You'll see a per-row preview before anything is written.</li>
+              </ol>
+              <div style={{display:'flex', gap:12, marginTop:20, flexWrap:'wrap'}}>
+                <button onClick={downloadTemplate} style={btnSecondary}>{'\u2b07'} Download Template</button>
+                <label style={{...btnPrimary, display:'inline-block'}}>
+                  {'\u2b06'} Upload Filled Template
+                  <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e.target.files[0])} style={{display:'none'}}/>
+                </label>
+              </div>
+              <div style={{fontSize:11, color:'#9ca3af', marginTop:14, lineHeight:1.5}}>
+                Tip: this importer auto-creates new breeds and origins on commit, so you can type a new selling-farm name without setting it up first.
+              </div>
+            </div>
+          )}
+
+          {stage === 'preview' && (
+            <div>
+              <div style={{display:'flex', gap:14, fontSize:13, marginBottom:14, flexWrap:'wrap'}}>
+                <span style={{padding:'4px 10px', background:'#dcfce7', color:'#166534', borderRadius:6, fontWeight:600}}>{'\u2713'} {readyCount} ready</span>
+                {warnCount > 0 && <span style={{padding:'4px 10px', background:'#fef3c7', color:'#92400e', borderRadius:6, fontWeight:600}}>{'\u26a0'} {warnCount} with warnings</span>}
+                {errorCount > 0 && <span style={{padding:'4px 10px', background:'#fef2f2', color:'#991b1b', borderRadius:6, fontWeight:600}}>{'\u2717'} {errorCount} with errors (will skip)</span>}
+              </div>
+              <div style={{maxHeight:'55vh', overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:8}}>
+                <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
+                  <thead style={{position:'sticky', top:0, background:'#f9fafb', zIndex:1}}>
+                    <tr>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Row</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Status</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Tag</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Sex</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Flock</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Breed</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Origin</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Extras</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', borderBottom:'1px solid #e5e7eb', fontWeight:600, color:'#4b5563'}}>Issues</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r,i) => {
+                      const hasErr = r.errors.length > 0;
+                      const hasWarn = r.warnings.length > 0;
+                      const bg = hasErr ? '#fef2f2' : (hasWarn ? '#fffbeb' : 'white');
+                      const extras = [];
+                      if(r.parsed.last_lambing_date) extras.push('lambing ' + r.parsed.last_lambing_date + (r.parsed.total_born ? ' ('+r.parsed.total_born+' born)' : ''));
+                      if(r.parsed.receiving_weight != null) extras.push('weigh-in ' + r.parsed.receiving_weight + ' lb');
+                      if(r.parsed.comment) {
+                        const c = r.parsed.comment;
+                        extras.push('\u201c' + (c.length > 60 ? c.slice(0, 60) + '\u2026' : c) + '\u201d');
+                      }
+                      return (
+                        <tr key={i} style={{background:bg, borderBottom:'1px solid #f3f4f6'}}>
+                          <td style={{padding:'6px 10px', color:'#9ca3af', fontVariantNumeric:'tabular-nums'}}>{r.rowIdx}</td>
+                          <td style={{padding:'6px 10px'}}>{hasErr ? <span style={{color:'#991b1b', fontWeight:600}}>{'\u2717'} skip</span> : (hasWarn ? <span style={{color:'#92400e', fontWeight:600}}>{'\u26a0'} ready</span> : <span style={{color:'#166534', fontWeight:600}}>{'\u2713'} ready</span>)}</td>
+                          <td style={{padding:'6px 10px', fontWeight:600}}>{r.parsed.tag||'\u2014'}</td>
+                          <td style={{padding:'6px 10px'}}>{r.parsed.sex||'\u2014'}</td>
+                          <td style={{padding:'6px 10px'}}>{r.parsed.flock||'\u2014'}</td>
+                          <td style={{padding:'6px 10px'}}>{r.parsed.breed||'\u2014'}</td>
+                          <td style={{padding:'6px 10px'}}>{r.parsed.origin||'\u2014'}</td>
+                          <td style={{padding:'6px 10px', color:'#6b7280'}}>{extras.length ? extras.join(' \u00b7 ') : '\u2014'}</td>
+                          <td style={{padding:'6px 10px', color:hasErr?'#991b1b':'#92400e', fontSize:11}}>{[...r.errors, ...r.warnings].join('; ')||'\u2014'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{display:'flex', gap:12, justifyContent:'flex-end', marginTop:16}}>
+                <button onClick={()=>setStage('start')} style={btnSecondary} disabled={busy}>Back</button>
+                <button onClick={commit} style={{...btnPrimary, opacity:readyCount===0?.5:1, cursor:readyCount===0?'not-allowed':'pointer'}} disabled={busy || readyCount === 0}>Commit {readyCount} row{readyCount===1?'':'s'}</button>
+              </div>
+            </div>
+          )}
+
+          {stage === 'committing' && (
+            <div style={{textAlign:'center', padding:'2rem 0'}}>
+              <div style={{fontSize:14, color:'#4b5563', marginBottom:14}}>Importing {progress.done} of {progress.total}{'\u2026'}</div>
+              <div style={{height:8, background:'#f3f4f6', borderRadius:4, overflow:'hidden', maxWidth:400, margin:'0 auto'}}>
+                <div style={{height:'100%', background:'#0f766e', width:(progress.total?(progress.done/progress.total*100):0)+'%', transition:'width 0.2s'}}/>
+              </div>
+            </div>
+          )}
+
+          {stage === 'done' && results && (
+            <div>
+              <div style={{display:'flex', gap:14, fontSize:13, marginBottom:16, flexWrap:'wrap'}}>
+                <span style={{padding:'6px 12px', background:'#dcfce7', color:'#166534', borderRadius:6, fontWeight:600}}>{'\u2713'} {results.okCount} imported</span>
+                {results.failCount > 0 && <span style={{padding:'6px 12px', background:'#fef2f2', color:'#991b1b', borderRadius:6, fontWeight:600}}>{'\u2717'} {results.failCount} failed</span>}
+                {results.skipped > 0 && <span style={{padding:'6px 12px', background:'#f3f4f6', color:'#4b5563', borderRadius:6, fontWeight:600}}>skipped {results.skipped} with errors</span>}
+              </div>
+              <div style={{maxHeight:'40vh', overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:8, padding:'10px 14px'}}>
+                {results.log.map((l,i) => (
+                  <div key={i} style={{fontSize:12, padding:'3px 0', color:l.ok?'#374151':'#991b1b'}}>
+                    {l.ok ? '\u2713' : '\u2717'} #{l.tag}{l.msg ? ' \u2014 '+l.msg : ''}
+                  </div>
+                ))}
+              </div>
+              <div style={{display:'flex', gap:12, justifyContent:'flex-end', marginTop:16}}>
+                <button onClick={() => { onComplete && onComplete(); onClose(); }} style={btnPrimary}>Close</button>
+              </div>
+            </div>
+          )}
+
+          {busy && stage !== 'committing' && <div style={{textAlign:'center', padding:14, color:'#6b7280', fontSize:13}}>Working{'\u2026'}</div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ── SHEEP DETAIL PANEL ─────────────────────────────────────────────────────
+// Inline expansion under a sheep row. Slimmer than CowDetail — Phase 1 keeps
+// the essentials: identity, lineage tags, weight history table, lambing
+// history, comments timeline. Charts + nav stack are Phase 2.
+const SheepDetail = ({sheep, weighIns, lambing, comments, lambs, dam, fmt, FLOCK_LABELS, onEdit, onTransfer, onDelete, onComment, onAddLambing, onDeleteLambing}) => {
+  const {useState} = React;
+  const [commentText, setCommentText] = useState('');
+  const [showLambForm, setShowLambForm] = useState(false);
+  const [lambForm, setLambForm] = useState({lambing_date:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''});
+  const sectionT = {fontSize:11, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, fontWeight:700, marginBottom:6};
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', boxSizing:'border-box', width:'100%'};
+  const wiSorted = [...weighIns].sort((a,b)=>(b.entered_at||'').localeCompare(a.entered_at||''));
+  return (
+    <div style={{padding:'14px 18px', background:'#f9fafb', borderTop:'2px solid #0f766e', borderBottom:'2px solid #0f766e', borderLeft:'2px solid #0f766e', borderRight:'2px solid #0f766e', borderRadius:8, margin:'0 8px 8px'}}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, gap:8, flexWrap:'wrap'}}>
+        <div style={{display:'flex', gap:6}}>
+          <button onClick={onEdit} style={{fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#374151', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>Edit</button>
+          <select onChange={e=>{ if(e.target.value){ onTransfer(e.target.value); e.target.value=''; }}} defaultValue="" style={{...inpS, width:'auto', padding:'4px 8px', fontSize:11}}>
+            <option value="">Transfer\u2026</option>
+            {Object.entries(FLOCK_LABELS).filter(([k])=>k!==sheep.flock).map(([k,l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          <button onClick={onDelete} style={{fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #fecaca', background:'white', color:'#7f1d1d', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>Delete</button>
+        </div>
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:18, marginBottom:18}}>
+        <div>
+          <div style={sectionT}>Identity</div>
+          <div style={{fontSize:12, color:'#374151', lineHeight:1.7}}>
+            <div>Tag: <strong>{sheep.tag||'\u2014'}</strong></div>
+            <div>Sex: <strong>{(sheep.sex||'\u2014').toUpperCase()}</strong></div>
+            <div>Breed: <strong>{sheep.breed||'\u2014'}</strong></div>
+            <div>Origin: <strong>{sheep.origin||'\u2014'}</strong></div>
+            <div>DOB: <strong>{sheep.birth_date ? fmt(sheep.birth_date) : '\u2014'}</strong></div>
+            <div>Purchased: <strong>{sheep.purchase_date ? fmt(sheep.purchase_date)+(sheep.purchase_amount?' \u00b7 $'+Number(sheep.purchase_amount).toLocaleString():'') : '\u2014'}</strong></div>
+            <div>Breeding: <strong>{sheep.breeding_status||'\u2014'}</strong></div>
+          </div>
+        </div>
+        <div>
+          <div style={sectionT}>Lineage</div>
+          <div style={{fontSize:12, color:'#374151', lineHeight:1.7}}>
+            <div>Dam: <strong>{sheep.dam_tag||'\u2014'}</strong>{sheep.dam_reg_num?' (reg '+sheep.dam_reg_num+')':''}{dam ? ' \u00b7 in '+(FLOCK_LABELS[dam.flock]||dam.flock):''}</div>
+            <div>Sire: <strong>{sheep.sire_tag||'\u2014'}</strong>{sheep.sire_reg_num?' (reg '+sheep.sire_reg_num+')':''}</div>
+            <div>Lambs in directory: <strong>{lambs.length}</strong></div>
+            {Array.isArray(sheep.old_tags) && sheep.old_tags.length > 0 && <div>Prior tags: <strong>{sheep.old_tags.map(t=>'#'+t.tag).join(', ')}</strong></div>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{marginBottom:18}}>
+        <div style={sectionT}>Weight History ({wiSorted.length})</div>
+        {wiSorted.length === 0 ? <div style={{fontSize:12, color:'#9ca3af'}}>No weigh-ins yet.</div> : (
+          <div style={{maxHeight:200, overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:6}}>
+            <table style={{width:'100%', fontSize:12, borderCollapse:'collapse'}}>
+              <thead><tr style={{background:'#f3f4f6'}}><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Date</th><th style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>Weight</th><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Note</th></tr></thead>
+              <tbody>
+                {wiSorted.map(w => <tr key={w.id} style={{borderTop:'1px solid #f3f4f6'}}><td style={{padding:'5px 10px'}}>{fmt(w.entered_at?w.entered_at.slice(0,10):'')}</td><td style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>{w.weight} lb</td><td style={{padding:'5px 10px', color:'#6b7280'}}>{w.note||'\u2014'}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {sheep.sex === 'ewe' && (
+        <div style={{marginBottom:18}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+            <div style={sectionT}>Lambing History ({lambing.length})</div>
+            <button onClick={()=>setShowLambForm(s=>!s)} style={{fontSize:11, padding:'3px 10px', borderRadius:5, border:'1px solid #0f766e', background:showLambForm?'#0f766e':'white', color:showLambForm?'white':'#0f766e', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>{showLambForm?'Cancel':'+ Add Lambing'}</button>
+          </div>
+          {showLambForm && (
+            <div style={{padding:10, background:'white', border:'1px solid #d1d5db', borderRadius:6, marginBottom:8, display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8}}>
+              <div><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Date</label><input type="date" value={lambForm.lambing_date} onChange={e=>setLambForm({...lambForm, lambing_date:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Total born</label><input type="number" value={lambForm.total_born} onChange={e=>setLambForm({...lambForm, total_born:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Deaths</label><input type="number" value={lambForm.deaths} onChange={e=>setLambForm({...lambForm, deaths:e.target.value})} style={inpS}/></div>
+              <div style={{gridColumn:'1/-1'}}><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Notes</label><input type="text" value={lambForm.notes} onChange={e=>setLambForm({...lambForm, notes:e.target.value})} style={inpS}/></div>
+              <button onClick={async ()=>{ const ok = await onAddLambing(lambForm); if(ok){ setLambForm({lambing_date:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''}); setShowLambForm(false); }}} style={{gridColumn:'1/-1', padding:'7px 14px', background:'#0f766e', color:'white', border:'none', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600, fontFamily:'inherit'}}>Save Lambing Record</button>
+            </div>
+          )}
+          {lambing.length === 0 ? <div style={{fontSize:12, color:'#9ca3af'}}>No lambing records yet.</div> : (
+            <div style={{maxHeight:160, overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:6}}>
+              <table style={{width:'100%', fontSize:12, borderCollapse:'collapse'}}>
+                <thead><tr style={{background:'#f3f4f6'}}><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Date</th><th style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>Born</th><th style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>Deaths</th><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Notes</th><th></th></tr></thead>
+                <tbody>
+                  {lambing.map(r => <tr key={r.id} style={{borderTop:'1px solid #f3f4f6'}}><td style={{padding:'5px 10px'}}>{fmt(r.lambing_date)}</td><td style={{padding:'5px 10px', textAlign:'right'}}>{r.total_born}</td><td style={{padding:'5px 10px', textAlign:'right', color:r.deaths>0?'#b91c1c':'#9ca3af'}}>{r.deaths}</td><td style={{padding:'5px 10px', color:'#6b7280'}}>{r.notes||'\u2014'}</td><td style={{padding:'5px 10px'}}><button onClick={()=>onDeleteLambing(r.id)} style={{fontSize:10, padding:'2px 6px', borderRadius:4, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>{'\u00d7'}</button></td></tr>)}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <div style={sectionT}>Comments Timeline ({comments.length})</div>
+        <div style={{display:'flex', gap:8, marginBottom:8}}>
+          <input type="text" value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder="Add a comment\u2026" style={{...inpS, flex:1}}/>
+          <button onClick={()=>{ if(commentText.trim()){ onComment(commentText.trim()); setCommentText(''); }}} style={{padding:'7px 14px', background:'#0f766e', color:'white', border:'none', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600, fontFamily:'inherit'}}>Add</button>
+        </div>
+        {comments.length === 0 ? <div style={{fontSize:12, color:'#9ca3af'}}>No comments yet.</div> : (
+          <div style={{maxHeight:200, overflowY:'auto'}}>
+            {comments.map(c => (
+              <div key={c.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12}}>
+                <div style={{color:'#374151'}}>{c.comment}</div>
+                <div style={{color:'#9ca3af', fontSize:10, marginTop:2}}>{fmt(c.created_at?c.created_at.slice(0,10):'')} {c.team_member?' \u00b7 '+c.team_member:''} {c.source?' \u00b7 '+c.source:''}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+// ── SHEEP FLOCKS VIEW ──────────────────────────────────────────────────────
+// Mirror of CattleHerdsView with sheep terminology (flock/ewe/ram/wether,
+// lambing instead of calving). Phase 1 covers: directory + flat/tile modes,
+// add/edit/delete, transfer, inline detail, bulk import.
+const SheepFlocksView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit}) => {
+  const {useState, useEffect} = React;
+  const [sheep, setSheep] = useState([]);
+  const [weighIns, setWeighIns] = useState([]);
+  const [lambingRecs, setLambingRecs] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [breedOpts, setBreedOpts] = useState([]);
+  const [originOpts, setOriginOpts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [sortBy, setSortBy] = useState('tag-asc');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [expandedSheep, setExpandedSheep] = useState(null);
+  const [expandedFlocks, setExpandedFlocks] = useState({});
+
+  const FLOCKS = ['rams','ewes','feeders'];
+  const OUTCOMES = ['processed','deceased','sold'];
+  const ALL_FLOCKS = [...FLOCKS, ...OUTCOMES];
+  const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders', processed:'Processed', deceased:'Deceased', sold:'Sold'};
+  const FLOCK_COLORS = {rams:{bg:'#f0fdfa',tx:'#0f766e',bd:'#5eead4'}, ewes:{bg:'#fdf4ff',tx:'#86198f',bd:'#f0abfc'}, feeders:{bg:'#fefce8',tx:'#854d0e',bd:'#fde047'}, processed:{bg:'#f3f4f6',tx:'#374151',bd:'#d1d5db'}, deceased:{bg:'#f9fafb',tx:'#6b7280',bd:'#e5e7eb'}, sold:{bg:'#eff6ff',tx:'#1e40af',bd:'#bfdbfe'}};
+
+  const EMPTY_SHEEP = {
+    tag:'', sex:'ewe', flock:'ewes', breed:'', breeding_blacklist:false,
+    origin:'', birth_date:'', purchase_date:'', purchase_amount:'',
+    dam_tag:'', dam_reg_num:'', sire_tag:'', sire_reg_num:'', registration_num:'',
+    breeding_status:'', maternal_issue_flag:false, maternal_issue_desc:'',
+    sale_date:'', sale_amount:'', death_date:'', death_reason:'',
+    old_tags:[],
+  };
+
+  async function loadAll() {
+    // Two-step weigh-in load (matches existing pattern — no relationship-name joins)
+    const sessR = await sb.from('weigh_in_sessions').select('id,date,herd').eq('species','sheep');
+    const sessIds = (sessR.data||[]).map(s => s.id);
+    const wR = sessIds.length > 0 ? await sb.from('weigh_ins').select('*').in('session_id', sessIds).order('entered_at',{ascending:false}) : {data:[]};
+    const [sR, lR, cR, brR, orR] = await Promise.all([
+      sb.from('sheep').select('*').order('tag'),
+      sb.from('sheep_lambing_records').select('*').order('lambing_date',{ascending:false}),
+      sb.from('sheep_comments').select('*').order('created_at',{ascending:false}),
+      sb.from('sheep_breeds').select('*').order('label'),
+      sb.from('sheep_origins').select('*').order('label'),
+    ]);
+    if(sR.data) setSheep(sR.data);
+    if(wR.data) setWeighIns(wR.data);
+    if(lR.data) setLambingRecs(lR.data);
+    if(cR.data) setComments(cR.data);
+    if(brR.data) setBreedOpts(brR.data);
+    if(orR.data) setOriginOpts(orR.data);
+    setLoading(false);
+  }
+  useEffect(()=>{ loadAll(); }, []);
+
+  function age(birth) {
+    if(!birth) return null;
+    const days = Math.floor((Date.now() - new Date(birth+'T12:00:00').getTime())/86400000);
+    if(days < 0) return null;
+    const y = Math.floor(days/365), m = Math.floor((days%365)/30);
+    if(y > 0) return y+'y '+m+'m';
+    return m+'m';
+  }
+  function lastWeight(s) {
+    if(!s.tag) return null;
+    const w = weighIns.find(x => x.tag === s.tag);
+    return w ? parseFloat(w.weight) : null;
+  }
+  function calfCount(tag) { return sheep.filter(s => s.dam_tag === tag).length; }
+
+  const filtered = sheep.filter(s => {
+    const searching = !!search;
+    if(!searching && statusFilter === 'active' && !FLOCKS.includes(s.flock)) return false;
+    if(statusFilter !== 'all' && statusFilter !== 'active' && s.flock !== statusFilter) return false;
+    if(searching) {
+      const q = search.toLowerCase().trim();
+      const fields = [s.tag, s.dam_tag, s.sire_tag, s.breed, s.origin].map(x => (x||'').toLowerCase());
+      if(!fields.some(f => f.includes(q))) return false;
+    }
+    return true;
+  });
+  const sorted = [...filtered].sort((a,b) => {
+    if(sortBy === 'tag-asc') return (parseFloat(a.tag)||0) - (parseFloat(b.tag)||0) || (a.tag||'').localeCompare(b.tag||'');
+    if(sortBy === 'tag-desc') return (parseFloat(b.tag)||0) - (parseFloat(a.tag)||0) || (b.tag||'').localeCompare(a.tag||'');
+    if(sortBy === 'age-asc') return (a.birth_date||'9999').localeCompare(b.birth_date||'9999');
+    if(sortBy === 'age-desc') return (b.birth_date||'').localeCompare(a.birth_date||'');
+    if(sortBy === 'weight-desc') return (lastWeight(b)||0) - (lastWeight(a)||0);
+    if(sortBy === 'weight-asc') return (lastWeight(a)||0) - (lastWeight(b)||0);
+    return 0;
+  });
+
+  function openAdd() { setForm({...EMPTY_SHEEP}); setEditId(null); setShowAddForm(true); }
+  function openEdit(s) {
+    setForm({...EMPTY_SHEEP, ...s,
+      purchase_amount: s.purchase_amount != null ? String(s.purchase_amount) : '',
+      sale_amount: s.sale_amount != null ? String(s.sale_amount) : '',
+      birth_date: s.birth_date || '', purchase_date: s.purchase_date || '',
+      sale_date: s.sale_date || '', death_date: s.death_date || '',
+      breeding_status: s.breeding_status || '',
+      maternal_issue_desc: s.maternal_issue_desc || '',
+      old_tags: Array.isArray(s.old_tags) ? s.old_tags : [],
+    });
+    setEditId(s.id); setShowAddForm(true);
+  }
+  async function saveSheep() {
+    if(!form.tag.trim()) { if(!confirm('Save sheep without a tag?')) return; }
+    setSaving(true);
+    const isEwe = form.sex === 'ewe';
+    const rec = {
+      tag: form.tag.trim() || null,
+      sex: form.sex, flock: form.flock,
+      breed: form.breed || null,
+      breeding_blacklist: !!form.breeding_blacklist,
+      origin: form.origin || null,
+      birth_date: form.birth_date || null,
+      purchase_date: form.purchase_date || null,
+      purchase_amount: form.purchase_amount !== '' ? parseFloat(form.purchase_amount) : null,
+      dam_tag: form.dam_tag || null, dam_reg_num: form.dam_reg_num || null,
+      sire_tag: form.sire_tag || null, sire_reg_num: form.sire_reg_num || null,
+      registration_num: form.registration_num || null,
+      breeding_status: isEwe ? (form.breeding_status || null) : null,
+      maternal_issue_flag: !!form.maternal_issue_flag,
+      maternal_issue_desc: form.maternal_issue_desc || null,
+      sale_date: form.sale_date || null,
+      sale_amount: form.sale_amount !== '' ? parseFloat(form.sale_amount) : null,
+      death_date: form.death_date || null, death_reason: form.death_reason || null,
+      old_tags: Array.isArray(form.old_tags) ? form.old_tags : [],
+    };
+    let newId = editId;
+    if(editId) {
+      const {error} = await sb.from('sheep').update(rec).eq('id', editId);
+      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
+    } else {
+      newId = (rec.tag ? 's-'+rec.tag : 's-'+Date.now()) + '-' + Math.random().toString(36).slice(2,5);
+      const {error} = await sb.from('sheep').insert({id:newId, ...rec});
+      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
+    }
+    setSaving(false); await loadAll();
+    setShowAddForm(false); setEditId(null); setForm(null);
+  }
+  async function deleteSheep(id) {
+    if(!confirm('Permanently delete this sheep? Lambing records, comments, and weigh-ins for this tag remain.')) return;
+    await sb.from('sheep').delete().eq('id', id);
+    await loadAll();
+    setShowAddForm(false); setEditId(null); setForm(null); setExpandedSheep(null);
+  }
+  async function transferSheep(id, newFlock) {
+    const s = sheep.find(x => x.id === id); if(!s) return;
+    const updates = {flock: newFlock};
+    if(newFlock === 'deceased' && !s.death_date) updates.death_date = new Date().toISOString().slice(0,10);
+    if(newFlock === 'sold' && !s.sale_date) updates.sale_date = new Date().toISOString().slice(0,10);
+    await sb.from('sheep').update(updates).eq('id', id);
+    await loadAll();
+  }
+  async function addQuickComment(sheepId, sheepTag, text) {
+    await sb.from('sheep_comments').insert({
+      id: String(Date.now())+Math.random().toString(36).slice(2,6),
+      sheep_id: sheepId, sheep_tag: sheepTag, comment: text,
+      team_member: authState && authState.name ? authState.name : null, source: 'manual',
+    });
+    await loadAll();
+  }
+  async function addLambingRecord(s, formData) {
+    if(!formData.lambing_date) { alert('Lambing date required.'); return false; }
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    const rec = {
+      id, dam_tag: s.tag, lambing_date: formData.lambing_date,
+      total_born: parseInt(formData.total_born) || 0,
+      deaths: parseInt(formData.deaths) || 0,
+      complications_flag: !!formData.complications_flag,
+      complications_desc: formData.complications_desc || null,
+      notes: formData.notes || null,
+    };
+    const {error} = await sb.from('sheep_lambing_records').insert(rec);
+    if(error) { alert('Save failed: '+error.message); return false; }
+    try {
+      const note = rec.total_born+' born'+(rec.deaths>0?', '+rec.deaths+' died':'');
+      await sb.from('sheep_comments').insert({
+        id: String(Date.now())+Math.random().toString(36).slice(2,6),
+        sheep_id: s.id, sheep_tag: s.tag, comment: note,
+        team_member: authState && authState.name ? authState.name : null,
+        source: 'lambing', reference_id: id,
+      });
+    } catch(e){}
+    await loadAll();
+    return true;
+  }
+  async function deleteLambingRecord(recId) {
+    if(!confirm('Delete this lambing record?')) return;
+    await sb.from('sheep_lambing_records').delete().eq('id', recId);
+    try { await sb.from('sheep_comments').delete().eq('reference_id', recId); } catch(e){}
+    await loadAll();
+  }
+
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const isFlatMode = search || (statusFilter !== 'active');
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
+        <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+          <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tag, dam, sire, breed, origin\u2026" style={{...inpS, flex:1, minWidth:200}}/>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{...inpS, width:'auto'}}>
+            <option value="active">All Active Flocks</option>
+            <option value="all">All (incl. outcomes)</option>
+            <option disabled>{'\u2500\u2500\u2500'}</option>
+            {FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}
+            <option disabled>{'\u2500\u2500\u2500'}</option>
+            {OUTCOMES.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}
+          </select>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...inpS, width:'auto'}}>
+            <option value="tag-asc">Tag {'\u2191'}</option><option value="tag-desc">Tag {'\u2193'}</option>
+            <option value="age-asc">Age (youngest)</option><option value="age-desc">Age (oldest)</option>
+            <option value="weight-desc">Weight {'\u2193'}</option><option value="weight-asc">Weight {'\u2191'}</option>
+          </select>
+          <button onClick={()=>setShowBulkImport(true)} style={{padding:'7px 14px', borderRadius:7, border:'1px solid #0f766e', background:'white', color:'#0f766e', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap'}}>{'\ud83d\udce5'} Bulk Import</button>
+          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap'}}>+ Add Sheep</button>
+        </div>
+
+        {showBulkImport && <SheepBulkImport sb={sb} breedOpts={breedOpts} originOpts={originOpts} existingSheep={sheep} onClose={()=>setShowBulkImport(false)} onComplete={loadAll}/>}
+
+        {loading && <div style={{textAlign:'center', padding:'3rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && sheep.length === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No sheep records yet. Click <strong>+ Add Sheep</strong> or <strong>Bulk Import</strong>.
+          </div>
+        )}
+
+        {!loading && isFlatMode && sheep.length > 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
+            <div style={{padding:'10px 16px', borderBottom:'1px solid #e5e7eb', background:'#f9fafb', fontSize:12, fontWeight:600, color:'#4b5563'}}>{sorted.length} sheep match</div>
+            {sorted.map((s, i) => {
+              const fc = FLOCK_COLORS[s.flock] || FLOCK_COLORS.ewes;
+              const lw = lastWeight(s);
+              const isExp = expandedSheep === s.id;
+              const myWi = weighIns.filter(w => w.tag === s.tag);
+              const myLamb = lambingRecs.filter(r => r.dam_tag === s.tag);
+              const myCom = comments.filter(c => c.sheep_id === s.id || c.sheep_tag === s.tag).slice(0, 20);
+              return (
+                <div key={s.id} style={{borderBottom:i<sorted.length-1?'1px solid #f3f4f6':'none'}}>
+                  <div onClick={()=>setExpandedSheep(isExp?null:s.id)} style={{padding:'10px 16px', display:'grid', gridTemplateColumns:'24px 16px 70px 100px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer'}} className="hoverable-tile">
+                    <span style={{fontSize:11, color:'#9ca3af', fontVariantNumeric:'tabular-nums', fontWeight:600}}>{i+1}</span>
+                    <span style={{fontSize:11, color:'#9ca3af'}}>{isExp?'\u25bc':'\u25b6'}</span>
+                    <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{s.tag ? '#'+s.tag : '(no tag)'}</span>
+                    <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:fc.bg, color:fc.tx, border:'1px solid '+fc.bd, fontWeight:600, textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{FLOCK_LABELS[s.flock]}</span>
+                    <span style={{fontSize:11, color:'#6b7280'}}>{(s.sex||'\u2014').toUpperCase()}</span>
+                    <span style={{fontSize:11, color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{s.breed||'\u2014'}</span>
+                    <span style={{fontSize:11, color:'#6b7280'}}>{age(s.birth_date)||'\u2014'}</span>
+                    <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400}}>{lw ? lw.toLocaleString()+' lb' : 'no weigh-in'}</span>
+                    <span style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                      {s.dam_tag && <span style={{fontSize:11, color:'#9ca3af'}}>{'dam #'+s.dam_tag}</span>}
+                    </span>
+                  </div>
+                  {isExp && <SheepDetail sheep={s} weighIns={myWi} lambing={myLamb} comments={myCom} lambs={sheep.filter(x => x.dam_tag === s.tag)} dam={sheep.find(x => x.tag === s.dam_tag)} fmt={fmt} FLOCK_LABELS={FLOCK_LABELS} onEdit={()=>openEdit(s)} onTransfer={(nf)=>transferSheep(s.id, nf)} onDelete={()=>deleteSheep(s.id)} onComment={(t)=>addQuickComment(s.id, s.tag, t)} onAddLambing={(d)=>addLambingRecord(s, d)} onDeleteLambing={(rid)=>deleteLambingRecord(rid)}/>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!loading && !isFlatMode && sheep.length > 0 && (
+          <div style={{display:'flex', flexDirection:'column', gap:12}}>
+            {FLOCKS.map(f => {
+              const flockSheep = sorted.filter(s => s.flock === f);
+              const fc = FLOCK_COLORS[f];
+              const open = !!expandedFlocks[f];
+              return (
+                <div key={f} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
+                  <div onClick={()=>setExpandedFlocks({...expandedFlocks, [f]:!open})} style={{padding:'12px 18px', background:fc.bg, borderBottom:open?'1px solid '+fc.bd:'none', display:'flex', alignItems:'center', gap:12, cursor:'pointer'}}>
+                    <span style={{fontSize:12, color:fc.tx}}>{open?'\u25bc':'\u25b6'}</span>
+                    <span style={{fontSize:15, fontWeight:700, color:fc.tx}}>{'\ud83d\udc11 '+FLOCK_LABELS[f]}</span>
+                    <span style={{fontSize:12, color:fc.tx, opacity:.8}}>{flockSheep.length} {flockSheep.length===1?'sheep':'sheep'}</span>
+                  </div>
+                  {open && flockSheep.length === 0 && <div style={{padding:'1rem', color:'#9ca3af', fontSize:12, fontStyle:'italic'}}>No sheep in this flock.</div>}
+                  {open && flockSheep.map((s, idx) => {
+                    const lw = lastWeight(s);
+                    const isExp = expandedSheep === s.id;
+                    const myWi = weighIns.filter(w => w.tag === s.tag);
+                    const myLamb = lambingRecs.filter(r => r.dam_tag === s.tag);
+                    const myCom = comments.filter(c => c.sheep_id === s.id || c.sheep_tag === s.tag).slice(0, 20);
+                    return (
+                      <div key={s.id} style={{borderBottom:'1px solid #f3f4f6'}}>
+                        <div onClick={()=>setExpandedSheep(isExp?null:s.id)} style={{padding:'10px 18px', display:'grid', gridTemplateColumns:'24px 16px 70px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer'}} className="hoverable-tile">
+                          <span style={{fontSize:11, color:'#9ca3af', fontVariantNumeric:'tabular-nums', fontWeight:600}}>{idx+1}</span>
+                          <span style={{fontSize:11, color:'#9ca3af'}}>{isExp?'\u25bc':'\u25b6'}</span>
+                          <span style={{fontWeight:700, fontSize:13}}>{s.tag ? '#'+s.tag : '(no tag)'}</span>
+                          <span style={{fontSize:11, color:'#6b7280'}}>{(s.sex||'\u2014').toUpperCase()}</span>
+                          <span style={{fontSize:11, color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{s.breed||'\u2014'}</span>
+                          <span style={{fontSize:11, color:'#6b7280'}}>{age(s.birth_date)||'\u2014'}</span>
+                          <span style={{fontSize:11, color:lw?'#065f46':'#9ca3af', fontWeight:lw?600:400}}>{lw ? lw.toLocaleString()+' lb' : 'no weigh-in'}</span>
+                          <span style={{display:'flex', gap:8}}>{s.dam_tag && <span style={{fontSize:11, color:'#9ca3af'}}>{'dam #'+s.dam_tag}</span>}</span>
+                        </div>
+                        {isExp && <SheepDetail sheep={s} weighIns={myWi} lambing={myLamb} comments={myCom} lambs={sheep.filter(x => x.dam_tag === s.tag)} dam={sheep.find(x => x.tag === s.dam_tag)} fmt={fmt} FLOCK_LABELS={FLOCK_LABELS} onEdit={()=>openEdit(s)} onTransfer={(nf)=>transferSheep(s.id, nf)} onDelete={()=>deleteSheep(s.id)} onComment={(t)=>addQuickComment(s.id, s.tag, t)} onAddLambing={(d)=>addLambingRecord(s, d)} onDeleteLambing={(rid)=>deleteLambingRecord(rid)}/>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {showAddForm && form && (
+        <div onClick={()=>{setShowAddForm(false);setForm(null);setEditId(null);}} style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'2rem 1rem', overflowY:'auto'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white', borderRadius:12, maxWidth:600, width:'100%', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)'}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between'}}>
+              <h2 style={{margin:0, fontSize:16, color:'#0f766e', fontWeight:700}}>{editId ? 'Edit Sheep' : 'Add Sheep'}</h2>
+              <button onClick={()=>{setShowAddForm(false);setForm(null);setEditId(null);}} style={{background:'none', border:'none', fontSize:20, cursor:'pointer'}}>{'\u00d7'}</button>
+            </div>
+            <div style={{padding:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Tag #</label><input type="text" value={form.tag} onChange={e=>setForm({...form, tag:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Sex</label><select value={form.sex} onChange={e=>setForm({...form, sex:e.target.value})} style={inpS}><option value="ewe">Ewe</option><option value="ram">Ram</option><option value="wether">Wether</option></select></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Flock *</label><select value={form.flock} onChange={e=>setForm({...form, flock:e.target.value})} style={inpS}>{ALL_FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}</select></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Breed</label><select value={form.breed} onChange={e=>setForm({...form, breed:e.target.value})} style={inpS}><option value="">\u2014</option>{breedOpts.map(b => <option key={b.id} value={b.label}>{b.label}</option>)}</select></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Origin</label><select value={form.origin} onChange={e=>setForm({...form, origin:e.target.value})} style={inpS}><option value="">\u2014</option>{originOpts.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}</select></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Birth Date</label><input type="date" value={form.birth_date} onChange={e=>setForm({...form, birth_date:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Purchase Date</label><input type="date" value={form.purchase_date} onChange={e=>setForm({...form, purchase_date:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Purchase Amount ($)</label><input type="number" value={form.purchase_amount} onChange={e=>setForm({...form, purchase_amount:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Dam Tag</label><input type="text" value={form.dam_tag} onChange={e=>setForm({...form, dam_tag:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Dam Reg #</label><input type="text" value={form.dam_reg_num} onChange={e=>setForm({...form, dam_reg_num:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Sire Tag</label><input type="text" value={form.sire_tag} onChange={e=>setForm({...form, sire_tag:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Sire Reg #</label><input type="text" value={form.sire_reg_num} onChange={e=>setForm({...form, sire_reg_num:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Registration #</label><input type="text" value={form.registration_num} onChange={e=>setForm({...form, registration_num:e.target.value})} style={inpS}/></div>
+              {form.sex === 'ewe' && <div><label style={{fontSize:11, color:'#6b7280'}}>Breeding Status</label><select value={form.breeding_status} onChange={e=>setForm({...form, breeding_status:e.target.value})} style={inpS}><option value="">\u2014</option><option value="Open">Open</option><option value="Pregnant">Pregnant</option><option value="N/A">N/A</option></select></div>}
+            </div>
+            <div style={{padding:'14px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:10, justifyContent:'flex-end'}}>
+              {editId && <button onClick={()=>deleteSheep(editId)} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #fecaca', background:'white', color:'#7f1d1d', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Delete</button>}
+              <button onClick={()=>{setShowAddForm(false);setForm(null);setEditId(null);}} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #d1d5db', background:'white', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+              <button onClick={saveSheep} disabled={saving} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:13, cursor:saving?'not-allowed':'pointer', opacity:saving?.6:1, fontFamily:'inherit'}}>{saving ? 'Saving\u2026' : (editId ? 'Save' : 'Add Sheep')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ── SHEEP HOME DASHBOARD ───────────────────────────────────────────────────
+// Top stats + per-flock count tiles + rolling-window card with sheep-specific
+// MetricsGrid (bales of hay, alfalfa lbs, mineral compliance %, fence
+// voltage avg, mortality, report days). Period toggle 30/90/120 days.
+// Phase 1 has no nutrition targets, so target % cells are skipped.
+const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
+  const {useState, useEffect} = React;
+  const [sheep, setSheep] = useState([]);
+  const [dailys, setDailys] = useState([]);
+  const [weighIns, setWeighIns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState(30);
+  const FLOCKS = ['rams','ewes','feeders'];
+  const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders'};
+  const FLOCK_COLORS = {rams:'#0f766e', ewes:'#86198f', feeders:'#854d0e'};
+  const SEX_DEFAULT_WEIGHT = {ewe:150, ram:225, wether:80};
+  const ESTIMATE_WINDOW_DAYS = 120;
+  const cutoff120 = new Date(Date.now() - 120*86400000).toISOString().slice(0,10);
+  const cutoff30 = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
+
+  useEffect(()=>{
+    (async ()=>{
+      const sessR = await sb.from('weigh_in_sessions').select('id').eq('species','sheep');
+      const sessIds = (sessR.data||[]).map(s => s.id);
+      const wR = sessIds.length > 0 ? await sb.from('weigh_ins').select('*').in('session_id', sessIds) : {data:[]};
+      const [sR, dR] = await Promise.all([
+        sb.from('sheep').select('*'),
+        sb.from('sheep_dailys').select('*').gte('date', cutoff120),
+      ]);
+      if(sR.data) setSheep(sR.data);
+      if(dR.data) setDailys(dR.data);
+      if(wR.data) setWeighIns(wR.data);
+      setLoading(false);
+    })();
+  }, []);
+
+  function lastWeight(s) {
+    if(!s.tag) return 0;
+    const w = weighIns.find(x => x.tag === s.tag);
+    return w ? (parseFloat(w.weight)||0) : 0;
+  }
+  function isRecentlyPurchased(s) {
+    if(!s.purchase_date) return false;
+    const ms = Date.now() - new Date(s.purchase_date+'T12:00:00').getTime();
+    return ms >= 0 && ms <= ESTIMATE_WINDOW_DAYS * 86400000;
+  }
+  function effectiveWeight(s) {
+    const real = lastWeight(s);
+    if(real > 0) return real;
+    return isRecentlyPurchased(s) ? (SEX_DEFAULT_WEIGHT[s.sex] || 0) : 0;
+  }
+  function flockTotalWeight(f) {
+    return sheep.filter(s => s.flock === f).reduce((sum, s) => sum + effectiveWeight(s), 0);
+  }
+  function flockEstCount(f) {
+    return sheep.filter(s => s.flock === f && lastWeight(s) === 0 && isRecentlyPurchased(s)).length;
+  }
+
+  const totalSheep = sheep.filter(s => FLOCKS.includes(s.flock)).length;
+  const totalWeight = FLOCKS.reduce((s,f) => s + flockTotalWeight(f), 0);
+  const totalEstimated = FLOCKS.reduce((s,f) => s + flockEstCount(f), 0);
+  const dailys30 = dailys.filter(d => (d.date||'') >= cutoff30);
+  const totalMort30 = dailys30.reduce((s,d) => s + (parseInt(d.mortality_count)||0), 0);
+  const totalReports30 = dailys30.length;
+  const minRecords = dailys30.filter(d => d.minerals_given && d.minerals_pct_eaten != null);
+  const avgMinPct = minRecords.length > 0 ? (minRecords.reduce((s,d) => s + (parseFloat(d.minerals_pct_eaten)||0), 0) / minRecords.length) : null;
+
+  function computeWindow(fromISO, toISO) {
+    const windowDays = Math.max(1, Math.floor((new Date(toISO+'T12:00:00') - new Date(fromISO+'T12:00:00'))/86400000) + 1);
+    const rows = dailys.filter(d => d.date >= fromISO && d.date <= toISO);
+    let bales = 0, alfalfa = 0, mort = 0, fenceSum = 0, fenceN = 0, minSum = 0, minN = 0, watersOk = 0, watersN = 0;
+    const reportDates = new Set();
+    for(const d of rows) {
+      reportDates.add(d.date);
+      bales += parseFloat(d.bales_of_hay) || 0;
+      alfalfa += parseFloat(d.lbs_of_alfalfa) || 0;
+      mort += parseInt(d.mortality_count) || 0;
+      if(d.fence_voltage_kv != null) { fenceSum += parseFloat(d.fence_voltage_kv) || 0; fenceN++; }
+      if(d.minerals_given && d.minerals_pct_eaten != null) { minSum += parseFloat(d.minerals_pct_eaten) || 0; minN++; }
+      if(d.waterers_working != null) { if(d.waterers_working) watersOk++; watersN++; }
+    }
+    return { bales, alfalfa, mort, fenceAvg: fenceN > 0 ? fenceSum/fenceN : null, minAvg: minN > 0 ? minSum/minN : null, watersPct: watersN > 0 ? (watersOk/watersN)*100 : null, reportDays: reportDates.size, days: windowDays };
+  }
+
+  function trendArrow(cur, prev, higherIsBetter) {
+    if(cur == null || prev == null || prev === 0) return null;
+    if(Math.abs(prev) < 0.05) return null;
+    const pct = ((cur - prev) / prev) * 100;
+    if(Math.abs(pct) > 200) return null;
+    const up = pct >= 0;
+    const good = higherIsBetter ? up : !up;
+    const color = Math.abs(pct) < 2 ? '#9ca3af' : (good ? '#065f46' : '#b91c1c');
+    const arrow = Math.abs(pct) < 2 ? '\u2192' : (up ? '\u2191' : '\u2193');
+    return <span style={{fontSize:10, color, fontWeight:600, marginLeft:4}}>{arrow} {Math.abs(pct).toFixed(0)}%</span>;
+  }
+
+  const periodFromISO = new Date(Date.now() - (period-1)*86400000).toISOString().slice(0,10);
+  const todayISOstr   = new Date().toISOString().slice(0,10);
+  const prevToISO     = new Date(Date.now() - period*86400000).toISOString().slice(0,10);
+  const prevFromISO   = new Date(Date.now() - (period*2-1)*86400000).toISOString().slice(0,10);
+  const cur = computeWindow(periodFromISO, todayISOstr);
+  const prev = computeWindow(prevFromISO, prevToISO);
+
+  const StatTile = ({label, val, sub, color='#0f766e'}) => (
+    <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 16px'}}>
+      <div style={{fontSize:11, color:'#6b7280', textTransform:'uppercase', letterSpacing:.8, marginBottom:4}}>{label}</div>
+      <div style={{fontSize:24, fontWeight:700, color, lineHeight:1}}>{val}</div>
+      {sub && <div style={{fontSize:11, color:'#9ca3af', marginTop:3}}>{sub}</div>}
+    </div>
+  );
+
+  const PeriodToggle = () => (
+    <div style={{display:'flex', borderRadius:8, overflow:'hidden', border:'1px solid #d1d5db', width:'fit-content'}}>
+      {[{v:30,l:'30 Days'},{v:90,l:'90 Days'},{v:120,l:'120 Days'}].map(({v,l}) => (
+        <button key={v} onClick={()=>setPeriod(v)} style={{padding:'6px 14px', border:'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:period===v?'#0f766e':'white', color:period===v?'white':'#6b7280'}}>{l}</button>
+      ))}
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1.25rem', maxWidth:1200, margin:'0 auto', display:'flex', flexDirection:'column', gap:'1.5rem'}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:10}}>
+          <StatTile label="Sheep on Farm" val={totalSheep.toLocaleString()}/>
+          <StatTile label="Total Live Weight" val={totalWeight > 0 ? Math.round(totalWeight).toLocaleString()+' lbs' : '\u2014'} sub={totalEstimated > 0 ? totalEstimated+' est.' : null}/>
+          <StatTile label="Mortality 30d" val={totalMort30.toString()} color={totalMort30>0?'#b91c1c':'#374151'}/>
+          <StatTile label="Reports 30d" val={totalReports30.toString()} color="#374151"/>
+          <StatTile label="Minerals Eaten 30d" val={avgMinPct != null ? Math.round(avgMinPct)+'%' : '\u2014'} color={avgMinPct >= 80 ? '#065f46' : (avgMinPct >= 50 ? '#92400e' : '#b91c1c')}/>
+        </div>
+
+        <div>
+          <div style={{fontSize:13, fontWeight:600, color:'#4b5563', marginBottom:8, letterSpacing:.3}}>FLOCK BREAKDOWN</div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:10}}>
+            {FLOCKS.map(f => {
+              const flockSheep = sheep.filter(s => s.flock === f);
+              const lw = flockTotalWeight(f);
+              const est = flockEstCount(f);
+              return (
+                <div key={f} onClick={()=>setView('sheepflocks')} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 16px', cursor:'pointer'}} className="hoverable-tile">
+                  <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:6}}>
+                    <span style={{fontSize:14, fontWeight:700, color:FLOCK_COLORS[f]}}>{FLOCK_LABELS[f]}</span>
+                    <span style={{fontSize:11, color:'#6b7280'}}>{flockSheep.length} {flockSheep.length===1?'sheep':'sheep'}</span>
+                  </div>
+                  <div style={{fontSize:12, color:'#374151'}}>Live wt: <strong>{lw>0 ? Math.round(lw).toLocaleString()+' lbs' : '\u2014'}</strong></div>
+                  {est > 0 && <div style={{fontSize:11, color:'#92400e', marginTop:2}}>{est+' est. (no weigh-in yet)'}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {!loading && (
+          <div>
+            <div style={{display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:10}}>
+              <div style={{fontSize:13, fontWeight:600, color:'#4b5563', letterSpacing:.3}}>FARM-WIDE DAILYS {'\u2014'} ROLLING WINDOW</div>
+              <PeriodToggle/>
+            </div>
+            <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:14, overflow:'hidden'}}>
+              <div style={{background:'#f0fdfa', borderBottom:'1px solid #5eead4', borderLeft:'4px solid #0f766e', padding:'12px 20px', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                <span style={{fontSize:16, fontWeight:700, color:'#0f766e'}}>{'\ud83d\udc11 All Flocks'}</span>
+                <span style={{fontSize:11, color:'#6b7280'}}>{cur.reportDays} of {cur.days} days reported</span>
+              </div>
+              <div style={{padding:'14px 20px'}}>
+                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(110px, 1fr))', gap:8}}>
+                  {[
+                    {l:'Bales of hay', v: cur.bales > 0 ? cur.bales.toFixed(2) : '\u2014', trend: trendArrow(cur.bales, prev.bales, false)},
+                    {l:'Alfalfa lbs',  v: cur.alfalfa > 0 ? Math.round(cur.alfalfa).toLocaleString() : '\u2014', trend: trendArrow(cur.alfalfa, prev.alfalfa, false)},
+                    {l:'Mineral % eaten', v: cur.minAvg != null ? Math.round(cur.minAvg)+'%' : '\u2014', trend: trendArrow(cur.minAvg, prev.minAvg, true), color: cur.minAvg >= 80 ? '#065f46' : (cur.minAvg >= 50 ? '#92400e' : (cur.minAvg != null ? '#b91c1c' : null))},
+                    {l:'Fence voltage', v: cur.fenceAvg != null ? cur.fenceAvg.toFixed(1)+' kV' : '\u2014', trend: trendArrow(cur.fenceAvg, prev.fenceAvg, true), color: cur.fenceAvg >= 4 ? '#065f46' : (cur.fenceAvg >= 2 ? '#92400e' : (cur.fenceAvg != null ? '#b91c1c' : null))},
+                    {l:'Waterers OK', v: cur.watersPct != null ? Math.round(cur.watersPct)+'%' : '\u2014'},
+                    {l:'Mortality', v: String(cur.mort||0), warn: cur.mort > 0},
+                    {l:'Report days', v: cur.reportDays + ' of ' + cur.days},
+                  ].map(it => (
+                    <div key={it.l} style={{padding:'8px 10px', background:'#f9fafb', border:'1px solid #f3f4f6', borderRadius:8, minWidth:0, overflow:'hidden'}}>
+                      <div style={{fontSize:9, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4, marginBottom:2}}>{it.l}</div>
+                      <div style={{fontSize:13, fontWeight:700, color:it.warn?'#b91c1c':(it.color||'#111827'), whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{it.v}{it.trend}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af', fontSize:13}}>Loading{'\u2026'}</div>}
+        {!loading && totalSheep === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'24px', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No sheep on file yet. Click <strong>Flocks</strong> in the sub-nav, then <strong>Bulk Import</strong> to load your records.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+// ── SHEEP DAILYS VIEW (admin entry) ────────────────────────────────────────
+// Add/edit daily reports for sheep. Sheep-specific fields: bales of hay,
+// alfalfa lbs, minerals given + % eaten, fence voltage kV, waterers working.
+const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
+  const {useState, useEffect} = React;
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [filterFlock, setFilterFlock] = useState('all');
+  const FLOCKS = ['rams','ewes','feeders'];
+  const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders'};
+  const EMPTY_FORM = {
+    date: new Date().toISOString().slice(0,10),
+    team_member: (authState && authState.name) || '', flock: 'ewes',
+    bales_of_hay: '', lbs_of_alfalfa: '',
+    minerals_given: false, minerals_pct_eaten: '',
+    fence_voltage_kv: '', waterers_working: true,
+    mortality_count: '', comments: '',
+  };
+
+  async function loadAll() {
+    setLoading(true);
+    const {data} = await sb.from('sheep_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).limit(500);
+    if(data) setRows(data);
+    setLoading(false);
+  }
+  useEffect(()=>{ loadAll(); }, []);
+
+  function openAdd() { setForm({...EMPTY_FORM}); setEditId(null); setShowForm(true); }
+  function openEdit(r) {
+    setForm({
+      date: r.date || '', team_member: r.team_member || '', flock: r.flock || 'ewes',
+      bales_of_hay: r.bales_of_hay != null ? String(r.bales_of_hay) : '',
+      lbs_of_alfalfa: r.lbs_of_alfalfa != null ? String(r.lbs_of_alfalfa) : '',
+      minerals_given: !!r.minerals_given,
+      minerals_pct_eaten: r.minerals_pct_eaten != null ? String(r.minerals_pct_eaten) : '',
+      fence_voltage_kv: r.fence_voltage_kv != null ? String(r.fence_voltage_kv) : '',
+      waterers_working: r.waterers_working == null ? true : !!r.waterers_working,
+      mortality_count: r.mortality_count != null ? String(r.mortality_count) : '',
+      comments: r.comments || '',
+    });
+    setEditId(r.id); setShowForm(true);
+  }
+  async function save() {
+    if(!form.date) { alert('Date is required.'); return; }
+    if(!form.flock) { alert('Flock is required.'); return; }
+    setSaving(true);
+    const rec = {
+      date: form.date, team_member: form.team_member || null, flock: form.flock,
+      bales_of_hay: form.bales_of_hay !== '' ? parseFloat(form.bales_of_hay) : null,
+      lbs_of_alfalfa: form.lbs_of_alfalfa !== '' ? parseFloat(form.lbs_of_alfalfa) : null,
+      minerals_given: !!form.minerals_given,
+      minerals_pct_eaten: form.minerals_pct_eaten !== '' ? parseFloat(form.minerals_pct_eaten) : null,
+      fence_voltage_kv: form.fence_voltage_kv !== '' ? parseFloat(form.fence_voltage_kv) : null,
+      waterers_working: !!form.waterers_working,
+      mortality_count: form.mortality_count !== '' ? parseInt(form.mortality_count) : null,
+      comments: form.comments || null,
+    };
+    if(editId) {
+      const {error} = await sb.from('sheep_dailys').update(rec).eq('id', editId);
+      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
+    } else {
+      const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+      const {error} = await sb.from('sheep_dailys').insert({id, ...rec, source:'admin'});
+      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
+    }
+    setSaving(false); await loadAll();
+    setShowForm(false); setEditId(null); setForm(null);
+  }
+  async function del(id) {
+    if(!confirm('Delete this daily report?')) return;
+    await sb.from('sheep_dailys').delete().eq('id', id);
+    await loadAll();
+  }
+
+  const filtered = filterFlock === 'all' ? rows : rows.filter(r => r.flock === filterFlock);
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
+        <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+          <div style={{fontSize:15, fontWeight:700, color:'#0f766e'}}>{'\ud83d\udc11 Sheep Daily Reports'}</div>
+          <select value={filterFlock} onChange={e=>setFilterFlock(e.target.value)} style={{...inpS, width:'auto'}}>
+            <option value="all">All Flocks</option>
+            {FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}
+          </select>
+          <div style={{flex:1}}/>
+          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ Add Report</button>
+        </div>
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && filtered.length === 0 && <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>No daily reports yet. Click <strong>+ Add Report</strong>.</div>}
+
+        {!loading && filtered.length > 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
+            <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
+              <thead style={{background:'#f9fafb'}}>
+                <tr>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Date</th>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Flock</th>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Team</th>
+                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Hay</th>
+                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Alfalfa</th>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Minerals</th>
+                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Fence kV</th>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Waterers</th>
+                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Mort</th>
+                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Comments</th>
+                  <th style={{padding:'8px 10px', borderBottom:'1px solid #e5e7eb'}}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(r => (
+                  <tr key={r.id} style={{borderBottom:'1px solid #f3f4f6'}}>
+                    <td style={{padding:'6px 10px', fontWeight:600}}>{fmt(r.date)}</td>
+                    <td style={{padding:'6px 10px'}}>{FLOCK_LABELS[r.flock] || r.flock}</td>
+                    <td style={{padding:'6px 10px'}}>{r.team_member||'\u2014'}</td>
+                    <td style={{padding:'6px 10px', textAlign:'right'}}>{r.bales_of_hay != null ? r.bales_of_hay+' bales' : '\u2014'}</td>
+                    <td style={{padding:'6px 10px', textAlign:'right'}}>{r.lbs_of_alfalfa != null ? r.lbs_of_alfalfa+' lb' : '\u2014'}</td>
+                    <td style={{padding:'6px 10px'}}>{r.minerals_given ? (r.minerals_pct_eaten!=null ? r.minerals_pct_eaten+'% eaten' : 'yes') : 'no'}</td>
+                    <td style={{padding:'6px 10px', textAlign:'right'}}>{r.fence_voltage_kv != null ? r.fence_voltage_kv : '\u2014'}</td>
+                    <td style={{padding:'6px 10px'}}>{r.waterers_working ? '\u2713' : (r.waterers_working === false ? '\u2717' : '\u2014')}</td>
+                    <td style={{padding:'6px 10px', textAlign:'right', color:(r.mortality_count||0)>0?'#b91c1c':'#9ca3af', fontWeight:(r.mortality_count||0)>0?700:400}}>{r.mortality_count||0}</td>
+                    <td style={{padding:'6px 10px', color:'#6b7280', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.comments||'\u2014'}</td>
+                    <td style={{padding:'6px 10px', whiteSpace:'nowrap'}}>
+                      <button onClick={()=>openEdit(r)} style={{fontSize:11, padding:'3px 8px', borderRadius:5, border:'1px solid #d1d5db', background:'white', cursor:'pointer', fontFamily:'inherit', marginRight:4}}>Edit</button>
+                      <button onClick={()=>del(r.id)} style={{fontSize:11, padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>{'\u00d7'}</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {showForm && form && (
+        <div onClick={()=>{setShowForm(false);setForm(null);setEditId(null);}} style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'2rem 1rem', overflowY:'auto'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white', borderRadius:12, maxWidth:560, width:'100%'}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between'}}>
+              <h2 style={{margin:0, fontSize:16, color:'#0f766e', fontWeight:700}}>{editId ? 'Edit Daily Report' : 'Add Daily Report'}</h2>
+              <button onClick={()=>{setShowForm(false);setForm(null);setEditId(null);}} style={{background:'none', border:'none', fontSize:20, cursor:'pointer'}}>{'\u00d7'}</button>
+            </div>
+            <div style={{padding:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Date *</label><input type="date" value={form.date} onChange={e=>setForm({...form, date:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Flock *</label><select value={form.flock} onChange={e=>setForm({...form, flock:e.target.value})} style={inpS}>{FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}</select></div>
+              <div style={{gridColumn:'1/-1'}}><label style={{fontSize:11, color:'#6b7280'}}>Team Member</label><input type="text" value={form.team_member} onChange={e=>setForm({...form, team_member:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Bales of Hay</label><input type="number" step="0.25" value={form.bales_of_hay} onChange={e=>setForm({...form, bales_of_hay:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Alfalfa (lbs)</label><input type="number" value={form.lbs_of_alfalfa} onChange={e=>setForm({...form, lbs_of_alfalfa:e.target.value})} style={inpS}/></div>
+              <div style={{gridColumn:'1/-1', display:'flex', alignItems:'center', gap:10}}>
+                <label style={{fontSize:13, display:'flex', alignItems:'center', gap:6, cursor:'pointer'}}><input type="checkbox" checked={form.minerals_given} onChange={e=>setForm({...form, minerals_given:e.target.checked})}/>Minerals given?</label>
+                {form.minerals_given && <div style={{flex:1}}><input type="number" min="0" max="100" placeholder="% eaten" value={form.minerals_pct_eaten} onChange={e=>setForm({...form, minerals_pct_eaten:e.target.value})} style={inpS}/></div>}
+              </div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Fence Voltage (kV)</label><input type="number" step="0.1" value={form.fence_voltage_kv} onChange={e=>setForm({...form, fence_voltage_kv:e.target.value})} style={inpS}/></div>
+              <div><label style={{fontSize:13, display:'flex', alignItems:'center', gap:6, cursor:'pointer', paddingTop:18}}><input type="checkbox" checked={form.waterers_working} onChange={e=>setForm({...form, waterers_working:e.target.checked})}/>Waterers working?</label></div>
+              <div><label style={{fontSize:11, color:'#6b7280'}}>Mortality Count</label><input type="number" value={form.mortality_count} onChange={e=>setForm({...form, mortality_count:e.target.value})} style={inpS}/></div>
+              <div style={{gridColumn:'1/-1'}}><label style={{fontSize:11, color:'#6b7280'}}>Issues / Comments</label><textarea rows={3} value={form.comments} onChange={e=>setForm({...form, comments:e.target.value})} style={{...inpS, resize:'vertical'}}/></div>
+            </div>
+            <div style={{padding:'14px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:10, justifyContent:'flex-end'}}>
+              <button onClick={()=>{setShowForm(false);setForm(null);setEditId(null);}} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #d1d5db', background:'white', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+              <button onClick={save} disabled={saving} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:13, cursor:saving?'not-allowed':'pointer', opacity:saving?.6:1, fontFamily:'inherit'}}>{saving ? 'Saving\u2026' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ── SHEEP WEIGH-INS VIEW (admin) ───────────────────────────────────────────
+// Session-based weigh-ins on the shared weigh_in_sessions / weigh_ins tables
+// with species='sheep'. Phase 1: list sessions, expand to entries, create
+// session, add/edit/delete entries. Retag flow deferred to Phase 2.
+const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
+  const {useState, useEffect} = React;
+  const [sessions, setSessions] = useState([]);
+  const [entries, setEntries] = useState({}); // session_id → entries[]
+  const [sheep, setSheep] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [newSessForm, setNewSessForm] = useState({date: new Date().toISOString().slice(0,10), team_member:(authState && authState.name) || '', herd:'ewes', notes:''});
+  const [tagSearch, setTagSearch] = useState('');
+  const [addEntry, setAddEntry] = useState({tag:'', weight:'', note:''});
+  const [busy, setBusy] = useState(false);
+  const FLOCKS = ['rams','ewes','feeders'];
+  const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders'};
+
+  async function loadAll() {
+    setLoading(true);
+    const sR = await sb.from('weigh_in_sessions').select('*').eq('species','sheep').order('date',{ascending:false}).limit(200);
+    const sessIds = (sR.data||[]).map(s => s.id);
+    const eR = sessIds.length > 0 ? await sb.from('weigh_ins').select('*').in('session_id', sessIds).order('entered_at',{ascending:true}) : {data:[]};
+    const shR = await sb.from('sheep').select('id,tag,flock').order('tag');
+    if(sR.data) setSessions(sR.data);
+    if(eR.data) {
+      const grouped = {};
+      eR.data.forEach(e => { (grouped[e.session_id] = grouped[e.session_id] || []).push(e); });
+      setEntries(grouped);
+    }
+    if(shR.data) setSheep(shR.data);
+    setLoading(false);
+  }
+  useEffect(()=>{ loadAll(); }, []);
+
+  async function createSession() {
+    if(!newSessForm.team_member) { alert('Pick a team member.'); return; }
+    setBusy(true);
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    const rec = {id, date:newSessForm.date, team_member:newSessForm.team_member, species:'sheep', herd:newSessForm.herd, status:'draft', notes:newSessForm.notes||null};
+    const {error} = await sb.from('weigh_in_sessions').insert(rec);
+    setBusy(false);
+    if(error) { alert('Could not create session: '+error.message); return; }
+    setShowNewSession(false);
+    setNewSessForm({date: new Date().toISOString().slice(0,10), team_member:(authState && authState.name) || '', herd:'ewes', notes:''});
+    await loadAll();
+    setExpandedId(id);
+  }
+  async function addNewEntry(sessionId) {
+    if(!addEntry.tag.trim() || !addEntry.weight || parseFloat(addEntry.weight) <= 0) { alert('Tag and weight are required.'); return; }
+    setBusy(true);
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    const rec = {id, session_id:sessionId, tag:addEntry.tag.trim(), weight:parseFloat(addEntry.weight), note:addEntry.note||null};
+    const {error} = await sb.from('weigh_ins').insert(rec);
+    setBusy(false);
+    if(error) { alert('Save failed: '+error.message); return; }
+    if(addEntry.note && addEntry.note.trim()) {
+      const cow = sheep.find(s => s.tag === rec.tag);
+      try {
+        await sb.from('sheep_comments').insert({
+          id: String(Date.now())+Math.random().toString(36).slice(2,6),
+          sheep_id: cow ? cow.id : null, sheep_tag: rec.tag,
+          comment: addEntry.note.trim(), team_member: newSessForm.team_member,
+          source:'weigh_in', reference_id: id,
+        });
+      } catch(e){}
+    }
+    setAddEntry({tag:'', weight:'', note:''});
+    await loadAll();
+  }
+  async function delEntry(id) {
+    if(!confirm('Delete this entry?')) return;
+    await sb.from('weigh_ins').delete().eq('id', id);
+    try { await sb.from('sheep_comments').delete().eq('reference_id', id); } catch(e){}
+    await loadAll();
+  }
+  async function completeSession(id) {
+    if(!confirm('Mark session complete?')) return;
+    await sb.from('weigh_in_sessions').update({status:'complete', completed_at:new Date().toISOString()}).eq('id', id);
+    await loadAll();
+  }
+  async function delSession(id) {
+    if(!confirm('Delete this session AND all its entries?')) return;
+    await sb.from('weigh_ins').delete().eq('session_id', id);
+    await sb.from('weigh_in_sessions').delete().eq('id', id);
+    setExpandedId(null);
+    await loadAll();
+  }
+
+  const filteredSessions = !tagSearch.trim() ? sessions : sessions.filter(s => {
+    const ents = entries[s.id] || [];
+    return ents.some(e => (e.tag||'').toLowerCase().includes(tagSearch.toLowerCase().trim()));
+  });
+  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', boxSizing:'border-box'};
+  const tagSet = new Set(sheep.map(s => s.tag).filter(Boolean));
+
+  return (
+    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
+      {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
+      <Header/>
+      <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
+        <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+          <div style={{fontSize:15, fontWeight:700, color:'#0f766e'}}>{'\ud83d\udc11 Sheep Weigh-Ins'}</div>
+          <input type="text" value={tagSearch} onChange={e=>setTagSearch(e.target.value)} placeholder="Search tag #\u2026" style={{...inpS, width:180}}/>
+          <div style={{flex:1}}/>
+          <button onClick={()=>setShowNewSession(true)} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Session</button>
+        </div>
+
+        {showNewSession && (
+          <div style={{background:'white', border:'1px solid #0f766e', borderRadius:10, padding:'14px 18px', marginBottom:14, display:'grid', gridTemplateColumns:'1fr 1fr 1fr 2fr auto', gap:10, alignItems:'end'}}>
+            <div><label style={{fontSize:11, color:'#6b7280'}}>Date</label><input type="date" value={newSessForm.date} onChange={e=>setNewSessForm({...newSessForm, date:e.target.value})} style={inpS}/></div>
+            <div><label style={{fontSize:11, color:'#6b7280'}}>Team Member</label><input type="text" value={newSessForm.team_member} onChange={e=>setNewSessForm({...newSessForm, team_member:e.target.value})} style={inpS}/></div>
+            <div><label style={{fontSize:11, color:'#6b7280'}}>Flock</label><select value={newSessForm.herd} onChange={e=>setNewSessForm({...newSessForm, herd:e.target.value})} style={inpS}>{FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}</select></div>
+            <div><label style={{fontSize:11, color:'#6b7280'}}>Notes (optional)</label><input type="text" value={newSessForm.notes} onChange={e=>setNewSessForm({...newSessForm, notes:e.target.value})} style={inpS}/></div>
+            <div style={{display:'flex', gap:6}}>
+              <button onClick={()=>setShowNewSession(false)} style={{padding:'7px 14px', borderRadius:6, border:'1px solid #d1d5db', background:'white', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+              <button onClick={createSession} disabled={busy} style={{padding:'7px 16px', borderRadius:6, border:'none', background:'#0f766e', color:'white', fontSize:12, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>Create</button>
+            </div>
+          </div>
+        )}
+
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
+        {!loading && filteredSessions.length === 0 && <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>{tagSearch ? 'No sessions match that tag.' : 'No sheep weigh-in sessions yet. Click + New Session.'}</div>}
+
+        {!loading && filteredSessions.map(s => {
+          const isExp = expandedId === s.id;
+          const ents = entries[s.id] || [];
+          const visibleEnts = !tagSearch.trim() ? ents : ents.filter(e => (e.tag||'').toLowerCase().includes(tagSearch.toLowerCase().trim()));
+          const totalWt = ents.reduce((sum,e)=>sum+(parseFloat(e.weight)||0), 0);
+          const isComplete = s.status === 'complete';
+          return (
+            <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, marginBottom:10, overflow:'hidden'}}>
+              <div onClick={()=>setExpandedId(isExp?null:s.id)} style={{padding:'10px 16px', display:'flex', alignItems:'center', gap:10, cursor:'pointer', borderBottom:isExp?'1px solid #e5e7eb':'none'}}>
+                <span style={{fontSize:11, color:'#9ca3af'}}>{isExp?'\u25bc':'\u25b6'}</span>
+                <span style={{fontSize:13, fontWeight:700, color:'#111827'}}>{fmt(s.date)}</span>
+                <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#f0fdfa', color:'#0f766e', border:'1px solid #5eead4', fontWeight:600}}>{FLOCK_LABELS[s.herd] || s.herd || '\u2014'}</span>
+                <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member||'\u2014'}</span>
+                <span style={{fontSize:11, color:'#6b7280'}}>{visibleEnts.length}{tagSearch?' of '+ents.length:''} {ents.length===1?'entry':'entries'}</span>
+                {totalWt > 0 && <span style={{fontSize:11, color:'#065f46', fontWeight:600}}>{Math.round(totalWt).toLocaleString()} lb total</span>}
+                {isComplete ? <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#dcfce7', color:'#166534', fontWeight:700}}>COMPLETE</span> : <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#fef3c7', color:'#92400e', fontWeight:700}}>DRAFT</span>}
+                <div style={{flex:1}}/>
+                {!isComplete && <button onClick={(e)=>{e.stopPropagation();completeSession(s.id);}} style={{fontSize:11, padding:'3px 10px', borderRadius:5, border:'1px solid #166534', color:'#166534', background:'white', cursor:'pointer', fontFamily:'inherit', fontWeight:600}}>Mark Complete</button>}
+                <button onClick={(e)=>{e.stopPropagation();delSession(s.id);}} style={{fontSize:11, padding:'3px 10px', borderRadius:5, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>Delete</button>
+              </div>
+              {isExp && (
+                <div style={{padding:'12px 16px'}}>
+                  {!isComplete && (
+                    <div style={{display:'grid', gridTemplateColumns:'120px 100px 1fr auto', gap:8, marginBottom:12, alignItems:'end', padding:10, background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8}}>
+                      <div><label style={{fontSize:11, color:'#6b7280'}}>Tag #</label><input list="sheep-tags" type="text" value={addEntry.tag} onChange={e=>setAddEntry({...addEntry, tag:e.target.value})} style={inpS}/></div>
+                      <div><label style={{fontSize:11, color:'#6b7280'}}>Weight (lb)</label><input type="number" value={addEntry.weight} onChange={e=>setAddEntry({...addEntry, weight:e.target.value})} style={inpS}/></div>
+                      <div><label style={{fontSize:11, color:'#6b7280'}}>Note (optional)</label><input type="text" value={addEntry.note} onChange={e=>setAddEntry({...addEntry, note:e.target.value})} style={inpS}/></div>
+                      <button onClick={()=>addNewEntry(s.id)} disabled={busy} style={{padding:'7px 14px', borderRadius:6, border:'none', background:'#0f766e', color:'white', fontSize:12, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add Entry</button>
+                      <datalist id="sheep-tags">{sheep.map(sh => <option key={sh.id} value={sh.tag}/>)}</datalist>
+                    </div>
+                  )}
+                  {visibleEnts.length === 0 ? <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No entries yet.</div> : (
+                    <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8}}>
+                      {visibleEnts.map(e => {
+                        const known = tagSet.has(e.tag);
+                        return (
+                          <div key={e.id} style={{padding:'8px 10px', background:known?'white':'#fef3c7', border:'1px solid '+(known?'#e5e7eb':'#fde68a'), borderRadius:8, display:'flex', flexDirection:'column', gap:2}}>
+                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                              <span style={{fontSize:13, fontWeight:700, color:known?'#111827':'#92400e'}}>{'#'+e.tag}{!known && ' \u2009*'}</span>
+                              <button onClick={()=>delEntry(e.id)} style={{fontSize:10, padding:'1px 6px', borderRadius:3, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>{'\u00d7'}</button>
+                            </div>
+                            <div style={{fontSize:14, fontWeight:600, color:'#065f46'}}>{e.weight} lb</div>
+                            {e.note && <div style={{fontSize:10, color:'#6b7280'}}>{e.note}</div>}
+                            {!known && <div style={{fontSize:9, color:'#92400e'}}>* tag not in directory</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -1740,3 +1740,223 @@ e8ca425  Cow detail: weight history table polish, clickable lineage, back nav
 ---
 
 *End of April 17 evening session. The work-tree state at session end: clean. 6 commits sitting locally awaiting push. Next session should: (1) push the 6 commits, (2) get answers to the 12 cattle-import questions in §15.4, (3) build the importer for the 41 new mommas. Good luck.*
+
+---
+
+# 16. Session Update — April 18, 2026 (Cattle Bulk Import + Auth Hardening + User Mgmt + Sheep Module Phase 1)
+
+Long session. Started by getting answers to the 12 cattle-import questions from §15.4, then built a self-serve cattle bulk import tool, then chased down a string of auth + user-management bugs while testing the new-user invite flow, then kicked off the entire sheep module from scratch.
+
+Three commits shipped (all pushed to prod by end of session, Netlify auto-deployed):
+
+```
+08ca04b  SetPasswordScreen: manually exchange URL tokens for a session
+72196dd  SetPasswordScreen: wait for session before enabling submit
+1fdc869  Cattle bulk import + estimated weight fallback + per-program user access
+```
+
+The big sheep batch (migration 009 + all six Sheep* components + routing wiring) is committed in this final commit alongside the §16 doc append.
+
+## 16.1 What was built and shipped (in execution order)
+
+### Cattle bulk import tool (replaces one-off scripts/import_cattle.js for future imports)
+- **Migration 007** (`007_split_dam_sire_reg.sql`) — re-added `dam_reg_num` + `sire_reg_num` text columns to `cattle` (mig 004 had dropped sire_reg_num). Seeded `AKAUSHI-ANGUS CROSS` + `RED ANGUS` in `cattle_breeds` and `A-Z FEEDERS` + `WRIGHT FARMS` in `cattle_origins`. Idempotent via `IF NOT EXISTS` + `ON CONFLICT DO NOTHING`.
+- **`CattleBulkImport` component** in `index.html` — full-screen modal. Stages: start (download template / upload xlsx) → preview (per-row validation table, ✓ ready / ⚠ warning / ✗ error) → committing (progress bar) → done (per-tag log). Auto-creates new breeds/origins on commit, validates tag collisions against active-herd cows. Per-row optional extras: `last_calve_date` → cattle_calving_records, `comment` → cattle_comments source='import', `receiving_weight` → wsess-rcv-* session.
+- **"📥 Bulk Import" button** in CattleHerdsView header next to + Add Cow.
+- **`scripts/seed_momma_import_template.js`** — Node script that takes the New Momma Planner Import xlsx and produces a pre-filled WCF template xlsx on Desktop. Used to seed the 41 cows for Ronnie's first dogfood test.
+- **The 41 cows imported successfully** after migration 007 was applied. Confirmed in prod.
+
+### Estimated cow weight fallback (so feed math doesn't blow up between purchase and first weigh-in)
+- New `cowEffectiveWeight(c)` helper in `CattleHomeView` and `effectiveWeight(c)` in `CattleHerdsView`.
+- Returns real weight if known; otherwise **1,000 lb** if cow has `purchase_date` within last **120 days**; otherwise 0 (calves and legacy data gaps stay honest).
+- Aggregate-only — per-cow rows still show "no weigh-in" honestly.
+- Window math in `nutritionForHerd` is now backdated per cow's purchase_date so cow_units shrinks proportionally for cows that joined mid-window — target lbs/day matches what was actually being fed.
+- UI badges show "(N est. @ 1,000 lb)" on Total Live Weight + Cow Units stat tiles, on each herd tile in HERD BREAKDOWN, and on the per-herd tile in CattleHerdsView's tile mode.
+
+### Cattle dashboard restyled to Layers rolling-window pattern
+- Replaced the table-style "NUTRITION VS TARGET (3 windows side by side)" with **per-herd cards + PeriodToggle (30/90/120 days)**.
+- Each card has colored left-accent header (herd name · cow count · cow units avg · estimated badge · target % string) + body using auto-fill MetricsGrid: Total feed, Feed cost, DM lb/day, CP lb/day, NFC lb/day, Cow units, Mortality, Report days.
+- DM/CP/NFC tiles show actual + "X target" subtitle + "% of target" line in color (green 90-110%, amber 75-89%, red <75%, blue >110%).
+- Trend arrows on DM/CP/NFC vs equivalent prior period (suppresses noise from tiny baselines, caps at 200%).
+- HERD BREAKDOWN tiles above kept as quick at-a-glance summary.
+
+### Auth: SetPasswordScreen (handles invite + recovery links)
+Three iterations to get this right.
+- **v1** (in commit `1fdc869`): added `SetPasswordScreen` component triggered by URL hash `type=recovery`/`type=invite` OR Supabase's PASSWORD_RECOVERY event. Took users out of the "land on home with mystery session" trap.
+- **v2** (`72196dd`): added a sessionReady gate — wait for getSession() / onAuthStateChange to return a session before enabling the Set Password button. Otherwise users hit "Auth session missing" on submit. Shows "Validating reset link…" while waiting; falls back to "expired/already used" message after 8s.
+- **v3** (`08ca04b`): manually parse `access_token`+`refresh_token` from the URL hash and call `setSession()`, with `exchangeCodeForSession(code)` PKCE fallback. **The supabase client is initialized with `detectSessionInUrl: false` (line 220) so the auto-exchange never runs.** Without this, the "Validating…" branch never resolved, fresh links always hit the 8s "expired" branch.
+
+### User management improvements
+- **Drop temp password field** on Add User form. createUser auto-generates a long random throwaway (`wcf_` + 16 random chars). The user's first action is setting their real password via the welcome email link. Admin only enters name + email + role.
+- **🗑 Delete button** on each non-self user row. Calls `rapid-processor` edge function with `type:'user_delete'`, then deletes the profile row. Email becomes free for re-invite. **Required edge function update** — added `user_delete` handler (admin.auth.admin.deleteUser) — Ronnie pasted that block in mid-session, deployed it.
+- **Per-program access pills** (🐔 Broiler · 🥚 Layer · 🐷 Pig · 🐄 Cattle · 🐑 Sheep) on each non-admin user. All on (or all off) = "All programs" (null in DB). Otherwise specific list. Persists to new `profiles.program_access text[]`.
+- **Migration 008** (`008_profile_program_access.sql`) — `ALTER TABLE profiles ADD COLUMN program_access text[] DEFAULT NULL`. Null means full access (default for existing users).
+- **Program access gates**: `canAccessProgram(prog)` helper at App scope. Filters home program tiles, gates sub-nav rendering, redirects forbidden routes to home via `useEffect` watching `view`. Admins always bypass.
+- **`VIEW_TO_PROGRAM` map** added — every program-specific view name → its program key. Views not in the map (home, webforms, weighins, etc.) are always accessible.
+
+### Sheep module Phase 1 (everything but the actual data import)
+- **Migration 009** (`009_sheep_module.sql`) — 6 tables: `sheep`, `sheep_breeds` (5 hair-sheep breeds seeded), `sheep_origins` (5 origins seeded from Ronnie's tracker file), `sheep_dailys` (sheep-specific fields), `sheep_lambing_records`, `sheep_comments`. Reuses existing `weigh_in_sessions` + `weigh_ins` with `species='sheep'` — no dedicated weigh-in tables.
+- **Flock model**: `rams / ewes / feeders` active + `processed / deceased / sold` outcomes. Sex CHECK = `ewe / ram / wether` (no LAMB rank — lambs become one of these at weaning).
+- **Sheep dailys schema** matches the 642 historical Podio rows: `bales_of_hay`, `lbs_of_alfalfa`, `minerals_given` (bool) + `minerals_pct_eaten`, `fence_voltage_kv`, `waterers_working` (bool), `mortality_count`, `comments`.
+- **Components**:
+  - `SheepBulkImport` — clone of CattleBulkImport with sheep schema (no pct_wagyu, flock instead of herd, lambing instead of calving, sex enum `ewe/ram/wether`, optional `total_born` for lambing record).
+  - `SheepDetail` — slim version of CowDetail. Identity, lineage tags (with reg #), weight history table, lambing history (with inline + Add Lambing form), comments timeline. No chart toggle, no nav stack, no prior-tags editor in Phase 1.
+  - `SheepFlocksView` — directory + flat/tile modes, add/edit/delete sheep modal, transfer between flocks, bulk import button. Per-row honest weight display (no estimate fallback — that's only used in aggregates on the dashboard).
+  - `SheepHomeView` — top stats (Sheep on Farm, Total Live Weight, Mortality 30d, Reports 30d, Minerals Eaten 30d), flock breakdown tiles, single farm-wide rolling-window card with sheep MetricsGrid (Bales, Alfalfa, Mineral % eaten, Fence voltage, Waterers OK, Mortality, Report days). 30/90/120 toggle + trend arrows.
+  - `SheepDailysView` — admin entry/edit/delete with sheep-specific form fields.
+  - `SheepWeighInsView` — session-based weigh-ins on shared weigh_in_sessions/weigh_ins (species='sheep'). New session form + add entries + delete entries + mark complete + delete session. No retag flow yet (Phase 2).
+- **Wiring**: `sheepHome / sheepflocks / sheepdailys / sheepweighins` added to `VALID_VIEWS` + `VIEW_TO_PROGRAM`. Sheep section added to sidebar sub-nav (matching cattle's nav style). Sheep tile added to home (5th in the program grid). Sheep pill added to per-program access UI in UsersModal.
+- **Per-sex weight defaults** for sheep aggregate math: ewes 150 lb, rams 225 lb, feeders/wethers 80 lb (vs cattle's flat 1,000 lb). Same 120-day "recently purchased" cutoff.
+
+### What was NOT built (Phase 2 candidates)
+- Public weigh-in webform for sheep (would need to extend `WeighInsWebform` with `'sheep'` species)
+- Public dailys webform for sheep
+- `sheep_nutrition_targets` table + targets-vs-actual on dashboard
+- `sheep_processing_batches` table
+- `sheep_breeding_cycles` table
+- FAMACHA parasite scoring (Ronnie said skip for now)
+- Actual data import: 67 sheep tracker rows + 642 daily reports — Ronnie wants to handle that next session, deliberately deferred
+
+## 16.2 Database state at session end
+
+### Applied to production Supabase by Ronnie
+- **Migration 007** (`007_split_dam_sire_reg.sql`) — applied. Cattle now has `dam_reg_num` + `sire_reg_num` columns. Two new breeds + two new origins seeded.
+- **Migration 008** (`008_profile_program_access.sql`) — applied. profiles.program_access exists.
+
+### NOT YET applied (must apply before sheep module functions correctly)
+- **Migration 009** (`009_sheep_module.sql`) — schema for the 6 sheep tables. Apply in Supabase SQL Editor before testing the sheep module. The migration is idempotent.
+
+### Edge function update
+- `rapid-processor` was updated to add `user_delete` handler. Deployed by Ronnie mid-session.
+
+## 16.3 Bugs caught and fixed this session (chronological)
+
+1. **CattleBulkImport's "Extras" column showed literal word "comment"** instead of the actual comment text. Fixed by inlining a 60-char-truncated preview in curly quotes.
+2. **First commit attempt of the seeded import template put SIRE REG # into `sire_reg_num` column.** Ronnie clarified: that field is the sire of the calf the cow is currently carrying, NOT her own sire. Fixed by moving the reg # into the comment field with the registry name appended (American Wagyu Association for A-Z, American Akaushi Association for Wright).
+3. **xlsx file was locked by Excel** when re-running the seeder script — `EBUSY` error. Asked Ronnie to close the file before re-running.
+4. **41-cow import errored on commit** with "Could not find the 'dam_reg_num' column of 'cattle' in the schema cache" — the migration 007 hadn't been applied yet. Surfaced the error message clearly so Ronnie immediately knew to apply the SQL.
+5. **Estimated weight fallback was over-applied.** Initial implementation gave the 1,000 lb default to every cow without a weigh-in (66 cows). Ronnie pointed out that the 25 calves should NOT get 1,000 lb — they're not 1,000 lb, and 1,000 lb is the wrong number for them anyway. Fixed by gating the fallback on `purchase_date` within last 120 days, which naturally excludes calves (no purchase_date) and legacy un-weighed records.
+6. **SetPasswordScreen "Auth session missing" error.** First fix didn't work because the URL token exchange was being skipped due to `detectSessionInUrl: false` global config. Manual `setSession()` from URL hash was the actual fix.
+7. **Forgot password flow appeared broken** but it actually wasn't — Ronnie just needed to confirm that users CAN self-serve via the login screen's "Forgot password?" link. The admin "Send password reset" button is just a backup. Documented this so future sessions don't re-investigate.
+8. **Edge function deploy failed** with `Expected ':', got 'TO'` — markdown smart-quote conversion mangled the single quotes when Ronnie pasted the full file from my response. Solution: don't paste the whole file — only the new block. Future Claude: warn the user about smart-quote risk when pasting code blocks into editors.
+
+## 16.4 Lessons + things I wish I knew at the start
+
+1. **`sb` is initialized with `detectSessionInUrl: false`** (index.html line ~220). This affects ANY auth flow that relies on URL hash tokens — recovery, invite, OAuth. Components handling those flows must manually call `setSession({access_token, refresh_token})` from the URL hash, OR `exchangeCodeForSession(code)` for PKCE. **Don't flip the global flag** — it's there to prevent the planner from auto-signing-in when users navigate to public webform pages.
+2. **Existing weigh-ins fetch uses TWO queries**, not Supabase joins. First `sb.from('weigh_in_sessions').select('id').eq('species', X)` to get session IDs, then `sb.from('weigh_ins').select('*').in('session_id', ids)`. The `weigh_in_sessions!inner(species)` join syntax may or may not work depending on FK configuration — match the existing pattern instead.
+3. **All Supabase admin operations** (`auth.admin.deleteUser`, `auth.admin.generateLink`, etc.) require the service-role key. Browser code can't call them directly. The pattern is: call the `rapid-processor` edge function with a `type: 'X'` discriminator, edge function uses the SUPABASE_SERVICE_ROLE_KEY env var.
+4. **Smart-quote conversion in markdown** can mangle pasted code into the Supabase edge function editor (or any web editor). Symptoms: `Expected ':', got 'X'` parser errors at string-literal boundaries. Don't ship full files via markdown blocks — ship deltas only.
+5. **`xlsx` file locks on Windows** mean any open-in-Excel file can't be written by Node. Surface that as a "close the file in Excel" message immediately, don't try fancy retries.
+6. **Cattle and sheep have different aggregate-weight defaults**: cattle uses one flat `DEFAULT_COW_WEIGHT = 1000`, sheep uses per-sex `SEX_DEFAULT_WEIGHT = {ewe:150, ram:225, wether:80}`. Both use the same 120-day "recently purchased" cutoff.
+7. **The `role: 'admin'` bypass is universal** — admins should bypass program_access, role-gated buttons, and any other access check. Always include the admin short-circuit at the top of permission helpers.
+8. **The cattle module's bulk import auto-creates breeds/origins** on commit (idempotent INSERT). Same pattern in sheep. Trust users to type new selling-farm names — don't make them set up the dropdown first.
+9. **The cattle module shipped with `breeding_blacklist_reason`, `sire_reg_num`, `receiving_weight`, `notes` dropped in mig 004.** When mirroring to sheep, I kept `notes` out (cattle replaced it with cattle_comments timeline) but added back the reg # columns dam/sire. Sheep doesn't have its own `breeding_blacklist_reason` column — using a plain comment if needed.
+10. **Source-label convention for old_tags is workflow-based, not data-origin-based** (per §15.7 #5):
+    - Known at entry time → `'import'` (renders as "Purchase tag")
+    - Reconciled after entry → `'weigh_in'` (renders as "Retag")
+    - Admin typed manually → `'manual'`
+11. **`canAccessProgram(prog)` runs in App scope.** It needs `authState` and `authState.profile`. If either is null/false, it returns true (don't gate during loading — the auth gate handles that).
+
+## 16.5 Mistakes I made
+
+1. **Initial estimate-weight fallback was too broad** (66 cows including calves). Should have gated on purchase_date from the start. Ronnie caught it before any user impact.
+2. **Initial sire reg # placement was schematically wrong.** Read the data more carefully — the column header was ambiguous between "sire of this animal" and "sire of the calf this animal is carrying". Ask before assuming.
+3. **First edge function snippet pasted as a full file** — caused the smart-quote parse error. Should have led with "paste only this block" from the start.
+4. **Tried to use `weigh_in_sessions!inner(species)` joins** in the sheep components without checking that the existing codebase uses two-query pattern. Caught and rewrote before testing, but wasted code.
+5. **Asked "should I commit + push" too often early in the session.** The `feedback_commit_vs_push.md` rule: "commit" = full commit, no follow-up; "push"/"deploy" still needs explicit approval. Got better at this mid-session.
+6. **Built SetPasswordScreen v1 without checking the existing supabase client config first.** The `detectSessionInUrl: false` setting was the root cause of the entire issue. A 1-minute search would have saved 2 iterations.
+
+## 16.6 Potential bugs / things to verify next session
+
+1. **Sheep components are NOT runtime-tested.** Ronnie has to apply migration 009 first, then visit each view. Possible issues:
+   - SheepFlocksView's flat/tile mode might have JSX issues I missed in code review
+   - SheepBulkImport's downloadTemplate path on Windows browsers
+   - SheepDailysView's checkbox state management for `minerals_given` + conditional `minerals_pct_eaten` field
+   - SheepWeighInsView's session-vs-entries grouping
+2. **The `weigh_in_sessions.species` column may have a CHECK constraint** that doesn't include `'sheep'`. Need to verify before sheep weigh-ins can save. If it errors on insert, run `ALTER TABLE weigh_in_sessions DROP CONSTRAINT IF EXISTS weigh_in_sessions_species_check; ALTER TABLE weigh_in_sessions ADD CONSTRAINT weigh_in_sessions_species_check CHECK (species IN ('cattle','broiler','pig','sheep'));` (or just drop the constraint entirely).
+3. **`sheep_dailys.flock` has no CHECK constraint** in migration 009 (loose text). The form uses the dropdown but the schema doesn't enforce. Consider adding a CHECK in a later migration if data integrity matters.
+4. **SheepDetail's "Lambs in directory" count** uses `sheep.filter(x => x.dam_tag === s.tag).length` — works only if lambs have been added via Add Sheep with `dam_tag` filled. The lambing_records table doesn't auto-create sheep rows for lambs.
+5. **SheepHomeView's mineral-compliance % calculation** averages `minerals_pct_eaten` across reports where `minerals_given=true`. If Ronnie's historical data has `minerals_given=true` but no `minerals_pct_eaten`, those reports get filtered out — fine, but the count tile may surprise him.
+6. **Per-program access cuts the home tile** but doesn't (yet) cut the menu items inside the legacy webforms admin page or other deep links. Verify by setting a non-admin user to "Cattle only" and trying various navigation paths.
+7. **Sheep route handlers were added** to App's view dispatcher (`if(view==="sheepHome") ...`) but if you navigate to a sheep view BEFORE migration 009 is applied, you'll see Supabase errors. Components handle gracefully (no data, no crash) but the console will be noisy.
+8. **The Lambs count in SheepDetail** uses a pluralization that's always "sheep" (treats 1 and N+ identically). Cosmetic.
+
+## 16.7 Outstanding items (in priority order)
+
+### Top of next session
+1. **Apply migration 009** in Supabase SQL Editor.
+2. **Verify the `weigh_in_sessions.species` CHECK constraint** allows `'sheep'`. If not, drop or extend.
+3. **Smoke-test each sheep view** by clicking through Dashboard / Flocks / Dailys / Weigh-Ins.
+4. **Test the sheep bulk import** by downloading the template + uploading a tiny test sheet (3-5 rows).
+
+### Once smoke tests pass
+5. **Build the sheep import seeder script** modeled on `seed_momma_import_template.js`. Read `Sheep Tracker - All Sheep Tracker.xlsx` (67 rows) and produce a pre-filled WCF Sheep Import Template. Mapping:
+   - Tag # → tag (numeric, as-is)
+   - SEX → sex (lowercase)
+   - Status MAIN FLOCK → flock by sex (EWE→ewes, RAM→rams, WETHER→feeders); other statuses → matching outcome flock
+   - Breed → breed (preserve case from data — KATAHDIN, DORPER, GULF COAST, KATAHDIN / GULF COAST CROSS, DORPER CROSS)
+   - Origin → origin
+   - Birth Date / Purchase Date → ISO format (Excel may give serials)
+   - Purchase Amount - amount → purchase_amount
+   - Receiving Weight → receiving_weight (creates wsess-rcv-* on import)
+   - Last recorded weight → consider creating an additional weigh-in session at session-creation date (or skip — Phase 1 only ingests one receiving weight per cow)
+   - Last Lambing → last_lambing_date
+   - Lambs → total_born
+   - Sire / Dam → sire_tag / dam_tag
+   - Tags → old_tags array (workflow-based source — most likely 'import' for prior selling-farm tags)
+6. **Build the sheep dailys importer** for the 642 historical rows. Map "MAIN FLOCK" → ewes (the primary flock). Generate an `id` per row, parse Date (Excel serial), map "YES"/"NO" to booleans, copy comments verbatim.
+7. **Phase 2 sheep features** when Ronnie asks:
+   - Public weigh-in webform (extend `WeighInsWebform` with sheep)
+   - Public dailys webform
+   - sheep_nutrition_targets + dashboard targets-vs-actual
+   - sheep_processing_batches
+   - sheep_breeding_cycles
+   - FAMACHA scoring (deferred per Ronnie)
+
+### Lower-priority parked items (still applies from §15.4)
+- Service-role key rotation (key was exposed in earlier sessions)
+- Cow #2269999999 in Lotus Hill (10-digit tag almost certainly a Podio paste artifact)
+- Loading slowness phase 2 (initial render before dailys load)
+- Browser back-button / pushState
+- Per-head cost rollup (analytical metric)
+- Weather API (Open-Meteo recommended, no key needed)
+- DNA test PDF parser (manual entry is v1)
+- Cut pricing spreadsheet upload
+- Imported processing batches still named as raw dates (e.g. `2025-12-19`) — Ronnie owns renaming via the Batches tab
+- Imported weigh-in sessions show "Unknown herd" for the 7 sessions where majority-vote couldn't resolve
+
+## 16.8 Things to make next Claude's life easier
+
+1. **The cattle bulk import is the template for any future bulk import.** Pattern: validation function that produces `{rowIdx, raw, parsed, errors, warnings}`, preview table with per-row badges, commit loop with per-row try/catch. Auto-create dropdowns. Tag collision pre-check against active animals.
+2. **`scripts/seed_momma_import_template.js` is the template for any future xlsx-to-template pre-fill.** Reuse the date parsing (`parseSlashDate`), the Podio compound-field handling (`Purchase Amount - amount` not `Purchase Amount`), and the `XLSX.writeFile` invocation. Output to Desktop with descriptive filename.
+3. **`canAccessProgram(prog)` is the gate for any new program-specific feature.** Add new views to `VIEW_TO_PROGRAM` map at the top of App, then calls to `canAccessProgram` filter UI elements + the route useEffect redirects forbidden routes. Admin always bypasses.
+4. **Edge function dispatch is keyed on `type` field.** `rapid-processor` handles: `egg_report`, `starter_feed_check`, `user_welcome`, `password_reset`, `user_delete`. To add a new server-side capability: add a new branch alongside, deploy, then call from frontend with `sb.functions.invoke('rapid-processor', {body: {type: 'X', data: {...}}})`.
+5. **The `SheepDetail` component is intentionally slimmer than `CowDetail`.** No chart, no nav stack, no prior-tags editor. If sheep needs feature parity, factor out a shared `<AnimalDetail>` rather than copy-pasting the cattle one wholesale.
+6. **Sheep components are interleaved with cattle ones** in `index.html` (around lines 15217–16500). Search by component name (`SheepBulkImport`, `SheepFlocksView`, etc.). They live before the `CattleHerdsView` declaration because of declaration-order dependency on `SheepBulkImport` + `SheepDetail`.
+7. **Migration 009 is idempotent** — safe to re-run. All `CREATE TABLE IF NOT EXISTS`, `INSERT … ON CONFLICT DO NOTHING`, `DROP POLICY IF EXISTS` followed by `CREATE POLICY`.
+8. **The Add Sheep modal does NOT include `breeding_blacklist`, `maternal_issue_flag`, or sale/death fields** in Phase 1 form. The schema has them; form's just minimal. Edit modal could surface them if/when needed.
+
+## 16.9 Architecture decisions worth knowing
+
+1. **Sheep flocks are sex-derived for the import**: a new sheep with no Status mapping defaults to its sex's natural flock (EWE→ewes, RAM→rams, WETHER→feeders). After import, transfers between flocks are manual via the Sheep Detail panel.
+2. **Per-sex weight defaults** (`SEX_DEFAULT_WEIGHT = {ewe:150, ram:225, wether:80}`) live INSIDE `SheepHomeView`. Not yet shared with `SheepFlocksView` (which only needs honest per-row weights, no estimate). If estimate logic moves to flock tiles in Phase 2, pull the constant up.
+3. **`weigh_in_sessions` is shared across species** with a `species` text column discriminator. Same for `weigh_ins` (no species, joined via session_id). Add `'sheep'` to any CHECK constraint that exists.
+4. **Sheep dailys schema differs significantly from cattle dailys.** Cattle uses a `feeds` jsonb array of {feed_input_id, lbs_as_fed, nutrition_snapshot}. Sheep uses flat columns (bales_of_hay, lbs_of_alfalfa, minerals_*). Reflects how Ronnie tracks sheep feed simpler — one bales count + one alfalfa count per day, not a ration table.
+5. **Comments timeline source enum** for `sheep_comments`: `'manual' | 'weigh_in' | 'daily_report' | 'lambing' | 'import'`. (Cattle's enum has `'calving'` instead of `'lambing'`.)
+6. **Lambing record schema mirrors cattle_calving_records** (dam_tag, lambing_date, lamb_tag, lamb_id FK to sheep, sire_tag, total_born, deaths, complications_*, notes). Cattle's `cycle_id` field is omitted — no breeding_cycles table for sheep yet.
+
+## 16.10 SOP reminders for the AI reading this
+
+- **`commit` = commit fully** — don't ask, just do it. Status line only. Memory rule `feedback_commit_vs_push.md`.
+- **`push` / `deploy` still requires explicit approval** in the same turn.
+- **Never run destructive Supabase ops** without explicit approval (DROP, TRUNCATE, large DELETEs).
+- **Inspect xlsx column names** before any import — `Object.keys(rows[0])`. Podio compound fields split into `X - amount` + `X - currency` etc.
+- **Don't paste full edge function code into Supabase editor via markdown** — smart-quote conversion will break it. Send deltas only.
+- **`detectSessionInUrl: false`** on the supabase client means manual setSession() from URL hash is required for any recovery/invite/OAuth flow.
+- **Match existing data-loading patterns** — two-query weigh-ins fetch, not joins.
+- **Always check the `role: 'admin'` bypass** in any new permission gate.
+- **The cattle module is the canonical pattern** for new species modules. Sheep mirrored its shape minus the bells (no nutrition targets, no batches, no breeding cycles in Phase 1).
+
+---
+
+*End of April 18 session. Work-tree state at session end: clean. All commits pushed. Next session should: (1) apply migration 009, (2) smoke-test the sheep module, (3) verify weigh_in_sessions.species CHECK allows 'sheep', (4) build the sheep import seeder for Ronnie's 67-row tracker file. Good luck.*
