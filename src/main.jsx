@@ -12,7 +12,14 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { createClient } from '@supabase/supabase-js';
+
+// Phase 2.0.0: foundation lib helpers extracted from this file. Importing
+// here makes them available throughout the verbatim-ported app body without
+// any rename or rewiring (the names `sb`, `wcfSendEmail`, `wcfSelectAll`
+// are still globals in the module scope).
+import { sb } from './lib/supabase.js';
+import { wcfSendEmail } from './lib/email.js';
+import { wcfSelectAll } from './lib/pagination.js';
 
 // ── ONE-TIME LEGACY BABEL-CACHE CLEANUP ──
 // Pre-Vite versions cached compiled JSX in localStorage under wcf-babel-*
@@ -44,45 +51,10 @@ window._wcfLoadXLSX = function() {
 
 // === BEGIN VERBATIM PORT (was index.html lines 212–19342) ===
 
-const SUPABASE_URL = 'https://pzfujbjtayhkdlxiblwe.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6ZnVqYmp0YXloa2RseGlibHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMzYxOTMsImV4cCI6MjA5MDgxMjE5M30.I_Pvb_Hwt9VpavB-Q-wFOmodRhSOqD1r6B9_gQfy5U8';
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: {
-    storage: window.localStorage,
-    storageKey: 'farm-planner-auth',
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-    lock: (name, acquireTimeout, fn) => fn()
-  }
-});
-// Expose for browser console testing (e.g. sending test emails)
-window.sb = sb;
-
-// ── EMAIL HELPER ─────────────────────────────────────────────────────────────
-// Fire-and-forget: calls the Supabase send-email edge function.
-// Never blocks the UI or shows errors to end users.
-function wcfSendEmail(type, data) {
-  sb.functions.invoke('rapid-processor', { body: { type, data } })
-    .catch(e => console.warn('wcfSendEmail failed:', e));
-}
-
-// Supabase PostgREST caps responses at 1000 rows by default. Anywhere a table
-// can realistically grow past that (weigh_ins, cattle_dailys, etc.) use this
-// helper instead of plain .select(). Caller supplies a function that builds
-// a query for a given [from, to] range so ordering/filters stay intact.
-async function wcfSelectAll(buildRangeQuery, pageSize) {
-  const page = pageSize || 1000;
-  let all = [], from = 0;
-  while (true) {
-    const { data, error } = await buildRangeQuery(from, from + page - 1);
-    if (error || !data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < page) break;
-    from += page;
-  }
-  return all;
-}
+// (Phase 2.0.0: sb client init + wcfSendEmail + wcfSelectAll definitions
+// moved to src/lib/supabase.js, src/lib/email.js, src/lib/pagination.js
+// respectively. They're re-imported above as module-scoped names so every
+// downstream reference in the verbatim-ported body still resolves.)
 
 // ── Cattle weigh_ins cache ──────────────────────────────────────────────────
 // Each cattle sub-view (Home / Herds / Batches / Weigh-Ins) needs the full
