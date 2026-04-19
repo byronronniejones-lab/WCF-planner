@@ -472,4 +472,74 @@ Then: merge, push, watch Netlify, run smoke test on production, declare cutover 
 
 ---
 
-*End of plan. Awaiting Ronnie's review. No code changes outside this doc until explicit go-ahead.*
+## 14. Progress log (append-only — newest entries at the bottom)
+
+### 2026-04-19 — Phase 1 complete + Phase 2.0.0 (lib extraction) done
+Branch: `vite-migration` (pushed). Main + production untouched.
+
+**Phase 1 — Vite scaffolding** (all 7 commits done):
+| SHA | Commit | What landed |
+|---|---|---|
+| `26ba711` | 1.1 Vite scaffolding | `package.json`, `vite.config.js` (sourcemap:true, default port 5173), `package-lock.json`. `npm install` succeeded. |
+| `d304908` | 1.2 Move app source to src/main.jsx | Verbatim port of the 19,131-line `<script type="text/jsx-source">` block. ESM imports added; old `const { createClient } = supabase;` destructure dropped. |
+| `78ed759` | 1.3 Replace CDN scripts | `index.html` 19,445 → 208 lines. CDN preloads + script tags + JSX inline source + Babel.transform bootstrap all deleted. Single `<script type="module" src="/src/main.jsx">`. Boot loader fade-out added to main.jsx. |
+| `b14ffd2` | 1.4 + 1.5 XLSX + Babel cleanup | `_wcfLoadXLSX` switched to dynamic `import('xlsx')` (Vite auto-code-splits the chunk). `_wcfBabelCache` deleted. One-time `wcf-babel-*` localStorage purge added on app mount. |
+| `3045a99` | 1.6 + 1.7 Netlify config | `public/_redirects` (SPA fallback). `netlify.toml` (build command, NODE_VERSION 20, publish dir). |
+
+**Phase 2 — Component extraction**, Round 0 (Contexts) — first commit done:
+| SHA | Commit | What landed |
+|---|---|---|
+| `9956d13` | 2.0.0 Extract sb + helpers to src/lib/ | `src/lib/supabase.js` (sb client + `window.sb` side-effect), `src/lib/email.js` (`wcfSendEmail`), `src/lib/pagination.js` (`wcfSelectAll` — pagination loop preserved verbatim per don't-touch rule). main.jsx imports all three at top. |
+
+**Verification status:**
+- Local `npm run build` passes after every commit. Bundle: ~1.26 MB main + 429 kB xlsx (auto-split, lazy-loaded).
+- Production (`wcfplanner.com` / `cheerful-narwhal-1e39f5.netlify.app`) is untouched, still on `main`.
+- Deploy preview (`deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`): SSL was provisioning at first push; verify it's live before relying on it.
+- SetPasswordScreen (forgot password flow) confirmed working on production after a clean test.
+- **Full smoke test §8 NOT yet run on the deploy preview** — that's the next pre-merge gate.
+
+**What's next (Phase 2 Round 0 remaining):**
+- 2.0.1 Extract AuthContext (carries the URL hash recovery logic + auth state listener — most complex Context)
+- 2.0.2 Extract BatchesContext
+- 2.0.3 Extract PigContext
+- 2.0.4 Extract LayerContext
+- 2.0.5 Extract DailysRecentContext (broiler / pig / layer / egg / cattle / sheep recent dailys)
+- 2.0.6 Extract CattleHomeContext + SheepHomeContext + WebformsConfigContext + FeedCostsContext + UIContext (5 small ones bundled)
+
+After Round 0: rounds 1–8 (component extractions) per §6.
+
+---
+
+## 15. Resuming this migration in a new Claude Code session
+
+If you (a future Claude) are picking this up cold, do these in order before touching code:
+
+1. **Read** `PROJECT.md` end-to-end for general project context. The don't-touch rules in §15.7, §15.11, §16.4, §16.10 apply to ALL work, not just the migration. The auth-recovery + `detectSessionInUrl: false` saga in §16 is critical context for any Phase 2 / Phase 3 commit that touches auth.
+2. **Read** this `MIGRATION_PLAN.md` cover-to-cover. §10 (don't-touch list) and §3 (current state inventory) are most load-bearing.
+3. **Check git state:**
+   - `git checkout vite-migration` (the migration branch)
+   - `git log --oneline main..vite-migration` (see what's already done)
+   - `git status` (should be clean except `.claude/`)
+4. **Verify build still passes locally:**
+   - `npm install` (in case node_modules is out of date or fresh clone)
+   - `npm run build` (must succeed without errors before you change anything)
+5. **Read §14 above** to find the most recent commit + the next-up commit per the plan. If a phase is partially complete, finish it before moving to the next round.
+6. **Confirm with Ronnie before** any of the following:
+   - Merging `vite-migration` to `main` (production cutover)
+   - Pushing the branch (auto-triggers Netlify deploy preview rebuild)
+   - Any commit that touches auth, payment-like flows, or the `wcfSelectAll` pagination loop
+   - Any structural decision not already locked in §11 (router, folders, state, package mgr)
+7. **After every meaningful commit:**
+   - `npm run build` to verify the bundle still produces
+   - For phases that touch auth or routing, also walk through §8 smoke test mentally before claiming done
+   - Append a new dated entry to §14 with SHA + what landed + verification status
+
+**Pacing rule (decided 2026-04-19):** Phase 1 in one session (mechanical), Phase 2 paced one round per session, Phase 3 in one session. Don't try to compress this. The deletion-incident risk Ronnie called out in his original prompt is real; small per-session blast radius is the protection.
+
+**Edit-tool note for working in main.jsx:** The file is currently ~19,100 lines. Edit-tool's unique-`old_string` requirement still works, but reads/edits are slow. Prefer extracting whole chunks (Read → Write to new file → Edit-replace original chunk with import). Don't try to surgically rename inside the verbatim port — too fragile.
+
+**Backup:** A pre-migration `index.html` is at `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` (SHA `1a535f73…`) as belt-and-suspenders. If a commit goes wrong and you need to recover the pre-Vite shape, it's there.
+
+---
+
+*End of plan. Living document — append to §14 as each phase progresses.*
