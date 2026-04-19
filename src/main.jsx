@@ -19155,3 +19155,16 @@ const CattleNewWeighInModal = ({sb, onClose, onCreate}) => {
 // no eval+retry path that could re-execute this module.
 const root = createRoot(document.getElementById('root'));
 root.render(<App/>);
+
+// Fade out the static boot loader after React's first paint. Two RAFs to
+// ensure the first frame containing real React content is on screen before
+// the spinner disappears (matches the original bootstrap's fadeOutLoader).
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    const loader = document.getElementById('wcf-boot-loader');
+    if(loader){
+      loader.classList.add('fade-out');
+      setTimeout(() => { if(loader.parentNode) loader.parentNode.removeChild(loader); }, 350);
+    }
+  });
+});
