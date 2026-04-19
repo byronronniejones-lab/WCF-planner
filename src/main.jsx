@@ -14,6 +14,34 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 
+// ── ONE-TIME LEGACY BABEL-CACHE CLEANUP ──
+// Pre-Vite versions cached compiled JSX in localStorage under wcf-babel-*
+// keys (~600 KB per user). With Vite there's no in-browser transpile, so
+// these are dead weight. Idempotent purge on every mount; safe to leave
+// in forever even after every existing user has reloaded once.
+try {
+  for(let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i);
+    if(k && k.startsWith('wcf-babel-')) localStorage.removeItem(k);
+  }
+} catch(e) { /* localStorage disabled — fine */ }
+
+// ── LAZY LOAD SHEETJS ──
+// SheetJS (xlsx) is ~600KB minified and only used when opening processor
+// reports / running bulk imports. Defer loading until first use via dynamic
+// ESM import. Same window._wcfLoadXLSX API as the pre-Vite CDN-script-tag
+// loader so the existing call sites (`await window._wcfLoadXLSX()` followed
+// by `XLSX.X`) don't need to change.
+window._wcfLoadXLSX = function() {
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(window._wcfXLSXPromise) return window._wcfXLSXPromise;
+  window._wcfXLSXPromise = import('xlsx').then(m => {
+    window.XLSX = m.default || m;
+    return window.XLSX;
+  });
+  return window._wcfXLSXPromise;
+};
+
 // === BEGIN VERBATIM PORT (was index.html lines 212–19342) ===
 
 const SUPABASE_URL = 'https://pzfujbjtayhkdlxiblwe.supabase.co';

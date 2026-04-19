@@ -124,58 +124,11 @@
   document.addEventListener('focusin', function(e){
     if(e.target.type === 'number') e.target.select();
   });
-
-  // ── BABEL TRANSPILE CACHE ──
-  // Babel-in-browser is the slowest part of cold-start. We hash the JSX source
-  // and cache the compiled output in localStorage. First visit is unchanged,
-  // every subsequent visit (until the source changes) skips the transpile entirely.
-  // The cache key includes the source hash, so deploying a new index.html
-  // automatically invalidates the cache — no risk of serving stale code.
-  window._wcfBabelCache = {
-    hash: function(s){
-      let h = 5381;
-      for(let i=0; i<s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-      return 'wcf-babel-' + (h>>>0).toString(36) + '-' + s.length;
-    },
-    get: function(src){
-      try {
-        const key = this.hash(src);
-        const cached = localStorage.getItem(key);
-        if(cached) return cached;
-      } catch(e) { /* localStorage may be disabled */ }
-      return null;
-    },
-    set: function(src, compiled){
-      try {
-        const key = this.hash(src);
-        // Clear any older babel cache entries to keep localStorage from filling up
-        for(let i = localStorage.length - 1; i >= 0; i--){
-          const k = localStorage.key(i);
-          if(k && k.startsWith('wcf-babel-') && k !== key) localStorage.removeItem(k);
-        }
-        localStorage.setItem(key, compiled);
-      } catch(e) {
-        // Quota exceeded or disabled — not fatal, app still works without cache
-        console.warn('Babel cache write failed:', e.message);
-      }
-    }
-  };
-
-  // ── LAZY LOAD SHEETJS ──
-  // SheetJS (xlsx) is ~900KB and only used when opening processor reports.
-  // Defer loading until first use. Returns a promise that resolves when XLSX is ready.
-  window._wcfLoadXLSX = function(){
-    if(window.XLSX) return Promise.resolve(window.XLSX);
-    if(window._wcfXLSXPromise) return window._wcfXLSXPromise;
-    window._wcfXLSXPromise = new Promise(function(resolve, reject){
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = function(){ resolve(window.XLSX); };
-      s.onerror = function(){ reject(new Error('Failed to load XLSX library')); };
-      document.head.appendChild(s);
-    });
-    return window._wcfXLSXPromise;
-  };
+  // (window._wcfBabelCache + window._wcfLoadXLSX definitions removed in
+  // Phase 1.5 / 1.4 — Babel-in-browser is gone, xlsx is dynamically
+  // imported from npm in src/main.jsx. The wcf-babel-* localStorage keys
+  // left over from prior visits are purged once on app mount, also in
+  // src/main.jsx.)
 </script>
 <style>
   /* Loading spinner shown while Babel transpiles + first React render */
