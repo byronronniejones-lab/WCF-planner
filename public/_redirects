@@ -1,0 +1,4 @@
+# SPA fallback — any unmatched path serves index.html so client-side
+# routing (React Router, added in Phase 3) can take over. Status 200 (not
+# 301) so the browser URL stays as-is.
+/*  /index.html  200
