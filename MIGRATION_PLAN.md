@@ -512,6 +512,26 @@ After Round 0: rounds 1–8 (component extractions) per §6.
 
 ## 15. Resuming this migration in a new Claude Code session
 
+### URL cheat sheet (read first — easy to confuse)
+| What | URL | Branch | Who deploys here |
+|---|---|---|---|
+| Production | `https://wcfplanner.com` (alias `https://cheerful-narwhal-1e39f5.netlify.app`) | `main` | Auto-deploys on every push to `main` |
+| Deploy preview | `https://deploy-preview-N--cheerful-narwhal-1e39f5.netlify.app` (N = PR number, currently 1) | `vite-migration` | Auto-deploys on every push to `vite-migration` |
+
+If a smoke-test URL starts with `https://cheerful-narwhal…` directly (no `deploy-preview-N` prefix), you are testing **production**, NOT the migration. Two different code bases. We hit this confusion on 2026-04-19; don't repeat it.
+
+### Critical workflow rules (also in PROJECT.md memory, restated for visibility)
+- **`commit` = full commit, no follow-up.** When Ronnie says "commit," do it (status line only) and don't ask "ready to push?".
+- **`push` / `deploy` / merge ALWAYS needs a fresh explicit approval** in the same turn. The commit-no-prompt rule does NOT extend to push.
+- **Never merge `vite-migration` to `main` without explicit "merge" or "cutover" from Ronnie.** Production is on `main`; the migration is mid-flight. An accidental merge promotes a half-done refactor to live for the farm team.
+- **Never run destructive Supabase ops** (DROP, TRUNCATE, large DELETEs without WHERE) without explicit approval.
+
+### Phase gates (don't skip)
+- **Phase 1 must be verified on the deploy preview URL before any Phase 2 commit lands.** Run the §8 smoke test on `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`. If anything fails, fix it before extracting Contexts. As of last update to §14, smoke test is still pending — confirm with Ronnie that it passed before continuing Round 0.
+- **Each Phase 2 round (0, 1, 2, … 8) is a session boundary.** Don't compress two rounds into one session even if context budget seems to allow it; the per-round verify-build-and-confirm pause is the safety net.
+- **Phase 3 (React Router) cannot start until all of Phase 2 is verified-merged.** Routing changes how the SetPasswordScreen URL hash gets read; do not interleave with Context extraction.
+
+### Read order (before touching code)
 If you (a future Claude) are picking this up cold, do these in order before touching code:
 
 1. **Read** `PROJECT.md` end-to-end for general project context. The don't-touch rules in §15.7, §15.11, §16.4, §16.10 apply to ALL work, not just the migration. The auth-recovery + `detectSessionInUrl: false` saga in §16 is critical context for any Phase 2 / Phase 3 commit that touches auth.
