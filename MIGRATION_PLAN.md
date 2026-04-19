@@ -427,16 +427,16 @@ These are explicit. If a migration commit modifies any of them, **revert and ask
 
 ---
 
-## 11. Open questions for Ronnie
+## 11. Resolved questions (Ronnie 2026-04-19)
 
-1. **ESLint + Prettier** — install in Phase 1 or hold off as a separate step? Vite scaffolds without them by default; adding them is ~5 min.
-2. **Source maps in production** — `build.sourcemap: true` so browser DevTools shows real source on errors? Costs ~30% of bundle size on disk; doesn't affect runtime perf.
-3. **Vite dev server port** — default 5173, fine? Or pin to something memorable like 3000?
-4. **Should we add a one-time `wcf-babel-*` localStorage cleanup** in main.jsx? (R5 above.) Vote: yes — frees ~600KB per user.
-5. **First production deploy of Phase 1 — preview branch first?** Strongly recommend: deploy `vite-migration` to a Netlify deploy preview, smoke-test there, then merge.
-6. **Phased timing** — do you want all of Phase 1 in one session, or one-commit-per-session? My lean: all of Phase 1 in one session (it's mechanical), then Phase 2 commits paced one rounds-worth per session, Phase 3 in one session.
-7. **PROJECT.md updates** — append a §17 per session documenting what got moved, like §16? Yes/no.
-8. **Should `scripts/` (the Node import scripts) move under `src/` or stay at root?** Lean: stay at root. They're CLI Node scripts, not part of the bundle.
+1. **ESLint + Prettier** — **Defer.** Lint warnings during a structural migration are noise; add later as a separate initiative.
+2. **Source maps in production** — **Yes** (`build.sourcemap: true`). Worth the ~30% disk cost for debuggable stack traces.
+3. **Vite dev server port** — **Default 5173** (Ronnie pushed back on the 3000 recommendation, correctly: "boring standard Vite" wins on turnover; 3000 is squatted by Next.js + lots of Node backends; the number-on-bookmark argument is thin).
+4. **`wcf-babel-*` localStorage cleanup** in main.jsx — **Yes.** One-time idempotent purge on app mount; frees ~600KB per user.
+5. **First production deploy of Phase 1** — **Deploy preview first.** Push `vite-migration` to GitHub → Netlify auto-builds a preview URL → smoke-test there → only merge to main when green.
+6. **Phase pacing** — **Phase 1 in one session, Phase 2 paced one round per session, Phase 3 in one session.** Phase 1 is mechanical (one shot is fine); Phase 2 component extractions benefit from per-round verification.
+7. **PROJECT.md updates** — **Yes, §17 onward per session.** Same pattern as §16 / §16.11. Each migration session gets a brief log so future Claude can trace the path from monolith to Vite without re-reading every commit.
+8. **`scripts/` location** — **Stay at repo root.** They're CLI Node scripts, not part of the Vite bundle. Moving under `src/` would force exclude config + add friction.
 
 ---
 
