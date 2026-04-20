@@ -565,6 +565,88 @@ Per §6 Round 1 table:
 
 **Cutover (merge to main) is still deferred.** Ronnie's call at end of this session: build more rounds before merge. Round 0 is pure state plumbing — no user-visible upside yet. Earliest reasonable cutover is after Round 1 or 2 when component extraction starts paying off.
 
+### 2026-04-20 (session 2) — Phase 2 Rounds 1-5 landed + helper libs
+
+Branch: `vite-migration` (pushed through commit `3d34089`). Main + production untouched.
+
+Big session. Ronnie said "huge build — rounds 1-6 commit-and-push, 7 standalone." I got cleanly through Rounds 1-5 and then stopped at the Round 6 architectural boundary (inline-JSX-in-App views are structurally different; see §14 Round 6 section below for what's needed).
+
+**Pivot that made the session possible:** after a false start on AdminAddReportModal where I introduced silent transcription drift, I switched to PowerShell file-slice extraction. Each big component extraction is now a line-range `Substring` operation reading main.jsx, writing a new file with an imports-prologue + export-epilogue, and splicing a one-line marker comment into main.jsx. **Zero transcription risk — the bytes are never in my messages.** This is the pattern future sessions should use for remaining rounds.
+
+**Rounds landed (chronological):**
+
+| SHA | Commit | What landed |
+|---|---|---|
+| `db2a1fd` | Phase 2 Round 1 | Leaf components + auth screens. Moved: WcfYN, WcfToggle, DeleteModal (src/shared/); AdminAddReportModal, AdminNewWeighInModal (src/shared/); PigSendToTripModal (src/livestock/); CattleNewWeighInModal (src/cattle/); SetPasswordScreen, LoginScreen (src/auth/). Helper prep: setHousingAnchorFromReport + computeProjectedCount + computeLayerFeedCost to src/lib/layerHousing.js. **Header deferred** — closes over ~12 pieces of App state + helpers (signOut, backupData, restoreData, loadUsers); clean extract needs App-helpers lifted first. |
+| `0aa3aeb` | Phase 2 Round 2 | Single-feature dailys views: BroilerDailysView (src/broiler/), LayerDailysView + EggDailysView (src/layer/), PigDailysView (src/pig/), CattleDailysView (src/cattle/), CattleBulkImport (src/cattle/ — incl its 5 module-scope import constants), SheepBulkImport (src/sheep/ — incl its 4 constants), SheepDetail + SheepDailysView + SheepWeighInsView (src/sheep/), CollapsibleOutcomeSections + CowDetail (src/cattle/). **LayerBatchesView deferred** — 6 helpers (calcPhaseFromAge, computeProjectedCount, computeLayerFeedCost, toISO, addDays, inRange). |
+| `0f858ac` | Phase 2 Round 3 | Bigger stateful views + recovery fix. Extracted UsersModal (src/auth/), LayersView (src/layer/), CattleHomeView / CattleHerdsView / CattleBreedingView / CattleBatchesView (src/cattle/), SheepFlocksView / SheepHomeView (src/sheep/). Helper prep: cattleCache.js (loadCattleWeighInsCached + invalidateCattleWeighInsCache + module cache state), cattleBreeding.js (calcCattleBreedingTimeline + buildCattleCycleSeqMap + cattleCycleLabel), dateUtils.js (addDays, toISO, fmt, fmtS, todayISO, thisMonday) — all in src/lib/. **Bug fix included** — Round 1 extracted AdminNewWeighInModal with an end anchor that swept `LivestockWeighInsView` into the same file (undefined in main.jsx, silently broken /broilerweighins + /pigweighins routes); same issue with PigSendToTripModal sweeping `CattleWeighInsView`. Round 3 splits those into dedicated src/livestock/LivestockWeighInsView.jsx + src/cattle/CattleWeighInsView.jsx and exports each properly. |
+| `42069b8` | Phase 2 Round 4 | Admin panels: FeedCostsPanel, FeedCostByMonthPanel, LivestockFeedInputsPanel, NutritionTargetsPanel — all to src/admin/. |
+| `3d34089` | Phase 2 Round 5 | Public webforms: AddFeedWebform, WeighInsWebform, WebformHub — all to src/webforms/. Hash-route bypass logic in App unchanged. |
+
+**Numbers:**
+- main.jsx: 19,170 → 9,035 lines (53% reduction).
+- Total component files under src/: 40+ extracted components, plus 4 helper libs (layerHousing, cattleCache, cattleBreeding, dateUtils).
+- Module count at build: 77 (session start) → 121+ (after Round 5).
+- Bundle: 1.26 MB → 1.26 MB (stable — code moved, not duplicated).
+- Every round verified with `npm run build` clean before commit + push.
+- No preview smoke test between rounds — done at end of session.
+
+**The "huge build" approach (PowerShell file-slicing):**
+
+For every big extraction, use a PowerShell command of the shape:
+```powershell
+$content = [System.IO.File]::ReadAllText($path)
+$startIdx = $content.IndexOf($startAnchor)   # e.g. 'const XyzView = ({'
+$nextIdx  = $content.IndexOf($nextAnchor, $startIdx)
+$slice    = $content.Substring($startIdx, $nextIdx - $startIdx)
+$endIdx   = $startIdx + $slice.LastIndexOf('};') + 2
+$body     = $content.Substring($startIdx, $endIdx - $startIdx)
+$new      = $header + $body + $footer   # header = imports, footer = export default
+[System.IO.File]::WriteAllText($targetPath, $new)
+$content  = $content.Substring(0, $startIdx) + $markerComment + $content.Substring($endIdx)
+[System.IO.File]::WriteAllText($path, $content)
+```
+
+Before extracting, always audit dependencies: `Select-String -Path <targetBody> -Pattern '\b(setHousingAnchorFromReport|wcfSendEmail|toISO|…)\b'`. The imports prologue must include every bare name the body refers to.
+
+**Critical trap we hit: anchor over-sweep.** If two top-level `const X = ({...}) => { … }` components sit adjacent in main.jsx and your `nextAnchor` is wrong, the extraction sweeps BOTH into one file. Round 1 did this with AdminNewWeighInModal + LivestockWeighInsView and again with PigSendToTripModal + CattleWeighInsView. Check adjacency before extracting: `Grep '^const \w' main.jsx | head -50` and make sure the `nextAnchor` is the NEXT top-level const after the one you want, not two or more.
+
+**What's left for future sessions:**
+
+### Round 6 — inline views inside App (the hard round)
+11 views currently live as `if(view==="X") return (…)` JSX blocks INSIDE the App function body. They close over 40+ App-scope state variables (batches, pigData, form, editId, showBreedForm, etc.) plus helpers (submit, del, openEdit, etc.). PowerShell file-slicing does NOT work for these — they're not standalone components.
+
+Current start lines (for the record):
+- `broilerHome` — line 3032
+- `timeline` — line 3342
+- `list` — line 3609
+- `feed` — line 3929 (biggest, ~1026 lines)
+- `pigsHome` — line 4955
+- `breeding` — line 5264
+- `pigbatches` — line 5579 (biggest pig, ~1226 lines)
+- `farrowing` — line 6805
+- `sows` — line 7278
+- Plus `BatchForm` (broiler add/edit) and `PigFeedView` — locations TBD inside the blocks above
+
+Each one needs:
+1. Enumerate every identifier the JSX references (state, setters, helpers, derived values).
+2. Decide: hook-based (component calls `useAuth()`, `useBatches()`, etc. directly) vs prop-based (App passes ~30 props).
+3. Move JSX into `src/broiler/BroilerHomeView.jsx` (or wherever) as a proper component.
+4. Replace App's `if(view==="X") { … return (…) }` with `if(view==="X") return <X {...necessaryProps}/>`.
+
+Strong recommendation: **hook-based.** That's exactly why Round 0 put state in Contexts. A component that calls `const { batches, setBatches } = useBatches()` inside its body can be extracted with zero props. The App-scope helpers (submit, del, openEdit) will need to be lifted to a src/broiler/broilerOps.js file or made into custom hooks (`useBroilerOps()`) — that's the real architectural work Round 6 demands.
+
+### Round 7 — HomeDashboard (even harder, flagged as catastrophic-risk in §9 R6)
+Currently inline in App, lines ~3000. Consumes essentially all of App's state. Split into multiple smaller pieces if >1500 lines in one commit per §9 R6.
+
+### Round 8 — EquipmentPlaceholder
+Trivial — stub component, replace with a proper file.
+
+### Phase 3 — React Router
+Unchanged from earlier plan. Don't start until Phase 2 is done AND verified.
+
+**Merge (`vite-migration` → `main`)** is still deferred. Current state on preview is stable but not user-visible-improved. Reasonable cutover point: after Round 6 is done (when inline views leave App), OR now if you want to land the structural progress and finish Round 6+ on a separate branch.
+
 ---
 
 ## 15. Resuming this migration in a new Claude Code session

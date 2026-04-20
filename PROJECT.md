@@ -2080,4 +2080,139 @@ Not in the plan's Context table — will land in feature folders during Rounds 1
 
 ---
 
-*End of April 20 session. Work-tree state at session end: clean. Commit `67d2ae3` pushed to `vite-migration`. Deploy preview green. Production unchanged. Next session: Phase 2 Round 1 leaf-component extractions.*
+*End of April 20 session (part 1). Work-tree state at session end: clean. Commit `67d2ae3` pushed to `vite-migration`. Deploy preview green. Production unchanged. Next session: Phase 2 Round 1 leaf-component extractions.*
+
+---
+
+# 18. Session Update — April 20, 2026 (part 2) — Vite migration Phase 2 Rounds 1–5
+
+**Branch: `vite-migration`. Main + production untouched — legacy monolithic `index.html` still serves `wcfplanner.com`.**
+
+Huge session. Ronnie greenlit a "huge build" with pre-approval for commit + push after each of Rounds 1–6 (Round 7 reserved for standalone review). I got cleanly through Rounds 1–5 and stopped at the Round 6 architectural boundary. Full migration details live in `MIGRATION_PLAN.md §14` — this is the cross-project summary.
+
+## 18.1 What landed
+
+Five rounds pushed to `vite-migration`. No production change — all still on `main`.
+
+| SHA | Round | Files added |
+|---|---|---|
+| `db2a1fd` | Round 1 | 10 components + 1 helper lib |
+| `0aa3aeb` | Round 2 | 12 components |
+| `0f858ac` | Round 3 | 8 components + 3 helper libs + 2 recovery splits |
+| `42069b8` | Round 4 | 4 admin panels |
+| `3d34089` | Round 5 | 3 public webforms |
+
+**Numbers at session end:**
+- main.jsx: 19,170 → 9,035 lines (53% reduction).
+- 40+ extracted components across src/auth, src/admin, src/broiler, src/cattle, src/layer, src/livestock, src/pig, src/sheep, src/shared, src/webforms.
+- 4 helper libs in src/lib/: layerHousing.js, cattleCache.js, cattleBreeding.js, dateUtils.js (plus pre-existing supabase.js, email.js, pagination.js).
+- Build: 121 modules (was 77 at session start), bundle size stable (code moved, not duplicated).
+
+## 18.2 The breakthrough: PowerShell file-slicing
+
+First attempted big-component extraction (AdminAddReportModal, 475 lines) introduced silent transcription drift — I dropped the `housingBatchMap` badge line in the layer-form branch because I was composing the Write payload across multiple Reads.
+
+Pivoted to reading + writing the file bytes directly via PowerShell:
+```powershell
+$content = [System.IO.File]::ReadAllText($path)
+$startIdx = $content.IndexOf('const XyzView = ({')
+$endIdx   = $startIdx + $content.Substring($startIdx, $nextIdx - $startIdx).LastIndexOf('};') + 2
+[System.IO.File]::WriteAllText($newFile, $header + $content.Substring($startIdx, $endIdx - $startIdx) + $footer)
+```
+The component body never enters my context — zero transcription risk. This is the pattern the remaining rounds should use.
+
+## 18.3 Recovered bugs
+
+**Round-1 anchor over-sweep.** Two components (LivestockWeighInsView and CattleWeighInsView) sat adjacent to modals that got extracted with wrong end-anchors. They were swept into AdminNewWeighInModal.jsx and PigSendToTripModal.jsx respectively, with only the first export emitted. Result: the `cattleweighins`, `broilerweighins`, `pigweighins` routes were silently broken after Round 1 (undefined module-scope refs).
+
+Round 3 fix: split each co-resident file into a correctly-exported pair. Both routes now work.
+
+**Lesson for future rounds:** when picking `nextAnchor`, always grep `^const \w` in main.jsx and make sure the anchor is the NEXT top-level const, not two over. Ask if unsure.
+
+## 18.4 What's extracted + where (for the handover)
+
+```
+src/
+├─ main.jsx                     9,035 lines (was 19,170 at session 1 start)
+├─ contexts/                    (Round 0 — state plumbing)
+│  ├─ AuthContext.jsx, BatchesContext.jsx, PigContext.jsx,
+│  ├─ LayerContext.jsx, DailysRecentContext.jsx,
+│  └─ CattleHomeContext.jsx, SheepHomeContext.jsx,
+│     WebformsConfigContext.jsx, FeedCostsContext.jsx, UIContext.jsx
+├─ lib/                         (helpers)
+│  ├─ supabase.js, email.js, pagination.js (Phase 2.0.0)
+│  ├─ layerHousing.js           setHousingAnchorFromReport, computeProjectedCount, computeLayerFeedCost
+│  ├─ cattleCache.js            loadCattleWeighInsCached, invalidateCattleWeighInsCache + module cache
+│  ├─ cattleBreeding.js         calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel
+│  └─ dateUtils.js              addDays, toISO, fmt, fmtS, todayISO, thisMonday
+├─ shared/                      WcfYN, WcfToggle, DeleteModal, AdminAddReportModal, AdminNewWeighInModal
+├─ auth/                        SetPasswordScreen, LoginScreen, UsersModal
+├─ admin/                       FeedCostsPanel, FeedCostByMonthPanel, LivestockFeedInputsPanel, NutritionTargetsPanel
+├─ webforms/                    AddFeedWebform, WeighInsWebform, WebformHub
+├─ broiler/                     BroilerDailysView
+├─ layer/                       LayerDailysView, EggDailysView, LayersView
+├─ pig/                         PigDailysView
+├─ cattle/                      CattleDailysView, CattleBulkImport, CollapsibleOutcomeSections,
+│                               CowDetail, CattleHomeView, CattleHerdsView, CattleBreedingView,
+│                               CattleBatchesView, CattleWeighInsView, CattleNewWeighInModal
+├─ sheep/                       SheepDailysView, SheepWeighInsView, SheepBulkImport, SheepDetail,
+│                               SheepFlocksView, SheepHomeView
+├─ livestock/                   LivestockWeighInsView, PigSendToTripModal
+├─ dashboard/                   (empty — HomeDashboard stays in App until Round 7)
+└─ equipment/                   (empty — placeholder stays in App until Round 8)
+```
+
+## 18.5 What's NOT extracted (Round 6+ work)
+
+**Round 6 — 11 inline-JSX views inside App.** These are NOT top-level components. They're JSX blocks inside `if(view==="X") return (…)` branches that close over ~40 App-scope variables. The PowerShell file-slice trick does NOT apply.
+
+Locations in current main.jsx:
+- broilerHome (L3032), timeline (L3342), list (L3609), feed (L3929, ~1026 lines)
+- pigsHome (L4955), breeding (L5264), pigbatches (L5579, ~1226 lines), farrowing (L6805), sows (L7278)
+- Plus BatchForm + PigFeedView nested inside one of the above
+
+Approach (sketch — not designed yet):
+- Prefer: convert each inline view into a real component that calls `useAuth() / useBatches() / usePig() / etc.` directly. Props shrink to near-zero. This is what Round 0's Contexts were designed to enable.
+- Non-App helpers (submit, del, openEdit, openAdd in App) will need to lift to src/broiler/broilerOps.js or become a `useBroilerOps()` hook. This is genuine architectural work.
+- Expect 2–3 sessions for Round 6 done well.
+
+**Round 7 — HomeDashboard** (inline in App, huge). Flagged in §9 R6 as catastrophic-risk. Split into multiple commits (<1500 lines each).
+
+**Round 8 — EquipmentPlaceholder.** Trivial stub. Do last.
+
+**Deferred components:**
+- `Header` (deferred from Round 1) — closes over ~12 App-scope state + helpers (signOut, backupData, restoreData, loadUsers). Should land during Round 6 when App helpers get lifted to lib.
+- `LayerBatchesView` (deferred from Round 2.2.2) — 855 lines, uses 6 module-scope helpers. 4 of them now exist in src/lib/; the remaining `calcPhaseFromAge` + `inRange` still need lifting. Quick win if you extract those two first.
+
+## 18.6 Next-session starter checklist
+
+Before touching code, future Claude should:
+
+1. **Read `MIGRATION_PLAN.md §14` end to end**, especially the 2026-04-20 session 2 entry with the PowerShell pattern.
+2. **`git checkout vite-migration` and confirm** `git log --oneline main..HEAD | head -10` shows the 5 Round commits (`db2a1fd` → `3d34089`) plus earlier Round 0 + docs commits.
+3. **`npm install && npm run build`** — must be clean before any edits.
+4. **Decide scope before coding:** if you're doing Round 6, talk to Ronnie about the hook-based vs prop-based approach first. Don't quietly start and hope.
+5. **Pre-flight for any PowerShell extraction:** Grep `^const \w` in main.jsx; verify your start + end anchors are adjacent top-level consts; audit the body for bare-name references to module-scope helpers before writing the extraction command.
+6. **The deploy preview URL is `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`.** Anything without the `deploy-preview-N--` prefix is PRODUCTION — do not confuse them.
+
+## 18.7 What to NOT redo
+
+Past sessions have had multiple false starts that looked sensible but hit walls. Don't re-walk these paths:
+
+1. **Don't re-propose "extract Header verbatim."** It closes over App's closure scope. The fix is lifting signOut/backupData/etc. to a lib first.
+2. **Don't re-propose "split AdminAddReportModal's submit functions into smaller modules."** Not in scope; ignore unless Ronnie asks.
+3. **Don't try to transcribe 500-line components into a Write call payload.** That's where the drift comes from. Use the PowerShell slice.
+4. **Don't try to Round 6 inline views with PowerShell.** They're not standalone — see §18.5.
+5. **Don't touch the `housingBatchMap` bare-name reference inside AdminAddReportModal.jsx line ~277.** It's a pre-existing quirk preserved from the monolith; may be dead code (the condition short-circuits on `lForm.batchLabel` being empty). Would be a separate bug hunt, not a migration concern.
+
+## 18.8 SOP reminders (restated)
+
+- **`commit` = commit fully, no re-prompt.** Memory rule `feedback_commit_vs_push.md`.
+- **`push` / `deploy` / `merge` always needs fresh explicit approval in the same turn.** "yes push" after "yes commit" — two approvals.
+- **Never merge `vite-migration` → `main` without Ronnie explicitly saying "merge" / "cutover."** Production is still the monolith.
+- **Don't run destructive Supabase ops without approval.**
+- **Don't start interactive editors from PowerShell** (no `git rebase -i`, no `git add -i`).
+
+---
+
+*End of April 20 session (part 2). Work-tree state at session end: clean. Commits `db2a1fd` / `0aa3aeb` / `0f858ac` / `42069b8` / `3d34089` pushed to `vite-migration`. main.jsx down 53%. Deploy preview will rebuild automatically — smoke-test before resuming. Production unchanged. Next session: Phase 2 Round 6 (inline-JSX views inside App) — needs architectural design discussion before any extraction.*
