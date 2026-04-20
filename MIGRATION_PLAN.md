@@ -663,6 +663,78 @@ The anchor-oversweep trap has now bitten three times (`LivestockWeighInsView`, `
 
 **Merge (`vite-migration` → `main`):** still deferred by Ronnie's call. Migration is structurally sound — ~53% of main.jsx extracted, all tabs work on preview. Reasonable cutover points: (1) now, if you want to land the structural progress and finish Round 6+ on a fresh branch, or (2) after Round 6 when inline views leave App. Ronnie decides.
 
+### 2026-04-20 (session 3) — Phase 2 Round 6 complete: all 12 inline views extracted
+
+Branch: `vite-migration` (pushed through `ab94108`). Main + production untouched. main.jsx: 9,012 → 3,996 lines (-56% from session start, -78% from pre-migration).
+
+Round 6 shipped as 22 commits across three phases: 12 view extractions (one per commit for bisect safety) + 4 supporting lifts + 6 runtime-fixup commits after preview smoke tests.
+
+**Views extracted — the full Round 6 list:**
+
+| SHA | View | Target folder | Props from App (couldn't live in context yet) |
+|---|---|---|---|
+| `083494f` | `BroilerHomeView` | `src/broiler/` | Header, loadUsers |
+| `5db0a7a` | `BroilerTimelineView` | `src/broiler/` | Header, loadUsers, openEdit |
+| `a5635b6` | `BroilerListView` | `src/broiler/` | Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything |
+| `5fbe3da` | `BroilerFeedView` | `src/broiler/` | Header, feedOrders+set, poultryFeedInventory+set, poultryFeedExpandedMonths+set, collapsedBatches+set, sbSave |
+| `4a05a5f` | `PigsHomeView` | `src/pig/` | Header, loadUsers |
+| `b8de123` | `BreedingView` | `src/pig/` | Header, loadUsers, persistBreeding, breedAutoSaveTimer, confirmDelete |
+| `204deef` | `FarrowingView` | `src/pig/` | Header, loadUsers, persistFarrowing, confirmDelete, resolveSire |
+| `a718d21` | `SowsView` | `src/pig/` | Header, loadUsers, persistBreeders, persistBreedOptions, persistOriginOptions, confirmDelete, resolveSire, leaderboardExpanded+set, showArchived+set |
+| `2c3679e` | `PigFeedView` | `src/pig/` | Header, loadUsers, feedOrders+set, pigFeedInventory+set, pigFeedExpandedMonths+set, sbSave |
+| `f7f268b` | `PigBatchesView` | `src/pig/` | Header, loadUsers, persistFeeders, confirmDelete, pigAutoSaveTimer, subAutoSaveTimer, tripAutoSaveTimer, showSubForm+set, subForm+set, editSubId+set, collapsedBatches+set, collapsedMonths+set, showArchBatches+set |
+| `66a792e` | `LayersHomeView` | `src/layer/` | Header, loadUsers |
+| `1188fa7` | `WebformsAdminView` | `src/webforms/` | Header, loadUsers, persistWebforms, saveFeedCosts, confirmDelete, adminTab+set, plus 14 wf* form-state pairs |
+
+**Supporting lifts (4 prep commits):**
+
+| SHA | What |
+|---|---|
+| `d6897c9` | `WEEKS_SHOWN`, `LEGACY_BREEDS`, `RESOURCES`, `BATCH_COLOR_PALETTE`, `getBatchColor`, `breedLabel` → `src/lib/broiler.js`. |
+| `38051d9` | Pig breeding constants (`BOAR_EXPOSURE_DAYS`, `GESTATION_DAYS`, `WEANING_DAYS`, `GROW_OUT_DAYS`, `PIG_GROUPS`, `PIG_GROUP_COLORS`, `PIG_GROUP_TEXT`, `PHASE_LABELS`, `BREEDING_STATUSES`) + helpers (`calcBreedingTimeline`, `buildCycleSeqMap`, `cycleLabel`, `calcCycleStatus`) → new `src/lib/pig.js` (80 lines). |
+| (in `a5635b6`) | `STATUS_STYLE`, `isNearHoliday` + holiday helpers → `lib/broiler.js`. |
+| (in `5fbe3da`) | `calcBatchFeedForMonth`, `calcLayerFeedForMonth`, `LAYER_FEED_SCHEDULE`, `LAYER_FEED_PER_DAY` → `lib/broiler.js`. |
+
+**`lib/broiler.js` final shape** (368 lines): all broiler-domain constants + 6 public helpers (`getFeedSchedule`, `calcBatchFeed`, `calcBatchFeedForMonth`, `calcLayerFeedForMonth`, `calcTimeline`, `calcPoultryStatus`, `calcBroilerStatsFromDailys`) + `getBatchColor`, `breedLabel`, `isNearHoliday`, `STATUS_STYLE`, `BREED_STYLE`, `LEGACY_BREEDS`, `RESOURCES`, `LAYER_FEED_SCHEDULE`, `LAYER_FEED_PER_DAY`, `WEEKS_SHOWN`.
+
+**`lib/pig.js` final shape** (80 lines): pig breeding constants + 4 helpers listed above.
+
+**The 6 runtime fixups after Ronnie smoke-tested the preview:**
+
+Every single one was a bare-name miss — same class of bug as the April 20 session 2 `DEFAULT_WEBFORMS_CONFIG` / `UsersModal` regressions. The hook-based approach surfaces *many* more of these than the PowerShell file-slice approach because the inline-JSX bodies closed over 30+ App-scope variables each, and the "copy the body, wrap in hooks" pattern is only as good as your inventory of what the body actually uses.
+
+| SHA | Miss |
+|---|---|
+| `7cca2d9` | `BroilerListView`: `isAdmin`, `setBatches`, `persist`, `del`, `confirmDelete`, `canDeleteAnything`. |
+| `08d17ec` | 7 views at once: `setShowAllComparison`, `calcBatchFeed/calcBroilerStatsFromDailys/calcPoultryStatus/getBatchColor/setCollapsedBatches` (feed view), `calcCycleStatus/confirmDelete/useBatches{tooltip,setTooltip}` (breeding), `confirmDelete` (farrowing), `persistBreedOptions/persistOriginOptions/confirmDelete/leaderboardExpanded/showArchived` (sows), `confirmDelete/setShowArchBatches` (pigbatches), `FeedCostsPanel/FeedCostByMonthPanel/LivestockFeedInputsPanel/NutritionTargetsPanel/feedCosts/saveFeedCosts/adminTab/setAdminTab/confirmDelete` (webforms). |
+| `0e852ce` | `BroilerListView` also needed `showAllComparison` itself (had setter, missed getter). |
+| `345eefa` | 4 views missing lib imports: `BREED_STYLE`, `breedLabel` (feed), `PIG_GROUPS/PIG_GROUP_COLORS` (farrowing + sows), `PIG_GROUP_COLORS` (pigbatches). |
+| `c336f90` | `LAYER_FEED_SCHEDULE`, `LAYER_FEED_PER_DAY` were module-internal in broiler.js; feed view uses them directly — exported. |
+| `4610228` | 4 views missing `toISO` import (had `todayISO` + `addDays` but not `toISO` itself): breeding, farrowing, pigbatches, layersHome. |
+| `2f5db09` | `resolveSire` prop (farrowing + sows) + `pigDailys` via `useDailysRecent` (pig feed). |
+| `ab94108` | `feedCosts` for list view, `pigDailys` for sows view, `feedOrders+set` props for pig feed view. |
+
+Plus two mid-session bugs caught by failed local builds (never pushed):
+- **Farrowing extraction over-swept** — range removal took the `if(view==="sows") {` wrapper line along with the farrowing body. Rebuild failed; surgical fix restored the wrapper.
+- **Pigs extraction off-by-one** — slice pulled one extra line (the original `}` closer) into PigFeedView.jsx, leaving a stray `}` that tripped esbuild. Deleted it by Edit.
+
+**Lessons for future view-extraction work:**
+
+1. **Hook-based extraction needs a *systematic* bare-name audit, not eyeballing.** Write a script that parses the file's imports + destructures + function params, then checks every reference against that set. See `audit-imports.cjs` / `audit-refs.cjs` pattern that was used mid-session (delete after use — they're dev-only tools). Pool the checker against: every lib export, every context state name, every known App helper, and all deferred App-scope state from the Round 0 handover list. False positives are JSDoc comment words like "view", "form", "override" — filter by whether the match is inside code vs. a comment.
+2. **After the audit passes, verify the view loads in the browser.** Not just "build clean" — a build pass only catches syntax, not ReferenceErrors on runtime access.
+3. **Boundary detection for the view's closing `}`** — `awk`-finding the *next* `if(view===` gives the line AFTER the current view's closing brace. The correct end-index for `RemoveRange` is that line minus 1 (or 2 if there's a blank line between views). PowerShell-verify `idx[end]` is actually `  }` before committing to the slice.
+4. **Bundle hash in console errors is a staleness indicator.** When Ronnie reports an error, compare the hash in the traceback (`index-CcQgZKrh.js`) against `ls dist/assets/` locally — if they differ, the preview hasn't rebuilt yet and Ronnie is seeing the *previous* push.
+
+**What's NOT extracted (remaining):**
+- `Header` component (Round 1 deferral, still inline in App — closes over ~12 App helpers).
+- `BatchForm` (the broiler add/edit modal, ~1100 lines still inline — nested inside `if(view!==…)` or rendered via `showForm && …` in App body).
+- `LayerBatchesView` (Round 2 deferral, 855 lines — needs `calcPhaseFromAge`, `inRange` lifted first).
+- `home` → HomeDashboard (Round 7). Still inline in App. ~1000 lines. Uses most of App's state.
+- `equipmentHome` → EquipmentPlaceholder (Round 8). Trivial stub.
+- ~40+ App-scope useState hooks + helpers that props-drill into the extracted views. Plausible future work: promote App-scope state to contexts (e.g. `feedOrders` → `FeedCostsContext`, `adminTab` → `UIContext`, the pig auto-save timers → a `usePigOps()` custom hook). Not needed for correctness; just reduces prop pile-up.
+
+**Preview state at end of session:** all 12 extracted views verified loading on `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`. Ronnie hit each one, reported each missing-ref ReferenceError, I patched, pushed, rebuilt. Last confirmation: "everything looks good." Migration state = clean.
+
 ---
 
 ## 15. Resuming this migration in a new Claude Code session
@@ -687,10 +759,11 @@ Anything WITHOUT the `deploy-preview-1--` prefix is **production**. Two differen
 2. `git log --oneline main..vite-migration | head -20` — see what's landed
 3. `npm install && npm run build` — must be clean before editing
 4. Read §14's latest dated entry to find starting point
-5. Before each batch extraction: grep `^const \w|^function \w` in main.jsx, verify the `nextAnchor` is the immediately-next top-level decl
-6. After each extraction: bare-name audit (find identifiers used but not imported or locally declared) before pushing
-7. After each commit: `npm run build` clean, then push if you have approval
-8. Append a dated entry to §14 at end of session
+5. **Read `src/main.jsx` carefully before extracting anything** — App closes over 40+ locals + helpers; the only way to do a clean hook-based view extraction is to know what's there first.
+6. Before each PowerShell slice: `awk '/^  if\(view===/' + /^  }/` around your target, PowerShell-verify the closing-brace index before `RemoveRange`.
+7. After each extraction: **systematic bare-name audit** (see the Round 6 session entry). Parse imports + destructures + params from the new file, compare against every reference to known lib exports, context-state names, and App helpers. Build-clean is not enough; ReferenceErrors only fire at runtime.
+8. After each commit: `npm run build` clean, then push if you have approval.
+9. Append a dated entry to §14 at end of session.
 
 ### Pacing
 We have a deploy preview auto-rebuilding on every push + a clean local build gate + a pre-migration backup. That's a solid safety net. The original "one round per session" rule was overcautious — Phase 2 Rounds 0 through 5 landed in a single session with PowerShell extractions, two runtime regressions caught + fixed the same day via the preview, migration still on track. Use judgment: small commits + build-verified + preview-checked is the real gate. Moving fast is fine.
