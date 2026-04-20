@@ -97,7 +97,7 @@ import { S } from './lib/styles.js';
 import { DEFAULT_WEBFORMS_CONFIG } from './lib/defaults.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
-import { BROODER_DAYS, CC_SCHOONER, WR_SCHOONER, BREED_STYLE, getFeedSchedule, calcBatchFeed, calcTimeline, calcPoultryStatus, calcBroilerStatsFromDailys } from './lib/broiler.js';
+import { BROODER_DAYS, CC_SCHOONER, WR_SCHOONER, WEEKS_SHOWN, LEGACY_BREEDS, RESOURCES, BREED_STYLE, getFeedSchedule, calcBatchFeed, calcTimeline, calcPoultryStatus, calcBroilerStatsFromDailys, getBatchColor, breedLabel } from './lib/broiler.js';
 if (typeof window !== 'undefined') { window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache; }
 
 // Phase 2 Round 3: bigger stateful views + UsersModal.
@@ -164,7 +164,6 @@ const { useState, useEffect, useCallback } = React;
 // ── CONSTANTS ──────────────────────────────────────────────────────────────
 const BROODER_CLEANOUT  = 3;
 const SCHOONER_CLEANOUT = 4;
-const WEEKS_SHOWN       = 52;
 const STORAGE_KEY       = "ppp-data-v1";
 
 // For monthly summary: given a batch and a calendar month (YYYY-MM),
@@ -280,10 +279,6 @@ const ALL_HATCHERIES = ["So Big Farms","Meyer Hatchery","Welp Hatchery","Myers P
 const LEGACY_HATCHERIES = ["VALLEY FARMS","CREDO FARMS","CACKLE"];
 // Legacy breeds — same gating. Both come from Freedom Ranger Hatchery historically
 // but the breed↔hatchery dropdown is now decoupled, so any combination is possible.
-const LEGACY_BREEDS = [
-  {code:"FR", label:"Freedom Rangers"},
-  {code:"CY", label:"Color Yields"},
-];
 const SCHOONERS     = ["1","2&3","4&5","6&6A","7&7A"];
 const BROODERS      = ["1","2","3"];
 const STATUSES      = ["planned","active","processed"];
@@ -413,65 +408,7 @@ const INITIAL_FARROWING = [
   {id:"f13", sow:"5",  group:"2", farrowingDate:"2024-07-19", exposureStart:"", exposureEnd:"", sire:"",        motheringQuality:"",        demeanor:"aggressive when getting into pen with her", totalBorn:8, deaths:1, location:"outside-pen", wentWell:"built pen around her after birth", didntGoWell:"", defects:"0, crushed piglet 3 days after birth"},
 ];
 
-const RESOURCES = [
-  {type:"brooder",  id:"1",    label:"Brooder 1"},
-  {type:"brooder",  id:"2",    label:"Brooder 2"},
-  {type:"brooder",  id:"3",    label:"Brooder 3"},
-  {type:"schooner", id:"1",    label:"Schooner 1"},
-  {type:"schooner", id:"2&3",  label:"Schooner 2 & 3"},
-  {type:"schooner", id:"4&5",  label:"Schooner 4 & 5"},
-  {type:"schooner", id:"6&6A", label:"Schooner 6 & 6A"},
-  {type:"schooner", id:"7&7A", label:"Schooner 7 & 7A"},
-];
 
-// ── Per-batch color system (hash of batch name) ────────────────────────────
-// Each batch gets a unique color from this palette. Brooder and schooner phases
-// of the same batch share the literally identical color. Used in timeline,
-// list view, and feed calculator.
-// Palette curated so adjacent indices are maximally distinct in hue.
-// Used with sequential batch number index (B-26-09 → 9), so consecutive
-// batches always land on adjacent palette positions.
-const BATCH_COLOR_PALETTE = [
-  {bg:'#dc2626', tx:'white', bd:'#7f1d1d'}, // 0  red
-  {bg:'#1e40af', tx:'white', bd:'#0f2247'}, // 1  navy
-  {bg:'#ea580c', tx:'white', bd:'#7c2d12'}, // 2  orange
-  {bg:'#7c3aed', tx:'white', bd:'#4c1d95'}, // 3  purple
-  {bg:'#16a34a', tx:'white', bd:'#14532d'}, // 4  green
-  {bg:'#db2777', tx:'white', bd:'#831843'}, // 5  pink
-  {bg:'#0891b2', tx:'white', bd:'#164e63'}, // 6  cyan
-  {bg:'#ca8a04', tx:'white', bd:'#713f12'}, // 7  amber
-  {bg:'#525b6e', tx:'white', bd:'#1e293b'}, // 8  slate
-  {bg:'#84cc16', tx:'#1a2e05', bd:'#365314'}, // 9  lime (light, dark text)
-  {bg:'#9f1239', tx:'white', bd:'#4c0519'}, // 10 wine
-  {bg:'#0284c7', tx:'white', bd:'#0c4a6e'}, // 11 sky
-  {bg:'#a16207', tx:'white', bd:'#451a03'}, // 12 brown
-  {bg:'#c026d3', tx:'white', bd:'#701a75'}, // 13 magenta
-  {bg:'#0d9488', tx:'white', bd:'#134e4a'}, // 14 teal
-  {bg:'#f97316', tx:'#451a03', bd:'#7c2d12'}, // 15 bright orange (light, dark text)
-  {bg:'#5b21b6', tx:'white', bd:'#2e1065'}, // 16 indigo
-  {bg:'#e11d48', tx:'white', bd:'#881337'}, // 17 crimson
-  {bg:'#365314', tx:'white', bd:'#1a2e0a'}, // 18 forest
-  {bg:'#67e8f9', tx:'#083344', bd:'#0e7490'}, // 19 light cyan (light, dark text)
-  {bg:'#7e22ce', tx:'white', bd:'#581c87'}, // 20 violet
-  {bg:'#facc15', tx:'#451a03', bd:'#854d0e'}, // 21 yellow (light, dark text)
-  {bg:'#1e3a8a', tx:'white', bd:'#0a1429'}, // 22 deep blue
-  {bg:'#be185d', tx:'white', bd:'#500724'}, // 23 deep pink
-];
-function getBatchColor(name){
-  if(!name) return BATCH_COLOR_PALETTE[0];
-  // Try to extract a trailing number from the name (e.g. "B-26-09" → 9, "L-26-01" → 1).
-  // This guarantees consecutive batches get adjacent (and visually distinct) palette colors.
-  const m = String(name).match(/(\d+)\s*$/);
-  if(m){
-    const n = parseInt(m[1]);
-    if(!isNaN(n)) return BATCH_COLOR_PALETTE[n % BATCH_COLOR_PALETTE.length];
-  }
-  // Fallback for batches without a trailing number: hash
-  let hash = 5381;
-  const s = String(name).toLowerCase().trim();
-  for(let i=0;i<s.length;i++) hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
-  return BATCH_COLOR_PALETTE[Math.abs(hash) % BATCH_COLOR_PALETTE.length];
-}
 
 // ── Layer housing count helpers (top-level, no React state) ────────────────
 // Model X: current_count is a *verified anchor* set by physical counts (manual
@@ -488,13 +425,6 @@ const STATUS_STYLE = {
   processed: {bg:"#4b5563", tx:"white"},
 };
 
-function breedLabel(code){
-  if(code==="CC") return "Cornish Cross";
-  if(code==="WR") return "White Ranger";
-  const lb = LEGACY_BREEDS.find(x=>x.code===code);
-  if(lb) return lb.label;
-  return code || "\u2014";
-}
 
 // ── DATE HELPERS ───────────────────────────────────────────────────────────
 // Phase 2.3 prep: date utils moved to src/lib/dateUtils.js.
