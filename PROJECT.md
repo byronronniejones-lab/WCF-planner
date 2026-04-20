@@ -2162,57 +2162,52 @@ src/
 └─ equipment/                   (empty — placeholder stays in App until Round 8)
 ```
 
-## 18.5 What's NOT extracted (Round 6+ work)
+## 18.5 Runtime fixups after the Round 5 smoke test
 
-**Round 6 — 11 inline-JSX views inside App.** These are NOT top-level components. They're JSX blocks inside `if(view==="X") return (…)` branches that close over ~40 App-scope variables. The PowerShell file-slice trick does NOT apply.
+Ronnie tested preview after Round 5; home hung on "Starting up". Two targeted commits landed same session:
 
-Locations in current main.jsx:
-- broilerHome (L3032), timeline (L3342), list (L3609), feed (L3929, ~1026 lines)
-- pigsHome (L4955), breeding (L5264), pigbatches (L5579, ~1226 lines), farrowing (L6805), sows (L7278)
-- Plus BatchForm + PigFeedView nested inside one of the above
+| SHA | What |
+|---|---|
+| `a8bb819` | **Root cause of the hang:** Round 1's `LoginScreen` end-anchor swept `const DEFAULT_WEBFORMS_CONFIG` into `src/auth/LoginScreen.jsx`. main.jsx's root render uses it as `configInit={DEFAULT_WEBFORMS_CONFIG}` — undefined at module init → `root.render()` threw ReferenceError → React never mounted → static boot loader stayed. Fix: moved to `src/lib/defaults.js`. Same commit extracted `S` (shared styles object) to `src/lib/styles.js` and imported it into the 6 dailys views that use `style={S.header}` (second latent crash that would have hit on first nav). |
+| `c0dd033` | Round 3's recovered `LivestockWeighInsView` + `CattleWeighInsView` used `<UsersModal>` without importing it; `CattleWeighInsView` also called `loadCattleWeighInsCached` / `invalidateCattleWeighInsCache` bare. Same missing-`UsersModal` issue across 7 cattle + sheep home/weigh-in views. Patched all. |
 
-Approach (sketch — not designed yet):
-- Prefer: convert each inline view into a real component that calls `useAuth() / useBatches() / usePig() / etc.` directly. Props shrink to near-zero. This is what Round 0's Contexts were designed to enable.
-- Non-App helpers (submit, del, openEdit, openAdd in App) will need to lift to src/broiler/broilerOps.js or become a `useBroilerOps()` hook. This is genuine architectural work.
-- Expect 2–3 sessions for Round 6 done well.
+Ronnie verified all tabs (including `/cattleweighins`) after the second fix. Migration state is clean.
 
-**Round 7 — HomeDashboard** (inline in App, huge). Flagged in §9 R6 as catastrophic-risk. Split into multiple commits (<1500 lines each).
+**Takeaway for future rounds:** after every batch extraction, run a "bare-name audit" — find identifiers used in the extracted body that aren't in an `import` statement or a top-level `const|let|function` declaration. Two lines of Node shell did the job when it finally ran, would have caught both regressions before Ronnie had to smoke-test.
 
-**Round 8 — EquipmentPlaceholder.** Trivial stub. Do last.
+## 18.6 What's NOT extracted (Round 6+)
 
-**Deferred components:**
-- `Header` (deferred from Round 1) — closes over ~12 App-scope state + helpers (signOut, backupData, restoreData, loadUsers). Should land during Round 6 when App helpers get lifted to lib.
-- `LayerBatchesView` (deferred from Round 2.2.2) — 855 lines, uses 6 module-scope helpers. 4 of them now exist in src/lib/; the remaining `calcPhaseFromAge` + `inRange` still need lifting. Quick win if you extract those two first.
+**Round 6 — 11 inline-JSX views inside App.** These are JSX blocks inside `if(view==="X") return (…)` branches that close over ~40 App-scope variables, not standalone components. PowerShell file-slice does not apply.
 
-## 18.6 Next-session starter checklist
+Locations in current main.jsx: broilerHome (L3032), timeline (L3342), list (L3609), feed (L3929, ~1026 lines), pigsHome (L4955), breeding (L5264), pigbatches (L5579, ~1226 lines), farrowing (L6805), sows (L7278). Plus BatchForm + PigFeedView nested inside one of the above.
 
-Before touching code, future Claude should:
+**Approach — hook-based.** Each inline view becomes a real component in its feature folder that consumes Contexts directly (`useAuth()`, `useBatches()`, `usePig()`, etc.) — Round 0 set this up deliberately. Non-App helpers (submit, del, openEdit) lift to `src/<feature>/<feature>Ops.js` or custom hooks. Ship per-view commits, preview-test each, keep moving.
 
-1. **Read `MIGRATION_PLAN.md §14` end to end**, especially the 2026-04-20 session 2 entry with the PowerShell pattern.
-2. **`git checkout vite-migration` and confirm** `git log --oneline main..HEAD | head -10` shows the 5 Round commits (`db2a1fd` → `3d34089`) plus earlier Round 0 + docs commits.
-3. **`npm install && npm run build`** — must be clean before any edits.
-4. **Decide scope before coding:** if you're doing Round 6, talk to Ronnie about the hook-based vs prop-based approach first. Don't quietly start and hope.
-5. **Pre-flight for any PowerShell extraction:** Grep `^const \w` in main.jsx; verify your start + end anchors are adjacent top-level consts; audit the body for bare-name references to module-scope helpers before writing the extraction command.
-6. **The deploy preview URL is `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`.** Anything without the `deploy-preview-N--` prefix is PRODUCTION — do not confuse them.
+**Round 7 — HomeDashboard.** Inline in App, consumes most of App's state. Split across commits if one diff exceeds ~1500 moved lines — just for skim-ability, not risk.
 
-## 18.7 What to NOT redo
+**Round 8 — EquipmentPlaceholder.** Stub. Last.
 
-Past sessions have had multiple false starts that looked sensible but hit walls. Don't re-walk these paths:
+**Deferred from earlier rounds:**
+- `Header` (Round 1) — closes over ~12 App-scope refs + helpers. Fits naturally into Round 6 once App helpers lift to lib.
+- `LayerBatchesView` (Round 2) — 855 lines, uses 6 module-scope helpers. 4 are now in `src/lib/`; `calcPhaseFromAge` + `inRange` still need lifting. Quick win.
 
-1. **Don't re-propose "extract Header verbatim."** It closes over App's closure scope. The fix is lifting signOut/backupData/etc. to a lib first.
-2. **Don't re-propose "split AdminAddReportModal's submit functions into smaller modules."** Not in scope; ignore unless Ronnie asks.
-3. **Don't try to transcribe 500-line components into a Write call payload.** That's where the drift comes from. Use the PowerShell slice.
-4. **Don't try to Round 6 inline views with PowerShell.** They're not standalone — see §18.5.
-5. **Don't touch the `housingBatchMap` bare-name reference inside AdminAddReportModal.jsx line ~277.** It's a pre-existing quirk preserved from the monolith; may be dead code (the condition short-circuits on `lForm.batchLabel` being empty). Would be a separate bug hunt, not a migration concern.
+## 18.7 Things that don't work — don't re-propose them
 
-## 18.8 SOP reminders (restated)
+1. **Extract Header verbatim.** It closes over App's scope — won't compile as a standalone component without lifting App helpers first.
+2. **Transcribe 500-line components into Write payloads.** That's where the first session's drift came from. PowerShell file-slice.
+3. **Round 6 via PowerShell file-slice.** Inline JSX has closure deps, not a valid standalone module. Use the hook-based rewrite instead.
+4. **Touch the `housingBatchMap` bare-name reference in `AdminAddReportModal.jsx`.** Pre-existing quirk from the monolith; the condition short-circuits on empty `lForm.batchLabel` so it's likely dead. Separate bug hunt, not migration work.
 
-- **`commit` = commit fully, no re-prompt.** Memory rule `feedback_commit_vs_push.md`.
-- **`push` / `deploy` / `merge` always needs fresh explicit approval in the same turn.** "yes push" after "yes commit" — two approvals.
-- **Never merge `vite-migration` → `main` without Ronnie explicitly saying "merge" / "cutover."** Production is still the monolith.
-- **Don't run destructive Supabase ops without approval.**
-- **Don't start interactive editors from PowerShell** (no `git rebase -i`, no `git add -i`).
+## 18.8 Hard rules (short list)
+
+- **`commit` = commit fully, one-line status, no follow-up prompt.**
+- **`push` / `deploy` / `merge`** = fresh explicit approval in the same turn.
+- **Don't merge `vite-migration` → `main`** without "merge" or "cutover" from Ronnie.
+- **Don't run destructive Supabase ops** without approval (DROP, TRUNCATE, bare DELETEs).
+- **Don't touch `MIGRATION_PLAN §10` don't-touch list** — wcfSelectAll, detectSessionInUrl, auth listener, source-label strings, etc.
+
+Everything else is judgment. Use the preview as the safety net — build locally, push, check the preview, iterate. Don't stop to re-confirm each decision; Ronnie can redirect in the moment if needed.
 
 ---
 
-*End of April 20 session (part 2). Work-tree state at session end: clean. Commits `db2a1fd` / `0aa3aeb` / `0f858ac` / `42069b8` / `3d34089` pushed to `vite-migration`. main.jsx down 53%. Deploy preview will rebuild automatically — smoke-test before resuming. Production unchanged. Next session: Phase 2 Round 6 (inline-JSX views inside App) — needs architectural design discussion before any extraction.*
+*End of April 20 session (part 2). Commits `db2a1fd` → `c0dd033` pushed to `vite-migration` (Rounds 0–5 + two fixups). main.jsx down 53%. All tabs verified on preview. Production unchanged. Next session: Phase 2 Round 6 — use the hook-based approach described in §18.6, ship per-view commits, iterate fast.*

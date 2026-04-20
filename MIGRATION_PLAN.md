@@ -628,74 +628,78 @@ Current start lines (for the record):
 - `sows` — line 7278
 - Plus `BatchForm` (broiler add/edit) and `PigFeedView` — locations TBD inside the blocks above
 
-Each one needs:
-1. Enumerate every identifier the JSX references (state, setters, helpers, derived values).
-2. Decide: hook-based (component calls `useAuth()`, `useBatches()`, etc. directly) vs prop-based (App passes ~30 props).
-3. Move JSX into `src/broiler/BroilerHomeView.jsx` (or wherever) as a proper component.
-4. Replace App's `if(view==="X") { … return (…) }` with `if(view==="X") return <X {...necessaryProps}/>`.
+Approach — hook-based. Round 0 put state in Contexts specifically so this would work: each inline view becomes a real component that calls `useAuth()` / `useBatches()` / `usePig()` / etc. directly and needs near-zero props. The App-scope helpers (submit, del, openEdit) lift to `src/<feature>/<feature>Ops.js` files or custom hooks. That's the actual work. Ship per-view commits, preview-test each, keep moving.
 
-Strong recommendation: **hook-based.** That's exactly why Round 0 put state in Contexts. A component that calls `const { batches, setBatches } = useBatches()` inside its body can be extracted with zero props. The App-scope helpers (submit, del, openEdit) will need to be lifted to a src/broiler/broilerOps.js file or made into custom hooks (`useBroilerOps()`) — that's the real architectural work Round 6 demands.
-
-### Round 7 — HomeDashboard (even harder, flagged as catastrophic-risk in §9 R6)
-Currently inline in App, lines ~3000. Consumes essentially all of App's state. Split into multiple smaller pieces if >1500 lines in one commit per §9 R6.
+### Round 7 — HomeDashboard
+Inline in App. Consumes most of App's state. Split into multiple commits if it exceeds ~1500 moved lines per §9 R6 — not because it's dangerous, just to keep each diff easy to skim.
 
 ### Round 8 — EquipmentPlaceholder
-Trivial — stub component, replace with a proper file.
+Trivial stub. Move last.
 
 ### Phase 3 — React Router
-Unchanged from earlier plan. Don't start until Phase 2 is done AND verified.
+Don't start until Phase 2 is done. Routing changes how `SetPasswordScreen` reads the URL hash; interleaving with component extraction adds noise.
 
-**Merge (`vite-migration` → `main`)** is still deferred. Current state on preview is stable but not user-visible-improved. Reasonable cutover point: after Round 6 is done (when inline views leave App), OR now if you want to land the structural progress and finish Round 6+ on a separate branch.
+### 2026-04-20 (session 2 continued) — runtime-crash fixups after preview smoke test
+
+Ronnie tested the preview after the Round 5 push. Home was stuck on "Starting up". Two commits fixed it + everything that followed:
+
+| SHA | Commit | What landed |
+|---|---|---|
+| `a8bb819` | Recover DEFAULT_WEBFORMS_CONFIG + extract S | Root-cause: Round 1's `LoginScreen` end-anchor swept `const DEFAULT_WEBFORMS_CONFIG` into `src/auth/LoginScreen.jsx`. main.jsx's root render passes it as `configInit={DEFAULT_WEBFORMS_CONFIG}` — undefined at module init, `root.render()` threw, React never mounted, boot loader stayed. Fix: move to `src/lib/defaults.js`, import in main.jsx. Also extracted `S` (shared inline-style object) to `src/lib/styles.js` since 6 extracted dailys views reference it (second latent crash — would hit on first nav). |
+| `c0dd033` | Patch missing UsersModal + cattleCache imports | Round 3's recovered `LivestockWeighInsView` + `CattleWeighInsView` both use `<UsersModal>` but didn't import it; `CattleWeighInsView` also called `loadCattleWeighInsCached` / `invalidateCattleWeighInsCache` without importing. Same issue in 7 cattle/sheep home + weigh-in views. Would crash on nav to /cattleweighins et al. |
+
+All tabs verified on preview after both commits. Migration state = clean.
+
+**Lesson now baked in:** after any batch extraction, do the "bare-name audit." Quick Node snippet:
+```javascript
+// For each extracted file, find identifiers that are called or JSX-used
+// but aren't (a) locally declared or (b) named in an import statement.
+// If the ident is a proper noun (PascalCase or known helper name), it's
+// likely a missed import. Fix before pushing.
+```
+Would have caught both fixup rounds above without Ronnie having to smoke-test.
+
+The anchor-oversweep trap has now bitten three times (`LivestockWeighInsView`, `CattleWeighInsView`, `DEFAULT_WEBFORMS_CONFIG`). Before every PowerShell extraction, grep `^const \w|^function \w` in main.jsx and confirm your `nextAnchor` is the *very next* top-level declaration, not two over.
+
+**Merge (`vite-migration` → `main`):** still deferred by Ronnie's call. Migration is structurally sound — ~53% of main.jsx extracted, all tabs work on preview. Reasonable cutover points: (1) now, if you want to land the structural progress and finish Round 6+ on a fresh branch, or (2) after Round 6 when inline views leave App. Ronnie decides.
 
 ---
 
 ## 15. Resuming this migration in a new Claude Code session
 
-### URL cheat sheet (read first — easy to confuse)
-| What | URL | Branch | Who deploys here |
-|---|---|---|---|
-| Production | `https://wcfplanner.com` (alias `https://cheerful-narwhal-1e39f5.netlify.app`) | `main` | Auto-deploys on every push to `main` |
-| Deploy preview | `https://deploy-preview-N--cheerful-narwhal-1e39f5.netlify.app` (N = PR number, currently 1) | `vite-migration` | Auto-deploys on every push to `vite-migration` |
+### URLs
+| What | URL | Branch |
+|---|---|---|
+| Production | `https://wcfplanner.com` (alias `https://cheerful-narwhal-1e39f5.netlify.app`) | `main` |
+| Deploy preview | `https://deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app` | `vite-migration` |
 
-If a smoke-test URL starts with `https://cheerful-narwhal…` directly (no `deploy-preview-N` prefix), you are testing **production**, NOT the migration. Two different code bases. We hit this confusion on 2026-04-19; don't repeat it.
+Anything WITHOUT the `deploy-preview-1--` prefix is **production**. Two different code bases.
 
-### Critical workflow rules (also in PROJECT.md memory, restated for visibility)
-- **`commit` = full commit, no follow-up.** When Ronnie says "commit," do it (status line only) and don't ask "ready to push?".
-- **`push` / `deploy` / merge ALWAYS needs a fresh explicit approval** in the same turn. The commit-no-prompt rule does NOT extend to push.
-- **Never merge `vite-migration` to `main` without explicit "merge" or "cutover" from Ronnie.** Production is on `main`; the migration is mid-flight. An accidental merge promotes a half-done refactor to live for the farm team.
-- **Never run destructive Supabase ops** (DROP, TRUNCATE, large DELETEs without WHERE) without explicit approval.
+### Hard rules (the short list)
+- **`commit` = do it.** One-line status update, no "ready to push?" follow-up.
+- **`push` / `deploy` / `merge`** = fresh explicit approval in the same turn. Commit approval does not extend.
+- **Don't merge `vite-migration` → `main`** without Ronnie saying "merge" or "cutover". Production is on `main`; migration is mid-flight.
+- **Don't run destructive Supabase ops** (DROP, TRUNCATE, large DELETEs without WHERE) without approval.
+- **Don't touch the §10 don't-touch list** — `wcfSelectAll`, `detectSessionInUrl:false`, auth listener, source-label workflow strings, etc.
 
-### Phase gates (don't skip)
-- **Phase 1 must be verified on the deploy preview URL before any Phase 2 commit lands.** Run the §8 smoke test on `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`. If anything fails, fix it before extracting Contexts. As of last update to §14, smoke test is still pending — confirm with Ronnie that it passed before continuing Round 0.
-- **Each Phase 2 round (0, 1, 2, … 8) is a session boundary.** Don't compress two rounds into one session even if context budget seems to allow it; the per-round verify-build-and-confirm pause is the safety net.
-- **Phase 3 (React Router) cannot start until all of Phase 2 is verified-merged.** Routing changes how the SetPasswordScreen URL hash gets read; do not interleave with Context extraction.
+### Starter checklist for a new session
+1. `git checkout vite-migration`
+2. `git log --oneline main..vite-migration | head -20` — see what's landed
+3. `npm install && npm run build` — must be clean before editing
+4. Read §14's latest dated entry to find starting point
+5. Before each batch extraction: grep `^const \w|^function \w` in main.jsx, verify the `nextAnchor` is the immediately-next top-level decl
+6. After each extraction: bare-name audit (find identifiers used but not imported or locally declared) before pushing
+7. After each commit: `npm run build` clean, then push if you have approval
+8. Append a dated entry to §14 at end of session
 
-### Read order (before touching code)
-If you (a future Claude) are picking this up cold, do these in order before touching code:
+### Pacing
+We have a deploy preview auto-rebuilding on every push + a clean local build gate + a pre-migration backup. That's a solid safety net. The original "one round per session" rule was overcautious — Phase 2 Rounds 0 through 5 landed in a single session with PowerShell extractions, two runtime regressions caught + fixed the same day via the preview, migration still on track. Use judgment: small commits + build-verified + preview-checked is the real gate. Moving fast is fine.
 
-1. **Read** `PROJECT.md` end-to-end for general project context. The don't-touch rules in §15.7, §15.11, §16.4, §16.10 apply to ALL work, not just the migration. The auth-recovery + `detectSessionInUrl: false` saga in §16 is critical context for any Phase 2 / Phase 3 commit that touches auth.
-2. **Read** this `MIGRATION_PLAN.md` cover-to-cover. §10 (don't-touch list) and §3 (current state inventory) are most load-bearing.
-3. **Check git state:**
-   - `git checkout vite-migration` (the migration branch)
-   - `git log --oneline main..vite-migration` (see what's already done)
-   - `git status` (should be clean except `.claude/`)
-4. **Verify build still passes locally:**
-   - `npm install` (in case node_modules is out of date or fresh clone)
-   - `npm run build` (must succeed without errors before you change anything)
-5. **Read §14 above** to find the most recent commit + the next-up commit per the plan. If a phase is partially complete, finish it before moving to the next round.
-6. **Confirm with Ronnie before** any of the following:
-   - Merging `vite-migration` to `main` (production cutover)
-   - Pushing the branch (auto-triggers Netlify deploy preview rebuild)
-   - Any commit that touches auth, payment-like flows, or the `wcfSelectAll` pagination loop
-   - Any structural decision not already locked in §11 (router, folders, state, package mgr)
-7. **After every meaningful commit:**
-   - `npm run build` to verify the bundle still produces
-   - For phases that touch auth or routing, also walk through §8 smoke test mentally before claiming done
-   - Append a new dated entry to §14 with SHA + what landed + verification status
+### Edit-tool note for main.jsx
+The file is large. PowerShell file-slice operations are the right tool for big component extractions — see the pattern in §14's 2026-04-20 session 2 entry. Don't try to transcribe multi-hundred-line components through Read → Write; drift is inevitable. PowerShell reads the bytes directly and the content never enters your messages.
 
-**Pacing rule (decided 2026-04-19):** Phase 1 in one session (mechanical), Phase 2 paced one round per session, Phase 3 in one session. Don't try to compress this. The deletion-incident risk Ronnie called out in his original prompt is real; small per-session blast radius is the protection.
-
-**Edit-tool note for working in main.jsx:** The file is currently ~19,100 lines. Edit-tool's unique-`old_string` requirement still works, but reads/edits are slow. Prefer extracting whole chunks (Read → Write to new file → Edit-replace original chunk with import). Don't try to surgically rename inside the verbatim port — too fragile.
+### The "it's stuck on Loading" failure mode
+If the deploy preview hangs on the boot loader after a push, it's almost always a ReferenceError during `root.render()` in main.jsx — something main.jsx references at module scope that was accidentally moved (see the `DEFAULT_WEBFORMS_CONFIG` incident in §14 2026-04-20 session 2). Open F12 Console in the browser, find the red error, fix the missing import, push. Preview rebuild is ~1 min.
 
 **Backup:** A pre-migration `index.html` is at `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` (SHA `1a535f73…`) as belt-and-suspenders. If a commit goes wrong and you need to recover the pre-Vite shape, it's there.
 
