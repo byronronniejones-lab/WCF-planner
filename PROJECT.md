@@ -2088,25 +2088,28 @@ Not in the plan's Context table — will land in feature folders during Rounds 1
 
 **Branch: `vite-migration`. Main + production untouched — legacy monolithic `index.html` still serves `wcfplanner.com`.**
 
-Huge session. Ronnie greenlit a "huge build" with pre-approval for commit + push after each of Rounds 1–6 (Round 7 reserved for standalone review). I got cleanly through Rounds 1–5 and stopped at the Round 6 architectural boundary. Full migration details live in `MIGRATION_PLAN.md §14` — this is the cross-project summary.
+Long session. Phase 2 Rounds 1–5 landed + two runtime-crash fixups after preview smoke test. Round 6 (inline-JSX views inside App) is the next chunk — it needs the hook-based rewrite approach described in §18.6 rather than file-slicing. Details live in `MIGRATION_PLAN.md §14`; this is the cross-project summary.
 
 ## 18.1 What landed
 
-Five rounds pushed to `vite-migration`. No production change — all still on `main`.
+Seven commits pushed to `vite-migration`. No production change — all still on `main`.
 
-| SHA | Round | Files added |
+| SHA | Round | Files |
 |---|---|---|
 | `db2a1fd` | Round 1 | 10 components + 1 helper lib |
 | `0aa3aeb` | Round 2 | 12 components |
 | `0f858ac` | Round 3 | 8 components + 3 helper libs + 2 recovery splits |
 | `42069b8` | Round 4 | 4 admin panels |
 | `3d34089` | Round 5 | 3 public webforms |
+| `a8bb819` | Fixup 1 | Recover DEFAULT_WEBFORMS_CONFIG + extract S styles (2 new libs) |
+| `c0dd033` | Fixup 2 | Patch missing UsersModal + cattleCache imports in 9 views |
 
 **Numbers at session end:**
 - main.jsx: 19,170 → 9,035 lines (53% reduction).
-- 40+ extracted components across src/auth, src/admin, src/broiler, src/cattle, src/layer, src/livestock, src/pig, src/sheep, src/shared, src/webforms.
-- 4 helper libs in src/lib/: layerHousing.js, cattleCache.js, cattleBreeding.js, dateUtils.js (plus pre-existing supabase.js, email.js, pagination.js).
-- Build: 121 modules (was 77 at session start), bundle size stable (code moved, not duplicated).
+- 40+ extracted components across `src/{auth,admin,broiler,cattle,layer,livestock,pig,sheep,shared,webforms}`.
+- 6 helper libs in `src/lib/`: layerHousing.js, cattleCache.js, cattleBreeding.js, dateUtils.js, styles.js, defaults.js (plus pre-existing supabase.js, email.js, pagination.js).
+- Build: 121+ modules (was 77 at session start), bundle size stable (code moved, not duplicated).
+- All tabs verified on preview by Ronnie.
 
 ## 18.2 The breakthrough: PowerShell file-slicing
 
@@ -2127,7 +2130,7 @@ The component body never enters my context — zero transcription risk. This is 
 
 Round 3 fix: split each co-resident file into a correctly-exported pair. Both routes now work.
 
-**Lesson for future rounds:** when picking `nextAnchor`, always grep `^const \w` in main.jsx and make sure the anchor is the NEXT top-level const, not two over. Ask if unsure.
+**Lesson for future rounds:** when picking `nextAnchor`, always grep `^const \w|^function \w` in main.jsx and make sure the anchor is the immediately-next top-level decl, not two over. This trap bit three times (`LivestockWeighInsView` + `CattleWeighInsView` in Round 1, `DEFAULT_WEBFORMS_CONFIG` in Round 1's LoginScreen extraction).
 
 ## 18.4 What's extracted + where (for the handover)
 
@@ -2144,7 +2147,9 @@ src/
 │  ├─ layerHousing.js           setHousingAnchorFromReport, computeProjectedCount, computeLayerFeedCost
 │  ├─ cattleCache.js            loadCattleWeighInsCached, invalidateCattleWeighInsCache + module cache
 │  ├─ cattleBreeding.js         calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel
-│  └─ dateUtils.js              addDays, toISO, fmt, fmtS, todayISO, thisMonday
+│  ├─ dateUtils.js              addDays, toISO, fmt, fmtS, todayISO, thisMonday
+│  ├─ styles.js                 S (shared inline-style object used by Header + dailys views)
+│  └─ defaults.js               DEFAULT_WEBFORMS_CONFIG (consumed by WebformsConfigProvider)
 ├─ shared/                      WcfYN, WcfToggle, DeleteModal, AdminAddReportModal, AdminNewWeighInModal
 ├─ auth/                        SetPasswordScreen, LoginScreen, UsersModal
 ├─ admin/                       FeedCostsPanel, FeedCostByMonthPanel, LivestockFeedInputsPanel, NutritionTargetsPanel
