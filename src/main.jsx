@@ -2669,7 +2669,7 @@ function App(){
   );
 
   // ── LIST VIEW ──
-  if(view==="list") return React.createElement(BroilerListView, {Header, loadUsers, openAdd, openEdit});
+  if(view==="list") return React.createElement(BroilerListView, {Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything});
 
   // ── POULTRY FEED VIEW ──
   if(view==="feed") return React.createElement(BroilerFeedView, {Header, feedOrders, setFeedOrders, poultryFeedInventory, setPoultryFeedInventory, poultryFeedExpandedMonths, setPoultryFeedExpandedMonths, sbSave});

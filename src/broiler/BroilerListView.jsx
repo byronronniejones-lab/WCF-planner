@@ -26,14 +26,19 @@ import { useBatches } from '../contexts/BatchesContext.jsx';
 import { useDailysRecent } from '../contexts/DailysRecentContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
-export default function BroilerListView({ Header, loadUsers, openAdd, openEdit }) {
+export default function BroilerListView({
+  Header, loadUsers,
+  openAdd, openEdit,
+  persist, del, confirmDelete, canDeleteAnything,
+}) {
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
-  const { batches } = useBatches();
+  const { batches, setBatches } = useBatches();
   const { broilerDailys } = useDailysRecent();
   const { setView } = useUI();
 
-  const role   = authState?.role;
-  const isMgmt = role==='management' || role==='admin';
+  const role    = authState?.role;
+  const isAdmin = role==='admin';
+  const isMgmt  = role==='management' || role==='admin';
 
   return (
     <div style={{minHeight:"100vh",background:"#f1f3f2"}}
