@@ -8,7 +8,7 @@
 // ============================================================================
 import React from 'react';
 import { sb } from '../lib/supabase.js';
-import { fmt, fmtS, todayISO, addDays } from '../lib/dateUtils.js';
+import { fmt, fmtS, todayISO, addDays, toISO } from '../lib/dateUtils.js';
 import { S } from '../lib/styles.js';
 import { computeLayerFeedCost } from '../lib/layerHousing.js';
 import UsersModal from '../auth/UsersModal.jsx';
