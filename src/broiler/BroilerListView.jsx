@@ -24,6 +24,7 @@ import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useBatches } from '../contexts/BatchesContext.jsx';
 import { useDailysRecent } from '../contexts/DailysRecentContext.jsx';
+import { useFeedCosts } from '../contexts/FeedCostsContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
 export default function BroilerListView({
@@ -34,6 +35,7 @@ export default function BroilerListView({
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const { batches, setBatches } = useBatches();
   const { broilerDailys } = useDailysRecent();
+  const { feedCosts } = useFeedCosts();
   const { setView, showAllComparison, setShowAllComparison } = useUI();
 
   const role    = authState?.role;

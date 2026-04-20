@@ -20,6 +20,7 @@ import { useUI } from '../contexts/UIContext.jsx';
 
 export default function PigFeedView({
   Header, loadUsers,
+  feedOrders, setFeedOrders,
   pigFeedInventory, setPigFeedInventory,
   pigFeedExpandedMonths, setPigFeedExpandedMonths,
   sbSave,

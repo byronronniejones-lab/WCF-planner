@@ -2675,7 +2675,7 @@ function App(){
   if(view==="feed") return React.createElement(BroilerFeedView, {Header, feedOrders, setFeedOrders, poultryFeedInventory, setPoultryFeedInventory, poultryFeedExpandedMonths, setPoultryFeedExpandedMonths, collapsedBatches, setCollapsedBatches, sbSave});
 
   // ── PIG FEED VIEW ──
-  if(view==="pigs") return React.createElement(PigFeedView, {Header, loadUsers, pigFeedInventory, setPigFeedInventory, pigFeedExpandedMonths, setPigFeedExpandedMonths, sbSave});
+  if(view==="pigs") return React.createElement(PigFeedView, {Header, loadUsers, feedOrders, setFeedOrders, pigFeedInventory, setPigFeedInventory, pigFeedExpandedMonths, setPigFeedExpandedMonths, sbSave});
   // ── BREEDING GANTT VIEW ──
 
   // ── PIGS HOME DASHBOARD ──

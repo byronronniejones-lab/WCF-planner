@@ -19,6 +19,7 @@ import {
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { usePig } from '../contexts/PigContext.jsx';
+import { useDailysRecent } from '../contexts/DailysRecentContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
 export default function SowsView({
@@ -42,6 +43,7 @@ export default function SowsView({
     sowSearch, setSowSearch,
     expandedSow, setExpandedSow,
   } = usePig();
+  const { pigDailys } = useDailysRecent();
   const { setView } = useUI();
     const cycleSeqMap = buildCycleSeqMap(breedingCycles);
     // ── Helpers ──
