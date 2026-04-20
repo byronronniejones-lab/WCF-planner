@@ -5,6 +5,7 @@
 // Pure module-scope functions + constants; no React, no App closure state.
 // ============================================================================
 import { toISO, addDays, todayISO } from './dateUtils.js';
+import { computeProjectedCount } from './layerHousing.js';
 export const BROODER_DAYS = 14;
 export const CC_SCHOONER  = 35;
 export const WR_SCHOONER  = 42;
@@ -252,4 +253,116 @@ export function isNearHoliday(iso){
   const d=new Date(iso+"T12:00:00"),y=d.getFullYear();
   const all=[...holidaysForYear(y-1),...holidaysForYear(y),...holidaysForYear(y+1)];
   return all.some(h=>Math.abs(d-new Date(h+"T12:00:00"))/86400000<=1);
+}
+
+
+// ============================================================================
+// Monthly feed projections (feed-view deps, lifted in Round 6)
+// ----------------------------------------------------------------------------
+// calcBatchFeedForMonth projects broiler feed for a calendar month using
+// the same schedule as calcBatchFeed. calcLayerFeedForMonth does the same
+// for layer batches — starter/grower phases drive off original_count, layer
+// phase uses computeProjectedCount against the active housings.
+// ============================================================================
+// For monthly summary: given a batch and a calendar month (YYYY-MM),
+// return {starter, grower} lbs consumed in that month
+export function calcBatchFeedForMonth(batch, yearMonth) {
+  if (!batch.hatchDate) return {starter:0, grower:0};
+  const schedule = getFeedSchedule(batch.breed);
+  const [y,m] = yearMonth.split("-").map(Number);
+  const monthStart = new Date(y, m-1, 1);
+  const monthEnd   = new Date(y, m, 0, 23, 59, 59);
+  let starter = 0, grower = 0;
+  schedule.forEach((w, i) => {
+    const weekStart = addDays(batch.hatchDate, i*7);
+    const weekEnd   = addDays(batch.hatchDate, (i+1)*7 - 1);
+    // Check overlap with month
+    if (weekStart <= monthEnd && weekEnd >= monthStart) {
+      // Proportion of week that falls in this month
+      const overlapStart = weekStart < monthStart ? monthStart : weekStart;
+      const overlapEnd   = weekEnd   > monthEnd   ? monthEnd   : weekEnd;
+      const overlapDays  = (overlapEnd - overlapStart) / 86400000 + 1;
+      const prop = overlapDays / 7;
+      if (w.phase === "starter") starter += w.totalLbs * prop;
+      else grower += w.totalLbs * prop;
+    }
+  });
+  return { starter: Math.round(starter), grower: Math.round(grower) };
+}
+
+// ── LAYER FEED SCHEDULE ──────────────────────────────────────────────────
+// Weeks 1-6: starter, Weeks 7-20: grower, Week 21+: layer feed (0.25 lbs/bird/day)
+// Starter capped at 1,500 lbs per batch (same as broilers).
+const LAYER_FEED_SCHEDULE = [
+  {week:1,  phase:'starter', lbsPerBird:0.50},
+  {week:2,  phase:'starter', lbsPerBird:1.00},
+  {week:3,  phase:'starter', lbsPerBird:1.10},
+  {week:4,  phase:'starter', lbsPerBird:1.20},
+  {week:5,  phase:'starter', lbsPerBird:1.20},
+  {week:6,  phase:'starter', lbsPerBird:1.00},
+  {week:7,  phase:'grower',  lbsPerBird:0.60},
+  {week:8,  phase:'grower',  lbsPerBird:0.65},
+  {week:9,  phase:'grower',  lbsPerBird:0.70},
+  {week:10, phase:'grower',  lbsPerBird:0.75},
+  {week:11, phase:'grower',  lbsPerBird:0.80},
+  {week:12, phase:'grower',  lbsPerBird:0.80},
+  {week:13, phase:'grower',  lbsPerBird:0.85},
+  {week:14, phase:'grower',  lbsPerBird:0.85},
+  {week:15, phase:'grower',  lbsPerBird:0.90},
+  {week:16, phase:'grower',  lbsPerBird:0.90},
+  {week:17, phase:'grower',  lbsPerBird:0.95},
+  {week:18, phase:'grower',  lbsPerBird:0.95},
+  {week:19, phase:'grower',  lbsPerBird:1.00},
+  {week:20, phase:'grower',  lbsPerBird:1.00},
+];
+const LAYER_FEED_PER_DAY = 0.25; // lbs/bird/day on layer feed (week 21+)
+
+// For a layer batch + month, return {starter, grower, layer} lbs projected.
+// Uses brooder_entry_date as day 0, original_count for starter/grower phases,
+// computeProjectedCount for layer phase hen count.
+export function calcLayerFeedForMonth(batch, housings, layerDailys, yearMonth) {
+  const startDate = batch.brooder_entry_date || batch.arrival_date;
+  if(!startDate) return {starter:0, grower:0, layer:0};
+  const birdCount = parseInt(batch.original_count) || 0;
+  if(birdCount <= 0) return {starter:0, grower:0, layer:0};
+  const [y,m] = yearMonth.split('-').map(Number);
+  const monthStart = new Date(y, m-1, 1);
+  const monthEnd = new Date(y, m, 0, 23, 59, 59);
+  let starter = 0, grower = 0, layer = 0;
+  // Weeks 1-20: starter/grower from schedule
+  LAYER_FEED_SCHEDULE.forEach(function(w, i){
+    const weekStart = addDays(startDate, i*7);
+    const weekEnd = addDays(startDate, (i+1)*7 - 1);
+    if(weekStart <= monthEnd && weekEnd >= monthStart){
+      const overlapStart = weekStart < monthStart ? monthStart : weekStart;
+      const overlapEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+      const overlapDays = (overlapEnd - overlapStart) / 86400000 + 1;
+      const prop = overlapDays / 7;
+      const lbs = w.lbsPerBird * birdCount * prop;
+      if(w.phase === 'starter') starter += lbs;
+      else grower += lbs;
+    }
+  });
+  // Week 21+: layer feed at 0.25 lbs/bird/day using projected hen count
+  var layerStart = addDays(startDate, 20*7); // day 140
+  if(layerStart <= monthEnd){
+    var lStart = layerStart < monthStart ? monthStart : layerStart;
+    var lEnd = monthEnd;
+    var lDays = Math.max(0, (lEnd - lStart) / 86400000 + 1);
+    if(lDays > 0){
+      // Use projected hen count from active housings for this batch
+      var batchHousings = (housings||[]).filter(function(h){return h.batch_id===batch.id && h.status==='active';});
+      var hens = 0;
+      if(batchHousings.length > 0){
+        batchHousings.forEach(function(h){
+          var proj = computeProjectedCount(h, layerDailys);
+          hens += proj ? proj.projected : (parseInt(h.current_count)||0);
+        });
+      } else {
+        hens = birdCount; // fallback if no housings yet
+      }
+      layer += hens * LAYER_FEED_PER_DAY * lDays;
+    }
+  }
+  return {starter:Math.round(starter), grower:Math.round(grower), layer:Math.round(layer)};
 }
