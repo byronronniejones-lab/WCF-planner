@@ -13,6 +13,8 @@ import {
   calcBreedingTimeline,
   buildCycleSeqMap,
   cycleLabel,
+  PIG_GROUPS,
+  PIG_GROUP_COLORS,
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';

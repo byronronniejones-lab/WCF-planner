@@ -13,7 +13,7 @@ import { S } from '../lib/styles.js';
 import {
   calcBatchFeedForMonth, calcLayerFeedForMonth,
   calcBatchFeed, calcBroilerStatsFromDailys, calcPoultryStatus,
-  getBatchColor,
+  getBatchColor, breedLabel, BREED_STYLE,
 } from '../lib/broiler.js';
 import { computeProjectedCount } from '../lib/layerHousing.js';
 import { useBatches } from '../contexts/BatchesContext.jsx';
