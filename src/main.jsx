@@ -100,6 +100,7 @@ import { DEFAULT_WEBFORMS_CONFIG } from './lib/defaults.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
 import { BROODER_DAYS, CC_SCHOONER, WR_SCHOONER, WEEKS_SHOWN, LEGACY_BREEDS, RESOURCES, BREED_STYLE, STATUS_STYLE, getFeedSchedule, calcBatchFeed, calcTimeline, calcPoultryStatus, calcBroilerStatsFromDailys, getBatchColor, breedLabel, isNearHoliday } from './lib/broiler.js';
+import { BOAR_EXPOSURE_DAYS, GESTATION_DAYS, WEANING_DAYS, GROW_OUT_DAYS, PIG_GROUPS, BREEDING_STATUSES, PIG_GROUP_COLORS, PIG_GROUP_TEXT, PHASE_LABELS, calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus } from './lib/pig.js';
 if (typeof window !== 'undefined') { window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache; }
 
 // Phase 2 Round 3: bigger stateful views + UsersModal.
@@ -285,67 +286,8 @@ const SCHOONERS     = ["1","2&3","4&5","6&6A","7&7A"];
 const BROODERS      = ["1","2","3"];
 const STATUSES      = ["planned","active","processed"];
 
-// ── PIG BREEDING CONSTANTS ─────────────────────────────────────────────────
-const BOAR_EXPOSURE_DAYS  = 45;
-const GESTATION_DAYS      = 116; // days from first exposure to first possible farrowing
-const WEANING_DAYS        = 42;  // 6 weeks
-const GROW_OUT_DAYS       = 183; // 6 months
 
-const PIG_GROUPS = ["1","2","3"];
-const BREEDING_STATUSES = ["planned","active","completed"];
 
-// Phase colors per group (light=earlier phases, dark=later phases)
-const PIG_GROUP_COLORS = {
-  "1": {boar:"#B5D4F4", paddock:"#85B7EB", farrowing:"#378ADD", weaning:"#185FA5", gilt:"#0C447C", boarGrow:"#042C53"},
-  "2": {boar:"#F4C0D1", paddock:"#ED93B1", farrowing:"#D4537E", weaning:"#993556", gilt:"#72243E", boarGrow:"#4B1528"},
-  "3": {boar:"#C0DD97", paddock:"#97C459", farrowing:"#639922", weaning:"#3B6D11", gilt:"#27500A", boarGrow:"#173404"},
-};
-const PIG_GROUP_TEXT = {"1":"#E6F1FB","2":"#FBEAF0","3":"#EAF3DE"};
-
-const PHASE_LABELS = ["Boar Exposure","Exp. Paddock","Farrowing","Weaning","Gilt Grow-out","Male Grow-out"];
-
-function calcBreedingTimeline(exposureStart) {
-  if (!exposureStart) return null;
-  const d0 = new Date(exposureStart+"T12:00:00");
-  const boarEnd        = toISO(addDays(d0, BOAR_EXPOSURE_DAYS - 1));
-  // Paddock starts day AFTER last boar exposure day, ends day before first possible farrowing
-  const paddockStart   = toISO(addDays(d0, BOAR_EXPOSURE_DAYS));
-  const paddockEnd     = toISO(addDays(d0, GESTATION_DAYS - 1));
-  const farrowingStart = toISO(addDays(d0, GESTATION_DAYS));
-  const farrowingEnd   = toISO(addDays(d0, BOAR_EXPOSURE_DAYS - 1 + GESTATION_DAYS));
-  const weaningStart   = toISO(addDays(d0, BOAR_EXPOSURE_DAYS + GESTATION_DAYS));
-  const weaningEnd     = toISO(addDays(d0, BOAR_EXPOSURE_DAYS + GESTATION_DAYS + WEANING_DAYS - 1));
-  const growStart      = toISO(addDays(d0, BOAR_EXPOSURE_DAYS + GESTATION_DAYS + WEANING_DAYS));
-  const growEnd        = toISO(addDays(d0, BOAR_EXPOSURE_DAYS + GESTATION_DAYS + WEANING_DAYS + GROW_OUT_DAYS - 1));
-  return { boarStart:exposureStart, boarEnd, paddockStart, paddockEnd,
-    farrowingStart, farrowingEnd, weaningStart, weaningEnd, growStart, growEnd };
-}
-
-// ── BREEDING CYCLE LABELS ────────────────────────────────────────────────
-// Auto-generate per-year global sequence number for breeding cycles.
-// Format: "Group N - YY-NN" (e.g. "Group 1 - 25-01").
-// NN resets each year; first cycle to start in any year gets 01, then 02, etc.
-// regardless of which group it's in.
-function buildCycleSeqMap(cycles) {
-  const seqMap = {};
-  const dated = (cycles||[]).filter(c=>c&&c.id&&c.exposureStart);
-  const sorted = [...dated].sort((a,b)=>{
-    if(a.exposureStart!==b.exposureStart) return a.exposureStart.localeCompare(b.exposureStart);
-    return String(a.id).localeCompare(String(b.id));
-  });
-  const yearCounts = {};
-  sorted.forEach(c=>{
-    const yr = c.exposureStart.slice(2,4); // '2025' -> '25'
-    yearCounts[yr] = (yearCounts[yr]||0) + 1;
-    seqMap[c.id] = yr + '-' + String(yearCounts[yr]).padStart(2,'0');
-  });
-  return seqMap;
-}
-function cycleLabel(cycle, seqMap) {
-  if(!cycle) return '';
-  const suffix = seqMap && seqMap[cycle.id];
-  return 'Group ' + cycle.group + (suffix ? ' - ' + suffix : '');
-}
 
 // ── CATTLE CONSTANTS ───────────────────────────────────────────────────────
 // See CATTLE_DESIGN.md for full module design.
@@ -381,15 +323,6 @@ const CATTLE_NURSING_DAYS           = 213;  // ~7 months
 // All dates ISO strings. Returns null if start not provided.
 // Phase 2.3 prep: cattle breeding helpers moved to src/lib/cattleBreeding.js.
 
-function calcCycleStatus(cycle) {
-  if(!cycle.exposureStart) return cycle.status||'planned';
-  const today = todayISO();
-  const tl = calcBreedingTimeline(cycle.exposureStart);
-  if(!tl) return 'planned';
-  if(today < cycle.exposureStart) return 'planned';
-  if(today > tl.growEnd) return 'completed';
-  return 'active';
-}
 
 const INITIAL_BREEDERS = [{"id": "podio-1", "tag": "1", "sex": "Boar", "group": "", "status": "Boar Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-01-15", "lastWeight": "393", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-2", "tag": "2", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "444", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-3", "tag": "3", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "285", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-4", "tag": "4", "sex": "Sow", "group": "", "status": "Deceased", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "570", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": true}, {"id": "podio-5", "tag": "5", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "644", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-6", "tag": "6", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "370", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-7", "tag": "7", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "315", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-8", "tag": "8", "sex": "Sow", "group": "2", "status": "Deceased", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "416", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": true}, {"id": "podio-9", "tag": "9", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2023-05-17", "lastWeight": "374", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-10", "tag": "10", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "610", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-11", "tag": "11", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "387", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-13", "tag": "13", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2023-05-17", "lastWeight": "373", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-17", "tag": "17", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "370", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-18", "tag": "18", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "462", "purchaseDate": "2024-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-19", "tag": "19", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-03-06", "lastWeight": "414", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-21", "tag": "21", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "388", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-22", "tag": "22", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "395", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-25", "tag": "25", "sex": "Boar", "group": "", "status": "Boar Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2023-05-17", "lastWeight": "396", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-27", "tag": "27", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "377", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-28", "tag": "28", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "360", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-32", "tag": "32", "sex": "Gilt", "group": "3", "status": "Sow Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2024-09-18", "lastWeight": "", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-33", "tag": "33", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Born on Farm", "birthDate": "2024-09-18", "lastWeight": "", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-34", "tag": "34", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Born on Farm", "birthDate": "2024-09-18", "lastWeight": "", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-98", "tag": "98", "sex": "Sow", "group": "1", "status": "Deceased", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "361", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": true}];
 
