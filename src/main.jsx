@@ -21,6 +21,32 @@ import { sb } from './lib/supabase.js';
 import { wcfSendEmail } from './lib/email.js';
 import { wcfSelectAll } from './lib/pagination.js';
 
+// Phase 2.0.1: AuthContext owns the auth-related useState hooks. App() reads
+// them via useAuth(); effects + helpers + derived values stay in App.
+import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
+
+// Phase 2.0.2: BatchesContext owns the broiler batch + edit-form hooks.
+// EMPTY_FORM + thisMonday are passed in as initializers (module-scope here).
+import { BatchesProvider, useBatches } from './contexts/BatchesContext.jsx';
+
+// Phase 2.0.3: PigContext owns all pig-scoped useState hooks. INITIAL_FARROWING,
+// INITIAL_BREEDERS, and the breedTlStart lazy init are threaded in as props.
+import { PigProvider, usePig } from './contexts/PigContext.jsx';
+
+// Phase 2.0.4: LayerContext owns layer-scoped useState hooks.
+import { LayerProvider, useLayer } from './contexts/LayerContext.jsx';
+
+// Phase 2.0.5: DailysRecentContext owns the recent-window dailys arrays
+// across broiler/pig/layer/egg/cattle/sheep.
+import { DailysRecentProvider, useDailysRecent } from './contexts/DailysRecentContext.jsx';
+
+// Phase 2.0.6: five small contexts bundled in one commit.
+import { CattleHomeProvider, useCattleHome } from './contexts/CattleHomeContext.jsx';
+import { SheepHomeProvider, useSheepHome } from './contexts/SheepHomeContext.jsx';
+import { WebformsConfigProvider, useWebformsConfig } from './contexts/WebformsConfigContext.jsx';
+import { FeedCostsProvider, useFeedCosts } from './contexts/FeedCostsContext.jsx';
+import { UIProvider, useUI } from './contexts/UIContext.jsx';
+
 // ── ONE-TIME LEGACY BABEL-CACHE CLEANUP ──
 // Pre-Vite versions cached compiled JSX in localStorage under wcf-babel-*
 // keys (~600 KB per user). With Vite there's no in-browser transpile, so
@@ -4439,17 +4465,99 @@ const DeleteModal = ({msg, onConfirm, onCancel}) => {
 
 function App(){
   // ── AUTH & LOADING STATE ──
-  const [authState,   setAuthState]  = useState(null); // null=loading, false=logged out, object=logged in
-  // Set when the user arrives via a password-reset / invite link. We hold
-  // them on the SetPasswordScreen until they pick a password, then resume
-  // the normal logged-in flow. Detected from URL hash on mount AND from the
-  // PASSWORD_RECOVERY event Supabase fires after exchanging the token.
-  const [pwRecovery,  setPwRecovery] = useState(() => {
-    if(typeof window === 'undefined') return false;
-    const h = window.location.hash || '';
-    const q = window.location.search || '';
-    return /[#&?]type=recovery\b/.test(h) || /[?&]type=recovery\b/.test(q) || /[#&?]type=invite\b/.test(h) || /[?&]type=invite\b/.test(q);
-  });
+  // Phase 2.0.1: these hooks live in AuthContext. See src/contexts/AuthContext.jsx
+  // for the pwRecovery URL-hash initializer and other state defaults. Effects
+  // (auth listener, visibility refresh, access-gate redirect), helpers
+  // (loadUser, loadAllData, canAccessProgram), and derived values remain here.
+  const {
+    authState,   setAuthState,
+    pwRecovery,  setPwRecovery,
+    dataLoaded,  setDataLoaded,
+    saveStatus,  setSaveStatus,
+    showUsers,   setShowUsers,
+    allUsers,    setAllUsers,
+    inviteEmail, setInviteEmail,
+    inviteRole,  setInviteRole,
+    inviteMsg,   setInviteMsg,
+  } = useAuth();
+
+  // Phase 2.0.2: broiler batch + edit-form hooks live in BatchesContext.
+  const {
+    batches,         setBatches,
+    showForm,        setShowForm,
+    editId,          setEditId,
+    form,            setForm,
+    originalForm,    setOriginalForm,
+    conflicts,       setConflicts,
+    tlStart,         setTlStart,
+    tooltip,         setTooltip,
+    override,        setOverride,
+    showLegacy,      setShowLegacy,
+    parsedProcessor, setParsedProcessor,
+    docUploading,    setDocUploading,
+    deleteConfirm,   setDeleteConfirm,
+  } = useBatches();
+
+  // Phase 2.0.3: pig-scoped hooks live in PigContext.
+  const {
+    pigData, setPigData,
+    breedingCycles, setBreedingCycles,
+    farrowingRecs, setFarrowingRecs,
+    boarNames, setBoarNames,
+    breedTlStart, setBreedTlStart,
+    showBreedForm, setShowBreedForm,
+    editBreedId, setEditBreedId,
+    breedForm, setBreedForm,
+    showFarrowForm, setShowFarrowForm,
+    editFarrowId, setEditFarrowId,
+    farrowForm, setFarrowForm,
+    farrowFilter, setFarrowFilter,
+    feederGroups, setFeederGroups,
+    showFeederForm, setShowFeederForm,
+    editFeederId, setEditFeederId,
+    feederForm, setFeederForm,
+    originalFeederForm, setOriginalFeederForm,
+    activeTripBatchId, setActiveTripBatchId,
+    tripForm, setTripForm,
+    editTripId, setEditTripId,
+    sowSearch, setSowSearch,
+    expandedSow, setExpandedSow,
+    archivedSows, setArchivedSows,
+    breeders, setBreeders,
+    breedOptions, setBreedOptions,
+    originOptions, setOriginOptions,
+    showBreederForm, setShowBreederForm,
+    editBreederId, setEditBreederId,
+    breederForm, setBreederForm,
+  } = usePig();
+
+  // Phase 2.0.4: layer-scoped hooks live in LayerContext.
+  const {
+    layerGroups,      setLayerGroups,
+    layerBatches,     setLayerBatches,
+    layerHousings,    setLayerHousings,
+    allLayerDailys,   setAllLayerDailys,
+    allEggDailys,     setAllEggDailys,
+    layerDashPeriod,  setLayerDashPeriod,
+    retHomeDashPeriod,setRetHomeDashPeriod,
+  } = useLayer();
+
+  // Phase 2.0.5: recent-window dailys arrays live in DailysRecentContext.
+  const {
+    broilerDailys,     setBroilerDailys,
+    pigDailys,         setPigDailys,
+    layerDailysRecent, setLayerDailysRecent,
+    eggDailysRecent,   setEggDailysRecent,
+    cattleDailysRecent,setCattleDailysRecent,
+    sheepDailysRecent, setSheepDailysRecent,
+  } = useDailysRecent();
+
+  // Phase 2.0.6 — small bundled contexts.
+  const { cattleForHome, setCattleForHome, cattleOnFarmCount, setCattleOnFarmCount } = useCattleHome();
+  const { sheepForHome,  setSheepForHome } = useSheepHome();
+  const { wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, webformsConfig, setWebformsConfig } = useWebformsConfig();
+  const { feedCosts, setFeedCosts, broilerNotes, setBroilerNotes, missedCleared, setMissedCleared } = useFeedCosts();
+  const { view, setView, pendingEdit, setPendingEdit, showAllComparison, setShowAllComparison, showMenu, setShowMenu } = useUI();
 
   // Permission helpers — role-based access
   // farm_team: edit+delete own dailys only
@@ -4462,110 +4570,25 @@ function App(){
   const canEditAll   = isMgmt;          // management + admin can edit anything
   const canDeleteDailys = isMgmt || isFarmTeam; // all roles can delete dailys
   const canDeleteAll = isAdmin;          // only admin can delete batches, groups, etc.
-  const [dataLoaded,  setDataLoaded] = useState(false);
-  const [saveStatus,  setSaveStatus] = useState('');   // '' | 'saving' | 'saved'
-  const [showUsers,   setShowUsers]  = useState(false);
-  const [allUsers,    setAllUsers]   = useState([]);
-  const [inviteEmail, setInviteEmail]= useState('');
-  const [inviteRole,  setInviteRole] = useState('farm_team');
-  const [inviteMsg,   setInviteMsg]  = useState('');
-  const [batches,        setBatches]       = useState([]);
-  const [view,           setView]          = useState(()=>{
-    const h = window.location.hash;
-    if(h==='#webforms'||h==='#/webforms') return 'webformhub';
-    if(h==='#addfeed'||h==='#/addfeed') return 'addfeed';
-    if(h==='#weighins'||h==='#/weighins') return 'weighins';
-    if(h==='#pigdailys'||h==='#/pigdailys') return 'webform';
-    return 'home';
-  });
-  const [showForm,       setShowForm]      = useState(false);
-  const [editId,         setEditId]        = useState(null);
-  const [form,           setForm]          = useState(EMPTY_FORM);
-  const [originalForm,   setOriginalForm]  = useState(null);
   const autoSaveTimer = React.useRef(null);
-  const [deleteConfirm, setDeleteConfirm]  = useState(null); // {message, onConfirm}
-  const [docUploading,   setDocUploading]  = useState(false);
-  const [parsedProcessor,setParsedProcessor]= useState(null); // {avgDressed, avgBreast, avgThigh, birdCount, fileName}
-  const [conflicts,      setConflicts]     = useState([]);
-  const [pigData,        setPigData]       = useState(()=>{
-    try { const r=localStorage.getItem("ppp-pigs-v1"); return r?JSON.parse(r):{
-      sows:0, nursingSows:0, boars:0,
-      feederGroups:[{id:"1",count:0,ageMonths:1}]
-    }; } catch(e){ return {sows:0,nursingSows:0,boars:0,feederGroups:[{id:"1",count:0,ageMonths:1}]}; }
-  });
-  const [breedingCycles, setBreedingCycles]= useState(()=>{
-    try { const r=localStorage.getItem("ppp-breeding-v1"); return r?JSON.parse(r):[]; }
-    catch(e){ return []; }
-  });
-  const [farrowingRecs,  setFarrowingRecs] = useState(()=>{
-    try { const r=localStorage.getItem("ppp-farrowing-v1"); return r?JSON.parse(r):INITIAL_FARROWING; }
-    catch(e){ return INITIAL_FARROWING; }
-  });
-  const [boarNames,      setBoarNames]     = useState(()=>{
-    try { const r=localStorage.getItem("ppp-boars-v1"); return r?JSON.parse(r):{boar1:"MACHINE",boar2:"AO"}; }
-    catch(e){ return {boar1:"MACHINE",boar2:"AO"}; }
-  });
-  const [breedTlStart,   setBreedTlStart]  = useState(()=>{
-    const d=new Date(); d.setMonth(d.getMonth()-2); d.setDate(1); return toISO(d);
-  });
-  const [override,       setOverride]      = useState(false);
-  const [showLegacy,     setShowLegacy]    = useState(false); // legacy hatchery/breed dropdowns toggle (processed batches only)
-  const [tlStart,        setTlStart]       = useState(thisMonday);
-  const [tooltip,        setTooltip]       = useState(null);
-  const [showBreedForm,  setShowBreedForm] = useState(false);
-  const [editBreedId,    setEditBreedId]   = useState(null);
-  const [breedForm,      setBreedForm]     = useState({group:"1",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:""});
-  const [showFarrowForm, setShowFarrowForm]= useState(false);
-  const [editFarrowId,   setEditFarrowId]  = useState(null);
-  const [farrowForm,     setFarrowForm]    = useState({sow:"",group:"1",farrowingDate:"",exposureStart:"",exposureEnd:"",sire:"",motheringQuality:"",demeanor:"",totalBorn:0,deaths:0,location:"",wentWell:"",didntGoWell:"",defects:""});
-  const [farrowFilter,   setFarrowFilter]  = useState({group:"all",sow:""});
-  const [feederGroups,   setFeederGroups]  = useState(()=>{
-    try { const r=localStorage.getItem("ppp-feeders-v1"); return r?JSON.parse(r):[]; }
-    catch(e){ return []; }
-  });
-  const [showFeederForm, setShowFeederForm]= useState(false);
-  const [editFeederId,   setEditFeederId]  = useState(null);
-  const [feederForm,     setFeederForm]    = useState({batchName:"",cycleId:"",giltCount:0,boarCount:0,startDate:"",originalPigCount:0,perLbFeedCost:0,legacyFeedLbs:0,notes:"",status:"active"});
-  const [originalFeederForm, setOriginalFeederForm] = useState(null);
   const pigAutoSaveTimer = React.useRef(null);
   const subAutoSaveTimer = React.useRef(null);
   const tripAutoSaveTimer = React.useRef(null);
   const breedAutoSaveTimer = React.useRef(null);
-  const [activeTripBatchId, setActiveTripBatchId] = useState(null);
-  const [tripForm,       setTripForm]      = useState({date:"",pigCount:0,liveWeights:"",hangingWeight:0,notes:""});
-  const [editTripId,     setEditTripId]    = useState(null);
-  const [showMenu,       setShowMenu]      = useState(false);
-  const [sowSearch,      setSowSearch]     = useState("");
-  const [expandedSow,    setExpandedSow]   = useState(null);
-  const [archivedSows,   setArchivedSows]  = useState([]);
-  const [breeders,       setBreeders]      = useState(INITIAL_BREEDERS);
-  const [breedOptions,   setBreedOptions]  = useState(["Berkshire","Duroc","Berkshire Cross","Duroc/Berkshire Cross"]);
-  const [originOptions,  setOriginOptions] = useState(["Born on Farm","Corey Davis"]);
-  const [showBreederForm,setShowBreederForm]= useState(false);
-  const [editBreederId,  setEditBreederId] = useState(null);
-  const [breederForm,    setBreederForm]   = useState({tag:"",sex:"Sow",group:"1",status:"Sow Group",breed:"",origin:"",birthDate:"",lastWeight:"",purchaseDate:"",purchaseAmount:""});
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
   const [showArchived,   setShowArchived]  = useState(false);
   const [showArchBatches,setShowArchBatches]= useState(false);
-  const [wfGroups,      setWfGroups]      = useState([]);
-  const [feedCosts,     setFeedCosts]     = useState({starter:0, grower:0, layer:0, pig:0, grit:0});
   const [feedOrders,   setFeedOrders]    = useState({pig:{},starter:{},grower:{},layerfeed:{}});
   const [pigFeedInventory, setPigFeedInventory] = useState(null); // {count, date} or null
   const [pigFeedExpandedMonths, setPigFeedExpandedMonths] = useState(new Set());
   const [poultryFeedInventory, setPoultryFeedInventory] = useState(null); // {starter:{count,date}, grower:{count,date}, layer:{count,date}}
   const [poultryFeedExpandedMonths, setPoultryFeedExpandedMonths] = useState(new Set());
   const [adminTab,      setAdminTab]      = useState('webforms'); // 'webforms' | 'feedcosts'
-  const [pendingEdit,   setPendingEdit]   = useState(null); // {id, viewName} — opens edit on nav
-  const [wfTeamMembers, setWfTeamMembers] = useState([]);
-  const [layerGroups,   setLayerGroups]   = useState([]);
-  const [layerBatches,  setLayerBatches]  = useState([]);
-  const [layerHousings, setLayerHousings] = useState([]);
   const [wfForm,     setWfForm]     = useState(()=>{const d=new Date();return{date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,teamMember:localStorage.getItem('wcf_team')||'',batchId:'',pigCount:'',feedLbs:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''};});
   const [wfSubmitting,setWfSubmitting]= useState(false);
   const [wfDone,     setWfDone]     = useState(false);
   const [wfErr,      setWfErr]      = useState('');
   const [wfGroupName,setWfGroupName]= useState('');
-  const [webformsConfig, setWebformsConfig]= useState(DEFAULT_WEBFORMS_CONFIG);
   const [wfView,         setWfView]        = useState("list"); // list | edit-webform | edit-field
   const [editWfId,       setEditWfId]      = useState(null);
   const [editFieldId,    setEditFieldId]   = useState(null);
@@ -4590,22 +4613,6 @@ function App(){
     // We'll populate this in the feed view
     return s;
   });
-  const [pigDailys,        setPigDailys]        = useState([]);
-  const [broilerDailys,    setBroilerDailys]    = useState([]);
-  const [cattleOnFarmCount, setCattleOnFarmCount] = useState(0);
-  const [showAllComparison, setShowAllComparison] = useState(false);
-  const [missedCleared,    setMissedCleared]    = useState(new Set());
-  const [layerDailysRecent,setLayerDailysRecent]= useState([]);
-  const [eggDailysRecent,  setEggDailysRecent]  = useState([]);
-  const [cattleDailysRecent,setCattleDailysRecent] = useState([]);
-  const [sheepDailysRecent, setSheepDailysRecent]  = useState([]);
-  const [cattleForHome,    setCattleForHome]    = useState([]); // [{id,herd}] for missed-report flock-presence check
-  const [sheepForHome,     setSheepForHome]     = useState([]); // [{id,flock}]
-  const [allLayerDailys,   setAllLayerDailys]   = useState([]);
-  const [allEggDailys,     setAllEggDailys]     = useState([]);
-  const [layerDashPeriod,  setLayerDashPeriod]  = useState(30);
-  const [retHomeDashPeriod,setRetHomeDashPeriod]= useState(30);
-  const [broilerNotes,     setBroilerNotes]     = useState('');
   const [pigNotes,         setPigNotes]         = useState('');
   const [layerNotes,       setLayerNotes]       = useState('');
   const [dailysFilter,     setDailysFilter]     = useState({batchId:"all",dateFrom:"",dateTo:""});
@@ -19154,7 +19161,40 @@ const CattleNewWeighInModal = ({sb, onClose, onCreate}) => {
 // createRoot on Babel cache retry) is no longer needed under Vite — there's
 // no eval+retry path that could re-execute this module.
 const root = createRoot(document.getElementById('root'));
-root.render(<App/>);
+const breedTlStartInit = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 2);
+  d.setDate(1);
+  return toISO(d);
+};
+
+root.render(
+  <AuthProvider>
+    <BatchesProvider formInit={EMPTY_FORM} tlStartInit={thisMonday}>
+      <PigProvider
+        initialFarrowing={INITIAL_FARROWING}
+        initialBreeders={INITIAL_BREEDERS}
+        breedTlStartInit={breedTlStartInit}
+      >
+        <LayerProvider>
+          <DailysRecentProvider>
+            <CattleHomeProvider>
+              <SheepHomeProvider>
+                <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
+                  <FeedCostsProvider>
+                    <UIProvider>
+                      <App/>
+                    </UIProvider>
+                  </FeedCostsProvider>
+                </WebformsConfigProvider>
+              </SheepHomeProvider>
+            </CattleHomeProvider>
+          </DailysRecentProvider>
+        </LayerProvider>
+      </PigProvider>
+    </BatchesProvider>
+  </AuthProvider>
+);
 
 // Fade out the static boot loader after React's first paint. Two RAFs to
 // ensure the first frame containing real React content is on screen before
