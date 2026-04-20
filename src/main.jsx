@@ -2928,10 +2928,10 @@ function App(){
   }
 
   // ── FARROWING RECORDS VIEW ──
-  if(view==="farrowing") return React.createElement(FarrowingView, {Header, loadUsers, persistFarrowing, confirmDelete});
+  if(view==="farrowing") return React.createElement(FarrowingView, {Header, loadUsers, persistFarrowing, confirmDelete, resolveSire});
 
   // ── BREEDING PIGS TAB ──
-  if(view==="sows") return React.createElement(SowsView, {Header, loadUsers, persistBreeders, persistBreedOptions, persistOriginOptions, confirmDelete, leaderboardExpanded, setLeaderboardExpanded, showArchived, setShowArchived});
+  if(view==="sows") return React.createElement(SowsView, {Header, loadUsers, persistBreeders, persistBreedOptions, persistOriginOptions, confirmDelete, resolveSire, leaderboardExpanded, setLeaderboardExpanded, showArchived, setShowArchived});
 
 
 

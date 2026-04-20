@@ -24,7 +24,7 @@ import { useUI } from '../contexts/UIContext.jsx';
 export default function SowsView({
   Header, loadUsers,
   persistBreeders, persistBreedOptions, persistOriginOptions,
-  confirmDelete,
+  confirmDelete, resolveSire,
   leaderboardExpanded, setLeaderboardExpanded,
   showArchived, setShowArchived,
 }) {

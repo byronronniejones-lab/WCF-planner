@@ -14,6 +14,7 @@ import { calcBreedingTimeline } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { usePig } from '../contexts/PigContext.jsx';
+import { useDailysRecent } from '../contexts/DailysRecentContext.jsx';
 import { useFeedCosts } from '../contexts/FeedCostsContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
@@ -25,6 +26,7 @@ export default function PigFeedView({
 }) {
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const { breeders, feederGroups, farrowingRecs, breedingCycles } = usePig();
+  const { pigDailys } = useDailysRecent();
   const { feedCosts } = useFeedCosts();
   const { setView } = useUI();
     // ── PIG FEED PLANNING ──
