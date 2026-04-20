@@ -1,5 +1,6 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
+import UsersModal from '../auth/UsersModal.jsx';
 
 const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;

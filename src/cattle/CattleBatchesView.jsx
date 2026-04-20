@@ -1,5 +1,6 @@
 // Phase 2 Round 3 extraction (verbatim).
 import React from 'react';
+import UsersModal from '../auth/UsersModal.jsx';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
 import PigSendToTripModal from '../livestock/PigSendToTripModal.jsx';

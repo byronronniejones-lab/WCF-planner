@@ -6,6 +6,8 @@
 // ============================================================================
 import React from 'react';
 import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
+import UsersModal from '../auth/UsersModal.jsx';
+import { loadCattleWeighInsCached, invalidateCattleWeighInsCache } from '../lib/cattleCache.js';
 const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;
   const [sessions, setSessions] = useState([]);

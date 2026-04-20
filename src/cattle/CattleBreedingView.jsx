@@ -1,5 +1,6 @@
 // Phase 2 Round 3 extraction (verbatim).
 import React from 'react';
+import UsersModal from '../auth/UsersModal.jsx';
 import { calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel } from '../lib/cattleBreeding.js';
 const CattleBreedingView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;

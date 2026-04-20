@@ -1,5 +1,6 @@
 // Phase 2 Round 3 extraction (verbatim).
 import React from 'react';
+import UsersModal from '../auth/UsersModal.jsx';
 import SheepBulkImport from './SheepBulkImport.jsx';
 import SheepDetail from './SheepDetail.jsx';
 const SheepFlocksView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit}) => {

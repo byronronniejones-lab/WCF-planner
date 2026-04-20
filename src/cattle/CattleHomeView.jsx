@@ -1,5 +1,6 @@
 // Phase 2 Round 3 extraction (verbatim).
 import React from 'react';
+import UsersModal from '../auth/UsersModal.jsx';
 import CattleBulkImport from './CattleBulkImport.jsx';
 import SheepBulkImport from '../sheep/SheepBulkImport.jsx';
 import CowDetail from './CowDetail.jsx';
