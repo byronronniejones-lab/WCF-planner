@@ -1,5 +1,6 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
+import { S } from '../lib/styles.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState,useEffect}=React;

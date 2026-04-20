@@ -92,6 +92,8 @@ import CattleWeighInsView from './cattle/CattleWeighInsView.jsx';
 import { loadCattleWeighInsCached, invalidateCattleWeighInsCache } from './lib/cattleCache.js';
 import { calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel } from './lib/cattleBreeding.js';
 import { addDays, toISO, fmt, fmtS, todayISO, thisMonday } from './lib/dateUtils.js';
+import { S } from './lib/styles.js';
+import { DEFAULT_WEBFORMS_CONFIG } from './lib/defaults.js';
 if (typeof window !== 'undefined') { window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache; }
 
 // Phase 2 Round 3: bigger stateful views + UsersModal.
@@ -755,32 +757,7 @@ const EMPTY_FORM = {
 // Phase 2.1.5: LoginScreen moved to src/auth/LoginScreen.jsx.;
 
 
-const S={
-    header:{
-      background:"linear-gradient(135deg,#042f23 0%,#085041 60%,#0d6652 100%)",
-      color:"white",
-      padding:"10px 1.25rem",
-      display:"flex",
-      justifyContent:"space-between",
-      alignItems:"center",
-      flexWrap:"wrap",
-      gap:8,
-      position:"sticky",
-      top:0,
-      zIndex:100,
-      boxShadow:"0 2px 8px rgba(0,0,0,.12)",
-    },
-    navBtn:(active)=>({padding:"5px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:active?700:500,fontFamily:"inherit",
-      background:active?"white":"rgba(255,255,255,.15)",color:active?"#085041":"rgba(255,255,255,.9)"}),
-    addBtn:{padding:"5px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:"#085041",color:"white"},
-    card:{background:"white",border:"1px solid #e5e7eb",borderRadius:10,overflow:"hidden"},
-    label:{fontSize:12,color:"#4b5563",marginBottom:3,display:"block"},
-    fieldGroup:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},
-    badge:(bg,tx)=>({display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:500,background:bg,color:tx}),
-    btnPrimary:{padding:"9px 0",borderRadius:7,border:"none",fontWeight:500,fontSize:13,cursor:"pointer",background:"#085041",color:"white",width:"100%"},
-    btnDanger:{padding:"9px 14px",borderRadius:7,border:"1px solid #F09595",cursor:"pointer",background:"white",color:"#b91c1c",fontSize:13},
-    btnGhost:{padding:"9px 14px",borderRadius:7,border:"1px solid #d1d5db",cursor:"pointer",background:"white",color:"#4b5563",fontSize:13},
-  };
+// Phase 2 Round 5 fix: S styles object moved to src/lib/styles.js.
 
 // ── PERMISSION HELPERS ──────────────────────────────────────
 function canEditDailys(role)     { return ['farm_team','management','admin'].includes(role); }
