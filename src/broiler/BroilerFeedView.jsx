@@ -10,7 +10,11 @@ import React from 'react';
 import { sb } from '../lib/supabase.js';
 import { fmt, fmtS, todayISO, addDays } from '../lib/dateUtils.js';
 import { S } from '../lib/styles.js';
-import { calcBatchFeedForMonth, calcLayerFeedForMonth } from '../lib/broiler.js';
+import {
+  calcBatchFeedForMonth, calcLayerFeedForMonth,
+  calcBatchFeed, calcBroilerStatsFromDailys, calcPoultryStatus,
+  getBatchColor,
+} from '../lib/broiler.js';
 import { computeProjectedCount } from '../lib/layerHousing.js';
 import { useBatches } from '../contexts/BatchesContext.jsx';
 import { useLayer } from '../contexts/LayerContext.jsx';
@@ -21,6 +25,7 @@ export default function BroilerFeedView({
   feedOrders, setFeedOrders,
   poultryFeedInventory, setPoultryFeedInventory,
   poultryFeedExpandedMonths, setPoultryFeedExpandedMonths,
+  collapsedBatches, setCollapsedBatches,
   sbSave,
 }) {
   const { batches } = useBatches();

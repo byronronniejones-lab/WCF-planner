@@ -34,7 +34,7 @@ export default function BroilerListView({
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const { batches, setBatches } = useBatches();
   const { broilerDailys } = useDailysRecent();
-  const { setView } = useUI();
+  const { setView, setShowAllComparison } = useUI();
 
   const role    = authState?.role;
   const isAdmin = role==='admin';

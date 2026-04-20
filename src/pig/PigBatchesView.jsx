@@ -23,13 +23,14 @@ import { useDailysRecent } from '../contexts/DailysRecentContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
 export default function PigBatchesView({
-  Header, loadUsers, persistFeeders,
+  Header, loadUsers, persistFeeders, confirmDelete,
   pigAutoSaveTimer, subAutoSaveTimer, tripAutoSaveTimer,
   showSubForm, setShowSubForm,
   subForm, setSubForm,
   editSubId, setEditSubId,
   collapsedBatches, setCollapsedBatches,
   collapsedMonths, setCollapsedMonths,
+  showArchBatches, setShowArchBatches,
 }) {
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const {

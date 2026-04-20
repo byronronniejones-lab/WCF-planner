@@ -2672,7 +2672,7 @@ function App(){
   if(view==="list") return React.createElement(BroilerListView, {Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything});
 
   // ── POULTRY FEED VIEW ──
-  if(view==="feed") return React.createElement(BroilerFeedView, {Header, feedOrders, setFeedOrders, poultryFeedInventory, setPoultryFeedInventory, poultryFeedExpandedMonths, setPoultryFeedExpandedMonths, sbSave});
+  if(view==="feed") return React.createElement(BroilerFeedView, {Header, feedOrders, setFeedOrders, poultryFeedInventory, setPoultryFeedInventory, poultryFeedExpandedMonths, setPoultryFeedExpandedMonths, collapsedBatches, setCollapsedBatches, sbSave});
 
   // ── PIG FEED VIEW ──
   if(view==="pigs") return React.createElement(PigFeedView, {Header, loadUsers, pigFeedInventory, setPigFeedInventory, pigFeedExpandedMonths, setPigFeedExpandedMonths, sbSave});
@@ -2681,14 +2681,14 @@ function App(){
   // ── PIGS HOME DASHBOARD ──
   if(view==="pigsHome") return React.createElement(PigsHomeView, {Header, loadUsers});
 
-  if(view==="breeding") return React.createElement(BreedingView, {Header, loadUsers, persistBreeding, breedAutoSaveTimer});
+  if(view==="breeding") return React.createElement(BreedingView, {Header, loadUsers, persistBreeding, breedAutoSaveTimer, confirmDelete});
 
   // ── PIG BATCHES VIEW ──
-  if(view==="pigbatches") return React.createElement(PigBatchesView, {Header, loadUsers, persistFeeders, pigAutoSaveTimer, subAutoSaveTimer, tripAutoSaveTimer, showSubForm, setShowSubForm, subForm, setSubForm, editSubId, setEditSubId, collapsedBatches, setCollapsedBatches, collapsedMonths, setCollapsedMonths});
+  if(view==="pigbatches") return React.createElement(PigBatchesView, {Header, loadUsers, persistFeeders, confirmDelete, pigAutoSaveTimer, subAutoSaveTimer, tripAutoSaveTimer, showSubForm, setShowSubForm, subForm, setSubForm, editSubId, setEditSubId, collapsedBatches, setCollapsedBatches, collapsedMonths, setCollapsedMonths, showArchBatches, setShowArchBatches});
 
 
   // ── WEBFORMS ADMIN VIEW ──
-  if(view==="webforms") return React.createElement(WebformsAdminView, {Header, loadUsers, persistWebforms, wfForm, setWfForm, wfSubmitting, setWfSubmitting, wfDone, setWfDone, wfErr, setWfErr, wfGroupName, setWfGroupName, wfView, setWfView, editWfId, setEditWfId, editFieldId, setEditFieldId, wfFieldForm, setWfFieldForm, newTeamMember, setNewTeamMember, addingTo, setAddingTo, editFldLbl, setEditFldLbl, editFldVal, setEditFldVal, editSecIdx, setEditSecIdx, editSecVal, setEditSecVal, newOpt, setNewOpt});
+  if(view==="webforms") return React.createElement(WebformsAdminView, {Header, loadUsers, persistWebforms, saveFeedCosts, confirmDelete, adminTab, setAdminTab, wfForm, setWfForm, wfSubmitting, setWfSubmitting, wfDone, setWfDone, wfErr, setWfErr, wfGroupName, setWfGroupName, wfView, setWfView, editWfId, setEditWfId, editFieldId, setEditFieldId, wfFieldForm, setWfFieldForm, newTeamMember, setNewTeamMember, addingTo, setAddingTo, editFldLbl, setEditFldLbl, editFldVal, setEditFldVal, editSecIdx, setEditSecIdx, editSecVal, setEditSecVal, newOpt, setNewOpt});
 
   // ── PIG DAILY WEBFORM VIEW (public, no auth needed — route: #pigdailys) ──
   function renderWebform() {
@@ -2928,10 +2928,10 @@ function App(){
   }
 
   // ── FARROWING RECORDS VIEW ──
-  if(view==="farrowing") return React.createElement(FarrowingView, {Header, loadUsers, persistFarrowing});
+  if(view==="farrowing") return React.createElement(FarrowingView, {Header, loadUsers, persistFarrowing, confirmDelete});
 
   // ── BREEDING PIGS TAB ──
-  if(view==="sows") return React.createElement(SowsView, {Header, loadUsers, persistBreeders});
+  if(view==="sows") return React.createElement(SowsView, {Header, loadUsers, persistBreeders, persistBreedOptions, persistOriginOptions, confirmDelete, leaderboardExpanded, setLeaderboardExpanded, showArchived, setShowArchived});
 
 
 

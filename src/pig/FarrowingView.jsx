@@ -18,7 +18,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { usePig } from '../contexts/PigContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
-export default function FarrowingView({ Header, loadUsers, persistFarrowing }) {
+export default function FarrowingView({ Header, loadUsers, persistFarrowing, confirmDelete }) {
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const {
     breedingCycles,

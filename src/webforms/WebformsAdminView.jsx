@@ -11,12 +11,19 @@ import { sb } from '../lib/supabase.js';
 import { fmt, fmtS, todayISO, addDays } from '../lib/dateUtils.js';
 import { S } from '../lib/styles.js';
 import UsersModal from '../auth/UsersModal.jsx';
+import FeedCostsPanel from '../admin/FeedCostsPanel.jsx';
+import FeedCostByMonthPanel from '../admin/FeedCostByMonthPanel.jsx';
+import LivestockFeedInputsPanel from '../admin/LivestockFeedInputsPanel.jsx';
+import NutritionTargetsPanel from '../admin/NutritionTargetsPanel.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useFeedCosts } from '../contexts/FeedCostsContext.jsx';
 import { useWebformsConfig } from '../contexts/WebformsConfigContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
 export default function WebformsAdminView({
   Header, loadUsers, persistWebforms,
+  saveFeedCosts, confirmDelete,
+  adminTab, setAdminTab,
   wfForm, setWfForm,
   wfSubmitting, setWfSubmitting,
   wfDone, setWfDone,
@@ -36,6 +43,7 @@ export default function WebformsAdminView({
 }) {
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const { webformsConfig, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers } = useWebformsConfig();
+  const { feedCosts } = useFeedCosts();
   const { setView } = useUI();
     const FIELD_TYPES = [
       {value:"text",          label:"Text (single line)"},

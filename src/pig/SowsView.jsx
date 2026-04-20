@@ -19,7 +19,13 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { usePig } from '../contexts/PigContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
-export default function SowsView({ Header, loadUsers, persistBreeders }) {
+export default function SowsView({
+  Header, loadUsers,
+  persistBreeders, persistBreedOptions, persistOriginOptions,
+  confirmDelete,
+  leaderboardExpanded, setLeaderboardExpanded,
+  showArchived, setShowArchived,
+}) {
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const {
     breedingCycles,
