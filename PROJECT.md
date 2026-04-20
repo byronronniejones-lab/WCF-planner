@@ -1986,3 +1986,98 @@ After the §16 commit, Ronnie flagged that the program tiles were eating too muc
 ---
 
 *End of April 18 session. Work-tree state at session end: clean. All commits pushed. Next session should: (1) apply migration 009, (2) smoke-test the sheep module, (3) verify weigh_in_sessions.species CHECK allows 'sheep', (4) build the sheep import seeder for Ronnie's 67-row tracker file, (5) verify the new home-page cross-program coverage works once cattle/sheep dailys are flowing in. Good luck.*
+
+---
+
+# 17. Session Update — April 20, 2026 (Vite migration Phase 1 preview verify + Phase 2 Round 0)
+
+**Branch: `vite-migration`. Main + production untouched — legacy monolithic `index.html` still serves `wcfplanner.com`.**
+
+Short session focused on the Vite migration's Phase 1 smoke-test gate and the full Phase 2 Round 0 (Context extraction). No feature work. No data changes. No schema changes. Migration progress only.
+
+The detailed migration log lives in `MIGRATION_PLAN.md §14` — this section is the cross-project summary so future Claude picks up the thread without having to read the migration plan end-to-end.
+
+## 17.1 What landed this session
+
+### Phase 1 gate cleared (Vite build serving preview)
+Ronnie smoke-tested the deploy preview (`deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`) after the previous session's Phase 1 commits (`26ba711` → `9956d13`). All tabs load, navigation works. That was the last required verification before moving to Phase 2 per `MIGRATION_PLAN §14` / §15 "phase gates" rules.
+
+### Phase 2 Round 0 (all six Context extractions) — single commit
+| SHA | Branch | What landed |
+|---|---|---|
+| `67d2ae3` | `vite-migration` | 10 thin Context Providers under `src/contexts/`. ~78 useState hooks moved out of App(). App retains all effects, helpers, and derived values — feature components read their state via `useAuth()`, `useBatches()`, `usePig()`, `useLayer()`, `useDailysRecent()`, `useCattleHome()`, `useSheepHome()`, `useWebformsConfig()`, `useFeedCosts()`, `useUI()`. |
+
+Why one commit instead of six per-step SHAs: all six extractions are the same structural pattern (move state hooks into Provider, App destructures via `useX()`, root wraps in `<XProvider>`). Splitting already-intermixed changes in main.jsx would have been git surgery for its own sake. The single commit captures a coherent "Round 0 complete" chunk.
+
+### Deployed state
+- **Production (`wcfplanner.com`):** still on `main` — unchanged legacy monolith. No user-visible change.
+- **Deploy preview (`deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`):** Phase 1 + Round 0 live. Ronnie smoke-tested after push — all tabs work, **forgot-password flow works end-to-end** (AuthContext's `pwRecovery` initializer + auth listener effect both survived the state-vs-effect split cleanly).
+
+## 17.2 Where Round 0 put things
+
+New `src/contexts/` directory, 10 files:
+
+| Context | Owns |
+|---|---|
+| `AuthContext` | `authState`, `pwRecovery`, `dataLoaded`, `saveStatus`, `showUsers`, `allUsers`, `inviteEmail`, `inviteRole`, `inviteMsg` |
+| `BatchesContext` | `batches`, `showForm`, `editId`, `form`, `originalForm`, `conflicts`, `tlStart`, `tooltip`, `override`, `showLegacy`, `parsedProcessor`, `docUploading`, `deleteConfirm` |
+| `PigContext` | `pigData`, `breedingCycles`, `farrowingRecs`, `boarNames`, `breedTlStart`, 5 pig form states (breed/farrow/feeder/breeder/trip), sows UI, `archivedSows`, `breeders`, `breedOptions`, `originOptions` (29 hooks) |
+| `LayerContext` | `layerGroups`, `layerBatches`, `layerHousings`, `allLayerDailys`, `allEggDailys`, `layerDashPeriod`, `retHomeDashPeriod` |
+| `DailysRecentContext` | `broilerDailys`, `pigDailys`, `layerDailysRecent`, `eggDailysRecent`, `cattleDailysRecent`, `sheepDailysRecent` |
+| `CattleHomeContext` | `cattleForHome`, `cattleOnFarmCount` |
+| `SheepHomeContext` | `sheepForHome` |
+| `WebformsConfigContext` | `wfGroups`, `wfTeamMembers`, `webformsConfig` |
+| `FeedCostsContext` | `feedCosts`, `broilerNotes`, `missedCleared` |
+| `UIContext` | `view`, `pendingEdit`, `showAllComparison`, `showMenu` |
+
+**Deviation from `MIGRATION_PLAN §4` table:** `view` went to `UIContext`, not `BatchesContext`. The plan hedged with "(initially)" and also listed `view` under `UIContext` — UIContext is the correct final home (every feature reads it), so it landed there directly and skipped a later rework.
+
+## 17.3 What did NOT change
+
+Everything on the `MIGRATION_PLAN §10` don't-touch list is verbatim-preserved. In particular:
+- `wcfSelectAll` pagination loop untouched
+- `loadCattleWeighInsCached` two-query pattern untouched
+- `detectSessionInUrl: false` + `storageKey: 'farm-planner-auth'` untouched
+- `SetPasswordScreen` URL-hash recovery logic untouched
+- `_wcfPersistData` debounce untouched
+- No JSX `\u` escapes touched
+- No `canAccessProgram` / `VIEW_TO_PROGRAM` semantics changed
+- No Supabase schema changes
+- No edge function changes
+
+Also unchanged: all feature components (`CattleHerdsView`, `SheepFlocksView`, `WebformHub`, etc.) still receive state via props from App — no component signatures changed this round. Contexts exist but only `App()` consumes them so far; feature-folder extractions in Rounds 1–8 will switch those consumers to `useX()` hooks.
+
+## 17.4 State that stayed in App()
+
+Not in the plan's Context table — will land in feature folders during Rounds 1–8:
+- Refs: `autoSaveTimer`, `pigAutoSaveTimer`, `subAutoSaveTimer`, `tripAutoSaveTimer`, `breedAutoSaveTimer`
+- Pig UI flags: `leaderboardExpanded`, `showArchived`, `showArchBatches`
+- Feed orders/inventories: `feedOrders`, `pigFeedInventory`, `pigFeedExpandedMonths`, `poultryFeedInventory`, `poultryFeedExpandedMonths`
+- Notes: `pigNotes`, `layerNotes`
+- Webforms admin state: `wfForm`, `wfSubmitting`, `wfDone`, `wfErr`, `wfGroupName`, `wfView`, `editWfId`, `editFieldId`, `wfFieldForm`, `newTeamMember`, `addingTo`, `editFldLbl`, `editFldVal`, `editSecIdx`, `editSecVal`, `newOpt`
+- Pig batches UI: `showSubForm`, `subForm`, `editSubId`, `collapsedBatches`, `collapsedMonths`
+- Legacy pig dailys form: `dailysFilter`, `showDailyForm`, `editDailyId`, `EMPTY_DAILY`, `dailyForm`
+- Admin tab: `adminTab`
+
+## 17.5 What's next
+
+**Next session: Phase 2 Round 1** (leaf components per `MIGRATION_PLAN §6`):
+- 2.1.1 `WcfYN` + `WcfToggle` → `src/shared/`
+- 2.1.2 `DeleteModal` → `src/shared/`
+- 2.1.3 `Header` → `src/shared/`
+- 2.1.4 `AdminAddReportModal` + `AdminNewWeighInModal` + `PigSendToTripModal` + `CattleNewWeighInModal`
+- 2.1.5 `SetPasswordScreen` + `LoginScreen` → `src/auth/` (forgot-password flow must be re-tested after this one — critical gate)
+
+**Cutover (merge `vite-migration` → `main`) is still deferred.** Ronnie's call at end of session: build more rounds before merging. Round 0 is pure state plumbing — no user-visible improvement yet. Earliest reasonable cutover is after Round 1 or 2 when component extraction actually starts paying structural-organization dividends.
+
+## 17.6 Gotchas for future Claude
+
+1. **The provider tree matters for prop-forwarding** — `BatchesProvider` and `PigProvider` and `WebformsConfigProvider` accept initializer props (`formInit`, `tlStartInit`, `initialFarrowing`, `initialBreeders`, `breedTlStartInit`, `configInit`). These read module-scope constants from `main.jsx` (EMPTY_FORM, INITIAL_FARROWING, INITIAL_BREEDERS, DEFAULT_WEBFORMS_CONFIG, `thisMonday`, `toISO`). When extracting Round-6+ inline components that need those constants directly, prefer reading them from context over re-importing from main.jsx.
+2. **App reads every context at the top of its body**. If a Round 1+ component doesn't need a specific context, don't route its state back through App as a prop — consume the hook directly (`const { authState } = useAuth()`). That's the entire point of the context move.
+3. **Every round in Phase 2 is a session boundary.** Don't compress. The §15 rule exists because the deletion-incident risk in the migration is real; small per-session blast radius is the protection.
+4. **The deploy preview URL has `deploy-preview-1--` prefix.** Anything that starts with just `cheerful-narwhal-` is **production** — we hit this confusion on 2026-04-19 and again watch out for it.
+5. **`commit` vs `push`** per the memory rules: "commit" = just commit fully, no follow-up. "push"/"deploy"/"merge" always needs a separate, explicit approval in the same turn. Round 0's commit landed on "yes A" and pushed on "yes push" — two separate approvals. Don't skip that.
+
+---
+
+*End of April 20 session. Work-tree state at session end: clean. Commit `67d2ae3` pushed to `vite-migration`. Deploy preview green. Production unchanged. Next session: Phase 2 Round 1 leaf-component extractions.*

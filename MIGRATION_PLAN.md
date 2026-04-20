@@ -508,6 +508,63 @@ Branch: `vite-migration` (pushed). Main + production untouched.
 
 After Round 0: rounds 1–8 (component extractions) per §6.
 
+### 2026-04-20 — Phase 1 preview verified + Phase 2 Round 0 complete
+
+Branch: `vite-migration` (pushed). Main + production untouched.
+
+**Phase 1 preview gate cleared:**
+Ronnie smoke-tested `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app` — all tabs load, navigation works. Green to continue into Phase 2.
+
+**Phase 2 Round 0 — Contexts** shipped as a single commit rather than six per-step SHAs, since all six extractions are structurally coherent "state-only plumbing with App unchanged" and splitting already-intermixed changes would have been git surgery for its own sake.
+
+| SHA | Commit | What landed |
+|---|---|---|
+| `67d2ae3` | Phase 2 Round 0: Extract 10 Contexts from App() | 10 thin Provider files under `src/contexts/`. ~78 useState hooks moved out of App(). App retains all effects, helpers (loadUser, loadAllData, canAccessProgram), derived values (role/isAdmin/etc.), and module-scope constants — each feature reads its state via `useAuth()` / `useBatches()` / `usePig()` / `useLayer()` / `useDailysRecent()` / `useCattleHome()` / `useSheepHome()` / `useWebformsConfig()` / `useFeedCosts()` / `useUI()`. |
+
+Each sub-step (2.0.1 → 2.0.6) was built + verified in isolation before moving to the next; the single commit captures the whole chunk.
+
+**One deviation from §4 table:** `view` moved to `UIContext` (not `BatchesContext`). The plan hedged with "(initially)" and also listed `view` under UIContext — UIContext is the correct final home (every feature reads it), so it landed there directly and skipped a later rework.
+
+**Verification:**
+- `npm run build` clean after each of the 6 intermediate states. Final bundle 1.27 MB (gzip 294 KB) — essentially unchanged from pre-round.
+- Deploy preview smoke-tested by Ronnie after push: all tabs load, forgot-password flow works end-to-end (AuthContext's pwRecovery initializer and the auth listener effect both survived the state-vs-effect split cleanly).
+- Don't-touch list in §10: **untouched.** No edits to `wcfSelectAll`, `loadCattleWeighInsCached`, `detectSessionInUrl`/`storageKey` Supabase config, source-label strings, xlsx `cellDates`, webform URL paths, `_wcfPersistData`, `\u` JSX escapes, `canAccessProgram`, or `SetPasswordScreen`.
+
+**What stayed in App() (not in plan's Context table — will land in feature folders during Rounds 1–8):**
+- Refs: `autoSaveTimer`, `pigAutoSaveTimer`, `subAutoSaveTimer`, `tripAutoSaveTimer`, `breedAutoSaveTimer`.
+- Pig UI flags: `leaderboardExpanded`, `showArchived`, `showArchBatches`.
+- Feed orders/inventories: `feedOrders`, `pigFeedInventory`, `pigFeedExpandedMonths`, `poultryFeedInventory`, `poultryFeedExpandedMonths`.
+- Pig/layer notes: `pigNotes`, `layerNotes`.
+- Webforms admin form state: `wfForm`, `wfSubmitting`, `wfDone`, `wfErr`, `wfGroupName`, `wfView`, `editWfId`, `editFieldId`, `wfFieldForm`, `newTeamMember`, `addingTo`, `editFldLbl`, `editFldVal`, `editSecIdx`, `editSecVal`, `newOpt`.
+- Pig batches UI: `showSubForm`, `subForm`, `editSubId`, `collapsedBatches`, `collapsedMonths`.
+- Legacy pig dailys form state: `dailysFilter`, `showDailyForm`, `editDailyId`, `EMPTY_DAILY`, `dailyForm`.
+- Admin tab toggle: `adminTab`.
+
+**Root render provider tree** (for reference by Round 1+):
+```
+AuthProvider
+  > BatchesProvider (formInit={EMPTY_FORM} tlStartInit={thisMonday})
+    > PigProvider (initialFarrowing, initialBreeders, breedTlStartInit)
+      > LayerProvider
+        > DailysRecentProvider
+          > CattleHomeProvider
+            > SheepHomeProvider
+              > WebformsConfigProvider (configInit={DEFAULT_WEBFORMS_CONFIG})
+                > FeedCostsProvider
+                  > UIProvider
+                    > App
+```
+
+**What's next (Phase 2 Round 1 — leaf components):**
+Per §6 Round 1 table:
+- 2.1.1 `WcfYN` + `WcfToggle` to `src/shared/`
+- 2.1.2 `DeleteModal` to `src/shared/`
+- 2.1.3 `Header` to `src/shared/`
+- 2.1.4 `AdminAddReportModal` + `AdminNewWeighInModal` + `PigSendToTripModal` + `CattleNewWeighInModal`
+- 2.1.5 `SetPasswordScreen` + `LoginScreen` to `src/auth/` (test forgot-password again — critical gate)
+
+**Cutover (merge to main) is still deferred.** Ronnie's call at end of this session: build more rounds before merge. Round 0 is pure state plumbing — no user-visible upside yet. Earliest reasonable cutover is after Round 1 or 2 when component extraction starts paying off.
+
 ---
 
 ## 15. Resuming this migration in a new Claude Code session
