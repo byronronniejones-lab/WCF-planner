@@ -219,3 +219,37 @@ export function breedLabel(code){
   if(lb) return lb.label;
   return code || "\u2014";
 }
+
+
+// ============================================================================
+// Status badge colors + US-holiday-adjacent date warnings (list view deps)
+// ----------------------------------------------------------------------------
+// STATUS_STYLE is used by the broiler list view for the planned/active/
+// processed pills. isNearHoliday flags hatch/processing dates that fall
+// within 1 day of a US holiday (processors close, so scheduling gets sticky).
+// ============================================================================
+export const STATUS_STYLE = {
+  planned:   {bg:"#374151", tx:"white"},
+  active:    {bg:"#085041", tx:"white"},
+  processed: {bg:"#4b5563", tx:"white"},
+};
+
+function getEaster(y){
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4;
+  const f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+  const i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451);
+  return toISO(new Date(y,Math.floor((h+l-7*m+114)/31)-1,((h+l-7*m+114)%31)+1));
+}
+function getThanksgiving(y){
+  const d=new Date(y,10,1);
+  return toISO(new Date(y,10,((4-d.getDay()+7)%7)+22));
+}
+function holidaysForYear(y){
+  return [`${y}-01-01`,getEaster(y),`${y}-07-04`,getThanksgiving(y),`${y}-12-25`];
+}
+export function isNearHoliday(iso){
+  if(!iso) return false;
+  const d=new Date(iso+"T12:00:00"),y=d.getFullYear();
+  const all=[...holidaysForYear(y-1),...holidaysForYear(y),...holidaysForYear(y+1)];
+  return all.some(h=>Math.abs(d-new Date(h+"T12:00:00"))/86400000<=1);
+}
