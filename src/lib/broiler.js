@@ -293,7 +293,7 @@ export function calcBatchFeedForMonth(batch, yearMonth) {
 // ── LAYER FEED SCHEDULE ──────────────────────────────────────────────────
 // Weeks 1-6: starter, Weeks 7-20: grower, Week 21+: layer feed (0.25 lbs/bird/day)
 // Starter capped at 1,500 lbs per batch (same as broilers).
-const LAYER_FEED_SCHEDULE = [
+export const LAYER_FEED_SCHEDULE = [
   {week:1,  phase:'starter', lbsPerBird:0.50},
   {week:2,  phase:'starter', lbsPerBird:1.00},
   {week:3,  phase:'starter', lbsPerBird:1.10},
@@ -315,7 +315,7 @@ const LAYER_FEED_SCHEDULE = [
   {week:19, phase:'grower',  lbsPerBird:1.00},
   {week:20, phase:'grower',  lbsPerBird:1.00},
 ];
-const LAYER_FEED_PER_DAY = 0.25; // lbs/bird/day on layer feed (week 21+)
+export const LAYER_FEED_PER_DAY = 0.25; // lbs/bird/day on layer feed (week 21+)
 
 // For a layer batch + month, return {starter, grower, layer} lbs projected.
 // Uses brooder_entry_date as day 0, original_count for starter/grower phases,

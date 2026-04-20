@@ -14,6 +14,7 @@ import {
   calcBatchFeedForMonth, calcLayerFeedForMonth,
   calcBatchFeed, calcBroilerStatsFromDailys, calcPoultryStatus,
   getBatchColor, breedLabel, BREED_STYLE,
+  LAYER_FEED_SCHEDULE, LAYER_FEED_PER_DAY,
 } from '../lib/broiler.js';
 import { computeProjectedCount } from '../lib/layerHousing.js';
 import { useBatches } from '../contexts/BatchesContext.jsx';
