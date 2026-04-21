@@ -640,3 +640,130 @@ The bare-name audit (see §Part 3 "Lessons") caught zero misses in the Phase 2 f
 
 Each can come later as its own initiative. Migration was purely toolchain + organization.
 
+---
+
+# Part 3 — History
+
+## 3.1 Origin
+
+WCF Planner started as a single `index.html` file serving the full app: ~19,445 lines of JSX inside a `<script type="text/jsx-source">` block, transpiled in the browser via Babel-standalone with a localStorage cache. React, ReactDOM, supabase-js, and xlsx were loaded from CDNs. No build step, no package.json, no `src/` tree. Deploy = commit `index.html` to GitHub, Netlify serves it.
+
+The model held for months while features accumulated: broiler batch tracking, pig breeding + farrowing + feeder batches, layer housing, egg collection, public webforms with admin configuration, a cattle module (469 animals imported from Podio), a sheep module. By early April 2026, `index.html` was ~19k lines. Cold-load on mobile cellular ran Babel on every visit — ~2–3 seconds to interactive. A single accidental break could take the whole app down; there were no extraction boundaries.
+
+## 3.2 Migration timeline (April 19–21, 2026 — ~4 calendar days, ~30 commits)
+
+### Phase 1 — Vite scaffolding
+
+Replace in-browser Babel with a proper Vite build. Same code, different toolchain.
+
+- Moved the JSX source block verbatim into `src/main.jsx`. No logic changes. Replaced CDN `<script>` tags in `index.html` with `<script type="module" src="/src/main.jsx">`.
+- Replaced `_wcfLoadXLSX` CDN fetch with `await import('xlsx')`. Same lazy-load contract.
+- Deleted the `_wcfBabelCache` localStorage helper + eval bootstrap. Added a one-time `wcf-babel-*` purge to free ~600 KB per user.
+- Added `public/_redirects` for Netlify SPA fallback.
+- Build: `npm run build` → `dist/`. Netlify config: publish `dist/`, build command `npm run build`.
+- Result: identical user experience, near-instant mobile cold load.
+
+### Phase 2 — Component extraction (8 rounds)
+
+Split the monolithic `src/main.jsx` into a feature-organized tree.
+
+- **Round 0** — Extracted 10 feature-scoped Contexts (`AuthContext`, `BatchesContext`, `PigContext`, `LayerContext`, `DailysRecentContext`, `CattleHomeContext`, `SheepHomeContext`, `WebformsConfigContext`, `FeedCostsContext`, `UIContext`). App now wraps in a provider tree.
+- **Rounds 1–5** — Leaf components + single-feature views + admin panels + public webforms. PowerShell file-slicing for big blocks that didn't close over App state. 30+ components moved.
+- **Round 6** — Inline views inside App (the hard ones: `BroilerHomeView`, `BroilerListView`, `BroilerTimelineView`, `BroilerFeedView`, `BatchForm`, `PigsHomeView`, `BreedingView`, `FarrowingView`, `SowsView`, `PigBatchesView`, `PigFeedView`, plus `LayersHomeView`, `LayersView`, `LayerBatchesView`, and all cattle/sheep views). Hook-based extraction.
+- **Round 7** — `HomeDashboard` (the biggest single extraction — ~540 lines reading every data context).
+- **Round 8** — `EquipmentPlaceholder` stub.
+- **Phase 2 cutover** — merge commit `9799960` to `main` on 2026-04-21. Ronnie's verdict: "everything looks good. Zero difference noticed actually."
+
+End state: `src/main.jsx` 19,445 → ~2,000 lines of pure wiring.
+
+### Phase 3 — URL routing
+
+Add per-tab URLs + working browser back button via `react-router-dom@7`.
+
+- Installed `react-router-dom`. Created `src/lib/routes.js` with `VIEW_TO_PATH`, `PATH_TO_VIEW`, `HASH_COMPAT` maps.
+- Wrapped root in `<BrowserRouter>`. Added URL↔view adapter (two `useEffect`s with `syncingFromUrl` ref guard) inside `App`.
+- Hash-compat shim at module scope, runs synchronously before `root.render()`. Rewrites `/#weighins`, `/#addfeed`, `/#webforms` to clean paths via `history.replaceState`. Recovery hash left alone.
+- Polish: URLSync fallback preserves `location.hash` (protects password-recovery flow on mangled URLs). `UIContext.initialView()` reads pathname first — no LoginScreen flash on `/weighins` cold load.
+- **Phase 3 cutover** — merge commit `7779750` to `main` on 2026-04-21. Ronnie's verdict: "Everything look great. We have 'urls' for each page and back button work."
+
+### Post-migration polish
+
+Four commits on a short-lived `polish` branch on 2026-04-21:
+
+- `CATTLE_*` constants → `src/lib/cattle.js`. Fixed latent `ReferenceError` in `cattleBreeding.js` (had been using `CATTLE_*_DAYS` + `toISO` + `addDays` as bare refs with no imports).
+- `detectConflicts` → `src/lib/conflicts.js`. Preserved `–` escape literals.
+- `writeBroilerBatchAvg` → `src/lib/broiler.js`. Fixed second latent `ReferenceError` — `WeighInsWebform.jsx` + `LivestockWeighInsView.jsx` both called it with no import.
+- `renderWebform` → `src/webforms/PigDailysWebform.jsx`. Moved 5 `wf*` state pieces into the new component as internal `useState`; dropped 10 unused props from `WebformsAdminView`.
+
+Polish cutover: merge commit `8b3d1c0` to `main` on 2026-04-21.
+
+## 3.3 Final numbers
+
+| Metric | Pre-migration | Post-migration | Delta |
+|---|---|---|---|
+| `index.html` | 19,445 lines | ~30 lines | -99% |
+| Main source file | — | `src/main.jsx` ~1,750 lines | — |
+| Main source vs pre | `index.html` = 19,445 | main.jsx = 1,750 | **-91%** |
+| Bundle size (gzipped) | Babel transpile every load | 308 KB + 143 KB lazy xlsx | — |
+| Module count | 1 file | 162 modules | — |
+| Extracted components | 0 | 54+ | — |
+| Helper libs | inline | 14 in `src/lib/` | — |
+| Contexts | 0 | 10 | — |
+| URL support | hash-only | per-tab paths + working back button | — |
+| Latent `ReferenceError` bugs caught along the way | — | 2 (in `cattleBreeding.js`, in 2 `writeBroilerBatchAvg` callers) | — |
+
+## 3.4 Transferable lessons
+
+These are session-independent patterns worth preserving for future Claude work on this codebase.
+
+### The bare-name audit pattern (hook-based extractions)
+
+Hook-based view extractions close over dozens of App-scope names. Missing a single one = runtime `ReferenceError` on first nav to that view. Builds pass silently; only the browser catches these. **Clean build is not proof of correctness.**
+
+The cure: before pushing any hook-based extraction, run a systematic bare-name audit:
+
+1. Parse the new file's imports + destructures + function params + local const/let/var + function declarations into a `known` set.
+2. Scan every identifier-looking token in the body.
+3. Strip comments + string literals + JSX text + property access (preceded by `.`) + object keys (followed by `:`) + JSX attributes (followed by `=`) + lowercase-HTML tag names.
+4. Flag what's left.
+5. Cross-check remaining suspects against every `lib/*` export, every context state name, and the App-helper blast list: `persist`, `del`, `confirmDelete`, `saveFeedCosts`, `loadUsers`, `refreshDailys`, `openEdit`, `submit`, `upd`, `closeForm`, `signOut`, `backupData`, `restoreData`, `sbSave`, `persistBreeding`, `persistFarrowing`, `persistFeeders`, `persistBreeders`, `persistBreedOptions`, `persistOriginOptions`, `persistWebforms`, `persistLayerGroups`, `persistLayerHousings`, `resolveSire`, `parseProcessorXlsx`.
+
+A reference `tmp_audit.cjs` script was used during Phase 2 Round 6+ and the 2026-04-21 polish. It's dev-only — delete before push. Never commit it.
+
+The pattern earned its keep: Phase 2 Round 6 had 8 fix-up commits before the audit was introduced. Round 6-tail, Round 7, Round 8, and the 2026-04-21 polish shipped with zero post-push `ReferenceError` fixups.
+
+### The latent `ReferenceError` class of bug
+
+Both `src/lib/cattleBreeding.js` (CATTLE_* constants + toISO + addDays) and `writeBroilerBatchAvg`'s callers (`WeighInsWebform.jsx` + `LivestockWeighInsView.jsx`) had bare-identifier references with no imports, apparently cold in production and therefore never caught. Vite doesn't error on unresolved identifiers at build time — only at runtime, and only when the specific call path executes.
+
+**When doing any `src/lib/` lift, check every existing caller for an import statement.** Not having one isn't "don't need to add it" — it's "there's a latent bug here."
+
+### PowerShell file-slicing (for big JSX blocks)
+
+For components with minimal App-state coupling, byte-range slicing via PowerShell (`[System.Collections.ArrayList]::RemoveRange`) is faster and less error-prone than transcribing JSX through Read → Write. The file content never enters conversation context, so there's no drift.
+
+Pattern: locate the target block's start + end line numbers (via Grep), verify the closing brace index, slice the byte range into the new file, remove from the source. Always verify with `npm run build` clean before commit.
+
+### Module-scope synchronous shims run before React
+
+For startup-order-sensitive work (hash-bookmark compat, the `wcf-babel-*` localStorage purge), module-scope code in `main.jsx` executes before `createRoot(…).render(…)`. This is the only safe place for logic that must happen before React's first render sees the URL or mutates the DOM.
+
+### The `_wcfConfirmDelete` window escape hatch
+
+App exposes `confirmDelete` as `window._wcfConfirmDelete` so deeply-nested components can trigger the confirmation modal without prop-drilling. Strict-mode-safe only if the consuming component has `confirmDelete` in scope — extracting a component that uses it as a bare identifier without making it a prop will crash (see the `LayerBatchesView` latent fix in Phase 2 Round 2 tail).
+
+## 3.5 Backup paths still valid
+
+- **Netlify UI → Deploys → "Publish deploy"** on any pre-incident build. Fastest rollback, ~60s to live.
+- **`git revert -m 1 <merge-commit> && git push`.** Durable — preserves the incident commit in history.
+- **`~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19`** (1.3 MB, blob SHA `e06c66df…`). Pre-migration single-file app. Nuclear option if git ever gets confused.
+
+## 3.6 Stale branches (deleted post-cutover)
+
+- `vite-migration` — Phase 2 work. Deleted 2026-04-21 session 3. Structurally merged via `9799960`.
+- `phase-3-router` — Phase 3 work. Deleted 2026-04-21 session 3. Structurally merged via `7779750`.
+- `polish` — 2026-04-21 polish + doc commits. Deleted same day. Structurally merged via `8b3d1c0`.
+
+Only `main` remains (local + origin). All history preserved in merge commits on `main`.
+
+
