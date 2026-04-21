@@ -788,6 +788,71 @@ Missing hits = either import it, destructure it, or add it as a prop. No hits th
 
 **Cutover readiness.** Every structural goal in §1 + §4 is met. The `src/` tree matches the target shape. main.jsx is 10% of its pre-migration size. Behavior is identical (no feature changes). Deploy preview has been green for two consecutive sessions. The next natural step is merging `vite-migration` → `main` and running the §8 smoke-test on production. **That's Ronnie's call.**
 
+### 2026-04-21 (session 2) — Phase 2 cutover to production + Phase 3 adapter shipped to preview
+
+Big half-day. Phase 2 went live on production + Phase 3 (URL routing) built out on a branch, smoke-tested locally, and staged for the second cutover.
+
+**Phase 2 cutover — `vite-migration` → `main`:**
+
+| SHA | Commit | What |
+|---|---|---|
+| `9799960` | Merge vite-migration: Phase 1 + Phase 2 complete | `git merge --no-ff` preserved the merge commit for clean rollback. 86 files changed, ~24k insertions, ~19k deletions. Netlify picked it up, built in ~90s, `wcfplanner.com` now serves the Vite bundle instead of the Babel-in-browser 19k-line index.html. |
+
+Ronnie's verdict on production after cutover: "everything looks good. Zero difference noticed actually." That's the right outcome — §1 non-goals list was "zero behavior changes." Speed win is invisible on warm desktop caches; will show on mobile cold-load (old Babel-transpile-at-load was ~2-3 s on cellular, Vite pre-build is near-instant).
+
+**Phase 2 backup verification before cutover:**
+- Git `main` pre-cutover HEAD: `1059b18` ("Home: 3-col tile grid + Equipment + cattle/sheep in missed/last-5") — all pre-migration commits preserved.
+- OneDrive backup: MIGRATION_PLAN §3 referenced a file that didn't actually exist on disk. Recreated from git: `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` (1.3 MB, git blob SHA `e06c66df…`). Now matches the doc.
+- Netlify deploy history: confirmed available for one-click rollback.
+
+**Phase 3 — URL routing adapter approach (branch: `phase-3-router`, unmerged):**
+
+Chose adapter over full setView→useNavigate migration after weighing options. Adapter delivers the same user-visible win (per-tab URLs, working back button, bookmarkable deep links) without touching the ~50 existing `setView()` call sites across extracted views. Full migration was pure churn for "idiomatic React Router" without user-visible benefit; could happen later if ever needed.
+
+| SHA | Commit | What |
+|---|---|---|
+| `963a006` | Phase 3.1 | Installed `react-router-dom@7`. Created `src/lib/routes.js` with `VIEW_TO_PATH`, `PATH_TO_VIEW`, `HASH_COMPAT` maps. No behavior change; tree-shaken out of bundle (nothing imports it yet). |
+| `aa0f1ff` | Phase 3.2 | Wrapped root in `<BrowserRouter>`. Added two-effect URL↔view adapter inside App(). Effect 1: URL → view on location change. Effect 2: view → URL on setView. `syncingFromUrl` ref guards against infinite loops. Unknown URLs snap to home with `navigate('/', {replace:true})`. Bundle +36 kB / +13 kB gzip (react-router-dom). |
+| `923f758` | Phase 3.3 | Hash-compat shim at module-scope in main.jsx, runs synchronously BEFORE `root.render()`. Rewrites `/#weighins`, `/#addfeed`, `/#webforms` to clean paths via `history.replaceState`. Recovery hash `/#access_token=…&type=recovery` deliberately left untouched — SetPasswordScreen still parses it for supabase email-template backcompat. |
+| `598b90d` | Phase 3 polish | Two follow-ups: (1) URLSync unknown-URL fallback preserves `location.hash` — prevents password-recovery breakage if someone clicks a mangled email link like `/garbage#access_token=…`. (2) UIContext's `initialView()` now reads pathname first (via `PATH_TO_VIEW` import), hash is the defensive backup. Eliminates the LoginScreen flash on `/weighins` cold-load. |
+
+**§7 plan deltas (what shipped vs what was planned):**
+- 3.1, 3.2, 3.3 shipped as planned.
+- **3.4 deliberately skipped.** The plan called for `SetPasswordScreen` to accept `/reset?token=…` as primary. That's a security regression — auth tokens in URL query params end up in server logs, `Referer` headers, and browser history. Supabase's default hash-fragment format exists specifically to avoid those leaks. Hash-based recovery stays as the single flow.
+- **3.5 was a no-op.** Plan called for removing an "old hash-detection useEffect" but no such effect ever existed in the code — hash bookmarks had been handled via `UIContext.initialView()` peeking at `window.location.hash`, which is still needed as defensive backup. Nothing to remove.
+- **3.6 folded into 3.2.** Plan called for a 404 catch-all route. The URLSync adapter's unknown-URL fallback already does this (`!viewFromUrl` → setView('home') + navigate('/')).
+
+**URL shape after Phase 3:**
+- `/` — home
+- `/broiler`, `/broiler/timeline`, `/broiler/batches`, `/broiler/feed`, `/broiler/dailys`, `/broiler/weighins`
+- `/pig`, `/pig/breeding`, `/pig/farrowing`, `/pig/sows`, `/pig/batches`, `/pig/feed`, `/pig/dailys`, `/pig/weighins`
+- `/layer`, `/layer/groups`, `/layer/batches`, `/layer/dailys`, `/layer/eggs`
+- `/cattle`, `/cattle/herds`, `/cattle/breeding`, `/cattle/batches`, `/cattle/dailys`, `/cattle/weighins`
+- `/sheep`, `/sheep/flocks`, `/sheep/dailys`, `/sheep/weighins`
+- `/equipment`
+- `/admin` (authed, admin-only)
+- `/webforms`, `/addfeed`, `/weighins` (public, no-auth)
+
+**Smoke-test state:** Ronnie ran `npm run dev` locally at `localhost:5173` after the 4 commits. Verdict: "Smooth as a baby bottom." All tabs navigate, URLs update, back button works. Not tested on Netlify preview (not needed — local dev hits the same prod Supabase with the same built code).
+
+**Phase 3 cutover status: NOT YET MERGED.** `phase-3-router` branch is pushed (`598b90d`). Waiting for Ronnie's say-so to merge → `main`. Cutover procedure is identical to Phase 2:
+1. `git checkout main && git merge phase-3-router --no-ff -m "Merge phase-3-router: URL routing + back-button support"`
+2. `git push origin main`
+3. Netlify rebuilds prod (~90s).
+4. Rollback paths unchanged — Netlify UI "Publish deploy" on the last pre-merge build, or `git revert -m 1 <merge-commit> && git push`.
+
+### 2026-04-21 (session 2) — what's left for the next session
+
+1. **Merge `phase-3-router` → `main`** (second cutover). Requires explicit "merge"/"cutover" from Ronnie.
+2. **Delete stale branches** (when Ronnie gives the go): `vite-migration` + `phase-3-router` are both structurally merged into main via the two cutover commits. Git history is preserved either way; deleting is hygiene.
+3. **Optional polish** (not required for correctness):
+   - Promote App-scope state to contexts: `feedOrders` → `FeedCostsContext`, `adminTab`/`collapsedBatches`/`collapsedMonths`/`showArchBatches`/`leaderboardExpanded`/`showArchived` → `UIContext`, the 14 `wf*` form-state pairs → a `useWebformsAdminForm()` hook. Shrinks the longest prop lists (WebformsAdminView + PigBatchesView + SowsView).
+   - Extract `renderWebform()` (the legacy pig-dailys public form) out of App. It closes over `wfForm`/`wfErr` state that would need its own context or local state first.
+   - Lift `detectConflicts` + `writeBroilerBatchAvg` + `CATTLE_*` constants from main.jsx to a new `lib/conflicts.js` / `lib/cattle.js`. Trims the last cruft from the App file.
+4. **Full router migration** (even more optional): if ever desired, replace `setView('X')` calls with `useNavigate('/path')` across every extracted view. Full native React Router semantics. The adapter doesn't prevent this — views could incrementally migrate. Pure churn for "idiomatic" rather than "better"; unlikely to be worth doing unless there's a specific user-facing need.
+
+**Hard rules unchanged** — `commit` = do it, `push`/`merge` = fresh approval same turn, don't touch §10 don't-touch list, destructive Supabase ops need approval.
+
 ---
 
 ## 15. Resuming this migration in a new Claude Code session
