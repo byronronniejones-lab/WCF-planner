@@ -485,3 +485,158 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 - **The `housingBatchMap` shape** was not directly SQL-verified during the Add Feed design. Existing code treats it as `{housingName: batchName}` (flat object). If layer `batch_id` resolution misbehaves at runtime, that's the first place to look.
 - **The `source` column** on dailys tables is nullable. Filter logic: `r.source !== 'add_feed_webform'` handles null correctly (returns true). No null guard needed.
 - **Historical B-24-* broiler batches** use legacy manual feed fields. B-25+ batches pull from dailys. Don't unify these without backfilling the older data.
+
+---
+
+# Part 2 — Design Decisions
+
+Load-bearing choices with rationale and — where it matters — the alternatives that were rejected. Future sessions should not relitigate these without reading the "why" first.
+
+## 2.1 Add Feed Webform (2026-04-12, shipped)
+
+### What was decided
+
+The Add Feed webform (route `/addfeed`) inserts a brand-new row into the appropriate `*_dailys` table with `source='add_feed_webform'`. It does **not** mutate any existing row. It does **not** merge. It does **not** check for collisions. It inserts a fresh row and walks away.
+
+All 16+ feed-aggregation sites already use `.reduce((s,d) => s + (parseFloat(d.feed_lbs) || 0), 0)` over filtered row arrays. Multiple rows per batch+date are already normal. The new Add Feed row is automatically picked up by every existing total, average, cost-per-dozen, feed-per-hen, and dashboard tile, with zero changes to any calculation code.
+
+Add Feed rows are visually badged in the three Reports lists (broiler / layer / pig) with a 🌾 icon when `source === 'add_feed_webform'`. A tri-state filter chip (All / Daily Reports / Add Feed) lives at the top of each list. Edit modals hide non-feed fields for Add Feed rows to prevent users from accidentally turning them into frankenrows.
+
+### Why — rejected alternatives
+
+We went through three rejected designs before landing here. Don't re-propose these:
+
+**Rejected #1: Merge logic on the dailys row.** Original spec had Add Feed look up an existing dailys row for that batch+date, increment its `feed_lbs`, and handle feed_type collisions (insert new row if feed_type differs, update if same/empty). **Why rejected:** multiple daily reports per batch+date are normal — the existing webform just `.insert()`s a fresh row every submit, no upsert. So "find the existing row to mutate" has no unique answer when there are 2+ rows for the same batch+date. Mutating an arbitrary one, and then later editing the morning vs evening report, could overwrite or double-count. Brittle.
+
+**Rejected #2: Separate `feed_edit_log` ledger table.** Parallel audit table with its own row per Add Feed submission, linked to the dailys row via `daily_report_id`. **Why rejected:** the "mutate the dailys row" half still had the multi-row problem. And once you stop mutating it, the ledger becomes redundant — the dailys row IS the audit trail, distinguished by `source`. The `feed_edit_log` table was created and then dropped during the design session. Do not reference it.
+
+**Rejected #3: Dedicated Feed Log tab in each dailys view.** Initially planned as `Reports | Add Feed Log` tabs side by side. **Why rejected:** once Add Feed rows are just badged dailys rows, a separate tab is duplicate UI. A filter chip gives the same audit-scanning capability with one small UI control instead of a parallel tab + modal + list rendering.
+
+### Why the chosen design wins
+
+Zero changes to calculation infrastructure. No orphan handling (Add Feed always creates a complete row). No new tables. No new modals. No multi-row ambiguity. The editing constraints (lbs + feed_type only) are enforced via conditional rendering in the existing edit modal, ~5–10 lines per modal. Smallest footprint, maximum reuse.
+
+### Verified facts (do not re-verify)
+
+1. All feed-aggregation sites use `.reduce()` over filtered row arrays — none assume one row per batch+date. Verified via grep during the design session.
+2. No code anywhere filters dailys rows by `source`. Adding the column is invisible to existing logic.
+3. `source` column added to all three dailys tables (`layer_dailys`, `poultry_dailys`, `pig_dailys`) via `ALTER TABLE … ADD COLUMN IF NOT EXISTS source TEXT;`. Nullable, no default. Existing rows have null.
+4. `pig_dailys` has **no `feed_type` column.** Add Feed inserts for pig must omit `feed_type` entirely — passing null fails because the column doesn't exist.
+
+## 2.2 Cattle module (2026-04-15, shipped)
+
+### Decision 1: Directory tab merged into Herds (no separate Directory)
+
+**Decided:** 6 sub-tabs (Dashboard / Herds / Dailys / Weigh-Ins / Breeding / Batches) — no Directory. Herds combines per-herd-tile operational view AND flat searchable directory view.
+
+**How it works:** Default = per-herd tiles for the 4 active herds, outcome herds (Processed / Deceased / Sold) collapsed at bottom. When the user types in search or picks a non-active status filter, the view switches to a flat sortable list across all matching cattle. Add / Edit / Transfer / Delete work in both modes.
+
+**Why:** A separate Directory tab duplicates UI. The unique value of "Directory" was (1) cross-herd search, (2) flat sortable table, (3) outcome animals as first-class records — all achievable with a search box + status filter on top of Herds. One tab, less navigation, no confusion about "which tab do I edit a cow on."
+
+### Decision 2: `is_creep` as a per-line flag on `cattle_dailys.feeds` (not a feed-input attribute, not a separate compound feed)
+
+**Decided:** When a Mommas daily report includes creep-feed ingredients (alfalfa pellets, citrus pellets, sugar, colostrum supplement), each feed line can be flagged with an `is_creep` boolean. Creep lines are excluded from Mommas nutrition math (calves eat them, not the mommas) but included in cost totals. Stored inline in the `feeds` jsonb on each `cattle_dailys` row.
+
+**Why:** Creep ingredients are NOT unique to creep — alfalfa pellets are also eaten by Bulls, citrus pellets also by Backgrounders/Finishers. So we can't tag the FEED itself as "exclude from nutrition." Tag the USAGE.
+
+**Rejected: separate `cattle_creep_batches` table + standalone "Mix Creep Batch" form.** Rejected because Ronnie said "we don't need a creep feed standalone form, we just track ingredients and cost like everything else." Simpler = win.
+
+**Rejected: `exclude_from_nutrition` boolean on `cattle_feed_inputs`.** Would mark alfalfa pellets as always-excluded — but then you can't feed them directly to bulls without it counting. Same ingredient, different usage. Per-line flag is the only model that works.
+
+### Decision 3: Comments unified into one `cattle_comments` table with a `source` discriminator
+
+**Decided:** All per-cow observations live in a single `cattle_comments` table. `source` distinguishes origin (`manual` / `weigh_in` / `daily_report` / `calving`). `reference_id` links back to the originating row when applicable. Cow profile shows a unified timeline.
+
+**Why:** Observations naturally come from multiple sources — a weigh-in note, a calving observation, an ad-hoc field note. Unifying them means cow profiles show a single chronological timeline instead of stitching from `weigh_ins.note` + `cattle_calving_records.notes` + `cattle.notes`.
+
+**Rejected: comment fields scattered across source tables** — would have required cow-profile views to query 4+ tables and merge client-side. Too much friction.
+
+**Rejected: `cow.notes` as a single text field** — Ronnie wanted a date-stamped timeline, not a single editable blob.
+
+### Decision 4: Snapshot nutrition onto `cattle_dailys.feeds` at submit time (not by-reference lookup)
+
+**Decided:** Each feed line stores `nutrition_snapshot: {moisture_pct, nfc_pct, protein_pct}` captured at submit time. Editing the parent feed in admin does NOT rewrite historical reports.
+
+**Why:** By-reference lookup means uploading a new test PDF for "Rye Baleage" would silently revise the calculated nutrition of every past daily report. Misleading — the cow ate the hay that was in the field at the time, not the hay's current spec.
+
+### Decision 5: Cattle uses dedicated Supabase tables (not `app_store` jsonb)
+
+**Decided:** All cattle data lives in dedicated tables. `app_store` is used only for legacy poultry/pig blobs.
+
+**Why:** Matches the pattern used by `pig_dailys`, `layer_dailys`, `egg_dailys`, `poultry_dailys`, `layer_batches`, `layer_housings`. Dedicated tables have RLS policies, indexes, foreign keys, and SQL queryability. jsonb blobs are fine for a small handful of records but don't scale to 469+ cattle with weigh-ins and dailys.
+
+### Decision 6: Delete Permanently (not Mark Inactive) for feed entries
+
+**Decided:** Livestock Feed Inputs panel's edit modal has a "Delete Feed" button that permanently deletes the feed row + cascades to its tests + cleans up PDFs from storage. Historical `cattle_dailys` snapshots are preserved (nutrition is stored by-value per Decision 4).
+
+**Why:** Ronnie asked for "I should be able to delete any feed tile." "Mark Inactive" was leftover from an earlier draft.
+
+**Safety:** Cascade is intentional — `cattle_feed_tests.feed_input_id` has `ON DELETE CASCADE`. PDFs in storage are removed by app code (not Postgres cascade). Historical reports retain their snapshot values.
+
+## 2.3 Supabase auth config
+
+### `detectSessionInUrl: false` + `storageKey: 'farm-planner-auth'`
+
+**Decided:** The Supabase client is initialized with `detectSessionInUrl: false` and `storageKey: 'farm-planner-auth'` in `src/lib/supabase.js`. `SetPasswordScreen` parses the recovery token from `window.location.hash` manually and calls `sb.auth.setSession(…)` itself.
+
+**Why:** The default (`detectSessionInUrl: true`) makes supabase-js auto-consume the URL hash on client init — which races with React mount, can clear the hash before `SetPasswordScreen` sees it, and fights with `BrowserRouter`'s location parsing. Manual parsing is more verbose but puts ordering in our control.
+
+**Why the custom storage key:** The default key (`sb-<project-ref>-auth-token`) changes if we ever migrate the Supabase project. Using a stable app-owned key means outstanding sessions survive a project-ref change.
+
+**Don't change these** without a migration plan for currently-signed-in users (they'd lose their session on deploy).
+
+## 2.4 Two-query `loadCattleWeighInsCached` (no `!inner` joins)
+
+**Decided:** `src/lib/cattleCache.js` fetches weigh-in sessions first (IDs only), then `weigh_ins` via `.in('session_id', ids)`. Two round trips, not one.
+
+**Why not a `!inner` join:** PostgREST's `!inner` emits a SQL inner join with subquery filters that, under our RLS policies + realistic row counts, generates query plans that time out or return incomplete result sets. The two-query pattern is explicitly safer. Verified during the original cattle build.
+
+**Don't unify these into one PostgREST call** without rerunning the timing experiments from the April 16 cattle import session.
+
+## 2.5 Vite migration — key decisions
+
+### Feature-scoped Contexts over one god-Context or Zustand
+
+**Decided:** 10 feature-scoped React Contexts — `AuthContext`, `BatchesContext`, `PigContext`, `LayerContext`, `DailysRecentContext`, `CattleHomeContext`, `SheepHomeContext`, `WebformsConfigContext`, `FeedCostsContext`, `UIContext`.
+
+**Why:** One god-Context forces every consumer to re-render on every state change. Zustand is a fine library but introduces a dependency + mental model switch for zero incremental benefit over native React context. Feature scoping maps directly to the folder tree (each provider owns state for exactly one program/area) and the provider order in `main.jsx` makes dependency ordering explicit.
+
+### BrowserRouter with a view↔URL adapter (not full `setView` → `useNavigate` migration)
+
+**Decided:** Phase 3 wrapped the root in `<BrowserRouter>` and added two `useEffect`s inside `App` that mirror `view` state to `location.pathname`. Every existing `setView('X')` call site continues to work.
+
+**Why:** A full migration would replace `setView('X')` with `useNavigate('/path')` at ~50 call sites across extracted views. Pure churn for idiomatic React Router — same user-visible outcome, same URLs, same back button. The adapter is a thin layer on top of a clean state machine; the state machine isn't a hack, it's a clean model that happens to mirror URLs now.
+
+### Hook-based extraction with a systematic bare-name audit (not file-slice for every component)
+
+**Decided:** Components with ≤100 lines of JSX that close over many App-scope names are extracted as hook-based components that consume their own contexts directly. Components that are pure JSX trees can be file-sliced. Every hook-based extraction runs through a bare-name audit before push.
+
+**Why:** PowerShell file-slicing (the big-block cut-and-paste pattern from Phase 2 Rounds 1–5) is the right tool for components whose content never touches App's locals. Hook-based is the only option when the component reads 10+ pieces of shared state. Mixing the two approaches lets each component pick its lowest-risk path.
+
+The bare-name audit (see §Part 3 "Lessons") caught zero misses in the Phase 2 finale sessions after one painful audit-less round produced 8 commits of runtime fixups.
+
+### Hash-compat shim over user bookmark migration
+
+**Decided:** `/#weighins`, `/#addfeed`, `/#webforms` bookmarks are rewritten to clean paths by a module-scope `history.replaceState` shim that runs before `root.render()`. Recovery hashes (`/#access_token=…&type=recovery`) are left intact.
+
+**Why:** Users have those URLs printed on field materials, saved in Slack messages, and bookmarked in phones. A shim is invisible; a URL migration would silently 404 on every legacy bookmark until the user noticed and updated.
+
+### Supabase password-recovery stays on hash (not `/reset?token=…`)
+
+**Decided:** The Phase 3 plan originally called for switching `SetPasswordScreen` to read tokens from `/reset?token=…` as primary. **Skipped deliberately.**
+
+**Why:** Auth tokens in URL query params end up in server logs, `Referer` headers, and browser history. Supabase's default hash-fragment format exists specifically to avoid those leaks. Moving them to query params is a security regression.
+
+### What the migration deliberately did NOT do
+
+- TypeScript conversion.
+- Test suite (Vitest/Playwright).
+- CSS framework (Tailwind etc.).
+- Storybook.
+- Service worker / PWA install.
+- Splitting `app_store` jsonb blobs into dedicated tables.
+- Bundle splitting beyond Vite's defaults.
+- Any framework jump (Next.js, React Server Components).
+
+Each can come later as its own initiative. Migration was purely toolchain + organization.
+
