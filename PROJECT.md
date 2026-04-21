@@ -376,14 +376,16 @@ Projection rates:
 - Palette: red family (no purple — Bulls is wine/deep red, outcomes are neutral).
 - Breeding timeline constants: `BULL_EXPOSURE_DAYS=65`, `PREG_CHECK_OFFSET=30`, `GESTATION=274`, `CALVING_WINDOW=65`, `NURSING=213`. See `src/lib/cattleBreeding.js`.
 - Per-head cost rollup (feed + processing) was deferred from the original module build.
-- Podio data imported April 16–17, 2026: 469 cattle, 1,930 weigh-ins, 1,525 daily reports. Fresh exports pending.
+- Podio data imported April 16–17, 2026: 469 cattle, 1,930 weigh-ins, 1,525 daily reports. The planner has been the source of truth for cattle dailys + weigh-ins since 2026-04-17 — no further Podio cattle import planned.
 - All cattle data lives in dedicated tables (`cattle`, `cattle_dailys`, `cattle_feed_inputs`, `cattle_calving_records`, `cattle_processing_batches`, `cattle_feed_tests`, `cattle_comments`) — NOT `app_store`. See §Part 2 Decision 5.
 - DNA test PDF parser: manual entry is the workaround for v1.
 
 ### 5.6 Sheep module
 
 - Parallel structure to cattle but with sheep terminology (flock / ewe / ram / wether / lambing).
-- Phase 1 shipped April 18: directory, flat/tile modes, add/edit/delete/transfer, inline detail, bulk import, dailys + weigh-ins. No nutrition targets (Phase 2).
+- Phase 1 UI shipped April 18: directory, flat/tile modes, add/edit/delete/transfer, inline detail, bulk import, dailys + weigh-ins. No nutrition targets (Phase 2).
+- **Podio data imported 2026-04-21:** 67 Podio sheep + 18 newly-purchased lambs (Willie Nisewonger, $275/each, KATAHDIN, DOB 2026-01-01, tags `RAM 001`–`RAM 008` + `EWE 001`–`EWE 010`, all in `ewes` flock pending weigh-in retag). Also 26 synthesized lambing records, 6 historical weigh-in sessions (34 weigh-ins), and 639 `sheep_dailys` (3 null-date rows skipped). The planner is now the sole source of truth for sheep — no further Podio sheep import planned.
+- Migration 009 (sheep schema) had been drafted pre-import but was never applied to Supabase until 2026-04-21. Migration 010 extended `weigh_in_sessions.species` CHECK to include `'sheep'` (mig 009 originally assumed the CHECK already allowed it). Both applied that day.
 - Sheep-specific daily fields: bales of hay, alfalfa lbs, minerals given + % eaten, fence voltage kV, waterers working.
 
 ### 5.7 Daily reports / webforms
@@ -461,7 +463,6 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 ### Near-term (known & actionable)
 
 - **Per-view state internalization** (optional polish, parked 2026-04-21). ~40 `useState` hooks in App's body are view-local state that belongs inside the view component. Right approach: push each block INTO the view that uses it (webforms-admin state → `WebformsAdminView`; feed state → shared `FeedUIContext`; auto-save refs → per-context). Regressions only surface at runtime, so it needs the bare-name audit pattern (see §Part 3) and careful per-view verification. Estimated 5–7 commits.
-- **Podio cattle re-import.** Awaiting a fresh export from Ronnie once the public webforms have been live in the field for ≥1 day.
 - **Per-head cattle cost rollup.** Feed cost (from `cattle_dailys.feeds[].lbs_as_fed × landed_per_lb`) + processing cost (from `cattle_processing_batches`) per cow with attribution rules. Not blocking ops.
 - **Send-to-trip wiring on pig weigh-ins.** Pigs aren't tagged; Trip view should pull recent session entries by checkbox.
 - **Feed system physical count verification.** The adjustment calculation (system estimate vs actual count) needs real-world validation. Code reviewed for edge cases.
@@ -478,7 +479,7 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 - **Full router migration** (replace `setView('X')` with `useNavigate('/path')` across every view). The adapter works fine; this is pure churn for "idiomatic React Router" without user-visible benefit.
 - **ESLint + Prettier.**
 - **Equipment module.** Currently a placeholder stub at `/equipment`.
-- **Sheep module Phase 2** — nutrition targets, Podio sheep import, retag flow.
+- **Sheep module Phase 2** — nutrition targets, retag flow.
 
 ### Known gotchas (watch for these)
 
@@ -790,6 +791,7 @@ One line per working session. Detail lives in git log (`git log --oneline --date
 | 2026-04-21 (midday) | `7779750` | Phase 2 cutover to production (`9799960`) + Phase 3 URL routing (3.1/3.2/3.3/polish) + Phase 3 cutover to production (`7779750`). Per-tab URLs + working back button live. |
 | 2026-04-21 (eve) | `8b3d1c0` | Polish: CATTLE_* + detectConflicts + writeBroilerBatchAvg + renderWebform extractions. Two latent `ReferenceError` bugs caught and fixed. Polish cutover (`8b3d1c0`). |
 | 2026-04-21 (wrap) | (this commit) | Doc consolidation: `archive/SESSION_LOG.md` frozen; `PROJECT.md` rewritten in 4 parts (Living Reference, Design Decisions, History, Session Index); `DECISIONS.md` + `MIGRATION_PLAN.md` to be deleted in the final commit. |
+| 2026-04-21 (later) | (this commit) | Sheep Podio import: mig 009 (sheep module, never previously applied) + mig 010 (weigh_in_sessions.species CHECK extended with 'sheep') applied via SQL Editor; `scripts/import_sheep.cjs` landed 85 sheep (67 Podio + 18 new Willie Nisewonger lambs), 26 lambing records, 6 weigh-in sessions (34 weigh-ins), 639 sheep_dailys. Planner is now sole source of truth for sheep. |
 
 **How to use this index:** if you need the exact commit message or a specific bugfix commit, run `git log --oneline <date>..` or filter by filename. If you need the narrator's-voice session-end summary, see the matching block in `archive/SESSION_LOG.md`. Git log is the authoritative timeline — this table is just the map.
 
