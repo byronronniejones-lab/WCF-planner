@@ -10,6 +10,21 @@ export const BROODER_DAYS = 14;
 export const CC_SCHOONER  = 35;
 export const WR_SCHOONER  = 42;
 
+// Housing slot identifiers + cleanout windows. Used by detectConflicts in
+// main.jsx, by the broiler BatchForm dropdowns, and by LayerBatchesView's
+// brooder/schooner pickers. Single source of truth for both programs.
+export const BROODERS           = ["1","2","3"];
+export const SCHOONERS          = ["1","2&3","4&5","6&6A","7&7A"];
+export const BROODER_CLEANOUT   = 3;
+export const SCHOONER_CLEANOUT  = 4;
+
+// Date-range overlap helper (both ends inclusive, ISO date strings).
+// Broiler-vs-broiler and broiler-vs-layer conflict detection both use it.
+export function overlaps(a1, a2, b1, b2){
+  return new Date(a1+"T12:00:00") <= new Date(b2+"T12:00:00")
+      && new Date(a2+"T12:00:00") >= new Date(b1+"T12:00:00");
+}
+
 const FEED_BIRDS        = 700;                           // target processed count (order 750, expect ~700 to processor)
 const STARTER_TOTAL_LBS = 1500;                          // fixed cap per batch for both breeds
 const STARTER_PER_BIRD  = STARTER_TOTAL_LBS / FEED_BIRDS; // 2.14 lbs/bird (1500/700)
