@@ -1,0 +1,834 @@
+# WCF Planner — Vite Migration Plan
+
+**Status:** Draft for Ronnie's review. **Do NOT begin migration until approved.**
+**Branch:** `vite-migration` (current). `main` stays deployable until cutover.
+**Backup:** `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` (SHA `1a535f73…`).
+**Drafted:** 2026-04-19, after reading the full `index.html` (19,445 lines, 39 components).
+
+---
+
+## 1. Goals + non-goals
+
+### Goals
+- Replace in-browser Babel transpilation with a proper Vite build (cold-load on mobile drops from "noticeable" to "imperceptible").
+- Split the single 19k-line `index.html` into a feature-organized `src/` tree so single-file accidents stop being catastrophic.
+- Add real URLs + working browser back button via React Router.
+- Same Supabase backend, same Netlify deploy, same domain, same auth, same edge function. **Zero new services or logins.**
+- Existing webform bookmarks (`wcfplanner.com/#weighins`, `/#webforms`, `/#addfeed`) keep working transparently.
+
+### Non-goals (during this migration)
+- No feature changes. Behavior identical to the pre-migration build.
+- No TypeScript conversion (stays JSX).
+- No test suite (separate effort if/when desired).
+- No CSS framework switch (existing inline styles + scoped `#webform-container` styles ported as-is).
+- No Supabase schema changes.
+- No edge function changes (`rapid-processor` untouched).
+- No "clever" refactors (Babel-in-browser-specific patterns like `\u` JSX escapes stay; removing them is risk-for-nothing).
+
+---
+
+## 2. Decisions locked (from 2026-04-19 Q&A)
+
+| Decision | Choice |
+|---|---|
+| Router | **BrowserRouter** + on-load hash-compat shim (existing `/#weighins` etc. `history.replaceState`'d to clean paths) |
+| Folder layout | **By feature** — `src/auth/ src/webforms/ src/admin/ src/cattle/ src/sheep/ src/broiler/ src/layer/ src/pig/ src/dashboard/ src/shared/` |
+| Shared state | **Multiple feature-scoped React Contexts** (AuthContext, BatchesContext, DailysContext, CattleContext, SheepContext, WebformsConfigContext, FeedCostsContext). NOT one god-Context, NOT Zustand. |
+| Package manager | **npm** (already installed `node_modules`, matches Netlify default) |
+
+---
+
+## 3. Current state inventory (what we're moving)
+
+### File shape
+- `index.html` — 19,445 lines. Structure:
+  - Lines 1–207: `<head>` (CDN scripts, base CSS, webform CSS, Babel cache helper, lazy-XLSX helper, boot loader CSS).
+  - Lines 208: opens `<script type="text/jsx-source" id="wcf-app-source">`.
+  - Lines 209–19347: the entire JSX app source as a single string.
+  - Line 19348: closes that script.
+  - Lines 19349–19445: bootstrap (`Babel.transform` → `eval`, with localStorage cache lookup).
+
+### Top-level CDN dependencies (all become npm packages)
+- `react@18` + `react-dom@18` → `npm i react react-dom`
+- `@babel/standalone` → **removed entirely** (Vite handles transpilation at build time)
+- `@supabase/supabase-js@2` → `npm i @supabase/supabase-js`
+- `xlsx@0.18.5` (lazy-loaded from cdnjs via `_wcfLoadXLSX`) → `npm i xlsx` + `await import('xlsx')`
+- Geist font from Google Fonts → keep as `<link>` in `index.html` template
+
+### Top-level helpers + globals (move to `src/lib/`)
+- `sb` — Supabase client init (with `detectSessionInUrl: false`, `storageKey: 'farm-planner-auth'`). **Critical config — preserve verbatim.**
+- `wcfSendEmail(type, data)` — fire-and-forget edge function call.
+- `wcfSelectAll(buildRangeQuery, pageSize)` — **the pagination helper Ronnie called out**. `.range(from, from+999)` in a loop; `.limit()` silently caps at 1000. **Move verbatim. Do not touch.**
+- `loadCattleWeighInsCached(sb)` — two-query pattern (session IDs first, then `weigh_ins.in()`). **No `!inner` joins.** Keep verbatim.
+- `wcfFmt`, `wcfToISO`, `addDays`, `todayISO`, `wcfPersistData` (debounced jsonb blob save), `cycleHashSeed`, etc.
+- `_wcfLoadXLSX` — replaced by `await import('xlsx')` once on Vite.
+- `_wcfBabelCache` — entire mechanism deleted in Phase 1.
+
+### Component inventory (39 total)
+Grouped by target folder.
+
+**`src/auth/`** (3)
+- `SetPasswordScreen` — invite/recovery landing. Manually parses `#access_token` from URL hash because `detectSessionInUrl: false`. **Fragile + critical.**
+- `LoginScreen` — email/password sign-in + forgot-password.
+- `UsersModal` — admin user management (add/delete/role/program-access).
+
+**`src/webforms/`** (3) — public, no auth required
+- `AddFeedWebform`
+- `WeighInsWebform`
+- `WebformHub`
+
+**`src/admin/`** (4)
+- `FeedCostsPanel`, `FeedCostByMonthPanel`, `LivestockFeedInputsPanel`, `NutritionTargetsPanel`
+
+**`src/shared/`** (5)
+- `DeleteModal`, `WcfYN`, `WcfToggle`, `AdminAddReportModal`, `AdminNewWeighInModal`
+
+**`src/broiler/`** (1 + several inline-in-App)
+- `BroilerDailysView` (extracted)
+- `BroilerHomeView`, `BatchesListView`, `TimelineView`, `FeedView`, `BatchForm` (currently inline JSX inside `App()` — must be extracted in Phase 2 Round 6)
+
+**`src/layer/`** (4)
+- `LayersView`, `LayerBatchesView`, `LayerDailysView`, `EggDailysView`
+- `LayersHomeDashboard` (currently inline in App)
+
+**`src/pig/`** (1 + several inline-in-App)
+- `PigDailysView` (extracted)
+- `PigsHomeDashboard`, `PigBreedingView`, `PigFarrowingView`, `PigSowsView`, `PigBatchesView`, `PigFeedView`, `BreedingForm`, `FarrowingForm`, `FeederForm`, `BreederForm` (inline)
+
+**`src/cattle/`** (8)
+- `CattleHomeView`, `CattleHerdsView`, `CowDetail`, `CollapsibleOutcomeSections`, `CattleBreedingView`, `CattleBatchesView`, `CattleDailysView`, `CattleWeighInsView`, `CattleBulkImport`, `CattleNewWeighInModal`
+
+**`src/sheep/`** (6)
+- `SheepHomeView`, `SheepFlocksView`, `SheepDetail`, `SheepDailysView`, `SheepWeighInsView`, `SheepBulkImport`
+
+**`src/livestock/`** (2 — broiler + pig shared weigh-in flow)
+- `LivestockWeighInsView`, `PigSendToTripModal`
+
+**`src/dashboard/`** (1 huge, currently inline in App)
+- `HomeDashboard` — top stats, missed reports, NEXT 30 DAYS, LAST 5 DAYS section. Probably the single biggest extraction effort because it consumes ~all of App's state.
+
+**`src/equipment/`** (1)
+- `EquipmentPlaceholder` — current "coming soon" stub. Easy.
+
+### `App()` state — 50+ useState hooks
+Will be split across these contexts (Phase 2 Round 0):
+
+| Context | Owns |
+|---|---|
+| `AuthContext` | `authState`, `pwRecovery`, `dataLoaded`, `saveStatus`, `showUsers`, `allUsers`, `inviteEmail`, `inviteRole`, `inviteMsg` |
+| `BatchesContext` | `batches`, `view` (initially), `showForm`, `editId`, `form`, `originalForm`, `conflicts`, `tlStart`, `tooltip`, `override`, `showLegacy`, `parsedProcessor`, `docUploading`, `deleteConfirm` |
+| `PigContext` | `pigData`, `breedingCycles`, `farrowingRecs`, `boarNames`, `feederGroups`, `breeders`, `breedOptions`, `originOptions`, all pig form state (`showBreedForm`, `showFarrowForm`, `showFeederForm`, `breedForm`, `farrowForm`, `feederForm`, `editBreedId`, etc.), `archivedSows`, `expandedSow`, `sowSearch`, `activeTripBatchId`, `tripForm`, `editTripId` |
+| `LayerContext` | `layerGroups`, `layerBatches`, `layerHousings`, `allLayerDailys`, `allEggDailys`, `layerDashPeriod`, `retHomeDashPeriod` |
+| `DailysRecentContext` | `broilerDailys`, `pigDailys`, `layerDailysRecent`, `eggDailysRecent`, `cattleDailysRecent`, `sheepDailysRecent` (all fed by App-level loaders + `refreshDailys`) |
+| `CattleHomeContext` | `cattleForHome`, `cattleOnFarmCount` |
+| `SheepHomeContext` | `sheepForHome` |
+| `WebformsConfigContext` | `wfGroups`, `wfTeamMembers`, `webformsConfig` |
+| `FeedCostsContext` | `feedCosts`, `broilerNotes`, `missedCleared` |
+| `UIContext` | `view`, `pendingEdit`, `showAllComparison`, `showMenu` |
+
+### View dispatcher
+`App()` currently has ~40 `if(view === "X") return React.createElement(...)` lines. In Phase 3 these become `<Route path="/X" element={<X/>} />` declarations.
+
+### Hash routing today (becomes BrowserRouter routes + shim)
+- `/#weighins` → `<WeighInsWebform>`
+- `/#webforms` → `<WebformHub>`
+- `/#addfeed` → `<AddFeedWebform>`
+- `/#access_token=…&type=recovery` → `<SetPasswordScreen>` (kept as hash because Supabase recovery links generate this format)
+
+### Gotchas the migration must respect (the "don't touch" list)
+1. `wcfSelectAll` pagination pattern. Move file, don't rewrite.
+2. Two-query `loadCattleWeighInsCached` pattern. No `!inner` joins anywhere.
+3. `detectSessionInUrl: false` Supabase config + `storageKey: 'farm-planner-auth'`.
+4. Source-label workflow (`'import'` / `'weigh_in'` / `'manual'`) for `old_tags`.
+5. `cellDates:true` in any `XLSX.read()` call.
+6. Webform URLs: `/#weighins`, `/#webforms`, `/#addfeed` must keep working.
+7. `_wcfPersistData` debounce + jsonb blob save to `app_store` table.
+8. `\u`-escaped JSX literals (em-dashes, bullets, etc.) — leave them. Removing mid-migration is pure risk.
+9. Per-program access gates (`canAccessProgram`, `VIEW_TO_PROGRAM` map). Move to a hook (`usePermissions`), don't redesign.
+10. `SetPasswordScreen` URL-hash token parsing + `setSession` fallback. Test after every Phase 1 + Phase 3 commit.
+
+---
+
+## 4. Target architecture
+
+```
+WCF-planner/
+├─ index.html              # Vite entry (~30 lines: head, root div, script src=main.jsx)
+├─ vite.config.js
+├─ package.json
+├─ public/
+│  ├─ _redirects           # Netlify SPA fallback: /*  /index.html  200
+│  └─ favicon.ico
+├─ src/
+│  ├─ main.jsx             # ReactDOM root, RouterProvider
+│  ├─ App.jsx              # Layout + provider tree + <Outlet/>
+│  ├─ routes.jsx           # All <Route> declarations
+│  ├─ lib/
+│  │  ├─ supabase.js       # sb client init (detectSessionInUrl:false etc.)
+│  │  ├─ pagination.js     # wcfSelectAll
+│  │  ├─ email.js          # wcfSendEmail
+│  │  ├─ dateUtils.js      # toISO, addDays, todayISO, wcfFmt
+│  │  ├─ persist.js        # wcfPersistData debounce
+│  │  └─ permissions.js    # canAccessProgram, VIEW_TO_PROGRAM
+│  ├─ contexts/
+│  │  ├─ AuthContext.jsx
+│  │  ├─ BatchesContext.jsx
+│  │  ├─ PigContext.jsx
+│  │  ├─ LayerContext.jsx
+│  │  ├─ DailysRecentContext.jsx
+│  │  ├─ CattleHomeContext.jsx
+│  │  ├─ SheepHomeContext.jsx
+│  │  ├─ WebformsConfigContext.jsx
+│  │  ├─ FeedCostsContext.jsx
+│  │  └─ UIContext.jsx
+│  ├─ shared/
+│  │  ├─ DeleteModal.jsx
+│  │  ├─ WcfYN.jsx
+│  │  ├─ WcfToggle.jsx
+│  │  ├─ AdminAddReportModal.jsx
+│  │  ├─ AdminNewWeighInModal.jsx
+│  │  └─ Header.jsx        # extracted from App
+│  ├─ auth/
+│  │  ├─ SetPasswordScreen.jsx
+│  │  ├─ LoginScreen.jsx
+│  │  └─ UsersModal.jsx
+│  ├─ webforms/
+│  │  ├─ AddFeedWebform.jsx
+│  │  ├─ WeighInsWebform.jsx
+│  │  └─ WebformHub.jsx
+│  ├─ admin/
+│  │  ├─ FeedCostsPanel.jsx
+│  │  ├─ FeedCostByMonthPanel.jsx
+│  │  ├─ LivestockFeedInputsPanel.jsx
+│  │  └─ NutritionTargetsPanel.jsx
+│  ├─ dashboard/
+│  │  └─ HomeDashboard.jsx
+│  ├─ broiler/
+│  ├─ layer/
+│  ├─ pig/
+│  ├─ cattle/
+│  ├─ sheep/
+│  ├─ livestock/
+│  └─ equipment/
+├─ supabase-migrations/    # unchanged
+├─ scripts/                # unchanged (one-off Node import scripts)
+├─ PROJECT.md              # unchanged
+├─ DECISIONS.md            # unchanged
+└─ MIGRATION_PLAN.md       # this doc
+```
+
+---
+
+## 5. Phase 1 — Vite scaffolding (commit-by-commit)
+
+Goal: app runs identically to today, just from a Vite build instead of Babel-in-browser. **Zero JSX changes.** No component extraction. No routing changes. Just toolchain.
+
+| # | Commit | Verification |
+|---|---|---|
+| 1.1 | `Add Vite scaffolding (package.json, vite.config.js, .gitignore)` | `npm install` succeeds, `dist/` and `node_modules/` ignored |
+| 1.2 | `Move app source to src/main.jsx (no logic changes)` | New file is the contents of the old `<script type="text/jsx-source">` block, line-for-line, with the supabase-js + xlsx CDN globals replaced by ESM imports at the top |
+| 1.3 | `Replace CDN script tags with ESM imports` | `index.html` becomes ~30 lines (head, root div, `<script type="module" src="/src/main.jsx">`); React/ReactDOM/supabase-js imported in main.jsx |
+| 1.4 | `Replace _wcfLoadXLSX CDN call with await import("xlsx")` | xlsx still lazy-loads, just from npm not cdnjs |
+| 1.5 | `Remove Babel cache + bootstrap script` | `_wcfBabelCache` localStorage helper deleted; bootstrap eval script deleted; existing localStorage `wcf-babel-*` keys harmless (untouched) |
+| 1.6 | `Add Netlify _redirects for SPA fallback` | `public/_redirects`: `/*  /index.html  200` so deep links don't 404 |
+| 1.7 | `Update Netlify build: npm run build, publish dist/` | Verify on a deploy preview branch BEFORE merging to main |
+
+**Smoke test after each commit (Section 8 below).**
+
+**Cutover (end of Phase 1):** merge `vite-migration` into `main`, push, watch Netlify deploy. Run smoke test on production. Have rollback ready (`git revert` the merge commit) if anything breaks.
+
+---
+
+## 6. Phase 2 — Component extraction (commit-by-commit, ordered)
+
+Goal: split the monolithic `src/main.jsx` (still ~19k lines after Phase 1) into the feature folders.
+
+**Round 0 — Contexts FIRST.** Without this, every extracted component just becomes a tendril back to a god-object App.
+| # | Commit |
+|---|---|
+| 2.0.1 | `Extract AuthContext` |
+| 2.0.2 | `Extract BatchesContext` |
+| 2.0.3 | `Extract PigContext` |
+| 2.0.4 | `Extract LayerContext` |
+| 2.0.5 | `Extract DailysRecentContext (incl. cattle + sheep recent)` |
+| 2.0.6 | `Extract CattleHomeContext + SheepHomeContext + WebformsConfigContext + FeedCostsContext + UIContext` |
+
+After Round 0, App.jsx wraps everything in a provider tree but otherwise unchanged.
+
+**Round 1 — Leaf components (no shared state, lowest risk).**
+| # | Commit |
+|---|---|
+| 2.1.1 | `Extract WcfYN + WcfToggle to src/shared/` |
+| 2.1.2 | `Extract DeleteModal to src/shared/` |
+| 2.1.3 | `Extract Header to src/shared/` |
+| 2.1.4 | `Extract AdminAddReportModal + AdminNewWeighInModal + PigSendToTripModal + CattleNewWeighInModal` |
+| 2.1.5 | `Extract SetPasswordScreen + LoginScreen to src/auth/` (test forgot-password flow!) |
+
+**Round 2 — Single-feature view components (medium risk).**
+| # | Commit |
+|---|---|
+| 2.2.1 | `Extract BroilerDailysView` |
+| 2.2.2 | `Extract LayerBatchesView + LayerDailysView + EggDailysView` |
+| 2.2.3 | `Extract PigDailysView` |
+| 2.2.4 | `Extract CattleDailysView` |
+| 2.2.5 | `Extract CattleBulkImport + SheepBulkImport` |
+| 2.2.6 | `Extract SheepDetail + SheepDailysView + SheepWeighInsView` |
+| 2.2.7 | `Extract CowDetail + CollapsibleOutcomeSections` |
+
+**Round 3 — Bigger stateful views (consume multiple contexts).**
+| # | Commit |
+|---|---|
+| 2.3.1 | `Extract LayersView + LayersHomeDashboard` |
+| 2.3.2 | `Extract CattleHomeView` |
+| 2.3.3 | `Extract CattleHerdsView` |
+| 2.3.4 | `Extract SheepHomeView + SheepFlocksView` |
+| 2.3.5 | `Extract CattleBreedingView + CattleBatchesView + CattleWeighInsView` |
+| 2.3.6 | `Extract LivestockWeighInsView` |
+| 2.3.7 | `Extract UsersModal` |
+
+**Round 4 — Admin panels.**
+| # | Commit |
+|---|---|
+| 2.4.1 | `Extract FeedCostsPanel + FeedCostByMonthPanel` |
+| 2.4.2 | `Extract LivestockFeedInputsPanel + NutritionTargetsPanel` |
+
+**Round 5 — Public webforms (high public-impact, careful).**
+| # | Commit |
+|---|---|
+| 2.5.1 | `Extract WebformHub` |
+| 2.5.2 | `Extract AddFeedWebform` (test public submission immediately after deploy) |
+| 2.5.3 | `Extract WeighInsWebform` (test public submission immediately after deploy) |
+
+**Round 6 — Inline views inside App (the hard part).**
+This is where Pig/Broiler/Layer pages currently live inline as `if(view==="X") return ...` JSX inside App. Each gets extracted to its own component.
+| # | Commit |
+|---|---|
+| 2.6.1 | `Extract BroilerHomeView` |
+| 2.6.2 | `Extract BatchesListView` (the broiler list page) |
+| 2.6.3 | `Extract TimelineView` (broiler timeline) |
+| 2.6.4 | `Extract FeedView` (poultry feed) |
+| 2.6.5 | `Extract BatchForm (broiler add/edit form)` |
+| 2.6.6 | `Extract PigsHomeDashboard` |
+| 2.6.7 | `Extract PigBreedingView + BreedingForm` |
+| 2.6.8 | `Extract PigFarrowingView + FarrowingForm` |
+| 2.6.9 | `Extract PigSowsView + BreederForm` |
+| 2.6.10 | `Extract PigBatchesView + FeederForm` |
+| 2.6.11 | `Extract PigFeedView` |
+
+**Round 7 — Home dashboard (last + biggest single piece).**
+| # | Commit |
+|---|---|
+| 2.7.1 | `Extract HomeDashboard (top stats + missed reports + last 5 days)` |
+
+**Round 8 — Equipment placeholder.** Trivial.
+| # | Commit |
+|---|---|
+| 2.8.1 | `Extract EquipmentPlaceholder to src/equipment/` |
+
+**Result after Phase 2:** `src/App.jsx` is ~100 lines (provider tree + view dispatch + Header + Footer). All real logic lives in feature folders.
+
+---
+
+## 7. Phase 3 — React Router
+
+Goal: real URLs + working back button. Existing `setView('X')` calls become `<Link to="/X">` or `useNavigate()`.
+
+| # | Commit |
+|---|---|
+| 3.1 | `Add react-router-dom + define top-level <Route> map` (no internal usages yet) |
+| 3.2 | `Replace setView(X) calls with useNavigate()` (one feature folder per commit) |
+| 3.3 | `Add hash-compat shim: on app mount, detect /#weighins / /#addfeed / /#webforms / /#access_token=… and history.replaceState() to clean path` |
+| 3.4 | `Switch SetPasswordScreen to read tokens from /reset?token=… as primary, fall back to URL hash for legacy email links` |
+| 3.5 | `Remove the old hash-detection useEffect from App.jsx` |
+| 3.6 | `Add 404 catch-all route → home` |
+
+After 3.3 the URL shape is:
+- `/` — home dashboard
+- `/broiler/dashboard`, `/broiler/dailys`, `/broiler/timeline`, `/broiler/list`, `/broiler/feed`
+- `/layer/dashboard`, `/layer/batches`, `/layer/dailys`, `/layer/eggs`
+- `/pig/dashboard`, `/pig/sows`, `/pig/breeding`, `/pig/farrowing`, `/pig/batches`, `/pig/dailys`, `/pig/feed`
+- `/cattle/dashboard`, `/cattle/herds`, `/cattle/dailys`, `/cattle/weighins`, `/cattle/breeding`, `/cattle/batches`
+- `/sheep/dashboard`, `/sheep/flocks`, `/sheep/dailys`, `/sheep/weighins`
+- `/equipment` — placeholder
+- `/webforms`, `/weighins`, `/addfeed` — public webforms (no auth)
+- `/admin/feed`, `/admin/users` — admin panels
+- `/login`, `/reset` — auth screens
+
+**Hash compat shim** (runs once on app mount, before the router decides anything):
+```js
+const h = window.location.hash;
+const compatMap = {
+  '#weighins': '/weighins',
+  '#addfeed': '/addfeed',
+  '#webforms': '/webforms',
+};
+if(compatMap[h]) {
+  history.replaceState(null, '', compatMap[h]);
+}
+// Recovery hash (#access_token=… &type=recovery) is NOT rewritten —
+// SetPasswordScreen still parses it from the hash for backward compat.
+```
+
+---
+
+## 8. Smoke test (run after EVERY Phase 1 + Phase 3 commit, periodically in Phase 2)
+
+1. Cold load `wcfplanner.com` (incognito) → home renders within 3s.
+2. `/weighins` (or `/#weighins` for back-compat verification) → public weigh-ins webform renders.
+3. `/webforms` → WebformHub renders.
+4. `/addfeed` → AddFeedWebform renders.
+5. Sign in as admin → home renders, all 6 program tiles visible, sub-nav works.
+6. Sign in as a non-admin user with restricted program access → only allowed tiles visible.
+7. Click "Forgot password?" → email arrives → click link → SetPasswordScreen renders → "Verifying…" briefly → "Set Password" enables → submit → continues to home.
+8. Cattle → Herds → expand a cow → weight history + lambing/calving + comments all render.
+9. Sheep → Flocks → add a test sheep → appears in directory.
+10. Submit a Cattle daily report from the public webform → appears in admin Cattle Dailys list within ~2s.
+11. Browser back button works between any two pages.
+12. Console: no red errors.
+
+**If any step fails, revert the commit and diagnose before re-attempting.**
+
+---
+
+## 9. Risk register
+
+| # | Risk | Mitigation |
+|---|---|---|
+| R1 | Forgot-password flow breaks because `SetPasswordScreen` URL-hash parsing assumes the `#` survives router init | Test after every Phase 1 + Phase 3 commit. Keep hash-token parsing as the primary path until 3.4. |
+| R2 | Existing webform bookmarks (`/#weighins`) silently redirect to home if shim fails | Shim runs synchronously on app mount, BEFORE router. Smoke step #2 catches this. |
+| R3 | `app_store` jsonb blob save (`wcfPersistData`) loses debounce timing across context split → double-saves or lost saves | Move `wcfPersistData` to `src/lib/persist.js` once, untouched. Each Context that owns a blob calls it the same way as today. |
+| R4 | Babel-in-browser-specific JSX patterns (`\u` escapes in template literals) behave differently under SWC/esbuild | They behave identically. Verified — esbuild handles `\u00d7` in JSX text the same way Babel does. Leave them. |
+| R5 | `localStorage` `wcf-babel-*` keys (~600KB per user) become dead data | Add a one-time cleanup in `src/main.jsx`: `Object.keys(localStorage).filter(k=>k.startsWith('wcf-babel-')).forEach(k=>localStorage.removeItem(k))`. Runs on every app mount; idempotent; harmless. |
+| R6 | Catastrophic deletion during a Round-7 (HomeDashboard) extraction | Keep file size of any single in-flight commit small. Backup + branch already in place. If a single component extraction PR exceeds ~1500 lines moved, split it. |
+| R7 | Netlify build fails on first deploy because `dist/` config is wrong | Test on a deploy preview from `vite-migration` branch BEFORE merging to main. Don't merge until preview is green. |
+| R8 | Supabase `farm-planner-auth` localStorage key behavior changes when supabase-js loads via ESM | It doesn't. Same package, same version, same key. Verified by grepping the package source. |
+| R9 | Dev/prod parity: Vite dev server vs Vite build output behave differently | Run `npm run build && npm run preview` locally before any push. Smoke-test from preview, not just dev. |
+| R10 | The `<script type="text/jsx-source">` script tag has any DOM dependencies (querySelector etc.) that ran in a specific order | None observed in the read-through. App's first React render handles all DOM mutations. Boot loader fade-out happens via React effect after first paint. |
+| R11 | Edge function calls fail because `sb` is initialized differently | Same Supabase client config, same edge function URL. Verified the only change is import path. |
+
+---
+
+## 10. Don't-touch list (during migration)
+
+These are explicit. If a migration commit modifies any of them, **revert and ask first.**
+
+- `wcfSelectAll` pagination loop (the `.range(from, from+999)` + while-loop pattern).
+- Two-query `loadCattleWeighInsCached` (no `!inner` joins).
+- `detectSessionInUrl: false` and `storageKey: 'farm-planner-auth'` Supabase config.
+- Source-label workflow strings (`'import'` / `'weigh_in'` / `'manual'`).
+- `cellDates: true` xlsx read option.
+- `_wcfPersistData` debounce timing (800ms today).
+- Webform URL paths.
+- Per-program `canAccessProgram` rules (admin always bypasses).
+- `\u` JSX escape literals.
+- `cattle.old_tags` jsonb shape.
+- The `weigh_in_sessions.species` column convention.
+- Supabase RLS policies (none of these are touched by frontend migration anyway).
+
+---
+
+## 11. Resolved questions (Ronnie 2026-04-19)
+
+1. **ESLint + Prettier** — **Defer.** Lint warnings during a structural migration are noise; add later as a separate initiative.
+2. **Source maps in production** — **Yes** (`build.sourcemap: true`). Worth the ~30% disk cost for debuggable stack traces.
+3. **Vite dev server port** — **Default 5173** (Ronnie pushed back on the 3000 recommendation, correctly: "boring standard Vite" wins on turnover; 3000 is squatted by Next.js + lots of Node backends; the number-on-bookmark argument is thin).
+4. **`wcf-babel-*` localStorage cleanup** in main.jsx — **Yes.** One-time idempotent purge on app mount; frees ~600KB per user.
+5. **First production deploy of Phase 1** — **Deploy preview first.** Push `vite-migration` to GitHub → Netlify auto-builds a preview URL → smoke-test there → only merge to main when green.
+6. **Phase pacing** — **Phase 1 in one session, Phase 2 paced one round per session, Phase 3 in one session.** Phase 1 is mechanical (one shot is fine); Phase 2 component extractions benefit from per-round verification.
+7. **PROJECT.md updates** — **Yes, §17 onward per session.** Same pattern as §16 / §16.11. Each migration session gets a brief log so future Claude can trace the path from monolith to Vite without re-reading every commit.
+8. **`scripts/` location** — **Stay at repo root.** They're CLI Node scripts, not part of the Vite bundle. Moving under `src/` would force exclude config + add friction.
+
+---
+
+## 12. What this plan deliberately defers
+
+These are good ideas that DON'T belong in the migration:
+- TypeScript conversion
+- Test suite (Vitest + Playwright)
+- CSS framework (Tailwind, etc.) or styled-components
+- Storybook
+- Service worker / PWA install
+- Splitting `app_store` jsonb blobs into dedicated tables (per-feature)
+- Bundle splitting beyond Vite's defaults
+- React Server Components / Next.js / any framework jump
+
+Each can come later as its own initiative. The migration is purely a toolchain + organization move.
+
+---
+
+## 13. Cutover checklist (end of Phase 1)
+
+Before merging `vite-migration` → `main`:
+- [ ] `npm run build` clean, no warnings.
+- [ ] `npm run preview` runs the production build locally.
+- [ ] All 12 smoke-test steps pass on `npm run preview`.
+- [ ] Netlify deploy preview from `vite-migration` branch is green.
+- [ ] All 12 smoke-test steps pass on the deploy preview URL.
+- [ ] `wcf-babel-*` localStorage cleanup verified (open DevTools → Application → Local Storage → no `wcf-babel-*` entries after one app load).
+- [ ] PROJECT.md §17 drafted with the change summary.
+- [ ] Backup of `index.html` confirmed at `~/OneDrive/Desktop/WCF-planner-backups/`.
+
+Then: merge, push, watch Netlify, run smoke test on production, declare cutover complete.
+
+---
+
+## 14. Progress log (append-only — newest entries at the bottom)
+
+### 2026-04-19 — Phase 1 complete + Phase 2.0.0 (lib extraction) done
+Branch: `vite-migration` (pushed). Main + production untouched.
+
+**Phase 1 — Vite scaffolding** (all 7 commits done):
+| SHA | Commit | What landed |
+|---|---|---|
+| `26ba711` | 1.1 Vite scaffolding | `package.json`, `vite.config.js` (sourcemap:true, default port 5173), `package-lock.json`. `npm install` succeeded. |
+| `d304908` | 1.2 Move app source to src/main.jsx | Verbatim port of the 19,131-line `<script type="text/jsx-source">` block. ESM imports added; old `const { createClient } = supabase;` destructure dropped. |
+| `78ed759` | 1.3 Replace CDN scripts | `index.html` 19,445 → 208 lines. CDN preloads + script tags + JSX inline source + Babel.transform bootstrap all deleted. Single `<script type="module" src="/src/main.jsx">`. Boot loader fade-out added to main.jsx. |
+| `b14ffd2` | 1.4 + 1.5 XLSX + Babel cleanup | `_wcfLoadXLSX` switched to dynamic `import('xlsx')` (Vite auto-code-splits the chunk). `_wcfBabelCache` deleted. One-time `wcf-babel-*` localStorage purge added on app mount. |
+| `3045a99` | 1.6 + 1.7 Netlify config | `public/_redirects` (SPA fallback). `netlify.toml` (build command, NODE_VERSION 20, publish dir). |
+
+**Phase 2 — Component extraction**, Round 0 (Contexts) — first commit done:
+| SHA | Commit | What landed |
+|---|---|---|
+| `9956d13` | 2.0.0 Extract sb + helpers to src/lib/ | `src/lib/supabase.js` (sb client + `window.sb` side-effect), `src/lib/email.js` (`wcfSendEmail`), `src/lib/pagination.js` (`wcfSelectAll` — pagination loop preserved verbatim per don't-touch rule). main.jsx imports all three at top. |
+
+**Verification status:**
+- Local `npm run build` passes after every commit. Bundle: ~1.26 MB main + 429 kB xlsx (auto-split, lazy-loaded).
+- Production (`wcfplanner.com` / `cheerful-narwhal-1e39f5.netlify.app`) is untouched, still on `main`.
+- Deploy preview (`deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`): SSL was provisioning at first push; verify it's live before relying on it.
+- SetPasswordScreen (forgot password flow) confirmed working on production after a clean test.
+- **Full smoke test §8 NOT yet run on the deploy preview** — that's the next pre-merge gate.
+
+**What's next (Phase 2 Round 0 remaining):**
+- 2.0.1 Extract AuthContext (carries the URL hash recovery logic + auth state listener — most complex Context)
+- 2.0.2 Extract BatchesContext
+- 2.0.3 Extract PigContext
+- 2.0.4 Extract LayerContext
+- 2.0.5 Extract DailysRecentContext (broiler / pig / layer / egg / cattle / sheep recent dailys)
+- 2.0.6 Extract CattleHomeContext + SheepHomeContext + WebformsConfigContext + FeedCostsContext + UIContext (5 small ones bundled)
+
+After Round 0: rounds 1–8 (component extractions) per §6.
+
+### 2026-04-20 — Phase 1 preview verified + Phase 2 Round 0 complete
+
+Branch: `vite-migration` (pushed). Main + production untouched.
+
+**Phase 1 preview gate cleared:**
+Ronnie smoke-tested `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app` — all tabs load, navigation works. Green to continue into Phase 2.
+
+**Phase 2 Round 0 — Contexts** shipped as a single commit rather than six per-step SHAs, since all six extractions are structurally coherent "state-only plumbing with App unchanged" and splitting already-intermixed changes would have been git surgery for its own sake.
+
+| SHA | Commit | What landed |
+|---|---|---|
+| `67d2ae3` | Phase 2 Round 0: Extract 10 Contexts from App() | 10 thin Provider files under `src/contexts/`. ~78 useState hooks moved out of App(). App retains all effects, helpers (loadUser, loadAllData, canAccessProgram), derived values (role/isAdmin/etc.), and module-scope constants — each feature reads its state via `useAuth()` / `useBatches()` / `usePig()` / `useLayer()` / `useDailysRecent()` / `useCattleHome()` / `useSheepHome()` / `useWebformsConfig()` / `useFeedCosts()` / `useUI()`. |
+
+Each sub-step (2.0.1 → 2.0.6) was built + verified in isolation before moving to the next; the single commit captures the whole chunk.
+
+**One deviation from §4 table:** `view` moved to `UIContext` (not `BatchesContext`). The plan hedged with "(initially)" and also listed `view` under UIContext — UIContext is the correct final home (every feature reads it), so it landed there directly and skipped a later rework.
+
+**Verification:**
+- `npm run build` clean after each of the 6 intermediate states. Final bundle 1.27 MB (gzip 294 KB) — essentially unchanged from pre-round.
+- Deploy preview smoke-tested by Ronnie after push: all tabs load, forgot-password flow works end-to-end (AuthContext's pwRecovery initializer and the auth listener effect both survived the state-vs-effect split cleanly).
+- Don't-touch list in §10: **untouched.** No edits to `wcfSelectAll`, `loadCattleWeighInsCached`, `detectSessionInUrl`/`storageKey` Supabase config, source-label strings, xlsx `cellDates`, webform URL paths, `_wcfPersistData`, `\u` JSX escapes, `canAccessProgram`, or `SetPasswordScreen`.
+
+**What stayed in App() (not in plan's Context table — will land in feature folders during Rounds 1–8):**
+- Refs: `autoSaveTimer`, `pigAutoSaveTimer`, `subAutoSaveTimer`, `tripAutoSaveTimer`, `breedAutoSaveTimer`.
+- Pig UI flags: `leaderboardExpanded`, `showArchived`, `showArchBatches`.
+- Feed orders/inventories: `feedOrders`, `pigFeedInventory`, `pigFeedExpandedMonths`, `poultryFeedInventory`, `poultryFeedExpandedMonths`.
+- Pig/layer notes: `pigNotes`, `layerNotes`.
+- Webforms admin form state: `wfForm`, `wfSubmitting`, `wfDone`, `wfErr`, `wfGroupName`, `wfView`, `editWfId`, `editFieldId`, `wfFieldForm`, `newTeamMember`, `addingTo`, `editFldLbl`, `editFldVal`, `editSecIdx`, `editSecVal`, `newOpt`.
+- Pig batches UI: `showSubForm`, `subForm`, `editSubId`, `collapsedBatches`, `collapsedMonths`.
+- Legacy pig dailys form state: `dailysFilter`, `showDailyForm`, `editDailyId`, `EMPTY_DAILY`, `dailyForm`.
+- Admin tab toggle: `adminTab`.
+
+**Root render provider tree** (for reference by Round 1+):
+```
+AuthProvider
+  > BatchesProvider (formInit={EMPTY_FORM} tlStartInit={thisMonday})
+    > PigProvider (initialFarrowing, initialBreeders, breedTlStartInit)
+      > LayerProvider
+        > DailysRecentProvider
+          > CattleHomeProvider
+            > SheepHomeProvider
+              > WebformsConfigProvider (configInit={DEFAULT_WEBFORMS_CONFIG})
+                > FeedCostsProvider
+                  > UIProvider
+                    > App
+```
+
+**What's next (Phase 2 Round 1 — leaf components):**
+Per §6 Round 1 table:
+- 2.1.1 `WcfYN` + `WcfToggle` to `src/shared/`
+- 2.1.2 `DeleteModal` to `src/shared/`
+- 2.1.3 `Header` to `src/shared/`
+- 2.1.4 `AdminAddReportModal` + `AdminNewWeighInModal` + `PigSendToTripModal` + `CattleNewWeighInModal`
+- 2.1.5 `SetPasswordScreen` + `LoginScreen` to `src/auth/` (test forgot-password again — critical gate)
+
+**Cutover (merge to main) is still deferred.** Ronnie's call at end of this session: build more rounds before merge. Round 0 is pure state plumbing — no user-visible upside yet. Earliest reasonable cutover is after Round 1 or 2 when component extraction starts paying off.
+
+### 2026-04-20 (session 2) — Phase 2 Rounds 1-5 landed + helper libs
+
+Branch: `vite-migration` (pushed through commit `3d34089`). Main + production untouched.
+
+Big session. Ronnie said "huge build — rounds 1-6 commit-and-push, 7 standalone." I got cleanly through Rounds 1-5 and then stopped at the Round 6 architectural boundary (inline-JSX-in-App views are structurally different; see §14 Round 6 section below for what's needed).
+
+**Pivot that made the session possible:** after a false start on AdminAddReportModal where I introduced silent transcription drift, I switched to PowerShell file-slice extraction. Each big component extraction is now a line-range `Substring` operation reading main.jsx, writing a new file with an imports-prologue + export-epilogue, and splicing a one-line marker comment into main.jsx. **Zero transcription risk — the bytes are never in my messages.** This is the pattern future sessions should use for remaining rounds.
+
+**Rounds landed (chronological):**
+
+| SHA | Commit | What landed |
+|---|---|---|
+| `db2a1fd` | Phase 2 Round 1 | Leaf components + auth screens. Moved: WcfYN, WcfToggle, DeleteModal (src/shared/); AdminAddReportModal, AdminNewWeighInModal (src/shared/); PigSendToTripModal (src/livestock/); CattleNewWeighInModal (src/cattle/); SetPasswordScreen, LoginScreen (src/auth/). Helper prep: setHousingAnchorFromReport + computeProjectedCount + computeLayerFeedCost to src/lib/layerHousing.js. **Header deferred** — closes over ~12 pieces of App state + helpers (signOut, backupData, restoreData, loadUsers); clean extract needs App-helpers lifted first. |
+| `0aa3aeb` | Phase 2 Round 2 | Single-feature dailys views: BroilerDailysView (src/broiler/), LayerDailysView + EggDailysView (src/layer/), PigDailysView (src/pig/), CattleDailysView (src/cattle/), CattleBulkImport (src/cattle/ — incl its 5 module-scope import constants), SheepBulkImport (src/sheep/ — incl its 4 constants), SheepDetail + SheepDailysView + SheepWeighInsView (src/sheep/), CollapsibleOutcomeSections + CowDetail (src/cattle/). **LayerBatchesView deferred** — 6 helpers (calcPhaseFromAge, computeProjectedCount, computeLayerFeedCost, toISO, addDays, inRange). |
+| `0f858ac` | Phase 2 Round 3 | Bigger stateful views + recovery fix. Extracted UsersModal (src/auth/), LayersView (src/layer/), CattleHomeView / CattleHerdsView / CattleBreedingView / CattleBatchesView (src/cattle/), SheepFlocksView / SheepHomeView (src/sheep/). Helper prep: cattleCache.js (loadCattleWeighInsCached + invalidateCattleWeighInsCache + module cache state), cattleBreeding.js (calcCattleBreedingTimeline + buildCattleCycleSeqMap + cattleCycleLabel), dateUtils.js (addDays, toISO, fmt, fmtS, todayISO, thisMonday) — all in src/lib/. **Bug fix included** — Round 1 extracted AdminNewWeighInModal with an end anchor that swept `LivestockWeighInsView` into the same file (undefined in main.jsx, silently broken /broilerweighins + /pigweighins routes); same issue with PigSendToTripModal sweeping `CattleWeighInsView`. Round 3 splits those into dedicated src/livestock/LivestockWeighInsView.jsx + src/cattle/CattleWeighInsView.jsx and exports each properly. |
+| `42069b8` | Phase 2 Round 4 | Admin panels: FeedCostsPanel, FeedCostByMonthPanel, LivestockFeedInputsPanel, NutritionTargetsPanel — all to src/admin/. |
+| `3d34089` | Phase 2 Round 5 | Public webforms: AddFeedWebform, WeighInsWebform, WebformHub — all to src/webforms/. Hash-route bypass logic in App unchanged. |
+
+**Numbers:**
+- main.jsx: 19,170 → 9,035 lines (53% reduction).
+- Total component files under src/: 40+ extracted components, plus 4 helper libs (layerHousing, cattleCache, cattleBreeding, dateUtils).
+- Module count at build: 77 (session start) → 121+ (after Round 5).
+- Bundle: 1.26 MB → 1.26 MB (stable — code moved, not duplicated).
+- Every round verified with `npm run build` clean before commit + push.
+- No preview smoke test between rounds — done at end of session.
+
+**The "huge build" approach (PowerShell file-slicing):**
+
+For every big extraction, use a PowerShell command of the shape:
+```powershell
+$content = [System.IO.File]::ReadAllText($path)
+$startIdx = $content.IndexOf($startAnchor)   # e.g. 'const XyzView = ({'
+$nextIdx  = $content.IndexOf($nextAnchor, $startIdx)
+$slice    = $content.Substring($startIdx, $nextIdx - $startIdx)
+$endIdx   = $startIdx + $slice.LastIndexOf('};') + 2
+$body     = $content.Substring($startIdx, $endIdx - $startIdx)
+$new      = $header + $body + $footer   # header = imports, footer = export default
+[System.IO.File]::WriteAllText($targetPath, $new)
+$content  = $content.Substring(0, $startIdx) + $markerComment + $content.Substring($endIdx)
+[System.IO.File]::WriteAllText($path, $content)
+```
+
+Before extracting, always audit dependencies: `Select-String -Path <targetBody> -Pattern '\b(setHousingAnchorFromReport|wcfSendEmail|toISO|…)\b'`. The imports prologue must include every bare name the body refers to.
+
+**Critical trap we hit: anchor over-sweep.** If two top-level `const X = ({...}) => { … }` components sit adjacent in main.jsx and your `nextAnchor` is wrong, the extraction sweeps BOTH into one file. Round 1 did this with AdminNewWeighInModal + LivestockWeighInsView and again with PigSendToTripModal + CattleWeighInsView. Check adjacency before extracting: `Grep '^const \w' main.jsx | head -50` and make sure the `nextAnchor` is the NEXT top-level const after the one you want, not two or more.
+
+**What's left for future sessions:**
+
+### Round 6 — inline views inside App (the hard round)
+11 views currently live as `if(view==="X") return (…)` JSX blocks INSIDE the App function body. They close over 40+ App-scope state variables (batches, pigData, form, editId, showBreedForm, etc.) plus helpers (submit, del, openEdit, etc.). PowerShell file-slicing does NOT work for these — they're not standalone components.
+
+Current start lines (for the record):
+- `broilerHome` — line 3032
+- `timeline` — line 3342
+- `list` — line 3609
+- `feed` — line 3929 (biggest, ~1026 lines)
+- `pigsHome` — line 4955
+- `breeding` — line 5264
+- `pigbatches` — line 5579 (biggest pig, ~1226 lines)
+- `farrowing` — line 6805
+- `sows` — line 7278
+- Plus `BatchForm` (broiler add/edit) and `PigFeedView` — locations TBD inside the blocks above
+
+Approach — hook-based. Round 0 put state in Contexts specifically so this would work: each inline view becomes a real component that calls `useAuth()` / `useBatches()` / `usePig()` / etc. directly and needs near-zero props. The App-scope helpers (submit, del, openEdit) lift to `src/<feature>/<feature>Ops.js` files or custom hooks. That's the actual work. Ship per-view commits, preview-test each, keep moving.
+
+### Round 7 — HomeDashboard
+Inline in App. Consumes most of App's state. Split into multiple commits if it exceeds ~1500 moved lines per §9 R6 — not because it's dangerous, just to keep each diff easy to skim.
+
+### Round 8 — EquipmentPlaceholder
+Trivial stub. Move last.
+
+### Phase 3 — React Router
+Don't start until Phase 2 is done. Routing changes how `SetPasswordScreen` reads the URL hash; interleaving with component extraction adds noise.
+
+### 2026-04-20 (session 2 continued) — runtime-crash fixups after preview smoke test
+
+Ronnie tested the preview after the Round 5 push. Home was stuck on "Starting up". Two commits fixed it + everything that followed:
+
+| SHA | Commit | What landed |
+|---|---|---|
+| `a8bb819` | Recover DEFAULT_WEBFORMS_CONFIG + extract S | Root-cause: Round 1's `LoginScreen` end-anchor swept `const DEFAULT_WEBFORMS_CONFIG` into `src/auth/LoginScreen.jsx`. main.jsx's root render passes it as `configInit={DEFAULT_WEBFORMS_CONFIG}` — undefined at module init, `root.render()` threw, React never mounted, boot loader stayed. Fix: move to `src/lib/defaults.js`, import in main.jsx. Also extracted `S` (shared inline-style object) to `src/lib/styles.js` since 6 extracted dailys views reference it (second latent crash — would hit on first nav). |
+| `c0dd033` | Patch missing UsersModal + cattleCache imports | Round 3's recovered `LivestockWeighInsView` + `CattleWeighInsView` both use `<UsersModal>` but didn't import it; `CattleWeighInsView` also called `loadCattleWeighInsCached` / `invalidateCattleWeighInsCache` without importing. Same issue in 7 cattle/sheep home + weigh-in views. Would crash on nav to /cattleweighins et al. |
+
+All tabs verified on preview after both commits. Migration state = clean.
+
+**Lesson now baked in:** after any batch extraction, do the "bare-name audit." Quick Node snippet:
+```javascript
+// For each extracted file, find identifiers that are called or JSX-used
+// but aren't (a) locally declared or (b) named in an import statement.
+// If the ident is a proper noun (PascalCase or known helper name), it's
+// likely a missed import. Fix before pushing.
+```
+Would have caught both fixup rounds above without Ronnie having to smoke-test.
+
+The anchor-oversweep trap has now bitten three times (`LivestockWeighInsView`, `CattleWeighInsView`, `DEFAULT_WEBFORMS_CONFIG`). Before every PowerShell extraction, grep `^const \w|^function \w` in main.jsx and confirm your `nextAnchor` is the *very next* top-level declaration, not two over.
+
+**Merge (`vite-migration` → `main`):** still deferred by Ronnie's call. Migration is structurally sound — ~53% of main.jsx extracted, all tabs work on preview. Reasonable cutover points: (1) now, if you want to land the structural progress and finish Round 6+ on a fresh branch, or (2) after Round 6 when inline views leave App. Ronnie decides.
+
+### 2026-04-20 (session 3) — Phase 2 Round 6 complete: all 12 inline views extracted
+
+Branch: `vite-migration` (pushed through `ab94108`). Main + production untouched. main.jsx: 9,012 → 3,996 lines (-56% from session start, -78% from pre-migration).
+
+Round 6 shipped as 22 commits across three phases: 12 view extractions (one per commit for bisect safety) + 4 supporting lifts + 6 runtime-fixup commits after preview smoke tests.
+
+**Views extracted — the full Round 6 list:**
+
+| SHA | View | Target folder | Props from App (couldn't live in context yet) |
+|---|---|---|---|
+| `083494f` | `BroilerHomeView` | `src/broiler/` | Header, loadUsers |
+| `5db0a7a` | `BroilerTimelineView` | `src/broiler/` | Header, loadUsers, openEdit |
+| `a5635b6` | `BroilerListView` | `src/broiler/` | Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything |
+| `5fbe3da` | `BroilerFeedView` | `src/broiler/` | Header, feedOrders+set, poultryFeedInventory+set, poultryFeedExpandedMonths+set, collapsedBatches+set, sbSave |
+| `4a05a5f` | `PigsHomeView` | `src/pig/` | Header, loadUsers |
+| `b8de123` | `BreedingView` | `src/pig/` | Header, loadUsers, persistBreeding, breedAutoSaveTimer, confirmDelete |
+| `204deef` | `FarrowingView` | `src/pig/` | Header, loadUsers, persistFarrowing, confirmDelete, resolveSire |
+| `a718d21` | `SowsView` | `src/pig/` | Header, loadUsers, persistBreeders, persistBreedOptions, persistOriginOptions, confirmDelete, resolveSire, leaderboardExpanded+set, showArchived+set |
+| `2c3679e` | `PigFeedView` | `src/pig/` | Header, loadUsers, feedOrders+set, pigFeedInventory+set, pigFeedExpandedMonths+set, sbSave |
+| `f7f268b` | `PigBatchesView` | `src/pig/` | Header, loadUsers, persistFeeders, confirmDelete, pigAutoSaveTimer, subAutoSaveTimer, tripAutoSaveTimer, showSubForm+set, subForm+set, editSubId+set, collapsedBatches+set, collapsedMonths+set, showArchBatches+set |
+| `66a792e` | `LayersHomeView` | `src/layer/` | Header, loadUsers |
+| `1188fa7` | `WebformsAdminView` | `src/webforms/` | Header, loadUsers, persistWebforms, saveFeedCosts, confirmDelete, adminTab+set, plus 14 wf* form-state pairs |
+
+**Supporting lifts (4 prep commits):**
+
+| SHA | What |
+|---|---|
+| `d6897c9` | `WEEKS_SHOWN`, `LEGACY_BREEDS`, `RESOURCES`, `BATCH_COLOR_PALETTE`, `getBatchColor`, `breedLabel` → `src/lib/broiler.js`. |
+| `38051d9` | Pig breeding constants (`BOAR_EXPOSURE_DAYS`, `GESTATION_DAYS`, `WEANING_DAYS`, `GROW_OUT_DAYS`, `PIG_GROUPS`, `PIG_GROUP_COLORS`, `PIG_GROUP_TEXT`, `PHASE_LABELS`, `BREEDING_STATUSES`) + helpers (`calcBreedingTimeline`, `buildCycleSeqMap`, `cycleLabel`, `calcCycleStatus`) → new `src/lib/pig.js` (80 lines). |
+| (in `a5635b6`) | `STATUS_STYLE`, `isNearHoliday` + holiday helpers → `lib/broiler.js`. |
+| (in `5fbe3da`) | `calcBatchFeedForMonth`, `calcLayerFeedForMonth`, `LAYER_FEED_SCHEDULE`, `LAYER_FEED_PER_DAY` → `lib/broiler.js`. |
+
+**`lib/broiler.js` final shape** (368 lines): all broiler-domain constants + 6 public helpers (`getFeedSchedule`, `calcBatchFeed`, `calcBatchFeedForMonth`, `calcLayerFeedForMonth`, `calcTimeline`, `calcPoultryStatus`, `calcBroilerStatsFromDailys`) + `getBatchColor`, `breedLabel`, `isNearHoliday`, `STATUS_STYLE`, `BREED_STYLE`, `LEGACY_BREEDS`, `RESOURCES`, `LAYER_FEED_SCHEDULE`, `LAYER_FEED_PER_DAY`, `WEEKS_SHOWN`.
+
+**`lib/pig.js` final shape** (80 lines): pig breeding constants + 4 helpers listed above.
+
+**The 6 runtime fixups after Ronnie smoke-tested the preview:**
+
+Every single one was a bare-name miss — same class of bug as the April 20 session 2 `DEFAULT_WEBFORMS_CONFIG` / `UsersModal` regressions. The hook-based approach surfaces *many* more of these than the PowerShell file-slice approach because the inline-JSX bodies closed over 30+ App-scope variables each, and the "copy the body, wrap in hooks" pattern is only as good as your inventory of what the body actually uses.
+
+| SHA | Miss |
+|---|---|
+| `7cca2d9` | `BroilerListView`: `isAdmin`, `setBatches`, `persist`, `del`, `confirmDelete`, `canDeleteAnything`. |
+| `08d17ec` | 7 views at once: `setShowAllComparison`, `calcBatchFeed/calcBroilerStatsFromDailys/calcPoultryStatus/getBatchColor/setCollapsedBatches` (feed view), `calcCycleStatus/confirmDelete/useBatches{tooltip,setTooltip}` (breeding), `confirmDelete` (farrowing), `persistBreedOptions/persistOriginOptions/confirmDelete/leaderboardExpanded/showArchived` (sows), `confirmDelete/setShowArchBatches` (pigbatches), `FeedCostsPanel/FeedCostByMonthPanel/LivestockFeedInputsPanel/NutritionTargetsPanel/feedCosts/saveFeedCosts/adminTab/setAdminTab/confirmDelete` (webforms). |
+| `0e852ce` | `BroilerListView` also needed `showAllComparison` itself (had setter, missed getter). |
+| `345eefa` | 4 views missing lib imports: `BREED_STYLE`, `breedLabel` (feed), `PIG_GROUPS/PIG_GROUP_COLORS` (farrowing + sows), `PIG_GROUP_COLORS` (pigbatches). |
+| `c336f90` | `LAYER_FEED_SCHEDULE`, `LAYER_FEED_PER_DAY` were module-internal in broiler.js; feed view uses them directly — exported. |
+| `4610228` | 4 views missing `toISO` import (had `todayISO` + `addDays` but not `toISO` itself): breeding, farrowing, pigbatches, layersHome. |
+| `2f5db09` | `resolveSire` prop (farrowing + sows) + `pigDailys` via `useDailysRecent` (pig feed). |
+| `ab94108` | `feedCosts` for list view, `pigDailys` for sows view, `feedOrders+set` props for pig feed view. |
+
+Plus two mid-session bugs caught by failed local builds (never pushed):
+- **Farrowing extraction over-swept** — range removal took the `if(view==="sows") {` wrapper line along with the farrowing body. Rebuild failed; surgical fix restored the wrapper.
+- **Pigs extraction off-by-one** — slice pulled one extra line (the original `}` closer) into PigFeedView.jsx, leaving a stray `}` that tripped esbuild. Deleted it by Edit.
+
+**Lessons for future view-extraction work:**
+
+1. **Hook-based extraction needs a *systematic* bare-name audit, not eyeballing.** Write a script that parses the file's imports + destructures + function params, then checks every reference against that set. See `audit-imports.cjs` / `audit-refs.cjs` pattern that was used mid-session (delete after use — they're dev-only tools). Pool the checker against: every lib export, every context state name, every known App helper, and all deferred App-scope state from the Round 0 handover list. False positives are JSDoc comment words like "view", "form", "override" — filter by whether the match is inside code vs. a comment.
+2. **After the audit passes, verify the view loads in the browser.** Not just "build clean" — a build pass only catches syntax, not ReferenceErrors on runtime access.
+3. **Boundary detection for the view's closing `}`** — `awk`-finding the *next* `if(view===` gives the line AFTER the current view's closing brace. The correct end-index for `RemoveRange` is that line minus 1 (or 2 if there's a blank line between views). PowerShell-verify `idx[end]` is actually `  }` before committing to the slice.
+4. **Bundle hash in console errors is a staleness indicator.** When Ronnie reports an error, compare the hash in the traceback (`index-CcQgZKrh.js`) against `ls dist/assets/` locally — if they differ, the preview hasn't rebuilt yet and Ronnie is seeing the *previous* push.
+
+**What's NOT extracted (remaining):**
+- `Header` component (Round 1 deferral, still inline in App — closes over ~12 App helpers).
+- `BatchForm` (the broiler add/edit modal, ~1100 lines still inline — nested inside `if(view!==…)` or rendered via `showForm && …` in App body).
+- `LayerBatchesView` (Round 2 deferral, 855 lines — needs `calcPhaseFromAge`, `inRange` lifted first).
+- `home` → HomeDashboard (Round 7). Still inline in App. ~1000 lines. Uses most of App's state.
+- `equipmentHome` → EquipmentPlaceholder (Round 8). Trivial stub.
+- ~40+ App-scope useState hooks + helpers that props-drill into the extracted views. Plausible future work: promote App-scope state to contexts (e.g. `feedOrders` → `FeedCostsContext`, `adminTab` → `UIContext`, the pig auto-save timers → a `usePigOps()` custom hook). Not needed for correctness; just reduces prop pile-up.
+
+**Preview state at end of session:** all 12 extracted views verified loading on `deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app`. Ronnie hit each one, reported each missing-ref ReferenceError, I patched, pushed, rebuilt. Last confirmation: "everything looks good." Migration state = clean.
+
+### 2026-04-21 — Phase 2 finale: Rounds 6 tail + 7 + 8 (the "huge build" session)
+
+Branch: `vite-migration` (pushed through `0a19f4b`). Main + production untouched.
+
+Ronnie said "plan a huge build and engage, would like to see the light at the end of the tunnel on this migration." Five extractions shipped in sequence. Zero post-push fixups this session — the automated bare-name audit + §14 Round 6 blast-list cross-check caught everything before push.
+
+**What landed — five extractions + one cleanup commit:**
+
+| SHA | Commit | What |
+|---|---|---|
+| `b2e9a86` | Round 8: EquipmentPlaceholder | Trivial `equipmentHome` stub → `src/equipment/`. Warm-up. |
+| `9fe35ce` | Round 2 tail: LayerBatchesView | File-slice of the 864-line module-scope const → `src/layer/LayerBatchesView.jsx`. Lifted `BROODERS`, `SCHOONERS`, `BROODER_CLEANOUT`, `SCHOONER_CLEANOUT`, `overlaps()` to `lib/broiler.js` so `detectConflicts` in main.jsx and this view share one source. **Latent bug fixed:** the inline version called bare `confirmDelete(...)` which would have ReferenceError'd under Vite's strict mode — there's no such global (only `window._wcfConfirmDelete`). Threaded `confirmDelete` as a prop. |
+| `f5bf02d` | Round 7: HomeDashboard | Hook-based. ~540-line inline block → `src/dashboard/HomeDashboard.jsx`. Reads every data context; takes `canAccessProgram`/`VIEW_TO_PROGRAM`/`Header`/`loadUsers` as props. |
+| `7a3e91c` | chore | Removed `tmp_audit.cjs`/`tmp_home.txt` dev files accidentally committed with HomeDashboard. |
+| `aa2ba21` | Round 6 tail: Header | ~100-line inline `const Header=()=>{...}` → `src/shared/Header.jsx`. Hook-based. App keeps a local `Header = () => React.createElement(HeaderBase, {...appOnlyProps})` wrapper closure so every extracted view still receives zero-arg `<Header/>`. Minimum ripple — no view-level edits. |
+| `0a19f4b` | Round 6 tail: BatchForm | ~465-line broiler add/edit modal (`if(showForm) return (...)`) → `src/broiler/BatchForm.jsx`. Hook-based. 8 App helpers threaded as props. Lifted `STATUSES`, `ALL_HATCHERIES`, `LEGACY_HATCHERIES`, `calcTargetHatch`, `suggestHatchDates` to `lib/broiler.js`. Dead-code sweep in main.jsx: `tlS`/`tlE`/`totalDays`/`pct`/`wkHdrs` (only home-inline consumed them), `tl`/`targetHatch`/`hatchSuggestions`/`hatchWarn`/`procWarn`/`hatcheries` (only BatchForm consumed them), `counts` (zero consumers), `CC_HATCHERIES`/`WR_HATCHERIES` (pre-decoupling-era dead). |
+
+**Numbers at session end:**
+- main.jsx: **3,996 → 1,994 lines** (-50% this session, **-90%** vs pre-migration 19,170).
+- `lib/broiler.js` final shape: ~420 lines. Owns the full broiler + layer housing domain — constants (BROODER_DAYS, CC_SCHOONER, WR_SCHOONER, BROODERS, SCHOONERS, STATUSES, STATUS_STYLE, BREED_STYLE, LEGACY_BREEDS, ALL_HATCHERIES, LEGACY_HATCHERIES, RESOURCES, WEEKS_SHOWN, BATCH_COLOR_PALETTE, LAYER_FEED_SCHEDULE, LAYER_FEED_PER_DAY, BROODER_CLEANOUT, SCHOONER_CLEANOUT), helpers (overlaps, getFeedSchedule, calcBatchFeed, calcBatchFeedForMonth, calcLayerFeedForMonth, calcTimeline, calcPoultryStatus, calcBroilerStatsFromDailys, getBatchColor, breedLabel, isNearHoliday, calcTargetHatch, suggestHatchDates).
+- Build: 144 → 149 modules, clean after every extraction. Bundle ~1.27 MB / 295 KB gzip — unchanged (code moved, not duplicated).
+- 54+ extracted components, 11 lib modules, 10 contexts.
+- Ronnie's preview smoke-test after the BatchForm push: "everything look good."
+
+**The audit pattern that worked this session — write it down:**
+
+```javascript
+// tmp_audit.cjs — dev-only, delete at end of session.
+// Parses imports + destructures + fn params + local consts/lets/functions
+// into a "known" set. Iterates every identifier-looking token in the source
+// (stripping comments + string/template literals first), flags anything not
+// in known + not a builtin + not a lowercase-HTML-tag + not preceded by `.`
+// + not followed by `:` or `=` (object keys/JSX attr values).
+```
+
+Running the script against an extracted file produces O(100) "unresolved refs" — mostly JSX text words, style token values like `#e5e7eb` / `flex` / `pointer`, template-literal interpolation markers (`$`), and loop-scope vars the regex missed. The practical use: grep the output for anything recognizable as a React/app name (PascalCase, `camelCase` app helpers, known state var names). Cross-check those against:
+- Every `lib/*.js` export
+- Every context state name (from `useAuth()`/`useBatches()`/etc. return values)
+- Every known App helper (`persist`, `del`, `confirmDelete`, `saveFeedCosts`, `loadUsers`, `refreshDailys`, `openEdit`, `submit`, `upd`, `closeForm`, `signOut`, `backupData`, `restoreData`, `sbSave`, `persistBreeding`, `persistFarrowing`, `persistFeeders`, `persistBreeders`, `persistBreedOptions`, `persistOriginOptions`, `persistWebforms`, `persistLayerGroups`, `persistLayerHousings`, `resolveSire`, `parseProcessorXlsx`)
+- The Round 6 blast list in §14's 2026-04-20 session 3 entry
+
+Missing hits = either import it, destructure it, or add it as a prop. No hits this session after auditing Header + BatchForm; the two biggest extractions (HomeDashboard + BatchForm) both shipped clean on first push.
+
+**What's NOT extracted (by design — stays in App for cutover):**
+- Module-scope constants still used by App's `detectConflicts` and `writeBroilerBatchAvg`: `STORAGE_KEY`, `CATTLE_*` (herds, labels, colors, breeding days), `INITIAL_BREEDERS`, `INITIAL_FARROWING`, `EMPTY_FORM`. Fine where they are; no benefit from moving.
+- `detectConflicts`, `writeBroilerBatchAvg` — top-level helpers still in main.jsx. Could move to `lib/` but nothing else imports them, so no need.
+- `renderWebform()` — the legacy pig-dailys public webform (view==='webform'). Routed before auth gates. Lives inside App because it closes over `wfForm`/`wfErr`/etc. state. Could extract later; not blocking anything.
+- ~40 App-scope `useState` hooks + refs that the extracted views receive as props (the deferred pile from Round 0). Purely ergonomic — moving them to contexts would shrink the longest prop lists (WebformsAdminView + PigBatchesView) but nothing breaks without it. Future polish.
+
+**Preview + production state:** `vite-migration` branch up-to-date at `0a19f4b`, preview green, Ronnie confirmed. `main` branch + `wcfplanner.com` unchanged — still running the pre-migration `index.html` Babel build.
+
+**Cutover readiness.** Every structural goal in §1 + §4 is met. The `src/` tree matches the target shape. main.jsx is 10% of its pre-migration size. Behavior is identical (no feature changes). Deploy preview has been green for two consecutive sessions. The next natural step is merging `vite-migration` → `main` and running the §8 smoke-test on production. **That's Ronnie's call.**
+
+---
+
+## 15. Resuming this migration in a new Claude Code session
+
+### URLs
+| What | URL | Branch |
+|---|---|---|
+| Production | `https://wcfplanner.com` (alias `https://cheerful-narwhal-1e39f5.netlify.app`) | `main` |
+| Deploy preview | `https://deploy-preview-1--cheerful-narwhal-1e39f5.netlify.app` | `vite-migration` |
+
+Anything WITHOUT the `deploy-preview-1--` prefix is **production**. Two different code bases.
+
+### Hard rules (the short list)
+- **`commit` = do it.** One-line status update, no "ready to push?" follow-up.
+- **`push` / `deploy` / `merge`** = fresh explicit approval in the same turn. Commit approval does not extend.
+- **Don't merge `vite-migration` → `main`** without Ronnie saying "merge" or "cutover". Production is on `main`; migration is mid-flight.
+- **Don't run destructive Supabase ops** (DROP, TRUNCATE, large DELETEs without WHERE) without approval.
+- **Don't touch the §10 don't-touch list** — `wcfSelectAll`, `detectSessionInUrl:false`, auth listener, source-label workflow strings, etc.
+
+### Starter checklist for a new session
+1. `git checkout vite-migration`
+2. `git log --oneline main..vite-migration | head -20` — see what's landed
+3. `npm install && npm run build` — must be clean before editing
+4. Read §14's latest dated entry to find starting point
+5. **Read `src/main.jsx` carefully before extracting anything** — App closes over 40+ locals + helpers; the only way to do a clean hook-based view extraction is to know what's there first.
+6. Before each PowerShell slice: `awk '/^  if\(view===/' + /^  }/` around your target, PowerShell-verify the closing-brace index before `RemoveRange`.
+7. After each extraction: **systematic bare-name audit** (see the Round 6 session entry). Parse imports + destructures + params from the new file, compare against every reference to known lib exports, context-state names, and App helpers. Build-clean is not enough; ReferenceErrors only fire at runtime.
+8. After each commit: `npm run build` clean, then push if you have approval.
+9. Append a dated entry to §14 at end of session.
+
+### Pacing
+We have a deploy preview auto-rebuilding on every push + a clean local build gate + a pre-migration backup. That's a solid safety net. The original "one round per session" rule was overcautious — Phase 2 Rounds 0 through 5 landed in a single session with PowerShell extractions, two runtime regressions caught + fixed the same day via the preview, migration still on track. Use judgment: small commits + build-verified + preview-checked is the real gate. Moving fast is fine.
+
+### Edit-tool note for main.jsx
+The file is large. PowerShell file-slice operations are the right tool for big component extractions — see the pattern in §14's 2026-04-20 session 2 entry. Don't try to transcribe multi-hundred-line components through Read → Write; drift is inevitable. PowerShell reads the bytes directly and the content never enters your messages.
+
+### The "it's stuck on Loading" failure mode
+If the deploy preview hangs on the boot loader after a push, it's almost always a ReferenceError during `root.render()` in main.jsx — something main.jsx references at module scope that was accidentally moved (see the `DEFAULT_WEBFORMS_CONFIG` incident in §14 2026-04-20 session 2). Open F12 Console in the browser, find the red error, fix the missing import, push. Preview rebuild is ~1 min.
+
+**Backup:** A pre-migration `index.html` is at `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` (SHA `1a535f73…`) as belt-and-suspenders. If a commit goes wrong and you need to recover the pre-Vite shape, it's there.
+
+---
+
+*End of plan. Living document — append to §14 as each phase progresses.*

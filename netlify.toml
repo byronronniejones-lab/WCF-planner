@@ -1,0 +1,16 @@
+# Netlify build config — added in Phase 1.7 of the Vite migration.
+# Pre-migration: no build step; Netlify served index.html as a static file
+# directly from the repo root. Post-migration: Netlify runs `npm run build`
+# (Vite) and serves the contents of dist/.
+#
+# Pre-migration deploys won't break — when this file is absent on the main
+# branch, Netlify falls back to its UI-configured settings (which were
+# "publish: ." with no build command). Once vite-migration merges, this
+# file takes over.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
