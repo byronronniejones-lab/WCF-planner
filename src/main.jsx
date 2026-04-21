@@ -13,7 +13,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
-import { VIEW_TO_PATH, PATH_TO_VIEW } from './lib/routes.js';
+import { VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT } from './lib/routes.js';
 
 // Phase 2.0.0: foundation lib helpers extracted from this file. Importing
 // here makes them available throughout the verbatim-ported app body without
@@ -170,6 +170,23 @@ try {
     if(k && k.startsWith('wcf-babel-')) localStorage.removeItem(k);
   }
 } catch(e) { /* localStorage disabled — fine */ }
+
+// ── PHASE 3.3 — LEGACY HASH-BOOKMARK COMPAT SHIM ──
+// Pre-Phase-3 users may have saved /#weighins, /#addfeed, /#webforms
+// URLs in browser bookmarks, Slack links, or printed materials. The
+// router only reads pathname, not hash, so we rewrite the URL here
+// synchronously BEFORE root.render() runs — otherwise BrowserRouter
+// would read pathname='/' and the adapter would snap to home.
+//
+// The supabase password-recovery hash (/#access_token=...&type=recovery)
+// is deliberately NOT rewritten — SetPasswordScreen still parses it
+// from window.location.hash for backward compat with the email template.
+try {
+  const h = window.location.hash;
+  if (h && HASH_COMPAT[h]) {
+    window.history.replaceState(null, '', HASH_COMPAT[h]);
+  }
+} catch(e) { /* no history API / locked-down browser — skip */ }
 
 // ── LAZY LOAD SHEETJS ──
 // SheetJS (xlsx) is ~600KB minified and only used when opening processor
