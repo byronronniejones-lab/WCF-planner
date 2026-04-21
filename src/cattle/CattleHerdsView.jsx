@@ -570,7 +570,48 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
               );
             })}
             {/* Outcome herds shown collapsed at the bottom */}
-            <CollapsibleOutcomeSections cattle={cattle} weighIns={weighIns} HERD_COLORS={HERD_COLORS} HERD_LABELS={HERD_LABELS} OUTCOMES={OUTCOMES} fmt={fmt} setStatusFilter={setStatusFilter} navigateToCow={navigateToCow}/>
+            <CollapsibleOutcomeSections
+              cattle={cattle}
+              weighIns={weighIns}
+              HERD_COLORS={HERD_COLORS}
+              HERD_LABELS={HERD_LABELS}
+              OUTCOMES={OUTCOMES}
+              fmt={fmt}
+              setStatusFilter={setStatusFilter}
+              expandedCow={expandedCow}
+              setExpandedCow={setExpandedCow}
+              renderCowDetail={(c) => {
+                const cTags = cowTagSet(c);
+                const cowWeighIns = weighIns.filter(w => cTags.has(w.tag));
+                const cowCalving = calvingRecs.filter(r => r.dam_tag === c.tag);
+                const cowComments = comments.filter(cm => cm.cattle_id === c.id || cm.cattle_tag === c.tag).slice(0, 20);
+                return <CowDetail
+                  cow={c}
+                  weighIns={cowWeighIns}
+                  calving={cowCalving}
+                  comments={cowComments}
+                  calves={cattle.filter(x => x.dam_tag === c.tag)}
+                  dam={cattle.find(x => x.tag === c.dam_tag)}
+                  cattleList={cattle}
+                  fmt={fmt}
+                  HERDS={ALL_HERDS}
+                  HERD_LABELS={HERD_LABELS}
+                  HERD_COLORS={HERD_COLORS}
+                  onEdit={()=>openEdit(c)}
+                  onTransfer={(newHerd)=>transferCow(c.id, newHerd)}
+                  onDelete={()=>deleteCow(c.id)}
+                  onComment={(text)=>addQuickComment(c.id, c.tag, text)}
+                  onEditComment={editComment}
+                  onDeleteComment={deleteComment}
+                  onAddCalving={(data)=>addCalvingRecord(c, data)}
+                  onDeleteCalving={(id)=>deleteCalvingRecord(id)}
+                  onNavigateToCow={(target)=>navigateToCow(target, c.id)}
+                  onNavigateBack={navigateBack}
+                  canNavigateBack={cowNavStack.length > 0}
+                  backToTag={cowNavStack.length > 0 ? (cattle.find(x => x.id === cowNavStack[cowNavStack.length-1])||{}).tag : null}
+                />;
+              }}
+            />
           </div>
         )}
       </div>
