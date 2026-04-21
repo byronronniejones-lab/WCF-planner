@@ -1,5 +1,6 @@
 // Phase 2 Round 5 extraction (verbatim).
 import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { setHousingAnchorFromReport } from '../lib/layerHousing.js';
 import { wcfSendEmail } from '../lib/email.js';
 const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig}) => {
@@ -33,7 +34,20 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     });
   },[]);
   const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
-  const [activeForm, setActiveForm] = useState(null); // 'broiler' | 'layer' | 'egg' | 'pig' | 'cattle' | 'sheep'
+
+  // URL-driven activeForm: /webforms → selector, /webforms/<sub> → sub-form.
+  // setActiveForm(X) pushes a history entry so the browser back button
+  // traverses selector ↔ sub-form correctly. main.jsx's URL adapter treats
+  // every /webforms/* path as view='webformhub' (see the adapter branch).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const SUB_FORMS = ['broiler','layer','pig','cattle','egg','sheep'];
+  const activeForm = (() => {
+    const parts = location.pathname.split('/');
+    const sub = parts[2];
+    return SUB_FORMS.includes(sub) ? sub : null;
+  })();
+  const setActiveForm = (f) => { navigate(f ? `/webforms/${f}` : '/webforms'); };
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
@@ -500,7 +514,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
           <div style={{flex:1}}>
             <div style={{fontSize:16,fontWeight:700,color:'#92400e'}}>Add Feed</div>
             <div style={{fontSize:12,color:'#92400e',opacity:.8}}>Quick log feed added in the field</div>
-            <div style={{fontSize:11,color:'#92400e',opacity:.6,marginTop:2}}>{'Pig \u00b7 Broiler \u00b7 Layer \u00b7 Cattle'}</div>
+            <div style={{fontSize:11,color:'#92400e',opacity:.6,marginTop:2}}>{'Pig \u00b7 Broiler \u00b7 Layer \u00b7 Cattle \u00b7 Sheep'}</div>
           </div>
           <div style={{color:'#92400e',fontSize:18}}>{'\u203a'}</div>
         </div>
@@ -924,7 +938,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
   }
 
   // ── EGG FORM ──
-  return (
+  if(activeForm==='egg') return (
     <div style={wfBg}>
       <div style={{maxWidth:480,margin:'0 auto'}}>
         {logo}

@@ -499,7 +499,11 @@ function App(){
   const navigate = useNavigate();
   const syncingFromUrl = React.useRef(false);
   useEffect(() => {
-    const viewFromUrl = PATH_TO_VIEW[location.pathname];
+    // WebformHub owns its own sub-routing under /webforms/<form>. Treat any
+    // such path as view='webformhub' so the browser back button can traverse
+    // selector ↔ sub-form boundaries without the app snapping to home.
+    const isWebformSubpath = location.pathname.startsWith('/webforms/');
+    const viewFromUrl = isWebformSubpath ? 'webformhub' : PATH_TO_VIEW[location.pathname];
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -523,6 +527,8 @@ function App(){
       syncingFromUrl.current = false;
       return;
     }
+    // Don't clobber /webforms/<form> sub-paths — WebformHub owns them.
+    if (view === 'webformhub' && location.pathname.startsWith('/webforms/')) return;
     const pathFromView = VIEW_TO_PATH[view];
     if (pathFromView && pathFromView !== location.pathname) {
       navigate(pathFromView);
@@ -859,6 +865,36 @@ function App(){
             ]},
             {id:'s-comments',title:'Comments',system:false,fields:[
               {id:'issues',label:'Comments / Issues',type:'textarea',required:false,system:false,enabled:true}
+            ]}
+          ]}]};
+        }
+        // Inject Sheep Daily webform entry if not already present (config may pre-date the sheep module)
+        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='sheep-dailys';})){
+          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'sheep-dailys',teamMembers:[],name:'Sheep Daily Report',description:'Daily care report for sheep flocks',table:'sheep_dailys',allowAddGroup:false,sections:[
+            {id:'s-info',title:'Report Info',system:true,fields:[
+              {id:'date',label:'Date',type:'date',required:true,system:true,enabled:true},
+              {id:'team_member',label:'Team Member',type:'team_picker',required:true,system:true,enabled:true}
+            ]},
+            {id:'s-flock',title:'Sheep Flock',system:true,fields:[
+              {id:'flock',label:'Flock (rams/ewes/feeders)',type:'flock_picker',required:true,system:true,enabled:true}
+            ]},
+            {id:'s-feed',title:'Feed',system:false,fields:[
+              {id:'bales_of_hay',label:'Bales of Hay',type:'number',required:false,system:false,enabled:true},
+              {id:'lbs_of_alfalfa',label:'Alfalfa (lbs)',type:'number',required:false,system:false,enabled:true}
+            ]},
+            {id:'s-minerals',title:'Minerals',system:false,fields:[
+              {id:'minerals_given',label:'Minerals given?',type:'yes_no',required:false,system:false,enabled:true},
+              {id:'minerals_pct_eaten',label:'% of Minerals Eaten',type:'number',required:false,system:false,enabled:true}
+            ]},
+            {id:'s-checks',title:'Daily Checks',system:false,fields:[
+              {id:'fence_voltage_kv',label:'Fence Voltage (kV)',type:'number',required:false,system:false,enabled:true},
+              {id:'waterers_working',label:'Waterers working?',type:'yes_no',required:false,system:false,enabled:true}
+            ]},
+            {id:'s-mortality',title:'Mortality',system:false,fields:[
+              {id:'mortality_count',label:'Mortality count',type:'number',required:false,system:false,enabled:true}
+            ]},
+            {id:'s-comments',title:'Comments',system:false,fields:[
+              {id:'comments',label:'Comments / Issues',type:'textarea',required:false,system:false,enabled:true}
             ]}
           ]}]};
         }

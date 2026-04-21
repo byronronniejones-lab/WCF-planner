@@ -27,6 +27,10 @@ const AddFeedWebform = ({sb}) => {
   const [cattleFeedInputs, setCattleFeedInputs] = React.useState([]);
   const [cattleHerd, setCattleHerd] = React.useState('');
   const [cattleRows, setCattleRows] = React.useState([{feedId:'', qty:'', isCreep:false}]);
+  // Sheep quick-log state
+  const [sheepFlock, setSheepFlock] = React.useState('');
+  const [sheepBales, setSheepBales] = React.useState('');
+  const [sheepAlfalfa, setSheepAlfalfa] = React.useState('');
 
   React.useEffect(function(){
     sb.from('cattle_feed_inputs').select('*').eq('status','active').order('category').order('name').then(function(res){
@@ -126,6 +130,39 @@ const AddFeedWebform = ({sb}) => {
   function handleSubmit(){
     if(!date){setErr('Please enter a date.');return;}
     if(isRequired('team_member')&&!teamMember){setErr(getLabel('team_member','Team Member')+' is required.');return;}
+    // Sheep-specific submit path
+    if(program==='sheep'){
+      if(!sheepFlock){setErr('Please select a flock.');return;}
+      var baleNum=sheepBales!==''?parseFloat(sheepBales):null;
+      var alfalfaNum=sheepAlfalfa!==''?parseFloat(sheepAlfalfa):null;
+      if((baleNum==null||baleNum<=0)&&(alfalfaNum==null||alfalfaNum<=0)){
+        setErr('Enter bales of hay, alfalfa lbs, or both.');return;
+      }
+      setErr('');setSubmitting(true);
+      var sRec={
+        id: String(Date.now())+Math.random().toString(36).slice(2,6),
+        submitted_at: new Date().toISOString(),
+        date: date,
+        team_member: teamMember || null,
+        flock: sheepFlock,
+        bales_of_hay: baleNum,
+        lbs_of_alfalfa: alfalfaNum,
+        minerals_given: false,
+        minerals_pct_eaten: null,
+        fence_voltage_kv: null,
+        waterers_working: null,
+        mortality_count: 0,
+        comments: null,
+        source: 'add_feed_webform',
+      };
+      sb.from('sheep_dailys').insert(sRec).then(function(res){
+        setSubmitting(false);
+        if(res.error){setErr('Could not save: '+res.error.message);return;}
+        if(teamMember) localStorage.setItem('wcf_team',teamMember);
+        setDone(true);
+      });
+      return;
+    }
     // Cattle-specific submit path
     if(program==='cattle'){
       if(!cattleHerd){setErr('Please select a herd.');return;}
@@ -196,7 +233,7 @@ const AddFeedWebform = ({sb}) => {
     });
   }
 
-  function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setErr('');setDone(false);}
+  function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setSheepFlock('');setSheepBales('');setSheepAlfalfa('');setErr('');setDone(false);}
 
   var wfBg={minHeight:'100vh',background:'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)',padding:'1rem',fontFamily:'inherit'};
   var cardS={background:'white',borderRadius:12,padding:'20px',marginBottom:12,boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
@@ -218,6 +255,8 @@ const AddFeedWebform = ({sb}) => {
         <div style={{fontSize:14,color:'#4b5563',marginBottom:28,lineHeight:1.6}}>
           {program==='cattle'
             ? (cattleHerd+' \u2014 '+cattleRows.filter(function(r){return r.feedId&&r.qty;}).length+' feed entr'+(cattleRows.filter(function(r){return r.feedId&&r.qty;}).length===1?'y':'ies'))
+            : program==='sheep'
+              ? (sheepFlock+' \u2014 '+(sheepBales?sheepBales+' bales':'')+(sheepBales&&sheepAlfalfa?', ':'')+(sheepAlfalfa?sheepAlfalfa+' lb alfalfa':''))
             : (batchLabel+' \u2014 '+feedLbs+' lbs'+(feedType?' ('+feedType+')':''))+(extraGroups.filter(function(g){return g.batchLabel;}).length>0?(' + '+extraGroups.filter(function(g){return g.batchLabel;}).length+' more'):'')
           }
         </div>
@@ -288,14 +327,15 @@ const AddFeedWebform = ({sb}) => {
 
         <div style={cardS}>
           <label style={lblS}>Program</label>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
             {[
               {key:'pig',icon:'\ud83d\udc37',label:'Pig',color:'#1e40af',bg:'#eff6ff'},
               {key:'broiler',icon:'\ud83d\udc14',label:'Broiler',color:'#a16207',bg:'#fef9c3'},
               {key:'layer',icon:'\ud83d\udc13',label:'Layer',color:'#78350f',bg:'#fffbeb'},
               {key:'cattle',icon:'\ud83d\udc04',label:'Cattle',color:'#991b1b',bg:'#fef2f2'},
+              {key:'sheep',icon:'\ud83d\udc11',label:'Sheep',color:'#0f766e',bg:'#f0fdfa'},
             ].map(function(p){return (
-              <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);}} style={{
+              <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setSheepFlock('');setSheepBales('');setSheepAlfalfa('');}} style={{
                 padding:'16px 8px',borderRadius:12,cursor:'pointer',fontFamily:'inherit',
                 border:program===p.key?'2px solid '+p.color:'2px solid #e5e7eb',
                 background:program===p.key?p.bg:'white',
@@ -308,19 +348,19 @@ const AddFeedWebform = ({sb}) => {
           </div>
         </div>
 
-        {program&&program!=='cattle'&&renderFeedGroup(batchLabel,feedType,feedLbs,function(k,v){
+        {program&&program!=='cattle'&&program!=='sheep'&&renderFeedGroup(batchLabel,feedType,feedLbs,function(k,v){
           if(k==='batchLabel') setBatchLabel(v);
           else if(k==='feedType') setFeedType(v);
           else if(k==='feedLbs') setFeedLbs(v);
         },null)}
 
-        {program&&program!=='cattle'&&extraGroups.map(function(eg,ei){
+        {program&&program!=='cattle'&&program!=='sheep'&&extraGroups.map(function(eg,ei){
           return renderFeedGroup(eg.batchLabel||'',eg.feedType||'',eg.feedLbs||'',function(k,v){
             setExtraGroups(function(p){return p.map(function(g,i){if(i!==ei)return g;var n={};for(var x in g)n[x]=g[x];n[k]=v;return n;});});
           },ei);
         })}
 
-        {program&&program!=='cattle'&&allowAddGroup()&&(
+        {program&&program!=='cattle'&&program!=='sheep'&&allowAddGroup()&&(
           <button type="button" onClick={function(){setExtraGroups(function(p){return p.concat([{batchLabel:'',feedType:'',feedLbs:''}]);});}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #a7f3d0',background:'transparent',color:'#085041',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Another Group</button>
         )}
 
@@ -369,6 +409,29 @@ const AddFeedWebform = ({sb}) => {
             {cattleHerd&&(
               <button type="button" onClick={function(){setCattleRows(cattleRows.concat([{feedId:'',qty:'',isCreep:false}]));}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #fca5a5',background:'transparent',color:'#991b1b',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Feed</button>
             )}
+          </React.Fragment>
+        )}
+
+        {program==='sheep'&&(
+          <React.Fragment>
+            <div style={cardS}>
+              <label style={lblS}>Flock<span style={{color:'#dc2626',marginLeft:2}}>*</span></label>
+              <select value={sheepFlock} onChange={function(e){setSheepFlock(e.target.value);}} style={inpS}>
+                <option value=''>Select flock...</option>
+                <option value='rams'>Rams</option>
+                <option value='ewes'>Ewes</option>
+                <option value='feeders'>Feeders</option>
+              </select>
+            </div>
+            <div style={cardS}>
+              <label style={lblS}>Bales of Hay</label>
+              <input type="number" min="0" step="0.25" value={sheepBales} onChange={function(e){setSheepBales(e.target.value);}} placeholder="0" style={inpS}/>
+            </div>
+            <div style={cardS}>
+              <label style={lblS}>Alfalfa (lbs)</label>
+              <input type="number" min="0" value={sheepAlfalfa} onChange={function(e){setSheepAlfalfa(e.target.value);}} placeholder="0" style={inpS}/>
+            </div>
+            <div style={{fontSize:11,color:'#6b7280',textAlign:'center',marginBottom:12,fontStyle:'italic'}}>Enter bales, alfalfa, or both.</div>
           </React.Fragment>
         )}
 
