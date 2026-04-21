@@ -230,35 +230,10 @@ const STORAGE_KEY       = "ppp-data-v1";
 
 
 
-// ── CATTLE CONSTANTS ───────────────────────────────────────────────────────
-// See CATTLE_DESIGN.md for full module design.
-const CATTLE_HERDS         = ['mommas','backgrounders','finishers','bulls'];
-const CATTLE_OUTCOMES      = ['processed','deceased','sold'];
-const CATTLE_ALL_HERDS     = [...CATTLE_HERDS, ...CATTLE_OUTCOMES];
-
-const CATTLE_HERD_LABELS = {
-  mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls',
-  processed:'Processed', deceased:'Deceased', sold:'Sold'
-};
-
-// Red family palette (matches program palette committed in 524b4c2).
-// No purple anywhere. Bulls is wine/deep red; outcomes are neutral.
-const CATTLE_HERD_COLORS = {
-  mommas:        {bg:'#fef2f2', bd:'#fca5a5', tx:'#991b1b', bar:'#dc2626'},   // red (primary)
-  backgrounders: {bg:'#ffedd5', bd:'#fdba74', tx:'#9a3412', bar:'#ea580c'},   // orange
-  finishers:     {bg:'#fff1f2', bd:'#fda4af', tx:'#9f1239', bar:'#e11d48'},   // rose
-  bulls:         {bg:'#fee2e2', bd:'#fca5a5', tx:'#7f1d1d', bar:'#991b1b'},   // wine
-  processed:     {bg:'#f3f4f6', bd:'#d1d5db', tx:'#374151', bar:'#6b7280'},
-  deceased:      {bg:'#f9fafb', bd:'#e5e7eb', tx:'#6b7280', bar:'#9ca3af'},
-  sold:          {bg:'#eff6ff', bd:'#bfdbfe', tx:'#1e40af', bar:'#2563eb'},
-};
-
-// ── CATTLE BREEDING CONSTANTS ──────────────────────────────────────────────
-const CATTLE_BULL_EXPOSURE_DAYS     = 65;
-const CATTLE_PREG_CHECK_OFFSET_DAYS = 30;   // days after bull_exposure_end
-const CATTLE_GESTATION_DAYS         = 274;  // ~9 months
-const CATTLE_CALVING_WINDOW_DAYS    = 65;
-const CATTLE_NURSING_DAYS           = 213;  // ~7 months
+// ── CATTLE CONSTANTS ──
+// Moved to src/lib/cattle.js (Phase 2 finale polish). main.jsx no longer
+// consumes them directly — cattleBreeding.js + the views import from lib/
+// directly. See CATTLE_DESIGN.md for full module design.
 
 // Given a bull exposure start date, return the full cycle timeline.
 // All dates ISO strings. Returns null if start not provided.
