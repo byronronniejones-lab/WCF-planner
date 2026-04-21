@@ -853,6 +853,40 @@ Chose adapter over full setView→useNavigate migration after weighing options. 
 
 **Hard rules unchanged** — `commit` = do it, `push`/`merge` = fresh approval same turn, don't touch §10 don't-touch list, destructive Supabase ops need approval.
 
+### 2026-04-21 (session 3) — Phase 3 cutover + post-migration polish
+
+Phase 3 went live on production + four post-migration polish commits landed on a new `polish` branch. main.jsx down another 15% on top of the 90% migration reduction. Two latent ReferenceError bugs caught during the lib lifts.
+
+**Phase 3 cutover — `phase-3-router` → `main`:**
+
+| SHA | Commit | What |
+|---|---|---|
+| `7779750` | Merge phase-3-router: URL routing + back-button support | `git merge --no-ff` preserved the merge commit. Netlify rebuilt in ~90s. Ronnie's post-cutover verdict: "Everything look great. We have 'urls' for each page and back button work." |
+
+**Branch cleanup:** `vite-migration` + `phase-3-router` both deleted local + origin (structurally merged via the two cutovers; history preserved in merge commits).
+
+**Polish branch — `polish` (4 commits, pushed, not yet merged):**
+
+| SHA | Commit | What |
+|---|---|---|
+| `b47feb7` | Lift CATTLE_* constants to `src/lib/cattle.js` | 10 constants moved out of main.jsx. **Latent bug fixed:** `lib/cattleBreeding.js` was referencing 5 CATTLE_*_DAYS constants + `toISO` + `addDays` as bare identifiers with zero imports. Would have ReferenceError'd the first time `calcCattleBreedingTimeline` hit a real cycle. Cold path in prod so far. Now imports from `./cattle.js` + `./dateUtils.js` explicitly. |
+| `96eb44e` | Lift `detectConflicts` to `src/lib/conflicts.js` | 55-line broiler/layer schedule overlap detector. Imports explicit. Preserves the `–` escape literals exactly per §10 don't-touch. |
+| `28bbc7f` | Lift `writeBroilerBatchAvg` to `src/lib/broiler.js` | Pure async helper for broiler week4/week6 batch-avg write. **Second latent bug fixed:** `WeighInsWebform.jsx` + `LivestockWeighInsView.jsx` both called it as a bare identifier with no import. Would have fired the first time a broiler weigh-in session was marked complete. Both callers now import it. |
+| `753754a` | Extract `renderWebform` to `src/webforms/PigDailysWebform.jsx` | 210-line pig-dailys public webform. The 5 `wf*` form-state pieces moved from App into the new component as internal useState — they were threaded through `WebformsAdminView` as unused passthrough props. `WebformsAdminView`'s prop list shrinks by 10 params. Bare-name audit + App-helper blast-list both clean before push. |
+
+**Numbers at session end:**
+- main.jsx: **2,061 → 1,750 lines** (-15% this session, **-91%** vs pre-migration 19,170).
+- Build: 159 → 162 modules, bundle ~1.31 MB / ~308 KB gzip (flat).
+- `lib/broiler.js` ~450 lines.
+- New: `lib/cattle.js` (30 lines), `lib/conflicts.js` (60 lines), `webforms/PigDailysWebform.jsx` (240 lines).
+- 2 latent ReferenceError bugs caught + fixed (cold paths in prod; would have fired on first cycle render / first broiler weigh-in completion).
+
+**Deliberately out of scope:**
+- Full state-promotion-to-contexts pass. App still owns ~40 `useState` hooks for view-local state (webforms-admin, pig-feed, broiler-feed, collapsed flags, notes, dailys filter). Right approach is per-view internalization, which is careful work deserving its own session.
+- Full `setView` → `useNavigate` router migration. Still pure churn; adapter works fine.
+
+**Polish cutover status: NOT YET MERGED.** Waiting on Ronnie's say-so. Cutover procedure is identical: `git checkout main && git merge polish --no-ff -m "Merge polish: post-migration lib lifts + renderWebform extraction" && git push origin main`. Netlify rebuilds prod (~90s).
+
 ---
 
 ## 15. Resuming this migration in a new Claude Code session
