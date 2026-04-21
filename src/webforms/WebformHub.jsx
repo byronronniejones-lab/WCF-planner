@@ -33,7 +33,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     });
   },[]);
   const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
-  const [activeForm, setActiveForm] = useState(null); // 'broiler' | 'layer' | 'egg'
+  const [activeForm, setActiveForm] = useState(null); // 'broiler' | 'layer' | 'egg' | 'pig' | 'cattle' | 'sheep'
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
@@ -74,6 +74,18 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
       if(data) setCattleFeedInputs(data);
     });
   },[]);
+
+  // Sheep form state — flat field set matching sheep_dailys schema
+  const EMPTY_S = {
+    date: todayStr(),
+    teamMember: localStorage.getItem('wcf_team')||'',
+    flock: '',
+    balesOfHay:'', lbsOfAlfalfa:'',
+    mineralsGiven:false, mineralsPctEaten:'',
+    fenceVoltageKv:'', waterersWorking:true,
+    mortalityCount:'', comments:''
+  };
+  const [sForm, setSForm] = useState(EMPTY_S);
 
   // CRITICAL: load from Supabase only — props are empty on mobile (no auth)
   const broilerGroups = (broilerGroupsFromDb.length>0 && broilerGroupsFromDb) || (loadedConfig?.broilerGroups?.length>0 && loadedConfig.broilerGroups) || [];
@@ -392,6 +404,48 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     setLastGroup(cForm.herd);
     setDone(true);
   }
+  async function submitSheep(){
+    const valuesByFieldId = {
+      date: sForm.date,
+      team_member: sForm.teamMember,
+      flock: sForm.flock,
+      bales_of_hay: sForm.balesOfHay,
+      lbs_of_alfalfa: sForm.lbsOfAlfalfa,
+      minerals_given: sForm.mineralsGiven,
+      minerals_pct_eaten: sForm.mineralsPctEaten,
+      fence_voltage_kv: sForm.fenceVoltageKv,
+      waterers_working: sForm.waterersWorking,
+      mortality_count: sForm.mortalityCount,
+      comments: sForm.comments,
+    };
+    const reqErr = validateRequiredFields('sheep-dailys', valuesByFieldId);
+    if(reqErr){ setErr(reqErr); return; }
+    // Hardcoded system fields — always required regardless of admin config
+    if(!sForm.date||!sForm.teamMember||!sForm.flock){setErr('Date, team member, and flock are required.');return;}
+    setErr('');setSubmitting(true);
+    localStorage.setItem('wcf_team',sForm.teamMember);
+    const rec = {
+      id: String(Date.now())+Math.random().toString(36).slice(2,6),
+      submitted_at: new Date().toISOString(),
+      date: sForm.date,
+      team_member: sForm.teamMember,
+      flock: sForm.flock,
+      bales_of_hay: sForm.balesOfHay!==''?parseFloat(sForm.balesOfHay):null,
+      lbs_of_alfalfa: sForm.lbsOfAlfalfa!==''?parseFloat(sForm.lbsOfAlfalfa):null,
+      minerals_given: !!sForm.mineralsGiven,
+      minerals_pct_eaten: sForm.mineralsPctEaten!==''?parseFloat(sForm.mineralsPctEaten):null,
+      fence_voltage_kv: sForm.fenceVoltageKv!==''?parseFloat(sForm.fenceVoltageKv):null,
+      waterers_working: !!sForm.waterersWorking,
+      mortality_count: sForm.mortalityCount!==''?parseInt(sForm.mortalityCount):0,
+      comments: sForm.comments||null,
+      source: 'daily_webform',
+    };
+    const {error} = await sb.from('sheep_dailys').insert(rec);
+    setSubmitting(false);
+    if(error){setErr('Could not save: '+error.message);return;}
+    setLastGroup({rams:'Rams',ewes:'Ewes',feeders:'Feeders'}[sForm.flock]||sForm.flock);
+    setDone(true);
+  }
 
   function resetAndAnother(){
     const team=localStorage.getItem('wcf_team')||'';
@@ -400,6 +454,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     else if(activeForm==='layer') setLForm({...EMPTY_L,date:today,teamMember:team,batchLabel:lastGroup});
     else if(activeForm==='pig') setPForm({...EMPTY_P,date:today,teamMember:team,batchLabel:lastGroup});
     else if(activeForm==='cattle') setCForm({...EMPTY_C,date:today,teamMember:team});
+    else if(activeForm==='sheep') setSForm({...EMPTY_S,date:today,teamMember:team,flock:lastGroup?sForm.flock:''});
     else setEForm({...EMPTY_E,date:today,teamMember:team});
     setDone(false);setErr('');
   }
@@ -414,6 +469,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     else if(activeForm==='pig')  setPForm(f => f.date===today ? f : {...f, date: today});
     else if(activeForm==='egg')  setEForm(f => f.date===today ? f : {...f, date: today});
     else if(activeForm==='cattle') setCForm(f => f.date===today ? f : {...f, date: today});
+    else if(activeForm==='sheep') setSForm(f => f.date===today ? f : {...f, date: today});
   }, [activeForm]);
 
   const wfBg = {minHeight:'100vh',background:'linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 100%)',padding:'1rem',fontFamily:'inherit'};
@@ -463,6 +519,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
           {id:'egg',label:'🥚 Egg Collection Report'},
           {id:'pig',label:'🐷 Pig Daily Report'},
           {id:'cattle',label:'🐄 Cattle Daily Report'},
+          {id:'sheep',label:'🐑 Sheep Daily Report'},
         ].map(f=>(
           <div key={f.id} onClick={()=>setActiveForm(f.id)} style={{background:'white',borderRadius:12,padding:'16px 18px',marginBottom:10,cursor:'pointer',boxShadow:'0 1px 3px rgba(0,0,0,.08)',display:'flex',alignItems:'center',gap:12,border:'1px solid #e5e7eb'}}>
             <div style={{flex:1,fontSize:15,fontWeight:600,color:'#111827'}}>{f.label}</div>
@@ -908,6 +965,67 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
         </div>
         {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
         <button onClick={submitEgg} disabled={submitting} style={{width:'100%',padding:14,border:'none',borderRadius:10,background:'#085041',color:'white',fontSize:15,fontWeight:600,cursor:submitting?'not-allowed':'pointer',opacity:submitting?.6:1,fontFamily:'inherit',marginBottom:16}}>
+          {submitting?'Submitting…':'Submit Report'}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── SHEEP FORM ──
+  if(activeForm==='sheep') return (
+    <div style={wfBg}>
+      <div style={{maxWidth:480,margin:'0 auto'}}>
+        {logo}
+        <button onClick={()=>setActiveForm(null)} style={{background:'none',border:'none',color:'#6b7280',fontSize:13,cursor:'pointer',marginBottom:12,padding:0,fontFamily:'inherit'}}>‹ Back</button>
+        <div style={{fontSize:17,fontWeight:700,color:'#0f766e',marginBottom:16}}>🐑 Sheep Daily Report</div>
+        <div style={sectionStyle}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Date{reqStar('sheep-dailys','date')}</label><input type="date" value={sForm.date} onChange={e=>setSForm(f=>({...f,date:e.target.value}))} style={inputStyle}/></div>
+            <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Team Member{reqStar('sheep-dailys','team_member')}</label>
+              <select value={sForm.teamMember} onChange={e=>setSForm(f=>({...f,teamMember:e.target.value}))} style={inputStyle}>
+                <option value=''>Select...</option>{getFormTeamMembers('sheep-dailys').map(m=><option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div style={{gridColumn:'1/-1'}}><label style={labelStyle}>Flock<span style={{color:'#dc2626',marginLeft:2}}>*</span></label>
+              <select value={sForm.flock} onChange={e=>setSForm(f=>({...f,flock:e.target.value}))} style={inputStyle}>
+                <option value=''>Select flock...</option>
+                <option value='rams'>Rams</option>
+                <option value='ewes'>Ewes</option>
+                <option value='feeders'>Feeders</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div style={sectionStyle}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {isEnabled('sheep-dailys','bales_of_hay')&&<div><label style={labelStyle}>Bales of Hay{reqStar('sheep-dailys','bales_of_hay')}</label><input type="number" min="0" step="0.25" value={sForm.balesOfHay||''} onChange={e=>setSForm(f=>({...f,balesOfHay:e.target.value}))} placeholder="0" style={inputStyle}/></div>}
+            {isEnabled('sheep-dailys','lbs_of_alfalfa')&&<div><label style={labelStyle}>Alfalfa (lbs){reqStar('sheep-dailys','lbs_of_alfalfa')}</label><input type="number" min="0" value={sForm.lbsOfAlfalfa||''} onChange={e=>setSForm(f=>({...f,lbsOfAlfalfa:e.target.value}))} placeholder="0" style={inputStyle}/></div>}
+          </div>
+          {isEnabled('sheep-dailys','minerals_given')&&<div style={{marginTop:12}}>
+            <label style={labelStyle}>Minerals given?{reqStar('sheep-dailys','minerals_given')}</label>
+            <YN val={sForm.mineralsGiven} onChange={v=>setSForm(f=>({...f,mineralsGiven:v}))}/>
+          </div>}
+          {sForm.mineralsGiven&&isEnabled('sheep-dailys','minerals_pct_eaten')&&<div style={{marginTop:12}}>
+            <label style={labelStyle}>% of Minerals Eaten{reqStar('sheep-dailys','minerals_pct_eaten')}</label>
+            <input type="number" min="0" max="200" value={sForm.mineralsPctEaten||''} onChange={e=>setSForm(f=>({...f,mineralsPctEaten:e.target.value}))} placeholder="100" style={inputStyle}/>
+          </div>}
+        </div>
+        <div style={sectionStyle}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            {isEnabled('sheep-dailys','fence_voltage_kv')&&<div><label style={labelStyle}>Fence Voltage (kV){reqStar('sheep-dailys','fence_voltage_kv')}</label><input type="number" min="0" step="0.1" value={sForm.fenceVoltageKv||''} onChange={e=>setSForm(f=>({...f,fenceVoltageKv:e.target.value}))} placeholder="0.0" style={inputStyle}/></div>}
+            {isEnabled('sheep-dailys','waterers_working')&&<div><label style={labelStyle}>Waterers working?{reqStar('sheep-dailys','waterers_working')}</label><YN val={sForm.waterersWorking} onChange={v=>setSForm(f=>({...f,waterersWorking:v}))}/></div>}
+          </div>
+        </div>
+        {isEnabled('sheep-dailys','mortality_count')&&<div style={sectionStyle}>
+          <label style={labelStyle}>Mortality count{reqStar('sheep-dailys','mortality_count')}</label>
+          <input type="number" min="0" value={sForm.mortalityCount||''} onChange={e=>setSForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inputStyle}/>
+        </div>}
+        {isEnabled('sheep-dailys','comments')&&<div style={sectionStyle}>
+          <label style={labelStyle}>Issues / Comments{reqStar('sheep-dailys','comments')}</label>
+          <textarea value={sForm.comments} onChange={e=>setSForm(f=>({...f,comments:e.target.value}))} rows={3} placeholder="Type 0 if nothing to report" style={{...inputStyle,resize:'vertical'}}/>
+        </div>}
+        {err&&<div style={{color:'#b91c1c',fontSize:13,marginBottom:10,padding:'8px 12px',background:'#fef2f2',borderRadius:8}}>{err}</div>}
+        <button onClick={submitSheep} disabled={submitting} style={{width:'100%',padding:14,border:'none',borderRadius:10,background:'#0f766e',color:'white',fontSize:15,fontWeight:600,cursor:submitting?'not-allowed':'pointer',opacity:submitting?.6:1,fontFamily:'inherit',marginBottom:16}}>
           {submitting?'Submitting…':'Submit Report'}
         </button>
       </div>

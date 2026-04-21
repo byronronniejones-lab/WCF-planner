@@ -110,6 +110,33 @@ export const DEFAULT_WEBFORMS_CONFIG = {
       {id:"s-comments",title:"Comments",system:false,fields:[
         {id:"issues",label:"Comments / Issues",type:"textarea",required:false,system:false,enabled:true}
       ]}
+    ]},
+    {id:"sheep-dailys",teamMembers:[],name:"Sheep Daily Report",description:"Daily care report for sheep flocks",table:"sheep_dailys",allowAddGroup:false,sections:[
+      {id:"s-info",title:"Report Info",system:true,fields:[
+        {id:"date",label:"Date",type:"date",required:true,system:true,enabled:true},
+        {id:"team_member",label:"Team Member",type:"team_picker",required:true,system:true,enabled:true}
+      ]},
+      {id:"s-flock",title:"Sheep Flock",system:true,fields:[
+        {id:"flock",label:"Flock (rams/ewes/feeders)",type:"flock_picker",required:true,system:true,enabled:true}
+      ]},
+      {id:"s-feed",title:"Feed",system:false,fields:[
+        {id:"bales_of_hay",label:"Bales of Hay",type:"number",required:false,system:false,enabled:true},
+        {id:"lbs_of_alfalfa",label:"Alfalfa (lbs)",type:"number",required:false,system:false,enabled:true}
+      ]},
+      {id:"s-minerals",title:"Minerals",system:false,fields:[
+        {id:"minerals_given",label:"Minerals given?",type:"yes_no",required:false,system:false,enabled:true},
+        {id:"minerals_pct_eaten",label:"% of Minerals Eaten",type:"number",required:false,system:false,enabled:true}
+      ]},
+      {id:"s-checks",title:"Daily Checks",system:false,fields:[
+        {id:"fence_voltage_kv",label:"Fence Voltage (kV)",type:"number",required:false,system:false,enabled:true},
+        {id:"waterers_working",label:"Waterers working?",type:"yes_no",required:false,system:false,enabled:true}
+      ]},
+      {id:"s-mortality",title:"Mortality",system:false,fields:[
+        {id:"mortality_count",label:"Mortality count",type:"number",required:false,system:false,enabled:true}
+      ]},
+      {id:"s-comments",title:"Comments",system:false,fields:[
+        {id:"comments",label:"Comments / Issues",type:"textarea",required:false,system:false,enabled:true}
+      ]}
     ]}
   ]
 }

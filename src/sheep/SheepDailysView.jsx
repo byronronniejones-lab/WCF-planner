@@ -1,169 +1,317 @@
-// Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
+// Rewritten 2026-04-21 session: parity pass vs CattleDailysView.
+// Adds date-range/team/flock filters, source tri-state chip, summary metrics,
+// card-tile layout with date dividers, pagination (wcfSelectAll pattern via
+// range()), DeleteModal integration (window._wcfConfirmDelete), team-member
+// dropdown, AdminAddReportModal for admin "+ Add Report", pendingEdit support.
 import React from 'react';
+import { S } from '../lib/styles.js';
+import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 
 const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
-  const [rows, setRows] = useState([]);
+  const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
+  const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [editSource, setEditSource] = useState(null);
   const [form, setForm] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [filterFlock, setFilterFlock] = useState('all');
-  const FLOCKS = ['rams','ewes','feeders'];
-  const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders'};
-  const EMPTY_FORM = {
-    date: new Date().toISOString().slice(0,10),
-    team_member: (authState && authState.name) || '', flock: 'ewes',
-    bales_of_hay: '', lbs_of_alfalfa: '',
-    minerals_given: false, minerals_pct_eaten: '',
-    fence_voltage_kv: '', waterers_working: true,
-    mortality_count: '', comments: '',
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [fFlock, setFFlock] = useState('');
+  const [fTeam, setFTeam] = useState('');
+  const [fFrom, setFFrom] = useState('');
+  const [fTo, setFTo] = useState('');
+  const [srcFilter, setSrcFilter] = useState('all');
+
+  const FLOCKS = ['rams','ewes','feeders','processed','deceased','sold'];
+  const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders', processed:'Processed', deceased:'Deceased', sold:'Sold'};
+  // Palette matches src/sheep/SheepFlocksView.jsx for intra-module consistency.
+  const FLOCK_COLORS = {
+    rams:      {bg:'#f0fdfa', tx:'#0f766e', bd:'#5eead4'},
+    ewes:      {bg:'#fdf4ff', tx:'#86198f', bd:'#f0abfc'},
+    feeders:   {bg:'#fefce8', tx:'#854d0e', bd:'#fde047'},
+    processed: {bg:'#f3f4f6', tx:'#374151', bd:'#d1d5db'},
+    deceased:  {bg:'#f9fafb', tx:'#6b7280', bd:'#e5e7eb'},
+    sold:      {bg:'#eff6ff', tx:'#1e40af', bd:'#bfdbfe'},
   };
 
-  async function loadAll() {
-    setLoading(true);
-    const {data} = await sb.from('sheep_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).limit(500);
-    if(data) setRows(data);
-    setLoading(false);
-  }
-  useEffect(()=>{ loadAll(); }, []);
+  const PAGE = 1000;
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
 
-  function openAdd() { setForm({...EMPTY_FORM}); setEditId(null); setShowForm(true); }
-  function openEdit(r) {
-    setForm({
-      date: r.date || '', team_member: r.team_member || '', flock: r.flock || 'ewes',
-      bales_of_hay: r.bales_of_hay != null ? String(r.bales_of_hay) : '',
-      lbs_of_alfalfa: r.lbs_of_alfalfa != null ? String(r.lbs_of_alfalfa) : '',
-      minerals_given: !!r.minerals_given,
-      minerals_pct_eaten: r.minerals_pct_eaten != null ? String(r.minerals_pct_eaten) : '',
-      fence_voltage_kv: r.fence_voltage_kv != null ? String(r.fence_voltage_kv) : '',
-      waterers_working: r.waterers_working == null ? true : !!r.waterers_working,
-      mortality_count: r.mortality_count != null ? String(r.mortality_count) : '',
-      comments: r.comments || '',
+  useEffect(() => {
+    sb.from('sheep_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).range(0, PAGE-1).then(({data}) => {
+      if(data) {
+        setRecords(data);
+        setHasMore(data.length === PAGE);
+        if(pendingEdit && pendingEdit.viewName === 'sheepdailys' && pendingEdit.id) {
+          const r = data.find(x => x.id === pendingEdit.id);
+          if(r) { openEdit(r); setPendingEdit && setPendingEdit(null); }
+        }
+      }
+      setLoading(false);
     });
-    setEditId(r.id); setShowForm(true);
+    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => { if(data && data.data) setTeamMembers(data.data); });
+  }, []);
+
+  const pgLoading = React.useRef(false);
+  useEffect(() => {
+    if(hasMore && !pgLoading.current) {
+      pgLoading.current = true;
+      const next = page + 1;
+      sb.from('sheep_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).range(next*PAGE, (next+1)*PAGE - 1).then(({data}) => {
+        pgLoading.current = false;
+        if(data) {
+          setRecords(r => {
+            const ids = new Set(r.map(x => x.id));
+            return [...r, ...data.filter(x => !ids.has(x.id))];
+          });
+          setHasMore(data.length === PAGE);
+          setPage(next);
+        }
+      });
+    }
+  }, [hasMore, page]);
+
+  function openEdit(d) {
+    setForm({
+      date: d.date || todayStr(),
+      teamMember: d.team_member || '',
+      flock: d.flock || 'ewes',
+      balesOfHay: d.bales_of_hay != null ? String(d.bales_of_hay) : '',
+      lbsOfAlfalfa: d.lbs_of_alfalfa != null ? String(d.lbs_of_alfalfa) : '',
+      mineralsGiven: !!d.minerals_given,
+      mineralsPctEaten: d.minerals_pct_eaten != null ? String(d.minerals_pct_eaten) : '',
+      fenceVoltageKv: d.fence_voltage_kv != null ? String(d.fence_voltage_kv) : '',
+      waterersWorking: d.waterers_working == null ? true : !!d.waterers_working,
+      mortalityCount: d.mortality_count != null ? String(d.mortality_count) : '',
+      comments: d.comments || '',
+    });
+    setEditId(d.id);
+    setEditSource(d.source || null);
+    setShowForm(true);
   }
-  async function save() {
-    if(!form.date) { alert('Date is required.'); return; }
-    if(!form.flock) { alert('Flock is required.'); return; }
-    setSaving(true);
+
+  async function saveEdit() {
+    if(!form.date || !form.teamMember || !form.flock) { alert('Date, team member, and flock are required.'); return; }
     const rec = {
-      date: form.date, team_member: form.team_member || null, flock: form.flock,
-      bales_of_hay: form.bales_of_hay !== '' ? parseFloat(form.bales_of_hay) : null,
-      lbs_of_alfalfa: form.lbs_of_alfalfa !== '' ? parseFloat(form.lbs_of_alfalfa) : null,
-      minerals_given: !!form.minerals_given,
-      minerals_pct_eaten: form.minerals_pct_eaten !== '' ? parseFloat(form.minerals_pct_eaten) : null,
-      fence_voltage_kv: form.fence_voltage_kv !== '' ? parseFloat(form.fence_voltage_kv) : null,
-      waterers_working: !!form.waterers_working,
-      mortality_count: form.mortality_count !== '' ? parseInt(form.mortality_count) : null,
+      date: form.date,
+      team_member: form.teamMember,
+      flock: form.flock,
+      bales_of_hay: form.balesOfHay !== '' ? parseFloat(form.balesOfHay) : null,
+      lbs_of_alfalfa: form.lbsOfAlfalfa !== '' ? parseFloat(form.lbsOfAlfalfa) : null,
+      minerals_given: !!form.mineralsGiven,
+      minerals_pct_eaten: form.mineralsPctEaten !== '' ? parseFloat(form.mineralsPctEaten) : null,
+      fence_voltage_kv: form.fenceVoltageKv !== '' ? parseFloat(form.fenceVoltageKv) : null,
+      waterers_working: !!form.waterersWorking,
+      mortality_count: form.mortalityCount !== '' ? parseInt(form.mortalityCount) : 0,
       comments: form.comments || null,
     };
-    if(editId) {
-      const {error} = await sb.from('sheep_dailys').update(rec).eq('id', editId);
-      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
-    } else {
-      const id = String(Date.now())+Math.random().toString(36).slice(2,6);
-      const {error} = await sb.from('sheep_dailys').insert({id, ...rec, source:'admin'});
-      if(error) { alert('Save failed: '+error.message); setSaving(false); return; }
-    }
-    setSaving(false); await loadAll();
+    const {error} = await sb.from('sheep_dailys').update(rec).eq('id', editId);
+    if(error) { alert('Save failed: ' + error.message); return; }
+    setRecords(p => p.map(r => r.id === editId ? {...r, ...rec} : r));
+    refreshDailys && refreshDailys('sheep');
     setShowForm(false); setEditId(null); setForm(null);
   }
-  async function del(id) {
-    if(!confirm('Delete this daily report?')) return;
-    await sb.from('sheep_dailys').delete().eq('id', id);
-    await loadAll();
+
+  function del(id) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this daily report? This cannot be undone.', async () => {
+      await sb.from('sheep_dailys').delete().eq('id', id);
+      setRecords(p => p.filter(r => r.id !== id));
+      refreshDailys && refreshDailys('sheep');
+      setShowForm(false); setEditId(null); setForm(null);
+    });
   }
 
-  const filtered = filterFlock === 'all' ? rows : rows.filter(r => r.flock === filterFlock);
-  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const filtered = records.filter(r =>
+    (!fFlock || r.flock === fFlock) &&
+    (!fTeam  || r.team_member === fTeam) &&
+    (!fFrom  || r.date >= fFrom) &&
+    (!fTo    || r.date <= fTo) &&
+    (srcFilter === 'all' || (srcFilter === 'daily' && r.source !== 'add_feed_webform') || (srcFilter === 'addfeed' && r.source === 'add_feed_webform'))
+  );
+  const teamOpts = [...new Set(records.map(r => r.team_member).filter(Boolean))].sort();
+  const fi = {padding:'6px 10px', borderRadius:6, border:'1px solid #d1d5db', fontSize:12, fontFamily:'inherit', background:'white', width:'auto'};
+
+  // Summary metrics for the filtered view
+  const totalMort   = filtered.reduce((s,r) => s + (parseInt(r.mortality_count)||0), 0);
+  const totalBales  = filtered.reduce((s,r) => s + (parseFloat(r.bales_of_hay)||0), 0);
+  const totalAlfalfa= filtered.reduce((s,r) => s + (parseFloat(r.lbs_of_alfalfa)||0), 0);
 
   return (
     <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
       <Header/>
       <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
-        <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-          <div style={{fontSize:15, fontWeight:700, color:'#0f766e'}}>{'\ud83d\udc11 Sheep Daily Reports'}</div>
-          <select value={filterFlock} onChange={e=>setFilterFlock(e.target.value)} style={{...inpS, width:'auto'}}>
-            <option value="all">All Flocks</option>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8}}>
+          <div>
+            <div style={{fontSize:15, fontWeight:700, color:'#111827'}}>{'🐑 Sheep Daily Reports'}</div>
+            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>
+              {records.length} total {'·'} {filtered.length} shown {'·'} {(Math.round(totalBales*100)/100).toLocaleString()} bales hay {'·'} {Math.round(totalAlfalfa).toLocaleString()} lb alfalfa {'·'} <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span>
+            </div>
+          </div>
+          <div style={{display:'flex', gap:8}}>
+            <button onClick={() => setShowAddModal(true)} style={{padding:'8px 16px', borderRadius:8, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ Add Report</button>
+          </div>
+        </div>
+        {showAddModal && <AdminAddReportModal sb={sb} formType="sheep" onClose={() => setShowAddModal(false)} onSaved={recs => { setRecords(p => [...(Array.isArray(recs)?recs:[recs]), ...p]); refreshDailys && refreshDailys('sheep'); }}/>}
+
+        {/* Filters */}
+        <div style={{display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'center'}}>
+          <input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} style={{...fi, width:130}}/>
+          <span style={{fontSize:12, color:'#6b7280'}}>to</span>
+          <input type="date" value={fTo} onChange={e => setFTo(e.target.value)} style={{...fi, width:130}}/>
+          <select value={fFlock} onChange={e => setFFlock(e.target.value)} style={fi}>
+            <option value=''>All flocks</option>
             {FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}
           </select>
-          <div style={{flex:1}}/>
-          <button onClick={openAdd} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ Add Report</button>
+          <select value={fTeam} onChange={e => setFTeam(e.target.value)} style={fi}>
+            <option value=''>All team</option>
+            {teamOpts.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          {(fFlock||fTeam||fFrom||fTo||srcFilter!=='all') && <button onClick={() => { setFFlock(''); setFTeam(''); setFFrom(''); setFTo(''); setSrcFilter('all'); }} style={{...fi, color:'#6b7280', cursor:'pointer'}}>Clear</button>}
+          <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db', marginLeft:'auto'}}>
+            {[{k:'all',l:'All'},{k:'daily',l:'Daily Reports'},{k:'addfeed',l:'🌾 Add Feed'}].map((o,oi) => (
+              <button key={o.k} onClick={() => setSrcFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:srcFilter===o.k?'#0f766e':'white', color:srcFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+            ))}
+          </div>
         </div>
 
-        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
-        {!loading && filtered.length === 0 && <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>No daily reports yet. Click <strong>+ Add Report</strong>.</div>}
-
+        {loading && <div style={{textAlign:'center', padding:'3rem', color:'#9ca3af'}}>Loading{'…'}</div>}
+        {!loading && filtered.length === 0 && <div style={{textAlign:'center', padding:'3rem', color:'#9ca3af', fontSize:13}}>No records found</div>}
         {!loading && filtered.length > 0 && (
-          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
-            <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
-              <thead style={{background:'#f9fafb'}}>
-                <tr>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Date</th>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Flock</th>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Team</th>
-                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Hay</th>
-                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Alfalfa</th>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Minerals</th>
-                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Fence kV</th>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Waterers</th>
-                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Mort</th>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#4b5563', borderBottom:'1px solid #e5e7eb'}}>Comments</th>
-                  <th style={{padding:'8px 10px', borderBottom:'1px solid #e5e7eb'}}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(r => (
-                  <tr key={r.id} style={{borderBottom:'1px solid #f3f4f6'}}>
-                    <td style={{padding:'6px 10px', fontWeight:600}}>{fmt(r.date)}</td>
-                    <td style={{padding:'6px 10px'}}>{FLOCK_LABELS[r.flock] || r.flock}</td>
-                    <td style={{padding:'6px 10px'}}>{r.team_member||'\u2014'}</td>
-                    <td style={{padding:'6px 10px', textAlign:'right'}}>{r.bales_of_hay != null ? r.bales_of_hay+' bales' : '\u2014'}</td>
-                    <td style={{padding:'6px 10px', textAlign:'right'}}>{r.lbs_of_alfalfa != null ? r.lbs_of_alfalfa+' lb' : '\u2014'}</td>
-                    <td style={{padding:'6px 10px'}}>{r.minerals_given ? (r.minerals_pct_eaten!=null ? r.minerals_pct_eaten+'% eaten' : 'yes') : 'no'}</td>
-                    <td style={{padding:'6px 10px', textAlign:'right'}}>{r.fence_voltage_kv != null ? r.fence_voltage_kv : '\u2014'}</td>
-                    <td style={{padding:'6px 10px'}}>{r.waterers_working ? '\u2713' : (r.waterers_working === false ? '\u2717' : '\u2014')}</td>
-                    <td style={{padding:'6px 10px', textAlign:'right', color:(r.mortality_count||0)>0?'#b91c1c':'#9ca3af', fontWeight:(r.mortality_count||0)>0?700:400}}>{r.mortality_count||0}</td>
-                    <td style={{padding:'6px 10px', color:'#6b7280', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.comments||'\u2014'}</td>
-                    <td style={{padding:'6px 10px', whiteSpace:'nowrap'}}>
-                      <button onClick={()=>openEdit(r)} style={{fontSize:11, padding:'3px 8px', borderRadius:5, border:'1px solid #d1d5db', background:'white', cursor:'pointer', fontFamily:'inherit', marginRight:4}}>Edit</button>
-                      <button onClick={()=>del(r.id)} style={{fontSize:11, padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>{'\u00d7'}</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{display:'flex', flexDirection:'column', gap:4}}>
+            {(() => {
+              const dates = [...new Set(filtered.map(r => r.date))];
+              return filtered.map((d,i) => {
+                const hasMort = parseInt(d.mortality_count) > 0;
+                const comments = d.comments && String(d.comments).trim().length > 2 ? String(d.comments).trim() : '';
+                const notable = hasMort || comments;
+                const prevDate = i > 0 ? filtered[i-1].date : null;
+                const showDivider = prevDate && prevDate !== d.date;
+                const dateIdx = dates.indexOf(d.date);
+                const shadeBg = dateIdx%2 === 0 ? 'white' : '#f8fafc';
+                const fc = FLOCK_COLORS[d.flock] || FLOCK_COLORS.ewes;
+                const mineralsSummary = d.minerals_given ? (d.minerals_pct_eaten != null ? (d.minerals_pct_eaten + '% eaten') : 'Yes') : 'No';
+                return (
+                  <React.Fragment key={d.id}>
+                    {showDivider && <div style={{height:2, background:'#9ca3af', margin:'6px 0', borderRadius:1}}/>}
+                    <div onClick={() => openEdit(d)} style={{
+                      background: d.source === 'add_feed_webform' ? '#fffbeb' : shadeBg,
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                      border: notable ? '1.5px solid #fca5a5' : d.source === 'add_feed_webform' ? '1px solid #fde68a' : '1px solid #e5e7eb',
+                      padding: '8px 14px',
+                      display: 'flex', flexDirection: 'column', gap: 4
+                    }} className="hoverable-tile">
+                      <div style={{display:'grid', gridTemplateColumns:'90px 120px 90px 90px 1fr', alignItems:'center', gap:12}}>
+                        <span style={{fontSize:12, color:'#6b7280'}}>{fmt(d.date)}</span>
+                        <span style={{display:'flex', alignItems:'center', gap:6, overflow:'hidden'}}>
+                          <span style={{padding:'2px 8px', borderRadius:4, fontSize:11, fontWeight:700, background:fc.bg, color:fc.tx, border:'1px solid '+fc.bd, textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{FLOCK_LABELS[d.flock] || d.flock}</span>
+                          {d.source === 'add_feed_webform' && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:6, background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a', flexShrink:0}}>{'🌾'}</span>}
+                        </span>
+                        <span style={{fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:4, background:'#f1f5f9', color:'#475569', border:'1px solid #e2e8f0', textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{d.team_member || '—'}</span>
+                        <span style={{fontSize:11, color:(d.fence_voltage_kv!=null?(parseFloat(d.fence_voltage_kv)<3?'#b91c1c':parseFloat(d.fence_voltage_kv)<5?'#92400e':'#065f46'):'#9ca3af'), fontWeight:600, whiteSpace:'nowrap'}}>{d.fence_voltage_kv != null ? ('⚡ ' + d.fence_voltage_kv + ' kV') : 'no voltage'}</span>
+                        <span style={{display:'flex', gap:6, flexWrap:'wrap', alignItems:'center'}}>
+                          <span style={{fontSize:10, fontWeight:600, padding:'2px 7px', borderRadius:4, background:d.waterers_working===false?'#fef2f2':'#f0fdf4', color:d.waterers_working===false?'#b91c1c':'#065f46', border:d.waterers_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Water: '+(d.waterers_working===false?'No':'Yes')}</span>
+                        </span>
+                      </div>
+                      <div style={{fontSize:11, color:'#92400e', display:'flex', gap:10, flexWrap:'wrap'}}>
+                        {d.bales_of_hay != null && <span>{'🌾 ' + d.bales_of_hay + ' bales hay'}</span>}
+                        {d.lbs_of_alfalfa != null && <span>{'• ' + d.lbs_of_alfalfa + ' lb alfalfa'}</span>}
+                        <span style={{color:'#6b21a8'}}>{'🧂 Minerals: ' + mineralsSummary}</span>
+                      </div>
+                      {(hasMort || comments) && (
+                        <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:2}}>
+                          {hasMort && <span style={{fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca'}}>{'💀 ' + d.mortality_count + ' mort.'}</span>}
+                          {comments && <span style={{fontSize:11, color:'#92400e', padding:'3px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, fontStyle:'italic'}}>{'💬 ' + comments}</span>}
+                        </div>
+                      )}
+                    </div>
+                  </React.Fragment>
+                );
+              });
+            })()}
           </div>
         )}
+        {hasMore && <div style={{textAlign:'center', padding:'0.5rem', fontSize:11, color:'#9ca3af'}}>Loading more records{'…'}</div>}
       </div>
 
+      {/* Edit modal */}
       {showForm && form && (
-        <div onClick={()=>{setShowForm(false);setForm(null);setEditId(null);}} style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'2rem 1rem', overflowY:'auto'}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:'white', borderRadius:12, maxWidth:560, width:'100%'}}>
-            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between'}}>
-              <h2 style={{margin:0, fontSize:16, color:'#0f766e', fontWeight:700}}>{editId ? 'Edit Daily Report' : 'Add Daily Report'}</h2>
-              <button onClick={()=>{setShowForm(false);setForm(null);setEditId(null);}} style={{background:'none', border:'none', fontSize:20, cursor:'pointer'}}>{'\u00d7'}</button>
+        <div onClick={() => { setShowForm(false); setEditId(null); setForm(null); }} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'1rem', overflowY:'auto'}}>
+          <div onClick={e => e.stopPropagation()} style={{background:'white', borderRadius:12, width:'100%', maxWidth:520, boxShadow:'0 8px 32px rgba(0,0,0,.2)', marginTop:40}}>
+            <div style={{padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div style={{fontSize:15, fontWeight:600, color:'#0f766e'}}>{editSource === 'add_feed_webform' ? 'Edit Sheep Add Feed Report' : 'Edit Sheep Daily Report'}</div>
+              <button onClick={() => { setShowForm(false); setEditId(null); setForm(null); }} style={{background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#9ca3af'}}>{'×'}</button>
             </div>
-            <div style={{padding:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-              <div><label style={{fontSize:11, color:'#6b7280'}}>Date *</label><input type="date" value={form.date} onChange={e=>setForm({...form, date:e.target.value})} style={inpS}/></div>
-              <div><label style={{fontSize:11, color:'#6b7280'}}>Flock *</label><select value={form.flock} onChange={e=>setForm({...form, flock:e.target.value})} style={inpS}>{FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}</select></div>
-              <div style={{gridColumn:'1/-1'}}><label style={{fontSize:11, color:'#6b7280'}}>Team Member</label><input type="text" value={form.team_member} onChange={e=>setForm({...form, team_member:e.target.value})} style={inpS}/></div>
-              <div><label style={{fontSize:11, color:'#6b7280'}}>Bales of Hay</label><input type="number" step="0.25" value={form.bales_of_hay} onChange={e=>setForm({...form, bales_of_hay:e.target.value})} style={inpS}/></div>
-              <div><label style={{fontSize:11, color:'#6b7280'}}>Alfalfa (lbs)</label><input type="number" value={form.lbs_of_alfalfa} onChange={e=>setForm({...form, lbs_of_alfalfa:e.target.value})} style={inpS}/></div>
-              <div style={{gridColumn:'1/-1', display:'flex', alignItems:'center', gap:10}}>
-                <label style={{fontSize:13, display:'flex', alignItems:'center', gap:6, cursor:'pointer'}}><input type="checkbox" checked={form.minerals_given} onChange={e=>setForm({...form, minerals_given:e.target.checked})}/>Minerals given?</label>
-                {form.minerals_given && <div style={{flex:1}}><input type="number" min="0" max="100" placeholder="% eaten" value={form.minerals_pct_eaten} onChange={e=>setForm({...form, minerals_pct_eaten:e.target.value})} style={inpS}/></div>}
+            <div style={{padding:'16px 20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, maxHeight:'70vh', overflowY:'auto'}}>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={S.label}>Date *</label>
+                <input type="date" value={form.date} onChange={e => setForm({...form, date:e.target.value})}/>
               </div>
-              <div><label style={{fontSize:11, color:'#6b7280'}}>Fence Voltage (kV)</label><input type="number" step="0.1" value={form.fence_voltage_kv} onChange={e=>setForm({...form, fence_voltage_kv:e.target.value})} style={inpS}/></div>
-              <div><label style={{fontSize:13, display:'flex', alignItems:'center', gap:6, cursor:'pointer', paddingTop:18}}><input type="checkbox" checked={form.waterers_working} onChange={e=>setForm({...form, waterers_working:e.target.checked})}/>Waterers working?</label></div>
-              <div><label style={{fontSize:11, color:'#6b7280'}}>Mortality Count</label><input type="number" value={form.mortality_count} onChange={e=>setForm({...form, mortality_count:e.target.value})} style={inpS}/></div>
-              <div style={{gridColumn:'1/-1'}}><label style={{fontSize:11, color:'#6b7280'}}>Issues / Comments</label><textarea rows={3} value={form.comments} onChange={e=>setForm({...form, comments:e.target.value})} style={{...inpS, resize:'vertical'}}/></div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={S.label}>Team Member *</label>
+                <select value={form.teamMember} onChange={e => setForm({...form, teamMember:e.target.value})}>
+                  <option value=''>Select...</option>
+                  {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={S.label}>Flock *</label>
+                <select value={form.flock} onChange={e => setForm({...form, flock:e.target.value})}>
+                  <option value=''>Select flock...</option>
+                  {FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}
+                </select>
+              </div>
+
+              {/* Feed fields — hide for add_feed source */}
+              {editSource !== 'add_feed_webform' && (
+                <React.Fragment>
+                  <div>
+                    <label style={S.label}>Bales of Hay</label>
+                    <input type="number" min="0" step="0.25" value={form.balesOfHay} onChange={e => setForm({...form, balesOfHay:e.target.value})} placeholder="0"/>
+                  </div>
+                  <div>
+                    <label style={S.label}>Alfalfa (lbs)</label>
+                    <input type="number" min="0" value={form.lbsOfAlfalfa} onChange={e => setForm({...form, lbsOfAlfalfa:e.target.value})} placeholder="0"/>
+                  </div>
+                  <div style={{gridColumn:'1/-1', display:'flex', alignItems:'center', gap:12}}>
+                    <label style={{fontSize:13, display:'flex', alignItems:'center', gap:6, cursor:'pointer'}}>
+                      <input type="checkbox" checked={!!form.mineralsGiven} onChange={e => setForm({...form, mineralsGiven:e.target.checked})}/>
+                      Minerals given?
+                    </label>
+                    {form.mineralsGiven && <div style={{flex:1}}><input type="number" min="0" max="200" placeholder="% eaten" value={form.mineralsPctEaten} onChange={e => setForm({...form, mineralsPctEaten:e.target.value})}/></div>}
+                  </div>
+                  <div>
+                    <label style={S.label}>Fence Voltage (kV)</label>
+                    <input type="number" min="0" step="0.1" value={form.fenceVoltageKv} onChange={e => setForm({...form, fenceVoltageKv:e.target.value})} placeholder="0.0"/>
+                  </div>
+                  <div>
+                    <label style={S.label}>Waterers working?</label>
+                    <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+                      {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l}) => (
+                        <button key={l} type="button" onClick={() => setForm({...form, waterersWorking:v})} style={{flex:1, padding:'7px 0', border:'none', fontFamily:'inherit', fontSize:12, cursor:'pointer', background:form.waterersWorking===v?(v?'#0f766e':'#374151'):'#f9fafb', color:form.waterersWorking===v?'white':'#6b7280'}}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={S.label}>Mortality count</label>
+                    <input type="number" min="0" value={form.mortalityCount} onChange={e => setForm({...form, mortalityCount:e.target.value})} placeholder="0"/>
+                  </div>
+                  <div style={{gridColumn:'1/-1'}}>
+                    <label style={S.label}>Issues / Comments</label>
+                    <textarea value={form.comments} onChange={e => setForm({...form, comments:e.target.value})} rows={3} style={{resize:'vertical'}}/>
+                  </div>
+                </React.Fragment>
+              )}
             </div>
-            <div style={{padding:'14px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:10, justifyContent:'flex-end'}}>
-              <button onClick={()=>{setShowForm(false);setForm(null);setEditId(null);}} style={{padding:'8px 16px', borderRadius:7, border:'1px solid #d1d5db', background:'white', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
-              <button onClick={save} disabled={saving} style={{padding:'8px 20px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:13, cursor:saving?'not-allowed':'pointer', opacity:saving?.6:1, fontFamily:'inherit'}}>{saving ? 'Saving\u2026' : 'Save'}</button>
+            <div style={{padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8}}>
+              <button onClick={saveEdit} style={{...S.btnPrimary, width:'auto', padding:'8px 20px'}}>Save</button>
+              {editId && <button onClick={() => del(editId)} style={S.btnDanger}>Delete</button>}
+              <button onClick={() => { setShowForm(false); setEditId(null); setForm(null); }} style={S.btnGhost}>Cancel</button>
             </div>
           </div>
         </div>
