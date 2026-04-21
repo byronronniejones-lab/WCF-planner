@@ -64,9 +64,12 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
   // Helpers to pull hay bales / alfalfa lbs / mineral pct out of the feeds/
   // minerals jsonb arrays populated by migration 012 + new submits.
   const sumBales = d => Array.isArray(d.feeds) ? d.feeds.reduce((s,f) => s + (f.category === 'hay' && f.unit === 'bale' ? (parseFloat(f.qty)||0) : 0), 0) : 0;
+  // Alfalfa pellets only — hay category excluded so historical hay bales
+  // (remapped by migration 013 to the ALFALFA cattle hay entry) don't
+  // inflate alfalfa-lb totals via the bale unit-weight.
   const sumAlfalfa = d => Array.isArray(d.feeds) ? d.feeds.reduce((s,f) => {
     const nm = String(f.feed_name||'').toLowerCase();
-    return s + (nm.includes('alfalfa') ? (parseFloat(f.lbs_as_fed)||0) : 0);
+    return s + ((f.category === 'pellet' && nm.includes('alfalfa')) ? (parseFloat(f.lbs_as_fed)||0) : 0);
   }, 0) : 0;
   // Average % eaten across all mineral entries on a row that report a pct.
   const mineralPctOn = d => {

@@ -547,7 +547,8 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                                         // Cattle-parity jsonb: feeds[]/minerals[]. Hay bales = hay + bale-unit entries. Alfalfa = any feed with "alfalfa" in its name.
                                         const feedsArr = Array.isArray(d.feeds) ? d.feeds : [];
                                         const bales = feedsArr.reduce((s,f)=>s+((f.category==='hay'&&f.unit==='bale')?(parseFloat(f.qty)||0):0),0);
-                                        const alfalfaLbs = feedsArr.reduce((s,f)=>{const nm=String(f.feed_name||'').toLowerCase();return s+(nm.includes('alfalfa')?(parseFloat(f.lbs_as_fed)||0):0);},0);
+                                        // Pellets only — keeps hay-category 'ALFALFA' bales out of the alfalfa-lb chip.
+                                        const alfalfaLbs = feedsArr.reduce((s,f)=>{const nm=String(f.feed_name||'').toLowerCase();return s+((f.category==='pellet'&&nm.includes('alfalfa'))?(parseFloat(f.lbs_as_fed)||0):0);},0);
                                         const hasHay = bales > 0;
                                         const hasAlfalfa = alfalfaLbs > 0;
                                         const mineralsArr = Array.isArray(d.minerals) ? d.minerals : [];

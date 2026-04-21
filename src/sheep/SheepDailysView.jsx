@@ -174,9 +174,12 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   // Summary metrics derived from feeds jsonb (hay bales + alfalfa lbs)
   const totalMort = filtered.reduce((s,r) => s + (parseInt(r.mortality_count)||0), 0);
   const totalBales = filtered.reduce((s,r) => s + (Array.isArray(r.feeds) ? r.feeds.reduce((ss,f) => ss + (f.category === 'hay' && f.unit === 'bale' ? (parseFloat(f.qty)||0) : 0), 0) : 0), 0);
+  // Alfalfa pellets only — exclude alfalfa hay so historical hay bales
+  // (remapped to the ALFALFA cattle hay entry by migration 013) don't
+  // get double-counted in the alfalfa-lb total.
   const totalAlfalfa = filtered.reduce((s,r) => s + (Array.isArray(r.feeds) ? r.feeds.reduce((ss,f) => {
     const nm = String(f.feed_name||'').toLowerCase();
-    return ss + (nm.includes('alfalfa') ? (parseFloat(f.lbs_as_fed)||0) : 0);
+    return ss + ((f.category === 'pellet' && nm.includes('alfalfa')) ? (parseFloat(f.lbs_as_fed)||0) : 0);
   }, 0) : 0), 0);
 
   return (
