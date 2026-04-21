@@ -24,11 +24,8 @@ export default function WebformsAdminView({
   Header, loadUsers, persistWebforms,
   saveFeedCosts, confirmDelete,
   adminTab, setAdminTab,
-  wfForm, setWfForm,
-  wfSubmitting, setWfSubmitting,
-  wfDone, setWfDone,
-  wfErr, setWfErr,
-  wfGroupName, setWfGroupName,
+  // (5 pig-dailys-webform state props removed — that form now owns its own
+  // state in src/webforms/PigDailysWebform.jsx)
   wfView, setWfView,
   editWfId, setEditWfId,
   editFieldId, setEditFieldId,
