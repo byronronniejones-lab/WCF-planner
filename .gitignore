@@ -141,3 +141,7 @@ vite.config.ts.timestamp-*
 
 # Claude Code local config (machine-specific permissions cache)
 .claude/
+
+# Local-only CLI script secrets + Podio/other data dumps
+scripts/.env
+scripts/podio_equipment_dump/
