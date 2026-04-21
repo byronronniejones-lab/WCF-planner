@@ -15,6 +15,14 @@ const WeighInsWebform = ({sb}) => {
   // Cattle
   const [cattleHerd, setCattleHerd] = React.useState('');
   const [cattleList, setCattleList] = React.useState([]);
+  // Sheep — parallel to cattle (per-sheep weigh-in with session autosave)
+  const [sheepFlock, setSheepFlock] = React.useState('');
+  const [sheepList, setSheepList] = React.useState([]);
+  // Prior-weight lookup: tag → {weight, date} from most-recent COMPLETED session
+  // of this species, excluding today and the current session. Used to show
+  // "prior weight" in the dropdown, compute ADG per entry, and aggregate a
+  // session-average ADG. Loaded when species is picked (and when session changes).
+  const [priorByTag, setPriorByTag] = React.useState({});
   const [tagInput, setTagInput] = React.useState('');
   const [weightInput, setWeightInput] = React.useState('');
   const [noteInput, setNoteInput] = React.useState('');
@@ -62,6 +70,10 @@ const WeighInsWebform = ({sb}) => {
       sb.from('cattle').select('id, tag, herd, birth_date, sex, breed, old_tags').then(({data}) => {
         if(data) setCattleList(data);
       });
+    } else if(species === 'sheep') {
+      sb.from('sheep').select('id, tag, flock, birth_date, sex, breed, old_tags').then(({data}) => {
+        if(data) setSheepList(data);
+      });
     } else if(species === 'pig') {
       sb.from('webform_config').select('data').eq('key','active_groups').maybeSingle().then(({data}) => {
         if(data && Array.isArray(data.data)) {
@@ -83,7 +95,69 @@ const WeighInsWebform = ({sb}) => {
     sb.from('weigh_in_sessions').select('*').eq('species', species).eq('status','draft').gte('date', cutoff).order('started_at',{ascending:false}).then(({data}) => {
       if(data) setDrafts(data);
     });
+    // Build priorByTag: most recent COMPLETED weigh-in per tag for this
+    // species, excluding today. Powers the dropdown's prior-weight column,
+    // per-entry ADG, and session-average ADG.
+    const today = new Date().toISOString().slice(0,10);
+    sb.from('weigh_in_sessions')
+      .select('id, date')
+      .eq('species', species)
+      .eq('status', 'complete')
+      .lt('date', today)
+      .order('date', {ascending:false})
+      .then(({data: sessions}) => {
+        const sessionById = {};
+        (sessions||[]).forEach(s => { sessionById[s.id] = s; });
+        const sessIds = (sessions||[]).map(s => s.id);
+        if(sessIds.length === 0) { setPriorByTag({}); return; }
+        sb.from('weigh_ins').select('tag, weight, session_id').in('session_id', sessIds).then(({data: wis}) => {
+          const byTag = {};
+          (wis||[]).forEach(w => {
+            if(!w.tag) return;
+            const sd = sessionById[w.session_id]?.date;
+            if(!sd) return;
+            const existing = byTag[w.tag];
+            if(!existing || sd > existing.date) byTag[w.tag] = { weight: parseFloat(w.weight)||0, date: sd };
+          });
+          setPriorByTag(byTag);
+        });
+      });
   }, [species]);
+
+  // ── Age / ADG helpers ─────────────────────────────────────────────────────
+  // Age in years+months from a birth date string ('YYYY-MM-DD') to a reference
+  // date. Returns '2y 3m' / '5m' / '—' (null birth → dash).
+  function ageYM(birth, asOf) {
+    if(!birth) return '—';
+    const b = new Date(birth+'T12:00:00');
+    const a = asOf ? new Date(asOf+'T12:00:00') : new Date();
+    const ms = a - b;
+    if(!Number.isFinite(ms) || ms < 0) return '—';
+    const days = Math.floor(ms / 86400000);
+    const y = Math.floor(days / 365);
+    const m = Math.floor((days % 365) / 30);
+    return y > 0 ? (y + 'y ' + m + 'm') : (m + 'm');
+  }
+  // ADG (lb/day) between a prior weigh-in and today's. Null if either side missing
+  // or if the interval is < 1 day (same-day priors excluded upstream anyway).
+  function adgLbPerDay(priorWt, priorDate, curWt, curDate) {
+    if(priorWt == null || curWt == null || !priorDate || !curDate) return null;
+    const pd = new Date(priorDate+'T12:00:00');
+    const cd = new Date(curDate+'T12:00:00');
+    const days = Math.round((cd - pd) / 86400000);
+    if(!Number.isFinite(days) || days < 1) return null;
+    const adg = (parseFloat(curWt) - parseFloat(priorWt)) / days;
+    return Number.isFinite(adg) ? adg : null;
+  }
+  // Format an animal directory row for the tag dropdown: '#101 · 2y 3m · 850 lb'.
+  // Missing birth → age '—'; missing prior weight → 'new'.
+  function formatAnimalOption(animal, sessionDate) {
+    const tag = animal.tag || '?';
+    const age = ageYM(animal.birth_date, sessionDate);
+    const prior = priorByTag[tag];
+    const priorStr = prior ? (Math.round(prior.weight) + ' lb') : 'new';
+    return '#' + tag + ' · ' + age + ' · ' + priorStr;
+  }
 
   // Load entries when session is set, and (for broiler/pig) hydrate the grid
   // so previously-saved weights show up in the input cells they came from.
@@ -363,6 +437,18 @@ const WeighInsWebform = ({sb}) => {
   }
 
   // Cattle: list of remaining tags (sorted asc, weighed already removed)
+  // Sheep parallel: tags in the selected flock not yet weighed this session.
+  const sheepRemainingTags = (() => {
+    if(species !== 'sheep' || !sheepFlock) return [];
+    const weighed = new Set(entries.map(e => e.tag).filter(Boolean));
+    return sheepList
+      .filter(s => s.flock === sheepFlock && s.tag && !weighed.has(s.tag))
+      .map(s => s.tag);
+  })();
+  const sheepExpectedTags = species === 'sheep' && sheepFlock
+    ? sheepList.filter(s => s.flock === sheepFlock && s.tag).length
+    : 0;
+
   const remainingTags = (() => {
     if(species !== 'cattle' || !cattleHerd) return [];
     const weighed = new Set(entries.map(e => e.tag).filter(Boolean));
@@ -427,6 +513,7 @@ const WeighInsWebform = ({sb}) => {
         <div style={{fontSize:13, color:'#6b7280', textAlign:'center', marginBottom:20}}>Pick what you{'\u2019'}re weighing</div>
         {[
           {key:'cattle', icon:'\ud83d\udc04', color:'#991b1b', bg:'#fef2f2', label:'Cattle', desc:'Per-cow weigh-in with session autosave'},
+          {key:'sheep',  icon:'\ud83d\udc11', color:'#0f766e', bg:'#f0fdfa', label:'Sheep',  desc:'Per-sheep weigh-in with session autosave'},
           {key:'pig',    icon:'\ud83d\udc37', color:'#1e40af', bg:'#eff6ff', label:'Pig',    desc:'Feeder batch \u2014 weigh several pigs at once'},
           {key:'broiler',icon:'\ud83d\udc14', color:'#a16207', bg:'#fef9c3', label:'Broiler',desc:'4-week or 6-week weighings, ~15 birds'},
         ].map(s => (
@@ -452,14 +539,14 @@ const WeighInsWebform = ({sb}) => {
       <div style={{maxWidth:480, margin:'0 auto', paddingTop:'1rem'}}>
         {logoEl}
         <button onClick={() => { setStage('species'); setSpecies(''); }} style={{background:'none', border:'none', color:'#6b7280', fontSize:13, cursor:'pointer', marginBottom:12, padding:0, fontFamily:'inherit'}}>{'\u2039 Back'}</button>
-        <div style={{fontSize:17, fontWeight:700, color:'#1e40af', marginBottom:16}}>{species==='cattle'?'\ud83d\udc04 Cattle':species==='pig'?'\ud83d\udc37 Pig':'\ud83d\udc14 Broiler'} Weigh-In</div>
+        <div style={{fontSize:17, fontWeight:700, color:'#1e40af', marginBottom:16}}>{species==='cattle'?'\ud83d\udc04 Cattle':species==='sheep'?'\ud83d\udc11 Sheep':species==='pig'?'\ud83d\udc37 Pig':'\ud83d\udc14 Broiler'} Weigh-In</div>
 
         {drafts.length > 0 && (
           <div style={cardS}>
             <div style={{fontSize:13, fontWeight:700, color:'#374151', marginBottom:8}}>Resume a draft session</div>
             {drafts.map(d => (
               <div key={d.id} onClick={() => resumeSession(d)} style={{background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8, padding:'10px 12px', marginBottom:6, cursor:'pointer'}} className="hoverable-tile">
-                <div style={{fontSize:13, fontWeight:600, color:'#111827'}}>{d.species==='cattle'?(d.herd||'?'):d.species==='broiler'?(d.batch_id||'?')+(d.broiler_week?' \u00b7 wk '+d.broiler_week:''):d.batch_id||'?'}</div>
+                <div style={{fontSize:13, fontWeight:600, color:'#111827'}}>{d.species==='cattle'||d.species==='sheep'?(d.herd||'?'):d.species==='broiler'?(d.batch_id||'?')+(d.broiler_week?' \u00b7 wk '+d.broiler_week:''):d.batch_id||'?'}</div>
                 <div style={{fontSize:11, color:'#6b7280'}}>{d.date} {'\u00b7'} {d.team_member} {'\u00b7'} started {(d.started_at||'').slice(11,16)}</div>
               </div>
             ))}
@@ -533,6 +620,24 @@ const WeighInsWebform = ({sb}) => {
             </React.Fragment>
           )}
 
+          {species === 'sheep' && (
+            <React.Fragment>
+              <div style={{marginBottom:10}}>
+                <label style={lblS}>Flock *</label>
+                <select value={sheepFlock} onChange={e=>setSheepFlock(e.target.value)} style={inpS}>
+                  <option value=''>Select flock...</option>
+                  <option value='rams'>Rams</option>
+                  <option value='ewes'>Ewes</option>
+                  <option value='feeders'>Feeders</option>
+                </select>
+                {sheepFlock && sheepExpectedTags > 0 && (
+                  <div style={{fontSize:11, color:'#0f766e', marginTop:4}}>{sheepExpectedTags + ' sheep in this flock to weigh'}</div>
+                )}
+              </div>
+              <button onClick={() => startNewSession({herd: sheepFlock})} disabled={busy || !teamMember || !sheepFlock} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!teamMember||!sheepFlock)?'#9ca3af':'#0f766e', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!teamMember||!sheepFlock)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy ? 'Starting\u2026' : 'Start Session'}</button>
+            </React.Fragment>
+          )}
+
           {err && <div style={{color:'#b91c1c', fontSize:13, marginTop:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
         </div>
       </div>
@@ -548,13 +653,13 @@ const WeighInsWebform = ({sb}) => {
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
             <div>
               <div style={{fontSize:14, fontWeight:700, color:'#111827'}}>
-                {species==='cattle'?(session.herd||'?'):species==='broiler'?(session.batch_id||'?')+' \u00b7 wk '+session.broiler_week:session.batch_id||'?'}
+                {species==='cattle'||species==='sheep'?(session.herd||'?'):species==='broiler'?(session.batch_id||'?')+' \u00b7 wk '+session.broiler_week:session.batch_id||'?'}
               </div>
               <div style={{fontSize:11, color:'#6b7280'}}>{session.date} {'\u00b7'} {session.team_member}</div>
             </div>
             <div style={{textAlign:'right'}}>
               <div style={{fontSize:18, fontWeight:700, color:'#1e40af'}}>{entries.length}</div>
-              <div style={{fontSize:10, color:'#6b7280'}}>{species==='cattle'?'of '+expectedTags:'entries'}</div>
+              <div style={{fontSize:10, color:'#6b7280'}}>{species==='cattle'?'of '+expectedTags:species==='sheep'?'of '+sheepExpectedTags:'entries'}</div>
             </div>
           </div>
         </div>
@@ -567,7 +672,7 @@ const WeighInsWebform = ({sb}) => {
                   <label style={lblS}>Tag #</label>
                   <select value={tagInput} onChange={e=>setTagInput(e.target.value)} style={inpS}>
                     <option value=''>Select tag... ({remainingTags.length} remaining)</option>
-                    {remainingTags.map(t => <option key={t} value={t}>{'#'+t}</option>)}
+                    {remainingTags.map(t => { const cow = cattleList.find(c => c.tag === t && c.herd === cattleHerd); return <option key={t} value={t}>{cow ? formatAnimalOption(cow, session && session.date) : ('#'+t)}</option>; })}
                   </select>
                 </div>
                 <div style={{display:'flex', gap:6, marginBottom:10, flexWrap:'wrap'}}>
@@ -640,7 +745,29 @@ const WeighInsWebform = ({sb}) => {
           </div>
         )}
 
-        {(species === 'pig' || species === 'broiler') && (
+        {species === 'sheep' && (
+          <div style={cardS}>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Tag #</label>
+              <select value={tagInput} onChange={e=>setTagInput(e.target.value)} style={inpS}>
+                <option value=''>Select tag... ({sheepRemainingTags.length} remaining)</option>
+                {sheepRemainingTags.map(t => { const sh = sheepList.find(s => s.tag === t && s.flock === sheepFlock); return <option key={t} value={t}>{sh ? formatAnimalOption(sh, session && session.date) : ('#'+t)}</option>; })}
+              </select>
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Weight (lbs) *</label>
+              <input type="number" min="0" step="0.1" value={weightInput} onChange={e=>setWeightInput(e.target.value)} placeholder="0" style={inpS}/>
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Note <span style={{fontSize:10, color:'#9ca3af'}}>(saves to sheep comment timeline)</span></label>
+              <textarea value={noteInput} onChange={e=>setNoteInput(e.target.value)} rows={2} placeholder="Optional" style={{...inpS, resize:'vertical'}}/>
+            </div>
+            {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
+            <button onClick={()=>saveEntry({tag:tagInput, weight:weightInput, note:noteInput, mode:'normal'})} disabled={busy || !tagInput || !weightInput} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!tagInput||!weightInput)?'#9ca3af':'#0f766e', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!tagInput||!weightInput)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Entry'}</button>
+          </div>
+        )}
+
+                {(species === 'pig' || species === 'broiler') && (
           <div style={cardS}>
             <label style={lblS}>{species==='broiler'?'Bird':'Pig'} weights (lbs) <span style={{fontSize:10, color:'#9ca3af'}}>— blanks are skipped</span></label>
             <div style={{display:'grid', gridTemplateColumns:'repeat('+columnLabels.length+', 1fr)', gap:8, marginBottom:12}}>
@@ -681,20 +808,36 @@ const WeighInsWebform = ({sb}) => {
           </div>
         )}
 
-        {/* Recent entries — cattle only, since the broiler/pig grid already shows all weights inline */}
-        {species === 'cattle' && entries.length > 0 && (
-          <div style={cardS}>
-            <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
-            {entries.slice(-10).reverse().map(e => (
-              <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', gap:8, alignItems:'center'}}>
-                {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50}}>#{e.tag}</span>}
-                <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
-                {e.new_tag_flag && <span style={{fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
-                {e.note && <span style={{fontSize:11, color:'#6b7280', fontStyle:'italic', flex:1}}>{e.note}</span>}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Recent entries — cattle + sheep. Each row shows tag, age,
+            prior weight, current weight, and ADG (when a prior exists). */}
+        {(species === 'cattle' || species === 'sheep') && entries.length > 0 && (() => {
+          const directory = species === 'cattle' ? cattleList : sheepList;
+          const curDate = (session && session.date) || new Date().toISOString().slice(0,10);
+          return (
+            <div style={cardS}>
+              <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
+              {entries.slice(-10).reverse().map(e => {
+                const animal = directory.find(a => a.tag === e.tag);
+                const age = ageYM(animal ? animal.birth_date : null, curDate);
+                const prior = priorByTag[e.tag];
+                const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
+                return (
+                  <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', flexDirection:'column', gap:2}}>
+                    <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                      {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50}}>#{e.tag}</span>}
+                      <span style={{fontSize:11, color:'#6b7280'}}>{age}</span>
+                      <span style={{fontSize:11, color:'#6b7280'}}>{prior ? ('prior '+Math.round(prior.weight)+' lb') : 'no prior'}</span>
+                      <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                      {adg != null && <span style={{fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:4, background:adg>=0?'#ecfdf5':'#fef2f2', color:adg>=0?'#065f46':'#b91c1c', border:'1px solid '+(adg>=0?'#a7f3d0':'#fecaca')}}>{(adg>=0?'+':'')+adg.toFixed(2)+' lb/d'}</span>}
+                      {e.new_tag_flag && <span style={{fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
+                    </div>
+                    {e.note && <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {species === 'cattle' && pendingReconciles.length > 0 && (
           <div style={{...cardS, border:'2px solid #f59e0b', background:'#fffbeb'}}>
@@ -711,11 +854,25 @@ const WeighInsWebform = ({sb}) => {
             ))}
           </div>
         )}
-        {entries.length > 0 && (
-          <div style={{padding:'8px 12px', background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, fontSize:12, color:'#065f46', marginTop:8, marginBottom:6, textAlign:'center', fontWeight:600}}>
-            {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' saved'}{species==='broiler' ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''}
-          </div>
-        )}
+        {entries.length > 0 && (() => {
+          let avgAdgStr = '';
+          if(species === 'cattle' || species === 'sheep') {
+            const curDate = (session && session.date) || new Date().toISOString().slice(0,10);
+            const adgs = entries.map(e => {
+              const prior = priorByTag[e.tag];
+              return prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
+            }).filter(a => a != null);
+            if(adgs.length > 0) {
+              const avg = adgs.reduce((s,v) => s+v, 0) / adgs.length;
+              avgAdgStr = ' \u00b7 avg ADG ' + (avg>=0?'+':'') + avg.toFixed(2) + ' lb/d (' + adgs.length + ' of ' + entries.length + ')';
+            }
+          }
+          return (
+            <div style={{padding:'8px 12px', background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, fontSize:12, color:'#065f46', marginTop:8, marginBottom:6, textAlign:'center', fontWeight:600}}>
+              {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' saved'}{species==='broiler' ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''}{avgAdgStr}
+            </div>
+          );
+        })()}
         {(() => {
           var filledCount = (species === 'broiler' || species === 'pig')
             ? weightInputs.filter(function(w){return w !== '' && !isNaN(parseFloat(w)) && parseFloat(w) > 0;}).length
