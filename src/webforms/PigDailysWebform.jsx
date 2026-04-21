@@ -17,7 +17,7 @@ export default function PigDailysWebform() {
     const d = new Date();
     return {
       date: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
-      teamMember: localStorage.getItem('wcf_team') || '',
+      teamMember: '',
       batchId: '', pigCount: '', feedLbs: '',
       groupMoved: true, nippleDrinkerMoved: true, nippleDrinkerWorking: true,
       troughsMoved: true, fenceWalked: true, fenceVoltage: '', issues: ''
@@ -79,7 +79,7 @@ export default function PigDailysWebform() {
     const d=new Date();
     setWfForm({
       date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
-      teamMember:localStorage.getItem('wcf_team')||'',
+      teamMember:'',
       batchId:'',pigCount:'',feedLbs:'',
       groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,
       troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''

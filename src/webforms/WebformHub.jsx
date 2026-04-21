@@ -54,28 +54,28 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
   const [lastGroup, setLastGroup] = useState('');
 
   // Broiler form state
-  const EMPTY_B = {date:todayStr(),teamMember:localStorage.getItem('wcf_team')||'',batchLabel:'',feedType:'',feedLbs:'',gritLbs:'',groupMoved:true,watererChecked:true,mortalityCount:'',mortalityReason:'',comments:''};
+  const EMPTY_B = {date:todayStr(),teamMember:'',batchLabel:'',feedType:'',feedLbs:'',gritLbs:'',groupMoved:true,watererChecked:true,mortalityCount:'',mortalityReason:'',comments:''};
   const [bForm, setBForm] = useState(EMPTY_B);
 
   // Layer form state
-  const EMPTY_L = {date:todayStr(),teamMember:localStorage.getItem('wcf_team')||'',batchLabel:'',feedType:'',feedLbs:'',gritLbs:'',layerCount:'',groupMoved:true,watererChecked:true,mortalityCount:'',mortalityReason:'',comments:''};
+  const EMPTY_L = {date:todayStr(),teamMember:'',batchLabel:'',feedType:'',feedLbs:'',gritLbs:'',layerCount:'',groupMoved:true,watererChecked:true,mortalityCount:'',mortalityReason:'',comments:''};
   const [lForm, setLForm] = useState(EMPTY_L);
 
   // Pig form state
   const pigGroupList = [];
-  const EMPTY_P = {date:todayStr(),teamMember:localStorage.getItem('wcf_team')||'',batchLabel:'',feedLbs:'',pigCount:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''};
+  const EMPTY_P = {date:todayStr(),teamMember:'',batchLabel:'',feedLbs:'',pigCount:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''};
   const [pForm, setPForm] = useState(EMPTY_P);
 
   // Egg form state
   const activeLayerGroups = (layerGroups||[]).filter(g=>g.status==='active');
-  const EMPTY_E = {date:todayStr(),teamMember:localStorage.getItem('wcf_team')||'',g1n:activeLayerGroups[0]?.name||'',g1c:'',g2n:activeLayerGroups[1]?.name||'',g2c:'',g3n:activeLayerGroups[2]?.name||'',g3c:'',g4n:activeLayerGroups[3]?.name||'',g4c:'',dozensOnHand:'',comments:''};
+  const EMPTY_E = {date:todayStr(),teamMember:'',g1n:activeLayerGroups[0]?.name||'',g1c:'',g2n:activeLayerGroups[1]?.name||'',g2c:'',g3n:activeLayerGroups[2]?.name||'',g3c:'',g4n:activeLayerGroups[3]?.name||'',g4c:'',dozensOnHand:'',comments:''};
   const [eForm, setEForm] = useState(EMPTY_E);
 
   // Cattle form state + active feeds list
   const [cattleFeedInputs, setCattleFeedInputs] = useState([]);
   const EMPTY_C = {
     date: todayStr(),
-    teamMember: localStorage.getItem('wcf_team')||'',
+    teamMember: '',
     herd: '',
     feeds:    [{feedId:'', qty:'', isCreep:false}],
     minerals: [{feedId:'', lbs:''}],
@@ -93,7 +93,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
   // master comes from cattleFeedInputs filtered by sheep herd_scope.
   const EMPTY_S = {
     date: todayStr(),
-    teamMember: localStorage.getItem('wcf_team')||'',
+    teamMember: '',
     flock: '',
     feeds:    [{feedId:'', qty:''}],
     minerals: [{feedId:'', lbs:'', pctEaten:''}],
@@ -468,7 +468,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
   }
 
   function resetAndAnother(){
-    const team=localStorage.getItem('wcf_team')||'';
+    const team='';
     const today=todayStr();
     if(activeForm==='broiler') setBForm({...EMPTY_B,date:today,teamMember:team,batchLabel:lastGroup});
     else if(activeForm==='layer') setLForm({...EMPTY_L,date:today,teamMember:team,batchLabel:lastGroup});

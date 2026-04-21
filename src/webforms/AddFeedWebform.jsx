@@ -18,7 +18,7 @@ const AddFeedWebform = ({sb}) => {
   const [batchLabel, setBatchLabel] = React.useState('');
   const [feedType, setFeedType] = React.useState('');
   const [feedLbs, setFeedLbs] = React.useState('');
-  const [teamMember, setTeamMember] = React.useState(localStorage.getItem('wcf_team')||'');
+  const [teamMember, setTeamMember] = React.useState('');
   const [extraGroups, setExtraGroups] = React.useState([]);
   const [submitting, setSubmitting] = React.useState(false);
   const [err, setErr] = React.useState('');

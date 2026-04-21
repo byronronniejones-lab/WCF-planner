@@ -10,7 +10,7 @@ const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
   const {useState, useEffect} = React;
   const todayStr = (() => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
   const [teamMembers, setTeamMembers] = useState([]);
-  const [team, setTeam] = useState(localStorage.getItem('wcf_team') || '');
+  const [team, setTeam] = useState('');
   const [date, setDate] = useState(todayStr);
   const [batchOpts, setBatchOpts] = useState([]);
   const [batchId, setBatchId] = useState('');

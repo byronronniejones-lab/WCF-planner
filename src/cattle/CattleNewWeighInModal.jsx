@@ -9,7 +9,7 @@ const CattleNewWeighInModal = ({sb, onClose, onCreate}) => {
   const {useState, useEffect} = React;
   const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
   const [teamMembers, setTeamMembers] = useState([]);
-  const [team, setTeam] = useState(localStorage.getItem('wcf_team') || '');
+  const [team, setTeam] = useState('');
   const [date, setDate] = useState(todayStr());
   const [herd, setHerd] = useState('');
   const [busy, setBusy] = useState(false);

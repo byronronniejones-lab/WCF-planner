@@ -6,7 +6,7 @@ const WeighInsWebform = ({sb}) => {
   const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'
   const [species, setSpecies] = React.useState('');
   const [date, setDate] = React.useState('');
-  const [teamMember, setTeamMember] = React.useState(localStorage.getItem('wcf_team')||'');
+  const [teamMember, setTeamMember] = React.useState('');
   const [allTeamMembers, setAllTeamMembers] = React.useState([]);
   // Draft + session state
   const [drafts, setDrafts] = React.useState([]);
