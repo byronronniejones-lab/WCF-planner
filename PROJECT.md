@@ -766,4 +766,32 @@ App exposes `confirmDelete` as `window._wcfConfirmDelete` so deeply-nested compo
 
 Only `main` remains (local + origin). All history preserved in merge commits on `main`.
 
+---
+
+# Part 4 — Session Index
+
+One line per working session. Detail lives in git log (`git log --oneline --date=short`) and full per-session narratives in [`archive/SESSION_LOG.md`](archive/SESSION_LOG.md). The left column shows a representative commit SHA.
+
+| Date | SHA (end) | Headline |
+|---|---|---|
+| 2026-04-12 | `021714b` | Initial setup: repo, Netlify auto-deploy, Add Feed Webform full feature build, pig feed planning tab, comprehensive PROJECT.md handover. |
+| 2026-04-13 | `fbac585` | Feed tab overhaul — running ledger, order-timing model, suggested orders; pig/broiler feed inventory; breeding pigs redesign + farrowing cycle linkage. Three commits of feed-tab bugfixes. |
+| 2026-04-14 | `85f17eb` | Program color palette applied across app (no purple); auto-generated pig breeding cycle labels; egg webform Group 1 bug fix; broiler feed projections updated from WCF historical data (`94f0d5e`); branded welcome/password-reset emails via Resend (`a7a9658`); B-24-02..B-25-01 migrated to FR breed. Cattle module Q&A captured. |
+| 2026-04-15 | `5716420` | Cattle module Phase 1 build + Phase 2 (cattle/pig/broiler dailys) + Phase 3 Directory-merged-into-Herds. Admin feed inputs + test PDFs + cattle webforms + dailys view (`d8a4a67`, `be4525e`). Deployment SOP codified in docs. Two post-deploy hotfixes (`45756a5`, `05578a0`). |
+| 2026-04-16 | `56bad15` | Cattle Podio data import: 469 cattle, 1,930 weigh-ins (`56bad15`), tag-swap history + New-Cow-vs-Replacement-Tag split (`6a40485`), per-schooner broiler weigh-in columns, admin tabs for broilers/pigs. |
+| 2026-04-17 | `3874dca` | Cattle admin UX deep dive: weigh-in functionality, mortality fix, cattle batches + rolling nutrition panel (`618125c`), cow-detail polish + clickable lineage (`e8ca425`), Cost-by-Month tab + DM field (`bc2cc24`). |
+| 2026-04-17 (eve) | `ac40fd8` | Cow detail: weight history polish + tag search + Prior Tags editor + on-the-spot retag flow. Six commits sitting unpushed at session end. |
+| 2026-04-18 | (see archive) | Cattle bulk import tool (self-serve XLSX), auth hardening (SetPasswordScreen — invite + recovery), user management improvements, Sheep module Phase 1 (directory + flat/tile + add/edit/transfer + bulk import + dailys + weigh-ins). |
+| 2026-04-19 | `6f15a29` | Vite migration plan drafted: goals, phased plan (Phases 1–3), risk register, don't-touch list, cutover checklist. Backup created. |
+| 2026-04-20 (AM) | `67d2ae3` | Phase 1 preview verified. Phase 2 Round 0: all 10 Contexts extracted from App. |
+| 2026-04-20 (PM) | `0f02b2c` | Phase 2 Rounds 1–5: leaf components + auth screens + single-feature dailys views + stateful views + admin panels + public webforms. PowerShell file-slicing pattern established. |
+| 2026-04-20 (eve) | `7e9f999` | Phase 2 Round 6: all 12 inline views extracted. 8 commits of runtime ReferenceError fixups — the painful session that taught us to build the bare-name audit. |
+| 2026-04-21 (AM) | `377211a` | Phase 2 finale: Round 6 tail (Header + BatchForm) + Round 7 (HomeDashboard) + Round 8 (EquipmentPlaceholder) + Round 2 tail (LayerBatchesView with latent-bug fix). Zero post-push fixups — the audit pattern earned its keep. |
+| 2026-04-21 (midday) | `7779750` | Phase 2 cutover to production (`9799960`) + Phase 3 URL routing (3.1/3.2/3.3/polish) + Phase 3 cutover to production (`7779750`). Per-tab URLs + working back button live. |
+| 2026-04-21 (eve) | `8b3d1c0` | Polish: CATTLE_* + detectConflicts + writeBroilerBatchAvg + renderWebform extractions. Two latent `ReferenceError` bugs caught and fixed. Polish cutover (`8b3d1c0`). |
+| 2026-04-21 (wrap) | (this commit) | Doc consolidation: `archive/SESSION_LOG.md` frozen; `PROJECT.md` rewritten in 4 parts (Living Reference, Design Decisions, History, Session Index); `DECISIONS.md` + `MIGRATION_PLAN.md` to be deleted in the final commit. |
+
+**How to use this index:** if you need the exact commit message or a specific bugfix commit, run `git log --oneline <date>..` or filter by filename. If you need the narrator's-voice session-end summary, see the matching block in `archive/SESSION_LOG.md`. Git log is the authoritative timeline — this table is just the map.
+
+
 
