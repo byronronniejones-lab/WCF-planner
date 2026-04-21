@@ -13,6 +13,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   const [comments, setComments] = useState([]);
   const [breedOpts, setBreedOpts] = useState([]);
   const [originOpts, setOriginOpts] = useState([]);
+  const [processingBatches, setProcessingBatches] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -47,13 +48,14 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   };
 
   async function loadAll() {
-    const [cR, wAll, calR, comR, brR, orR] = await Promise.all([
+    const [cR, wAll, calR, comR, brR, orR, pbR] = await Promise.all([
       sb.from('cattle').select('*').order('tag'),
       loadCattleWeighInsCached(sb),  // already sorted entered_at desc
       sb.from('cattle_calving_records').select('*').order('calving_date',{ascending:false}),
       sb.from('cattle_comments').select('*').order('created_at',{ascending:false}),
       sb.from('cattle_breeds').select('*').order('label'),
       sb.from('cattle_origins').select('*').order('label'),
+      sb.from('cattle_processing_batches').select('id,name,actual_process_date,planned_process_date'),
     ]);
     if(cR.data) setCattle(cR.data);
     setWeighIns(wAll);
@@ -61,6 +63,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     if(comR.data) setComments(comR.data);
     if(brR.data) setBreedOpts(brR.data);
     if(orR.data) setOriginOpts(orR.data);
+    if(pbR.data) setProcessingBatches(pbR.data);
     setLoading(false);
   }
   useEffect(()=>{ loadAll(); }, []);
@@ -74,6 +77,26 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     const m = Math.floor((days%365)/30);
     if(y > 0) return y+'y '+m+'m';
     return m+'m';
+  }
+  function ageAtDate(birth, endDate) {
+    if(!birth || !endDate) return null;
+    const ms = new Date(endDate+'T12:00:00').getTime() - new Date(birth+'T12:00:00').getTime();
+    const days = Math.floor(ms/86400000);
+    if(days < 0) return null;
+    const y = Math.floor(days/365);
+    const m = Math.floor((days%365)/30);
+    if(y > 0) return y+'y '+m+'m';
+    return m+'m';
+  }
+  // For a processed cow, return { date, age } using the linked batch's
+  // actual_process_date (fall back to planned_process_date if actual is null).
+  function processingInfo(cow) {
+    if(!cow || cow.herd !== 'processed' || !cow.processing_batch_id) return null;
+    const b = processingBatches.find(pb => pb.id === cow.processing_batch_id);
+    if(!b) return null;
+    const date = b.actual_process_date || b.planned_process_date;
+    if(!date) return null;
+    return { date, age: ageAtDate(cow.birth_date, date) };
   }
   function cowTagSet(cow) {
     // Includes current WCF tag + prior WCF tags (source='weigh_in' retags).
@@ -578,6 +601,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
               OUTCOMES={OUTCOMES}
               fmt={fmt}
               setStatusFilter={setStatusFilter}
+              processingInfo={processingInfo}
               expandedCow={expandedCow}
               setExpandedCow={setExpandedCow}
               renderCowDetail={(c) => {

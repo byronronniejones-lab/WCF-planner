@@ -6,7 +6,7 @@
 // herds page instead of jumping to the flat filtered view.
 import React from 'react';
 
-const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS, OUTCOMES, fmt, setStatusFilter, expandedCow, setExpandedCow, renderCowDetail}) => {
+const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS, OUTCOMES, fmt, setStatusFilter, processingInfo, expandedCow, setExpandedCow, renderCowDetail}) => {
   const [expanded, setExpanded] = React.useState({});
   return (
     <div style={{marginTop:8}}>
@@ -28,6 +28,7 @@ const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS,
                 {cows.slice(0, 50).map(c => {
                   const isCowExpanded = expandedCow === c.id;
                   const clickable = !!setExpandedCow;
+                  const pInfo = processingInfo ? processingInfo(c) : null;
                   return (
                     <div key={c.id} id={'cow-'+c.id} style={{borderTop:'1px solid #f3f4f6'}}>
                       <div
@@ -41,6 +42,8 @@ const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS,
                         <span>{c.breed||'—'}</span>
                         {c.death_date && <span>{'died '+fmt(c.death_date)}</span>}
                         {c.sale_date && <span>{'sold '+fmt(c.sale_date)}</span>}
+                        {pInfo && <span style={{color:'#6b7280'}}>{'processed '+fmt(pInfo.date)}</span>}
+                        {pInfo && pInfo.age && <span style={{fontWeight:600, color:'#4b5563'}}>{pInfo.age+' at processing'}</span>}
                       </div>
                       {isCowExpanded && renderCowDetail && (
                         <div style={{borderTop:'1px solid #e5e7eb'}}>{renderCowDetail(c)}</div>
