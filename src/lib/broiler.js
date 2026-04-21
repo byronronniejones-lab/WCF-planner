@@ -4,7 +4,7 @@
 // Lifted out of main.jsx as prep for Round 6 (inline-JSX view extraction).
 // Pure module-scope functions + constants; no React, no App closure state.
 // ============================================================================
-import { toISO, addDays, todayISO } from './dateUtils.js';
+import { toISO, addDays, todayISO, fmtS } from './dateUtils.js';
 import { computeProjectedCount } from './layerHousing.js';
 export const BROODER_DAYS = 14;
 export const CC_SCHOONER  = 35;
@@ -23,6 +23,41 @@ export const SCHOONER_CLEANOUT  = 4;
 export function overlaps(a1, a2, b1, b2){
   return new Date(a1+"T12:00:00") <= new Date(b2+"T12:00:00")
       && new Date(a2+"T12:00:00") >= new Date(b1+"T12:00:00");
+}
+
+// Status enum + hatchery lists. Used by the broiler BatchForm dropdowns +
+// App's openEdit() legacy-flag detection. calcPoultryStatus() in this file
+// also owns the same status strings (the enum is implicit there).
+export const STATUSES          = ["planned","active","processed"];
+export const ALL_HATCHERIES    = ["So Big Farms","Meyer Hatchery","Welp Hatchery","Myers Poultry","Freedom Ranger Hatchery"];
+export const LEGACY_HATCHERIES = ["VALLEY FARMS","CREDO FARMS","CACKLE"];
+
+// Target hatch date given a processing date + breed. Inverts calcTimeline().
+// (1 day of schooner gap + BROODER_DAYS + per-breed schooner length.)
+export function calcTargetHatch(processingDate, breed){
+  if(!processingDate) return null;
+  const totalDays = 1 + BROODER_DAYS + (breed==="WR" ? WR_SCHOONER : CC_SCHOONER);
+  return toISO(addDays(processingDate, -totalDays));
+}
+
+// Suggest weekday hatch dates within +/-3d of a target — hatchery ships
+// Mon-Fri only, so we offer the caller the five available weekdays.
+export function suggestHatchDates(targetISO){
+  if(!targetISO) return [];
+  const out = [];
+  for(let i = -3; i <= 3; i++){
+    const d = addDays(targetISO, i);
+    const dow = d.getDay();
+    if(dow >= 1 && dow <= 5){
+      out.push({
+        iso: toISO(d),
+        offset: i,
+        day: ["","Mon","Tue","Wed","Thu","Fri"][dow],
+        label: fmtS(toISO(d)),
+      });
+    }
+  }
+  return out;
 }
 
 const FEED_BIRDS        = 700;                           // target processed count (order 750, expect ~700 to processor)
