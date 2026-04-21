@@ -98,8 +98,8 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
         ? d.feeds.map(f => ({feedId: f.feed_input_id || '', qty: f.qty != null ? String(f.qty) : ''}))
         : [{feedId:'', qty:''}],
       minerals: Array.isArray(d.minerals) && d.minerals.length > 0
-        ? d.minerals.map(m => ({feedId: m.feed_input_id || '', lbs: m.lbs != null ? String(m.lbs) : '', pctEaten: m.pct_eaten != null ? String(m.pct_eaten) : ''}))
-        : [{feedId:'', lbs:'', pctEaten:''}],
+        ? d.minerals.map(m => ({feedId: m.feed_input_id || '', lbs: m.lbs != null ? String(m.lbs) : ''}))
+        : [{feedId:'', lbs:''}],
       fenceVoltageKv: d.fence_voltage_kv != null ? String(d.fence_voltage_kv) : '',
       waterersWorking: d.waterers_working == null ? true : !!d.waterers_working,
       mortalityCount: d.mortality_count != null ? String(d.mortality_count) : '',
@@ -124,13 +124,12 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
         is_creep: false,
       };
     }).filter(Boolean);
-    const mineralsJ = (form.minerals||[]).filter(m => m.feedId && ((m.lbs !== '' && m.lbs != null) || (m.pctEaten !== '' && m.pctEaten != null))).map(m => {
+    const mineralsJ = (form.minerals||[]).filter(m => m.feedId && m.lbs !== '' && m.lbs != null).map(m => {
       const fi = feedInputs.find(x => x.id === m.feedId);
       if(!fi) return null;
       return {
         feed_input_id: fi.id, name: fi.name,
-        lbs: m.lbs !== '' && m.lbs != null ? parseFloat(m.lbs) : null,
-        pct_eaten: m.pctEaten !== '' && m.pctEaten != null ? parseFloat(m.pctEaten) : null,
+        lbs: parseFloat(m.lbs),
       };
     }).filter(Boolean);
     const rec = {
@@ -241,7 +240,6 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                   ? d.minerals.map(m => {
                       const parts = [m.name || '?'];
                       if(m.lbs != null) parts.push(m.lbs + ' lb');
-                      if(m.pct_eaten != null) parts.push(m.pct_eaten + '% eaten');
                       return parts.join(' ');
                     }).join(', ')
                   : '';
@@ -339,18 +337,17 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
                   <span style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5}}>MINERALS</span>
-                  <button type="button" onClick={() => setForm({...form, minerals:[...(form.minerals||[]), {feedId:'', lbs:'', pctEaten:''}]})} style={{fontSize:11, color:'#6b21a8', background:'none', border:'1px solid #d8b4fe', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
+                  <button type="button" onClick={() => setForm({...form, minerals:[...(form.minerals||[]), {feedId:'', lbs:''}]})} style={{fontSize:11, color:'#6b21a8', background:'none', border:'1px solid #d8b4fe', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
                 </div>
                 {form.minerals.map((r,ri) => {
                   const minerals = feedInputs.filter(f => f.category === 'mineral');
                   return (
-                    <div key={ri} style={{display:'grid', gridTemplateColumns:'2fr 1fr 1fr auto', gap:6, marginBottom:6, alignItems:'center'}}>
+                    <div key={ri} style={{display:'grid', gridTemplateColumns:'2fr 1fr auto', gap:6, marginBottom:6, alignItems:'center'}}>
                       <select value={r.feedId} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, feedId:e.target.value} : x)})}>
                         <option value=''>Select mineral...</option>
                         {minerals.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                       <input type="number" min="0" step="0.1" value={r.lbs} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, lbs:e.target.value} : x)})} placeholder="lbs"/>
-                      <input type="number" min="0" max="200" value={r.pctEaten} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, pctEaten:e.target.value} : x)})} placeholder="% eaten"/>
                       <button type="button" onClick={() => setForm({...form, minerals:form.minerals.filter((_,i) => i!==ri)})} style={{padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, background:'white', color:'#9ca3af', cursor:'pointer'}}>{'×'}</button>
                     </div>
                   );

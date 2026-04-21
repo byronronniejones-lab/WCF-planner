@@ -71,21 +71,10 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
     const nm = String(f.feed_name||'').toLowerCase();
     return s + ((f.category === 'pellet' && nm.includes('alfalfa')) ? (parseFloat(f.lbs_as_fed)||0) : 0);
   }, 0) : 0;
-  // Average % eaten across all mineral entries on a row that report a pct.
-  const mineralPctOn = d => {
-    if(!Array.isArray(d.minerals)) return null;
-    const pcts = d.minerals.map(m => m.pct_eaten).filter(p => p != null);
-    if(pcts.length === 0) return null;
-    return pcts.reduce((s,p) => s + (parseFloat(p)||0), 0) / pcts.length;
-  };
-
-  const minRecords = dailys30.filter(d => mineralPctOn(d) != null);
-  const avgMinPct = minRecords.length > 0 ? (minRecords.reduce((s,d) => s + mineralPctOn(d), 0) / minRecords.length) : null;
-
   function computeWindow(fromISO, toISO) {
     const windowDays = Math.max(1, Math.floor((new Date(toISO+'T12:00:00') - new Date(fromISO+'T12:00:00'))/86400000) + 1);
     const rows = dailys.filter(d => d.date >= fromISO && d.date <= toISO);
-    let bales = 0, alfalfa = 0, mort = 0, fenceSum = 0, fenceN = 0, minSum = 0, minN = 0, watersOk = 0, watersN = 0;
+    let bales = 0, alfalfa = 0, mort = 0, fenceSum = 0, fenceN = 0, watersOk = 0, watersN = 0;
     const reportDates = new Set();
     for(const d of rows) {
       reportDates.add(d.date);
@@ -93,11 +82,9 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
       alfalfa += sumAlfalfa(d);
       mort += parseInt(d.mortality_count) || 0;
       if(d.fence_voltage_kv != null) { fenceSum += parseFloat(d.fence_voltage_kv) || 0; fenceN++; }
-      const pct = mineralPctOn(d);
-      if(pct != null) { minSum += pct; minN++; }
       if(d.waterers_working != null) { if(d.waterers_working) watersOk++; watersN++; }
     }
-    return { bales, alfalfa, mort, fenceAvg: fenceN > 0 ? fenceSum/fenceN : null, minAvg: minN > 0 ? minSum/minN : null, watersPct: watersN > 0 ? (watersOk/watersN)*100 : null, reportDays: reportDates.size, days: windowDays };
+    return { bales, alfalfa, mort, fenceAvg: fenceN > 0 ? fenceSum/fenceN : null, watersPct: watersN > 0 ? (watersOk/watersN)*100 : null, reportDays: reportDates.size, days: windowDays };
   }
 
   function trendArrow(cur, prev, higherIsBetter) {
@@ -145,7 +132,6 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
           <StatTile label="Total Live Weight" val={totalWeight > 0 ? Math.round(totalWeight).toLocaleString()+' lbs' : '\u2014'} sub={totalEstimated > 0 ? totalEstimated+' est.' : null}/>
           <StatTile label="Mortality 30d" val={totalMort30.toString()} color={totalMort30>0?'#b91c1c':'#374151'}/>
           <StatTile label="Reports 30d" val={totalReports30.toString()} color="#374151"/>
-          <StatTile label="Minerals Eaten 30d" val={avgMinPct != null ? Math.round(avgMinPct)+'%' : '\u2014'} color={avgMinPct >= 80 ? '#065f46' : (avgMinPct >= 50 ? '#92400e' : '#b91c1c')}/>
         </div>
 
         <div>
@@ -185,7 +171,6 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
                   {[
                     {l:'Bales of hay', v: cur.bales > 0 ? cur.bales.toFixed(2) : '\u2014', trend: trendArrow(cur.bales, prev.bales, false)},
                     {l:'Alfalfa lbs',  v: cur.alfalfa > 0 ? Math.round(cur.alfalfa).toLocaleString() : '\u2014', trend: trendArrow(cur.alfalfa, prev.alfalfa, false)},
-                    {l:'Mineral % eaten', v: cur.minAvg != null ? Math.round(cur.minAvg)+'%' : '\u2014', trend: trendArrow(cur.minAvg, prev.minAvg, true), color: cur.minAvg >= 80 ? '#065f46' : (cur.minAvg >= 50 ? '#92400e' : (cur.minAvg != null ? '#b91c1c' : null))},
                     {l:'Fence voltage', v: cur.fenceAvg != null ? cur.fenceAvg.toFixed(1)+' kV' : '\u2014', trend: trendArrow(cur.fenceAvg, prev.fenceAvg, true), color: cur.fenceAvg >= 4 ? '#065f46' : (cur.fenceAvg >= 2 ? '#92400e' : (cur.fenceAvg != null ? '#b91c1c' : null))},
                     {l:'Waterers OK', v: cur.watersPct != null ? Math.round(cur.watersPct)+'%' : '\u2014'},
                     {l:'Mortality', v: String(cur.mort||0), warn: cur.mort > 0},

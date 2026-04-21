@@ -96,9 +96,9 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
     teamMember: '',
     flock: '',
     feeds:    [{feedId:'', qty:''}],
-    minerals: [{feedId:'', lbs:'', pctEaten:''}],
+    minerals: [{feedId:'', lbs:''}],
     fenceVoltageKv:'', waterersWorking:true,
-    mortalityCount:'', comments:''
+    comments:''
   };
   const [sForm, setSForm] = useState(EMPTY_S);
 
@@ -437,13 +437,12 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
         is_creep: false,
       };
     }).filter(Boolean);
-    const mineralsJ = (sForm.minerals||[]).filter(m=>m.feedId && ((m.lbs!==''&&m.lbs!=null)||(m.pctEaten!==''&&m.pctEaten!=null))).map(m=>{
+    const mineralsJ = (sForm.minerals||[]).filter(m=>m.feedId && m.lbs!==''&&m.lbs!=null).map(m=>{
       const fi = cattleFeedInputs.find(x=>x.id===m.feedId);
       if(!fi) return null;
       return {
         feed_input_id: fi.id, name: fi.name,
-        lbs: m.lbs!==''&&m.lbs!=null ? parseFloat(m.lbs) : null,
-        pct_eaten: m.pctEaten!==''&&m.pctEaten!=null ? parseFloat(m.pctEaten) : null,
+        lbs: parseFloat(m.lbs),
       };
     }).filter(Boolean);
     const rec = {
@@ -456,7 +455,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
       minerals: mineralsJ,
       fence_voltage_kv: sForm.fenceVoltageKv!==''?parseFloat(sForm.fenceVoltageKv):null,
       waterers_working: !!sForm.waterersWorking,
-      mortality_count: sForm.mortalityCount!==''?parseInt(sForm.mortalityCount):0,
+      mortality_count: 0,
       comments: sForm.comments||null,
       source: 'daily_webform',
     };
@@ -1049,14 +1048,14 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
           );
         })()}
 
-        {/* Minerals — multi-row picker; pct_eaten is sheep-specific per-entry field. */}
+        {/* Minerals — multi-row picker. */}
         {sForm.flock && (() => {
           const mineralsForFlock = cattleFeedInputs.filter(f => f.category === 'mineral' && (f.herd_scope||[]).includes(sForm.flock));
           return (
             <div style={sectionStyle}>
               <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:10}}>Minerals</div>
               {sForm.minerals.map((row,ri)=>(
-                <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
+                <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
                   <div>
                     {ri===0&&<label style={{...labelStyle,fontSize:12}}>Mineral</label>}
                     <select value={row.feedId} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inputStyle,fontSize:13,padding:'8px 10px'}}>
@@ -1069,10 +1068,6 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
                     <input type="number" min="0" step="0.1" value={row.lbs} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,lbs:e.target.value}:r)}))} placeholder="0" style={{...inputStyle,fontSize:13,padding:'8px 10px'}}/>
                   </div>
                   <div>
-                    {ri===0&&<label style={{...labelStyle,fontSize:12}}>% eaten</label>}
-                    <input type="number" min="0" max="200" value={row.pctEaten} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,pctEaten:e.target.value}:r)}))} placeholder="100" style={{...inputStyle,fontSize:13,padding:'8px 10px'}}/>
-                  </div>
-                  <div>
                     {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
                     {sForm.minerals.length>1?(
                       <button type="button" onClick={()=>setSForm(f=>({...f,minerals:f.minerals.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'×'}</button>
@@ -1080,7 +1075,7 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
                   </div>
                 </div>
               ))}
-              <button type="button" onClick={()=>setSForm(f=>({...f,minerals:[...f.minerals,{feedId:'',lbs:'',pctEaten:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #d8b4fe',background:'transparent',color:'#6b21a8',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Mineral</button>
+              <button type="button" onClick={()=>setSForm(f=>({...f,minerals:[...f.minerals,{feedId:'',lbs:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #d8b4fe',background:'transparent',color:'#6b21a8',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Mineral</button>
             </div>
           );
         })()}
@@ -1090,10 +1085,6 @@ const WebformHub = ({sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers,
             {isEnabled('sheep-dailys','waterers_working')&&<div><label style={labelStyle}>Waterers working?{reqStar('sheep-dailys','waterers_working')}</label><YN val={sForm.waterersWorking} onChange={v=>setSForm(f=>({...f,waterersWorking:v}))}/></div>}
           </div>
         </div>
-        {isEnabled('sheep-dailys','mortality_count')&&<div style={sectionStyle}>
-          <label style={labelStyle}>Mortality count{reqStar('sheep-dailys','mortality_count')}</label>
-          <input type="number" min="0" value={sForm.mortalityCount||''} onChange={e=>setSForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inputStyle}/>
-        </div>}
         {isEnabled('sheep-dailys','comments')&&<div style={sectionStyle}>
           <label style={labelStyle}>Issues / Comments{reqStar('sheep-dailys','comments')}</label>
           <textarea value={sForm.comments} onChange={e=>setSForm(f=>({...f,comments:e.target.value}))} rows={3} placeholder="Type 0 if nothing to report" style={{...inputStyle,resize:'vertical'}}/>

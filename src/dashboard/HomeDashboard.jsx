@@ -552,8 +552,6 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                                         const hasHay = bales > 0;
                                         const hasAlfalfa = alfalfaLbs > 0;
                                         const mineralsArr = Array.isArray(d.minerals) ? d.minerals : [];
-                                        const mineralPcts = mineralsArr.map(m=>m.pct_eaten).filter(p=>p!=null).map(p=>parseFloat(p)||0);
-                                        const avgMineralPct = mineralPcts.length>0 ? (mineralPcts.reduce((s,p)=>s+p,0)/mineralPcts.length) : null;
                                         const hasMinerals = mineralsArr.length>0;
                                         const hasMort=(d.mortality_count||0)>0;
                                         const rawCmt=d.comments==null?'':String(d.comments).trim();
@@ -569,7 +567,7 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                                             <span style={{color:hasAlfalfa?'#92400e':'#9ca3af',fontWeight:hasAlfalfa?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasAlfalfa?`alfalfa ${Math.round(alfalfaLbs)} lb`:'no alfalfa'}</span>
                                             <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage_kv)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasVolt?`\u26a1 ${d.fence_voltage_kv} kV`:'no voltage'}</span>
                                             <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-                                              {hasMinerals&&<span style={{...chipBase,background:'#f0fdf4',color:'#065f46',border:'1px solid #bbf7d0'}}>{avgMineralPct!=null?'Min '+Math.round(avgMineralPct)+'%':'Minerals: Yes'}</span>}
+                                              {hasMinerals&&<span style={{...chipBase,background:'#f0fdf4',color:'#065f46',border:'1px solid #bbf7d0'}}>Minerals: Yes</span>}
                                               {chipYes('Waterers',d.waterers_working!==false)}
                                             </span>
                                           </div>

@@ -104,7 +104,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   },[formType]);
   // Sheep: cattle-parity shape — feeds + minerals jsonb, matching sheep_dailys
   // after migration 012. Source list is cattleFeedInputs filtered by flock in herd_scope.
-  const [sForm,setSForm]=React.useState({date:todayStr(),teamMember:'',flock:'',feeds:[{feedId:'',qty:''}],minerals:[{feedId:'',lbs:'',pctEaten:''}],fenceVoltageKv:'',waterersWorking:true,mortalityCount:'',comments:''});
+  const [sForm,setSForm]=React.useState({date:todayStr(),teamMember:'',flock:'',feeds:[{feedId:'',qty:''}],minerals:[{feedId:'',lbs:''}],fenceVoltageKv:'',waterersWorking:true,comments:''});
 
   React.useEffect(()=>{ if(layerGroupNames.length>0&&!eForm.g1n) setEForm(f=>({...f,g1n:layerGroupNames[0]||'',g2n:layerGroupNames[1]||'',g3n:layerGroupNames[2]||'',g4n:layerGroupNames[3]||''})); },[layerGroupNames.join(',')]);
 
@@ -234,13 +234,12 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
         is_creep: false,
       };
     }).filter(Boolean);
-    const mineralsJ = (sForm.minerals||[]).filter(m=>m.feedId && ((m.lbs!==''&&m.lbs!=null)||(m.pctEaten!==''&&m.pctEaten!=null))).map(m=>{
+    const mineralsJ = (sForm.minerals||[]).filter(m=>m.feedId && m.lbs!==''&&m.lbs!=null).map(m=>{
       const fi = cattleFeedInputs.find(x=>x.id===m.feedId);
       if(!fi) return null;
       return {
         feed_input_id: fi.id, name: fi.name,
-        lbs: m.lbs!==''&&m.lbs!=null ? parseFloat(m.lbs) : null,
-        pct_eaten: m.pctEaten!==''&&m.pctEaten!=null ? parseFloat(m.pctEaten) : null,
+        lbs: parseFloat(m.lbs),
       };
     }).filter(Boolean);
     const rec={
@@ -249,7 +248,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
       feeds: feedsJ, minerals: mineralsJ,
       fence_voltage_kv: sForm.fenceVoltageKv!==''?parseFloat(sForm.fenceVoltageKv):null,
       waterers_working: !!sForm.waterersWorking,
-      mortality_count: sForm.mortalityCount!==''?parseInt(sForm.mortalityCount):0,
+      mortality_count: 0,
       comments: sForm.comments||null,
       source: 'admin_add_report',
     };
@@ -582,7 +581,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                     <div style={sec}>
                       <div style={{fontSize:13,fontWeight:600,color:'#0f766e',marginBottom:10}}>Minerals</div>
                       {sForm.minerals.map((row,ri)=>(
-                        <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
+                        <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
                           <div>
                             {ri===0&&<label style={{...lbl,fontSize:12}}>Mineral</label>}
                             <select value={row.feedId} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inp,fontSize:13,padding:'8px 10px'}}>
@@ -595,10 +594,6 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                             <input type="number" min="0" step="0.1" value={row.lbs} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,lbs:e.target.value}:r)}))} placeholder="0" style={{...inp,fontSize:13,padding:'8px 10px'}}/>
                           </div>
                           <div>
-                            {ri===0&&<label style={{...lbl,fontSize:12}}>% eaten</label>}
-                            <input type="number" min="0" max="200" value={row.pctEaten} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,pctEaten:e.target.value}:r)}))} placeholder="100" style={{...inp,fontSize:13,padding:'8px 10px'}}/>
-                          </div>
-                          <div>
                             {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
                             {sForm.minerals.length>1?(
                               <button type="button" onClick={()=>setSForm(f=>({...f,minerals:f.minerals.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'×'}</button>
@@ -606,7 +601,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                           </div>
                         </div>
                       ))}
-                      <button type="button" onClick={()=>setSForm(f=>({...f,minerals:[...f.minerals,{feedId:'',lbs:'',pctEaten:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #d8b4fe',background:'transparent',color:'#6b21a8',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Mineral</button>
+                      <button type="button" onClick={()=>setSForm(f=>({...f,minerals:[...f.minerals,{feedId:'',lbs:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #d8b4fe',background:'transparent',color:'#6b21a8',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Mineral</button>
                     </div>
                   );
                 })()}
@@ -616,10 +611,6 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                     {isEnabled('sheep-dailys','waterers_working')&&<div><label style={lbl}>{getFieldLabel('sheep-dailys','waterers_working','Waterers working?')}{reqStar('sheep-dailys','waterers_working')}</label><WcfYN val={sForm.waterersWorking} onChange={v=>setSForm(f=>({...f,waterersWorking:v}))}/></div>}
                   </div>
                 </div>
-                {isEnabled('sheep-dailys','mortality_count')&&<div style={sec}>
-                  <label style={lbl}>{getFieldLabel('sheep-dailys','mortality_count','Mortality count')}{reqStar('sheep-dailys','mortality_count')}</label>
-                  <input type="number" min="0" value={sForm.mortalityCount} onChange={e=>setSForm(f=>({...f,mortalityCount:e.target.value}))} placeholder="0" style={inp}/>
-                </div>}
                 {isEnabled('sheep-dailys','comments')&&<div style={sec}>
                   <label style={lbl}>{getFieldLabel('sheep-dailys','comments','Issues / Comments')}{reqStar('sheep-dailys','comments')}</label>
                   <textarea value={sForm.comments} onChange={e=>setSForm(f=>({...f,comments:e.target.value}))} rows={3} placeholder="Type 0 if nothing to report" style={{...inp,resize:'vertical'}}/>
