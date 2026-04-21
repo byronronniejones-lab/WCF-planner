@@ -61,8 +61,23 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
   const dailys30 = dailys.filter(d => (d.date||'') >= cutoff30);
   const totalMort30 = dailys30.reduce((s,d) => s + (parseInt(d.mortality_count)||0), 0);
   const totalReports30 = dailys30.length;
-  const minRecords = dailys30.filter(d => d.minerals_given && d.minerals_pct_eaten != null);
-  const avgMinPct = minRecords.length > 0 ? (minRecords.reduce((s,d) => s + (parseFloat(d.minerals_pct_eaten)||0), 0) / minRecords.length) : null;
+  // Helpers to pull hay bales / alfalfa lbs / mineral pct out of the feeds/
+  // minerals jsonb arrays populated by migration 012 + new submits.
+  const sumBales = d => Array.isArray(d.feeds) ? d.feeds.reduce((s,f) => s + (f.category === 'hay' && f.unit === 'bale' ? (parseFloat(f.qty)||0) : 0), 0) : 0;
+  const sumAlfalfa = d => Array.isArray(d.feeds) ? d.feeds.reduce((s,f) => {
+    const nm = String(f.feed_name||'').toLowerCase();
+    return s + (nm.includes('alfalfa') ? (parseFloat(f.lbs_as_fed)||0) : 0);
+  }, 0) : 0;
+  // Average % eaten across all mineral entries on a row that report a pct.
+  const mineralPctOn = d => {
+    if(!Array.isArray(d.minerals)) return null;
+    const pcts = d.minerals.map(m => m.pct_eaten).filter(p => p != null);
+    if(pcts.length === 0) return null;
+    return pcts.reduce((s,p) => s + (parseFloat(p)||0), 0) / pcts.length;
+  };
+
+  const minRecords = dailys30.filter(d => mineralPctOn(d) != null);
+  const avgMinPct = minRecords.length > 0 ? (minRecords.reduce((s,d) => s + mineralPctOn(d), 0) / minRecords.length) : null;
 
   function computeWindow(fromISO, toISO) {
     const windowDays = Math.max(1, Math.floor((new Date(toISO+'T12:00:00') - new Date(fromISO+'T12:00:00'))/86400000) + 1);
@@ -71,11 +86,12 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
     const reportDates = new Set();
     for(const d of rows) {
       reportDates.add(d.date);
-      bales += parseFloat(d.bales_of_hay) || 0;
-      alfalfa += parseFloat(d.lbs_of_alfalfa) || 0;
+      bales += sumBales(d);
+      alfalfa += sumAlfalfa(d);
       mort += parseInt(d.mortality_count) || 0;
       if(d.fence_voltage_kv != null) { fenceSum += parseFloat(d.fence_voltage_kv) || 0; fenceN++; }
-      if(d.minerals_given && d.minerals_pct_eaten != null) { minSum += parseFloat(d.minerals_pct_eaten) || 0; minN++; }
+      const pct = mineralPctOn(d);
+      if(pct != null) { minSum += pct; minN++; }
       if(d.waterers_working != null) { if(d.waterers_working) watersOk++; watersN++; }
     }
     return { bales, alfalfa, mort, fenceAvg: fenceN > 0 ? fenceSum/fenceN : null, minAvg: minN > 0 ? minSum/minN : null, watersPct: watersN > 0 ? (watersOk/watersN)*100 : null, reportDays: reportDates.size, days: windowDays };

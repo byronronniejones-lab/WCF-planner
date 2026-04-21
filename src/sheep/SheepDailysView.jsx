@@ -1,8 +1,9 @@
-// Rewritten 2026-04-21 session: parity pass vs CattleDailysView.
-// Adds date-range/team/flock filters, source tri-state chip, summary metrics,
-// card-tile layout with date dividers, pagination (wcfSelectAll pattern via
-// range()), DeleteModal integration (window._wcfConfirmDelete), team-member
-// dropdown, AdminAddReportModal for admin "+ Add Report", pendingEdit support.
+// Rewritten 2026-04-21 session (2nd pass): full cattle parity.
+// sheep_dailys now carries feeds + minerals jsonb (migration 012); feed master
+// list is the shared cattle_feed_inputs, scoped to sheep flocks via herd_scope.
+// Edit modal has multi-row feed + mineral pickers (mirrors CattleDailysView).
+// Card tile shows feed / mineral summary lines. Comments that are just
+// "None" / "none" / "0" / "n/a" no longer render as a pill badge.
 import React from 'react';
 import { S } from '../lib/styles.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
@@ -21,6 +22,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
   const [records, setRecords] = useState([]);
+  const [feedInputs, setFeedInputs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -35,8 +37,8 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const [srcFilter, setSrcFilter] = useState('all');
 
   const FLOCKS = ['rams','ewes','feeders','processed','deceased','sold'];
+  const SHEEP_ACTIVE_FLOCKS = ['rams','ewes','feeders'];
   const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders', processed:'Processed', deceased:'Deceased', sold:'Sold'};
-  // Palette matches src/sheep/SheepFlocksView.jsx for intra-module consistency.
   const FLOCK_COLORS = {
     rams:      {bg:'#f0fdfa', tx:'#0f766e', bd:'#5eead4'},
     ewes:      {bg:'#fdf4ff', tx:'#86198f', bd:'#f0abfc'},
@@ -61,6 +63,9 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
         }
       }
       setLoading(false);
+    });
+    sb.from('cattle_feed_inputs').select('*').eq('status','active').order('category').order('name').then(({data}) => {
+      if(data) setFeedInputs(data.filter(f => (f.herd_scope||[]).some(h => SHEEP_ACTIVE_FLOCKS.includes(h))));
     });
     sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => { if(data && data.data) setTeamMembers(data.data); });
   }, []);
@@ -89,10 +94,12 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
       date: d.date || todayStr(),
       teamMember: d.team_member || '',
       flock: d.flock || 'ewes',
-      balesOfHay: d.bales_of_hay != null ? String(d.bales_of_hay) : '',
-      lbsOfAlfalfa: d.lbs_of_alfalfa != null ? String(d.lbs_of_alfalfa) : '',
-      mineralsGiven: !!d.minerals_given,
-      mineralsPctEaten: d.minerals_pct_eaten != null ? String(d.minerals_pct_eaten) : '',
+      feeds: Array.isArray(d.feeds) && d.feeds.length > 0
+        ? d.feeds.map(f => ({feedId: f.feed_input_id || '', qty: f.qty != null ? String(f.qty) : ''}))
+        : [{feedId:'', qty:''}],
+      minerals: Array.isArray(d.minerals) && d.minerals.length > 0
+        ? d.minerals.map(m => ({feedId: m.feed_input_id || '', lbs: m.lbs != null ? String(m.lbs) : '', pctEaten: m.pct_eaten != null ? String(m.pct_eaten) : ''}))
+        : [{feedId:'', lbs:'', pctEaten:''}],
       fenceVoltageKv: d.fence_voltage_kv != null ? String(d.fence_voltage_kv) : '',
       waterersWorking: d.waterers_working == null ? true : !!d.waterers_working,
       mortalityCount: d.mortality_count != null ? String(d.mortality_count) : '',
@@ -105,14 +112,33 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
 
   async function saveEdit() {
     if(!form.date || !form.teamMember || !form.flock) { alert('Date, team member, and flock are required.'); return; }
+    const feedsJ = (form.feeds||[]).filter(r => r.feedId && r.qty !== '' && r.qty != null).map(r => {
+      const fi = feedInputs.find(x => x.id === r.feedId);
+      if(!fi) return null;
+      const qty = parseFloat(r.qty) || 0;
+      const unitWt = parseFloat(fi.unit_weight_lbs) || 1;
+      return {
+        feed_input_id: fi.id, feed_name: fi.name, category: fi.category,
+        qty, unit: fi.unit,
+        lbs_as_fed: Math.round(qty*unitWt*100)/100,
+        is_creep: false,
+      };
+    }).filter(Boolean);
+    const mineralsJ = (form.minerals||[]).filter(m => m.feedId && ((m.lbs !== '' && m.lbs != null) || (m.pctEaten !== '' && m.pctEaten != null))).map(m => {
+      const fi = feedInputs.find(x => x.id === m.feedId);
+      if(!fi) return null;
+      return {
+        feed_input_id: fi.id, name: fi.name,
+        lbs: m.lbs !== '' && m.lbs != null ? parseFloat(m.lbs) : null,
+        pct_eaten: m.pctEaten !== '' && m.pctEaten != null ? parseFloat(m.pctEaten) : null,
+      };
+    }).filter(Boolean);
     const rec = {
       date: form.date,
       team_member: form.teamMember,
       flock: form.flock,
-      bales_of_hay: form.balesOfHay !== '' ? parseFloat(form.balesOfHay) : null,
-      lbs_of_alfalfa: form.lbsOfAlfalfa !== '' ? parseFloat(form.lbsOfAlfalfa) : null,
-      minerals_given: !!form.mineralsGiven,
-      minerals_pct_eaten: form.mineralsPctEaten !== '' ? parseFloat(form.mineralsPctEaten) : null,
+      feeds: feedsJ,
+      minerals: mineralsJ,
       fence_voltage_kv: form.fenceVoltageKv !== '' ? parseFloat(form.fenceVoltageKv) : null,
       waterers_working: !!form.waterersWorking,
       mortality_count: form.mortalityCount !== '' ? parseInt(form.mortalityCount) : 0,
@@ -145,10 +171,13 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const teamOpts = [...new Set(records.map(r => r.team_member).filter(Boolean))].sort();
   const fi = {padding:'6px 10px', borderRadius:6, border:'1px solid #d1d5db', fontSize:12, fontFamily:'inherit', background:'white', width:'auto'};
 
-  // Summary metrics for the filtered view
-  const totalMort   = filtered.reduce((s,r) => s + (parseInt(r.mortality_count)||0), 0);
-  const totalBales  = filtered.reduce((s,r) => s + (parseFloat(r.bales_of_hay)||0), 0);
-  const totalAlfalfa= filtered.reduce((s,r) => s + (parseFloat(r.lbs_of_alfalfa)||0), 0);
+  // Summary metrics derived from feeds jsonb (hay bales + alfalfa lbs)
+  const totalMort = filtered.reduce((s,r) => s + (parseInt(r.mortality_count)||0), 0);
+  const totalBales = filtered.reduce((s,r) => s + (Array.isArray(r.feeds) ? r.feeds.reduce((ss,f) => ss + (f.category === 'hay' && f.unit === 'bale' ? (parseFloat(f.qty)||0) : 0), 0) : 0), 0);
+  const totalAlfalfa = filtered.reduce((s,r) => s + (Array.isArray(r.feeds) ? r.feeds.reduce((ss,f) => {
+    const nm = String(f.feed_name||'').toLowerCase();
+    return ss + (nm.includes('alfalfa') ? (parseFloat(f.lbs_as_fed)||0) : 0);
+  }, 0) : 0), 0);
 
   return (
     <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
@@ -167,7 +196,6 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
         </div>
         {showAddModal && <AdminAddReportModal sb={sb} formType="sheep" onClose={() => setShowAddModal(false)} onSaved={recs => { setRecords(p => [...(Array.isArray(recs)?recs:[recs]), ...p]); refreshDailys && refreshDailys('sheep'); }}/>}
 
-        {/* Filters */}
         <div style={{display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'center'}}>
           <input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} style={{...fi, width:130}}/>
           <span style={{fontSize:12, color:'#6b7280'}}>to</span>
@@ -203,7 +231,17 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                 const dateIdx = dates.indexOf(d.date);
                 const shadeBg = dateIdx%2 === 0 ? 'white' : '#f8fafc';
                 const fc = FLOCK_COLORS[d.flock] || FLOCK_COLORS.ewes;
-                const mineralsSummary = d.minerals_given ? (d.minerals_pct_eaten != null ? (d.minerals_pct_eaten + '% eaten') : 'Yes') : 'No';
+                const feedSummary = Array.isArray(d.feeds) && d.feeds.length > 0
+                  ? d.feeds.map(f => (f.feed_name||'?') + (f.qty != null ? (' ' + f.qty + ' ' + (f.unit||'')) : '')).join(', ')
+                  : '';
+                const mineralSummary = Array.isArray(d.minerals) && d.minerals.length > 0
+                  ? d.minerals.map(m => {
+                      const parts = [m.name || '?'];
+                      if(m.lbs != null) parts.push(m.lbs + ' lb');
+                      if(m.pct_eaten != null) parts.push(m.pct_eaten + '% eaten');
+                      return parts.join(' ');
+                    }).join(', ')
+                  : '';
                 return (
                   <React.Fragment key={d.id}>
                     {showDivider && <div style={{height:2, background:'#9ca3af', margin:'6px 0', borderRadius:1}}/>}
@@ -227,11 +265,8 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                           <span style={{fontSize:10, fontWeight:600, padding:'2px 7px', borderRadius:4, background:d.waterers_working===false?'#fef2f2':'#f0fdf4', color:d.waterers_working===false?'#b91c1c':'#065f46', border:d.waterers_working===false?'1px solid #fecaca':'1px solid #bbf7d0'}}>{'Water: '+(d.waterers_working===false?'No':'Yes')}</span>
                         </span>
                       </div>
-                      <div style={{fontSize:11, color:'#92400e', display:'flex', gap:10, flexWrap:'wrap'}}>
-                        {d.bales_of_hay != null && <span>{'🌾 ' + d.bales_of_hay + ' bales hay'}</span>}
-                        {d.lbs_of_alfalfa != null && <span>{'• ' + d.lbs_of_alfalfa + ' lb alfalfa'}</span>}
-                        <span style={{color:'#6b21a8'}}>{'🧂 Minerals: ' + mineralsSummary}</span>
-                      </div>
+                      {feedSummary && <div style={{fontSize:11, color:'#92400e'}}>{'🌾 ' + feedSummary}</div>}
+                      {mineralSummary && <div style={{fontSize:11, color:'#6b21a8'}}>{'🧂 ' + mineralSummary}</div>}
                       {(hasMort || comments) && (
                         <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:2}}>
                           {hasMort && <span style={{fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca'}}>{'💀 ' + d.mortality_count + ' mort.'}</span>}
@@ -248,7 +283,6 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
         {hasMore && <div style={{textAlign:'center', padding:'0.5rem', fontSize:11, color:'#9ca3af'}}>Loading more records{'…'}</div>}
       </div>
 
-      {/* Edit modal */}
       {showForm && form && (
         <div onClick={() => { setShowForm(false); setEditId(null); setForm(null); }} style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'1rem', overflowY:'auto'}}>
           <div onClick={e => e.stopPropagation()} style={{background:'white', borderRadius:12, width:'100%', maxWidth:520, boxShadow:'0 8px 32px rgba(0,0,0,.2)', marginTop:40}}>
@@ -276,24 +310,52 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                 </select>
               </div>
 
-              {/* Feed fields — hide for add_feed source */}
+              {/* Feeds — multi-row picker, mirrors CattleDailysView */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <span style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5}}>FEEDS</span>
+                  <button type="button" onClick={() => setForm({...form, feeds:[...(form.feeds||[]), {feedId:'', qty:''}]})} style={{fontSize:11, color:'#0f766e', background:'none', border:'1px solid #5eead4', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
+                </div>
+                {form.feeds.map((r,ri) => {
+                  const feedsForFlock = feedInputs.filter(f => f.category !== 'mineral' && (!form.flock || (f.herd_scope||[]).includes(form.flock)));
+                  const fiRow = feedInputs.find(x => x.id === r.feedId);
+                  return (
+                    <div key={ri} style={{display:'grid', gridTemplateColumns:'2fr 1fr auto', gap:6, marginBottom:6, alignItems:'center'}}>
+                      <select value={r.feedId} onChange={e => setForm({...form, feeds:form.feeds.map((x,i) => i===ri ? {...x, feedId:e.target.value} : x)})}>
+                        <option value=''>Select feed...</option>
+                        {feedsForFlock.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.1" value={r.qty} onChange={e => setForm({...form, feeds:form.feeds.map((x,i) => i===ri ? {...x, qty:e.target.value} : x)})} placeholder={fiRow ? fiRow.unit : 'qty'}/>
+                      <button type="button" onClick={() => setForm({...form, feeds:form.feeds.filter((_,i) => i!==ri)})} style={{padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, background:'white', color:'#9ca3af', cursor:'pointer'}}>{'×'}</button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Minerals — dropdown + lbs + optional pct_eaten per entry */}
+              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <span style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5}}>MINERALS</span>
+                  <button type="button" onClick={() => setForm({...form, minerals:[...(form.minerals||[]), {feedId:'', lbs:'', pctEaten:''}]})} style={{fontSize:11, color:'#6b21a8', background:'none', border:'1px solid #d8b4fe', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
+                </div>
+                {form.minerals.map((r,ri) => {
+                  const minerals = feedInputs.filter(f => f.category === 'mineral');
+                  return (
+                    <div key={ri} style={{display:'grid', gridTemplateColumns:'2fr 1fr 1fr auto', gap:6, marginBottom:6, alignItems:'center'}}>
+                      <select value={r.feedId} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, feedId:e.target.value} : x)})}>
+                        <option value=''>Select mineral...</option>
+                        {minerals.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.1" value={r.lbs} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, lbs:e.target.value} : x)})} placeholder="lbs"/>
+                      <input type="number" min="0" max="200" value={r.pctEaten} onChange={e => setForm({...form, minerals:form.minerals.map((x,i) => i===ri ? {...x, pctEaten:e.target.value} : x)})} placeholder="% eaten"/>
+                      <button type="button" onClick={() => setForm({...form, minerals:form.minerals.filter((_,i) => i!==ri)})} style={{padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, background:'white', color:'#9ca3af', cursor:'pointer'}}>{'×'}</button>
+                    </div>
+                  );
+                })}
+              </div>
+
               {editSource !== 'add_feed_webform' && (
                 <React.Fragment>
-                  <div>
-                    <label style={S.label}>Bales of Hay</label>
-                    <input type="number" min="0" step="0.25" value={form.balesOfHay} onChange={e => setForm({...form, balesOfHay:e.target.value})} placeholder="0"/>
-                  </div>
-                  <div>
-                    <label style={S.label}>Alfalfa (lbs)</label>
-                    <input type="number" min="0" value={form.lbsOfAlfalfa} onChange={e => setForm({...form, lbsOfAlfalfa:e.target.value})} placeholder="0"/>
-                  </div>
-                  <div style={{gridColumn:'1/-1', display:'flex', alignItems:'center', gap:12}}>
-                    <label style={{fontSize:13, display:'flex', alignItems:'center', gap:6, cursor:'pointer'}}>
-                      <input type="checkbox" checked={!!form.mineralsGiven} onChange={e => setForm({...form, mineralsGiven:e.target.checked})}/>
-                      Minerals given?
-                    </label>
-                    {form.mineralsGiven && <div style={{flex:1}}><input type="number" min="0" max="200" placeholder="% eaten" value={form.mineralsPctEaten} onChange={e => setForm({...form, mineralsPctEaten:e.target.value})}/></div>}
-                  </div>
                   <div>
                     <label style={S.label}>Fence Voltage (kV)</label>
                     <input type="number" min="0" step="0.1" value={form.fenceVoltageKv} onChange={e => setForm({...form, fenceVoltageKv:e.target.value})} placeholder="0.0"/>
@@ -312,7 +374,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                   </div>
                   <div style={{gridColumn:'1/-1'}}>
                     <label style={S.label}>Issues / Comments</label>
-                    <textarea value={form.comments} onChange={e => setForm({...form, comments:e.target.value})} rows={3} style={{resize:'vertical'}}/>
+                    <textarea value={form.comments} onChange={e => setForm({...form, comments:e.target.value})} rows={3} placeholder="Type 0 if nothing to report" style={{resize:'vertical'}}/>
                   </div>
                 </React.Fragment>
               )}

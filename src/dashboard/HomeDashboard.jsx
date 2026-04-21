@@ -544,10 +544,17 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                                         const FLOCK_LBL={rams:'Rams',ewes:'Ewes',feeders:'Feeders'};
                                         const FLOCK_C={rams:{bg:'#f0fdfa',tx:'#0f766e',bd:'#5eead4'},ewes:{bg:'#fdf4ff',tx:'#86198f',bd:'#f0abfc'},feeders:{bg:'#fefce8',tx:'#854d0e',bd:'#fde047'}};
                                         const fc=FLOCK_C[d.flock]||FLOCK_C.ewes;
-                                        const hasHay=d.bales_of_hay!=null;
-                                        const hasAlfalfa=d.lbs_of_alfalfa!=null&&parseFloat(d.lbs_of_alfalfa)>0;
+                                        // Cattle-parity jsonb: feeds[]/minerals[]. Hay bales = hay + bale-unit entries. Alfalfa = any feed with "alfalfa" in its name.
+                                        const feedsArr = Array.isArray(d.feeds) ? d.feeds : [];
+                                        const bales = feedsArr.reduce((s,f)=>s+((f.category==='hay'&&f.unit==='bale')?(parseFloat(f.qty)||0):0),0);
+                                        const alfalfaLbs = feedsArr.reduce((s,f)=>{const nm=String(f.feed_name||'').toLowerCase();return s+(nm.includes('alfalfa')?(parseFloat(f.lbs_as_fed)||0):0);},0);
+                                        const hasHay = bales > 0;
+                                        const hasAlfalfa = alfalfaLbs > 0;
+                                        const mineralsArr = Array.isArray(d.minerals) ? d.minerals : [];
+                                        const mineralPcts = mineralsArr.map(m=>m.pct_eaten).filter(p=>p!=null).map(p=>parseFloat(p)||0);
+                                        const avgMineralPct = mineralPcts.length>0 ? (mineralPcts.reduce((s,p)=>s+p,0)/mineralPcts.length) : null;
+                                        const hasMinerals = mineralsArr.length>0;
                                         const hasMort=(d.mortality_count||0)>0;
-                                        // Treat "none"/"0"/"n/a" as nothing-to-report; don't render a comment badge.
                                         const rawCmt=d.comments==null?'':String(d.comments).trim();
                                         const cmtLow=rawCmt.toLowerCase();
                                         const comment=(rawCmt===''||cmtLow==='none'||cmtLow==='0'||cmtLow==='n/a'||cmtLow==='na'||cmtLow==='-')?'':rawCmt;
@@ -557,11 +564,11 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                                           <div style={{display:'grid',gridTemplateColumns:'120px 90px 90px 90px 90px 1fr',alignItems:'center',gap:12}}>
                                             <span style={{padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:700,background:fc.bg,color:fc.tx,border:'1px solid '+fc.bd,textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{FLOCK_LBL[d.flock]||d.flock||'\u2014'}</span>
                                             {teamChip}
-                                            <span style={{color:hasHay?'#92400e':'#9ca3af',fontWeight:hasHay?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasHay?`\ud83c\udf3e ${d.bales_of_hay} bales`:'no hay'}</span>
-                                            <span style={{color:hasAlfalfa?'#92400e':'#9ca3af',fontWeight:hasAlfalfa?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasAlfalfa?`alfalfa ${d.lbs_of_alfalfa} lb`:'no alfalfa'}</span>
+                                            <span style={{color:hasHay?'#92400e':'#9ca3af',fontWeight:hasHay?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasHay?`\ud83c\udf3e ${bales} bales`:'no hay'}</span>
+                                            <span style={{color:hasAlfalfa?'#92400e':'#9ca3af',fontWeight:hasAlfalfa?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasAlfalfa?`alfalfa ${Math.round(alfalfaLbs)} lb`:'no alfalfa'}</span>
                                             <span style={{color:hasVolt?voltColor(parseFloat(d.fence_voltage_kv)):'#9ca3af',fontWeight:hasVolt?600:400,fontSize:12,whiteSpace:'nowrap'}}>{hasVolt?`\u26a1 ${d.fence_voltage_kv} kV`:'no voltage'}</span>
                                             <span style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-                                              {d.minerals_given!=null&&<span style={{...chipBase,background:d.minerals_given?'#f0fdf4':'#f3f4f6',color:d.minerals_given?'#065f46':'#6b7280',border:'1px solid '+(d.minerals_given?'#bbf7d0':'#e5e7eb')}}>{d.minerals_given?(d.minerals_pct_eaten!=null?'Min '+d.minerals_pct_eaten+'%':'Minerals: Yes'):'Minerals: No'}</span>}
+                                              {hasMinerals&&<span style={{...chipBase,background:'#f0fdf4',color:'#065f46',border:'1px solid #bbf7d0'}}>{avgMineralPct!=null?'Min '+Math.round(avgMineralPct)+'%':'Minerals: Yes'}</span>}
                                               {chipYes('Waterers',d.waterers_working!==false)}
                                             </span>
                                           </div>

@@ -119,13 +119,9 @@ export const DEFAULT_WEBFORMS_CONFIG = {
       {id:"s-flock",title:"Sheep Flock",system:true,fields:[
         {id:"flock",label:"Flock (rams/ewes/feeders)",type:"flock_picker",required:true,system:true,enabled:true}
       ]},
-      {id:"s-feed",title:"Feed",system:false,fields:[
-        {id:"bales_of_hay",label:"Bales of Hay",type:"number",required:false,system:false,enabled:true},
-        {id:"lbs_of_alfalfa",label:"Alfalfa (lbs)",type:"number",required:false,system:false,enabled:true}
-      ]},
-      {id:"s-minerals",title:"Minerals",system:false,fields:[
-        {id:"minerals_given",label:"Minerals given?",type:"yes_no",required:false,system:false,enabled:true},
-        {id:"minerals_pct_eaten",label:"% of Minerals Eaten",type:"number",required:false,system:false,enabled:true}
+      {id:"s-feeds",title:"Feeds & Minerals",system:true,fields:[
+        {id:"feeds",label:"Feeds (multi-line)",type:"feed_lines",required:false,system:true,enabled:true},
+        {id:"minerals",label:"Minerals (multi-line, with % eaten)",type:"mineral_lines",required:false,system:true,enabled:true}
       ]},
       {id:"s-checks",title:"Daily Checks",system:false,fields:[
         {id:"fence_voltage_kv",label:"Fence Voltage (kV)",type:"number",required:false,system:false,enabled:true},

@@ -40,6 +40,9 @@ const LivestockFeedInputsPanel = ({sb}) => {
     {v:'backgrounders', l:'Backgrounders'},
     {v:'finishers',     l:'Finishers'},
     {v:'bulls',         l:'Bulls'},
+    {v:'rams',          l:'Rams'},
+    {v:'ewes',          l:'Ewes'},
+    {v:'feeders',       l:'Feeders'},
   ];
 
   async function loadFeeds() {
@@ -541,7 +544,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
 
               {/* Herd scope */}
               <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:10, marginTop:4}}>
-                <div style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5, marginBottom:8}}>{'\ud83d\udc04 HERD SCOPE'} <span style={{fontWeight:400, color:'#9ca3af'}}>(which herds see this in webform dropdowns)</span></div>
+                <div style={{fontSize:11, fontWeight:700, color:'#4b5563', letterSpacing:.5, marginBottom:8}}>{'\ud83d\udc04 HERD / FLOCK SCOPE'} <span style={{fontWeight:400, color:'#9ca3af'}}>(which herds/flocks see this in webform dropdowns)</span></div>
                 <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
                   {HERD_SCOPE_OPTIONS.map(h => {
                     const on = (form.herd_scope || []).includes(h.v);

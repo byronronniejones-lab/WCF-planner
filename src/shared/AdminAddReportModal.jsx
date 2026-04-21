@@ -98,12 +98,13 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   const [cForm,setCForm]=React.useState({date:todayStr(),teamMember:'',herd:'',feeds:[{feedId:'',qty:'',isCreep:false}],minerals:[{feedId:'',lbs:''}],fenceVoltage:'',waterChecked:true,issues:''});
   const [cattleFeedInputs,setCattleFeedInputs]=React.useState([]);
   React.useEffect(()=>{
-    if(formType!=='cattle') return;
+    // Loaded for both cattle and sheep (sheep reuses the master list via herd_scope).
+    if(formType!=='cattle' && formType!=='sheep') return;
     sb.from('cattle_feed_inputs').select('*').eq('status','active').then(({data})=>{ if(data) setCattleFeedInputs(data); });
   },[formType]);
-  // Sheep: flat field set (no jsonb). Schema: sheep_dailys — bales_of_hay, lbs_of_alfalfa,
-  // minerals_given + minerals_pct_eaten, fence_voltage_kv, waterers_working, mortality_count, comments.
-  const [sForm,setSForm]=React.useState({date:todayStr(),teamMember:'',flock:'',balesOfHay:'',lbsOfAlfalfa:'',mineralsGiven:false,mineralsPctEaten:'',fenceVoltageKv:'',waterersWorking:true,mortalityCount:'',comments:''});
+  // Sheep: cattle-parity shape — feeds + minerals jsonb, matching sheep_dailys
+  // after migration 012. Source list is cattleFeedInputs filtered by flock in herd_scope.
+  const [sForm,setSForm]=React.useState({date:todayStr(),teamMember:'',flock:'',feeds:[{feedId:'',qty:''}],minerals:[{feedId:'',lbs:'',pctEaten:''}],fenceVoltageKv:'',waterersWorking:true,mortalityCount:'',comments:''});
 
   React.useEffect(()=>{ if(layerGroupNames.length>0&&!eForm.g1n) setEForm(f=>({...f,g1n:layerGroupNames[0]||'',g2n:layerGroupNames[1]||'',g3n:layerGroupNames[2]||'',g4n:layerGroupNames[3]||''})); },[layerGroupNames.join(',')]);
 
@@ -219,13 +220,33 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   async function submitSheep(){
     if(!sForm.date||!sForm.teamMember||!sForm.flock){setErr('Date, team member, and flock are required.');return;}
     setErr('');setSubmitting(true);
+    // Shared livestock feed master list — sheep uses cattleFeedInputs with
+    // sheep flocks in herd_scope (migration 012 seeds three defaults).
+    const feedsJ = (sForm.feeds||[]).filter(f=>f.feedId && f.qty!==''&&f.qty!=null).map(f=>{
+      const fi = cattleFeedInputs.find(x=>x.id===f.feedId);
+      if(!fi) return null;
+      const qty = parseFloat(f.qty)||0;
+      const unitWt = parseFloat(fi.unit_weight_lbs)||1;
+      return {
+        feed_input_id: fi.id, feed_name: fi.name, category: fi.category,
+        qty, unit: fi.unit,
+        lbs_as_fed: Math.round(qty*unitWt*100)/100,
+        is_creep: false,
+      };
+    }).filter(Boolean);
+    const mineralsJ = (sForm.minerals||[]).filter(m=>m.feedId && ((m.lbs!==''&&m.lbs!=null)||(m.pctEaten!==''&&m.pctEaten!=null))).map(m=>{
+      const fi = cattleFeedInputs.find(x=>x.id===m.feedId);
+      if(!fi) return null;
+      return {
+        feed_input_id: fi.id, name: fi.name,
+        lbs: m.lbs!==''&&m.lbs!=null ? parseFloat(m.lbs) : null,
+        pct_eaten: m.pctEaten!==''&&m.pctEaten!=null ? parseFloat(m.pctEaten) : null,
+      };
+    }).filter(Boolean);
     const rec={
       id:genId(), submitted_at:new Date().toISOString(),
       date:sForm.date, team_member:sForm.teamMember, flock:sForm.flock,
-      bales_of_hay: sForm.balesOfHay!==''?parseFloat(sForm.balesOfHay):null,
-      lbs_of_alfalfa: sForm.lbsOfAlfalfa!==''?parseFloat(sForm.lbsOfAlfalfa):null,
-      minerals_given: !!sForm.mineralsGiven,
-      minerals_pct_eaten: sForm.mineralsPctEaten!==''?parseFloat(sForm.mineralsPctEaten):null,
+      feeds: feedsJ, minerals: mineralsJ,
       fence_voltage_kv: sForm.fenceVoltageKv!==''?parseFloat(sForm.fenceVoltageKv):null,
       waterers_working: !!sForm.waterersWorking,
       mortality_count: sForm.mortalityCount!==''?parseInt(sForm.mortalityCount):0,
@@ -521,20 +542,74 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
                     <div style={{gridColumn:'1/-1'}}><label style={lbl}>Flock <span style={{color:'#b91c1c'}}>*</span></label><select value={sForm.flock} onChange={e=>setSForm(f=>({...f,flock:e.target.value}))} style={inp}><option value=''>Select flock...</option>{SHEEP_FLOCKS.map(f=><option key={f.v} value={f.v}>{f.l}</option>)}</select></div>
                   </div>
                 </div>
-                <div style={sec}>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                    {isEnabled('sheep-dailys','bales_of_hay')&&<div><label style={lbl}>{getFieldLabel('sheep-dailys','bales_of_hay','Bales of Hay')}{reqStar('sheep-dailys','bales_of_hay')}</label><input type="number" min="0" step="0.25" value={sForm.balesOfHay} onChange={e=>setSForm(f=>({...f,balesOfHay:e.target.value}))} placeholder="0" style={inp}/></div>}
-                    {isEnabled('sheep-dailys','lbs_of_alfalfa')&&<div><label style={lbl}>{getFieldLabel('sheep-dailys','lbs_of_alfalfa','Alfalfa (lbs)')}{reqStar('sheep-dailys','lbs_of_alfalfa')}</label><input type="number" min="0" value={sForm.lbsOfAlfalfa} onChange={e=>setSForm(f=>({...f,lbsOfAlfalfa:e.target.value}))} placeholder="0" style={inp}/></div>}
-                  </div>
-                  {isEnabled('sheep-dailys','minerals_given')&&<div style={{marginTop:10}}>
-                    <label style={lbl}>{getFieldLabel('sheep-dailys','minerals_given','Minerals given?')}{reqStar('sheep-dailys','minerals_given')}</label>
-                    <WcfYN val={sForm.mineralsGiven} onChange={v=>setSForm(f=>({...f,mineralsGiven:v}))}/>
-                  </div>}
-                  {sForm.mineralsGiven&&isEnabled('sheep-dailys','minerals_pct_eaten')&&<div style={{marginTop:10}}>
-                    <label style={lbl}>{getFieldLabel('sheep-dailys','minerals_pct_eaten','% of Minerals Eaten')}</label>
-                    <input type="number" min="0" max="200" value={sForm.mineralsPctEaten} onChange={e=>setSForm(f=>({...f,mineralsPctEaten:e.target.value}))} placeholder="100" style={inp}/>
-                  </div>}
-                </div>
+                {/* Feeds — multi-row picker; mirrors cattle. Filtered to selected flock. */}
+                {sForm.flock && (() => {
+                  const feedsForFlock = cattleFeedInputs.filter(f => f.category !== 'mineral' && (f.herd_scope||[]).includes(sForm.flock));
+                  const unitFor = id => { const fi = cattleFeedInputs.find(x=>x.id===id); return fi ? fi.unit : ''; };
+                  return (
+                    <div style={sec}>
+                      <div style={{fontSize:13,fontWeight:600,color:'#0f766e',marginBottom:10}}>Feed</div>
+                      {sForm.feeds.map((row,ri)=>(
+                        <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
+                          <div>
+                            {ri===0&&<label style={{...lbl,fontSize:12}}>Feed Type</label>}
+                            <select value={row.feedId} onChange={e=>setSForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inp,fontSize:13,padding:'8px 10px'}}>
+                              <option value=''>Select feed...</option>
+                              {feedsForFlock.map(ff=><option key={ff.id} value={ff.id}>{ff.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            {ri===0&&<label style={{...lbl,fontSize:12}}>{row.feedId?'Qty ('+unitFor(row.feedId)+')':'Qty'}</label>}
+                            <input type="number" min="0" step="0.1" value={row.qty} onChange={e=>setSForm(f=>({...f,feeds:f.feeds.map((r,i)=>i===ri?{...r,qty:e.target.value}:r)}))} placeholder="0" style={{...inp,fontSize:13,padding:'8px 10px'}}/>
+                          </div>
+                          <div>
+                            {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
+                            {sForm.feeds.length>1?(
+                              <button type="button" onClick={()=>setSForm(f=>({...f,feeds:f.feeds.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'×'}</button>
+                            ):(<div style={{width:38}}/>)}
+                          </div>
+                        </div>
+                      ))}
+                      <button type="button" onClick={()=>setSForm(f=>({...f,feeds:[...f.feeds,{feedId:'',qty:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #5eead4',background:'transparent',color:'#0f766e',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Feed</button>
+                    </div>
+                  );
+                })()}
+
+                {/* Minerals — multi-row picker + pct_eaten per entry. */}
+                {sForm.flock && (() => {
+                  const mineralsForFlock = cattleFeedInputs.filter(f => f.category === 'mineral' && (f.herd_scope||[]).includes(sForm.flock));
+                  return (
+                    <div style={sec}>
+                      <div style={{fontSize:13,fontWeight:600,color:'#0f766e',marginBottom:10}}>Minerals</div>
+                      {sForm.minerals.map((row,ri)=>(
+                        <div key={ri} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr auto',gap:8,marginBottom:10,alignItems:'end'}}>
+                          <div>
+                            {ri===0&&<label style={{...lbl,fontSize:12}}>Mineral</label>}
+                            <select value={row.feedId} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,feedId:e.target.value}:r)}))} style={{...inp,fontSize:13,padding:'8px 10px'}}>
+                              <option value=''>Select mineral...</option>
+                              {mineralsForFlock.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            {ri===0&&<label style={{...lbl,fontSize:12}}>Lbs</label>}
+                            <input type="number" min="0" step="0.1" value={row.lbs} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,lbs:e.target.value}:r)}))} placeholder="0" style={{...inp,fontSize:13,padding:'8px 10px'}}/>
+                          </div>
+                          <div>
+                            {ri===0&&<label style={{...lbl,fontSize:12}}>% eaten</label>}
+                            <input type="number" min="0" max="200" value={row.pctEaten} onChange={e=>setSForm(f=>({...f,minerals:f.minerals.map((r,i)=>i===ri?{...r,pctEaten:e.target.value}:r)}))} placeholder="100" style={{...inp,fontSize:13,padding:'8px 10px'}}/>
+                          </div>
+                          <div>
+                            {ri===0&&<div style={{fontSize:12,marginBottom:4,opacity:0}}>.</div>}
+                            {sForm.minerals.length>1?(
+                              <button type="button" onClick={()=>setSForm(f=>({...f,minerals:f.minerals.filter((_,i)=>i!==ri)}))} style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',color:'#9ca3af',cursor:'pointer',fontFamily:'inherit',fontSize:14}}>{'×'}</button>
+                            ):(<div style={{width:38}}/>)}
+                          </div>
+                        </div>
+                      ))}
+                      <button type="button" onClick={()=>setSForm(f=>({...f,minerals:[...f.minerals,{feedId:'',lbs:'',pctEaten:''}]}))} style={{width:'100%',padding:10,borderRadius:8,border:'2px dashed #d8b4fe',background:'transparent',color:'#6b21a8',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:6}}>+ Add Mineral</button>
+                    </div>
+                  );
+                })()}
                 <div style={sec}>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                     {isEnabled('sheep-dailys','fence_voltage_kv')&&<div><label style={lbl}>{getFieldLabel('sheep-dailys','fence_voltage_kv','Fence Voltage (kV)')}{reqStar('sheep-dailys','fence_voltage_kv')}</label><input type="number" min="0" step="0.1" value={sForm.fenceVoltageKv} onChange={e=>setSForm(f=>({...f,fenceVoltageKv:e.target.value}))} placeholder="0.0" style={inp}/></div>}

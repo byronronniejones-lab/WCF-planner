@@ -27,10 +27,9 @@ const AddFeedWebform = ({sb}) => {
   const [cattleFeedInputs, setCattleFeedInputs] = React.useState([]);
   const [cattleHerd, setCattleHerd] = React.useState('');
   const [cattleRows, setCattleRows] = React.useState([{feedId:'', qty:'', isCreep:false}]);
-  // Sheep quick-log state
+  // Sheep quick-log state (cattle-parity shape after migration 012)
   const [sheepFlock, setSheepFlock] = React.useState('');
-  const [sheepBales, setSheepBales] = React.useState('');
-  const [sheepAlfalfa, setSheepAlfalfa] = React.useState('');
+  const [sheepRows, setSheepRows] = React.useState([{feedId:'', qty:''}]);
 
   React.useEffect(function(){
     sb.from('cattle_feed_inputs').select('*').eq('status','active').order('category').order('name').then(function(res){
@@ -130,14 +129,23 @@ const AddFeedWebform = ({sb}) => {
   function handleSubmit(){
     if(!date){setErr('Please enter a date.');return;}
     if(isRequired('team_member')&&!teamMember){setErr(getLabel('team_member','Team Member')+' is required.');return;}
-    // Sheep-specific submit path
+    // Sheep-specific submit path (feeds jsonb — shared cattle_feed_inputs)
     if(program==='sheep'){
       if(!sheepFlock){setErr('Please select a flock.');return;}
-      var baleNum=sheepBales!==''?parseFloat(sheepBales):null;
-      var alfalfaNum=sheepAlfalfa!==''?parseFloat(sheepAlfalfa):null;
-      if((baleNum==null||baleNum<=0)&&(alfalfaNum==null||alfalfaNum<=0)){
-        setErr('Enter bales of hay, alfalfa lbs, or both.');return;
-      }
+      var sFilledRows=(sheepRows||[]).filter(function(r){return r.feedId && r.qty!=='' && r.qty!=null;});
+      if(sFilledRows.length===0){setErr('Please enter at least one feed.');return;}
+      var sFeedsJ=sFilledRows.map(function(r){
+        var fi=cattleFeedInputs.find(function(x){return x.id===r.feedId;});
+        if(!fi) return null;
+        var qty=parseFloat(r.qty)||0;
+        var unitWt=parseFloat(fi.unit_weight_lbs)||1;
+        return {
+          feed_input_id: fi.id, feed_name: fi.name, category: fi.category,
+          qty: qty, unit: fi.unit,
+          lbs_as_fed: Math.round(qty*unitWt*100)/100,
+          is_creep: false,
+        };
+      }).filter(Boolean);
       setErr('');setSubmitting(true);
       var sRec={
         id: String(Date.now())+Math.random().toString(36).slice(2,6),
@@ -145,14 +153,9 @@ const AddFeedWebform = ({sb}) => {
         date: date,
         team_member: teamMember || null,
         flock: sheepFlock,
-        bales_of_hay: baleNum,
-        lbs_of_alfalfa: alfalfaNum,
-        minerals_given: false,
-        minerals_pct_eaten: null,
-        fence_voltage_kv: null,
-        waterers_working: null,
+        feeds: sFeedsJ,
+        minerals: [],
         mortality_count: 0,
-        comments: null,
         source: 'add_feed_webform',
       };
       sb.from('sheep_dailys').insert(sRec).then(function(res){
@@ -233,7 +236,7 @@ const AddFeedWebform = ({sb}) => {
     });
   }
 
-  function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setSheepFlock('');setSheepBales('');setSheepAlfalfa('');setErr('');setDone(false);}
+  function resetForm(){setBatchLabel('');setFeedType('');setFeedLbs('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setSheepFlock('');setSheepRows([{feedId:'',qty:''}]);setErr('');setDone(false);}
 
   var wfBg={minHeight:'100vh',background:'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)',padding:'1rem',fontFamily:'inherit'};
   var cardS={background:'white',borderRadius:12,padding:'20px',marginBottom:12,boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
@@ -256,7 +259,7 @@ const AddFeedWebform = ({sb}) => {
           {program==='cattle'
             ? (cattleHerd+' \u2014 '+cattleRows.filter(function(r){return r.feedId&&r.qty;}).length+' feed entr'+(cattleRows.filter(function(r){return r.feedId&&r.qty;}).length===1?'y':'ies'))
             : program==='sheep'
-              ? (sheepFlock+' \u2014 '+(sheepBales?sheepBales+' bales':'')+(sheepBales&&sheepAlfalfa?', ':'')+(sheepAlfalfa?sheepAlfalfa+' lb alfalfa':''))
+              ? (sheepFlock+' \u2014 '+sheepRows.filter(function(r){return r.feedId&&r.qty;}).length+' feed entr'+(sheepRows.filter(function(r){return r.feedId&&r.qty;}).length===1?'y':'ies'))
             : (batchLabel+' \u2014 '+feedLbs+' lbs'+(feedType?' ('+feedType+')':''))+(extraGroups.filter(function(g){return g.batchLabel;}).length>0?(' + '+extraGroups.filter(function(g){return g.batchLabel;}).length+' more'):'')
           }
         </div>
@@ -335,7 +338,7 @@ const AddFeedWebform = ({sb}) => {
               {key:'cattle',icon:'\ud83d\udc04',label:'Cattle',color:'#991b1b',bg:'#fef2f2'},
               {key:'sheep',icon:'\ud83d\udc11',label:'Sheep',color:'#0f766e',bg:'#f0fdfa'},
             ].map(function(p){return (
-              <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setSheepFlock('');setSheepBales('');setSheepAlfalfa('');}} style={{
+              <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setSheepFlock('');setSheepRows([{feedId:'',qty:''}]);}} style={{
                 padding:'10px 4px',borderRadius:10,cursor:'pointer',fontFamily:'inherit',
                 border:program===p.key?'2px solid '+p.color:'2px solid #e5e7eb',
                 background:program===p.key?p.bg:'white',
@@ -414,24 +417,41 @@ const AddFeedWebform = ({sb}) => {
 
         {program==='sheep'&&(
           <React.Fragment>
+            {/* Flock selector */}
             <div style={cardS}>
               <label style={lblS}>Flock<span style={{color:'#dc2626',marginLeft:2}}>*</span></label>
-              <select value={sheepFlock} onChange={function(e){setSheepFlock(e.target.value);}} style={inpS}>
+              <select value={sheepFlock} onChange={function(e){setSheepFlock(e.target.value);setSheepRows([{feedId:'',qty:''}]);}} style={inpS}>
                 <option value=''>Select flock...</option>
                 <option value='rams'>Rams</option>
                 <option value='ewes'>Ewes</option>
                 <option value='feeders'>Feeders</option>
               </select>
             </div>
-            <div style={cardS}>
-              <label style={lblS}>Bales of Hay</label>
-              <input type="number" min="0" step="0.25" value={sheepBales} onChange={function(e){setSheepBales(e.target.value);}} placeholder="0" style={inpS}/>
-            </div>
-            <div style={cardS}>
-              <label style={lblS}>Alfalfa (lbs)</label>
-              <input type="number" min="0" value={sheepAlfalfa} onChange={function(e){setSheepAlfalfa(e.target.value);}} placeholder="0" style={inpS}/>
-            </div>
-            <div style={{fontSize:11,color:'#6b7280',textAlign:'center',marginBottom:12,fontStyle:'italic'}}>Enter bales, alfalfa, or both.</div>
+            {/* Feed rows — one per feed, sheep-scoped feed master list */}
+            {sheepFlock&&(function(){
+              var feedsForFlock = cattleFeedInputs.filter(function(f){return f.category!=='mineral' && (f.herd_scope||[]).includes(sheepFlock);});
+              return sheepRows.map(function(row,ri){
+                var fi = cattleFeedInputs.find(function(x){return x.id===row.feedId;});
+                return React.createElement('div',{key:ri,style:cardS},
+                  sheepRows.length>1 && React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+                    React.createElement('div',{style:{fontSize:13,fontWeight:600,color:'#0f766e'}},'Feed '+(ri+1)),
+                    React.createElement('button',{type:'button',onClick:function(){setSheepRows(sheepRows.filter(function(_,i){return i!==ri;}));},style:{background:'none',border:'none',color:'#9ca3af',cursor:'pointer',fontSize:18}},'×')
+                  ),
+                  React.createElement('label',{style:lblS},'Feed Type'),
+                  React.createElement('select',{value:row.feedId,onChange:function(e){setSheepRows(sheepRows.map(function(r,i){return i===ri?Object.assign({},r,{feedId:e.target.value}):r;}));},style:inpS},
+                    React.createElement('option',{value:''},'Select feed...'),
+                    feedsForFlock.map(function(f){return React.createElement('option',{key:f.id,value:f.id},f.name);})
+                  ),
+                  React.createElement('div',{style:{marginTop:10}},
+                    React.createElement('label',{style:lblS},fi?'Qty ('+fi.unit+')':'Qty'),
+                    React.createElement('input',{type:'number',min:'0',step:'0.1',value:row.qty,onChange:function(e){setSheepRows(sheepRows.map(function(r,i){return i===ri?Object.assign({},r,{qty:e.target.value}):r;}));},placeholder:'0',style:inpS})
+                  )
+                );
+              });
+            })()}
+            {sheepFlock&&(
+              <button type="button" onClick={function(){setSheepRows(sheepRows.concat([{feedId:'',qty:''}]));}} style={{width:'100%',padding:12,borderRadius:10,border:'2px dashed #5eead4',background:'transparent',color:'#0f766e',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>+ Add Feed</button>
+            )}
           </React.Fragment>
         )}
 
