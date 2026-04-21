@@ -608,9 +608,15 @@ function App(){
       // Unknown path — snap to home + replaceState so back button doesn't
       // revisit the dead URL. The hash-compat shim (Phase 3.3) handles
       // legacy /#weighins etc. before this effect sees the pathname.
+      //
+      // Preserve location.hash on the fallback: a URL like
+      // /garbage#access_token=...&type=recovery would otherwise lose its
+      // hash, breaking supabase's password-recovery flow. SetPasswordScreen
+      // reads window.location.hash directly, so surviving to / with the
+      // hash intact lets the recovery listener fire normally.
       syncingFromUrl.current = true;
       setView('home');
-      navigate('/', { replace: true });
+      navigate({ pathname: '/', hash: location.hash }, { replace: true });
     }
   }, [location.pathname]);
   useEffect(() => {
