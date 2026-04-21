@@ -2514,3 +2514,120 @@ These would cut WebformsAdminView, PigBatchesView, and SowsView prop lists rough
 ---
 
 *End of April 21, 2026 session. Commits `b2e9a86` → `0a19f4b` pushed to `vite-migration`. Phase 2 structurally complete. main.jsx down 90% from pre-migration. Ronnie preview-verified. Production unchanged. Cutover is the obvious next move; waiting on Ronnie's say-so.*
+
+---
+
+# 21. Session Update — April 21, 2026 (session 2) — Phase 2 cutover + Phase 3 URL routing
+
+Back-to-back double session. Production went live on the Vite bundle (first cutover) and Phase 3 (URL routing + working back button) shipped to a new branch and got local-smoke-tested. Second cutover is staged, waiting on approval.
+
+## 21.1 Phase 2 cutover — merged to production
+
+Merge commit `9799960` went to `main`. Netlify rebuilt `wcfplanner.com` in ~90s. 86 files changed (~24k insertions, ~19k deletions). No runtime regressions reported — Ronnie's verdict: "everything looks good. Zero difference noticed actually."
+
+That's the right outcome — §1 non-goals list says "zero behavior changes." The speed win (Babel-in-browser ~900 KB transpile at cold-load eliminated) is invisible on desktop warm caches. It'll surface on mobile cellular cold-load, where pre-cutover the app took ~2-3 s to become interactive; post-cutover should be near-instant.
+
+**Backup verification before pulling the trigger:**
+- Git `main` pre-cutover HEAD: `1059b18`.
+- OneDrive backup was documented in MIGRATION_PLAN §3 but didn't actually exist on disk. Recreated from git: `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` (1.3 MB, blob SHA `e06c66df…`). Now matches the doc.
+- Netlify deploy history: confirmed Ronnie knows the "Publish deploy" rollback button path.
+
+All three backup layers in place:
+1. `git revert -m 1 9799960 && git push` — durable rollback.
+2. Netlify UI → Deploys → "Publish deploy" on any pre-merge build — fastest rollback (~60s).
+3. OneDrive file — nuclear option if git ever gets confused.
+
+## 21.2 Phase 3 — URL routing adapter approach (branch, not yet merged)
+
+Shipped to `phase-3-router` in 4 commits. Smoke-tested locally via `npm run dev` on `localhost:5173`. Not yet merged to main.
+
+**Decision: adapter over full migration.** Full migration would replace every `setView('X')` with `useNavigate('/path')` — ~50 call sites across extracted views. Adapter approach wraps root in `<BrowserRouter>` and adds a bidirectional URL ↔ view sync effect inside App. Same user-visible outcome (URLs update, back button works, deep links resolve), zero ripple across extracted views. Rationale: the `view` state machine isn't a hack, it's clean. Adding URL as a mirror is a layer, not a workaround.
+
+| SHA | Commit | What |
+|---|---|---|
+| `963a006` | Phase 3.1 | Installed `react-router-dom@7`. Created `src/lib/routes.js` (`VIEW_TO_PATH`, `PATH_TO_VIEW`, `HASH_COMPAT`). No behavior change. |
+| `aa0f1ff` | Phase 3.2 | `<BrowserRouter>` wraps root. URLSync effects inside App: Effect 1 (URL → view) on location change, Effect 2 (view → URL) on setView, `syncingFromUrl` ref as the infinite-loop guard. Bundle +36 KB (+13 KB gzip). |
+| `923f758` | Phase 3.3 | Hash-compat shim at module-scope, runs synchronously before `root.render()`. Rewrites `/#weighins`, `/#addfeed`, `/#webforms` to clean paths via `history.replaceState`. Recovery hash `/#access_token=…` left alone for supabase email-template backcompat. |
+| `598b90d` | Polish | URLSync fallback preserves `location.hash` (prevents password-recovery breakage on mangled URLs). `UIContext.initialView()` reads pathname first (via `PATH_TO_VIEW` import), so `/weighins` cold-load doesn't flash LoginScreen. |
+
+**What the §7 plan called for vs what shipped:**
+- 3.1, 3.2, 3.3: shipped as planned.
+- 3.4 (SetPasswordScreen `/reset?token=…`): **deliberately skipped.** Auth tokens in URL query params end up in server logs, Referer headers, browser history. Supabase's default hash-fragment format exists specifically to avoid this. Security regression to move them. Hash-based recovery stays.
+- 3.5 (remove old hash-detection effect): **no-op.** No such effect existed — hash bookmarks were handled via `UIContext.initialView()` peeking at `window.location.hash`, which is still needed as defensive backup.
+- 3.6 (404 catch-all): **folded into 3.2.** URLSync unknown-URL fallback snaps to home + replaces state.
+
+## 21.3 URL shape after Phase 3 (for bookmarking / sharing)
+
+| Path | View |
+|---|---|
+| `/` | Home dashboard |
+| `/broiler` | Broiler home |
+| `/broiler/timeline` | Broiler timeline view |
+| `/broiler/batches` | Broiler batches list |
+| `/broiler/feed` | Broiler feed page |
+| `/broiler/dailys` | Broiler dailys admin |
+| `/broiler/weighins` | Broiler weigh-ins admin |
+| `/pig` | Pig home |
+| `/pig/breeding` | Pig breeding gantt |
+| `/pig/farrowing` | Farrowing records |
+| `/pig/sows` | Sows directory |
+| `/pig/batches` | Pig feeder batches |
+| `/pig/feed` | Pig feed page |
+| `/pig/dailys` | Pig dailys admin |
+| `/pig/weighins` | Pig weigh-ins admin |
+| `/layer` | Layer home |
+| `/layer/groups` | Legacy layer groups editor |
+| `/layer/batches` | Layer batches (brooder → housing lifecycle) |
+| `/layer/dailys` | Layer dailys admin |
+| `/layer/eggs` | Egg dailys admin |
+| `/cattle` | Cattle home |
+| `/cattle/herds` | Cattle herds + directory |
+| `/cattle/breeding` | Cattle breeding cycles |
+| `/cattle/batches` | Cattle processing batches |
+| `/cattle/dailys` | Cattle dailys admin |
+| `/cattle/weighins` | Cattle weigh-in sessions |
+| `/sheep` | Sheep home |
+| `/sheep/flocks` | Sheep flocks + directory |
+| `/sheep/dailys` | Sheep dailys admin |
+| `/sheep/weighins` | Sheep weigh-in sessions |
+| `/equipment` | Equipment placeholder |
+| `/admin` | Webforms + feed costs admin (admin-only) |
+| `/webforms` | Public webform hub (no-auth) |
+| `/addfeed` | Add feed webform (no-auth) |
+| `/weighins` | Weigh-ins webform (no-auth) |
+
+Unknown URLs → home. Legacy `/#X` hash bookmarks rewritten to `/X` transparently on load.
+
+## 21.4 Smoke test — local `npm run dev`
+
+Ronnie ran `npm run dev` at `localhost:5173` after the 4 commits. Verdict: "Smooth as a baby bottom." All tabs navigate, URLs update, back button works. Local testing hits the same prod Supabase as production, so it's a functionally-identical test environment — no need to double-verify on Netlify preview.
+
+## 21.5 What's next — Phase 3 cutover pending
+
+**Second cutover is ready when Ronnie says so.** Same procedure as Phase 2:
+1. `git checkout main && git merge phase-3-router --no-ff -m "Merge phase-3-router: URL routing + back-button support"`
+2. `git push origin main`
+3. Netlify rebuilds production (~90s).
+4. Smoke-test on `wcfplanner.com` — back button, URL updates, deep links.
+
+Rollback paths: identical to Phase 2 — Netlify UI "Publish deploy" on previous build, or `git revert -m 1 <merge-commit> && git push`.
+
+**After second cutover, housekeeping:**
+- Delete stale branches once structurally merged: `vite-migration` + `phase-3-router`. Git history preserved in merge commits. (Waiting on explicit say-so per hard rules.)
+- Consider (optional, no user-facing impact):
+  - Promote App-scope state to contexts to shrink WebformsAdminView/PigBatchesView/SowsView prop lists (feedOrders, adminTab, wf* form state, auto-save timers).
+  - Extract `renderWebform()` (legacy pig-dailys public form) out of App.
+  - Lift `detectConflicts` + `writeBroilerBatchAvg` + `CATTLE_*` constants from main.jsx to a new `lib/conflicts.js` / `lib/cattle.js`.
+- Phase 3 → full router migration (replace setView with useNavigate across all views). Not needed. Pure idiomatic-React-Router churn with no user-visible benefit. Adapter stays unless there's a specific reason to migrate.
+
+## 21.6 Hard rules (unchanged)
+
+- `commit` = do it. One-line status.
+- `push` / `merge` / `deploy` = fresh explicit approval same turn.
+- Don't merge `phase-3-router` → `main` without "merge" or "cutover" from Ronnie.
+- Destructive Supabase ops need approval.
+- §10 don't-touch list is authoritative.
+
+---
+
+*End of April 21, 2026 session 2. Commits `963a006` → `598b90d` pushed to `phase-3-router`. Phase 2 live on `wcfplanner.com` since `9799960`. Phase 3 functionally complete on branch, local-smoke-tested, awaiting cutover approval.*

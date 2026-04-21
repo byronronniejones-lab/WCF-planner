@@ -12,6 +12,8 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
+import { VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT } from './lib/routes.js';
 
 // Phase 2.0.0: foundation lib helpers extracted from this file. Importing
 // here makes them available throughout the verbatim-ported app body without
@@ -168,6 +170,23 @@ try {
     if(k && k.startsWith('wcf-babel-')) localStorage.removeItem(k);
   }
 } catch(e) { /* localStorage disabled — fine */ }
+
+// ── PHASE 3.3 — LEGACY HASH-BOOKMARK COMPAT SHIM ──
+// Pre-Phase-3 users may have saved /#weighins, /#addfeed, /#webforms
+// URLs in browser bookmarks, Slack links, or printed materials. The
+// router only reads pathname, not hash, so we rewrite the URL here
+// synchronously BEFORE root.render() runs — otherwise BrowserRouter
+// would read pathname='/' and the adapter would snap to home.
+//
+// The supabase password-recovery hash (/#access_token=...&type=recovery)
+// is deliberately NOT rewritten — SetPasswordScreen still parses it
+// from window.location.hash for backward compat with the email template.
+try {
+  const h = window.location.hash;
+  if (h && HASH_COMPAT[h]) {
+    window.history.replaceState(null, '', HASH_COMPAT[h]);
+  }
+} catch(e) { /* no history API / locked-down browser — skip */ }
 
 // ── LAZY LOAD SHEETJS ──
 // SheetJS (xlsx) is ~600KB minified and only used when opening processor
@@ -568,6 +587,49 @@ function App(){
   const canEditAll   = isMgmt;          // management + admin can edit anything
   const canDeleteDailys = isMgmt || isFarmTeam; // all roles can delete dailys
   const canDeleteAll = isAdmin;          // only admin can delete batches, groups, etc.
+
+  // Phase 3.2: URL ↔ view adapter. The existing `view` state machine stays
+  // the primary API — setView('X') still works from every component. These
+  // effects mirror `view` into the URL and read URL → view on mount +
+  // back/forward button. No changes required at any setView call site.
+  //
+  // Infinite-loop guard: syncingFromUrl flag distinguishes URL-driven view
+  // changes (skip the view→URL effect) from code-driven view changes
+  // (do push a URL entry so the back button works).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const syncingFromUrl = React.useRef(false);
+  useEffect(() => {
+    const viewFromUrl = PATH_TO_VIEW[location.pathname];
+    if (viewFromUrl && viewFromUrl !== view) {
+      syncingFromUrl.current = true;
+      setView(viewFromUrl);
+    } else if (!viewFromUrl) {
+      // Unknown path — snap to home + replaceState so back button doesn't
+      // revisit the dead URL. The hash-compat shim (Phase 3.3) handles
+      // legacy /#weighins etc. before this effect sees the pathname.
+      //
+      // Preserve location.hash on the fallback: a URL like
+      // /garbage#access_token=...&type=recovery would otherwise lose its
+      // hash, breaking supabase's password-recovery flow. SetPasswordScreen
+      // reads window.location.hash directly, so surviving to / with the
+      // hash intact lets the recovery listener fire normally.
+      syncingFromUrl.current = true;
+      setView('home');
+      navigate({ pathname: '/', hash: location.hash }, { replace: true });
+    }
+  }, [location.pathname]);
+  useEffect(() => {
+    if (syncingFromUrl.current) {
+      syncingFromUrl.current = false;
+      return;
+    }
+    const pathFromView = VIEW_TO_PATH[view];
+    if (pathFromView && pathFromView !== location.pathname) {
+      navigate(pathFromView);
+    }
+  }, [view]);
+
   const autoSaveTimer = React.useRef(null);
   const pigAutoSaveTimer = React.useRef(null);
   const subAutoSaveTimer = React.useRef(null);
@@ -1952,32 +2014,37 @@ const breedTlStartInit = () => {
   return toISO(d);
 };
 
+// Phase 3.2: BrowserRouter wraps the provider tree so App (and any
+// extracted view, if it ever wants to) can use useLocation/useNavigate.
+// The view ↔ URL sync lives inside App via useViewUrlSync() below.
 root.render(
-  <AuthProvider>
-    <BatchesProvider formInit={EMPTY_FORM} tlStartInit={thisMonday}>
-      <PigProvider
-        initialFarrowing={INITIAL_FARROWING}
-        initialBreeders={INITIAL_BREEDERS}
-        breedTlStartInit={breedTlStartInit}
-      >
-        <LayerProvider>
-          <DailysRecentProvider>
-            <CattleHomeProvider>
-              <SheepHomeProvider>
-                <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
-                  <FeedCostsProvider>
-                    <UIProvider>
-                      <App/>
-                    </UIProvider>
-                  </FeedCostsProvider>
-                </WebformsConfigProvider>
-              </SheepHomeProvider>
-            </CattleHomeProvider>
-          </DailysRecentProvider>
-        </LayerProvider>
-      </PigProvider>
-    </BatchesProvider>
-  </AuthProvider>
+  <BrowserRouter>
+    <AuthProvider>
+      <BatchesProvider formInit={EMPTY_FORM} tlStartInit={thisMonday}>
+        <PigProvider
+          initialFarrowing={INITIAL_FARROWING}
+          initialBreeders={INITIAL_BREEDERS}
+          breedTlStartInit={breedTlStartInit}
+        >
+          <LayerProvider>
+            <DailysRecentProvider>
+              <CattleHomeProvider>
+                <SheepHomeProvider>
+                  <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
+                    <FeedCostsProvider>
+                      <UIProvider>
+                        <App/>
+                      </UIProvider>
+                    </FeedCostsProvider>
+                  </WebformsConfigProvider>
+                </SheepHomeProvider>
+              </CattleHomeProvider>
+            </DailysRecentProvider>
+          </LayerProvider>
+        </PigProvider>
+      </BatchesProvider>
+    </AuthProvider>
+  </BrowserRouter>
 );
 
 // Fade out the static boot loader after React's first paint. Two RAFs to
