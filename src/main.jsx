@@ -145,6 +145,12 @@ import LayerBatchesView from './layer/LayerBatchesView.jsx';
 // VIEW_TO_PROGRAM as props (they still live in App).
 import HomeDashboard from './dashboard/HomeDashboard.jsx';
 
+// Phase 2 Round 6 tail: top nav bar + program sub-nav. Pulls view/menu
+// state + auth + form-open booleans from their respective contexts; App()
+// wraps this in a local Header closure below so every extracted view can
+// still receive a zero-arg <Header/> prop (no ripple changes).
+import HeaderBase from './shared/Header.jsx';
+
 // ── ONE-TIME LEGACY BABEL-CACHE CLEANUP ──
 // Pre-Vite versions cached compiled JSX in localStorage under wcf-babel-*
 // keys (~600 KB per user). With Vite there's no in-browser transpile, so
@@ -1490,109 +1496,13 @@ function App(){
   // S defined globally above App
 
   // ── HEADER ──
-  const Header=()=>{
-    const poultryViews = ['broilerHome','timeline','list','feed','broilerdailys','broilerweighins'];
-    const pigViews     = ['pigsHome','breeding','farrowing','sows','pigbatches','pigs','pigdailys','pigweighins'];
-    const cattleViews  = ['cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches'];
-    const sheepViews   = ['sheepHome','sheepflocks','sheepdailys','sheepweighins'];
-    const inPoultry    = poultryViews.includes(view) || showForm;
-    const inPigs       = pigViews.includes(view) || showBreedForm || showFarrowForm || showDailyForm;
-    const inLayers     = ['layersHome','layerbatches','layerdailys','eggdailys'].includes(view);
-    const inCattle     = cattleViews.includes(view);
-    const inSheep      = sheepViews.includes(view);
-    const inSection    = inPoultry || inPigs || inLayers || inCattle || inSheep;
-    const nb = (active) => ({
-      padding:'7px 16px', borderRadius:8, cursor:'pointer', fontFamily:'inherit',
-      fontSize:12, fontWeight:active?700:500, whiteSpace:'nowrap',
-      border: active?'2px solid #085041':'1px solid #d1d5db',
-      background: active?'#085041':'white',
-      color: active?'white':'#374151',
-    });
-    const ghostBtn = {padding:'7px 12px',borderRadius:8,border:'1px solid #d1d5db',cursor:'pointer',fontSize:12,fontWeight:500,background:'white',color:'#6b7280',fontFamily:'inherit',whiteSpace:'nowrap'};
-    return (
-    <div className="no-print">
-      {DeleteConfirmModal}
-      {/* ── Dark top bar ── */}
-      <div style={S.header}>
-        <button onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView("home");}}
-          style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>
-          <div style={{fontSize:17,fontWeight:700,letterSpacing:"-.4px",color:"white"}}>WCF Planner</div>
-          {inPoultry&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>BROILERS</span>}
-          {(['webforms'].includes(view))&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>ADMIN</span>}
-          {inPigs&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>PIGS</span>}
-          {inLayers&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>LAYERS</span>}
-          {inCattle&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>CATTLE</span>}
-          {inSheep&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>SHEEP</span>}
-        </button>
-        <div style={{fontSize:11,display:"flex",alignItems:"center",gap:5,opacity:.75}}>
-          {saveStatus==='saving'&&<span style={{color:"#a7f3d0",fontWeight:500}}>Saving…</span>}
-          {saveStatus==='saved'&&<span style={{color:"#a7f3d0",fontWeight:500}}>✓ Saved</span>}
-          {saveStatus==='error'&&<span style={{color:"#fca5a5",fontWeight:500}}>⚠ Save failed — check connection</span>}
-          {!saveStatus&&authState?.name&&<span>{authState.name} · <span style={{textTransform:"capitalize"}}>{authState?.role}</span></span>}
-        </div>
-        <div style={{display:"flex",gap:6,alignItems:"center",position:"relative"}}>
-          <div style={{position:"relative"}}>
-            <button onClick={()=>setShowMenu(m=>!m)}
-              style={{padding:"5px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",cursor:"pointer",fontSize:15,background:"rgba(255,255,255,.1)",color:"white",lineHeight:1}}>
-              ☰
-            </button>
-            {showMenu&&(
-              <div onClick={()=>setShowMenu(false)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:199}} />
-            )}
-            {showMenu&&(
-              <div style={{position:"absolute",right:0,top:"110%",background:"white",border:"1px solid #e5e7eb",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,.15)",zIndex:200,minWidth:160,overflow:"hidden"}}>
-                <button onClick={()=>{backupData();setShowMenu(false);}}
-                  style={{display:"block",width:"100%",padding:"10px 16px",border:"none",background:"none",cursor:"pointer",fontSize:13,textAlign:"left",color:"#111827",fontFamily:"inherit"}}>
-                  ⬇ Backup
-                </button>
-                <label style={{display:"block",width:"100%",padding:"10px 16px",border:"none",background:"none",cursor:"pointer",fontSize:13,textAlign:"left",color:"#111827",fontFamily:"inherit"}}>
-                  ⬆ Restore
-                  <input type="file" accept=".json" onChange={(e)=>{restoreData(e);setShowMenu(false);}} style={{display:"none"}}/>
-                </label>
-                {authState?.role==='admin'&&(
-                  <button onClick={()=>{setShowUsers(true);loadUsers();setShowMenu(false);}}
-                    style={{display:"block",width:"100%",padding:"10px 16px",border:"none",background:"none",cursor:"pointer",fontSize:13,textAlign:"left",color:"#111827",fontFamily:"inherit"}}>
-                    👥 Users
-                  </button>
-                )}
-                <div style={{height:1,background:"#e5e7eb",margin:"4px 0"}}/>
-              </div>
-            )}
-          </div>
-          <button onClick={signOut}
-            style={{padding:"5px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",cursor:"pointer",fontSize:12,fontWeight:500,background:"rgba(255,255,255,.1)",color:"white"}}>
-            Sign Out
-          </button>
-        </div>
-      </div>
-      {/* ── Light sub-nav bar — only in section views ── */}
-      {inSection&&(
-        <div style={{background:"white",borderBottom:"1px solid #e5e7eb",padding:"8px 1.25rem",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          <button onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView("home");}} style={ghostBtn}>
-            ⌂ Home
-          </button>
-          <div style={{width:1,height:20,background:"#e5e7eb",margin:"0 4px"}}/>
-          {inPoultry&&[["broilerHome","Dashboard"],["timeline","Timeline"],["list","Batches"],["broilerdailys","Dailys"],["broilerweighins","Weigh-Ins"],["feed","Poultry Feed"]].map(([v,l])=>(
-            <button key={v} style={nb(view===v&&!showForm)} onClick={()=>{setShowForm(false);setView(v);}}>{l}</button>
-          ))}
-          {inPigs&&[["pigsHome","Dashboard"],["breeding","Timeline"],["farrowing","Farrowing"],["sows","Breeding Pigs"],["pigbatches","Batches"],["pigdailys","Dailys"],["pigweighins","Weigh-Ins"],["pigs","Feed"]].map(([v,l])=>(
-            <button key={v} style={nb(view===v&&!showForm&&!showBreedForm&&!showFarrowForm)} onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView(v);}}>{l}</button>
-          ))}
-          {inLayers&&[["layersHome","Dashboard"],["layerbatches","Layer Batches"],["layerdailys","Layer Dailys"],["eggdailys","Egg Dailys"]].map(([v,l])=>(
-            <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
-          ))}
-          {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattlebreeding","Breeding"],["cattleweighins","Weigh-Ins"],["cattledailys","Dailys"],["cattlebatches","Batches"]].map(([v,l])=>(
-            <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
-          ))}
-          {inSheep&&[["sheepHome","Dashboard"],["sheepflocks","Flocks"],["sheepweighins","Weigh-Ins"],["sheepdailys","Dailys"]].map(([v,l])=>(
-            <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
-          ))}
-        </div>
-      )}
-    </div>
-    );
-  }
-
+  // Phase 2 Round 6 tail: body moved to src/shared/Header.jsx. This local
+  // closure threads App-only props (form-open booleans, App helpers, the
+  // built-up DeleteConfirmModal) into the imported HeaderBase so that every
+  // extracted view can keep calling <Header/> as a zero-arg prop.
+  const Header = () => React.createElement(HeaderBase, {
+    showDailyForm, signOut, backupData, restoreData, loadUsers, DeleteConfirmModal,
+  });
 
   // ── DELETE CONFIRM MODAL ── (proper component so useState is never conditional)
   const DeleteConfirmModal = deleteConfirm ? React.createElement(DeleteModal, {msg:deleteConfirm.message, onConfirm:deleteConfirm.onConfirm, onCancel:()=>setDeleteConfirm(null)}) : null;
