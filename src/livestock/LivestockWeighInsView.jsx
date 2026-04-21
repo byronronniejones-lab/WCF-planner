@@ -8,6 +8,7 @@
 import React from 'react';
 import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
+import { writeBroilerBatchAvg } from '../lib/broiler.js';
 import PigSendToTripModal from './PigSendToTripModal.jsx';
 const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species}) => {
   const {useState, useEffect} = React;

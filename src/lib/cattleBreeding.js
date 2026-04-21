@@ -1,4 +1,12 @@
 // Cattle breeding timeline helpers. Verbatim extract from main.jsx.
+import { addDays, toISO } from './dateUtils.js';
+import {
+  CATTLE_BULL_EXPOSURE_DAYS,
+  CATTLE_PREG_CHECK_OFFSET_DAYS,
+  CATTLE_GESTATION_DAYS,
+  CATTLE_CALVING_WINDOW_DAYS,
+  CATTLE_NURSING_DAYS,
+} from './cattle.js';
 
 export function calcCattleBreedingTimeline(exposureStart) {
   if(!exposureStart) return null;

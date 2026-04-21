@@ -1,5 +1,6 @@
 // Phase 2 Round 5 extraction (verbatim).
 import React from 'react';
+import { writeBroilerBatchAvg } from '../lib/broiler.js';
 
 const WeighInsWebform = ({sb}) => {
   const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'

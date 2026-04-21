@@ -110,6 +110,7 @@ import { DEFAULT_WEBFORMS_CONFIG } from './lib/defaults.js';
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
 import { BROODER_DAYS, CC_SCHOONER, WR_SCHOONER, WEEKS_SHOWN, LEGACY_BREEDS, RESOURCES, BREED_STYLE, STATUS_STYLE, BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps, STATUSES, ALL_HATCHERIES, LEGACY_HATCHERIES, getFeedSchedule, calcBatchFeed, calcBatchFeedForMonth, calcLayerFeedForMonth, calcTimeline, calcPoultryStatus, calcBroilerStatsFromDailys, getBatchColor, breedLabel, isNearHoliday, calcTargetHatch, suggestHatchDates } from './lib/broiler.js';
 import { BOAR_EXPOSURE_DAYS, GESTATION_DAYS, WEANING_DAYS, GROW_OUT_DAYS, PIG_GROUPS, BREEDING_STATUSES, PIG_GROUP_COLORS, PIG_GROUP_TEXT, PHASE_LABELS, calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus } from './lib/pig.js';
+import { detectConflicts } from './lib/conflicts.js';
 if (typeof window !== 'undefined') { window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache; }
 
 // Phase 2 Round 3: bigger stateful views + UsersModal.
@@ -134,6 +135,7 @@ import AddFeedWebform from './webforms/AddFeedWebform.jsx';
 import WeighInsWebform from './webforms/WeighInsWebform.jsx';
 import WebformHub from './webforms/WebformHub.jsx';
 import WebformsAdminView from './webforms/WebformsAdminView.jsx';
+import PigDailysWebform from './webforms/PigDailysWebform.jsx';
 
 // Phase 2 Round 8: equipment placeholder.
 import EquipmentPlaceholder from './equipment/EquipmentPlaceholder.jsx';
@@ -230,35 +232,10 @@ const STORAGE_KEY       = "ppp-data-v1";
 
 
 
-// ── CATTLE CONSTANTS ───────────────────────────────────────────────────────
-// See CATTLE_DESIGN.md for full module design.
-const CATTLE_HERDS         = ['mommas','backgrounders','finishers','bulls'];
-const CATTLE_OUTCOMES      = ['processed','deceased','sold'];
-const CATTLE_ALL_HERDS     = [...CATTLE_HERDS, ...CATTLE_OUTCOMES];
-
-const CATTLE_HERD_LABELS = {
-  mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls',
-  processed:'Processed', deceased:'Deceased', sold:'Sold'
-};
-
-// Red family palette (matches program palette committed in 524b4c2).
-// No purple anywhere. Bulls is wine/deep red; outcomes are neutral.
-const CATTLE_HERD_COLORS = {
-  mommas:        {bg:'#fef2f2', bd:'#fca5a5', tx:'#991b1b', bar:'#dc2626'},   // red (primary)
-  backgrounders: {bg:'#ffedd5', bd:'#fdba74', tx:'#9a3412', bar:'#ea580c'},   // orange
-  finishers:     {bg:'#fff1f2', bd:'#fda4af', tx:'#9f1239', bar:'#e11d48'},   // rose
-  bulls:         {bg:'#fee2e2', bd:'#fca5a5', tx:'#7f1d1d', bar:'#991b1b'},   // wine
-  processed:     {bg:'#f3f4f6', bd:'#d1d5db', tx:'#374151', bar:'#6b7280'},
-  deceased:      {bg:'#f9fafb', bd:'#e5e7eb', tx:'#6b7280', bar:'#9ca3af'},
-  sold:          {bg:'#eff6ff', bd:'#bfdbfe', tx:'#1e40af', bar:'#2563eb'},
-};
-
-// ── CATTLE BREEDING CONSTANTS ──────────────────────────────────────────────
-const CATTLE_BULL_EXPOSURE_DAYS     = 65;
-const CATTLE_PREG_CHECK_OFFSET_DAYS = 30;   // days after bull_exposure_end
-const CATTLE_GESTATION_DAYS         = 274;  // ~9 months
-const CATTLE_CALVING_WINDOW_DAYS    = 65;
-const CATTLE_NURSING_DAYS           = 213;  // ~7 months
+// ── CATTLE CONSTANTS ──
+// Moved to src/lib/cattle.js (Phase 2 finale polish). main.jsx no longer
+// consumes them directly — cattleBreeding.js + the views import from lib/
+// directly. See CATTLE_DESIGN.md for full module design.
 
 // Given a bull exposure start date, return the full cycle timeline.
 // All dates ISO strings. Returns null if start not provided.
@@ -303,62 +280,7 @@ const INITIAL_FARROWING = [
 // ── BUSINESS LOGIC ─────────────────────────────────────────────────────────
 
 // calcTargetHatch + suggestHatchDates + overlaps() moved to lib/broiler.js.
-
-function detectConflicts(form, batches, layerBatches, editId){
-  const tl=calcTimeline(form.hatchDate, form.breed, form.processingDate);
-  if(!tl) return [];
-  const safeAddDays=(dateStr,n)=>{
-    if(!dateStr) return null;
-    try { return toISO(addDays(dateStr,n)); } catch(e) { return null; }
-  };
-  const bEnd=safeAddDays(tl.brooderOut,  BROODER_CLEANOUT);
-  const sEnd=safeAddDays(tl.schoonerOut, SCHOONER_CLEANOUT);
-  if(!bEnd&&!sEnd) return [];
-  const out=[];
-  // Hard conflicts: broiler vs broiler
-  for(const b of batches){
-    if(b.id===editId) continue;
-    if(b.brooder===form.brooder && b.brooderIn && b.brooderOut && bEnd){
-      const exEnd=safeAddDays(b.brooderOut, BROODER_CLEANOUT);
-      if(exEnd && overlaps(tl.brooderIn,bEnd,b.brooderIn,exEnd))
-        out.push({soft:false,message:'Brooder '+form.brooder+' conflict with "'+b.name+'" (brooder '+fmtS(b.brooderIn)+'\u2013'+fmtS(b.brooderOut)+' + '+BROODER_CLEANOUT+'d cleanout)'});
-    }
-    if(b.schooner===form.schooner && b.schoonerIn && b.schoonerOut && sEnd){
-      const exEnd=safeAddDays(b.schoonerOut, SCHOONER_CLEANOUT);
-      if(exEnd && overlaps(tl.schoonerIn,sEnd,b.schoonerIn,exEnd))
-        out.push({soft:false,message:'Schooner '+form.schooner+' conflict with "'+b.name+'" (schooner '+fmtS(b.schoonerIn)+'\u2013'+fmtS(b.schoonerOut)+' + '+SCHOONER_CLEANOUT+'d cleanout)'});
-    }
-  }
-  // Soft conflicts: broiler vs layer (layer brooder/schooner names have prefix to strip)
-  if(layerBatches&&layerBatches.length){
-    for(const lb of layerBatches){
-      if(lb.status==='retired') continue;
-      if(lb.name==='Retirement Home') continue;
-      // Strip "Brooder " / "Schooner " prefix to compare with broiler form values
-      const lbBrooderId = (lb.brooder_name||'').replace(/^Brooder\s*/i,'').trim();
-      const lbSchoonerId = (lb.schooner_name||'').replace(/^Schooner\s*/i,'').trim();
-      // Brooder check
-      if(lbBrooderId && lbBrooderId===form.brooder && lb.brooder_entry_date && bEnd){
-        const lbBOut = lb.brooder_exit_date || safeAddDays(lb.brooder_entry_date,21);
-        if(lbBOut){
-          const lbBExEnd = safeAddDays(lbBOut, BROODER_CLEANOUT);
-          if(lbBExEnd && overlaps(tl.brooderIn,bEnd,lb.brooder_entry_date,lbBExEnd))
-            out.push({soft:true,message:'Brooder '+form.brooder+' overlaps layer batch "'+lb.name+'" (brooder '+fmtS(lb.brooder_entry_date)+'\u2013'+fmtS(lbBOut)+')'});
-        }
-      }
-      // Schooner check
-      if(lbSchoonerId && lbSchoonerId===form.schooner && lb.schooner_entry_date && sEnd){
-        const lbSOut = lb.schooner_exit_date || safeAddDays(lb.schooner_entry_date,119);
-        if(lbSOut){
-          const lbSExEnd = safeAddDays(lbSOut, SCHOONER_CLEANOUT);
-          if(lbSExEnd && overlaps(tl.schoonerIn,sEnd,lb.schooner_entry_date,lbSExEnd))
-            out.push({soft:true,message:'Schooner '+form.schooner+' overlaps layer batch "'+lb.name+'" (schooner '+fmtS(lb.schooner_entry_date)+'\u2013'+fmtS(lbSOut)+')'});
-        }
-      }
-    }
-  }
-  return out;
-}
+// detectConflicts moved to lib/conflicts.js (imported above).
 
 // ── EMPTY FORM ─────────────────────────────────────────────────────────────
 const EMPTY_FORM = {
@@ -413,31 +335,8 @@ function canDeleteAnything(role) { return role==='admin'; }
 // Phase 2 Round 5: AddFeedWebform moved to C:\Users\Ronni\WCF-planner\src\webforms\AddFeedWebform.jsx.
 
 
-// Recompute the broiler session's average and write it to the matching
-// batch's week4Lbs / week6Lbs in app_store.ppp-v4. ONLY runs for sessions
-// already marked complete -- draft saves never bleed into the batch tile.
-// Called from completeSession (webform), completeFromAdmin (admin), and
-// saveAdminGrid (admin in-place edits on already-complete sessions).
-async function writeBroilerBatchAvg(sb, sessionRow, sessionEntries) {
-  if(!sb || !sessionRow || sessionRow.species !== 'broiler') return;
-  if(sessionRow.status !== 'complete') return;
-  if(!sessionRow.batch_id || !(sessionRow.broiler_week === 4 || sessionRow.broiler_week === 6)) return;
-  if(!sessionEntries || sessionEntries.length === 0) return;
-  var sum = 0, n = 0;
-  for(var i=0;i<sessionEntries.length;i++){
-    var w = parseFloat(sessionEntries[i].weight);
-    if(!isNaN(w) && w > 0) { sum += w; n++; }
-  }
-  if(n === 0) return;
-  var avg = Math.round((sum / n) * 100) / 100;
-  var fieldKey = sessionRow.broiler_week === 4 ? 'week4Lbs' : 'week6Lbs';
-  var resp = await sb.from('app_store').select('data').eq('key','ppp-v4').maybeSingle();
-  if(!resp || !resp.data || !Array.isArray(resp.data.data)) return;
-  var updated = resp.data.data.map(function(b){
-    return (b.name === sessionRow.batch_id) ? Object.assign({}, b, {[fieldKey]: avg}) : b;
-  });
-  await sb.from('app_store').upsert({key:'ppp-v4', data: updated, updated_at: new Date().toISOString()}, {onConflict:'key'});
-}
+// writeBroilerBatchAvg moved to lib/broiler.js. Its two callers
+// (WeighInsWebform + LivestockWeighInsView) now import it directly.
 
 // ── WEIGH-INS WEBFORM ──────────────────────────────────────────────────────
 // Public webform for weigh-in sessions. Three species flows:
@@ -644,11 +543,9 @@ function App(){
   const [poultryFeedInventory, setPoultryFeedInventory] = useState(null); // {starter:{count,date}, grower:{count,date}, layer:{count,date}}
   const [poultryFeedExpandedMonths, setPoultryFeedExpandedMonths] = useState(new Set());
   const [adminTab,      setAdminTab]      = useState('webforms'); // 'webforms' | 'feedcosts'
-  const [wfForm,     setWfForm]     = useState(()=>{const d=new Date();return{date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,teamMember:localStorage.getItem('wcf_team')||'',batchId:'',pigCount:'',feedLbs:'',groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''};});
-  const [wfSubmitting,setWfSubmitting]= useState(false);
-  const [wfDone,     setWfDone]     = useState(false);
-  const [wfErr,      setWfErr]      = useState('');
-  const [wfGroupName,setWfGroupName]= useState('');
+  // wfForm/wfSubmitting/wfDone/wfErr/wfGroupName moved into
+  // src/webforms/PigDailysWebform.jsx as internal state — App no longer
+  // needs them; they were only ever read by the extracted webform.
   const [wfView,         setWfView]        = useState("list"); // list | edit-webform | edit-field
   const [editWfId,       setEditWfId]      = useState(null);
   const [editFieldId,    setEditFieldId]   = useState(null);
@@ -1531,7 +1428,7 @@ function App(){
   const DeleteConfirmModal = deleteConfirm ? React.createElement(DeleteModal, {msg:deleteConfirm.message, onConfirm:deleteConfirm.onConfirm, onCancel:()=>setDeleteConfirm(null)}) : null;
 
   // ── WEBFORM BYPASS — no auth required ──
-  if(view==="webform") return renderWebform();
+  if(view==="webform") return React.createElement(PigDailysWebform);
   if(view==="addfeed") return React.createElement(AddFeedWebform, {sb});
   if(view==="weighins") return React.createElement(WeighInsWebform, {sb});
   if(view==="webformhub") return React.createElement(WebformHub, {sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig});
@@ -1611,219 +1508,11 @@ function App(){
 
 
   // ── WEBFORMS ADMIN VIEW ──
-  if(view==="webforms") return React.createElement(WebformsAdminView, {Header, loadUsers, persistWebforms, saveFeedCosts, confirmDelete, adminTab, setAdminTab, wfForm, setWfForm, wfSubmitting, setWfSubmitting, wfDone, setWfDone, wfErr, setWfErr, wfGroupName, setWfGroupName, wfView, setWfView, editWfId, setEditWfId, editFieldId, setEditFieldId, wfFieldForm, setWfFieldForm, newTeamMember, setNewTeamMember, addingTo, setAddingTo, editFldLbl, setEditFldLbl, editFldVal, setEditFldVal, editSecIdx, setEditSecIdx, editSecVal, setEditSecVal, newOpt, setNewOpt});
+  if(view==="webforms") return React.createElement(WebformsAdminView, {Header, loadUsers, persistWebforms, saveFeedCosts, confirmDelete, adminTab, setAdminTab, wfView, setWfView, editWfId, setEditWfId, editFieldId, setEditFieldId, wfFieldForm, setWfFieldForm, newTeamMember, setNewTeamMember, addingTo, setAddingTo, editFldLbl, setEditFldLbl, editFldVal, setEditFldVal, editSecIdx, setEditSecIdx, editSecVal, setEditSecVal, newOpt, setNewOpt});
 
-  // ── PIG DAILY WEBFORM VIEW (public, no auth needed — route: #pigdailys) ──
-  function renderWebform() {
-    const wfGroupOptions = wfGroups;
-
-    function wfToggle(field, val){
-      setWfForm(f=>({...f,[field]:val}));
-    }
-
-    async function wfSubmit(){
-      // Validate required fields based on webformsConfig
-      const wfCfg = webformsConfig?.webforms?.find(w=>w.id==='pig-dailys');
-      const wfRequiredFields = wfCfg ? wfCfg.fields.filter(f=>f.required&&f.enabled!==false) : [];
-      if(!wfForm.date){setWfErr('Please enter a date.');return;}
-      if(!wfForm.teamMember.trim()){setWfErr('Please enter your name.');return;}
-      if(!wfForm.batchId){setWfErr('Please select a pig group.');return;}
-      // Check custom required fields
-      for(const f of wfRequiredFields){
-        if(f.system) continue; // already checked above
-        if(f.id==='pig_count'&&wfForm.pigCount===''){setWfErr(`${f.label} is required.`);return;}
-        if(f.id==='feed_lbs'&&wfForm.feedLbs===''){setWfErr(`${f.label} is required.`);return;}
-        if(f.id==='fence_voltage'&&wfForm.fenceVoltage===''){setWfErr(`${f.label} is required.`);return;}
-        if(f.id==='issues'&&!wfForm.issues.trim()){setWfErr(`${f.label} is required.`);return;}
-      }
-      setWfErr(''); setWfSubmitting(true);
-      localStorage.setItem('wcf_team', wfForm.teamMember.trim());
-      const record = {
-        id: String(Date.now())+Math.random().toString(36).slice(2,6),
-        submitted_at: new Date().toISOString(),
-        date: wfForm.date,
-        team_member: wfForm.teamMember.trim(),
-        batch_id: wfForm.batchId.toLowerCase().replace(/[^a-z0-9]+/g,'-'),
-        batch_label: wfForm.batchId,
-        pig_count: wfForm.pigCount!==''?parseInt(wfForm.pigCount):null,
-        feed_lbs: wfForm.feedLbs!==''?parseFloat(wfForm.feedLbs):null,
-        group_moved: wfForm.groupMoved,
-        nipple_drinker_moved: wfForm.nippleDrinkerMoved,
-        nipple_drinker_working: wfForm.nippleDrinkerWorking,
-        troughs_moved: wfForm.troughsMoved,
-        fence_walked: wfForm.fenceWalked,
-        fence_voltage: wfForm.fenceVoltage!==''?parseFloat(wfForm.fenceVoltage):null,
-        issues: wfForm.issues.trim()||null
-      };
-      const {error} = await sb.from('pig_dailys').insert(record);
-      setWfSubmitting(false);
-      if(error){setWfErr('Could not save: '+error.message);return;}
-      setWfGroupName(wfForm.batchId);
-      setWfDone(true);
-    }
-
-    function wfReset(){
-      const d=new Date();
-      setWfForm({
-        date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
-        teamMember:localStorage.getItem('wcf_team')||'',
-        batchId:'',pigCount:'',feedLbs:'',
-        groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,
-        troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''
-      });
-      setWfDone(false); setWfErr('');
-    }
-
-    function wfTgl(label,field){
-      return (
-        <div style={{marginBottom:12}}>
-          <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>{label}</label>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
-            {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l})=>(
-              <button key={String(v)} type="button" onClick={()=>wfToggle(field,v)}
-                style={{padding:'9px 0',border:'none',fontFamily:'inherit',fontSize:13,fontWeight:500,cursor:'pointer',
-                  background:wfForm[field]===v?(v?'#085041':'#374151'):'#f9fafb',
-                  color:wfForm[field]===v?'white':'#6b7280'}}>
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    const wfCfgFields = (()=>{
-      const wf = webformsConfig?.webforms?.find(w=>w.id==='pig-dailys');
-      if(!wf) return [];
-      return (wf.sections||[]).flatMap(s=>s.fields||[]);
-    })();
-    const isReq = id => { const f=wfCfgFields.find(f=>f.id===id); return f?f.required:['date','team_member','group'].includes(id); };
-    const wfLbl = (text,id) => <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>{text}{isReq(id)&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>;
-
-    const wfCard = (title, children) => (
-      <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:10,padding:20,marginBottom:16,boxShadow:'0 1px 3px rgba(0,0,0,.06)'}}>
-        <div style={{fontSize:13,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:.4,marginBottom:14,paddingBottom:10,borderBottom:'1px solid #e5e7eb'}}>{title}</div>
-        {children}
-      </div>
-    );
-
-    if(wfDone) return (
-      <div style={{background:'#f6f8f7',minHeight:'100vh'}}>
-        <div style={{background:'linear-gradient(135deg,#042f23,#085041 60%,#0d6652)',color:'white',padding:'14px 1.5rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{fontSize:17,fontWeight:700,letterSpacing:'-.4px'}}>WCF Planner</div>
-            <span style={{fontSize:11,fontWeight:500,color:'rgba(255,255,255,.6)',borderLeft:'1px solid rgba(255,255,255,.25)',paddingLeft:10,letterSpacing:.5}}>PIGS</span>
-          </div>
-          <div style={{fontSize:12,color:'rgba(255,255,255,.6)'}}>Daily Report</div>
-        </div>
-        <div style={{maxWidth:540,margin:'0 auto',padding:'3rem 1rem',textAlign:'center'}}>
-          <div style={{fontSize:56,marginBottom:16}}>✅</div>
-          <div style={{fontSize:20,fontWeight:700,marginBottom:8}}>Report submitted!</div>
-          <div style={{fontSize:14,color:'#4b5563',marginBottom:28}}>Daily report saved for <strong>{wfGroupName}</strong>.</div>
-          <button onClick={wfReset} style={{padding:'10px 28px',border:'2px solid #085041',borderRadius:10,background:'white',color:'#085041',fontSize:14,fontWeight:600,cursor:'pointer'}}>Submit another</button>
-        </div>
-      </div>
-    );
-
-    return (
-      <div style={{background:'#f6f8f7',minHeight:'100vh'}}>
-        {/* Header */}
-        <div style={{background:'linear-gradient(135deg,#042f23,#085041 60%,#0d6652)',color:'white',padding:'14px 1.5rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{fontSize:17,fontWeight:700,letterSpacing:'-.4px'}}>WCF Planner</div>
-            <span style={{fontSize:11,fontWeight:500,color:'rgba(255,255,255,.6)',borderLeft:'1px solid rgba(255,255,255,.25)',paddingLeft:10,letterSpacing:.5}}>PIGS</span>
-          </div>
-          <div style={{fontSize:12,color:'rgba(255,255,255,.6)'}}>Daily Report</div>
-        </div>
-
-        <div style={{maxWidth:540,margin:'0 auto',padding:'1.5rem 1rem 3rem'}}>
-          <div style={{fontSize:22,fontWeight:700,color:'#111827',marginBottom:20,letterSpacing:'-.3px'}}>Pig Dailys</div>
-          {wfErr&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:6,color:'#b91c1c',padding:'10px 14px',fontSize:13,marginBottom:14}}>{wfErr}</div>}
-
-
-          {wfCard('Report Info', (
-            <div style={{display:'flex',flexDirection:'column',gap:12}}>
-              <div>
-                <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Date{isReq('date')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-                <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                  <input type="date" value={wfForm.date} onChange={e=>setWfForm({...wfForm,date:e.target.value})}
-                    style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,flex:1,outline:'none',background:'white',color:'#111827'}}/>
-                  <span onClick={()=>{const d=new Date();setWfForm({...wfForm,date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`});}}
-                    style={{display:'inline-block',fontSize:11,padding:'6px 10px',background:'#ecfdf5',color:'#085041',border:'1px solid #a7f3d0',borderRadius:6,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>Today</span>
-                </div>
-              </div>
-              <div>
-                <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Team member{isReq('team_member')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-                {wfTeamMembers.length>0
-                  ? <select value={wfForm.teamMember} onChange={e=>setWfForm({...wfForm,teamMember:e.target.value})}
-                      style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',color:wfForm.teamMember?'#111827':'#9ca3af'}}>
-                      <option value="">— Select name —</option>
-                      {wfTeamMembers.map(m=><option key={m} value={m}>{m}</option>)}
-                    </select>
-                  : <input value={wfForm.teamMember} onChange={e=>setWfForm({...wfForm,teamMember:e.target.value})} placeholder="Your name"
-                      style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',color:'#111827'}}/>
-                }
-              </div>
-              <div>
-                <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Pig group{isReq('group')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-                <select value={wfForm.batchId} onChange={e=>setWfForm({...wfForm,batchId:e.target.value})}
-                  style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',color:'#111827'}}>
-                  <option value="">— Select group —</option>
-                  {wfGroupOptions.map(g=><option key={g.value} value={g.value}>{g.label}</option>)}
-                </select>
-              </div>
-            </div>
-          ))}
-
-          {wfCard('Count & Feed', (
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-              <div>
-                <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}># Pigs in group{isReq('pig_count')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-                <input type="number" min="0" value={wfForm.pigCount||''} onChange={e=>setWfForm({...wfForm,pigCount:e.target.value})} placeholder="0"
-                  style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white'}}/>
-                <div style={{fontSize:11,color:'#9ca3af',marginTop:3}}>Current headcount</div>
-              </div>
-              <div>
-                <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Feed given (lbs){isReq('feed_lbs')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-                <input type="number" min="0" step="0.1" value={wfForm.feedLbs||''} onChange={e=>setWfForm({...wfForm,feedLbs:e.target.value})} placeholder="0"
-                  style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white'}}/>
-                <div style={{fontSize:11,color:'#9ca3af',marginTop:3}}>Total lbs fed today</div>
-              </div>
-            </div>
-          ))}
-
-          {wfCard('Daily Checks', (
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-              {wfTgl("Was group moved?","groupMoved")}
-              {wfTgl("Nipple drinker moved?","nippleDrinkerMoved")}
-              {wfTgl("Nipple drinker working?","nippleDrinkerWorking")}
-              {wfTgl("Feed troughs moved?","troughsMoved")}
-              {wfTgl("Fence line walked?","fenceWalked")}
-              <div>
-                <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Fence voltage (kV){isReq('fence_voltage')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-                <input type="number" min="0" max="20" step="0.1" value={wfForm.fenceVoltage||''} onChange={e=>setWfForm({...wfForm,fenceVoltage:e.target.value})} placeholder="e.g. 4.2"
-                  style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white'}}/>
-              </div>
-            </div>
-          ))}
-
-          {wfCard('Issues & Comments', (
-            <div>
-              <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Notes, issues, observations{isReq('issues')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-              <textarea rows={4} value={wfForm.issues} onChange={e=>setWfForm({...wfForm,issues:e.target.value})}
-                placeholder="Any problems, unusual behavior, health concerns, maintenance needed…"
-                style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',resize:'vertical'}}/>
-            </div>
-          ))}
-
-          <button onClick={wfSubmit} disabled={wfSubmitting}
-            style={{width:'100%',padding:13,border:'none',borderRadius:10,background:'linear-gradient(135deg,#085041,#0d6652)',color:'white',fontSize:15,fontWeight:600,cursor:wfSubmitting?'not-allowed':'pointer',opacity:wfSubmitting?.6:1,boxShadow:'0 2px 8px rgba(8,80,65,.25)',fontFamily:'inherit'}}>
-            {wfSubmitting?'Submitting…':'Submit Daily Report'}
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // ── PIG DAILY WEBFORM (public, no auth) ──
+  // renderWebform moved to src/webforms/PigDailysWebform.jsx;
+  // routed above in the webform bypass block as <PigDailysWebform/>.
 
 
 

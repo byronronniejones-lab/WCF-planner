@@ -2631,3 +2631,68 @@ Rollback paths: identical to Phase 2 — Netlify UI "Publish deploy" on previous
 ---
 
 *End of April 21, 2026 session 2. Commits `963a006` → `598b90d` pushed to `phase-3-router`. Phase 2 live on `wcfplanner.com` since `9799960`. Phase 3 functionally complete on branch, local-smoke-tested, awaiting cutover approval.*
+
+---
+
+# 22. Session Update — April 21, 2026 (session 3) — Phase 3 cutover + post-migration polish
+
+Phase 3 went live on production, stale branches cleaned up, and four post-migration polish commits shipped to a new `polish` branch. main.jsx down another 15% on top of the 90% migration reduction. Two latent ReferenceError bugs discovered + fixed in the process.
+
+## 22.1 Phase 3 cutover — merged to production
+
+Merge commit `7779750` on `main`. Netlify picked it up; Ronnie's verdict after rebuild: "Everything look great. We have 'urls' for each page and back button work." Per-tab URLs live, back button works, legacy `/#weighins` etc. bookmarks rewrite transparently.
+
+Rollback paths all still in place (Netlify UI Publish deploy, `git revert -m 1 7779750`, OneDrive backup).
+
+## 22.2 Branch cleanup
+
+Both `vite-migration` (last at `377211a`, structurally merged via Phase 2 cutover `9799960`) and `phase-3-router` (last at `c61054c`, structurally merged via `7779750`) deleted local + origin. Only `main` and the new `polish` branch remain.
+
+## 22.3 Polish commits — the last App-scope cruft
+
+Branch: `polish` (pushed, not yet merged). Four commits, each build-verified:
+
+| SHA | Commit | What |
+|---|---|---|
+| `b47feb7` | CATTLE_* constants → `src/lib/cattle.js` | 10 constants (herds, outcomes, labels, colors, 5 breeding-day constants). **Latent fix:** `lib/cattleBreeding.js` had been referencing `CATTLE_BULL_EXPOSURE_DAYS` / `CATTLE_GESTATION_DAYS` / `CATTLE_PREG_CHECK_OFFSET_DAYS` / `CATTLE_CALVING_WINDOW_DAYS` / `CATTLE_NURSING_DAYS` + `toISO` + `addDays` as bare identifiers with no imports — would have ReferenceError'd the first time `calcCattleBreedingTimeline` ran against a real cycle. Cold in prod so far (no cycles yet). Now properly imports from `./cattle.js` + `./dateUtils.js`. |
+| `96eb44e` | `detectConflicts` → `src/lib/conflicts.js` | 55-line broiler/layer schedule overlap detector. Imports `calcTimeline` + `overlaps` + `BROODER_CLEANOUT` + `SCHOONER_CLEANOUT` from `lib/broiler.js`, `addDays` + `toISO` + `fmtS` from `lib/dateUtils.js`. Preserves `–` escape literals per §10 don't-touch. |
+| `28bbc7f` | `writeBroilerBatchAvg` → `src/lib/broiler.js` | Pure async helper that recomputes week4Lbs/week6Lbs on a broiler batch from a complete weigh-in session. **Second latent fix same class:** `WeighInsWebform.jsx` + `LivestockWeighInsView.jsx` both called `writeBroilerBatchAvg` as a bare identifier with no imports — would've fired the first time a broiler weigh-in session was marked complete. Now both import it. |
+| `753754a` | `renderWebform` → `src/webforms/PigDailysWebform.jsx` | 210-line legacy pig-dailys public webform. Hook-based extraction; the 5 `wf*` form-state pieces (`wfForm`/`wfSubmitting`/`wfDone`/`wfErr`/`wfGroupName`) moved from App into the new component as internal useState — they were passed as props to `WebformsAdminView` but never consumed there. `WebformsAdminView`'s prop list drops 10 params it didn't use. Bare-name audit + App-helper blast-list cross-check were clean before push. |
+
+## 22.4 Numbers at end-of-polish
+
+- **main.jsx: 2,061 → 1,750 lines** (-15% this session, **-91%** vs pre-migration 19,170).
+- Build: 159 → 162 modules, bundle ~1.31 MB / ~308 KB gzip (flat — code moved, not duplicated).
+- `lib/broiler.js` ~450 lines (broiler + layer housing + weigh-in avg write).
+- New: `lib/cattle.js` (30 lines), `lib/conflicts.js` (60 lines), `webforms/PigDailysWebform.jsx` (240 lines).
+- 2 latent ReferenceError bugs discovered + fixed (cold code paths in prod; would have fired on first cycle / first broiler weigh-in completion).
+
+## 22.5 Bare-name audit pattern — still earning its keep
+
+Same pattern as §20.7: parse imports + destructures + fn params + local decls into a known set, diff against every identifier-looking reference in the body, filter JSX-text false positives, cross-check remaining suspects against `lib/*` exports + context state names + the App-helper blast list. The renderWebform extraction is the largest hook-based move of the whole migration (~210 lines closing over ≥10 App-scope names). Ran clean on first audit.
+
+`tmp_audit.cjs` was dev-only this session; deleted before push.
+
+## 22.6 What's next — cutover pending
+
+**Second cutover is ready when Ronnie says so.** `polish` branch has the 4 commits above. Same procedure as Phase 2 + Phase 3:
+1. `git checkout main && git merge polish --no-ff -m "Merge polish: post-migration lib lifts + renderWebform extraction"`
+2. `git push origin main`
+3. Netlify rebuilds prod (~90s).
+4. Rollback paths unchanged.
+
+**Deliberately deferred** (confirmed out of scope this session):
+- **Full state-promotion-to-contexts pass.** The remaining App-scope state (feedOrders + admin-tab state + the 9 webforms-admin `wf*` state pairs + 4 auto-save timer refs + 5 collapsed/archived toggles + pigNotes/layerNotes + dailyForm/dailysFilter) is still App-held. The right approach is to push each block into the view that owns it (webforms-admin state → `WebformsAdminView` internal; feed state → `PigFeedView` / `BroilerFeedView`; etc.). That's careful per-view work with regression risk, and worth its own session.
+- **Full router migration (`setView('X')` → `useNavigate('/path')`).** Still pure churn per the Phase 3 handover. Adapter works fine.
+
+## 22.7 Hard rules (unchanged)
+
+- `commit` = do it. One-line status.
+- `push` / `merge` / `deploy` = fresh explicit approval same turn.
+- Don't merge `polish` → `main` without "merge" or "cutover" from Ronnie.
+- Destructive Supabase ops need approval.
+- §10 don't-touch list is authoritative.
+
+---
+
+*End of April 21, 2026 session 3. Commits `b47feb7` → `96eb44e` → `28bbc7f` → `753754a` pushed to `polish`. Phase 3 live on `wcfplanner.com` since `7779750`. Migration structurally done; one optional cutover pending.*

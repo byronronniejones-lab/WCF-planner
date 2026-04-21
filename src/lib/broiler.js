@@ -416,3 +416,29 @@ export function calcLayerFeedForMonth(batch, housings, layerDailys, yearMonth) {
   }
   return {starter:Math.round(starter), grower:Math.round(grower), layer:Math.round(layer)};
 }
+
+// Recompute the broiler session's average and write it to the matching
+// batch's week4Lbs / week6Lbs in app_store.ppp-v4. ONLY runs for sessions
+// already marked complete -- draft saves never bleed into the batch tile.
+// Called from completeSession (webform), completeFromAdmin (admin), and
+// saveAdminGrid (admin in-place edits on already-complete sessions).
+export async function writeBroilerBatchAvg(sb, sessionRow, sessionEntries) {
+  if(!sb || !sessionRow || sessionRow.species !== 'broiler') return;
+  if(sessionRow.status !== 'complete') return;
+  if(!sessionRow.batch_id || !(sessionRow.broiler_week === 4 || sessionRow.broiler_week === 6)) return;
+  if(!sessionEntries || sessionEntries.length === 0) return;
+  var sum = 0, n = 0;
+  for(var i=0;i<sessionEntries.length;i++){
+    var w = parseFloat(sessionEntries[i].weight);
+    if(!isNaN(w) && w > 0) { sum += w; n++; }
+  }
+  if(n === 0) return;
+  var avg = Math.round((sum / n) * 100) / 100;
+  var fieldKey = sessionRow.broiler_week === 4 ? 'week4Lbs' : 'week6Lbs';
+  var resp = await sb.from('app_store').select('data').eq('key','ppp-v4').maybeSingle();
+  if(!resp || !resp.data || !Array.isArray(resp.data.data)) return;
+  var updated = resp.data.data.map(function(b){
+    return (b.name === sessionRow.batch_id) ? Object.assign({}, b, {[fieldKey]: avg}) : b;
+  });
+  await sb.from('app_store').upsert({key:'ppp-v4', data: updated, updated_at: new Date().toISOString()}, {onConflict:'key'});
+}
