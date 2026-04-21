@@ -288,11 +288,12 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
               }
             });
             const totalPigs=Object.values(pigCounts).reduce((s,v)=>s+v,0);
-            const totalAll=projectedBirds+totalHens+totalPigs+cattleOnFarmCount;
+            const sheepOnFarm=(sheepForHome||[]).filter(s=>s.flock==='rams'||s.flock==='ewes'||s.flock==='feeders').length;
+            const totalAll=projectedBirds+totalHens+totalPigs+cattleOnFarmCount+sheepOnFarm;
             return (
               <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:14,padding:'16px 24px'}}>
                 <div style={{fontSize:12,fontWeight:600,color:'#4b5563',letterSpacing:.3,marginBottom:12}}>ANIMALS ON FARM</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:16,alignItems:'center'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr',gap:16,alignItems:'center'}}>
                   <div style={{textAlign:'center'}}>
                     <div style={{fontSize:26,fontWeight:700,color:'#a16207'}}>{projectedBirds.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc14 Broilers'}</div>
@@ -308,6 +309,10 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                   <div style={{textAlign:'center'}}>
                     <div style={{fontSize:26,fontWeight:700,color:'#991b1b'}}>{cattleOnFarmCount.toLocaleString()}</div>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc04 Cattle'}</div>
+                  </div>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:26,fontWeight:700,color:'#0f766e'}}>{sheepOnFarm.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>{'\ud83d\udc11 Sheep'}</div>
                   </div>
                   <div style={{textAlign:'center',borderLeft:'1px solid #e5e7eb',paddingLeft:16}}>
                     <div style={{fontSize:26,fontWeight:700,color:'#085041'}}>{totalAll.toLocaleString()}</div>
@@ -542,7 +547,10 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                                         const hasHay=d.bales_of_hay!=null;
                                         const hasAlfalfa=d.lbs_of_alfalfa!=null&&parseFloat(d.lbs_of_alfalfa)>0;
                                         const hasMort=(d.mortality_count||0)>0;
-                                        const comment=d.comments&&String(d.comments).trim().length>2?String(d.comments).trim():'';
+                                        // Treat "none"/"0"/"n/a" as nothing-to-report; don't render a comment badge.
+                                        const rawCmt=d.comments==null?'':String(d.comments).trim();
+                                        const cmtLow=rawCmt.toLowerCase();
+                                        const comment=(rawCmt===''||cmtLow==='none'||cmtLow==='0'||cmtLow==='n/a'||cmtLow==='na'||cmtLow==='-')?'':rawCmt;
                                         const hasVolt=d.fence_voltage_kv!=null;
                                         const voltColor=v=>v<2?'#b91c1c':v<4?'#92400e':'#065f46';
                                         return (<>

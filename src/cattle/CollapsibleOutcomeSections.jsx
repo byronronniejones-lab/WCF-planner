@@ -1,7 +1,7 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
 
-const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS, OUTCOMES, fmt, setStatusFilter}) => {
+const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS, OUTCOMES, fmt, setStatusFilter, navigateToCow}) => {
   const [expanded, setExpanded] = React.useState({});
   return (
     <div style={{marginTop:8}}>
@@ -21,7 +21,7 @@ const CollapsibleOutcomeSections = ({cattle, weighIns, HERD_COLORS, HERD_LABELS,
             {isExpanded && (
               <div>
                 {cows.slice(0, 50).map(c => (
-                  <div key={c.id} style={{padding:'8px 16px', borderTop:'1px solid #f3f4f6', fontSize:12, color:'#4b5563', display:'flex', gap:10, flexWrap:'wrap'}}>
+                  <div key={c.id} onClick={() => navigateToCow && navigateToCow(c)} style={{padding:'8px 16px', borderTop:'1px solid #f3f4f6', fontSize:12, color:'#4b5563', display:'flex', gap:10, flexWrap:'wrap', cursor: navigateToCow ? 'pointer' : 'default'}} className={navigateToCow ? 'hoverable-tile' : ''}>
                     <span style={{fontWeight:600, color:'#111827', minWidth:60}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
                     <span>{c.sex||'\u2014'}</span>
                     <span>{c.breed||'\u2014'}</span>

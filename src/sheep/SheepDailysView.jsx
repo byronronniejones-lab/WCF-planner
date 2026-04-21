@@ -7,6 +7,15 @@ import React from 'react';
 import { S } from '../lib/styles.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 
+// "nothing to report" sentinels — don't render these as a comment badge.
+// Public-webform placeholder now tells the team to enter "0"; this covers
+// both that convention and legacy "None" / "none" / "n/a" entries.
+const isSentinelComment = s => {
+  if (s == null) return true;
+  const t = String(s).trim().toLowerCase();
+  return t === '' || t === 'none' || t === '0' || t === 'n/a' || t === 'na' || t === '-';
+};
+
 const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -187,7 +196,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               const dates = [...new Set(filtered.map(r => r.date))];
               return filtered.map((d,i) => {
                 const hasMort = parseInt(d.mortality_count) > 0;
-                const comments = d.comments && String(d.comments).trim().length > 2 ? String(d.comments).trim() : '';
+                const comments = isSentinelComment(d.comments) ? '' : String(d.comments).trim();
                 const notable = hasMort || comments;
                 const prevDate = i > 0 ? filtered[i-1].date : null;
                 const showDivider = prevDate && prevDate !== d.date;

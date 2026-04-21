@@ -570,7 +570,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
               );
             })}
             {/* Outcome herds shown collapsed at the bottom */}
-            <CollapsibleOutcomeSections cattle={cattle} weighIns={weighIns} HERD_COLORS={HERD_COLORS} HERD_LABELS={HERD_LABELS} OUTCOMES={OUTCOMES} fmt={fmt} setStatusFilter={setStatusFilter}/>
+            <CollapsibleOutcomeSections cattle={cattle} weighIns={weighIns} HERD_COLORS={HERD_COLORS} HERD_LABELS={HERD_LABELS} OUTCOMES={OUTCOMES} fmt={fmt} setStatusFilter={setStatusFilter} navigateToCow={navigateToCow}/>
           </div>
         )}
       </div>

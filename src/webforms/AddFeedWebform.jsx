@@ -327,7 +327,7 @@ const AddFeedWebform = ({sb}) => {
 
         <div style={cardS}>
           <label style={lblS}>Program</label>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:6}}>
             {[
               {key:'pig',icon:'\ud83d\udc37',label:'Pig',color:'#1e40af',bg:'#eff6ff'},
               {key:'broiler',icon:'\ud83d\udc14',label:'Broiler',color:'#a16207',bg:'#fef9c3'},
@@ -336,13 +336,13 @@ const AddFeedWebform = ({sb}) => {
               {key:'sheep',icon:'\ud83d\udc11',label:'Sheep',color:'#0f766e',bg:'#f0fdfa'},
             ].map(function(p){return (
               <button key={p.key} onClick={function(){setProgram(p.key);setBatchLabel('');setFeedType('');setExtraGroups([]);setCattleHerd('');setCattleRows([{feedId:'',qty:'',isCreep:false}]);setSheepFlock('');setSheepBales('');setSheepAlfalfa('');}} style={{
-                padding:'16px 8px',borderRadius:12,cursor:'pointer',fontFamily:'inherit',
+                padding:'10px 4px',borderRadius:10,cursor:'pointer',fontFamily:'inherit',
                 border:program===p.key?'2px solid '+p.color:'2px solid #e5e7eb',
                 background:program===p.key?p.bg:'white',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:6
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4
               }}>
-                <span style={{fontSize:32}}>{p.icon}</span>
-                <span style={{fontSize:13,fontWeight:600,color:p.color}}>{p.label}</span>
+                <span style={{fontSize:22}}>{p.icon}</span>
+                <span style={{fontSize:11,fontWeight:600,color:p.color}}>{p.label}</span>
               </button>
             );})}
           </div>
