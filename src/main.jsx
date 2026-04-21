@@ -12,6 +12,8 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
+import { VIEW_TO_PATH, PATH_TO_VIEW } from './lib/routes.js';
 
 // Phase 2.0.0: foundation lib helpers extracted from this file. Importing
 // here makes them available throughout the verbatim-ported app body without
@@ -568,6 +570,43 @@ function App(){
   const canEditAll   = isMgmt;          // management + admin can edit anything
   const canDeleteDailys = isMgmt || isFarmTeam; // all roles can delete dailys
   const canDeleteAll = isAdmin;          // only admin can delete batches, groups, etc.
+
+  // Phase 3.2: URL ↔ view adapter. The existing `view` state machine stays
+  // the primary API — setView('X') still works from every component. These
+  // effects mirror `view` into the URL and read URL → view on mount +
+  // back/forward button. No changes required at any setView call site.
+  //
+  // Infinite-loop guard: syncingFromUrl flag distinguishes URL-driven view
+  // changes (skip the view→URL effect) from code-driven view changes
+  // (do push a URL entry so the back button works).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const syncingFromUrl = React.useRef(false);
+  useEffect(() => {
+    const viewFromUrl = PATH_TO_VIEW[location.pathname];
+    if (viewFromUrl && viewFromUrl !== view) {
+      syncingFromUrl.current = true;
+      setView(viewFromUrl);
+    } else if (!viewFromUrl) {
+      // Unknown path — snap to home + replaceState so back button doesn't
+      // revisit the dead URL. The hash-compat shim (Phase 3.3) handles
+      // legacy /#weighins etc. before this effect sees the pathname.
+      syncingFromUrl.current = true;
+      setView('home');
+      navigate('/', { replace: true });
+    }
+  }, [location.pathname]);
+  useEffect(() => {
+    if (syncingFromUrl.current) {
+      syncingFromUrl.current = false;
+      return;
+    }
+    const pathFromView = VIEW_TO_PATH[view];
+    if (pathFromView && pathFromView !== location.pathname) {
+      navigate(pathFromView);
+    }
+  }, [view]);
+
   const autoSaveTimer = React.useRef(null);
   const pigAutoSaveTimer = React.useRef(null);
   const subAutoSaveTimer = React.useRef(null);
@@ -1952,32 +1991,37 @@ const breedTlStartInit = () => {
   return toISO(d);
 };
 
+// Phase 3.2: BrowserRouter wraps the provider tree so App (and any
+// extracted view, if it ever wants to) can use useLocation/useNavigate.
+// The view ↔ URL sync lives inside App via useViewUrlSync() below.
 root.render(
-  <AuthProvider>
-    <BatchesProvider formInit={EMPTY_FORM} tlStartInit={thisMonday}>
-      <PigProvider
-        initialFarrowing={INITIAL_FARROWING}
-        initialBreeders={INITIAL_BREEDERS}
-        breedTlStartInit={breedTlStartInit}
-      >
-        <LayerProvider>
-          <DailysRecentProvider>
-            <CattleHomeProvider>
-              <SheepHomeProvider>
-                <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
-                  <FeedCostsProvider>
-                    <UIProvider>
-                      <App/>
-                    </UIProvider>
-                  </FeedCostsProvider>
-                </WebformsConfigProvider>
-              </SheepHomeProvider>
-            </CattleHomeProvider>
-          </DailysRecentProvider>
-        </LayerProvider>
-      </PigProvider>
-    </BatchesProvider>
-  </AuthProvider>
+  <BrowserRouter>
+    <AuthProvider>
+      <BatchesProvider formInit={EMPTY_FORM} tlStartInit={thisMonday}>
+        <PigProvider
+          initialFarrowing={INITIAL_FARROWING}
+          initialBreeders={INITIAL_BREEDERS}
+          breedTlStartInit={breedTlStartInit}
+        >
+          <LayerProvider>
+            <DailysRecentProvider>
+              <CattleHomeProvider>
+                <SheepHomeProvider>
+                  <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
+                    <FeedCostsProvider>
+                      <UIProvider>
+                        <App/>
+                      </UIProvider>
+                    </FeedCostsProvider>
+                  </WebformsConfigProvider>
+                </SheepHomeProvider>
+              </CattleHomeProvider>
+            </DailysRecentProvider>
+          </LayerProvider>
+        </PigProvider>
+      </BatchesProvider>
+    </AuthProvider>
+  </BrowserRouter>
 );
 
 // Fade out the static boot loader after React's first paint. Two RAFs to
