@@ -284,10 +284,6 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
         })
         .filter(Boolean),
     };
-    if(form.maternal_issue_flag && !(form.maternal_issue_desc||'').trim()) {
-      alert('Maternal issue description is required when the flag is set.');
-      setSaving(false); return;
-    }
     let newId = editId;
     if(editId) {
       const {error} = await sb.from('cattle').update(rec).eq('id', editId);
@@ -751,23 +747,16 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                 })}
               </div>
 
-              <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:12, marginTop:4, display:'flex', flexDirection:'column', gap:10}}>
-                <label style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, alignSelf:'flex-start'}}>
-                  <input type="checkbox" checked={!!form.maternal_issue_flag} onChange={e=>setForm({...form, maternal_issue_flag:e.target.checked})}/>
-                  <span>Maternal issue flag</span>
-                </label>
-                {form.maternal_issue_flag && (
-                  <div style={{marginLeft:26}}>
-                    <label style={lbl}>Description *</label>
-                    <textarea value={form.maternal_issue_desc} onChange={e=>setForm({...form, maternal_issue_desc:e.target.value})} rows={2} style={{...inpS, resize:'vertical'}}/>
-                  </div>
-                )}
-                <label style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, alignSelf:'flex-start'}}>
-                  <input type="checkbox" checked={!!form.breeding_blacklist} onChange={e=>setForm({...form, breeding_blacklist:e.target.checked})}/>
-                  <span>Breeding blacklist</span>
-                </label>
-                <div style={{fontSize:11, color:'#9ca3af', marginLeft:26, marginTop:-4}}>Use the comments timeline to record why.</div>
-              </div>
+              {/* Breeding blacklist — hidden for steers (they can't breed). */}
+              {form.sex !== 'steer' && (
+                <div style={{gridColumn:'1/-1', borderTop:'1px solid #e5e7eb', paddingTop:12, marginTop:4}}>
+                  <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, whiteSpace:'nowrap'}}>
+                    <input type="checkbox" checked={!!form.breeding_blacklist} onChange={e=>setForm({...form, breeding_blacklist:e.target.checked})} style={{margin:0,flexShrink:0}}/>
+                    <span>Breeding blacklist</span>
+                  </label>
+                  <div style={{fontSize:11, color:'#9ca3af', marginLeft:26, marginTop:4}}>Use the comments timeline to record why.</div>
+                </div>
+              )}
 
               {(form.herd === 'sold' || form.sale_date) && (
                 <React.Fragment>

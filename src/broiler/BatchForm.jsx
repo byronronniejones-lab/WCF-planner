@@ -167,8 +167,8 @@ export default function BatchForm({
                 </div>
               </div>
 
-              {/* Hatch suggestions */}
-              {targetHatch&&(
+              {/* Hatch suggestions — hidden once a hatch date is locked in. */}
+              {targetHatch&&!form.hatchDate&&(
                 <div style={{borderTop:"1px solid #97C459",paddingTop:8}}>
                   <div style={{fontSize:11,color:"#085041",marginBottom:5,fontWeight:600}}>
                     Suggested hatch dates to check with hatchery (target: {fmt(targetHatch)}):
