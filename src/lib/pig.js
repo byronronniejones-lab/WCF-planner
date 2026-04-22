@@ -17,16 +17,16 @@ export const PIG_GROUPS = ["1","2","3"];
 export const BREEDING_STATUSES = ["planned","active","completed"];
 
 // Colors per group: one base shade for the whole cycle, with a lighter
-// shade for the Gilts grow-out phase and a darker shade for the Boars
-// grow-out phase. All other phases (boar exposure, paddock, farrowing,
-// weaning) share the base. Mirrors the broiler timeline's per-batch
-// single-color treatment.
+// shade for Gilts grow-out and a darker shade for Boars grow-out. All
+// three groups stay inside the pig program's blue family (no purple per
+// project rules) — Group 1 is sky, Group 2 is the core pig blue, and
+// Group 3 is slate. Mirrors the broiler per-batch single-color treatment.
 export const PIG_GROUP_COLORS = {
-  "1": {boar:"#378ADD", paddock:"#378ADD", farrowing:"#378ADD", weaning:"#378ADD", gilt:"#85B7EB", boarGrow:"#0C447C"},
-  "2": {boar:"#D4537E", paddock:"#D4537E", farrowing:"#D4537E", weaning:"#D4537E", gilt:"#ED93B1", boarGrow:"#72243E"},
-  "3": {boar:"#639922", paddock:"#639922", farrowing:"#639922", weaning:"#639922", gilt:"#97C459", boarGrow:"#27500A"},
+  "1": {boar:"#0EA5E9", paddock:"#0EA5E9", farrowing:"#0EA5E9", weaning:"#0EA5E9", gilt:"#7DD3FC", boarGrow:"#075985"},
+  "2": {boar:"#2563EB", paddock:"#2563EB", farrowing:"#2563EB", weaning:"#2563EB", gilt:"#93C5FD", boarGrow:"#1E3A8A"},
+  "3": {boar:"#475569", paddock:"#475569", farrowing:"#475569", weaning:"#475569", gilt:"#94A3B8", boarGrow:"#1E293B"},
 };
-export const PIG_GROUP_TEXT = {"1":"#E6F1FB","2":"#FBEAF0","3":"#EAF3DE"};
+export const PIG_GROUP_TEXT = {"1":"#E0F2FE","2":"#DBEAFE","3":"#F1F5F9"};
 
 export const PHASE_LABELS = ["Boar Exposure","Exp. Paddock","Farrowing","Weaning","Gilt Grow-out","Male Grow-out"];
 

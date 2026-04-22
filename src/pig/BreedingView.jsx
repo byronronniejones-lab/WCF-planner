@@ -45,7 +45,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
     const bWkHdrs = Array.from({length:BREED_WEEKS},(_,i)=>addDays(btlS,i*7));
     const cycleSeqMap = buildCycleSeqMap(breedingCycles);
 
-    const EMPTY_BREED = {group:"1",customSuffix:"",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:"",boar1Name:boarNames.boar1,boar2Name:boarNames.boar2};
+    const EMPTY_BREED = {group:"1",customSuffix:"",boar1Tags:"",boar2Tags:"",excludedSows:[],exposureStart:"",notes:"",boar1Name:boarNames.boar1,boar2Name:boarNames.boar2};
 
     // Breeder-registry-driven sow pool: any Sow/Gilt in the breeders tab
     // whose group matches and who isn't archived.
@@ -56,12 +56,14 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
         .filter(Boolean);
     }
     // Add any group sows that aren't already listed under either boar to
-    // Boar 1. Returns the new boar1Tags string (newline-separated).
-    function mergeSowsIntoB1(group, curB1, curB2) {
+    // Boar 1, EXCEPT sows the admin previously removed (excludedSows).
+    // Returns the new boar1Tags string (newline-separated).
+    function mergeSowsIntoB1(group, curB1, curB2, excluded) {
       const have1 = (curB1||'').split('\n').map(t=>t.trim()).filter(Boolean);
       const have2 = (curB2||'').split('\n').map(t=>t.trim()).filter(Boolean);
       const haveSet = new Set([...have1, ...have2]);
-      const missing = sowsForGroup(group).filter(t => !haveSet.has(t));
+      const excludedSet = new Set(Array.isArray(excluded) ? excluded.map(String) : []);
+      const missing = sowsForGroup(group).filter(t => !haveSet.has(t) && !excludedSet.has(String(t)));
       if(missing.length === 0) return have1.join('\n');
       return [...have1, ...missing].join('\n');
     }
@@ -98,9 +100,11 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
     function updBreed(k, v){
       var next = {...breedForm, [k]: v};
       // For unstarted cycles, changing the group pulls that group's sows
-      // into Boar 1 so the list tracks the breeders tab.
+      // into Boar 1 so the list tracks the breeders tab. Group switch
+      // also clears excludedSows since exclusions are group-specific.
       if(k === 'group' && !isCycleLocked(next.exposureStart)) {
-        next.boar1Tags = mergeSowsIntoB1(v, next.boar1Tags, next.boar2Tags);
+        next.excludedSows = [];
+        next.boar1Tags = mergeSowsIntoB1(v, next.boar1Tags, next.boar2Tags, next.excludedSows);
       }
       setBreedForm(next);
       if(!next.exposureStart) return;
@@ -193,15 +197,29 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                   const locked = isCycleLocked(breedForm.exposureStart);
                   const assigned = new Set([...b1List, ...b2List]);
                   const available = sowsForGroup(breedForm.group).filter(t => !assigned.has(t)).sort((a,b)=>(parseFloat(a)||0)-(parseFloat(b)||0));
+                  // Multi-field setter that mirrors updBreed's autosave behavior
+                  // so we can update boarNTags AND excludedSows in one shot.
+                  function setFormFields(updates) {
+                    const next = {...breedForm, ...updates};
+                    setBreedForm(next);
+                    if(!next.exposureStart) return;
+                    clearTimeout(breedAutoSaveTimer.current);
+                    breedAutoSaveTimer.current = setTimeout(function(){
+                      persistBreedCycle(next, editBreedId);
+                    }, 500);
+                  }
                   function removeSow(boarKey, tag) {
                     const cur = parseTags(breedForm[boarKey]);
-                    updBreed(boarKey, cur.filter(t => t !== tag).join('\n'));
+                    const curExcluded = Array.isArray(breedForm.excludedSows) ? breedForm.excludedSows : [];
+                    const nextExcluded = curExcluded.includes(tag) ? curExcluded : [...curExcluded, tag];
+                    setFormFields({[boarKey]: cur.filter(t => t !== tag).join('\n'), excludedSows: nextExcluded});
                   }
                   function addSow(boarKey, tag) {
                     if(!tag) return;
                     const cur = parseTags(breedForm[boarKey]);
                     if(cur.includes(tag)) return;
-                    updBreed(boarKey, [...cur, tag].join('\n'));
+                    const curExcluded = Array.isArray(breedForm.excludedSows) ? breedForm.excludedSows : [];
+                    setFormFields({[boarKey]: [...cur, tag].join('\n'), excludedSows: curExcluded.filter(t => t !== tag)});
                   }
                   const chipRow = (list, boarKey) => (
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,minHeight:30,padding:"6px 8px",background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:6}}>
@@ -280,7 +298,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
           <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
             <button onClick={()=>{const d=new Date();d.setMonth(d.getMonth()-1);d.setDate(1);setBreedTlStart(toISO(d));}} style={{padding:"5px 14px",borderRadius:5,border:"none",background:"#085041",color:"white",cursor:"pointer",fontSize:11,fontWeight:600}}>Today</button>
             <span style={{fontSize:11,color:"#9ca3af"}}>{fmtS(breedTlStart)} — {fmtS(toISO(btlE))}</span>
-            <button onClick={()=>{setBreedForm({...EMPTY_BREED, boar1Tags: mergeSowsIntoB1(EMPTY_BREED.group, '', '')});setEditBreedId(null);setShowBreedForm(true);}}
+            <button onClick={()=>{setBreedForm({...EMPTY_BREED, excludedSows:[], boar1Tags: mergeSowsIntoB1(EMPTY_BREED.group, '', '', [])});setEditBreedId(null);setShowBreedForm(true);}}
               style={{marginLeft:"auto",padding:"5px 14px",borderRadius:8,border:"none",background:"#085041",color:"white",cursor:"pointer",fontSize:12,fontWeight:600}}>
               + Add Cycle
             </button>
@@ -367,11 +385,13 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                           <div key={c.id} onClick={()=>{
                             const baseB1 = (c.boar1Tags||"").split(",").join("\n").split(", ").join("\n");
                             const baseB2 = (c.boar2Tags||"").split(",").join("\n").split(", ").join("\n");
+                            const excluded = Array.isArray(c.excludedSows) ? c.excludedSows : [];
                             // Unstarted cycles: re-pull any newly-added sows
-                            // from the breeder registry. Started cycles are
-                            // frozen — show what was saved.
-                            const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2);
-                            setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
+                            // from the breeder registry, skipping ones the
+                            // admin previously removed (excludedSows). Started
+                            // cycles are frozen — show what was saved.
+                            const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2, excluded);
+                            setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,excludedSows:excluded,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
                             setEditBreedId(c.id);setShowBreedForm(true);
                           }}
                             onMouseEnter={function(ev){var r=ev.currentTarget.getBoundingClientRect();setTooltip({type:'pig',group:c.group,cycleLbl:cLbl,phase:row.phase,phaseName:phaseNames[row.phase]||row.phase,start:s,end:e,sowCount:c.sowCount,vx:r.left+r.width/2,vy:r.top-10});}}
@@ -423,8 +443,9 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                       <button onClick={()=>{
                         const baseB1 = (c.boar1Tags||"").split(",").join("\n").split(", ").join("\n");
                         const baseB2 = (c.boar2Tags||"").split(",").join("\n").split(", ").join("\n");
-                        const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2);
-                        setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
+                        const excluded = Array.isArray(c.excludedSows) ? c.excludedSows : [];
+                        const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2, excluded);
+                        setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,excludedSows:excluded,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
                         setEditBreedId(c.id);setShowBreedForm(true);
                       }} style={{marginLeft:"auto",fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                     </div>
