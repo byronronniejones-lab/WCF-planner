@@ -65,7 +65,9 @@ export function buildCycleSeqMap(cycles) {
 }
 export function cycleLabel(cycle, seqMap) {
   if(!cycle) return '';
-  const suffix = seqMap && seqMap[cycle.id];
+  // customSuffix (when set by admin) overrides the auto year-sequence code.
+  const autoSuffix = seqMap && seqMap[cycle.id];
+  const suffix = (cycle.customSuffix && String(cycle.customSuffix).trim()) || autoSuffix;
   return 'Group ' + cycle.group + (suffix ? ' - ' + suffix : '');
 }
 

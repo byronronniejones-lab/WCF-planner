@@ -193,26 +193,20 @@ const WeighInsWebform = ({sb}) => {
     });
   }, [session]);
 
-  // Hydrate the broiler/pig grid from saved entries whenever entries OR columnLabels change.
-  // Broiler: distribute by tag (=schooner name) into each schooner column, in order.
-  // Pig: distribute sequentially (no per-column identity preserved at save time).
+  // Hydrate the broiler grid from saved entries whenever entries OR
+  // columnLabels change. Each entry's tag is the schooner name and lands
+  // in that schooner's column, top-down in save order.
   React.useEffect(() => {
     if(!session) return;
-    if(session.species !== 'broiler' && session.species !== 'pig') return;
+    if(session.species !== 'broiler') return;
     if(!columnLabels || columnLabels.length === 0) return;
     var grid = Array(columnLabels.length * 15).fill('');
-    if(session.species === 'broiler') {
-      columnLabels.forEach(function(label, colIdx){
-        var colEntries = entries.filter(function(e){ return (e.tag||'') === label; });
-        colEntries.slice(0, 15).forEach(function(e, i){
-          grid[colIdx * 15 + i] = String(e.weight);
-        });
+    columnLabels.forEach(function(label, colIdx){
+      var colEntries = entries.filter(function(e){ return (e.tag||'') === label; });
+      colEntries.slice(0, 15).forEach(function(e, i){
+        grid[colIdx * 15 + i] = String(e.weight);
       });
-    } else {
-      entries.slice(0, columnLabels.length * 15).forEach(function(e, i){
-        grid[i] = String(e.weight);
-      });
-    }
+    });
     setWeightInputs(grid);
   }, [entries, columnLabels, session]);
 
@@ -240,7 +234,7 @@ const WeighInsWebform = ({sb}) => {
     setBusy(false);
     if(error) { setErr('Could not start session: '+error.message); return; }
     if(teamMember) localStorage.setItem('wcf_team', teamMember);
-    if(species === 'broiler' || species === 'pig') {
+    if(species === 'broiler') {
       const labels = deriveColumnLabels(species, extra && extra.batch_id);
       const finalLabels = labels.length > 0 ? labels : ['1','2'];
       setColumnLabels(finalLabels);
@@ -258,7 +252,7 @@ const WeighInsWebform = ({sb}) => {
     // populates correctly on resume (it filters by cattleHerd / sheepFlock).
     if(s.species === 'cattle' && s.herd) setCattleHerd(s.herd);
     if(s.species === 'sheep' && s.herd) setSheepFlock(s.herd);
-    if(s.species === 'broiler' || s.species === 'pig') {
+    if(s.species === 'broiler') {
       const labels = deriveColumnLabels(s.species, s.batch_id);
       const finalLabels = labels.length > 0 ? labels : ['1','2'];
       setColumnLabels(finalLabels);
@@ -268,9 +262,9 @@ const WeighInsWebform = ({sb}) => {
   }
   async function completeSession() {
     if(!session) return;
-    // For broiler/pig: flush any pending grid edits to DB before flipping status,
-    // so what the user sees in the grid is what gets recorded as "complete".
-    if(species === 'broiler' || species === 'pig') {
+    // Broiler still uses the grid -> flush any pending edits to DB before
+    // flipping status. Pigs now save per-entry, so nothing to batch-flush.
+    if(species === 'broiler') {
       const ok = await saveBatch();
       if(!ok) return;
     }
@@ -311,7 +305,9 @@ const WeighInsWebform = ({sb}) => {
   async function saveEntry({tag, weight, note, mode, sex, priorTag}) {
     if(!session) return;
     if(!weight || parseFloat(weight) <= 0) { setErr('Weight is required.'); return; }
-    if(!tag) { setErr('Tag is required.'); return; }
+    // Pigs don't wear tags — entries save with tag=null. Everything else
+    // requires a tag.
+    if(!tag && species !== 'pig') { setErr('Tag is required.'); return; }
     if(mode === 'new_cow') {
       if(!sex) { setErr('Pick sex for the new cow.'); return; }
       if(cattleList.find(c => c.tag === tag)) { setErr('Tag #'+tag+' already exists in the directory.'); return; }
@@ -704,13 +700,15 @@ const WeighInsWebform = ({sb}) => {
                 <div style={{display:'flex', gap:6, marginBottom:10, flexWrap:'wrap'}}>
                   <button type="button" onClick={()=>{setEntryMode('new_cow'); setTagInput(''); setNewCowSex('cow'); setPriorTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #047857', background:'transparent', color:'#065f46', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New Cow</button>
                   <button type="button" onClick={()=>{
-                    // If a tag was already picked in the dropdown, use it as
-                    // the prior tag so the user doesn't have to retype it.
+                    // Swap Tag requires an existing cow to swap. If no tag
+                    // is picked in the dropdown, warn and bail instead of
+                    // entering retag mode with a blank prior tag.
+                    if(!tagInput) { setErr('Pick a cow from the tag dropdown above first, then click Swap Tag.'); return; }
                     const selected = tagInput;
                     setEntryMode('retag');
-                    setPriorTagInput(selected || '');
+                    setPriorTagInput(selected);
                     setTagInput('');
-                  }} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #1d4ed8', background:'transparent', color:'#1e40af', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u21bb Swap Tag'}</button>
+                  }} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #1d4ed8', background:'transparent', color:'#1e40af', fontSize:12, fontWeight:600, cursor:tagInput?'pointer':'not-allowed', fontFamily:'inherit', opacity:tagInput?1:0.5}}>{'\u21bb Swap Tag'}</button>
                   <button type="button" onClick={()=>{setEntryMode('replacement'); setTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #b45309', background:'transparent', color:'#92400e', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Missing Tag</button>
                 </div>
               </React.Fragment>
@@ -800,9 +798,24 @@ const WeighInsWebform = ({sb}) => {
           </div>
         )}
 
-                {(species === 'pig' || species === 'broiler') && (
+                {species === 'pig' && (
           <div style={cardS}>
-            <label style={lblS}>{species==='broiler'?'Bird':'Pig'} weights (lbs) <span style={{fontSize:10, color:'#9ca3af'}}>— blanks are skipped</span></label>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Weight (lbs) *</label>
+              <input type="number" min="0" step="0.1" value={weightInput} onChange={e=>setWeightInput(e.target.value)} placeholder="0" style={inpS}/>
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={lblS}>Note <span style={{fontSize:10, color:'#9ca3af'}}>(optional)</span></label>
+              <textarea value={noteInput} onChange={e=>setNoteInput(e.target.value)} rows={2} placeholder="Optional" style={{...inpS, resize:'vertical'}}/>
+            </div>
+            {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
+            <button onClick={()=>saveEntry({tag:null, weight:weightInput, note:noteInput, mode:'normal'})} disabled={busy || !weightInput} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:(busy||!weightInput)?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:(busy||!weightInput)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving…':'Save Entry'}</button>
+          </div>
+        )}
+
+        {species === 'broiler' && (
+          <div style={cardS}>
+            <label style={lblS}>Bird weights (lbs) <span style={{fontSize:10, color:'#9ca3af'}}>— blanks are skipped</span></label>
             <div style={{display:'grid', gridTemplateColumns:'repeat('+columnLabels.length+', 1fr)', gap:8, marginBottom:12}}>
               {columnLabels.map((label, col) => (
                 <div key={col}>
@@ -838,6 +851,27 @@ const WeighInsWebform = ({sb}) => {
             </div>
             {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
             <button onClick={saveBatch} disabled={busy} style={{width:'100%', padding:13, borderRadius:10, border:'none', background:busy?'#9ca3af':'#1e40af', color:'white', fontSize:15, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving\u2026':'Save Weights'}</button>
+          </div>
+        )}
+
+        {/* Recent entries (pig) — no tag / age / ADG, just numbered weights.
+            Entry # = insertion order. Display reversed (latest first). */}
+        {species === 'pig' && entries.length > 0 && (
+          <div style={cardS}>
+            <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
+            {entries.slice(-10).reverse().map((e, i) => {
+              // i=0 is the latest entry. Its original insertion index is
+              // entries.length - 1, so its 1-based number is entries.length - i.
+              const entryNum = entries.length - i;
+              return (
+                <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+                  <span style={{fontWeight:700, color:'#111827', minWidth:40}}>#{entryNum}</span>
+                  <span style={{color:'#9ca3af'}}>{'·'}</span>
+                  <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                  {e.note && <><span style={{color:'#9ca3af'}}>{'·'}</span><span style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</span></>}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -902,12 +936,12 @@ const WeighInsWebform = ({sb}) => {
           }
           return (
             <div style={{padding:'8px 12px', background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, fontSize:12, color:'#065f46', marginTop:8, marginBottom:6, textAlign:'center', fontWeight:600}}>
-              {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' saved'}{species==='broiler' ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''}{avgAdgStr}
+              {entries.length + ' ' + (entries.length===1?'entry':'entries') + ' saved'}{(species==='broiler'||species==='pig') ? ' \u00b7 avg ' + (Math.round((entries.reduce(function(s,e){return s+(parseFloat(e.weight)||0);},0) / entries.length)*100)/100) + ' lb' : ''}{avgAdgStr}
             </div>
           );
         })()}
         {(() => {
-          var filledCount = (species === 'broiler' || species === 'pig')
+          var filledCount = (species === 'broiler')
             ? weightInputs.filter(function(w){return w !== '' && !isNaN(parseFloat(w)) && parseFloat(w) > 0;}).length
             : entries.length;
           var isEmpty = filledCount === 0;

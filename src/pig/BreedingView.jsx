@@ -45,7 +45,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
     const bWkHdrs = Array.from({length:BREED_WEEKS},(_,i)=>addDays(btlS,i*7));
     const cycleSeqMap = buildCycleSeqMap(breedingCycles);
 
-    const EMPTY_BREED = {group:"1",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:"",boar1Name:boarNames.boar1,boar2Name:boarNames.boar2};
+    const EMPTY_BREED = {group:"1",customSuffix:"",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:"",boar1Name:boarNames.boar1,boar2Name:boarNames.boar2};
 
     function persistBreedCycle(formSnapshot, cycleId){
       if(!formSnapshot.exposureStart) return;
@@ -130,6 +130,10 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                     </select>
                   </div>
 
+                  <div>
+                    <label style={S.label}>Cycle code <span style={{fontWeight:400,color:"#9ca3af",fontSize:11}}>(overrides the auto year-sequence, e.g. "26-01")</span></label>
+                    <input type="text" value={breedForm.customSuffix||''} onChange={e=>updBreed('customSuffix',e.target.value)} placeholder="e.g. 26-01 or Spring Batch"/>
+                  </div>
 
                   <div>
                     <label style={S.label}>First day exposure (start date)</label>
@@ -286,7 +290,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                         const cSuffix = cycleSeqMap[c.id];
                         const label = `G${c.group}${cSuffix?' · '+cSuffix:''} — ${phaseNames[row.phase]||row.phase}`;
                         return (
-                          <div key={c.id} onClick={()=>{setBreedForm({group:c.group,boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}}
+                          <div key={c.id} onClick={()=>{setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}}
                             onMouseEnter={function(ev){var r=ev.currentTarget.getBoundingClientRect();setTooltip({type:'pig',group:c.group,cycleLbl:cLbl,phase:row.phase,phaseName:phaseNames[row.phase]||row.phase,start:s,end:e,sowCount:c.sowCount,vx:r.left+r.width/2,vy:r.top-10});}}
                             onMouseLeave={function(){setTooltip(null);}}
                             style={{position:"absolute",left:`${left}%`,width:`${w}%`,top:4,bottom:4,borderRadius:4,cursor:"pointer",

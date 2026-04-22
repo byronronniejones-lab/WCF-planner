@@ -30,6 +30,10 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
   const [feederGroups, setFeederGroups] = useState([]);
   const [selectedEntryIds, setSelectedEntryIds] = useState(new Set());
   const [tripModal, setTripModal] = useState(null); // {session, entries: []}
+  // Pig inline add-entry state (per expanded session — scoped via expandedSession)
+  const [pigAddEntry, setPigAddEntry] = useState({weight:'', note:''});
+  const [pigBusy, setPigBusy] = useState(false);
+  const [pigErr, setPigErr] = useState('');
 
   const speciesLabel = species === 'broiler' ? 'Broiler' : 'Pig';
 
@@ -42,7 +46,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       const parts = raw.split('&').map(x => x.trim()).filter(Boolean);
       return parts.length > 0 ? parts : ['(no schooner)'];
     }
-    if(s.species === 'pig') return ['1','2'];
+    // Pig admin view moved to per-entry list (no grid) — labels stay empty.
     return [];
   }
   // Distribute a session's saved entries into a weights grid (mirrors the public webform).
@@ -105,6 +109,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
   useEffect(() => {
     if(!expandedSession) {
       setGridLabels([]); setGridInputs([]); setGridUnlocked(false); setGridNote(''); setGridErr('');
+      setPigAddEntry({weight:'', note:''}); setPigErr('');
       return;
     }
     const s = sessions.find(x => x.id === expandedSession);
@@ -125,7 +130,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
   async function completeFromAdmin(s) {
     // If this session is the currently-expanded tile, flush any pending grid
     // edits to DB first so what's on screen is what gets recorded as complete.
-    if(expandedSession === s.id && (s.species === 'broiler' || s.species === 'pig')) {
+    if(expandedSession === s.id && s.species === 'broiler') {
       await saveAdminGrid(s);
     }
     await sb.from('weigh_in_sessions').update({status:'complete', completed_at: new Date().toISOString()}).eq('id', s.id);
@@ -134,6 +139,39 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       // Override status locally so writeBroilerBatchAvg's complete-only gate fires.
       await writeBroilerBatchAvg(sb, {...s, status:'complete'}, (eR && eR.data) || []);
     }
+    await loadAll();
+  }
+  // ── Pig per-entry admin helpers ───────────────────────────────────────────
+  // Pigs moved off the grid flow; editing/deleting/adding happens one row at a
+  // time, like cattle/sheep. Sent-to-trip entries can't be edited or deleted
+  // (they'd desync from the trip's liveWeights string in app_store).
+  async function addPigEntry(sessionId) {
+    const w = parseFloat(pigAddEntry.weight);
+    if(!Number.isFinite(w) || w <= 0) { setPigErr('Weight is required.'); return; }
+    setPigBusy(true); setPigErr('');
+    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+    const rec = { id, session_id: sessionId, tag: null, weight: w, note: pigAddEntry.note || null, new_tag_flag: false };
+    const { error } = await sb.from('weigh_ins').insert(rec);
+    setPigBusy(false);
+    if(error) { setPigErr('Save failed: '+error.message); return; }
+    setPigAddEntry({weight:'', note:''});
+    await loadAll();
+  }
+  async function updatePigEntry(entryId, fields) {
+    if(!entryId || !fields) return;
+    const { error } = await sb.from('weigh_ins').update(fields).eq('id', entryId);
+    if(error) { setPigErr('Update failed: '+error.message); return; }
+    await loadAll();
+  }
+  async function deletePigEntry(entryId) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this weigh-in entry?', async () => {
+      await sb.from('weigh_ins').delete().eq('id', entryId);
+      await loadAll();
+    });
+  }
+  async function savePigSessionNote(sessionId, note) {
+    await sb.from('weigh_in_sessions').update({notes: note || null}).eq('id', sessionId);
     await loadAll();
   }
   async function deleteSession(s) {
@@ -371,8 +409,6 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                       </React.Fragment>
                     )}
                     {species === 'pig' && (() => {
-                      const unsent = sEntries.filter(e => !e.sent_to_trip_id);
-                      const sent = sEntries.filter(e => e.sent_to_trip_id);
                       const lookupTrip = (e) => {
                         const g = feederGroups.find(x => x.id === e.sent_to_group_id);
                         if(!g) return null;
@@ -380,53 +416,62 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                         return t ? { group: g, trip: t } : null;
                       };
                       const toggle = (id) => setSelectedEntryIds(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; });
+                      const unsent = sEntries.filter(e => !e.sent_to_trip_id);
                       const sel = unsent.filter(e => selectedEntryIds.has(e.id));
+                      const rowInpS = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', background:'white'};
                       return (
-                        <div style={{marginTop:16, paddingTop:12, borderTop:'1px dashed #d1d5db'}}>
-                          <div style={{fontSize:12, fontWeight:700, color:'#374151', marginBottom:8, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                            <span>{'\ud83d\ude9a Send to Processing Trip'}</span>
-                            <span style={{fontSize:11, color:'#6b7280', fontWeight:400}}>Select individual weigh-ins to ship to a trip. Sent entries are locked from the grid above.</span>
+                        <div style={{marginTop:4, paddingTop:12, borderTop:'1px dashed #d1d5db'}}>
+                          <div style={{fontSize:12, fontWeight:700, color:'#374151', marginBottom:8}}>Weights ({sEntries.length})</div>
+                          {sEntries.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', padding:'6px 0'}}>No entries in this session yet.</div>}
+                          {sEntries.map(e => {
+                            const isSent = !!e.sent_to_trip_id;
+                            const link = isSent ? lookupTrip(e) : null;
+                            const checked = selectedEntryIds.has(e.id);
+                            return (
+                              <div key={e.id} style={{display:'flex', alignItems:'center', gap:6, padding:'5px 0', borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
+                                {!isSent && !fieldsLocked
+                                  ? <input type="checkbox" checked={checked} onChange={()=>toggle(e.id)} style={{margin:0}} title="Select to send to trip"/>
+                                  : <span style={{width:13}}/>}
+                                {!isSent && !fieldsLocked
+                                  ? <input type="number" min="0" step="0.1" defaultValue={e.weight} onBlur={ev=>{const v=parseFloat(ev.target.value); if(Number.isFinite(v)&&v>0&&v!==parseFloat(e.weight)) updatePigEntry(e.id,{weight:v});}} style={{...rowInpS, width:80}}/>
+                                  : <span style={{fontWeight:700, color:isSent?'#047857':'#1e40af', minWidth:80, fontSize:13}}>{e.weight} lb</span>}
+                                {!isSent && !fieldsLocked
+                                  ? <input type="text" placeholder="Note (optional)" defaultValue={e.note||''} onBlur={ev=>{const v=(ev.target.value||'').trim()||null; if(v!==(e.note||null)) updatePigEntry(e.id,{note:v});}} style={{...rowInpS, flex:1, minWidth:120}}/>
+                                  : (e.note && <span style={{fontSize:11, color:'#6b7280', fontStyle:'italic', flex:1}}>{e.note}</span>)}
+                                {isSent && link && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#d1fae5', color:'#065f46', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 '+link.group.batchName+' \u00b7 '+link.trip.date}</span>}
+                                {isSent && !link && <span style={{fontSize:11, color:'#b91c1c', fontStyle:'italic'}}>(missing trip)</span>}
+                                {isSent && <button onClick={()=>undoSendToTrip(e)} title="Undo send to trip" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Undo send</button>}
+                                {!isSent && !fieldsLocked && <button onClick={()=>deletePigEntry(e.id)} title="Delete entry" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Delete</button>}
+                              </div>
+                            );
+                          })}
+
+                          {/* Add entry row */}
+                          {!fieldsLocked && (
+                            <div style={{display:'flex', alignItems:'center', gap:6, marginTop:10, padding:'8px 10px', background:'#eff6ff', border:'1px dashed #bfdbfe', borderRadius:6, flexWrap:'wrap'}}>
+                              <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>+ Add:</span>
+                              <input type="number" min="0" step="0.1" placeholder="Weight (lb)" value={pigAddEntry.weight} onChange={ev=>setPigAddEntry(p=>({...p, weight:ev.target.value}))} style={{...rowInpS, width:110}}/>
+                              <input type="text" placeholder="Note (optional)" value={pigAddEntry.note} onChange={ev=>setPigAddEntry(p=>({...p, note:ev.target.value}))} style={{...rowInpS, flex:1, minWidth:120}}/>
+                              <button onClick={()=>addPigEntry(s.id)} disabled={pigBusy || !pigAddEntry.weight} style={{padding:'6px 14px', borderRadius:5, border:'none', background:(pigBusy||!pigAddEntry.weight)?'#9ca3af':'#1e40af', color:'white', fontSize:12, fontWeight:600, cursor:(pigBusy||!pigAddEntry.weight)?'not-allowed':'pointer', fontFamily:'inherit'}}>{pigBusy?'Saving\u2026':'Add'}</button>
+                            </div>
+                          )}
+                          {pigErr && <div style={{color:'#b91c1c', fontSize:12, marginTop:8, padding:'6px 10px', background:'#fef2f2', borderRadius:6}}>{pigErr}</div>}
+
+                          {/* Session note */}
+                          <div style={{marginTop:12}}>
+                            <label style={{display:'block', fontSize:12, color:'#374151', marginBottom:4, fontWeight:600}}>Session note</label>
+                            <textarea defaultValue={s.notes||''} disabled={fieldsLocked} readOnly={fieldsLocked} onBlur={ev=>{ if((ev.target.value||'') !== (s.notes||'')) savePigSessionNote(s.id, ev.target.value||''); }} rows={2} placeholder="Optional" style={{...(fieldsLocked?inpLockedStyle:inpEditableStyle), resize:'vertical'}}/>
                           </div>
-                          {unsent.length > 0 && (
-                            <div style={{marginBottom:10}}>
-                              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(120px, 1fr))', gap:4, marginBottom:8}}>
-                                {unsent.map(e => {
-                                  const checked = selectedEntryIds.has(e.id);
-                                  return (
-                                    <label key={e.id} style={{display:'flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:5, background:checked?'#dbeafe':'white', border:'1px solid '+(checked?'#bfdbfe':'#e5e7eb'), cursor:'pointer', fontSize:12}}>
-                                      <input type="checkbox" checked={checked} onChange={()=>toggle(e.id)} style={{margin:0}}/>
-                                      <span style={{fontWeight:700, color:'#1e40af'}}>{e.weight} lb</span>
-                                      {e.tag && <span style={{fontSize:11, color:'#6b7280', marginLeft:'auto'}}>{'Col '+e.tag}</span>}
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                              <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-                                <button onClick={()=>setSelectedEntryIds(new Set(unsent.map(e=>e.id)))} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Select all unsent</button>
-                                {selectedEntryIds.size > 0 && <button onClick={()=>setSelectedEntryIds(new Set())} style={{fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Clear</button>}
-                                <button disabled={sel.length===0} onClick={()=>setTripModal({session:s, entries:sel})} style={{marginLeft:'auto', padding:'6px 14px', borderRadius:6, border:'none', background:sel.length>0?'#047857':'#d1d5db', color:'white', fontSize:12, fontWeight:600, cursor:sel.length>0?'pointer':'not-allowed', fontFamily:'inherit'}}>{'\u2192 Send '+sel.length+' to Trip'}</button>
-                              </div>
+
+                          {/* Send-to-Trip action bar */}
+                          {unsent.length > 0 && !fieldsLocked && (
+                            <div style={{marginTop:12, paddingTop:10, borderTop:'1px dashed #e5e7eb', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                              <span style={{fontSize:11, color:'#6b7280'}}>{'\ud83d\ude9a Send to trip:'}</span>
+                              <button onClick={()=>setSelectedEntryIds(new Set(unsent.map(e=>e.id)))} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Select all unsent ({unsent.length})</button>
+                              {selectedEntryIds.size > 0 && <button onClick={()=>setSelectedEntryIds(new Set())} style={{fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Clear</button>}
+                              <button disabled={sel.length===0} onClick={()=>setTripModal({session:s, entries:sel})} style={{marginLeft:'auto', padding:'6px 14px', borderRadius:6, border:'none', background:sel.length>0?'#047857':'#d1d5db', color:'white', fontSize:12, fontWeight:600, cursor:sel.length>0?'pointer':'not-allowed', fontFamily:'inherit'}}>{'\u2192 Send '+sel.length+' to Trip'}</button>
                             </div>
                           )}
-                          {sent.length > 0 && (
-                            <div style={{background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:6, padding:'8px 10px'}}>
-                              <div style={{fontSize:11, fontWeight:700, color:'#065f46', marginBottom:6, textTransform:'uppercase', letterSpacing:.5}}>{'Sent to trip ('+sent.length+')'}</div>
-                              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:4}}>
-                                {sent.map(e => {
-                                  const link = lookupTrip(e);
-                                  return (
-                                    <div key={e.id} style={{display:'flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:5, background:'white', border:'1px solid #bbf7d0', fontSize:11}}>
-                                      <span style={{fontWeight:700, color:'#047857'}}>{e.weight} lb</span>
-                                      {link && <span style={{color:'#065f46'}}>{link.group.batchName+' \u00b7 '+link.trip.date}</span>}
-                                      {!link && <span style={{color:'#b91c1c', fontStyle:'italic'}}>(missing trip)</span>}
-                                      <button onClick={()=>undoSendToTrip(e)} title="Remove from trip" style={{marginLeft:'auto', background:'none', border:'none', color:'#b91c1c', cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 2px', fontFamily:'inherit'}}>{'\u00d7'}</button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          {unsent.length === 0 && sent.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No entries in this session yet.</div>}
                         </div>
                       );
                     })()}

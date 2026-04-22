@@ -52,6 +52,33 @@ export default function PigBatchesView({
   const { setView } = useUI();
     const statusColors = {active:{bg:"#085041",tx:"white"},processed:{bg:"#4b5563",tx:"white"}};
     const cycleSeqMap = buildCycleSeqMap(breedingCycles);
+    // Trip source tracking: for each processing trip, which weigh-in session(s)
+    // contributed pigs. Pulled from weigh_ins (sent_to_trip_id) + sessions (batch_id).
+    const [tripSentWeighins, setTripSentWeighins] = React.useState([]);
+    const [tripSessionBatch, setTripSessionBatch] = React.useState({}); // session_id -> batch_id
+    React.useEffect(() => {
+      (async () => {
+        const { data: sent } = await sb.from('weigh_ins').select('id, session_id, sent_to_trip_id, weight').not('sent_to_trip_id', 'is', null);
+        if(!sent) return;
+        setTripSentWeighins(sent);
+        const ids = [...new Set(sent.map(e => e.session_id).filter(Boolean))];
+        if(ids.length === 0) return;
+        const { data: sess } = await sb.from('weigh_in_sessions').select('id, batch_id').in('id', ids);
+        const m = {};
+        (sess||[]).forEach(s => { m[s.id] = s.batch_id; });
+        setTripSessionBatch(m);
+      })();
+    }, []);
+    function tripSourceCounts(tripId) {
+      if(!tripId) return {};
+      const counts = {};
+      tripSentWeighins.forEach(e => {
+        if(e.sent_to_trip_id !== tripId) return;
+        const name = tripSessionBatch[e.session_id] || 'Unknown session';
+        counts[name] = (counts[name] || 0) + 1;
+      });
+      return counts;
+    }
 
     // Match pig_dailys to a name (case-insensitive) — used for both batch and sub-batch matching
     function dailysForName(name){
@@ -652,8 +679,18 @@ export default function PigBatchesView({
                               const total = wts.reduce((a,b)=>a+b,0);
                               const avg = wts.length>0?Math.round(total/wts.length):0;
                               return wts.length>0?(
-                                <div style={{fontSize:11,color:"#085041",marginTop:3}}>{wts.length} pigs {'\u00b7'} Total: {Math.round(total)} lbs {'\u00b7'} Avg: {avg} lbs/pig</div>
+                                <div style={{fontSize:11,color:"#085041",marginTop:3}}>{wts.length} pigs {'\u00b7'} Total: {Math.round(total)} lbs{'\u00b7'} Avg: {avg} lbs/pig</div>
                               ):null;
+                            })()}
+                            {editTripId && (() => {
+                              const counts = tripSourceCounts(editTripId);
+                              const keys = Object.keys(counts);
+                              if(keys.length === 0) return null;
+                              return (
+                                <div style={{fontSize:11,color:"#065f46",marginTop:6,padding:"5px 9px",background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:5}}>
+                                  <strong>Sources:</strong> {keys.map(k => k + " (" + counts[k] + ")").join(", ")}
+                                </div>
+                              );
                             })()}
                           </div>
                           <div>
@@ -695,6 +732,12 @@ export default function PigBatchesView({
                           <button onClick={()=>deleteTrip(g.id,t.id)} style={{fontSize:11,color:"#b91c1c",background:"none",border:"none",cursor:"pointer"}}>Delete</button>
                         </div>
                         {wts.length>0&&<div style={{width:"100%",fontSize:10,color:"#9ca3af",marginTop:1}}>Weights: {t.liveWeights}</div>}
+                        {(() => {
+                          const counts = tripSourceCounts(t.id);
+                          const keys = Object.keys(counts);
+                          if(keys.length === 0) return null;
+                          return (<div style={{width:"100%",fontSize:11,color:"#065f46",marginTop:2}}><strong>From:</strong> {keys.map(k => k + " (" + counts[k] + ")").join(", ")}</div>);
+                        })()}
                       </div>
                     );
                   })}
