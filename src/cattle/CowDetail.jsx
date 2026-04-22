@@ -1,7 +1,47 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
 
-const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, fmt, HERDS, HERD_LABELS, HERD_COLORS, onEdit, onTransfer, onDelete, onComment, onEditComment, onDeleteComment, onAddCalving, onDeleteCalving, onNavigateToCow, onNavigateBack, canNavigateBack, backToTag}) => {
+const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, fmt, HERDS, HERD_LABELS, HERD_COLORS, onEdit, onTransfer, onDelete, onComment, onEditComment, onDeleteComment, onAddCalving, onDeleteCalving, onNavigateToCow, onNavigateBack, canNavigateBack, backToTag, onPatch, onClose, originOpts, breedOpts}) => {
+  // Auto-save inline editor — uncontrolled inputs that fire onPatch on blur
+  // when the value changed. Numbers parse to number; empty strings become null.
+  const patchOnBlur = (field, parser) => (ev) => {
+    if(!onPatch) return;
+    const raw = ev.target.value;
+    const cur = cow[field];
+    let next;
+    if(parser === 'number') {
+      next = raw === '' ? null : parseFloat(raw);
+      if(Number.isNaN(next)) next = null;
+    } else {
+      next = (raw||'').trim() || null;
+    }
+    const curNorm = (cur === '' ? null : cur);
+    if(String(next) === String(curNorm)) return;
+    onPatch({[field]: next});
+  };
+  const patchOnChange = (field) => (ev) => {
+    if(!onPatch) return;
+    const v = ev.target.type === 'checkbox' ? ev.target.checked : (ev.target.value || null);
+    onPatch({[field]: v});
+  };
+  // Editable old_tags helpers
+  function patchOldTagAt(idx, field, value) {
+    if(!onPatch) return;
+    const next = (Array.isArray(cow.old_tags) ? cow.old_tags : []).slice();
+    next[idx] = {...next[idx], [field]: value};
+    onPatch({old_tags: next});
+  }
+  function addOldTag() {
+    if(!onPatch) return;
+    const next = [...(Array.isArray(cow.old_tags) ? cow.old_tags : []), {tag:'', changed_at:'', source:'manual'}];
+    onPatch({old_tags: next});
+  }
+  function removeOldTag(idx) {
+    if(!onPatch) return;
+    const next = (Array.isArray(cow.old_tags) ? cow.old_tags : []).filter((_, i) => i !== idx);
+    onPatch({old_tags: next});
+  }
+  const editInp = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', width:'100%', background:'white'};
   const [commentText, setCommentText] = React.useState('');
   const [showTransfer, setShowTransfer] = React.useState(false);
   const [showCalvingForm, setShowCalvingForm] = React.useState(false);
@@ -36,56 +76,113 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, f
           <span style={{fontSize:11, color:'#6b7280'}}>— you navigated here from another cow</span>
         </div>
       )}
-      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6'}}>
-        <span style={{fontSize:16, fontWeight:700, color:accentColor}}>{cow.tag ? '#'+cow.tag : '(no tag)'}</span>
-        <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#f3f4f6', color:'#374151', fontWeight:600}}>{HERD_LABELS[cow.herd]||cow.herd}</span>
-        {cow.sex && <span style={{fontSize:11, color:'#6b7280', textTransform:'capitalize'}}>{cow.sex}</span>}
-        {cow.breed && <span style={{fontSize:11, color:'#6b7280'}}>{cow.breed}</span>}
+      {/* Header: editable tag + sex/herd/breed selects + close X */}
+      <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
+        <span style={{fontSize:16, fontWeight:700, color:accentColor, marginRight:2}}>{'#'}</span>
+        <input type="text" defaultValue={cow.tag||''} onBlur={patchOnBlur('tag','text')} placeholder="tag" style={{...editInp, width:80, fontWeight:700, fontSize:14, color:accentColor}}/>
+        <select defaultValue={cow.herd||''} onChange={patchOnChange('herd')} style={{...editInp, width:140}}>
+          {(HERDS||[]).map(h => <option key={h} value={h}>{HERD_LABELS[h]||h}</option>)}
+        </select>
+        <select defaultValue={cow.sex||''} onChange={patchOnChange('sex')} style={{...editInp, width:90}}>
+          <option value=''>{'\u2014 sex \u2014'}</option>
+          <option value='cow'>Cow</option>
+          <option value='heifer'>Heifer</option>
+          <option value='bull'>Bull</option>
+          <option value='steer'>Steer</option>
+          <option value='calf'>Calf</option>
+        </select>
+        <select defaultValue={cow.breed||''} onChange={patchOnChange('breed')} style={{...editInp, width:200}}>
+          <option value=''>{'\u2014 breed \u2014'}</option>
+          {(breedOpts||[]).filter(b=>b.active).map(b => <option key={b.id} value={b.label}>{b.label}</option>)}
+          {cow.breed && !(breedOpts||[]).some(b=>b.active && b.label===cow.breed) && (
+            <option value={cow.breed}>{cow.breed+' (historical)'}</option>
+          )}
+        </select>
+        {onClose && <button type="button" onClick={(e)=>{e.stopPropagation(); onClose();}} title="Close" style={{marginLeft:'auto', background:'none', border:'1px solid #d1d5db', borderRadius:6, color:'#6b7280', cursor:'pointer', fontSize:18, lineHeight:1, padding:'2px 10px', fontFamily:'inherit'}}>{'\u00d7'}</button>}
       </div>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
-        {/* Identity */}
+        {/* Identity (editable) */}
         <div>
           <div style={sectionTitle}>Identity</div>
-          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'auto 1fr', gap:'2px 8px'}}>
-            {cow.registration_num && <><span style={{color:'#9ca3af'}}>Reg #:</span><span>{cow.registration_num}</span></>}
-            {cow.pct_wagyu != null && <><span style={{color:'#9ca3af'}}>% Wagyu:</span><span>{cow.pct_wagyu}%</span></>}
-            {cow.origin && <><span style={{color:'#9ca3af'}}>Origin:</span><span>{cow.origin}</span></>}
-            {cow.birth_date && <><span style={{color:'#9ca3af'}}>Birth:</span><span>{fmt(cow.birth_date)}</span></>}
-            {cow.purchase_date && <><span style={{color:'#9ca3af'}}>Purchased:</span><span>{fmt(cow.purchase_date)} {cow.purchase_amount?('\u00b7 $'+cow.purchase_amount):''}</span></>}
-            {(cow.sex==='cow'||cow.sex==='heifer') && cow.breeding_status && <><span style={{color:'#9ca3af'}}>Breeding:</span><span style={{textTransform:'capitalize'}}>{String(cow.breeding_status).toLowerCase()}</span></>}
-            {Array.isArray(cow.old_tags) && cow.old_tags.length > 0 && (
-              <>
-                <span style={{color:'#9ca3af'}}>Prior tags:</span>
-                <span>{cow.old_tags.slice().reverse().map(function(t,i){
-                  var dateStr = t.changed_at ? (' ' + fmt((t.changed_at||'').slice(0,10))) : '';
-                  var srcLabel = t.source === 'import' ? ' (purchase)'
-                               : t.source === 'weigh_in' ? ' (swap)'
-                               : '';
-                  return (i>0?', ':'') + '#' + t.tag + dateStr + srcLabel;
-                }).join('')}</span>
-              </>
-            )}
+          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'120px 1fr', gap:'4px 8px', alignItems:'center'}}>
+            <span style={{color:'#9ca3af'}}>Reg #:</span>
+            <input type="text" defaultValue={cow.registration_num||''} onBlur={patchOnBlur('registration_num','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>% Wagyu:</span>
+            <input type="number" min="0" max="100" defaultValue={cow.pct_wagyu==null?'':cow.pct_wagyu} onBlur={patchOnBlur('pct_wagyu','number')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Origin:</span>
+            <select defaultValue={cow.origin||''} onChange={patchOnChange('origin')} style={editInp}>
+              <option value=''>{'\u2014 select \u2014'}</option>
+              {(originOpts||[]).filter(o=>o.active).map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+              {cow.origin && !(originOpts||[]).some(o=>o.active && o.label===cow.origin) && (
+                <option value={cow.origin}>{cow.origin}</option>
+              )}
+            </select>
+            <span style={{color:'#9ca3af'}}>Birth:</span>
+            <input type="date" defaultValue={cow.birth_date||''} onBlur={patchOnBlur('birth_date','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Purchased:</span>
+            <input type="date" defaultValue={cow.purchase_date||''} onBlur={patchOnBlur('purchase_date','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Purchase $:</span>
+            <input type="number" min="0" step="0.01" defaultValue={cow.purchase_amount==null?'':cow.purchase_amount} onBlur={patchOnBlur('purchase_amount','number')} style={editInp}/>
+            {(cow.sex==='cow'||cow.sex==='heifer') && (<>
+              <span style={{color:'#9ca3af'}}>Breeding:</span>
+              <select defaultValue={cow.breeding_status||''} onChange={patchOnChange('breeding_status')} style={editInp}>
+                <option value=''>{'\u2014 not set \u2014'}</option>
+                <option value='OPEN'>Open</option>
+                <option value='PREGNANT'>Pregnant</option>
+                <option value='N/A'>N/A</option>
+              </select>
+            </>)}
           </div>
         </div>
-        {/* Lineage */}
+        {/* Lineage (editable) */}
         <div>
           <div style={sectionTitle}>Lineage</div>
-          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'auto 1fr', gap:'2px 8px'}}>
-            <span style={{color:'#9ca3af'}}>Dam:</span>
-            <span>{cow.dam_tag
-              ? (findByTag(cow.dam_tag)
-                  ? <><TagLink tag={cow.dam_tag}/> <span style={{color:'#9ca3af'}}>{'('+(findByTag(cow.dam_tag).breed||'?')+')'}</span></>
-                  : <span>{'#'+cow.dam_tag+' (not in directory)'}</span>)
-              : '\u2014'}</span>
-            <span style={{color:'#9ca3af'}}>Sire:</span>
-            <span>{cow.sire_tag
-              ? (findByTag(cow.sire_tag)
-                  ? <><TagLink tag={cow.sire_tag}/> <span style={{color:'#9ca3af'}}>{'('+(findByTag(cow.sire_tag).breed||'?')+')'}</span></>
-                  : <span>{'#'+cow.sire_tag+' (not in directory)'}</span>)
-              : '\u2014'}</span>
+          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'120px 1fr', gap:'4px 8px', alignItems:'center'}}>
+            <span style={{color:'#9ca3af'}}>Dam tag #:</span>
+            <input type="text" defaultValue={cow.dam_tag||''} onBlur={patchOnBlur('dam_tag','text')} style={editInp}/>
+            {cow.dam_tag && findByTag(cow.dam_tag) && (<>
+              <span style={{color:'#9ca3af'}}>{}</span>
+              <span style={{fontSize:11, color:'#6b7280'}}><TagLink tag={cow.dam_tag} prefix="View "/> {'('+(findByTag(cow.dam_tag).breed||'?')+')'}</span>
+            </>)}
+            <span style={{color:'#9ca3af'}}>Sire tag #:</span>
+            <input type="text" defaultValue={cow.sire_tag||''} onBlur={patchOnBlur('sire_tag','text')} style={editInp}/>
+            {cow.sire_tag && findByTag(cow.sire_tag) && (<>
+              <span style={{color:'#9ca3af'}}>{}</span>
+              <span style={{fontSize:11, color:'#6b7280'}}><TagLink tag={cow.sire_tag} prefix="View "/> {'('+(findByTag(cow.sire_tag).breed||'?')+')'}</span>
+            </>)}
           </div>
         </div>
       </div>
+      {/* Prior Tags editor */}
+      <div style={{marginTop:12, paddingTop:10, borderTop:'1px solid #f3f4f6'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+          <div style={sectionTitle}>Prior Tags</div>
+          <button type="button" onClick={addOldTag} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'1px dashed #bfdbfe', borderRadius:5, padding:'3px 10px', cursor:'pointer', fontFamily:'inherit'}}>+ Add Prior Tag</button>
+        </div>
+        {(cow.old_tags||[]).length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No prior tags recorded.</div>}
+        {(cow.old_tags||[]).map((t, ti) => (
+          <div key={ti} style={{display:'grid', gridTemplateColumns:'100px 140px 1fr 30px', gap:8, marginBottom:6, alignItems:'center'}}>
+            <input type="text" placeholder="Tag #" defaultValue={t.tag||''} onBlur={ev=>patchOldTagAt(ti, 'tag', ev.target.value)} style={editInp}/>
+            <input type="date" defaultValue={(t.changed_at||'').slice(0,10)} onBlur={ev=>patchOldTagAt(ti, 'changed_at', ev.target.value)} style={editInp}/>
+            <select defaultValue={t.source||'manual'} onChange={ev=>patchOldTagAt(ti, 'source', ev.target.value)} style={editInp}>
+              <option value='import'>Purchase tag (selling farm)</option>
+              <option value='weigh_in'>Swapped tag (weigh-in)</option>
+              <option value='manual'>Other / manual entry</option>
+            </select>
+            <button type="button" title="Remove" onClick={()=>removeOldTag(ti)} style={{background:'none', border:'1px solid #F09595', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:14, lineHeight:1, padding:'4px 6px', fontFamily:'inherit'}}>{'\u00d7'}</button>
+          </div>
+        ))}
+      </div>
+      {/* Breeding blacklist (hidden for steers \u2014 they can't breed) */}
+      {cow.sex !== 'steer' && (
+        <div style={{marginTop:10, paddingTop:8, borderTop:'1px solid #f3f4f6'}}>
+          <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, whiteSpace:'nowrap'}}>
+            <input type="checkbox" checked={!!cow.breeding_blacklist} onChange={patchOnChange('breeding_blacklist')} style={{margin:0,flexShrink:0}}/>
+            <span>Breeding blacklist</span>
+          </label>
+          <div style={{fontSize:11, color:'#9ca3af', marginLeft:26, marginTop:4}}>Use the comments timeline to record why.</div>
+        </div>
+      )}
 
       {/* Weigh-in history — table / chart toggle with per-row ADG + lifetime footer */}
       {weighIns && weighIns.length > 0 && (() => {
@@ -364,9 +461,8 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, f
         )}
       </div>
 
-      {/* Action buttons */}
+      {/* Action buttons (Edit removed — fields are inline-editable above) */}
       <div style={{marginTop:12, display:'flex', gap:6, flexWrap:'wrap', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
-        <button onClick={onEdit} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#374151', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
         {!showTransfer && <button onClick={()=>setShowTransfer(true)} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Transfer</button>}
         {showTransfer && (
           <select onChange={e=>{if(e.target.value){onTransfer(e.target.value); setShowTransfer(false);}}} style={{fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit'}}>

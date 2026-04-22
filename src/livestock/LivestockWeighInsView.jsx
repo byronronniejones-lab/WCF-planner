@@ -278,9 +278,11 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       };
       // Read current breeders, append, write back.
       const brR = await sb.from('app_store').select('data').eq('key','ppp-breeders-v1').maybeSingle();
+      if(brR.error) { alert('Could not read breeders registry: '+brR.error.message); setTransferBusy(false); return; }
       const currentBreeders = (brR.data && Array.isArray(brR.data.data)) ? brR.data.data : [];
       const newBreeders = [...currentBreeders, breederRec];
-      await sb.from('app_store').upsert({key:'ppp-breeders-v1', data: newBreeders}, {onConflict:'key'});
+      const brW = await sb.from('app_store').upsert({key:'ppp-breeders-v1', data: newBreeders}, {onConflict:'key'});
+      if(brW.error) { alert('Could not save new breeder: '+brW.error.message); setTransferBusy(false); return; }
 
       // 2. Decrement parent + sub batch counts and accumulate feed allocation.
       const updatedFeederGroups = feederGroups.map(g => {
@@ -302,14 +304,27 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
         return next;
       });
       setFeederGroups(updatedFeederGroups);
-      await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: updatedFeederGroups}, {onConflict:'key'});
+      const fW = await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: updatedFeederGroups}, {onConflict:'key'});
+      if(fW.error) { alert('Could not update feeder batch counts: '+fW.error.message); setTransferBusy(false); return; }
 
-      // 3. Stamp the weigh-in entry.
-      await sb.from('weigh_ins').update({
+      // 3. Stamp the weigh-in entry. Try the rich payload first; if any of
+      // the new columns are missing on this Supabase project, fall back to
+      // adding the marker via the note field so the action is at least
+      // visible in the UI.
+      const wi = await sb.from('weigh_ins').update({
         transferred_to_breeding: true,
         transfer_breeder_id: breederId,
         feed_allocation_lbs: feedAllocLbs,
       }).eq('id', entry.id);
+      if(wi.error) {
+        const noteFallback = '[transferred_to_breeding breeder='+breederId+' feed_alloc='+feedAllocLbs+' lb] '+(entry.note||'');
+        const wi2 = await sb.from('weigh_ins').update({note: noteFallback}).eq('id', entry.id);
+        if(wi2.error) {
+          alert('Transfer mostly succeeded — breeder #'+tag+' was created and counts updated, but the weigh-in row could not be stamped: '+wi.error.message+' / '+wi2.error.message);
+        } else {
+          alert('Transfer succeeded — note: weigh_ins schema is missing transferred_to_breeding columns, fell back to a note marker. Run the migration to enable the badge.');
+        }
+      }
 
       setTransferModal(null);
       setTransferBusy(false);
@@ -568,6 +583,11 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                             const link = isSent ? lookupTrip(e) : null;
                             const checked = selectedEntryIds.has(e.id);
                             const editable = !isSent && !isTransferred && !fieldsLocked;
+                            // Action buttons (Breeding transfer, Delete, etc) stay
+                            // available on completed/locked sessions. Final-trip
+                            // decisions like "this gilt becomes a sow" need to
+                            // happen post-completion without unlocking weights.
+                            const canAct = !isSent && !isTransferred;
                             return (
                               <div key={e.id} style={{display:'grid', gridTemplateColumns:'24px 90px 1fr auto', gap:8, padding:'6px 0', borderBottom:'1px solid #f3f4f6', alignItems:'center'}}>
                                 {/* Col 1: select-to-trip checkbox (or spacer) */}
@@ -590,7 +610,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                                 </div>
                                 {/* Col 4: action buttons */}
                                 <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-                                  {editable && <button onClick={()=>openTransferModal(s, e)} title="Transfer to breeding pigs" style={{background:'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:5, color:'#5b21b6', cursor:'pointer', fontSize:11, padding:'3px 8px', fontFamily:'inherit', fontWeight:600}}>{'\u2192 Breeding'}</button>}
+                                  {canAct && <button onClick={()=>openTransferModal(s, e)} title="Transfer to breeding pigs" style={{background:'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:5, color:'#5b21b6', cursor:'pointer', fontSize:11, padding:'3px 8px', fontFamily:'inherit', fontWeight:600}}>{'\u2192 Breeding'}</button>}
                                   {isSent && <button onClick={()=>undoSendToTrip(e)} title="Undo send to trip" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Undo send</button>}
                                   {editable && <button onClick={()=>deletePigEntry(e.id)} title="Delete entry" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Delete</button>}
                                 </div>

@@ -299,6 +299,15 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
     setEditId(null);
     setForm(null);
   }
+  // Inline auto-save patch for a single cow. Called from CowDetail's
+  // editable inputs (defaultValue + onBlur pattern). Updates DB column-by-
+  // column then reflects locally so the read-only badges/labels refresh.
+  async function patchCow(cowId, fields) {
+    if(!cowId || !fields) return;
+    const {error} = await sb.from('cattle').update(fields).eq('id', cowId);
+    if(error) { alert('Save failed: '+error.message); return; }
+    setCattle(prev => prev.map(c => c.id === cowId ? {...c, ...fields} : c));
+  }
   async function deleteCow(id) {
     if(!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Permanently delete this cow record? Weigh-ins, calving records, comments, and transfer history will also be deleted (cascade).', async () => {
@@ -466,7 +475,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
               const cowComments = comments.filter(cm => cm.cattle_id === c.id || cm.cattle_tag === c.tag).slice(0, 20);
               return (
                 <div key={c.id} id={'cow-'+c.id} style={{borderBottom:i<sorted.length-1?'1px solid #f3f4f6':'none'}}>
-                  <div onClick={()=>setExpandedCow(isExpanded?null:c.id)} style={{padding:'10px 16px 10px 0', display:'grid', gridTemplateColumns:'48px 16px 70px 110px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'white'}} className="hoverable-tile">
+                  {!isExpanded && <div onClick={()=>setExpandedCow(c.id)} style={{padding:'10px 16px 10px 0', display:'grid', gridTemplateColumns:'48px 16px 70px 110px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'white'}} className="hoverable-tile">
                     <span style={{fontSize:11, color:'#9ca3af', fontVariantNumeric:'tabular-nums', alignSelf:'stretch', display:'flex', alignItems:'center', justifyContent:'flex-end', paddingRight:10, paddingLeft:8, marginTop:-10, marginBottom:-10, borderRight:'1px solid #d1d5db', fontWeight:600}}>{i+1}</span>
                     <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
                     <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
@@ -480,7 +489,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                       {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL ISSUE</span>}
                       {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
                     </span>
-                  </div>
+                  </div>}
                   {isExpanded && <CowDetail
                     cow={c}
                     weighIns={cowWeighIns}
@@ -505,6 +514,10 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                     onNavigateBack={navigateBack}
                     canNavigateBack={cowNavStack.length > 0}
                     backToTag={cowNavStack.length > 0 ? (cattle.find(x => x.id === cowNavStack[cowNavStack.length-1])||{}).tag : null}
+                          onPatch={(fields)=>patchCow(c.id, fields)}
+                          onClose={()=>setExpandedCow(null)}
+                          originOpts={originOpts}
+                          breedOpts={breedOpts}
                   />}
                 </div>
               );
@@ -542,7 +555,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                     const cowComments = comments.filter(cm => cm.cattle_id === c.id || cm.cattle_tag === c.tag).slice(0, 20);
                     return (
                       <div key={c.id} id={'cow-'+c.id} style={{borderBottom:'1px solid #f3f4f6'}}>
-                        <div onClick={()=>setExpandedCow(isExpanded?null:c.id)} style={{padding:'10px 18px 10px 0', display:'grid', gridTemplateColumns:'48px 16px 70px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'transparent'}} className="hoverable-tile">
+                        {!isExpanded && <div onClick={()=>setExpandedCow(c.id)} style={{padding:'10px 18px 10px 0', display:'grid', gridTemplateColumns:'48px 16px 70px 60px 180px 70px 90px 1fr', alignItems:'center', gap:10, cursor:'pointer', background:c.breeding_blacklist?'#fecaca':'transparent'}} className="hoverable-tile">
                           <span style={{fontSize:11, color:'#9ca3af', fontVariantNumeric:'tabular-nums', alignSelf:'stretch', display:'flex', alignItems:'center', justifyContent:'flex-end', paddingRight:10, paddingLeft:8, marginTop:-10, marginBottom:-10, borderRight:'1px solid #d1d5db', fontWeight:600}}>{cowIdx+1}</span>
                           <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>
                           <span style={{fontWeight:700, fontSize:13, color:'#111827'}}>{c.tag ? '#'+c.tag : '(no tag)'}</span>
@@ -556,7 +569,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                             {c.maternal_issue_flag && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>MATERNAL</span>}
                             {c.breeding_blacklist && <span style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c', fontWeight:600}}>BLACKLIST</span>}
                           </span>
-                        </div>
+                        </div>}
                         {isExpanded && <CowDetail
                           cow={c}
                           weighIns={cowWeighIns}
@@ -581,6 +594,10 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                           onNavigateBack={navigateBack}
                           canNavigateBack={cowNavStack.length > 0}
                           backToTag={cowNavStack.length > 0 ? (cattle.find(x => x.id === cowNavStack[cowNavStack.length-1])||{}).tag : null}
+                          onPatch={(fields)=>patchCow(c.id, fields)}
+                          onClose={()=>setExpandedCow(null)}
+                          originOpts={originOpts}
+                          breedOpts={breedOpts}
                         />}
                       </div>
                     );
@@ -629,6 +646,10 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                   onNavigateBack={navigateBack}
                   canNavigateBack={cowNavStack.length > 0}
                   backToTag={cowNavStack.length > 0 ? (cattle.find(x => x.id === cowNavStack[cowNavStack.length-1])||{}).tag : null}
+                          onPatch={(fields)=>patchCow(c.id, fields)}
+                          onClose={()=>setExpandedCow(null)}
+                          originOpts={originOpts}
+                          breedOpts={breedOpts}
                 />;
               }}
             />
