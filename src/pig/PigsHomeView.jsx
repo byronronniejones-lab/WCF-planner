@@ -107,7 +107,21 @@ export default function PigsHomeView({ Header, loadUsers }) {
       const reportDays = new Set(batchDailys.map(d=>d.date)).size;
       const cycle = breedingCycles.find(c=>c.id===g.cycleId);
       const tl = cycle?calcBreedingTimeline(cycle.exposureStart):null;
-      const daysOld = tl?Math.round((new Date()-new Date(tl.farrowingStart+'T12:00:00'))/86400000):null;
+      // Use the OLDEST actual farrow date (to match the batch tile's age
+      // range upper bound). Falls back to the theoretical farrowingStart
+      // when no actual farrowing records exist for this cycle yet.
+      let ageFromDate = null;
+      if(cycle && tl) {
+        const recs = farrowingRecs.filter(r => {
+          if(r.group !== cycle.group || !r.farrowingDate) return false;
+          const rd = new Date(r.farrowingDate+'T12:00:00');
+          return rd >= new Date(tl.farrowingStart+'T12:00:00') && rd <= addDays(new Date(tl.farrowingEnd+'T12:00:00'),14);
+        });
+        ageFromDate = recs.length > 0
+          ? recs.map(r => r.farrowingDate).sort()[0]
+          : tl.farrowingStart;
+      }
+      const daysOld = ageFromDate ? Math.round((new Date()-new Date(ageFromDate+'T12:00:00'))/86400000) : null;
       const perLbCost = parseFloat(g.perLbFeedCost)||0;
       const totalFeedCost = (totalFeed>0&&perLbCost>0) ? totalFeed*perLbCost : null;
       const costPerPig = (totalFeedCost!=null&&originalCount>0) ? totalFeedCost/originalCount : null;
@@ -274,7 +288,7 @@ export default function PigsHomeView({ Header, loadUsers }) {
                     <div style={{background:fbc.bg,borderBottom:'1px solid '+fbc.bd,padding:'10px 18px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                       <span style={{fontSize:15,fontWeight:700,color:fbc.tx}}>{g.batchName}</span>
                       <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>Active</span>
-                      {daysOld!=null&&<span style={{fontSize:11,color:'#6b7280'}}>{Math.floor(daysOld/30)+'m '+(daysOld%30)+'d old'}</span>}
+                      {daysOld!=null&&<span style={{fontSize:11,color:'#6b7280'}}>{Math.floor(daysOld/30)+'m '+Math.floor((daysOld%30)/7)+'w old'}</span>}
                     </div>
                     <div style={{padding:'12px 18px'}}>
                       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>

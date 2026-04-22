@@ -171,12 +171,11 @@ export default function PigBatchesView({
     }
 
     function daysToMWD(days) {
+      // Ronnie prefers months+weeks on the batch tile. Days dropped.
       if(days<=0) return null;
       const m = Math.floor(days/30);
-      const rem = days % 30;
-      const w = Math.floor(rem/7);
-      const d = rem % 7;
-      return `${m}m ${w}w ${d}d`;
+      const w = Math.floor((days % 30)/7);
+      return `${m}m ${w}w`;
     }
 
     // Get farrowing records that belong to a given breeding cycle (match group + within farrowing window)
