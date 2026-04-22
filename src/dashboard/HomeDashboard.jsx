@@ -142,16 +142,19 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
         if(!broilerCheck.has(b.name.toLowerCase().trim())&&!missedCleared.has(key))
           allMissed.push({key,label:b.name,icon:'🐔',type:'Broiler',date:checkDate});
       });
-      // Pigs — sub-batches if present, main batch otherwise
+      // Pigs — sub-batches if present, main batch otherwise.
+      // If the batch HAS sub-batches but none are active (all marked processed),
+      // skip entirely — don't fall back to flagging the parent name.
       feederGroups.filter(g=>g.status==='active').forEach(g=>{
-        const activeSubs=(g.subBatches||[]).filter(s=>s.status==='active');
+        const subs=g.subBatches||[];
+        const activeSubs=subs.filter(s=>s.status==='active');
         if(activeSubs.length>0){
           activeSubs.forEach(s=>{
             const key=`${s.id}|${checkDate}`;
             if(!pigCheck.has((s.name||'').toLowerCase().trim())&&!missedCleared.has(key))
               allMissed.push({key,label:s.name,icon:'🐷',type:`Pig · ${g.batchName}`,date:checkDate});
           });
-        } else {
+        } else if(subs.length===0){
           const key=`${g.id}|${checkDate}`;
           if(!pigCheck.has((g.batchName||'').toLowerCase().trim())&&!missedCleared.has(key))
             allMissed.push({key,label:g.batchName,icon:'🐷',type:'Pig',date:checkDate});
