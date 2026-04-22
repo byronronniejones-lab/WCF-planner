@@ -274,12 +274,21 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
           transferDate: new Date().toISOString().slice(0,10),
           feedAllocationLbs: feedAllocLbs,
           fcrUsed: fcr,
+          sourceWeighInId: entry.id,
         },
       };
       // Read current breeders, append, write back.
       const brR = await sb.from('app_store').select('data').eq('key','ppp-breeders-v1').maybeSingle();
       if(brR.error) { alert('Could not read breeders registry: '+brR.error.message); setTransferBusy(false); return; }
       const currentBreeders = (brR.data && Array.isArray(brR.data.data)) ? brR.data.data : [];
+      // Idempotency: skip if a breeder is already linked to this weigh-in id.
+      // (Guards against double-clicks before the modal closes.)
+      if(currentBreeders.some(b => b.transferredFromBatch && b.transferredFromBatch.sourceWeighInId === entry.id)) {
+        alert('This weigh-in entry has already been transferred to breeding. No new breeder created.');
+        setTransferModal(null); setTransferBusy(false);
+        await loadAll();
+        return;
+      }
       const newBreeders = [...currentBreeders, breederRec];
       const brW = await sb.from('app_store').upsert({key:'ppp-breeders-v1', data: newBreeders}, {onConflict:'key'});
       if(brW.error) { alert('Could not save new breeder: '+brW.error.message); setTransferBusy(false); return; }
@@ -575,11 +584,45 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                       const rowInpS = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', background:'white'};
                       return (
                         <div style={{marginTop:4, paddingTop:12, borderTop:'1px dashed #d1d5db'}}>
+                          {/* Session summary — full breakdown of every entry's
+                              outcome (sent / transferred / remaining) plus
+                              feed credited to transfers. */}
+                          {(() => {
+                            const sentEntries = sEntries.filter(e => e.sent_to_trip_id);
+                            const transferredEntries = sEntries.filter(e => e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note||''));
+                            const remainingEntries = sEntries.filter(e => !e.sent_to_trip_id && !e.transferred_to_breeding && !/\[transferred_to_breeding/.test(e.note||''));
+                            const sumW = (arr) => arr.reduce((s,e)=>s+(parseFloat(e.weight)||0), 0);
+                            const sentW = sumW(sentEntries);
+                            const transW = sumW(transferredEntries);
+                            const remW = sumW(remainingEntries);
+                            const totalFeedCredited = transferredEntries.reduce((s,e) => {
+                              let v = parseFloat(e.feed_allocation_lbs);
+                              if(!Number.isFinite(v) || v <= 0) {
+                                const m = (e.note||'').match(/feed_alloc=([\d.]+)/);
+                                if(m) v = parseFloat(m[1]);
+                              }
+                              return s + (Number.isFinite(v) ? v : 0);
+                            }, 0);
+                            if(sEntries.length === 0) return null;
+                            return (
+                              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:8, marginBottom:12, padding:'10px 12px', background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8}}>
+                                <div><div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Total entries</div><div style={{fontSize:14, fontWeight:700, color:'#111827'}}>{sEntries.length}</div></div>
+                                {sentEntries.length>0 && <div><div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Sent to trip</div><div style={{fontSize:14, fontWeight:700, color:'#047857'}}>{sentEntries.length} {'· '}{Math.round(sentW)} lb</div></div>}
+                                {transferredEntries.length>0 && <div><div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>{'→ Breeding'}</div><div style={{fontSize:14, fontWeight:700, color:'#5b21b6'}}>{transferredEntries.length} {'· '}{Math.round(transW)} lb</div></div>}
+                                {totalFeedCredited>0 && <div><div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Feed credited out</div><div style={{fontSize:14, fontWeight:700, color:'#5b21b6'}}>{Math.round(totalFeedCredited).toLocaleString()} lb</div></div>}
+                                {remainingEntries.length>0 && <div><div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Remaining</div><div style={{fontSize:14, fontWeight:700, color:'#1e40af'}}>{remainingEntries.length} {'· '}{Math.round(remW)} lb</div></div>}
+                              </div>
+                            );
+                          })()}
                           <div style={{fontSize:12, fontWeight:700, color:'#374151', marginBottom:8}}>Weights ({sEntries.length})</div>
                           {sEntries.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', padding:'6px 0'}}>No entries in this session yet.</div>}
                           {sEntries.map(e => {
                             const isSent = !!e.sent_to_trip_id;
-                            const isTransferred = !!e.transferred_to_breeding;
+                            // Detect transferred state via either the proper column
+                            // (when migration 014 has been applied) or the legacy
+                            // note-marker fallback that the transfer flow writes
+                            // when the column doesn't exist yet.
+                            const isTransferred = !!e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note||'');
                             const link = isSent ? lookupTrip(e) : null;
                             const checked = selectedEntryIds.has(e.id);
                             const editable = !isSent && !isTransferred && !fieldsLocked;
@@ -605,8 +648,23 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                                   {editable && <input type="text" placeholder="Note (optional)" defaultValue={e.note||''} onBlur={ev=>{const v=(ev.target.value||'').trim()||null; if(v!==(e.note||null)) updatePigEntry(e.id,{note:v});}} style={{...rowInpS, flex:1, minWidth:120}}/>}
                                   {isSent && link && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#d1fae5', color:'#065f46', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 '+link.group.batchName+' \u00b7 '+link.trip.date}</span>}
                                   {isSent && !link && <span style={{fontSize:11, color:'#b91c1c', fontStyle:'italic'}}>(missing trip)</span>}
-                                  {isTransferred && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#ede9fe', color:'#5b21b6', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 Transferred to Breeding'+(e.feed_allocation_lbs?' \u00b7 ~'+Math.round(e.feed_allocation_lbs)+' lb feed':'')}</span>}
-                                  {!editable && e.note && <span style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</span>}
+                                  {isTransferred && (() => {
+                                    let feedLb = parseFloat(e.feed_allocation_lbs);
+                                    if(!Number.isFinite(feedLb) || feedLb <= 0) {
+                                      const m = (e.note||'').match(/feed_alloc=([\d.]+)/);
+                                      if(m) feedLb = parseFloat(m[1]);
+                                    }
+                                    const feedTxt = (Number.isFinite(feedLb)&&feedLb>0) ? (' · ~'+Math.round(feedLb)+' lb feed') : '';
+                                    return <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#ede9fe', color:'#5b21b6', fontWeight:600, whiteSpace:'nowrap'}}>{'→ Transferred to Breeding'+feedTxt}</span>;
+                                  })()}
+                                  {false && false && <span>{'\u2192 Transferred to Breeding'+(e.feed_allocation_lbs?' \u00b7 ~'+Math.round(e.feed_allocation_lbs)+' lb feed':'')}</span>}
+                                  {!editable && (() => {
+                                    // Hide the transferred-to-breeding marker from the
+                                    // visible note (it's an internal stamp from the
+                                    // pre-migration fallback path).
+                                    const cleanNote = (e.note||'').replace(/^\[transferred_to_breeding[^\]]*\]\s*/, '');
+                                    return cleanNote ? <span style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{cleanNote}</span> : null;
+                                  })()}
                                 </div>
                                 {/* Col 4: action buttons */}
                                 <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>

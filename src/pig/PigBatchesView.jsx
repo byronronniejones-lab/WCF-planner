@@ -641,7 +641,8 @@ export default function PigBatchesView({
                   <div style={{padding:"10px 16px",background:"#f9fafb",borderBottom:"1px solid #e5e7eb"}}>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
                     {[
-                      {label:"Total feed",val:totalFeed>0?`${Math.round(totalFeed).toLocaleString()} lbs`:"—",color:"#92400e",hint:dailyFeedTotal>0&&legacyFeed>0?`${Math.round(dailyFeedTotal).toLocaleString()} from dailys + ${Math.round(legacyFeed).toLocaleString()} legacy`:dailyFeedTotal>0?`from ${batchDailys.length} daily reports`:null},
+                      {label:"Total feed",val:totalFeed>0?`${Math.round(totalFeed).toLocaleString()} lbs`:"—",color:"#92400e",hint:feedAllocatedOut>0?`raw ${Math.round(rawFeed).toLocaleString()} − ${Math.round(feedAllocatedOut).toLocaleString()} transferred out`:dailyFeedTotal>0&&legacyFeed>0?`${Math.round(dailyFeedTotal).toLocaleString()} from dailys + ${Math.round(legacyFeed).toLocaleString()} legacy`:dailyFeedTotal>0?`from ${batchDailys.length} daily reports`:null},
+                      ...(feedAllocatedOut>0 ? [{label:"Feed → Breeding",val:`−${Math.round(feedAllocatedOut).toLocaleString()} lbs`,color:"#5b21b6",hint:'credited to transferred pigs (subtracted above)'}] : []),
                       {label:"Lbs per pig",val:(()=>{const op=hasSubBatches?subFeedTotals.reduce((s,sf)=>s+(parseInt(sf.sb.originalPigCount)||0),0):parseInt(g.originalPigCount)||0;return totalFeed>0&&op>0?`${Math.round(totalFeed/op)} lbs/pig`:"—";})(),color:"#78350f",hint:null},
                       {label:"Feed cost",val:totalFeedCost?`$${totalFeedCost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—",color:"#92400e",hint:perLbCost>0?`$${perLbCost}/lb`:null},
                       {label:"Feed conversion",val:feedConversion?`${feedConversion} lbs/lb`:"—",color:"#78350f"},
