@@ -180,6 +180,24 @@ export default function SowsView({
       const C=pig.group?PIG_GROUP_COLORS[pig.group]:null;
       const isSow=pig.sex==='Sow'||pig.sex==='Gilt';
       const history=isSow?sowFarrowHistory(pig.tag):[];
+      // Breeding-pig weights are entered ONLY on the tile (Ronnie's rule).
+      // Each entry = {weight, date}. lastWeight is kept in sync for stats.
+      const [wInput, setWInput] = React.useState('');
+      const [wBusy, setWBusy] = React.useState(false);
+      const weighins = Array.isArray(pig.weighins) ? pig.weighins : [];
+      async function recordWeight() {
+        const w = parseFloat(wInput);
+        if(!Number.isFinite(w) || w <= 0) return;
+        setWBusy(true);
+        const entry = {weight: w, date: todayISO()};
+        const nextWeighins = [...weighins, entry];
+        const nb = breeders.map(b => b.id === pig.id ? {...b, weighins: nextWeighins, lastWeight: w} : b);
+        setBreeders(nb);
+        persistBreeders(nb);
+        setWInput('');
+        setWBusy(false);
+      }
+      const latestWeight = weighins.length > 0 ? weighins[weighins.length-1].weight : pig.lastWeight;
       return (
         <div style={{background:"white",border:"1px solid #e5e7eb",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           {/* Tile header */}
@@ -193,9 +211,24 @@ export default function SowsView({
           </div>
           {/* Stats grid */}
           <div style={{padding:"10px 16px",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-            {pig.lastWeight&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Last Weight</div><div style={{fontSize:15,fontWeight:600,color:"#111827"}}>{pig.lastWeight} lbs</div></div>}
+            {latestWeight&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Last Weight</div><div style={{fontSize:15,fontWeight:600,color:"#111827"}}>{latestWeight} lbs</div></div>}
             {isSow&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Litters</div><div style={{fontSize:15,fontWeight:600,color:"#111827"}}>{stats.litters}</div></div>}
             {isSow&&<div><div style={{fontSize:10,color:"#9ca3af"}}>Alive Total</div><div style={{fontSize:15,fontWeight:600,color:"#065f46"}}>{stats.alive}</div></div>}
+          </div>
+          {/* Weight entry + history (breeding-pig only — Ronnie's spec) */}
+          <div style={{padding:"8px 16px",borderTop:"1px solid #f3f4f6"}}>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input type="number" min="0" step="0.1" placeholder="Weight (lbs)" value={wInput} onChange={e=>setWInput(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') recordWeight(); }} style={{flex:1,fontSize:13,padding:"6px 10px",border:"1px solid #d1d5db",borderRadius:6,fontFamily:"inherit",boxSizing:"border-box"}}/>
+              <button onClick={recordWeight} disabled={wBusy||!wInput} style={{padding:"6px 12px",borderRadius:6,border:"none",background:(wBusy||!wInput)?"#9ca3af":"#085041",color:"white",fontSize:12,fontWeight:600,cursor:(wBusy||!wInput)?"not-allowed":"pointer",fontFamily:"inherit"}}>+ Record</button>
+            </div>
+            {weighins.length>0 && (
+              <div style={{marginTop:6,fontSize:11,color:"#6b7280",display:"flex",flexWrap:"wrap",gap:"2px 10px"}}>
+                {weighins.slice().reverse().slice(0,6).map((w,wi) => (
+                  <span key={wi}><strong style={{color:"#111827"}}>{w.weight} lb</strong> <span style={{color:"#9ca3af"}}>{fmtS(w.date)}</span></span>
+                ))}
+                {weighins.length>6 && <span style={{color:"#9ca3af"}}>+{weighins.length-6} more</span>}
+              </div>
+            )}
           </div>
           {/* Farrowing history */}
           {isSow&&history.length>0&&(

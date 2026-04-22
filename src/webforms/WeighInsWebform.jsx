@@ -855,14 +855,16 @@ const WeighInsWebform = ({sb}) => {
         )}
 
         {/* Recent entries (pig) — no tag / age / ADG, just numbered weights.
-            Entry # = insertion order. Display reversed (latest first). */}
-        {species === 'pig' && entries.length > 0 && (
+            Entry # = insertion order. Displayed ascending (oldest #1 at top). */}
+        {species === 'pig' && entries.length > 0 && (() => {
+          const tail = entries.slice(-10);
+          const firstNum = entries.length - tail.length + 1;
+          return (
           <div style={cardS}>
             <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
-            {entries.slice(-10).reverse().map((e, i) => {
-              // i=0 is the latest entry. Its original insertion index is
-              // entries.length - 1, so its 1-based number is entries.length - i.
-              const entryNum = entries.length - i;
+            {tail.map((e, i) => {
+              // i=0 is the oldest in the tail. 1-based number = firstNum + i.
+              const entryNum = firstNum + i;
               return (
                 <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
                   <span style={{fontWeight:700, color:'#111827', minWidth:40}}>#{entryNum}</span>
@@ -873,7 +875,8 @@ const WeighInsWebform = ({sb}) => {
               );
             })}
           </div>
-        )}
+          );
+        })()}
 
         {/* Recent entries — cattle + sheep. Each row shows tag, age,
             prior weight, current weight, and ADG (when a prior exists). */}

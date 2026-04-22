@@ -231,7 +231,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                 React.createElement('div',{style:{width:0,height:0,borderLeft:'7px solid transparent',borderRight:'7px solid transparent',borderTop:'7px solid #1a1a1a'}})
               );
             })()}
-            <div style={{width:`${210+BREED_WEEKS*80}px`}}>
+            <div style={{width:`${210+BREED_WEEKS*40}px`}}>
               {/* Week headers */}
               <div style={{display:"flex",borderBottom:"1px solid #e5e7eb"}}>
                 <div style={{width:210,flexShrink:0,padding:"6px 10px",fontSize:10,fontWeight:600,color:"#9ca3af",borderRight:"1px solid #e5e7eb",background:"#ecfdf5",position:"sticky",left:0,zIndex:10}}>Phase</div>
