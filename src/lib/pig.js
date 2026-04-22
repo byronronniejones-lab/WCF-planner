@@ -28,6 +28,10 @@ export const PIG_GROUP_COLORS = {
 };
 export const PIG_GROUP_TEXT = {"1":"#E0F2FE","2":"#DBEAFE","3":"#F1F5F9"};
 
+// getReadableText now lives in lib/styles.js so every program can use it.
+// Re-export here for back-compat with existing pig view imports.
+export { getReadableText } from './styles.js';
+
 export const PHASE_LABELS = ["Boar Exposure","Exp. Paddock","Farrowing","Weaning","Gilt Grow-out","Male Grow-out"];
 
 export function calcBreedingTimeline(exposureStart) {

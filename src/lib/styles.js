@@ -25,3 +25,18 @@ export const S={
     btnDanger:{padding:"9px 14px",borderRadius:7,border:"1px solid #F09595",cursor:"pointer",background:"white",color:"#b91c1c",fontSize:13},
     btnGhost:{padding:"9px 14px",borderRadius:7,border:"1px solid #d1d5db",cursor:"pointer",background:"white",color:"#4b5563",fontSize:13},
   };
+
+// Pick dark or light text for any colored background. Threshold 0.5 on
+// perceived luminance (YIQ): lighter half gets near-black, darker half
+// gets white. Use anywhere program/palette colors back inline text —
+// timeline bars, batch tile headers, herd/flock cycle headers, etc.
+export function getReadableText(hexBg) {
+  if(!hexBg) return '#0f172a';
+  const c = String(hexBg).replace('#','');
+  if(c.length !== 6) return '#0f172a';
+  const r = parseInt(c.slice(0,2),16);
+  const g = parseInt(c.slice(2,4),16);
+  const b = parseInt(c.slice(4,6),16);
+  const L = (0.299*r + 0.587*g + 0.114*b) / 255;
+  return L >= 0.5 ? '#0f172a' : 'white';
+}

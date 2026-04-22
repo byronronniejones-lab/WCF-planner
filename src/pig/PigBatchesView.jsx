@@ -16,6 +16,7 @@ import {
   buildCycleSeqMap,
   cycleLabel,
   PIG_GROUP_COLORS,
+  getReadableText,
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -508,19 +509,20 @@ export default function PigBatchesView({
               <div key={g.id} style={{background:"white",border:`1px solid ${C?C.farrowing:"#e0e0e0"}`,borderRadius:10,marginBottom:14,overflow:"hidden",fontSize:12}}>
 
                 {/* Batch header */}
-                <div style={{padding:"12px 16px",background:C?C.boar:"#f9f9f9",display:"flex",flexWrap:"wrap",gap:"6px 16px",alignItems:"center"}}>
-                  <strong style={{fontSize:14}}>{g.batchName}</strong>
+                {(() => { const headerBg = C?C.boar:"#f9f9f9"; const ht = getReadableText(headerBg); return (
+                <div style={{padding:"12px 16px",background:headerBg,display:"flex",flexWrap:"wrap",gap:"6px 16px",alignItems:"center"}}>
+                  <strong style={{fontSize:14,color:ht}}>{g.batchName}</strong>
                   <span style={S.badge("#065f46","white")}>Gilts: {g.giltCount}</span>
                   <span style={S.badge("#1e40af","white")}>Boars: {g.boarCount}</span>
                   {currentPigCount!==null
-                    ? <span style={{color:"#111827",fontWeight:500}}>Current: <strong>{currentPigCount}</strong></span>
-                    : originalPigCount>0&&<span style={{color:"#6b7280"}}>Started: {originalPigCount}</span>
+                    ? <span style={{color:ht,fontWeight:500}}>Current: <strong>{currentPigCount}</strong></span>
+                    : originalPigCount>0&&<span style={{color:ht,opacity:.85}}>Started: {originalPigCount}</span>
                   }
-                  <span style={{color:"#085041",fontWeight:600}}>
+                  <span style={{color:ht,fontWeight:600}}>
                     Age: {ageRange.text}
-                    {!ageRange.hasActual&&ageRange.text!=="—"&&<span style={{fontSize:10,color:"#92400e",marginLeft:4}}>(estimated)</span>}
+                    {!ageRange.hasActual&&ageRange.text!=="—"&&<span style={{fontSize:10,color:ht,opacity:.75,marginLeft:4}}>(estimated)</span>}
                   </span>
-                  {g.startDate&&<span style={{color:"white",fontSize:11}}>Started {fmt(g.startDate)}</span>}
+                  {g.startDate&&<span style={{color:ht,fontSize:11,opacity:.85}}>Started {fmt(g.startDate)}</span>}
                   <span style={S.badge(sc.bg,sc.tx)}>{g.status}</span>
                   <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
 
@@ -531,6 +533,7 @@ export default function PigBatchesView({
                     <button onClick={()=>{const f={batchName:g.batchName,cycleId:g.cycleId||"",giltCount:g.giltCount,boarCount:g.boarCount,startDate:g.startDate||"",originalPigCount:g.originalPigCount||0,perLbFeedCost:g.perLbFeedCost||0,legacyFeedLbs:g.legacyFeedLbs||0,notes:g.notes||"",status:g.status};setFeederForm(f);setOriginalFeederForm(f);setEditFeederId(g.id);setShowFeederForm(true);setShowSubForm(null);}} style={{fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                   </div>
                 </div>
+                ); })()}
 
                 {/* Summary stats */}
                 {(()=>{const anyDailys=hasSubBatches?subFeedTotals.some(sf=>sf.dailys.length>0):batchDailys.length>0; return (trips.length>0||totalFeed>0||anyDailys)})()&&(

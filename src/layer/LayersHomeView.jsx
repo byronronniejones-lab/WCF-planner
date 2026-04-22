@@ -236,8 +236,8 @@ export default function LayersHomeView({ Header, loadUsers }) {
                   <div style={{background:bc.bg,borderBottom:'1px solid '+bc.bd,padding:'12px 20px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                     <span style={{fontSize:16,fontWeight:700,color:bc.tx}}>{batch.name}</span>
                     <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>Active</span>
-                    {ageMonths>0&&<span style={{fontSize:11,color:'#6b7280'}}>{ageMonths} months old</span>}
-                    {batch.original_count&&<span style={{fontSize:11,color:'#6b7280'}}>{'\u00b7 '}{batch.original_count.toLocaleString()} birds</span>}
+                    {ageMonths>0&&<span style={{fontSize:11,color:bc.tx,opacity:.85}}>{ageMonths} months old</span>}
+                    {batch.original_count&&<span style={{fontSize:11,color:bc.tx,opacity:.85}}>{'\u00b7 '}{batch.original_count.toLocaleString()} birds</span>}
                   </div>
                   <div style={{padding:'14px 20px'}}>
                   <MetricsGrid s={cur} prev={prev} hidePhases={myHousings.length>0}/>

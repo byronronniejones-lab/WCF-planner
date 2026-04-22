@@ -17,6 +17,7 @@ import {
   PIG_GROUPS,
   PIG_GROUP_COLORS,
   PIG_GROUP_TEXT,
+  getReadableText,
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -344,7 +345,9 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                 const rowCycles = breedingCycles.filter(c=>c.group===row.group);
                 const todayPct = bpct(todayISO());
                 const phaseColor = PIG_GROUP_COLORS[row.group]?.[row.phase]||"#ccc";
-                const txtColor = PIG_GROUP_TEXT[row.group]||"white";
+                // Per-bar dynamic contrast: light bgs (gilt shades) get
+                // near-black text; darker bgs get white.
+                const txtColor = getReadableText(phaseColor);
                 return (
                   <div key={ri} style={{display:"flex",borderTop:isGroupStart?"2px solid #bbb":"1px solid #f0f0f0"}}>
                     <div style={{width:210,flexShrink:0,padding:"0 10px",display:"flex",alignItems:"center",height:40,fontSize:10,fontWeight:isGroupStart?700:400,color:isGroupStart?"#333":"#666",borderRight:"1px solid #e5e7eb",background:"#ecfdf5",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",position:"sticky",left:0,zIndex:10}}>

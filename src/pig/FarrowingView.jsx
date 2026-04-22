@@ -14,6 +14,7 @@ import {
   cycleLabel,
   PIG_GROUPS,
   PIG_GROUP_COLORS,
+  getReadableText,
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -370,11 +371,15 @@ export default function FarrowingView({ Header, loadUsers, persistFarrowing, con
             return (
               <div key={c.id} style={{background:"white",border:`1px solid ${C.farrowing}`,borderLeft:`5px solid ${C.farrowing}`,borderRadius:12,overflow:"hidden",boxShadow:"var(--shadow-sm)"}}>
                 <div style={{padding:"10px 16px",background:C.boar,display:"flex",flexWrap:"wrap",gap:"6px 16px",alignItems:"center"}}>
-                  <strong style={{fontSize:13}}>{cycleLabel(c, cycleSeqMap)}</strong>
-                  <span style={{fontSize:12,color:"#444"}}>Boars in: {fmtS(c.exposureStart)} → {fmtS(tl.boarEnd)}</span>
-                  <span style={{fontSize:12,color:"#444"}}>Farrowing window: {fmtS(tl.farrowingStart)} → {fmtS(tl.farrowingEnd)}</span>
-                  {c.boar1Tags&&<span style={{fontSize:11,color:"var(--text-secondary)"}}>{boarNames.boar1}: {c.boar1Tags}</span>}
-                  {c.boar2Tags&&<span style={{fontSize:11,color:"var(--text-secondary)"}}>{boarNames.boar2}: {c.boar2Tags}</span>}
+                  {(() => { const ht = getReadableText(C.boar); return (
+                  <>
+                  <strong style={{fontSize:13,color:ht}}>{cycleLabel(c, cycleSeqMap)}</strong>
+                  <span style={{fontSize:12,color:ht,opacity:.85}}>Boars in: {fmtS(c.exposureStart)} → {fmtS(tl.boarEnd)}</span>
+                  <span style={{fontSize:12,color:ht,opacity:.85}}>Farrowing window: {fmtS(tl.farrowingStart)} → {fmtS(tl.farrowingEnd)}</span>
+                  {c.boar1Tags&&<span style={{fontSize:11,color:ht,opacity:.75}}>{boarNames.boar1}: {c.boar1Tags}</span>}
+                  {c.boar2Tags&&<span style={{fontSize:11,color:ht,opacity:.75}}>{boarNames.boar2}: {c.boar2Tags}</span>}
+                  </>
+                  ); })()}
                   <button onClick={()=>{setFarrowForm({...EMPTY_FARROW,group:c.group,exposureStart:c.exposureStart,exposureEnd:tl.boarEnd});setEditFarrowId(null);setShowFarrowForm(true);}}
                     style={{marginLeft:"auto",padding:"4px 12px",borderRadius:5,border:"none",background:"var(--green-700)",color:"white",cursor:"pointer",fontSize:11,fontWeight:600}}>
                     + Add Record

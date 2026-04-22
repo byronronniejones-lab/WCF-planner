@@ -288,7 +288,7 @@ export default function PigsHomeView({ Header, loadUsers }) {
                     <div style={{background:fbc.bg,borderBottom:'1px solid '+fbc.bd,padding:'10px 18px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                       <span style={{fontSize:15,fontWeight:700,color:fbc.tx}}>{g.batchName}</span>
                       <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>Active</span>
-                      {daysOld!=null&&<span style={{fontSize:11,color:'#6b7280'}}>{Math.floor(daysOld/30)+'m '+Math.floor((daysOld%30)/7)+'w old'}</span>}
+                      {daysOld!=null&&<span style={{fontSize:11,color:fbc.tx,opacity:.85}}>{Math.floor(daysOld/30)+'m '+Math.floor((daysOld%30)/7)+'w old'}</span>}
                     </div>
                     <div style={{padding:'12px 18px'}}>
                       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
