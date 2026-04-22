@@ -47,6 +47,30 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
 
     const EMPTY_BREED = {group:"1",customSuffix:"",boar1Tags:"",boar2Tags:"",exposureStart:"",notes:"",boar1Name:boarNames.boar1,boar2Name:boarNames.boar2};
 
+    // Breeder-registry-driven sow pool: any Sow/Gilt in the breeders tab
+    // whose group matches and who isn't archived.
+    function sowsForGroup(group) {
+      return breeders
+        .filter(b => !b.archived && (b.sex==='Sow'||b.sex==='Gilt') && String(b.group||'') === String(group))
+        .map(b => b.tag)
+        .filter(Boolean);
+    }
+    // Add any group sows that aren't already listed under either boar to
+    // Boar 1. Returns the new boar1Tags string (newline-separated).
+    function mergeSowsIntoB1(group, curB1, curB2) {
+      const have1 = (curB1||'').split('\n').map(t=>t.trim()).filter(Boolean);
+      const have2 = (curB2||'').split('\n').map(t=>t.trim()).filter(Boolean);
+      const haveSet = new Set([...have1, ...have2]);
+      const missing = sowsForGroup(group).filter(t => !haveSet.has(t));
+      if(missing.length === 0) return have1.join('\n');
+      return [...have1, ...missing].join('\n');
+    }
+    // A cycle "starts" on its exposureStart date. Before that, the sow list
+    // is live-synced from the breeder registry; after that, it's frozen.
+    function isCycleStarted(exposureStart) {
+      return !!(exposureStart && exposureStart <= todayISO());
+    }
+
     function persistBreedCycle(formSnapshot, cycleId){
       if(!formSnapshot.exposureStart) return;
       const tl = calcBreedingTimeline(formSnapshot.exposureStart);
@@ -70,6 +94,11 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
     }
     function updBreed(k, v){
       var next = {...breedForm, [k]: v};
+      // For unstarted cycles, changing the group pulls that group's sows
+      // into Boar 1 so the list tracks the breeders tab.
+      if(k === 'group' && !isCycleStarted(next.exposureStart)) {
+        next.boar1Tags = mergeSowsIntoB1(v, next.boar1Tags, next.boar2Tags);
+      }
       setBreedForm(next);
       if(!next.exposureStart) return;
       clearTimeout(breedAutoSaveTimer.current);
@@ -131,8 +160,8 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                   </div>
 
                   <div>
-                    <label style={S.label}>Cycle code <span style={{fontWeight:400,color:"#9ca3af",fontSize:11}}>(overrides the auto year-sequence, e.g. "26-01")</span></label>
-                    <input type="text" value={breedForm.customSuffix||''} onChange={e=>updBreed('customSuffix',e.target.value)} placeholder="e.g. 26-01 or Spring Batch"/>
+                    <label style={S.label}>Batch number</label>
+                    <input type="text" value={breedForm.customSuffix||''} onChange={e=>updBreed('customSuffix',e.target.value)} placeholder="e.g. 26-01"/>
                   </div>
 
                   <div>
@@ -209,7 +238,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
           <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
             <button onClick={()=>{const d=new Date();d.setMonth(d.getMonth()-1);d.setDate(1);setBreedTlStart(toISO(d));}} style={{padding:"5px 14px",borderRadius:5,border:"none",background:"#085041",color:"white",cursor:"pointer",fontSize:11,fontWeight:600}}>Today</button>
             <span style={{fontSize:11,color:"#9ca3af"}}>{fmtS(breedTlStart)} — {fmtS(toISO(btlE))}</span>
-            <button onClick={()=>{setBreedForm(EMPTY_BREED);setEditBreedId(null);setShowBreedForm(true);}}
+            <button onClick={()=>{setBreedForm({...EMPTY_BREED, boar1Tags: mergeSowsIntoB1(EMPTY_BREED.group, '', '')});setEditBreedId(null);setShowBreedForm(true);}}
               style={{marginLeft:"auto",padding:"5px 14px",borderRadius:8,border:"none",background:"#085041",color:"white",cursor:"pointer",fontSize:12,fontWeight:600}}>
               + Add Cycle
             </button>
@@ -293,7 +322,16 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                         const cSuffix = (c.customSuffix && String(c.customSuffix).trim()) || cycleSeqMap[c.id];
                         const label = `G${c.group}${cSuffix?' · '+cSuffix:''} — ${phaseNames[row.phase]||row.phase}`;
                         return (
-                          <div key={c.id} onClick={()=>{setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}}
+                          <div key={c.id} onClick={()=>{
+                            const baseB1 = (c.boar1Tags||"").split(",").join("\n").split(", ").join("\n");
+                            const baseB2 = (c.boar2Tags||"").split(",").join("\n").split(", ").join("\n");
+                            // Unstarted cycles: re-pull any newly-added sows
+                            // from the breeder registry. Started cycles are
+                            // frozen — show what was saved.
+                            const liveB1 = isCycleStarted(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2);
+                            setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
+                            setEditBreedId(c.id);setShowBreedForm(true);
+                          }}
                             onMouseEnter={function(ev){var r=ev.currentTarget.getBoundingClientRect();setTooltip({type:'pig',group:c.group,cycleLbl:cLbl,phase:row.phase,phaseName:phaseNames[row.phase]||row.phase,start:s,end:e,sowCount:c.sowCount,vx:r.left+r.width/2,vy:r.top-10});}}
                             onMouseLeave={function(){setTooltip(null);}}
                             style={{position:"absolute",left:`${left}%`,width:`${w}%`,top:4,bottom:4,borderRadius:4,cursor:"pointer",
