@@ -376,7 +376,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                           }}
                             onMouseEnter={function(ev){var r=ev.currentTarget.getBoundingClientRect();setTooltip({type:'pig',group:c.group,cycleLbl:cLbl,phase:row.phase,phaseName:phaseNames[row.phase]||row.phase,start:s,end:e,sowCount:c.sowCount,vx:r.left+r.width/2,vy:r.top-10});}}
                             onMouseLeave={function(){setTooltip(null);}}
-                            style={{position:"absolute",left:`${left}%`,width:`${w}%`,top:4,bottom:4,borderRadius:4,cursor:"pointer",
+                            style={{position:"absolute",left:`${left}%`,width:`${w}%`,top:4,bottom:4,borderRadius:8,cursor:"pointer",
                               background:phaseColor,display:"flex",alignItems:"center",padding:"0 7px",overflow:"hidden",
                               outline:tooltip&&tooltip.type==='pig'&&tooltip.group===c.group&&tooltip.phase===row.phase?'2px solid rgba(0,0,0,.25)':'none'}}>
                             <span style={{fontSize:10,fontWeight:600,color:txtColor,whiteSpace:"nowrap",textOverflow:"ellipsis",overflow:"hidden"}}>{label}</span>
@@ -394,13 +394,13 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
           <div style={{display:"flex",gap:12,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
             {PIG_GROUPS.map(g=>(
               <div key={g} style={{display:"flex",alignItems:"center",gap:6}}>
-                <div style={{width:10,height:10,borderRadius:2,background:PIG_GROUP_COLORS[g].boar}}/>
-                <div style={{width:10,height:10,borderRadius:2,background:PIG_GROUP_COLORS[g].farrowing}}/>
-                <div style={{width:10,height:10,borderRadius:2,background:PIG_GROUP_COLORS[g].boarGrow}}/>
+                <div style={{width:10,height:10,borderRadius:2,background:PIG_GROUP_COLORS[g].gilt}} title="Gilts grow-out"/>
+                <div style={{width:10,height:10,borderRadius:2,background:PIG_GROUP_COLORS[g].farrowing}} title="Cycle base"/>
+                <div style={{width:10,height:10,borderRadius:2,background:PIG_GROUP_COLORS[g].boarGrow}} title="Boars grow-out"/>
                 <span style={{fontSize:11,color:"#4b5563"}}>Group {g}</span>
               </div>
             ))}
-            <span style={{fontSize:11,color:"#9ca3af"}}>Light → dark = earlier → later phases · Click bar to edit · Green line = today</span>
+            <span style={{fontSize:11,color:"#9ca3af"}}>Light = Gilts grow-out · Dark = Boars grow-out · Click bar to edit · Green line = today</span>
           </div>
 
           {/* Cycle cards below chart */}

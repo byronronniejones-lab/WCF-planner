@@ -176,7 +176,7 @@ export default function BroilerTimelineView({ Header, loadUsers, openEdit }) {
                           }}
                           onMouseLeave={()=>setTooltip(null)}
                           style={{position:"absolute",left:left+"%",width:w+"%",top:6,bottom:6,
-                            borderRadius:4,cursor:"pointer",display:"flex",alignItems:"center",
+                            borderRadius:8,cursor:"pointer",display:"flex",alignItems:"center",
                             padding:"0 6px",overflow:"hidden",zIndex:isHovered?10:1,
                             background:C.bg,opacity:0.8,
                             color:C.tx,
@@ -231,7 +231,7 @@ export default function BroilerTimelineView({ Header, loadUsers, openEdit }) {
                           }}
                           onMouseLeave={()=>setTooltip(null)}
                           style={{position:'absolute',left:left+'%',width:w+'%',top:6,bottom:6,
-                            borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',
+                            borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',
                             padding:'0 6px',overflow:'hidden',zIndex:isHov?10:1,
                             background:C.bg,opacity:0.8,
                             color:C.tx,

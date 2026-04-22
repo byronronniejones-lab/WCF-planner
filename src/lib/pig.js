@@ -16,11 +16,15 @@ export const GROW_OUT_DAYS       = 183; // 6 months
 export const PIG_GROUPS = ["1","2","3"];
 export const BREEDING_STATUSES = ["planned","active","completed"];
 
-// Phase colors per group (light=earlier phases, dark=later phases)
+// Colors per group: one base shade for the whole cycle, with a lighter
+// shade for the Gilts grow-out phase and a darker shade for the Boars
+// grow-out phase. All other phases (boar exposure, paddock, farrowing,
+// weaning) share the base. Mirrors the broiler timeline's per-batch
+// single-color treatment.
 export const PIG_GROUP_COLORS = {
-  "1": {boar:"#B5D4F4", paddock:"#85B7EB", farrowing:"#378ADD", weaning:"#185FA5", gilt:"#0C447C", boarGrow:"#042C53"},
-  "2": {boar:"#F4C0D1", paddock:"#ED93B1", farrowing:"#D4537E", weaning:"#993556", gilt:"#72243E", boarGrow:"#4B1528"},
-  "3": {boar:"#C0DD97", paddock:"#97C459", farrowing:"#639922", weaning:"#3B6D11", gilt:"#27500A", boarGrow:"#173404"},
+  "1": {boar:"#378ADD", paddock:"#378ADD", farrowing:"#378ADD", weaning:"#378ADD", gilt:"#85B7EB", boarGrow:"#0C447C"},
+  "2": {boar:"#D4537E", paddock:"#D4537E", farrowing:"#D4537E", weaning:"#D4537E", gilt:"#ED93B1", boarGrow:"#72243E"},
+  "3": {boar:"#639922", paddock:"#639922", farrowing:"#639922", weaning:"#639922", gilt:"#97C459", boarGrow:"#27500A"},
 };
 export const PIG_GROUP_TEXT = {"1":"#E6F1FB","2":"#FBEAF0","3":"#EAF3DE"};
 
