@@ -814,6 +814,11 @@ function App(){
             if(nb.breed!=='FR'){nb={...nb,breed:'FR'};changed=true;}
             if(nb.hatchery!=='Freedom Ranger Hatchery'){nb={...nb,hatchery:'Freedom Ranger Hatchery'};changed=true;}
           }
+          // Hard-code legacy hatchery names for two early-2025 batches
+          // (Ronnie ran these from non-standard hatcheries before the
+          // dropdown was canonicalized).
+          if(nameUpper==='B-25-02' && nb.hatchery!=='VALLEY FARMS'){nb={...nb,hatchery:'VALLEY FARMS'};changed=true;}
+          if(nameUpper==='B-25-03' && nb.hatchery!=='CREDO FARMS'){nb={...nb,hatchery:'CREDO FARMS'};changed=true;}
           return nb;
         });
         setBatches(migrated);

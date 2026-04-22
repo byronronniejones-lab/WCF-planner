@@ -101,8 +101,10 @@ export default function BatchForm({
 
           <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
 
-            {/* Conflict alert */}
-            {conflicts.length>0&&(()=>{
+            {/* Conflict alert — only shown while the batch can still be
+                rescheduled. Once a batch is processed the scheduling is
+                history and the warning has nothing actionable to do. */}
+            {conflicts.length>0 && form.status!=='processed' && (()=>{
               const hard=conflicts.filter(c=>!c.soft);
               const soft=conflicts.filter(c=>c.soft);
               const hasHard=hard.length>0;

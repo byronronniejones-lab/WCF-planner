@@ -81,6 +81,63 @@ export default function PigBatchesView({
       return counts;
     }
 
+    // ── Pig mortality entries (parent batch with sub-batch attribution) ─────
+    // Stored as feederGroup.pigMortalities = [{id, date, sub_batch_id,
+    // sub_batch_name, count, comment, team_member, created_at}]. Pure audit
+    // log — current pig count keeps coming from dailys; mortality just
+    // surfaces the death history with attribution.
+    const [mortalityModal, setMortalityModal] = React.useState(null);
+    const [mortalityForm, setMortalityForm] = React.useState({sub_batch_id:'', count:'', comment:''});
+    const [mortalityBusy, setMortalityBusy] = React.useState(false);
+    const [expandedMortality, setExpandedMortality] = React.useState(null);
+    function openMortalityModal(batchId) {
+      setMortalityModal({batchId});
+      setMortalityForm({sub_batch_id:'', count:'', comment:''});
+    }
+    async function saveMortality() {
+      if(!mortalityModal) return;
+      const count = parseInt(mortalityForm.count);
+      if(!Number.isFinite(count) || count <= 0) { alert('Enter a count of 1 or more.'); return; }
+      setMortalityBusy(true);
+      const batchId = mortalityModal.batchId;
+      const subId = mortalityForm.sub_batch_id || null;
+      const target = feederGroups.find(g => g.id === batchId);
+      const subName = subId
+        ? ((target && target.subBatches) || []).find(s => s.id === subId)?.name || null
+        : null;
+      const entry = {
+        id: String(Date.now())+Math.random().toString(36).slice(2,6),
+        date: todayISO(),
+        sub_batch_id: subId,
+        sub_batch_name: subName,
+        count,
+        comment: (mortalityForm.comment||'').trim() || null,
+        team_member: (authState && authState.user && authState.user.email) || 'unknown',
+        created_at: new Date().toISOString(),
+      };
+      const nb = feederGroups.map(g =>
+        g.id === batchId ? {...g, pigMortalities: [...(g.pigMortalities||[]), entry]} : g
+      );
+      setFeederGroups(nb);
+      try { await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: nb}, {onConflict:'key'}); }
+      catch(e){ alert('Save failed: '+(e.message||'unknown')); setMortalityBusy(false); return; }
+      setMortalityBusy(false);
+      setMortalityModal(null);
+    }
+    async function deleteMortality(batchId, entryId) {
+      if(!window._wcfConfirmDelete) return;
+      window._wcfConfirmDelete('Delete this mortality entry?', async () => {
+        const nb = feederGroups.map(g =>
+          g.id === batchId
+            ? {...g, pigMortalities: (g.pigMortalities||[]).filter(m => m.id !== entryId)}
+            : g
+        );
+        setFeederGroups(nb);
+        try { await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: nb}, {onConflict:'key'}); }
+        catch(e){ alert('Delete failed: '+(e.message||'unknown')); }
+      });
+    }
+
     // Match pig_dailys to a name (case-insensitive) — used for both batch and sub-batch matching
     function dailysForName(name){
       const n = name.trim().toLowerCase();
@@ -337,6 +394,44 @@ export default function PigBatchesView({
     return (
       <div>
         <Header/>
+        {/* Mortality entry modal — overlay across the page */}
+        {mortalityModal && (() => {
+          const target = feederGroups.find(g => g.id === mortalityModal.batchId);
+          if(!target) return null;
+          const subs = (target.subBatches||[]).filter(s => s.status === 'active');
+          return (
+            <div onClick={()=>setMortalityModal(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+              <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:12,width:"100%",maxWidth:480,boxShadow:"0 8px 32px rgba(0,0,0,.2)"}}>
+                <div style={{padding:"14px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{fontSize:15,fontWeight:600,color:"#b91c1c"}}>{'💀 Record Mortality — '+target.batchName}</div>
+                  <button onClick={()=>setMortalityModal(null)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af",lineHeight:1}}>{'×'}</button>
+                </div>
+                <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:12}}>
+                  <div>
+                    <label style={S.label}>Sub-batch (optional)</label>
+                    <select value={mortalityForm.sub_batch_id} onChange={e=>setMortalityForm({...mortalityForm,sub_batch_id:e.target.value})} style={{width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid #d1d5db",borderRadius:6,fontFamily:"inherit",boxSizing:"border-box",background:"white"}}>
+                      <option value="">{'— Whole batch (no sub) —'}</option>
+                      {subs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={S.label}>{'Count *'}</label>
+                    <input type="number" min="1" step="1" value={mortalityForm.count} onChange={e=>setMortalityForm({...mortalityForm,count:e.target.value})} placeholder="e.g. 1" style={{width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid #d1d5db",borderRadius:6,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  </div>
+                  <div>
+                    <label style={S.label}>Comment / cause (optional)</label>
+                    <textarea value={mortalityForm.comment} onChange={e=>setMortalityForm({...mortalityForm,comment:e.target.value})} rows={2} placeholder="e.g. found dead in pen, suspected respiratory" style={{width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid #d1d5db",borderRadius:6,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
+                  </div>
+                  <div style={{fontSize:11,color:"#6b7280"}}>{'Stamped: '+todayISO()+' · '+((authState && authState.user && authState.user.email) || 'unknown')}</div>
+                </div>
+                <div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8,justifyContent:"flex-end"}}>
+                  <button onClick={()=>setMortalityModal(null)} disabled={mortalityBusy} style={{padding:"8px 14px",borderRadius:7,border:"1px solid #d1d5db",background:"white",color:"#374151",fontWeight:600,fontSize:12,cursor:mortalityBusy?"not-allowed":"pointer",fontFamily:"inherit"}}>Cancel</button>
+                  <button onClick={saveMortality} disabled={mortalityBusy || !mortalityForm.count} style={{padding:"8px 16px",borderRadius:7,border:"none",background:(mortalityBusy||!mortalityForm.count)?"#9ca3af":"#b91c1c",color:"white",fontWeight:700,fontSize:12,cursor:(mortalityBusy||!mortalityForm.count)?"not-allowed":"pointer",fontFamily:"inherit"}}>{mortalityBusy?'Saving…':'Save Mortality'}</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         <div style={{padding:"1rem"}}>
           {showUsers&&<UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
@@ -530,6 +625,7 @@ export default function PigBatchesView({
                       ? <button onClick={()=>archiveBatch(g.id)} style={{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid #d1d5db",color:"#6b7280",background:"white",cursor:"pointer",fontFamily:"inherit"}}>Mark Processed</button>
                       : <button onClick={()=>unarchiveBatch(g.id)} style={{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid #085041",color:"#085041",background:"white",cursor:"pointer",fontFamily:"inherit"}}>Reactivate</button>
                     }
+                    <button onClick={()=>openMortalityModal(g.id)} style={{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid #fecaca",color:"#b91c1c",background:"white",cursor:"pointer",fontFamily:"inherit"}}>+ Mortality</button>
                     <button onClick={()=>{const f={batchName:g.batchName,cycleId:g.cycleId||"",giltCount:g.giltCount,boarCount:g.boarCount,startDate:g.startDate||"",originalPigCount:g.originalPigCount||0,perLbFeedCost:g.perLbFeedCost||0,legacyFeedLbs:g.legacyFeedLbs||0,notes:g.notes||"",status:g.status};setFeederForm(f);setOriginalFeederForm(f);setEditFeederId(g.id);setShowFeederForm(true);setShowSubForm(null);}} style={{fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                   </div>
                 </div>
@@ -744,6 +840,36 @@ export default function PigBatchesView({
                     );
                   })}
                 </div>
+
+                {/* Mortality summary (expandable) */}
+                {(g.pigMortalities||[]).length > 0 && (() => {
+                  const morts = g.pigMortalities||[];
+                  const total = morts.reduce((s, m) => s + (parseInt(m.count)||0), 0);
+                  const isOpen = expandedMortality === g.id;
+                  return (
+                    <div style={{padding:"6px 16px",background:"#fef2f2",borderTop:"1px solid #f3f4f6",fontSize:11}}>
+                      <div onClick={()=>setExpandedMortality(isOpen?null:g.id)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
+                        <span style={{color:"#9ca3af"}}>{isOpen?'▼':'▶'}</span>
+                        <span style={{color:"#b91c1c",fontWeight:600}}>{'💀 '+total+' '+(total===1?'mortality':'mortalities')+' on record'}</span>
+                        <span style={{color:"#9ca3af"}}>{'('+morts.length+' '+(morts.length===1?'entry':'entries')+')'}</span>
+                      </div>
+                      {isOpen && (
+                        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+                          {[...morts].reverse().map(m => (
+                            <div key={m.id} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 8px",background:"white",borderRadius:5,border:"1px solid #fde68a",flexWrap:"wrap"}}>
+                              <span style={{color:"#374151",minWidth:90,fontWeight:600}}>{fmt(m.date)}</span>
+                              <span style={{color:"#b91c1c",fontWeight:700,minWidth:32}}>{m.count}</span>
+                              <span style={{color:"#6b7280",minWidth:120}}>{m.sub_batch_name || 'Whole batch'}</span>
+                              {m.comment && <span style={{color:"#374151",fontStyle:"italic",flex:1,minWidth:120}}>{m.comment}</span>}
+                              <span style={{color:"#9ca3af",fontSize:10,marginLeft:"auto"}}>{m.team_member}</span>
+                              <button onClick={()=>deleteMortality(g.id, m.id)} title="Delete" style={{background:"none",border:"none",color:"#b91c1c",cursor:"pointer",fontSize:13,lineHeight:1,padding:"0 4px",fontFamily:"inherit"}}>{'×'}</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Cycle info footer */}
                 {tl&&(
