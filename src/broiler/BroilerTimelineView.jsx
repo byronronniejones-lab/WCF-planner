@@ -181,11 +181,11 @@ export default function BroilerTimelineView({ Header, loadUsers, openEdit }) {
                             background:C.bg,opacity:0.8,
                             color:C.tx,
                             border:'1px solid '+C.bd,
-                            outline:b.conflictOverride?"2px dashed #E24B4A":isHovered?"2px solid rgba(0,0,0,.25)":"none",
+                            outline:(b.conflictOverride && b.status!=='processed')?"2px dashed #E24B4A":isHovered?"2px solid rgba(0,0,0,.25)":"none",
                             outlineOffset:"-2px",
                           }}>
                           <span style={{fontSize:10,fontWeight:600,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                            {(b.conflictOverride?'\u26a0 ':'')+b.name}
+                            {(b.conflictOverride && b.status!=='processed'?'\u26a0 ':'')+b.name}
                           </span>
                         </div>
                       );

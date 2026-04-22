@@ -1503,7 +1503,11 @@ function App(){
       formNum.perLbStandardCost = feedCosts.grower  || 0;
       formNum.perLbGritCost     = feedCosts.grit    || 0;
     }
-    const batch={id:editId||String(Date.now()), ...formNum, ...tl, status:computedStatus, conflictOverride:force&&hardConflicts.length>0?true:(form.conflictOverride||false)};
+    // conflictOverride auto-clears when there's no longer a hard conflict.
+    // The flag was sticky before — it stayed true after dates were edited
+    // to resolve the conflict, leaving stale ⚠ warnings on processed batches.
+    const stillConflicting = hardConflicts.length > 0;
+    const batch={id:editId||String(Date.now()), ...formNum, ...tl, status:computedStatus, conflictOverride: stillConflicting ? (force || form.conflictOverride || false) : false};
     const nb=editId
       ? batches.map(b=>b.id===editId?batch:b)
       : [...batches, batch];
