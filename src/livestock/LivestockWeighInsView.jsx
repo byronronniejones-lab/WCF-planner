@@ -468,6 +468,71 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     await loadAll();
   }
 
+  // Reverse a transfer-to-breeding: drops the breeder (if still present),
+  // increments the parent + sub batch counts back, decrements the batch's
+  // feedAllocatedToTransfers, and clears the weigh-in entry. Also strips
+  // the legacy [transferred_to_breeding ...] note marker if present.
+  async function undoTransferToBreeding(session, entry) {
+    if(!entry) return;
+    if(!window._wcfConfirmDelete) { /* no-op: confirm helper missing */ }
+    const noteMarker = (entry.note||'').match(/\[transferred_to_breeding\s+breeder=([^\s\]]+)\s+feed_alloc=([\d.]+)/);
+    const breederId = entry.transfer_breeder_id || (noteMarker ? noteMarker[1] : null);
+    let feedAlloc = parseFloat(entry.feed_allocation_lbs);
+    if(!Number.isFinite(feedAlloc) || feedAlloc <= 0) feedAlloc = noteMarker ? parseFloat(noteMarker[2]) : 0;
+    if(!Number.isFinite(feedAlloc)) feedAlloc = 0;
+    if(!entry.transferred_to_breeding && !noteMarker) {
+      alert("This entry doesn't appear to be transferred — nothing to undo.");
+      return;
+    }
+    // 1. Drop the breeder if still present.
+    let breederSex = 'Gilt';
+    if(breederId) {
+      const brR = await sb.from('app_store').select('data').eq('key','ppp-breeders-v1').maybeSingle();
+      if(!brR.error) {
+        const cur = (brR.data && Array.isArray(brR.data.data)) ? brR.data.data : [];
+        const found = cur.find(b => b.id === breederId);
+        if(found && found.sex) breederSex = found.sex;
+        const next = cur.filter(b => b.id !== breederId);
+        if(next.length !== cur.length) {
+          await sb.from('app_store').upsert({key:'ppp-breeders-v1', data: next}, {onConflict:'key'});
+        }
+      }
+    }
+    // 2. Find parent + sub from session.batch_id and reverse counts + feed alloc.
+    const {parent, sub} = resolveBatchAndSub(session.batch_id);
+    if(parent) {
+      const inc = breederSex === 'Boar' ? 'boarCount' : 'giltCount';
+      const updated = feederGroups.map(g => {
+        if(g.id !== parent.id) return g;
+        const next = {...g};
+        next[inc] = (parseInt(g[inc])||0) + 1;
+        next.originalPigCount = (parseInt(g.originalPigCount)||0) + 1;
+        next.feedAllocatedToTransfers = Math.max(0, (parseFloat(g.feedAllocatedToTransfers)||0) - feedAlloc);
+        if(sub && Array.isArray(g.subBatches)) {
+          next.subBatches = g.subBatches.map(s => {
+            if(s.id !== sub.id) return s;
+            const ns = {...s};
+            ns[inc] = (parseInt(s[inc])||0) + 1;
+            ns.originalPigCount = (parseInt(s.originalPigCount)||0) + 1;
+            return ns;
+          });
+        }
+        return next;
+      });
+      setFeederGroups(updated);
+      await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: updated}, {onConflict:'key'});
+    }
+    // 3. Clear the weigh-in stamp / strip the note marker.
+    const cleanedNote = (entry.note||'').replace(/^\[transferred_to_breeding[^\]]*\]\s*/, '') || null;
+    await sb.from('weigh_ins').update({
+      transferred_to_breeding: false,
+      transfer_breeder_id: null,
+      feed_allocation_lbs: null,
+      note: cleanedNote,
+    }).eq('id', entry.id);
+    await loadAll();
+  }
+
   const filtered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
   const totalEntries = filtered.reduce((s,sess) => s + (entries[sess.id]?entries[sess.id].length:0), 0);
 
@@ -670,6 +735,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                                 <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
                                   {canAct && <button onClick={()=>openTransferModal(s, e)} title="Transfer to breeding pigs" style={{background:'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:5, color:'#5b21b6', cursor:'pointer', fontSize:11, padding:'3px 8px', fontFamily:'inherit', fontWeight:600}}>{'\u2192 Breeding'}</button>}
                                   {isSent && <button onClick={()=>undoSendToTrip(e)} title="Undo send to trip" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Undo send</button>}
+                                  {isTransferred && <button onClick={()=>undoTransferToBreeding(s, e)} title="Reverse the transfer to breeding (puts pig back in batch + restores feed allocation)" style={{background:'none', border:'1px solid #ddd6fe', borderRadius:5, color:'#5b21b6', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Undo transfer</button>}
                                   {editable && <button onClick={()=>deletePigEntry(e.id)} title="Delete entry" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Delete</button>}
                                 </div>
                               </div>
