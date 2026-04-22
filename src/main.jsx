@@ -1350,6 +1350,30 @@ function App(){
       const buf = await file.arrayBuffer();
       const wb2 = XLSX.read(buf, {type:'array', cellDates:false});
       let parsed = null;
+      const excluded = ['neck','feet','back','wing','grand total'];
+
+      // Map an aggregated {label: {total, count, label}} dict into the parsed
+      // shape (avgDressed/avgBreast/avgThigh/totalLbsWhole/totalLbsCuts).
+      // Used by both raw-format and pivot-format paths.
+      function aggToParsed(agg, fileName) {
+        const out = {fileName};
+        let cuts = 0;
+        for(const key of Object.keys(agg)) {
+          const a = agg[key];
+          const avgWt = a.count > 0 ? a.total / a.count : 0;
+          if(key.includes('whole chicken')) {
+            if(avgWt > 0) out.avgDressed = Math.round(avgWt*100)/100;
+            if(a.total > 0) out.totalLbsWhole = Math.round(a.total*10)/10;
+          }
+          if(key.includes('breast') && avgWt > 0) out.avgBreast = Math.round(avgWt*100)/100;
+          if(key.includes('thigh') && avgWt > 0) out.avgThigh = Math.round(avgWt*100)/100;
+          if(key !== 'grand total' && !excluded.some(e => key.includes(e)) && !key.includes('whole chicken') && a.total > 0) {
+            cuts += a.total;
+          }
+        }
+        if(cuts > 0) out.totalLbsCuts = Math.round(cuts*10)/10;
+        return out;
+      }
 
       for(const sheetName of wb2.SheetNames) {
         const ws = wb2.Sheets[sheetName];
@@ -1361,14 +1385,42 @@ function App(){
           if(addr[0]==='!') return;
           cv[addr] = ws[addr].v;
         });
-
-        // Find header row: look for a cell with "Row Labels"
-        let labelCol=-1, totalWtCol=-1, countCol=-1, avgWtCol=-1, hRow=-1;
         const range = XLSX.utils.decode_range(ws['!ref']);
+
+        // ── PATH 1: Raw per-package format (Sonny's standard layout).
+        // Header within first 5 rows containing "Description" + "Weight"
+        // columns; one data row per package.
+        let descCol=-1, weightCol=-1, hRowRaw=-1;
         for(let r=range.s.r; r<=Math.min(range.s.r+5, range.e.r); r++){
           for(let c=range.s.c; c<=range.e.c; c++){
-            const addr=XLSX.utils.encode_cell({r,c});
-            const v=String(cv[addr]||'').trim().toLowerCase();
+            const v = String(cv[XLSX.utils.encode_cell({r,c})]||'').trim().toLowerCase();
+            if(v === 'description') { descCol = c; hRowRaw = r; }
+            if(hRowRaw === r && v === 'weight') weightCol = c;
+          }
+          if(descCol >= 0 && weightCol >= 0) break;
+        }
+        if(descCol >= 0 && weightCol >= 0) {
+          const agg = {};
+          for(let r = hRowRaw+1; r <= range.e.r; r++){
+            const desc = String(cv[XLSX.utils.encode_cell({r,c:descCol})]||'').trim();
+            const wt = parseFloat(cv[XLSX.utils.encode_cell({r,c:weightCol})]);
+            if(!desc || !isFinite(wt) || wt <= 0) continue;
+            const key = desc.toLowerCase();
+            if(!agg[key]) agg[key] = {total:0, count:0, label:desc};
+            agg[key].total += wt;
+            agg[key].count += 1;
+          }
+          if(Object.keys(agg).length > 0) {
+            parsed = aggToParsed(agg, file.name);
+            if(Object.keys(parsed).length > 1) break;
+          }
+        }
+
+        // ── PATH 2: Pivot summary fallback ("Row Labels"/"Total Weight"/etc).
+        let labelCol=-1, totalWtCol=-1, countCol=-1, avgWtCol=-1, hRow=-1;
+        for(let r=range.s.r; r<=Math.min(range.s.r+5, range.e.r); r++){
+          for(let c=range.s.c; c<=range.e.c; c++){
+            const v=String(cv[XLSX.utils.encode_cell({r,c})]||'').trim().toLowerCase();
             if(v==='row labels'){ labelCol=c; hRow=r; }
             if(hRow===r && v==='total weight') totalWtCol=c;
             if(hRow===r && v==='count of packages') countCol=c;
@@ -1377,39 +1429,32 @@ function App(){
           if(labelCol>=0 && avgWtCol>=0) break;
         }
         if(labelCol<0 || avgWtCol<0) continue;
-
-        parsed={fileName:file.name};
-        const excluded=['neck','feet','back','wing','grand total'];
-
-        // Read each data row in the pivot
+        const agg2 = {};
         for(let r=hRow+1; r<=range.e.r; r++){
-          const labelAddr=XLSX.utils.encode_cell({r,c:labelCol});
-          const labelVal=cv[labelAddr];
+          const labelVal=cv[XLSX.utils.encode_cell({r,c:labelCol})];
           if(!labelVal) continue;
-          const label=String(labelVal).trim().toLowerCase();
+          const label=String(labelVal).trim();
           if(!label) continue;
-
-          // Read values relative to label column position (label=col0, totalWt=+1, count=+2, avgWt=+3)
-          const avgWt=parseFloat(cv[XLSX.utils.encode_cell({r,c:labelCol+3})]);
           const totalWt=parseFloat(cv[XLSX.utils.encode_cell({r,c:labelCol+1})]);
           const count=parseInt(cv[XLSX.utils.encode_cell({r,c:labelCol+2})]);
-
-          if(label==='whole chicken'||label==='whole chicken '||label.includes('whole chicken')){
-            if(!isNaN(avgWt)&&avgWt>0) parsed.avgDressed=Math.round(avgWt*100)/100;
-            if(!isNaN(totalWt)&&totalWt>0) parsed.totalLbsWhole=Math.round(totalWt*10)/10;
-          }
-          if(label.includes('breast')&&!isNaN(avgWt)) parsed.avgBreast=Math.round(avgWt*100)/100;
-          if(label.includes('thigh')&&!isNaN(avgWt)) parsed.avgThigh=Math.round(avgWt*100)/100;
-          if(label!=='grand total'&&!excluded.some(e=>label.includes(e))&&!label.includes('whole chicken')&&!isNaN(totalWt)&&totalWt>0){
-            parsed._cuts=(parsed._cuts||0)+totalWt;
-          }
+          if(!isFinite(totalWt) || totalWt <= 0) continue;
+          agg2[label.toLowerCase()] = {total: totalWt, count: isFinite(count)&&count>0 ? count : 1, label};
         }
-        if(parsed._cuts>0){ parsed.totalLbsCuts=Math.round(parsed._cuts*10)/10; }
-        delete parsed._cuts;
-        if(Object.keys(parsed).length>1) break;
+        if(Object.keys(agg2).length > 0) {
+          parsed = aggToParsed(agg2, file.name);
+          if(Object.keys(parsed).length > 1) break;
+        }
       }
-      if(parsed&&Object.keys(parsed).length>1) setParsedProcessor(parsed);
-    } catch(e){ console.warn('Processor parse error:',e.message); }
+
+      if(parsed && Object.keys(parsed).length > 1) {
+        setParsedProcessor(parsed);
+      } else {
+        alert('Couldn\'t find processor data in '+file.name+'.\n\nThe parser looks for either:\n  • A raw per-package sheet with "Description" and "Weight" columns (Sonny\'s standard format), or\n  • A pivot summary with "Row Labels" / "Total Weight" / "Average Weight" columns.\n\nThe file was uploaded as an attachment.');
+      }
+    } catch(e){
+      console.warn('Processor parse error:', e);
+      alert('Excel parse error: ' + (e.message || 'Unknown error'));
+    }
   }
 
   function confirmDelete(message, onConfirm) {
