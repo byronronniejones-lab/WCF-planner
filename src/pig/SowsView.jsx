@@ -260,6 +260,17 @@ export default function SowsView({
               })}
             </div>
           )}
+          {pig.transferredFromBatch && (() => {
+            const tfb = pig.transferredFromBatch;
+            const sourceLabel = tfb.subBatchName || tfb.batchName || '?';
+            const dateStr = tfb.transferDate ? (' on '+fmtS(tfb.transferDate)) : '';
+            const sexNoun = (pig.sex==='Boar'?'boar':pig.sex==='Sow'?'sow':'gilt');
+            return (
+              <div style={{margin:"0 16px 10px",padding:"6px 10px",background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:6,fontSize:11,color:"#5b21b6",fontWeight:600}}>
+                {'This '+sexNoun+' was saved from '+sourceLabel+dateStr+'.'}
+              </div>
+            );
+          })()}
           {pig.notes&&<div style={{padding:"0 16px 10px",fontSize:11,color:"#6b7280",fontStyle:"italic"}}>{pig.notes}</div>}
         </div>
       );

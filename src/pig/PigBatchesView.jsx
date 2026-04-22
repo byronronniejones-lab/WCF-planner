@@ -561,7 +561,14 @@ export default function PigBatchesView({
             const trips = g.processingTrips||[];
             const totalLive = trips.reduce((s,t)=>s+tripTotalLive(t),0);
             const totalHang = trips.reduce((s,t)=>s+(parseFloat(t.hangingWeight)||0),0);
-            const overallYield = totalLive>0&&totalHang>0 ? Math.round((totalHang/totalLive)*1000)/10 : null;
+            // Carcass yield % only counts trips that have a hanging weight
+            // entered. Otherwise a trip with no hanging data drags the
+            // denominator (live wt) down without contributing to the
+            // numerator, making the % look artificially low.
+            const tripsWithHang = trips.filter(t => (parseFloat(t.hangingWeight)||0) > 0);
+            const yieldHang = tripsWithHang.reduce((s,t)=>s+(parseFloat(t.hangingWeight)||0),0);
+            const yieldLive = tripsWithHang.reduce((s,t)=>s+tripTotalLive(t),0);
+            const overallYield = yieldLive>0&&yieldHang>0 ? Math.round((yieldHang/yieldLive)*1000)/10 : null;
             // Sub-batches
             const subBatches = g.subBatches||[];
             const hasSubBatches = subBatches.length>0;
@@ -671,6 +678,25 @@ export default function PigBatchesView({
                     })()}
                   </div>
                 )}
+
+                {/* Transferred-to-breeding note (per sub-batch breakdown) */}
+                {(() => {
+                  const transferred = (breeders||[]).filter(b => b && b.transferredFromBatch && b.transferredFromBatch.batchName === g.batchName);
+                  if(transferred.length === 0) return null;
+                  const bySub = {};
+                  transferred.forEach(b => {
+                    const k = b.transferredFromBatch.subBatchName || g.batchName;
+                    bySub[k] = (bySub[k] || 0) + 1;
+                  });
+                  return (
+                    <div style={{padding:"8px 16px",borderBottom:"1px solid #e5e7eb",background:"#f5f3ff",fontSize:12,color:"#5b21b6",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{fontWeight:700}}>{'→ Breeding:'}</span>
+                      {Object.entries(bySub).map(([sub, count], i) => (
+                        <span key={sub}>{(i>0?' · ':'')+count+' '+(count===1?'pig':'pigs')+' out of '+sub+' sent to breeding pigs group'}</span>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Sub-batches panel */}
                 <div style={{padding:"10px 16px",borderBottom:"1px solid #e5e7eb"}}>
