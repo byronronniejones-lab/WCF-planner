@@ -1350,7 +1350,9 @@ function App(){
       const buf = await file.arrayBuffer();
       const wb2 = XLSX.read(buf, {type:'array', cellDates:false});
       let parsed = null;
-      const excluded = ['neck','feet','back','wing','grand total'];
+      // Wings are a sellable cut — only neck/feet/back are scrap-style
+      // categories that should be left out of the cuts total.
+      const excluded = ['neck','feet','back','grand total'];
 
       // Map an aggregated {label: {total, count, label}} dict into the parsed
       // shape (avgDressed/avgBreast/avgThigh/totalLbsWhole/totalLbsCuts).
