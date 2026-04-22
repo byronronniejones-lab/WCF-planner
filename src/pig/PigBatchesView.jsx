@@ -520,7 +520,7 @@ export default function PigBatchesView({
                     Age: {ageRange.text}
                     {!ageRange.hasActual&&ageRange.text!=="—"&&<span style={{fontSize:10,color:"#92400e",marginLeft:4}}>(estimated)</span>}
                   </span>
-                  {g.startDate&&<span style={{color:"#6b7280",fontSize:11}}>Started {fmt(g.startDate)}</span>}
+                  {g.startDate&&<span style={{color:"white",fontSize:11}}>Started {fmt(g.startDate)}</span>}
                   <span style={S.badge(sc.bg,sc.tx)}>{g.status}</span>
                   <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
 
