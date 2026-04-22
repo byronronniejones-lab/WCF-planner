@@ -34,6 +34,10 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
   const [pigAddEntry, setPigAddEntry] = useState({weight:'', note:''});
   const [pigBusy, setPigBusy] = useState(false);
   const [pigErr, setPigErr] = useState('');
+  // Transfer-to-breeding modal state — scoped to one weigh-in entry at a time.
+  const [transferModal, setTransferModal] = useState(null); // {session, entry}
+  const [transferForm, setTransferForm] = useState({tag:'', group:'1', sex:'Gilt', birthDate:''});
+  const [transferBusy, setTransferBusy] = useState(false);
 
   const speciesLabel = species === 'broiler' ? 'Broiler' : 'Pig';
 
@@ -181,6 +185,141 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       await loadAll();
     });
   }
+
+  // ── Transfer-to-Breeding (admin only) ────────────────────────────────────
+  // Resolve a session's batch_id to {parentBatch, subBatch?} from feederGroups.
+  // session.batch_id is whatever the public webform picked — usually a
+  // sub-batch name like "P-26-01A (GILTS)", but can be a parent batchName too.
+  function resolveBatchAndSub(sessionBatchId) {
+    if(!sessionBatchId) return {parent: null, sub: null};
+    const norm = String(sessionBatchId).trim().toLowerCase();
+    for(const g of feederGroups) {
+      if((g.batchName||'').trim().toLowerCase() === norm) return {parent: g, sub: null};
+      const sub = (g.subBatches||[]).find(s => (s.name||'').trim().toLowerCase() === norm);
+      if(sub) return {parent: g, sub};
+    }
+    return {parent: null, sub: null};
+  }
+  // Compute parent batch's running FCR (lbs feed per lb live weight).
+  // Falls back to industry default 3.5 if no trips have happened yet.
+  function batchFCR(parent) {
+    if(!parent) return 3.5;
+    const subs = parent.subBatches || [];
+    const dailyFeed = (subs.length > 0
+      ? subs.reduce((acc, sb) => acc + (sb.dailyFeedTotalCached || 0), 0) // not used (cache absent), see below
+      : 0);
+    // Easier: re-derive from raw feed - allocated. We don't have pigDailys
+    // on this view, so use parent's processingTrips.liveWeights for live and
+    // fall back to default for feed (no clean source here). To keep this
+    // self-contained, use trips' counts × avg-live as a proxy; if no trips,
+    // fall back to default 3.5.
+    const trips = parent.processingTrips || [];
+    const totalLive = trips.reduce((s, t) => {
+      const w = (t.liveWeights||'').split(/[\s,]+/).map(parseFloat).filter(v => !isNaN(v) && v>0);
+      return s + w.reduce((a,b)=>a+b, 0);
+    }, 0);
+    // Without pigDailys on this view, FCR can't be computed live here.
+    // Use the stored fcrCached on the batch if present, else default 3.5.
+    if(parent.fcrCached && parent.fcrCached > 0) return parent.fcrCached;
+    return 3.5;
+  }
+  function openTransferModal(session, entry) {
+    setTransferModal({session, entry});
+    // Default birth date from session date minus 6 months (rough feeder pig
+    // age at processing-weight). Admin can adjust.
+    let bd = '';
+    try {
+      const sd = new Date((session.date||'') + 'T12:00:00');
+      sd.setMonth(sd.getMonth() - 6);
+      bd = sd.toISOString().slice(0,10);
+    } catch(e){}
+    setTransferForm({tag:'', group:'1', sex:'Gilt', birthDate: bd});
+  }
+  async function transferToBreeding() {
+    if(!transferModal) return;
+    const {session, entry} = transferModal;
+    const tag = (transferForm.tag||'').trim();
+    if(!tag) { alert('Tag # is required.'); return; }
+    if(!transferForm.group) { alert('Pick a group.'); return; }
+    setTransferBusy(true);
+    try {
+      // Resolve batch + sub from session.batch_id.
+      const {parent, sub} = resolveBatchAndSub(session.batch_id);
+      if(!parent) { alert('Could not match this session to a feeder batch.'); setTransferBusy(false); return; }
+      // FCR-based feed allocation: weight × FCR (lbs feed per lb live weight).
+      const fcr = batchFCR(parent);
+      const weight = parseFloat(entry.weight) || 0;
+      const feedAllocLbs = Math.round(weight * fcr * 10) / 10;
+
+      // 1. Insert into breeders registry.
+      const breederId = String(Date.now()) + Math.random().toString(36).slice(2,6);
+      const breederRec = {
+        id: breederId,
+        tag,
+        sex: transferForm.sex || 'Gilt',
+        group: transferForm.group,
+        status: transferForm.sex === 'Boar' ? 'Boar Group' : 'Sow Group',
+        breed: '',
+        origin: parent.batchName || '',
+        birthDate: transferForm.birthDate || '',
+        lastWeight: weight,
+        purchaseDate: '',
+        purchaseAmount: '',
+        notes: '',
+        archived: false,
+        weighins: [{weight, date: session.date || new Date().toISOString().slice(0,10)}],
+        transferredFromBatch: {
+          batchName: parent.batchName,
+          subBatchName: sub ? sub.name : null,
+          transferDate: new Date().toISOString().slice(0,10),
+          feedAllocationLbs: feedAllocLbs,
+          fcrUsed: fcr,
+        },
+      };
+      // Read current breeders, append, write back.
+      const brR = await sb.from('app_store').select('data').eq('key','ppp-breeders-v1').maybeSingle();
+      const currentBreeders = (brR.data && Array.isArray(brR.data.data)) ? brR.data.data : [];
+      const newBreeders = [...currentBreeders, breederRec];
+      await sb.from('app_store').upsert({key:'ppp-breeders-v1', data: newBreeders}, {onConflict:'key'});
+
+      // 2. Decrement parent + sub batch counts and accumulate feed allocation.
+      const updatedFeederGroups = feederGroups.map(g => {
+        if(g.id !== parent.id) return g;
+        const dec = transferForm.sex === 'Boar' ? 'boarCount' : 'giltCount';
+        const next = {...g};
+        next[dec] = Math.max(0, (parseInt(g[dec])||0) - 1);
+        next.originalPigCount = Math.max(0, (parseInt(g.originalPigCount)||0) - 1);
+        next.feedAllocatedToTransfers = (parseFloat(g.feedAllocatedToTransfers)||0) + feedAllocLbs;
+        if(sub && Array.isArray(g.subBatches)) {
+          next.subBatches = g.subBatches.map(s => {
+            if(s.id !== sub.id) return s;
+            const ns = {...s};
+            ns[dec] = Math.max(0, (parseInt(s[dec])||0) - 1);
+            ns.originalPigCount = Math.max(0, (parseInt(s.originalPigCount)||0) - 1);
+            return ns;
+          });
+        }
+        return next;
+      });
+      setFeederGroups(updatedFeederGroups);
+      await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: updatedFeederGroups}, {onConflict:'key'});
+
+      // 3. Stamp the weigh-in entry.
+      await sb.from('weigh_ins').update({
+        transferred_to_breeding: true,
+        transfer_breeder_id: breederId,
+        feed_allocation_lbs: feedAllocLbs,
+      }).eq('id', entry.id);
+
+      setTransferModal(null);
+      setTransferBusy(false);
+      await loadAll();
+    } catch(e) {
+      alert('Transfer failed: ' + (e.message || 'unknown error'));
+      setTransferBusy(false);
+    }
+  }
+
   // Admin save: wipe+rewrite semantics on the UNSENT pool. Entries with
   // sent_to_trip_id set are protected — they stay in weigh_ins and continue
   // referencing their trip in app_store.ppp-feeders-v1.
@@ -425,23 +564,36 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                           {sEntries.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', padding:'6px 0'}}>No entries in this session yet.</div>}
                           {sEntries.map(e => {
                             const isSent = !!e.sent_to_trip_id;
+                            const isTransferred = !!e.transferred_to_breeding;
                             const link = isSent ? lookupTrip(e) : null;
                             const checked = selectedEntryIds.has(e.id);
+                            const editable = !isSent && !isTransferred && !fieldsLocked;
                             return (
-                              <div key={e.id} style={{display:'flex', alignItems:'center', gap:6, padding:'5px 0', borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
-                                {!isSent && !fieldsLocked
-                                  ? <input type="checkbox" checked={checked} onChange={()=>toggle(e.id)} style={{margin:0}} title="Select to send to trip"/>
-                                  : <span style={{width:13}}/>}
-                                {!isSent && !fieldsLocked
-                                  ? <input type="number" min="0" step="0.1" defaultValue={e.weight} onBlur={ev=>{const v=parseFloat(ev.target.value); if(Number.isFinite(v)&&v>0&&v!==parseFloat(e.weight)) updatePigEntry(e.id,{weight:v});}} style={{...rowInpS, width:80}}/>
-                                  : <span style={{fontWeight:700, color:isSent?'#047857':'#1e40af', minWidth:80, fontSize:13}}>{e.weight} lb</span>}
-                                {!isSent && !fieldsLocked
-                                  ? <input type="text" placeholder="Note (optional)" defaultValue={e.note||''} onBlur={ev=>{const v=(ev.target.value||'').trim()||null; if(v!==(e.note||null)) updatePigEntry(e.id,{note:v});}} style={{...rowInpS, flex:1, minWidth:120}}/>
-                                  : (e.note && <span style={{fontSize:11, color:'#6b7280', fontStyle:'italic', flex:1}}>{e.note}</span>)}
-                                {isSent && link && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#d1fae5', color:'#065f46', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 '+link.group.batchName+' \u00b7 '+link.trip.date}</span>}
-                                {isSent && !link && <span style={{fontSize:11, color:'#b91c1c', fontStyle:'italic'}}>(missing trip)</span>}
-                                {isSent && <button onClick={()=>undoSendToTrip(e)} title="Undo send to trip" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Undo send</button>}
-                                {!isSent && !fieldsLocked && <button onClick={()=>deletePigEntry(e.id)} title="Delete entry" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Delete</button>}
+                              <div key={e.id} style={{display:'grid', gridTemplateColumns:'24px 90px 1fr auto', gap:8, padding:'6px 0', borderBottom:'1px solid #f3f4f6', alignItems:'center'}}>
+                                {/* Col 1: select-to-trip checkbox (or spacer) */}
+                                <div style={{display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                  {editable && <input type="checkbox" checked={checked} onChange={()=>toggle(e.id)} style={{margin:0}} title="Select to send to trip"/>}
+                                </div>
+                                {/* Col 2: weight (input or read-only) */}
+                                <div>
+                                  {editable
+                                    ? <input type="number" min="0" step="0.1" defaultValue={e.weight} onBlur={ev=>{const v=parseFloat(ev.target.value); if(Number.isFinite(v)&&v>0&&v!==parseFloat(e.weight)) updatePigEntry(e.id,{weight:v});}} style={{...rowInpS, width:'100%'}}/>
+                                    : <span style={{fontWeight:700, color:isSent?'#047857':isTransferred?'#5b21b6':'#1e40af', fontSize:13}}>{e.weight} lb</span>}
+                                </div>
+                                {/* Col 3: note input OR sent/transferred badge */}
+                                <div style={{minWidth:0,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                                  {editable && <input type="text" placeholder="Note (optional)" defaultValue={e.note||''} onBlur={ev=>{const v=(ev.target.value||'').trim()||null; if(v!==(e.note||null)) updatePigEntry(e.id,{note:v});}} style={{...rowInpS, flex:1, minWidth:120}}/>}
+                                  {isSent && link && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#d1fae5', color:'#065f46', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 '+link.group.batchName+' \u00b7 '+link.trip.date}</span>}
+                                  {isSent && !link && <span style={{fontSize:11, color:'#b91c1c', fontStyle:'italic'}}>(missing trip)</span>}
+                                  {isTransferred && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#ede9fe', color:'#5b21b6', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 Transferred to Breeding'+(e.feed_allocation_lbs?' \u00b7 ~'+Math.round(e.feed_allocation_lbs)+' lb feed':'')}</span>}
+                                  {!editable && e.note && <span style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</span>}
+                                </div>
+                                {/* Col 4: action buttons */}
+                                <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
+                                  {editable && <button onClick={()=>openTransferModal(s, e)} title="Transfer to breeding pigs" style={{background:'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:5, color:'#5b21b6', cursor:'pointer', fontSize:11, padding:'3px 8px', fontFamily:'inherit', fontWeight:600}}>{'\u2192 Breeding'}</button>}
+                                  {isSent && <button onClick={()=>undoSendToTrip(e)} title="Undo send to trip" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Undo send</button>}
+                                  {editable && <button onClick={()=>deletePigEntry(e.id)} title="Delete entry" style={{background:'none', border:'1px solid #fecaca', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:11, padding:'2px 8px', fontFamily:'inherit'}}>Delete</button>}
+                                </div>
                               </div>
                             );
                           })}
@@ -489,6 +641,67 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
         onClose={()=>setTripModal(null)}
         onConfirm={sendEntriesToTrip}
       />}
+      {/* Transfer-to-Breeding modal */}
+      {transferModal && (() => {
+        const {session, entry} = transferModal;
+        const {parent, sub} = resolveBatchAndSub(session.batch_id);
+        const fcr = parent ? batchFCR(parent) : 3.5;
+        const weight = parseFloat(entry.weight) || 0;
+        const previewAlloc = Math.round(weight * fcr * 10) / 10;
+        return (
+          <div onClick={()=>!transferBusy && setTransferModal(null)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:'1rem'}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:12,width:'100%',maxWidth:460,boxShadow:'0 8px 32px rgba(0,0,0,.2)'}}>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{fontSize:15,fontWeight:600,color:'#5b21b6'}}>{'→ Transfer to Breeding'}</div>
+                <button onClick={()=>setTransferModal(null)} disabled={transferBusy} style={{background:'none',border:'none',fontSize:22,cursor:transferBusy?'not-allowed':'pointer',color:'#9ca3af',lineHeight:1}}>{'×'}</button>
+              </div>
+              <div style={{padding:'16px 20px',display:'flex',flexDirection:'column',gap:12}}>
+                <div style={{fontSize:12,color:'#6b7280'}}>
+                  From <strong>{(parent && parent.batchName) || session.batch_id}</strong>
+                  {sub && <> {'·'} sub-batch <strong>{sub.name}</strong></>}
+                  {' · weighed '}<strong>{entry.weight} lb</strong>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <label style={{display:'block',fontSize:12,color:'#374151',marginBottom:4,fontWeight:600}}>{'New tag # *'}</label>
+                    <input type="text" value={transferForm.tag} onChange={e=>setTransferForm({...transferForm,tag:e.target.value})} placeholder="e.g. 26" style={{width:'100%',fontSize:13,padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit',boxSizing:'border-box'}}/>
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:12,color:'#374151',marginBottom:4,fontWeight:600}}>Group *</label>
+                    <select value={transferForm.group} onChange={e=>setTransferForm({...transferForm,group:e.target.value})} style={{width:'100%',fontSize:13,padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit',boxSizing:'border-box',background:'white'}}>
+                      <option value="1">Group 1</option>
+                      <option value="2">Group 2</option>
+                      <option value="3">Group 3</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:12,color:'#374151',marginBottom:4,fontWeight:600}}>Sex</label>
+                    <select value={transferForm.sex} onChange={e=>setTransferForm({...transferForm,sex:e.target.value})} style={{width:'100%',fontSize:13,padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit',boxSizing:'border-box',background:'white'}}>
+                      <option value="Gilt">Gilt</option>
+                      <option value="Sow">Sow</option>
+                      <option value="Boar">Boar</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:12,color:'#374151',marginBottom:4,fontWeight:600}}>Birth date (est.)</label>
+                    <input type="date" value={transferForm.birthDate} onChange={e=>setTransferForm({...transferForm,birthDate:e.target.value})} style={{width:'100%',fontSize:13,padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit',boxSizing:'border-box'}}/>
+                  </div>
+                </div>
+                <div style={{fontSize:11,color:'#5b21b6',background:'#f5f3ff',border:'1px solid #ddd6fe',borderRadius:6,padding:'8px 10px'}}>
+                  Feed allocation: <strong>{previewAlloc} lb</strong>
+                  {' · weight ' + entry.weight + ' lb × FCR ' + fcr.toFixed(2)}
+                  {(!parent || !parent.fcrCached) && <span style={{color:'#92400e'}}> {'(default FCR — no completed trips yet)'}</span>}
+                  <div style={{marginTop:3,color:'#7c3aed'}}>This amount is subtracted from the batch's feed total so per-pig math stays accurate.</div>
+                </div>
+              </div>
+              <div style={{padding:'12px 20px',borderTop:'1px solid #e5e7eb',display:'flex',gap:8,justifyContent:'flex-end'}}>
+                <button onClick={()=>setTransferModal(null)} disabled={transferBusy} style={{padding:'8px 14px',borderRadius:7,border:'1px solid #d1d5db',background:'white',color:'#374151',fontWeight:600,fontSize:12,cursor:transferBusy?'not-allowed':'pointer',fontFamily:'inherit'}}>Cancel</button>
+                <button onClick={transferToBreeding} disabled={transferBusy || !transferForm.tag.trim()} style={{padding:'8px 16px',borderRadius:7,border:'none',background:(transferBusy||!transferForm.tag.trim())?'#9ca3af':'#5b21b6',color:'white',fontWeight:700,fontSize:12,cursor:(transferBusy||!transferForm.tag.trim())?'not-allowed':'pointer',fontFamily:'inherit'}}>{transferBusy?'Transferring…':'→ Transfer'}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

@@ -102,7 +102,10 @@ export default function PigsHomeView({ Header, loadUsers }) {
         if(activeSubs.length>0) return activeSubs.some(s=>(d.batch_label||'').toLowerCase().trim()===(s.name||'').toLowerCase().trim());
         return (d.batch_label||'').toLowerCase().trim()===(g.batchName||'').toLowerCase().trim();
       });
-      const totalFeed = batchDailys.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
+      // Raw feed minus what's been allocated out to breeding-transferred pigs
+      // (see PigBatchesView transfer flow).
+      const rawFeed = batchDailys.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
+      const totalFeed = Math.max(0, rawFeed - (parseFloat(g.feedAllocatedToTransfers)||0));
       const originalCount = parseInt(g.originalPigCount)||0;
       const reportDays = new Set(batchDailys.map(d=>d.date)).size;
       const cycle = breedingCycles.find(c=>c.id===g.cycleId);

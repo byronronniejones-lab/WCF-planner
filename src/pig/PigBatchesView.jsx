@@ -575,7 +575,11 @@ export default function PigBatchesView({
               return {sb, dailys:sd, feedTotal:feed, latestDaily:latest, currentCount:latest?.pig_count??null};
             });
             const subFeedGrandTotal = subFeedTotals.reduce((s,sf)=>s+sf.feedTotal,0);
-            const totalFeed = hasSubBatches ? subFeedGrandTotal + legacyFeed : dailyFeedTotal + legacyFeed;
+            const rawFeed = hasSubBatches ? subFeedGrandTotal + legacyFeed : dailyFeedTotal + legacyFeed;
+            // Subtract feed already credited to pigs transferred out to the
+            // breeders registry (computed at transfer time as weight × FCR).
+            const feedAllocatedOut = parseFloat(g.feedAllocatedToTransfers) || 0;
+            const totalFeed = Math.max(0, rawFeed - feedAllocatedOut);
 
             // Current pig count — from most recent daily across all sub-batches or parent
             const sortedDailys = hasSubBatches
@@ -591,12 +595,13 @@ export default function PigBatchesView({
             // Feed cost
             const perLbCost = parseFloat(g.perLbFeedCost)||0;
             const totalFeedCost = totalFeed>0&&perLbCost>0 ? totalFeed*perLbCost : null;
-            // Feed conversion: (total feed / original pig count) / (total live wt / pigs processed)
-            // = avg feed per pig / avg live weight per pig
+            // Feed conversion ratio = total feed / total live weight produced.
+            // Standard FCR definition (lbs feed per lb live weight). The old
+            // hybrid (avg-feed-per-pig / avg-live-weight) drifted whenever
+            // original-count and pigs-processed weren't equal.
             const pigsProcessed = trips.reduce((s,t)=>s+(parseInt(t.pigCount)||0),0);
-            const avgFeedPerPig = originalPigCount>0&&totalFeed>0 ? totalFeed/originalPigCount : null;
-            const avgLiveWeight = pigsProcessed>0&&totalLive>0 ? totalLive/pigsProcessed : null;
-            const feedConversion = avgFeedPerPig&&avgLiveWeight ? Math.round((avgFeedPerPig/avgLiveWeight)*100)/100 : null;
+            const feedConversion = (totalFeed > 0 && totalLive > 0)
+              ? Math.round((totalFeed/totalLive)*100)/100 : null;
             const showTripForm = activeTripBatchId===g.id;
             const farrowPct = ageRange.total>0 ? Math.round((ageRange.count/ageRange.total)*100) : 0;
 
