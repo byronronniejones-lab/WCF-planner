@@ -368,6 +368,48 @@ Projection rates:
 - Feeder groups with sub-batches and processing trips.
 - Breeding pig registry (`INITIAL_BREEDERS` seed has 24 Podio-imported pigs; `INITIAL_FARROWING` has 13 historical records).
 
+**Breeding cycle modal (`BreedingView.jsx`) — major operational refactor 2026-04-22**:
+- Sow assignments are **chip-based**, not free-text textareas. Each boar has a chip row + `+ Add sow from Group N` dropdown filtered to that group.
+- **Auto-pull from breeders**: when a cycle is unstarted, opening the modal merges any group sows not yet in either boar's list into Boar 1. `mergeSowsIntoB1(group, b1, b2, excluded)` skips `cycle.excludedSows[]` so removed sows don't keep coming back.
+- **2-week grace period**: `isCycleLocked(exposureStart)` returns true 14 days after the cycle starts; chip × delete + auto-pull stop firing once locked. Banner switches to "Cycle locked".
+- **Custom batch number**: optional `cycle.customSuffix` overrides the auto `YY-NN`. Used by `cycleLabel()` and the gantt bar label.
+- **Color palette = blue family**: `PIG_GROUP_COLORS` per group has base + lighter (gilts) + darker (boars) shades. Group 1 sky `#0EA5E9`, Group 2 core blue `#2563EB`, Group 3 slate `#475569`.
+
+**Transfer-to-Breeding flow (admin weigh-ins → breeders registry)**:
+- `LivestockWeighInsView.jsx` → per-row **→ Breeding** button on pig sessions opens a modal: New tag, Group, Sex, Birth date (auto session date − 6 mo). No feed input — auto-computed.
+- `feedAllocationLbs = pig.weight × FCR`. FCR fallback chain: `parent.fcrCached` → industry default `3.5`. (FCR cache is **not yet wired** — see roadmap.)
+- On confirm: inserts breeders entry (with `transferredFromBatch: {batchName, subBatchName, transferDate, feedAllocationLbs, fcrUsed, sourceWeighInId}`), decrements parent + sub batch giltCount/boarCount and originalPigCount, accumulates `parent.feedAllocatedToTransfers` (subtracted from displayed `totalFeed` everywhere it shows).
+- **Dup guard**: pre-insert check skips when an existing breeder already references the same `sourceWeighInId`.
+- **Migration 014** adds `weigh_ins.transferred_to_breeding`, `transfer_breeder_id`, `feed_allocation_lbs` columns. Pre-migration fallback writes `[transferred_to_breeding breeder=ID feed_alloc=N lb] <note>` marker into `weigh_ins.note`. Both paths are detected by `isTransferred = !!e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note||'')`.
+- **Undo Transfer**: per-row purple button reverses everything — drops breeder by `transfer_breeder_id` (or note marker), increments counts back, decrements `feedAllocatedToTransfers`, clears the weigh-in stamp + strips the note marker.
+- **Breeding pig tile** (`SowsView.jsx`): transferred sows show purple banner `This gilt was saved from <subBatch> on <date>.` (word adapts: gilt/sow/boar).
+
+**Pig batch tile (`PigBatchesView.jsx`)**:
+- **Per-sub Mark Processed / Reactivate** buttons. Processed subs force `currentCount=0` and drop out of the public webform group dropdown via `syncWebformConfig`.
+- **Mortality entry**: + Mortality button on each batch tile opens a modal (Sub-batch picker, Count, Comment). Stored on `feederGroup.pigMortalities[]` with auto date + admin email. Expandable list per tile shows history with delete.
+- **Breeding-transfer note**: purple banner `→ Breeding: N pigs out of <sub> sent to breeding pigs group`. Live-derived from `breeders.transferredFromBatch.batchName`.
+- **Feed → Breeding stat tile**: shows `−N lbs` when `feedAllocatedToTransfers > 0`. Total Feed tile hint reads `raw X − Y transferred out`.
+- **Carcass yield %** only counts trips with `hangingWeight > 0`. Trips waiting on processor data don't drag the % down.
+- **Editable `feedAllocatedToTransfers`** in Edit Batch modal (set to 0 to clear stale state from outside-the-undo-flow cleanup).
+- **Trip source attribution**: each processing trip shows `From: P-26-01A (GILTS) (2), P-26-01B (BOARS) (2)` derived from `weigh_ins.sent_to_trip_id` join with sessions. Edit Trip modal includes a green "Sources:" block.
+
+**Pig timeline gantt (`BreedingView.jsx`)**:
+- 2x zoom (week-cell width `40px`, was `80px`) so ~8 months fit in the viewport.
+- `borderRadius:8` on bars (also broiler).
+- Bar labels honor `customSuffix` (`G3 · 26-01 — Sows in with Boars`).
+- Newest cycle cards on top below the chart.
+
+**Public weigh-ins (`WeighInsWebform.jsx`)**:
+- Per-species team-member lists (admin panel has a Weigh-Ins tile with 4 boxes for Cattle / Sheep / Pig / Broiler). Falls back to global team list if a species' list is empty.
+- Pig flow is **per-entry** (no 2x15 grid): Weight + Note + Save. Entry list shows ascending (#1 at top).
+- Cattle flow modes renamed: `↻ Swap Tag` (was Retag) + `+ Missing Tag` (was Replacement Tag). Internal mode IDs (`'retag'` / `'replacement'`) and `old_tags.source` values (`'weigh_in'`) unchanged for historical resolution.
+- Swap Tag button gated until a cow is picked in the dropdown; auto-populates the Prior tag field.
+- Cattle/sheep entries show age + prior weight + ADG.
+- Resume-session bug fixed: `cattleHerd` / `sheepFlock` now restored from session row.
+
+**Per-pig weight history on breeding pigs (`SowsView.jsx`)**:
+- Each tile has `+ Record` weight input below the stats. New entries append to `breeder.weighins: [{weight, date}]` and update `lastWeight`. Tile shows compact history row (latest 6) + `+N more` overflow.
+
 ### 5.5 Cattle module
 
 - 4 active herds + 3 outcomes (see `src/lib/cattle.js`):
@@ -455,6 +497,11 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 - **`cattle.old_tags` jsonb shape.** Retag reconciliation reads specific field names.
 - **`weigh_in_sessions.species` column convention** (`broiler` / `pig` / `cattle` / `sheep`). The shared session table discriminates here.
 - **Supabase RLS policies.** None are touched by frontend work anyway — flag any suggestion that would require an RLS change.
+- **`breeders[].transferredFromBatch.sourceWeighInId` shape.** The pig Transfer-to-Breeding dup guard reads this exact key — renaming breaks dedup and lets fast double-clicks recreate duplicates.
+- **`weigh_ins.note` `[transferred_to_breeding breeder=… feed_alloc=…]` marker.** Pre-migration-014 fallback path writes this; the LivestockWeighInsView badge detection regex (`/\[transferred_to_breeding/`) and the feed_alloc parser depend on the format.
+- **Pig transfer `mode` identifiers** in weigh_ins flow (`'retag'` / `'replacement'`) and old_tags `source` values (`'import'` / `'weigh_in'` / `'manual'`). User-facing strings were renamed to "Swap Tag" / "Missing Tag" / "(swap)" but internal IDs stayed for historical-data resolution.
+- **Pig color palette = blue family only.** `PIG_GROUP_COLORS` in `src/lib/pig.js` uses sky / core blue / slate. Per-group base, lighter for gilts grow-out, darker for boars grow-out. No purple anywhere in pig views (Ronnie's standing rule).
+- **`pigMortalities`, `pigsTransferredOut` audit fields on feeder groups.** Mortality count + comment + team_member + date stored on `feederGroup.pigMortalities[]`; transfer counts derived from `breeders.transferredFromBatch.batchName`. Both arrays are append-only audit logs — don't mutate historical entries.
 
 ---
 
@@ -464,8 +511,10 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 
 - **Per-view state internalization** (optional polish, parked 2026-04-21). ~40 `useState` hooks in App's body are view-local state that belongs inside the view component. Right approach: push each block INTO the view that uses it (webforms-admin state → `WebformsAdminView`; feed state → shared `FeedUIContext`; auto-save refs → per-context). Regressions only surface at runtime, so it needs the bare-name audit pattern (see §Part 3) and careful per-view verification. Estimated 5–7 commits.
 - **Per-head cattle cost rollup.** Feed cost (from `cattle_dailys.feeds[].lbs_as_fed × landed_per_lb`) + processing cost (from `cattle_processing_batches`) per cow with attribution rules. Not blocking ops.
-- **Send-to-trip wiring on pig weigh-ins.** Pigs aren't tagged; Trip view should pull recent session entries by checkbox.
 - **Feed system physical count verification.** The adjustment calculation (system estimate vs actual count) needs real-world validation. Code reviewed for edge cases.
+- **Pig FCR cache.** Transfer-to-breeding feed allocation = `pig.weight × FCR`. FCR currently falls back to industry default `3.5` because no code path stamps `parent.fcrCached` after a trip is added. Wire a side effect: when a trip is added/edited (PigBatchesView trip form persist), recompute parent FCR (`totalFeed / totalLive`) and stamp `parent.fcrCached`. Then transfers from in-progress batches use the real number.
+- **Cattle modal cleanup.** The `openEdit` / `openAdd` modal code still lives in `src/cattle/CattleHerdsView.jsx` even though no UI button reaches it (Edit was removed in favor of inline-editable expanded tile). Rip the modal JSX + `form` state out for clarity. Also: the Add-Cow path (top-right "+ Add Cow" button) still uses a modal — convert it to "create empty cow row, expand it inline" or keep modal-for-add only.
+- **Equipment module** — placeholder still at `/equipment`. Plan + Podio dump documented in `EQUIPMENT_PLAN.md`. Phases 1-6 sketched; no code beyond the data pull script. **Next session's anchor task** if Ronnie wants to move on from operational fixes.
 
 ### Deferred (no current owner)
 
@@ -478,8 +527,10 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 - **Splitting `app_store` jsonb blobs into dedicated tables** (per-feature).
 - **Full router migration** (replace `setView('X')` with `useNavigate('/path')` across every view). The adapter works fine; this is pure churn for "idiomatic React Router" without user-visible benefit.
 - **ESLint + Prettier.**
-- **Equipment module.** Currently a placeholder stub at `/equipment`.
+- **Equipment module.** Currently a placeholder stub at `/equipment`. See `EQUIPMENT_PLAN.md` for the 6-phase plan.
 - **Sheep module Phase 2** — nutrition targets, retag flow.
+- **Send-to-trip on pig weigh-ins.** Done 2026-04-22 — admin per-row checkbox + bottom Send-to-Trip button + Undo Send. Trips track origin sub-batch via `weigh_ins.session_id` join; PigBatchesView trip rows show "From: P-26-01A (GILTS) (2), P-26-01B (BOARS) (2)".
+- **Pig batch sub-status** — done 2026-04-22 via per-sub-batch Mark Processed / Reactivate buttons. No third batch status added; sub-batch processed is enough to drop it from the public webform without retiring the parent batch.
 
 ### Known gotchas (watch for these)
 
@@ -792,6 +843,7 @@ One line per working session. Detail lives in git log (`git log --oneline --date
 | 2026-04-21 (eve) | `8b3d1c0` | Polish: CATTLE_* + detectConflicts + writeBroilerBatchAvg + renderWebform extractions. Two latent `ReferenceError` bugs caught and fixed. Polish cutover (`8b3d1c0`). |
 | 2026-04-21 (wrap) | (this commit) | Doc consolidation: `archive/SESSION_LOG.md` frozen; `PROJECT.md` rewritten in 4 parts (Living Reference, Design Decisions, History, Session Index); `DECISIONS.md` + `MIGRATION_PLAN.md` to be deleted in the final commit. |
 | 2026-04-21 (later) | (this commit) | Sheep Podio import: mig 009 (sheep module, never previously applied) + mig 010 (weigh_in_sessions.species CHECK extended with 'sheep') applied via SQL Editor; `scripts/import_sheep.cjs` landed 85 sheep (67 Podio + 18 new Willie Nisewonger lambs), 26 lambing records, 6 weigh-in sessions (34 weigh-ins), 639 sheep_dailys. Planner is now sole source of truth for sheep. |
+| 2026-04-22 | `642137c` | Massive operational session. Weigh-ins: per-species team-member admin, Swap Tag / Missing Tag rename, resume-bug fix, age + prior weight + ADG inline, pig weigh-in entry list (no grid). Pig breeding: chip UI for sow/boar assignment, 14-day grace period, auto-pull from breeders by group, custom batch number override, group-color recolor (blue family, no purple), 2x timeline zoom, rounded gantt bars, Close button, sow-pool banner. Pig batches: chick→sow Transfer-to-Breeding flow on admin weigh-ins (FCR×weight feed allocation, parent+sub count decrements, dup guard via `sourceWeighInId`, Undo Transfer reversal, editable `feedAllocatedToTransfers` field, sow tile "saved from" banner, batch tile "→ Breeding: N pigs out of <sub>" note), per-sub-batch Mark Processed + Reactivate buttons, processed subs force currentCount=0, mortality entry modal with sub-batch attribution. Broiler: Sonny's raw per-package XLSX parser (replaces never-matched pivot expectation), wings included in cuts, chick purchase cost field rolling into total cost, conflict-override flag auto-clears on save and hides on processed batches, hatch-suggestions hide once date is set, B-25-02 → VALLEY FARMS / B-25-03 → CREDO FARMS hatchery backfill, processor cuts use raw aggregation. Cattle: Edit Cow modal **deleted** in favor of inline-editable expanded tile (header inputs + identity/lineage/prior-tags/blacklist sections all auto-save on blur), collapsed row hides when expanded, X close button, breeding blacklist hidden for steers + maternal flag removed. Pig color family / contrast: `getReadableText(hexBg)` helper in `src/lib/styles.js` for dynamic dark-vs-light text against any palette bg. Migration 014 (`weigh_ins.transferred_to_breeding/transfer_breeder_id/feed_allocation_lbs`) shipped — runs in Supabase SQL Editor; pre-migration fallback writes `[transferred_to_breeding ...]` marker into `note` column and the UI detects either path. Dashboard: missed-daily list now skips pig batches whose sub-batches are all marked processed (was flagging the parent batch name every day after a final-trip processed everything). |
 
 **How to use this index:** if you need the exact commit message or a specific bugfix commit, run `git log --oneline <date>..` or filter by filename. If you need the narrator's-voice session-end summary, see the matching block in `archive/SESSION_LOG.md`. Git log is the authoritative timeline — this table is just the map.
 
