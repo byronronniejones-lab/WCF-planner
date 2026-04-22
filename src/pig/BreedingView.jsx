@@ -65,10 +65,13 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
       if(missing.length === 0) return have1.join('\n');
       return [...have1, ...missing].join('\n');
     }
-    // A cycle "starts" on its exposureStart date. Before that, the sow list
-    // is live-synced from the breeder registry; after that, it's frozen.
-    function isCycleStarted(exposureStart) {
-      return !!(exposureStart && exposureStart <= todayISO());
+    // Cycle is "locked" once 14 days have passed since exposureStart —
+    // Ronnie's 2-week grace period to shuffle sow/boar assignments after
+    // the cycle goes live. Before lock, admin can still add/remove sows.
+    function isCycleLocked(exposureStart) {
+      if(!exposureStart) return false;
+      const lockDay = toISO(addDays(new Date(exposureStart+'T12:00:00'), 14));
+      return todayISO() >= lockDay;
     }
 
     function persistBreedCycle(formSnapshot, cycleId){
@@ -96,7 +99,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
       var next = {...breedForm, [k]: v};
       // For unstarted cycles, changing the group pulls that group's sows
       // into Boar 1 so the list tracks the breeders tab.
-      if(k === 'group' && !isCycleStarted(next.exposureStart)) {
+      if(k === 'group' && !isCycleLocked(next.exposureStart)) {
         next.boar1Tags = mergeSowsIntoB1(v, next.boar1Tags, next.boar2Tags);
       }
       setBreedForm(next);
@@ -173,44 +176,67 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                     set up groups there if empty. */}
                 {(() => {
                   const pool = sowsForGroup(breedForm.group);
-                  const started = isCycleStarted(breedForm.exposureStart);
-                  if(pool.length === 0 && !started) {
+                  const locked = isCycleLocked(breedForm.exposureStart);
+                  if(locked) {
+                    return <div style={{background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#374151"}}>Cycle locked — started on {fmtS(breedForm.exposureStart)} more than 2 weeks ago. Sow-boar assignments can't be changed.</div>;
+                  }
+                  if(pool.length === 0) {
                     return <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#92400e"}}>No sows assigned to Group {breedForm.group} yet. Go to the <strong>Breeding Pigs</strong> tab and set each sow's group to auto-fill this cycle.</div>;
                   }
-                  if(started) {
-                    return <div style={{background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#374151"}}>Cycle started on {fmtS(breedForm.exposureStart)} — sow list is locked. New sows in Group {breedForm.group} won't auto-fill.</div>;
-                  }
-                  return <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#1d4ed8"}}><strong>{pool.length} sows</strong> currently in Group {breedForm.group}. Auto-filled into {boarNames.boar1}; move any to {boarNames.boar2} manually.</div>;
+                  return <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#1d4ed8"}}><strong>{pool.length} sows</strong> currently in Group {breedForm.group}. Click a chip's × to unassign a sow; assignments lock 2 weeks after the cycle starts.</div>;
                 })()}
 
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div>
-                    <label style={S.label}>{breedForm.boar1Name||boarNames.boar1} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
-                    <textarea rows={5} value={breedForm.boar1Tags||""} onChange={e=>updBreed('boar1Tags',e.target.value)} placeholder="e.g. 5&#10;13&#10;19" style={{fontFamily:"monospace",fontSize:13}}/>
+                {(() => {
+                  const parseTags = str => (str||'').split('\n').map(t=>t.trim()).filter(Boolean);
+                  const b1List = parseTags(breedForm.boar1Tags);
+                  const b2List = parseTags(breedForm.boar2Tags);
+                  const locked = isCycleLocked(breedForm.exposureStart);
+                  const assigned = new Set([...b1List, ...b2List]);
+                  const available = sowsForGroup(breedForm.group).filter(t => !assigned.has(t)).sort((a,b)=>(parseFloat(a)||0)-(parseFloat(b)||0));
+                  function removeSow(boarKey, tag) {
+                    const cur = parseTags(breedForm[boarKey]);
+                    updBreed(boarKey, cur.filter(t => t !== tag).join('\n'));
+                  }
+                  function addSow(boarKey, tag) {
+                    if(!tag) return;
+                    const cur = parseTags(breedForm[boarKey]);
+                    if(cur.includes(tag)) return;
+                    updBreed(boarKey, [...cur, tag].join('\n'));
+                  }
+                  const chipRow = (list, boarKey) => (
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4,minHeight:30,padding:"6px 8px",background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:6}}>
+                      {list.length === 0 && <span style={{fontSize:11,color:"#9ca3af",fontStyle:"italic",padding:"2px 0"}}>No sows assigned</span>}
+                      {list.map(t => (
+                        <span key={t} style={{display:"inline-flex",alignItems:"center",gap:4,background:"white",border:"1px solid #d1d5db",borderRadius:12,padding:"2px 4px 2px 10px",fontSize:12,fontWeight:600,color:"#111827"}}>
+                          #{t}
+                          {!locked && <button onClick={()=>removeSow(boarKey, t)} title="Remove" style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 4px",fontFamily:"inherit"}}>×</button>}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                  const addDropdown = (boarKey) => (!locked && (
                     <div style={{marginTop:4}}>
-                      <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar1Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar1Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
+                      <select onChange={e=>{addSow(boarKey, e.target.value); e.target.value='';}} style={{fontSize:11}}>
                         <option value="">＋ Add sow from Group {breedForm.group}...</option>
-                        {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')&&String(b.group||'')===String(breedForm.group)).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
-                          <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'}</option>
-                        ))}
+                        {available.map(t => <option key={t} value={t}>#{t}</option>)}
                       </select>
                     </div>
-                    <div style={{fontSize:11,color:"#065f46",marginTop:3}}>{(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length} sows</div>
-                  </div>
-                  <div>
-                    <label style={S.label}>{breedForm.boar2Name||boarNames.boar2} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
-                    <textarea rows={5} value={breedForm.boar2Tags||""} onChange={e=>updBreed('boar2Tags',e.target.value)} placeholder="e.g. 6&#10;17&#10;98" style={{fontFamily:"monospace",fontSize:13}}/>
-                    <div style={{marginTop:4}}>
-                      <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar2Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar2Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
-                        <option value="">＋ Add sow from Group {breedForm.group}...</option>
-                        {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')&&String(b.group||'')===String(breedForm.group)).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
-                          <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'}</option>
-                        ))}
-                      </select>
+                  ));
+                  return (
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                      <div>
+                        <label style={S.label}>{breedForm.boar1Name||boarNames.boar1} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>({b1List.length})</span></label>
+                        {chipRow(b1List, 'boar1Tags')}
+                        {addDropdown('boar1Tags')}
+                      </div>
+                      <div>
+                        <label style={S.label}>{breedForm.boar2Name||boarNames.boar2} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>({b2List.length})</span></label>
+                        {chipRow(b2List, 'boar2Tags')}
+                        {addDropdown('boar2Tags')}
+                      </div>
                     </div>
-                    <div style={{fontSize:11,color:"#065f46",marginTop:3}}>{(breedForm.boar2Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length} sows</div>
-                  </div>
-                </div>
+                  );
+                })()}
                 <div style={{background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#065f46"}}>
                   <strong>Total sows in cycle: {(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length + (breedForm.boar2Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}</strong>
                   &nbsp;·&nbsp; {boarNames.boar1}: {(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}
@@ -344,7 +370,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                             // Unstarted cycles: re-pull any newly-added sows
                             // from the breeder registry. Started cycles are
                             // frozen — show what was saved.
-                            const liveB1 = isCycleStarted(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2);
+                            const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2);
                             setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
                             setEditBreedId(c.id);setShowBreedForm(true);
                           }}
@@ -394,7 +420,13 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                       <span style={{color:"#4b5563"}}>Farrowing: {fmt(tl.farrowingStart)} {'\u2192'} {fmt(tl.farrowingEnd)}</span>
                       <span style={{color:"#4b5563"}}>Grow-out ends: {fmt(tl.growEnd)}</span>
                       <span style={S.badge(calcCycleStatus(c)==="completed"?"#4b5563":calcCycleStatus(c)==="active"?"#085041":"#374151","white")}>{c.status}</span>
-                      <button onClick={()=>{setBreedForm({group:c.group,boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}} style={{marginLeft:"auto",fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
+                      <button onClick={()=>{
+                        const baseB1 = (c.boar1Tags||"").split(",").join("\n").split(", ").join("\n");
+                        const baseB2 = (c.boar2Tags||"").split(",").join("\n").split(", ").join("\n");
+                        const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2);
+                        setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
+                        setEditBreedId(c.id);setShowBreedForm(true);
+                      }} style={{marginLeft:"auto",fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 20px",borderTop:"1px solid #e5e7eb",paddingTop:6}}>
                       <div style={{fontSize:11}}><span style={{color:"#9ca3af"}}>{c.boar1Name||boarNames.boar1} ({c.boar1Count||"?"} sows): </span><span style={{fontWeight:500}}>{c.boar1Tags||"—"}</span></div>
