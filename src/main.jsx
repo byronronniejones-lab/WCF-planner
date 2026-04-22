@@ -294,6 +294,7 @@ const EMPTY_FORM = {
   mortalityCumulative:0,
   week4Lbs:0, week6Lbs:0,
   perLbStandardCost:0, perLbStarterCost:0, perLbGritCost:0,
+  chickCost:0,
   totalToProcessor:0, processingCost:0,
   avgBreastLbs:0, avgThighsLbs:0, avgDressedLbs:0,
   totalLbsWhole:0, totalLbsCuts:0,
@@ -1316,12 +1317,13 @@ function App(){
       brooderFeedLbs, schoonerFeedLbs, gritLbs, mortalityCumulative,
       week4Lbs:b.week4Lbs||0, week6Lbs:b.week6Lbs||0,
       perLbStandardCost:b.perLbStandardCost||0, perLbStarterCost:b.perLbStarterCost||0, perLbGritCost:b.perLbGritCost||0,
+      chickCost:b.chickCost||0,
       totalToProcessor:b.totalToProcessor||0, processingCost:b.processingCost||0,
       avgBreastLbs:b.avgBreastLbs||0, avgThighsLbs:b.avgThighsLbs||0, avgDressedLbs:b.avgDressedLbs||0,
       totalLbsWhole:b.totalLbsWhole||0, totalLbsCuts:b.totalLbsCuts||0,
       documents:b.documents||[],
     });
-    const snap={name:b.name,breed:b.breed||"",hatchery:b.hatchery||"",hatchDate:b.hatchDate||"",birdCount:b.birdCount||750,birdCountActual:b.birdCountActual||"",brooder:b.brooder||"1",schooner:b.schooner||"2&3",processingDate:b.processingDate||"",status:b.status||"planned",notes:b.notes||"",brooderIn,brooderOut:b.brooderOut||"",brooderFeedLbs:b.brooderFeedLbs||0,schoonerFeedLbs:b.schoonerFeedLbs||0,gritLbs:b.gritLbs||0,mortalityCumulative:b.mortalityCumulative||0,week4Lbs:b.week4Lbs||0,week6Lbs:b.week6Lbs||0,perLbStandardCost:b.perLbStandardCost||0,perLbStarterCost:b.perLbStarterCost||0,perLbGritCost:b.perLbGritCost||0,totalToProcessor:b.totalToProcessor||0,processingCost:b.processingCost||0,avgBreastLbs:b.avgBreastLbs||0,avgThighsLbs:b.avgThighsLbs||0,avgDressedLbs:b.avgDressedLbs||0,totalLbsWhole:b.totalLbsWhole||0,totalLbsCuts:b.totalLbsCuts||0};
+    const snap={name:b.name,breed:b.breed||"",hatchery:b.hatchery||"",hatchDate:b.hatchDate||"",birdCount:b.birdCount||750,birdCountActual:b.birdCountActual||"",brooder:b.brooder||"1",schooner:b.schooner||"2&3",processingDate:b.processingDate||"",status:b.status||"planned",notes:b.notes||"",brooderIn,brooderOut:b.brooderOut||"",brooderFeedLbs:b.brooderFeedLbs||0,schoonerFeedLbs:b.schoonerFeedLbs||0,gritLbs:b.gritLbs||0,mortalityCumulative:b.mortalityCumulative||0,week4Lbs:b.week4Lbs||0,week6Lbs:b.week6Lbs||0,perLbStandardCost:b.perLbStandardCost||0,perLbStarterCost:b.perLbStarterCost||0,perLbGritCost:b.perLbGritCost||0,chickCost:b.chickCost||0,totalToProcessor:b.totalToProcessor||0,processingCost:b.processingCost||0,avgBreastLbs:b.avgBreastLbs||0,avgThighsLbs:b.avgThighsLbs||0,avgDressedLbs:b.avgDressedLbs||0,totalLbsWhole:b.totalLbsWhole||0,totalLbsCuts:b.totalLbsCuts||0};
     setOriginalForm(snap);
     // Auto-enable Show Legacy if editing a batch that already has a legacy breed or hatchery selected,
     // so the user can actually see the saved value in the dropdown.

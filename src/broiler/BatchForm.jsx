@@ -233,6 +233,11 @@ export default function BatchForm({
                 <input type="number" value={form.birdCountActual||''} onChange={e=>upd("birdCountActual",e.target.value)} placeholder="Enter actual count"/>
                 <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>Actual day-1 count after hatchery overship. Enter manually — never auto-fills from ordered.</div>
               </div>
+              <div>
+                <label style={S.label}>Chick purchase cost ($)</label>
+                <input type="number" min="0" step="0.01" value={form.chickCost||''} onChange={e=>upd("chickCost",e.target.value)} placeholder="Total paid to hatchery"/>
+                <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>Total paid to the hatchery for this batch's chicks. Rolls into Total Cost.</div>
+              </div>
 
               <div>
                 <label style={S.label}>Brooder assigned</label>

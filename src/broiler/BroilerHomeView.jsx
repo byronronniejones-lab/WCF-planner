@@ -112,7 +112,7 @@ export default function BroilerHomeView({ Header, loadUsers }) {
     const wholePct = (totalLbsWhole+totalLbsCuts)>0?Math.round(totalLbsWhole/(totalLbsWhole+totalLbsCuts)*100):null;
     const cutsPct  = wholePct!=null?100-wholePct:null;
     const totalFeedCost = finBr.reduce((s,b)=>s+batchFeed(b)*(b.perLbStandardCost||0),0);
-    const totalAllCost = finBr.reduce((s,b)=>s+batchFeed(b)*(b.perLbStandardCost||0)+(b.processingCost||0),0);
+    const totalAllCost = finBr.reduce((s,b)=>s+batchFeed(b)*(b.perLbStandardCost||0)+(b.processingCost||0)+(parseFloat(b.chickCost)||0),0);
     const feedCostPct = totalAllCost>0?Math.round(totalFeedCost/totalAllCost*100):null;
     const totalProc = finBr.reduce((s,b)=>s+(b.totalToProcessor||0),0);
 

@@ -266,7 +266,8 @@ export default function BroilerListView({
               const growerCost=growerLbs*(b.perLbStandardCost||0);
               const feedCost=starterCost+growerCost;
               const gritCost=gritLbs*(b.perLbGritCost||0);
-              const totalCost=feedCost+gritCost+(b.processingCost||0);
+              const chickCost=parseFloat(b.chickCost)||0;
+              const totalCost=feedCost+gritCost+(b.processingCost||0)+chickCost;
               const perBird=b.totalToProcessor>0?totalCost/b.totalToProcessor:0;
               const mortalityPct=b.birdCount>0?(mortality/b.birdCount*100).toFixed(1):0;
               return (
@@ -332,6 +333,7 @@ export default function BroilerListView({
                         {l:"Feed Cost",      v:feedCost>0?`$${feedCost.toFixed(2)}`:"—"},
                         {l:"Grit Cost",      v:gritCost>0?`$${gritCost.toFixed(2)}`:"—"},
                         {l:"Process Cost",   v:b.processingCost>0?`$${(b.processingCost||0).toFixed(2)}`:"—"},
+                        {l:"Chick Cost",     v:chickCost>0?`$${chickCost.toFixed(2)}`:"—"},
                         {l:"Total Cost",     v:totalCost>0?`$${totalCost.toFixed(2)}`:"—"},
                         {l:"Per Bird Cost",  v:perBird>0?`$${perBird.toFixed(2)}`:"—"},
                       ].map(({l,v})=>(
