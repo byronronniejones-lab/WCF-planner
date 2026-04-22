@@ -718,7 +718,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                   <label style={{...lbl, margin:0, fontSize:12, fontWeight:600, color:'#374151', textTransform:'uppercase', letterSpacing:.5}}>Prior Tags</label>
                   <button type="button" onClick={()=>setForm({...form, old_tags:[...(form.old_tags||[]), {tag:'', changed_at:'', source:'manual'}]})} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'1px dashed #bfdbfe', borderRadius:5, padding:'3px 10px', cursor:'pointer', fontFamily:'inherit'}}>+ Add Prior Tag</button>
                 </div>
-                <div style={{fontSize:11, color:'#6b7280', marginBottom:8}}>Tags this cow had before her current one. Purchase tag from the selling farm, replacement tags from retags over time. Multiple entries supported.</div>
+                <div style={{fontSize:11, color:'#6b7280', marginBottom:8}}>Tags this cow had before her current one — the purchase tag from the selling farm, plus any tags swapped out over time. Multiple entries supported.</div>
                 {(form.old_tags||[]).length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', padding:'4px 0'}}>No prior tags recorded.</div>}
                 {(form.old_tags||[]).map(function(t, ti){
                   return (
@@ -739,7 +739,7 @@ const CattleHerdsView = ({sb, fmt, Header, authState, setView, showUsers, setSho
                         setForm({...form, old_tags:next});
                       }} style={{...inpS, fontSize:12, padding:'6px 8px'}}>
                         <option value='import'>Purchase tag (selling farm)</option>
-                        <option value='weigh_in'>Replacement tag (retag)</option>
+                        <option value='weigh_in'>Swapped tag (weigh-in)</option>
                         <option value='manual'>Other / manual entry</option>
                       </select>
                       <button type="button" title="Remove" onClick={function(){

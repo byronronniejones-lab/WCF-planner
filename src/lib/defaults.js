@@ -133,6 +133,11 @@ export const DEFAULT_WEBFORMS_CONFIG = {
       {id:"s-comments",title:"Comments",system:false,fields:[
         {id:"comments",label:"Comments / Issues",type:"textarea",required:false,system:false,enabled:true}
       ]}
-    ]}
+    ]},
+    // Weigh-Ins is a stage-based form (species picker -> herd/batch -> session),
+    // not section/field-driven. The admin editor surfaces a custom per-species
+    // team-member editor. teamMembers (union) is maintained by the editor so
+    // syncWebformConfig's global union still captures these members.
+    {id:"weighins-webform",name:"Weigh-Ins",description:"Per-species weigh-in sessions (Cattle / Sheep / Pig / Broiler)",table:"weigh_ins",allowAddGroup:false,teamMembers:[],teamMembersBySpecies:{cattle:[],sheep:[],pig:[],broiler:[]},sections:[]}
   ]
 }

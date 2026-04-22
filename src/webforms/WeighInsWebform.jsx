@@ -8,6 +8,10 @@ const WeighInsWebform = ({sb}) => {
   const [date, setDate] = React.useState('');
   const [teamMember, setTeamMember] = React.useState('');
   const [allTeamMembers, setAllTeamMembers] = React.useState([]);
+  // Per-species team-member lists from the admin panel. Empty per-species list
+  // means "not configured yet" -> fall back to the global allTeamMembers list
+  // so the form keeps working before an admin populates it.
+  const [teamMembersBySpecies, setTeamMembersBySpecies] = React.useState({cattle:[],sheep:[],pig:[],broiler:[]});
   // Draft + session state
   const [drafts, setDrafts] = React.useState([]);
   const [session, setSession] = React.useState(null); // current session row
@@ -60,7 +64,25 @@ const WeighInsWebform = ({sb}) => {
     sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data})=>{
       if(data && Array.isArray(data.data)) setAllTeamMembers(data.data);
     });
+    sb.from('webform_config').select('data').eq('key','weighins_team_members').maybeSingle().then(({data})=>{
+      if(data && data.data && typeof data.data === 'object') {
+        const bs = data.data;
+        setTeamMembersBySpecies({
+          cattle: Array.isArray(bs.cattle) ? bs.cattle : [],
+          sheep:  Array.isArray(bs.sheep)  ? bs.sheep  : [],
+          pig:    Array.isArray(bs.pig)    ? bs.pig    : [],
+          broiler:Array.isArray(bs.broiler)? bs.broiler: [],
+        });
+      }
+    });
   }, []);
+  // Team members visible in the dropdown for the currently-picked species.
+  // Falls back to the global team-members list if this species has no
+  // per-species list configured yet (migration-friendly default).
+  const speciesTeamMembers = (() => {
+    const list = (teamMembersBySpecies && teamMembersBySpecies[species]) || [];
+    return list.length > 0 ? list : allTeamMembers;
+  })();
 
   // When species picked, prefetch what's needed
   React.useEffect(() => {
@@ -232,6 +254,10 @@ const WeighInsWebform = ({sb}) => {
     setSession(s);
     if(s.team_member) setTeamMember(s.team_member);
     if(s.notes) setNoteInput(s.notes);
+    // Restore the herd/flock selection so the remaining-tags list
+    // populates correctly on resume (it filters by cattleHerd / sheepFlock).
+    if(s.species === 'cattle' && s.herd) setCattleHerd(s.herd);
+    if(s.species === 'sheep' && s.herd) setSheepFlock(s.herd);
     if(s.species === 'broiler' || s.species === 'pig') {
       const labels = deriveColumnLabels(s.species, s.batch_id);
       const finalLabels = labels.length > 0 ? labels : ['1','2'];
@@ -297,7 +323,7 @@ const WeighInsWebform = ({sb}) => {
       if(priorTag.trim() === tag.trim()) { setErr('Prior tag and new tag cannot be the same.'); return; }
       if(cattleList.find(c => c.tag === tag.trim())) { setErr('Tag #'+tag+' is already assigned to another cow.'); return; }
       retagCow = findCowByPriorTag(priorTag);
-      if(!retagCow) { setErr('No cow found with prior tag #'+priorTag+'. Check the number or use + Replacement Tag instead.'); return; }
+      if(!retagCow) { setErr('No cow found with prior tag #'+priorTag+'. Check the number or use + Missing Tag instead.'); return; }
     }
     setErr(''); setBusy(true);
     const id = String(Date.now())+Math.random().toString(36).slice(2,6);
@@ -563,7 +589,7 @@ const WeighInsWebform = ({sb}) => {
             <label style={lblS}>Team Member *</label>
             <select value={teamMember} onChange={e=>setTeamMember(e.target.value)} style={inpS}>
               <option value=''>Select...</option>
-              {allTeamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+              {speciesTeamMembers.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
 
@@ -677,8 +703,15 @@ const WeighInsWebform = ({sb}) => {
                 </div>
                 <div style={{display:'flex', gap:6, marginBottom:10, flexWrap:'wrap'}}>
                   <button type="button" onClick={()=>{setEntryMode('new_cow'); setTagInput(''); setNewCowSex('cow'); setPriorTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #047857', background:'transparent', color:'#065f46', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ New Cow</button>
-                  <button type="button" onClick={()=>{setEntryMode('retag'); setTagInput(''); setPriorTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #1d4ed8', background:'transparent', color:'#1e40af', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u21bb Retag'}</button>
-                  <button type="button" onClick={()=>{setEntryMode('replacement'); setTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #b45309', background:'transparent', color:'#92400e', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Replacement Tag</button>
+                  <button type="button" onClick={()=>{
+                    // If a tag was already picked in the dropdown, use it as
+                    // the prior tag so the user doesn't have to retype it.
+                    const selected = tagInput;
+                    setEntryMode('retag');
+                    setPriorTagInput(selected || '');
+                    setTagInput('');
+                  }} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #1d4ed8', background:'transparent', color:'#1e40af', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u21bb Swap Tag'}</button>
+                  <button type="button" onClick={()=>{setEntryMode('replacement'); setTagInput('');}} style={{flex:'1 1 120px', padding:8, borderRadius:8, border:'1px dashed #b45309', background:'transparent', color:'#92400e', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Missing Tag</button>
                 </div>
               </React.Fragment>
             )}
@@ -709,7 +742,7 @@ const WeighInsWebform = ({sb}) => {
             {entryMode === 'retag' && (
               <div style={{marginBottom:10, padding:10, background:'#eff6ff', borderRadius:8, border:'1px solid #bfdbfe'}}>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-                  <div style={{fontSize:11, fontWeight:700, color:'#1e40af'}}>{'\u21bb Retag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 swap a known cow\u2019s tag on the spot'}</span></div>
+                  <div style={{fontSize:11, fontWeight:700, color:'#1e40af'}}>{'\u21bb Swap Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 swap a known cow\u2019s tag on the spot'}</span></div>
                   <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setPriorTagInput(''); setErr('');}} style={{padding:'3px 9px', borderRadius:6, border:'1px solid #6b7280', background:'white', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2715 Cancel'}</button>
                 </div>
                 <div style={{marginBottom:8}}>
@@ -725,7 +758,7 @@ const WeighInsWebform = ({sb}) => {
             {entryMode === 'replacement' && (
               <div style={{marginBottom:10, padding:10, background:'#fffbeb', borderRadius:8, border:'1px solid #fde68a'}}>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-                  <div style={{fontSize:11, fontWeight:700, color:'#92400e'}}>{'\u26a0\ufe0f Replacement Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 reconcile later if cow is unknown now'}</span></div>
+                  <div style={{fontSize:11, fontWeight:700, color:'#92400e'}}>{'\u26a0\ufe0f Missing Tag'}<span style={{fontWeight:400, color:'#374151'}}>{' \u00b7 reconcile later if cow is unknown now'}</span></div>
                   <button type="button" onClick={()=>{setEntryMode('normal'); setTagInput(''); setErr('');}} style={{padding:'3px 9px', borderRadius:6, border:'1px solid #6b7280', background:'white', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2715 Cancel'}</button>
                 </div>
                 <label style={lblS}>New tag # *</label>
@@ -841,7 +874,7 @@ const WeighInsWebform = ({sb}) => {
 
         {species === 'cattle' && pendingReconciles.length > 0 && (
           <div style={{...cardS, border:'2px solid #f59e0b', background:'#fffbeb'}}>
-            <div style={{fontSize:13, fontWeight:700, color:'#92400e', marginBottom:6}}>{'\u26a0\ufe0f '+pendingReconciles.length+' '+(pendingReconciles.length===1?'replacement tag':'replacement tags')+' to reconcile'}</div>
+            <div style={{fontSize:13, fontWeight:700, color:'#92400e', marginBottom:6}}>{'\u26a0\ufe0f '+pendingReconciles.length+' '+(pendingReconciles.length===1?'missing tag':'missing tags')+' to reconcile'}</div>
             <div style={{fontSize:11, color:'#92400e', marginBottom:10}}>Pick which cow each new tag belongs to. Pool narrows as more cows get weighed.</div>
             {pendingReconciles.map(e => (
               <div key={e.id} style={{padding:'8px 10px', background:'white', border:'1px solid #fde68a', borderRadius:8, marginBottom:6}}>

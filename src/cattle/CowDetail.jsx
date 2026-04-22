@@ -59,7 +59,7 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, f
                 <span>{cow.old_tags.slice().reverse().map(function(t,i){
                   var dateStr = t.changed_at ? (' ' + fmt((t.changed_at||'').slice(0,10))) : '';
                   var srcLabel = t.source === 'import' ? ' (purchase)'
-                               : t.source === 'weigh_in' ? ' (retag)'
+                               : t.source === 'weigh_in' ? ' (swap)'
                                : '';
                   return (i>0?', ':'') + '#' + t.tag + dateStr + srcLabel;
                 }).join('')}</span>

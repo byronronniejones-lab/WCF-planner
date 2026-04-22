@@ -20,6 +20,50 @@ import { useFeedCosts } from '../contexts/FeedCostsContext.jsx';
 import { useWebformsConfig } from '../contexts/WebformsConfigContext.jsx';
 import { useUI } from '../contexts/UIContext.jsx';
 
+// Inline add/remove editor for a single weigh-ins species team-member list.
+// Module scope so each instance owns its own input state across parent renders.
+function WeighInsSpeciesList({ icon, label, color, bg, members, onAdd, onRemove }) {
+  const [input, setInput] = React.useState('');
+  const list = Array.isArray(members) ? members : [];
+  function tryAdd() {
+    const name = input.trim();
+    if (!name) return;
+    if (list.includes(name)) { setInput(''); return; }
+    onAdd(name);
+    setInput('');
+  }
+  return (
+    <div style={{background:'white',border:'1px solid '+color+'33',borderRadius:10,padding:'14px',marginBottom:10}}>
+      <div style={{fontSize:13,fontWeight:700,color:color,marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+        <span style={{fontSize:16}}>{icon}</span>{label}
+        <span style={{marginLeft:'auto',fontSize:11,fontWeight:400,color:'#9ca3af'}}>{list.length+' '+(list.length===1?'member':'members')}</span>
+      </div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10,minHeight:24}}>
+        {list.map(m => (
+          <div key={m} style={{display:'flex',alignItems:'center',gap:4,background:bg,border:'1px solid '+color+'55',borderRadius:6,padding:'4px 10px',fontSize:12,color:color}}>
+            {m}
+            <button onClick={()=>onRemove(m)} style={{background:'none',border:'none',color:color,cursor:'pointer',fontSize:14,lineHeight:1,padding:0,marginLeft:4,opacity:0.7}}>×</button>
+          </div>
+        ))}
+        {list.length===0 && <span style={{fontSize:12,color:'#9ca3af'}}>No team members yet</span>}
+      </div>
+      <div style={{display:'flex',gap:6}}>
+        <input value={input} onChange={e=>setInput(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Enter') tryAdd();}}
+          placeholder="Add name…"
+          style={{fontSize:12,padding:'6px 10px',flex:1,border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
+        <button onClick={tryAdd} style={{padding:'6px 14px',borderRadius:6,border:'none',background:color,color:'white',fontSize:12,fontWeight:600,cursor:'pointer'}}>Add</button>
+      </div>
+    </div>
+  );
+}
+const WEIGHINS_SPECIES = [
+  { key:'cattle',  icon:'🐄', label:'Cattle',  color:'#991b1b', bg:'#fef2f2' },
+  { key:'sheep',   icon:'🐑', label:'Sheep',   color:'#0f766e', bg:'#f0fdfa' },
+  { key:'pig',     icon:'🐷', label:'Pig',     color:'#1e40af', bg:'#eff6ff' },
+  { key:'broiler', icon:'🐔', label:'Broiler', color:'#a16207', bg:'#fef9c3' },
+];
+
 export default function WebformsAdminView({
   Header, loadUsers, persistWebforms,
   saveFeedCosts, confirmDelete,
@@ -156,8 +200,47 @@ export default function WebformsAdminView({
 
           {adminTab==='webforms'&&<div>
 
+          {/* ── WEIGH-INS EDITOR (custom: 4 per-species team-member lists, no sections/fields) ── */}
+          {editWfId&&currentWf&&currentWf.id==='weighins-webform'&&(()=>{
+            const bySpecies = currentWf.teamMembersBySpecies || {cattle:[],sheep:[],pig:[],broiler:[]};
+            function updateSpecies(sp, nextList){
+              const nextBy = {...bySpecies, [sp]: nextList};
+              const union = [...new Set([
+                ...(nextBy.cattle||[]), ...(nextBy.sheep||[]), ...(nextBy.pig||[]), ...(nextBy.broiler||[])
+              ])].sort();
+              updateWf({...currentWf, teamMembersBySpecies: nextBy, teamMembers: union});
+            }
+            return (
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                  <button onClick={()=>{setEditWfId(null);setWfView("list");setAddingTo(null);}}
+                    style={{fontSize:12,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>← All webforms</button>
+                  <span style={{color:"#d1d5db"}}>/</span>
+                  <span style={{fontSize:14,fontWeight:700}}>{currentWf.name}</span>
+                </div>
+                <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 16px",marginBottom:16,fontSize:12,display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{color:"#6b7280"}}>Live URL:</span>
+                  <strong style={{color:"#1e40af"}}>wcfplanner.com/weighins</strong>
+                  <a href="/weighins" target="_blank" style={{color:"#1e40af",fontSize:11,marginLeft:"auto"}}>Open form →</a>
+                </div>
+                <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:12,color:"#4b5563",lineHeight:1.5}}>
+                  Each species keeps its own team-member list. A list that's empty falls back to the full farm team in the form's dropdown, so you can migrate one species at a time.
+                </div>
+                {WEIGHINS_SPECIES.map(s => (
+                  <WeighInsSpeciesList
+                    key={s.key}
+                    icon={s.icon} label={s.label} color={s.color} bg={s.bg}
+                    members={bySpecies[s.key]||[]}
+                    onAdd={name => updateSpecies(s.key, [...(bySpecies[s.key]||[]), name].sort())}
+                    onRemove={name => updateSpecies(s.key, (bySpecies[s.key]||[]).filter(m=>m!==name))}
+                  />
+                ))}
+              </div>
+            );
+          })()}
+
           {/* ── EDITOR ── */}
-          {editWfId&&currentWf&&(
+          {editWfId&&currentWf&&currentWf.id!=='weighins-webform'&&(
             <div>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                 <button onClick={()=>{setEditWfId(null);setWfView("list");setAddingTo(null);}}
@@ -328,28 +411,43 @@ export default function WebformsAdminView({
 
               {webformsConfig.webforms.map(wf=>{
                 const isAddFeed=wf.id==='add-feed-webform';
+                const isWeighIns=wf.id==='weighins-webform';
                 const totalFields=(wf.sections||[]).reduce((s,sec)=>s+sec.fields.filter(f=>f.enabled).length,0);
+                const tileBg = isAddFeed?"#fffbeb":isWeighIns?"#eff6ff":"white";
+                const tileBorder = isAddFeed?"1px solid #fde68a":isWeighIns?"1px solid #bfdbfe":"1px solid #e5e7eb";
+                const titleColor = isAddFeed?"#92400e":isWeighIns?"#1e40af":"#111827";
+                const accent = isAddFeed?"#92400e":isWeighIns?"#1e40af":"#085041";
+                const iconPrefix = isAddFeed?'🌾 ':isWeighIns?'⚖️ ':'';
+                const liveHref = isAddFeed?"/#addfeed":isWeighIns?"/weighins":"/#webforms";
+                const liveLabel = isAddFeed?"wcfplanner.com/#addfeed":isWeighIns?"wcfplanner.com/weighins":"wcfplanner.com/#webforms";
+                const bySpecies = (isWeighIns && wf.teamMembersBySpecies) || null;
+                const weighinsTotal = bySpecies
+                  ? (bySpecies.cattle||[]).length+(bySpecies.sheep||[]).length+(bySpecies.pig||[]).length+(bySpecies.broiler||[]).length
+                  : 0;
                 return (
-                  <div key={wf.id} style={{background:isAddFeed?"#fffbeb":"white",border:isAddFeed?"1px solid #fde68a":"1px solid #e5e7eb",borderRadius:10,padding:"16px",marginBottom:12}}>
+                  <div key={wf.id} style={{background:tileBg,border:tileBorder,borderRadius:10,padding:"16px",marginBottom:12}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
                       <div>
-                        <div style={{fontSize:14,fontWeight:700,color:isAddFeed?"#92400e":"#111827"}}>{isAddFeed?'\ud83c\udf3e ':''}{wf.name}</div>
+                        <div style={{fontSize:14,fontWeight:700,color:titleColor}}>{iconPrefix}{wf.name}</div>
                         <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{wf.description}</div>
-                        <a href={isAddFeed?"/#addfeed":"/#webforms"} target="_blank" style={{fontSize:11,color:"#085041",display:"block",marginTop:4}}>{'wcfplanner.com/#'+(isAddFeed?'addfeed':'webforms')}</a>
+                        <a href={liveHref} target="_blank" style={{fontSize:11,color:accent,display:"block",marginTop:4}}>{liveLabel}</a>
                       </div>
-                      <button onClick={()=>{setEditWfId(wf.id);setWfView("list");setAddingTo(null);}} style={{padding:"6px 16px",borderRadius:7,border:"none",background:isAddFeed?"#92400e":"#085041",color:"white",fontSize:12,fontWeight:600,cursor:"pointer"}}>Edit {'\u2192'}</button>
+                      <button onClick={()=>{setEditWfId(wf.id);setWfView("list");setAddingTo(null);}} style={{padding:"6px 16px",borderRadius:7,border:"none",background:accent,color:"white",fontSize:12,fontWeight:600,cursor:"pointer"}}>Edit {'\u2192'}</button>
                     </div>
                     <div style={{marginTop:10,display:"flex",gap:16,fontSize:12,color:"#6b7280",alignItems:"center",flexWrap:"wrap"}}>
-                      {!isAddFeed&&<span>📋 {(wf.sections||[]).length} sections · {totalFields} active fields</span>}
-                      <span>👤 {(wf.teamMembers||[]).length} team members</span>
-                      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",marginLeft:"auto",userSelect:"none"}}>
-                        <span style={{color:"#374151",fontWeight:500,fontSize:11}}>Add Group:</span>
-                        <div onClick={()=>{const nb={...webformsConfig,webforms:webformsConfig.webforms.map(w=>w.id===wf.id?{...w,allowAddGroup:!wf.allowAddGroup}:w)};persistWebforms(nb);}}
-                          style={{width:36,height:20,borderRadius:10,background:wf.allowAddGroup?"#085041":"#d1d5db",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
-                          <div style={{position:"absolute",top:2,left:wf.allowAddGroup?18:2,width:16,height:16,borderRadius:"50%",background:"white",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
-                        </div>
-                        <span style={{fontSize:11,color:wf.allowAddGroup?"#085041":"#9ca3af"}}>{wf.allowAddGroup?"On":"Off"}</span>
-                      </label>
+                      {!isAddFeed&&!isWeighIns&&<span>📋 {(wf.sections||[]).length} sections · {totalFields} active fields</span>}
+                      {isWeighIns&&<span>🐄 {(bySpecies&&bySpecies.cattle||[]).length} · 🐑 {(bySpecies&&bySpecies.sheep||[]).length} · 🐷 {(bySpecies&&bySpecies.pig||[]).length} · 🐔 {(bySpecies&&bySpecies.broiler||[]).length}</span>}
+                      <span>👤 {isWeighIns?weighinsTotal:(wf.teamMembers||[]).length} team members{isWeighIns?' total':''}</span>
+                      {!isWeighIns&&(
+                        <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",marginLeft:"auto",userSelect:"none"}}>
+                          <span style={{color:"#374151",fontWeight:500,fontSize:11}}>Add Group:</span>
+                          <div onClick={()=>{const nb={...webformsConfig,webforms:webformsConfig.webforms.map(w=>w.id===wf.id?{...w,allowAddGroup:!wf.allowAddGroup}:w)};persistWebforms(nb);}}
+                            style={{width:36,height:20,borderRadius:10,background:wf.allowAddGroup?"#085041":"#d1d5db",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
+                            <div style={{position:"absolute",top:2,left:wf.allowAddGroup?18:2,width:16,height:16,borderRadius:"50%",background:"white",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+                          </div>
+                          <span style={{fontSize:11,color:wf.allowAddGroup?"#085041":"#9ca3af"}}>{wf.allowAddGroup?"On":"Off"}</span>
+                        </label>
+                      )}
                     </div>
                   </div>
                 );

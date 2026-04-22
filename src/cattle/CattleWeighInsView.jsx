@@ -138,7 +138,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     // Retag flow in admin: if a prior tag was supplied, swap the matching cow's
     // tag on the spot and stamp her old_tags. Mirrors the webform's retag mode.
     if(priorTag) {
-      if(!tag) { alert('Enter a New tag # for the retag.'); return; }
+      if(!tag) { alert('Enter a New tag # for the swap.'); return; }
       if(priorTag === tag) { alert('Prior tag and new tag cannot be the same.'); return; }
       const existingAtNewTag = cattle.find(c => c.tag === tag);
       if(existingAtNewTag) { alert('Tag #'+tag+' is already assigned to another cow.'); return; }
@@ -147,7 +147,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
       const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : [])
         .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'import'}]);
       const cowUpd = await sb.from('cattle').update({tag, old_tags: updatedOldTags}).eq('id', cow.id);
-      if(cowUpd.error) { alert('Retag failed: '+cowUpd.error.message); return; }
+      if(cowUpd.error) { alert('Tag swap failed: '+cowUpd.error.message); return; }
       const id = String(Date.now())+Math.random().toString(36).slice(2,6);
       await sb.from('weigh_ins').insert({
         id, session_id: s.id, tag, weight,
@@ -322,11 +322,11 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                         flow (swaps matching cow's tag + stamps her old_tags). */}
                     <div style={{marginTop:8, background:'#eff6ff', border:'1px dashed #bfdbfe', borderRadius:6, padding:'8px 10px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                       <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>+ Add entry:</span>
-                      <input type="text" placeholder="Prior tag (retag)" title="Optional. Fill to retag a known cow on the spot." value={addEntryForm.priorTag} onChange={ev=>setAddEntryForm(f=>({...f, priorTag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:130, background:addEntryForm.priorTag?'#dbeafe':'white'}}/>
+                      <input type="text" placeholder="Prior tag (swap)" title="Optional. Fill to swap a known cow's tag on the spot." value={addEntryForm.priorTag} onChange={ev=>setAddEntryForm(f=>({...f, priorTag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:130, background:addEntryForm.priorTag?'#dbeafe':'white'}}/>
                       <input type="text" placeholder={addEntryForm.priorTag?'New tag #':'Tag #'} value={addEntryForm.tag} onChange={ev=>setAddEntryForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:90}}/>
                       <input type="number" min="0" step="0.1" placeholder="lb" value={addEntryForm.weight} onChange={ev=>setAddEntryForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:70}}/>
                       <input type="text" placeholder="Note (optional)" value={addEntryForm.note} onChange={ev=>setAddEntryForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:100}}/>
-                      <button onClick={()=>addEntryToSession(s)} disabled={!(parseFloat(addEntryForm.weight)>0)} style={{padding:'4px 12px', borderRadius:5, border:'none', background:(parseFloat(addEntryForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(addEntryForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>{addEntryForm.priorTag?'Retag + Add':'Add'}</button>
+                      <button onClick={()=>addEntryToSession(s)} disabled={!(parseFloat(addEntryForm.weight)>0)} style={{padding:'4px 12px', borderRadius:5, border:'none', background:(parseFloat(addEntryForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(addEntryForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>{addEntryForm.priorTag?'Swap + Add':'Add'}</button>
                     </div>
                   </div>
                 )}

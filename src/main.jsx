@@ -894,6 +894,20 @@ function App(){
             ]}
           ]}]};
         }
+        // Inject Weigh-Ins webform entry if not already present (config pre-dates
+        // per-species team-member lists). Shape-only entry: no sections — the
+        // admin editor surfaces a custom per-species editor instead.
+        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='weighins-webform';})){
+          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'weighins-webform',name:'Weigh-Ins',description:'Per-species weigh-in sessions (Cattle / Sheep / Pig / Broiler)',table:'weigh_ins',allowAddGroup:false,teamMembers:[],teamMembersBySpecies:{cattle:[],sheep:[],pig:[],broiler:[]},sections:[]}]};
+        } else {
+          // Back-fill teamMembersBySpecies on configs that already have the entry
+          // but were saved before the field existed.
+          wfCfg = {...wfCfg, webforms: (wfCfg.webforms||[]).map(function(w){
+            if(w.id !== 'weighins-webform') return w;
+            var bs = w.teamMembersBySpecies || {};
+            return {...w, teamMembersBySpecies: {cattle:bs.cattle||[], sheep:bs.sheep||[], pig:bs.pig||[], broiler:bs.broiler||[]}};
+          })};
+        }
         // Cattle-only: strip s-mortality section from any previously-saved config
         // (mortality is handled via the cow record now, not the webform).
         wfCfg = {...wfCfg, webforms: (wfCfg.webforms||[]).map(function(w){
@@ -1108,8 +1122,22 @@ function App(){
             : g.status==='active' ? [g.batchName] : []
         )
       ];
-      // Per-form team members - push each form's list separately
-      const allTeamMembers = [...new Set((cfg.webforms||[]).flatMap(wf=>wf.teamMembers||[]))].sort();
+      // Per-form team members - push each form's list separately.
+      // For weighins-webform, roll up its teamMembersBySpecies into the flat
+      // teamMembers union so the global team_members key still reflects
+      // everyone who can submit.
+      const weighinsWf = (cfg.webforms||[]).find(w=>w.id==='weighins-webform');
+      const weighinsBySpecies = (weighinsWf && weighinsWf.teamMembersBySpecies) || {cattle:[],sheep:[],pig:[],broiler:[]};
+      const weighinsUnion = [...new Set([
+        ...(weighinsBySpecies.cattle||[]),
+        ...(weighinsBySpecies.sheep||[]),
+        ...(weighinsBySpecies.pig||[]),
+        ...(weighinsBySpecies.broiler||[]),
+      ])].sort();
+      const allTeamMembers = [...new Set([
+        ...(cfg.webforms||[]).flatMap(wf=>wf.teamMembers||[]),
+        ...weighinsUnion,
+      ])].sort();
       const perFormTeamMembers = {};
       (cfg.webforms||[]).forEach(wf=>{ perFormTeamMembers[wf.id]=wf.teamMembers||[]; });
       // Use explicit batchData param to avoid stale closure — batches state may not be set yet
@@ -1135,6 +1163,7 @@ function App(){
       await Promise.all([
         sb.from('webform_config').upsert({key:'team_members', data:allTeamMembers},{onConflict:'key'}),
         sb.from('webform_config').upsert({key:'per_form_team_members', data:perFormTeamMembers},{onConflict:'key'}),
+        sb.from('webform_config').upsert({key:'weighins_team_members', data:weighinsBySpecies},{onConflict:'key'}),
         sb.from('webform_config').upsert({key:'active_groups', data:pigGroups},{onConflict:'key'}),
         sb.from('webform_config').upsert({key:'broiler_groups', data:broilerGroupList},{onConflict:'key'}),
         sb.from('webform_config').upsert({key:'webform_settings', data:{allowAddGroup}},{onConflict:'key'}),
