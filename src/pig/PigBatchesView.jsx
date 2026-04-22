@@ -356,7 +356,7 @@ export default function PigBatchesView({
         pigAutoSaveTimer.current = setTimeout(() => {
           // Parse numeric form fields back to numbers (form state holds raw strings during typing)
           const fNum = {...f};
-          ['giltCount','boarCount','originalPigCount','perLbFeedCost','legacyFeedLbs'].forEach(key=>{
+          ['giltCount','boarCount','originalPigCount','perLbFeedCost','legacyFeedLbs','feedAllocatedToTransfers'].forEach(key=>{
             const v2 = fNum[key];
             fNum[key] = (v2===''||v2==null) ? 0 : (parseFloat(v2)||0);
           });
@@ -371,12 +371,12 @@ export default function PigBatchesView({
     function closeFeederForm() {
       clearTimeout(pigAutoSaveTimer.current);
       if (editFeederId && originalFeederForm) {
-        const FEEDER_KEYS = ['batchName','cycleId','giltCount','boarCount','startDate','originalPigCount','perLbFeedCost','legacyFeedLbs','notes','status'];
+        const FEEDER_KEYS = ['batchName','cycleId','giltCount','boarCount','startDate','originalPigCount','perLbFeedCost','legacyFeedLbs','notes','status','feedAllocatedToTransfers'];
         const changed = FEEDER_KEYS.some(k => String(feederForm[k]||'') !== String(originalFeederForm[k]||''));
         if (changed) {
           // Parse numeric form fields back to numbers
           const fNum = {...feederForm};
-          ['giltCount','boarCount','originalPigCount','perLbFeedCost','legacyFeedLbs'].forEach(key=>{
+          ['giltCount','boarCount','originalPigCount','perLbFeedCost','legacyFeedLbs','feedAllocatedToTransfers'].forEach(key=>{
             const v2 = fNum[key];
             fNum[key] = (v2===''||v2==null) ? 0 : (parseFloat(v2)||0);
           });
@@ -512,6 +512,10 @@ export default function PigBatchesView({
                   <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Auto-calculated: gilts + boars</div>
                 </div>
                 <div style={{gridColumn:"1/-1"}}>
+                  <label style={S.label}>Feed credited to breeding transfers (lbs) <span style={{fontWeight:400,color:'#9ca3af',fontSize:11}}>{'(subtracted from total feed; set to 0 to clear)'}</span></label>
+                  <input type="number" min="0" step="0.1" value={feederForm.feedAllocatedToTransfers||''} onChange={e=>updFeeder('feedAllocatedToTransfers',e.target.value)} placeholder="0"/>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
                   <div style={{fontSize:11,fontWeight:700,color:'#4b5563',letterSpacing:.5,marginBottom:6}}>{'\ud83d\udcb0 FEED COST RATE'} <span style={{fontWeight:400,color:'#9ca3af'}}>{'(locked \u2014 set in Admin \u203a Feed Costs)'}</span></div>
                   <div style={{fontSize:12,color:'#374151',padding:'8px 12px',background:'#f9fafb',borderRadius:8,border:'1px solid #e5e7eb'}}>
                     Pig feed: <strong>{feederForm.perLbFeedCost!==''&&feederForm.perLbFeedCost!=null?'$'+parseFloat(feederForm.perLbFeedCost).toFixed(3)+'/lb':'\u2014'}</strong>
@@ -631,7 +635,7 @@ export default function PigBatchesView({
                       : <button onClick={()=>unarchiveBatch(g.id)} style={{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid #085041",color:"#085041",background:"white",cursor:"pointer",fontFamily:"inherit"}}>Reactivate</button>
                     }
                     <button onClick={()=>openMortalityModal(g.id)} style={{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid #fecaca",color:"#b91c1c",background:"white",cursor:"pointer",fontFamily:"inherit"}}>+ Mortality</button>
-                    <button onClick={()=>{const f={batchName:g.batchName,cycleId:g.cycleId||"",giltCount:g.giltCount,boarCount:g.boarCount,startDate:g.startDate||"",originalPigCount:g.originalPigCount||0,perLbFeedCost:g.perLbFeedCost||0,legacyFeedLbs:g.legacyFeedLbs||0,notes:g.notes||"",status:g.status};setFeederForm(f);setOriginalFeederForm(f);setEditFeederId(g.id);setShowFeederForm(true);setShowSubForm(null);}} style={{fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
+                    <button onClick={()=>{const f={batchName:g.batchName,cycleId:g.cycleId||"",giltCount:g.giltCount,boarCount:g.boarCount,startDate:g.startDate||"",originalPigCount:g.originalPigCount||0,perLbFeedCost:g.perLbFeedCost||0,legacyFeedLbs:g.legacyFeedLbs||0,feedAllocatedToTransfers:g.feedAllocatedToTransfers||0,notes:g.notes||"",status:g.status};setFeederForm(f);setOriginalFeederForm(f);setEditFeederId(g.id);setShowFeederForm(true);setShowSubForm(null);}} style={{fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                   </div>
                 </div>
                 ); })()}
