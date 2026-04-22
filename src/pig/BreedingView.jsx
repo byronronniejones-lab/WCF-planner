@@ -104,7 +104,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
       clearTimeout(breedAutoSaveTimer.current);
       breedAutoSaveTimer.current = setTimeout(function(){
         persistBreedCycle(next, editBreedId);
-      }, 1500);
+      }, 500);
     }
     function closeBreedForm(){
       clearTimeout(breedAutoSaveTimer.current);
@@ -151,31 +151,47 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                   </div>
                 </div>
 
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
                   <div>
                     <label style={S.label}>Sow group</label>
                     <select value={breedForm.group} onChange={e=>updBreed('group',e.target.value)}>
                       {PIG_GROUPS.map(g=><option key={g} value={g}>Group {g}</option>)}
                     </select>
                   </div>
-
                   <div>
                     <label style={S.label}>Batch number</label>
                     <input type="text" value={breedForm.customSuffix||''} onChange={e=>updBreed('customSuffix',e.target.value)} placeholder="e.g. 26-01"/>
                   </div>
-
                   <div>
                     <label style={S.label}>First day exposure (start date)</label>
                     <input type="date" value={breedForm.exposureStart} onChange={e=>updBreed('exposureStart',e.target.value)}/>
                   </div>
+                </div>
+
+                {/* Sow-pool banner — shows how many sows are assigned to
+                    the current group in the breeders tab. Prompts admin to
+                    set up groups there if empty. */}
+                {(() => {
+                  const pool = sowsForGroup(breedForm.group);
+                  const started = isCycleStarted(breedForm.exposureStart);
+                  if(pool.length === 0 && !started) {
+                    return <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#92400e"}}>No sows assigned to Group {breedForm.group} yet. Go to the <strong>Breeding Pigs</strong> tab and set each sow's group to auto-fill this cycle.</div>;
+                  }
+                  if(started) {
+                    return <div style={{background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#374151"}}>Cycle started on {fmtS(breedForm.exposureStart)} — sow list is locked. New sows in Group {breedForm.group} won't auto-fill.</div>;
+                  }
+                  return <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#1d4ed8"}}><strong>{pool.length} sows</strong> currently in Group {breedForm.group}. Auto-filled into {boarNames.boar1}; move any to {boarNames.boar2} manually.</div>;
+                })()}
+
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <div>
                     <label style={S.label}>{breedForm.boar1Name||boarNames.boar1} sow tags <span style={{fontWeight:400,color:"#9ca3af"}}>(one per line — or select below)</span></label>
                     <textarea rows={5} value={breedForm.boar1Tags||""} onChange={e=>updBreed('boar1Tags',e.target.value)} placeholder="e.g. 5&#10;13&#10;19" style={{fontFamily:"monospace",fontSize:13}}/>
                     <div style={{marginTop:4}}>
                       <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar1Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar1Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
-                        <option value="">＋ Add sow from profiles...</option>
-                        {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
-                          <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'} (Group {b.group||'?'})</option>
+                        <option value="">＋ Add sow from Group {breedForm.group}...</option>
+                        {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')&&String(b.group||'')===String(breedForm.group)).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
+                          <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'}</option>
                         ))}
                       </select>
                     </div>
@@ -186,19 +202,19 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                     <textarea rows={5} value={breedForm.boar2Tags||""} onChange={e=>updBreed('boar2Tags',e.target.value)} placeholder="e.g. 6&#10;17&#10;98" style={{fontFamily:"monospace",fontSize:13}}/>
                     <div style={{marginTop:4}}>
                       <select onChange={e=>{if(!e.target.value)return;const cur=(breedForm.boar2Tags||'').split('\n').map(t=>t.trim()).filter(Boolean);if(!cur.includes(e.target.value)){updBreed('boar2Tags',[...cur,e.target.value].join('\n'));}e.target.value='';}} style={{fontSize:11}}>
-                        <option value="">＋ Add sow from profiles...</option>
-                        {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
-                          <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'} (Group {b.group||'?'})</option>
+                        <option value="">＋ Add sow from Group {breedForm.group}...</option>
+                        {breeders.filter(b=>!b.archived&&(b.sex==='Sow'||b.sex==='Gilt')&&String(b.group||'')===String(breedForm.group)).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(b=>(
+                          <option key={b.tag} value={b.tag}>#{b.tag} — {b.breed||'—'}</option>
                         ))}
                       </select>
                     </div>
                     <div style={{fontSize:11,color:"#065f46",marginTop:3}}>{(breedForm.boar2Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length} sows</div>
                   </div>
-                  <div style={{gridColumn:"1/-1",background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#065f46"}}>
-                    <strong>Total sows in cycle: {(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length + (breedForm.boar2Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}</strong>
-                    &nbsp;·&nbsp; {boarNames.boar1}: {(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}
-                    &nbsp;·&nbsp; {boarNames.boar2}: {(breedForm.boar2Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}
-                  </div>
+                </div>
+                <div style={{background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#065f46"}}>
+                  <strong>Total sows in cycle: {(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length + (breedForm.boar2Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}</strong>
+                  &nbsp;·&nbsp; {boarNames.boar1}: {(breedForm.boar1Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}
+                  &nbsp;·&nbsp; {boarNames.boar2}: {(breedForm.boar2Tags||"").split("\n").map(t=>t.trim()).filter(Boolean).length}
                 </div>
 
                 {/* Calculated timeline preview */}
@@ -365,7 +381,7 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
           {breedingCycles.length>0&&(
             <div style={{marginTop:"1rem",display:"flex",flexDirection:"column",gap:8}}>
               <div style={{fontSize:13,fontWeight:600,color:"#4b5563"}}>Breeding cycles</div>
-              {breedingCycles.map(c=>{
+              {breedingCycles.slice().sort((a,b)=>(b.exposureStart||'').localeCompare(a.exposureStart||'')).map(c=>{
                 const C=PIG_GROUP_COLORS[c.group];
                 const tl=calcBreedingTimeline(c.exposureStart)||c;
                 return (
