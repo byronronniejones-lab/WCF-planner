@@ -195,9 +195,10 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                   <textarea value={breedForm.notes} onChange={e=>updBreed('notes',e.target.value)} rows={2}/>
                 </div>
               </div>
-              {editBreedId&&<div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8}}>
-                <button onClick={()=>{confirmDelete("Delete this breeding cycle? This cannot be undone.",()=>{clearTimeout(breedAutoSaveTimer.current);const nb=breedingCycles.filter(c=>c.id!==editBreedId);setBreedingCycles(nb);persistBreeding(nb);setShowBreedForm(false);setEditBreedId(null);});}} style={S.btnDanger}>Delete</button>
-              </div>}
+              <div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8}}>
+                {editBreedId&&<button onClick={()=>{confirmDelete("Delete this breeding cycle? This cannot be undone.",()=>{clearTimeout(breedAutoSaveTimer.current);const nb=breedingCycles.filter(c=>c.id!==editBreedId);setBreedingCycles(nb);persistBreeding(nb);setShowBreedForm(false);setEditBreedId(null);});}} style={S.btnDanger}>Delete</button>}
+                <button onClick={closeBreedForm} style={{marginLeft:"auto",padding:"7px 16px",borderRadius:7,border:"1px solid #d1d5db",background:"white",color:"#374151",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
+              </div>
             </div>
           </div>
         )}
@@ -287,7 +288,9 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                           boarGrow:"Boars Grow Out",
                         };
                         const cLbl = cycleLabel(c, cycleSeqMap);
-                        const cSuffix = cycleSeqMap[c.id];
+                        // customSuffix (admin override) wins over the auto YY-NN
+                        // so bar labels reflect what you typed into the modal.
+                        const cSuffix = (c.customSuffix && String(c.customSuffix).trim()) || cycleSeqMap[c.id];
                         const label = `G${c.group}${cSuffix?' · '+cSuffix:''} — ${phaseNames[row.phase]||row.phase}`;
                         return (
                           <div key={c.id} onClick={()=>{setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:(c.boar1Tags||"").split(",").join("\n").split(", ").join("\n"),boar2Tags:(c.boar2Tags||"").split(",").join("\n").split(", ").join("\n"),exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});setEditBreedId(c.id);setShowBreedForm(true);}}
