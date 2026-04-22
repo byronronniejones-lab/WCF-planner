@@ -583,7 +583,12 @@ export default function PigBatchesView({
               const sd = dailysForName(sb.name);
               const feed = sd.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0) + (parseFloat(sb.legacyFeedLbs)||0);
               const latest = [...sd].sort((a,b)=>b.date.localeCompare(a.date)||b.submitted_at?.localeCompare(a.submitted_at||'')||0)[0]||null;
-              return {sb, dailys:sd, feedTotal:feed, latestDaily:latest, currentCount:latest?.pig_count??null};
+              // Once a sub-batch is marked processed, force current=0 — the
+              // pigs are gone (to processor / breeding) regardless of whatever
+              // the most recent daily report happened to log.
+              const rawCount = latest?.pig_count??null;
+              const currentCount = sb.status === 'processed' ? 0 : rawCount;
+              return {sb, dailys:sd, feedTotal:feed, latestDaily:latest, currentCount};
             });
             const subFeedGrandTotal = subFeedTotals.reduce((s,sf)=>s+sf.feedTotal,0);
             const rawFeed = hasSubBatches ? subFeedGrandTotal + legacyFeed : dailyFeedTotal + legacyFeed;
@@ -597,8 +602,12 @@ export default function PigBatchesView({
               ? subFeedTotals.flatMap(sf=>sf.dailys).sort((a,b)=>b.date.localeCompare(a.date)||b.submitted_at?.localeCompare(a.submitted_at||'')||0)
               : [...batchDailys].sort((a,b)=>b.date.localeCompare(a.date)||b.submitted_at?.localeCompare(a.submitted_at||'')||0);
             const latestDaily = sortedDailys[0]||null;
+            // Sum only subs that have a known count (skip subs that never had
+            // a daily report). Processed subs return 0 explicitly so they
+            // count toward "all done" rather than "no data".
+            const subsWithCount = subFeedTotals.filter(sf=>sf.currentCount!=null);
             const currentPigCount = hasSubBatches
-              ? subFeedTotals.reduce((s,sf)=>s+(sf.currentCount||0),0)||null
+              ? (subsWithCount.length > 0 ? subsWithCount.reduce((s,sf)=>s+(sf.currentCount||0),0) : null)
               : latestDaily?.pig_count??null;
             const originalPigCount = hasSubBatches
               ? subBatches.reduce((s,sb)=>s+(parseInt(sb.originalPigCount)||0),0)||parseInt(g.originalPigCount)||0
@@ -768,8 +777,11 @@ export default function PigBatchesView({
                         {sft.currentCount!=null&&<span style={{fontSize:11,color:"#111827"}}>🐷 {sft.currentCount} current</span>}
                         {sft.dailys.length>0&&<span style={{fontSize:11,color:"#6b7280"}}>📋 {sft.dailys.length} reports</span>}
 
-                        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-
+                        <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+                          {sb.status==="active"
+                            ? <button onClick={()=>archiveSubBatch(g.id, sb.id)} style={{fontSize:11,padding:"2px 8px",borderRadius:5,border:"1px solid #d1d5db",color:"#6b7280",background:"white",cursor:"pointer",fontFamily:"inherit"}}>Mark Processed</button>
+                            : <button onClick={()=>unarchiveSubBatch(g.id, sb.id)} style={{fontSize:11,padding:"2px 8px",borderRadius:5,border:"1px solid #085041",color:"#085041",background:"white",cursor:"pointer",fontFamily:"inherit"}}>Reactivate</button>
+                          }
                           <button onClick={()=>{clearTimeout(subAutoSaveTimer.current);setShowSubForm(g.id);setEditSubId(sb.id);setSubForm({name:sb.name,giltCount:sb.giltCount||0,boarCount:sb.boarCount||0,originalPigCount:sb.originalPigCount||0,notes:sb.notes||""});}} style={{fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                         </div>
 
