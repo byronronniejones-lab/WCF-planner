@@ -176,7 +176,8 @@ export function computeDueIntervals(intervals, completions, currentReading) {
     });
   }
 
-  return due.sort((a, b) => b.hours_or_km - a.hours_or_km);
+  // Ascending — smallest interval first (50h before 600h before 1200h).
+  return due.sort((a, b) => a.hours_or_km - b.hours_or_km);
 }
 
 // Strip Podio HTML tags (and trivial "None" placeholder) from comment text.
