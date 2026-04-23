@@ -28,10 +28,6 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   // completed; its flagged entries are passed to the modal. Mirrors the
   // webform's flow so the two surfaces land identical DB state.
   const [sessionForModal, setSessionForModal] = useState(null);
-  // Per-row "-> Batch" push state. When set, opens the same modal with a
-  // single entry; on confirm, the cow attaches to the chosen batch without
-  // flipping the session status (draft or complete is preserved).
-  const [pushState, setPushState] = useState(null); // {entry, session}
 
   function sortEntriesByTagAsc(a, b) {
     const at = a && a.tag, bt = b && b.tag;
@@ -412,9 +408,6 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                                     {s.herd === 'finishers' && s.status !== 'draft' && e.send_to_processor && (
                                       <span title="This cow was flagged for the processor during the draft session." style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, background:'#991b1b', color:'white', fontFamily:'inherit'}}>{'✓ Processor'}</span>
                                     )}
-                                    {s.herd === 'finishers' && (
-                                      <button onClick={()=>setPushState({entry:e, session:s})} title="Attach this cow to a processing batch now" style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid #b45309', background:'white', color:'#92400e', cursor:'pointer', fontFamily:'inherit'}}>{'→ Batch'}</button>
-                                    )}
                                     <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
                                     <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
                                   </div>
@@ -453,24 +446,6 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
           teamMember={(authState && authState.name) || null}
           onCancel={()=>setSessionForModal(null)}
           onConfirmed={async () => { const s = sessionForModal; setSessionForModal(null); await finalizeComplete(s); }}
-        />
-      )}
-      {pushState && (
-        <CattleSendToProcessorModal
-          sb={sb}
-          session={pushState.session}
-          flaggedEntries={[pushState.entry]}
-          cattleList={cattle}
-          teamMember={(authState && authState.name) || null}
-          onCancel={()=>setPushState(null)}
-          onConfirmed={async () => {
-            // Clear the -> Processor flag since the cow is now attached.
-            // Safe no-op if the flag was never set.
-            try { await sb.from('weigh_ins').update({send_to_processor:false}).eq('id', pushState.entry.id); } catch(err){}
-            setPushState(null);
-            invalidateCattleWeighInsCache();
-            await loadAll();
-          }}
         />
       )}
     </div>
