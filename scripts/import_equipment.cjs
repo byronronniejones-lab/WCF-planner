@@ -169,6 +169,13 @@ function fieldTextValue(item, external_id) {
   if (v.value && typeof v.value === 'object' && v.value.text) return v.value.text.trim() || null;
   return null;
 }
+// Strip <p>…</p> and placeholder 'None' text from Podio's HTML comments.
+function stripHtml(s) {
+  if (s == null) return null;
+  const clean = String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean || clean.toLowerCase() === 'none' || clean === 'N/A' || clean.toLowerCase() === 'n/a') return null;
+  return clean;
+}
 function fieldNumValue(item, external_id) {
   const t = fieldTextValue(item, external_id);
   if (t == null) return null;
@@ -411,9 +418,10 @@ function buildFuelingRows(eqRows, unresolvedLog) {
       km_reading:    eq.tracking_unit === 'km'    ? reading : null,
       every_fillup_check: [],
       service_intervals_completed: [],
-      comments: fieldTextValue(item, 'comments'),
+      comments: stripHtml(fieldTextValue(item, 'comments')),
       source: 'podio_import',
       fuel_cost_per_gal: null,
+      def_gallons: null,
     });
     podioIdToSlug.set(item.item_id, slug);
   }
@@ -487,8 +495,9 @@ function buildFuelingRows(eqRows, unresolvedLog) {
           km_reading:    eq.tracking_unit === 'km'    ? hoursKm : null,
           every_fillup_check: fillupTicks,
           service_intervals_completed: completions,
-          comments: fieldTextValue(item, 'issues-comments'),
+          comments: stripHtml(fieldTextValue(item, 'issues-comments')),
           source: 'podio_import',
+          def_gallons: null,
         });
       }
     }

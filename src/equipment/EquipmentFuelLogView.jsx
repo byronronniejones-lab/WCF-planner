@@ -2,6 +2,7 @@
 // equipment. Filters by equipment, fuel type, date range, team member.
 // Matches the "Fuel Log" Podio tab's mental model.
 import React from 'react';
+import { stripPodioHtml } from '../lib/equipment.js';
 
 export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
   const [eqFilter, setEqFilter] = React.useState('');
@@ -89,7 +90,7 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
               <div style={{textAlign:'right', color:'#1e40af', fontWeight:600}}>{f.gallons ? Math.round(f.gallons*10)/10 : '—'}</div>
               <div style={{textAlign:'right', color:'#6b7280'}}>{reading}</div>
               <div style={{color:'#6b7280'}}>{f.team_member || '—'}</div>
-              <div style={{color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontStyle:f.comments?'italic':'normal'}}>{f.comments || '—'}</div>
+              <div style={{color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontStyle:stripPodioHtml(f.comments)?'italic':'normal'}}>{stripPodioHtml(f.comments) || '—'}</div>
             </div>
           );
         })}

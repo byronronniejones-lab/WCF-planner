@@ -6,17 +6,39 @@
 //   5. Maintenance events (+ Add modal with photo upload)
 //   6. Warranty expiration flag when < 60 days out
 import React from 'react';
-import { EQUIPMENT_COLOR, WARRANTY_WINDOW_DAYS, computeIntervalStatus, fmtReading, daysSince } from '../lib/equipment.js';
+import { EQUIPMENT_COLOR, WARRANTY_WINDOW_DAYS, computeIntervalStatus, fmtReading, daysSince, stripPodioHtml } from '../lib/equipment.js';
 import EquipmentMaintenanceModal from './EquipmentMaintenanceModal.jsx';
 
 export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenance, authState, onReload}) {
   const eq = equipment;
   const reading = eq.tracking_unit === 'km' ? eq.current_km : eq.current_hours;
-  const [editingSpec, setEditingSpec] = React.useState(false);
-  const [specDraft, setSpecDraft] = React.useState({});
+  const readingLabel = eq.tracking_unit === 'km' ? 'KM' : 'Hours';
   const [expandedFueling, setExpandedFueling] = React.useState(null);
   const [showMaintenanceModal, setShowMaintenanceModal] = React.useState(false);
   const [editingMaintenance, setEditingMaintenance] = React.useState(null);
+
+  // Debounced inline auto-save: any spec field is live-edited; after 800ms
+  // of no typing the field patches to Supabase. Matches the cattle/sheep
+  // inline-edit UX.
+  const saveTimers = React.useRef({});
+  async function patchEq(fields) {
+    const {error} = await sb.from('equipment').update(fields).eq('id', eq.id);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  function queueFieldSave(field, rawValue, parser) {
+    if (saveTimers.current[field]) clearTimeout(saveTimers.current[field]);
+    saveTimers.current[field] = setTimeout(() => {
+      let next;
+      if (parser === 'number') {
+        const n = parseFloat(rawValue);
+        next = Number.isFinite(n) ? n : null;
+      } else {
+        next = (rawValue || '').trim() || null;
+      }
+      patchEq({[field]: next});
+    }, 800);
+  }
 
   const sortedFuelings = [...(fuelings || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const totalGallons = sortedFuelings.reduce((s, f) => s + (parseFloat(f.gallons) || 0), 0);
@@ -33,24 +55,6 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
   const warrantyDays = eq.warranty_expiration ? daysSince(eq.warranty_expiration) : null;
   const warrantyExpiresSoon = warrantyDays != null && warrantyDays < 0 && warrantyDays > -WARRANTY_WINDOW_DAYS;
 
-  async function saveSpec() {
-    const keys = ['engine_oil','oil_filter','hydraulic_oil','hydraulic_filter','coolant','brake_fluid','fuel_filter','def_filter','gearbox_drive_oil','air_filters','serial_number','warranty_description','warranty_expiration','fuel_tank_gal','def_tank_gal'];
-    const update = {};
-    for (const k of keys) {
-      if (specDraft[k] !== undefined) {
-        if (k === 'fuel_tank_gal' || k === 'def_tank_gal') {
-          const n = parseFloat(specDraft[k]); update[k] = Number.isFinite(n) ? n : null;
-        } else {
-          update[k] = specDraft[k] || null;
-        }
-      }
-    }
-    const {error} = await sb.from('equipment').update(update).eq('id', eq.id);
-    if (error) { alert('Save failed: '+error.message); return; }
-    setEditingSpec(false);
-    setSpecDraft({});
-    onReload();
-  }
   async function deleteMaintenance(id) {
     if (!confirm('Delete this maintenance event?')) return;
     await sb.from('equipment_maintenance_events').delete().eq('id', id);
@@ -90,18 +94,11 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
         )}
       </div>
 
-      {/* Spec panel (inline-editable) */}
+      {/* Spec panel — always inline-editable with debounced auto-save.
+          No Edit button. Click any field to type; autosaves 800ms after
+          you stop typing. Matches the cattle/sheep inline-edit pattern. */}
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
-          <div style={sectionTitle}>Specs & Fluids</div>
-          {!editingSpec && <button onClick={()=>{setEditingSpec(true); setSpecDraft({...eq});}} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'1px solid #bfdbfe', borderRadius:5, padding:'3px 10px', cursor:'pointer', fontFamily:'inherit'}}>Edit</button>}
-          {editingSpec && (
-            <div style={{display:'flex', gap:6}}>
-              <button onClick={()=>{setEditingSpec(false); setSpecDraft({});}} style={{fontSize:11, color:'#6b7280', background:'white', border:'1px solid #d1d5db', borderRadius:5, padding:'3px 10px', cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
-              <button onClick={saveSpec} style={{fontSize:11, color:'white', background:EQUIPMENT_COLOR, border:'none', borderRadius:5, padding:'3px 12px', cursor:'pointer', fontFamily:'inherit', fontWeight:600}}>Save</button>
-            </div>
-          )}
-        </div>
+        <div style={sectionTitle}>Specs & Fluids <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click any field to edit · auto-saves</span></div>
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'6px 14px', fontSize:12}}>
           {[
             ['engine_oil','Engine Oil'],
@@ -114,26 +111,56 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
             ['def_filter','DEF Filter'],
             ['gearbox_drive_oil','Gearbox / Drive Oil'],
             ['air_filters','Air Filters'],
+            ['serial_number','Serial Number'],
           ].map(([k, label]) => (
             <div key={k} style={{display:'grid', gridTemplateColumns:'140px 1fr', gap:6, alignItems:'center'}}>
               <span style={{color:'#9ca3af'}}>{label}:</span>
-              {editingSpec
-                ? <input type="text" value={specDraft[k]||''} onChange={e=>setSpecDraft({...specDraft, [k]:e.target.value})} style={inpS}/>
-                : <span style={{color:'#374151'}}>{eq[k] || '—'}</span>}
+              <input
+                type="text"
+                defaultValue={eq[k] || ''}
+                onChange={e => queueFieldSave(k, e.target.value, 'text')}
+                style={{...inpS, padding:'4px 7px', background:'transparent'}}
+              />
             </div>
           ))}
           <div style={{display:'grid', gridTemplateColumns:'140px 1fr', gap:6, alignItems:'center'}}>
             <span style={{color:'#9ca3af'}}>Warranty ends:</span>
-            {editingSpec
-              ? <input type="date" value={specDraft.warranty_expiration||''} onChange={e=>setSpecDraft({...specDraft, warranty_expiration:e.target.value})} style={inpS}/>
-              : <span style={{color:'#374151'}}>{eq.warranty_expiration ? fmt(eq.warranty_expiration) : '—'}</span>}
+            <input
+              type="date"
+              defaultValue={eq.warranty_expiration || ''}
+              onChange={e => queueFieldSave('warranty_expiration', e.target.value, 'text')}
+              style={{...inpS, padding:'4px 7px', background:'transparent'}}
+            />
           </div>
           <div style={{display:'grid', gridTemplateColumns:'140px 1fr', gap:6, alignItems:'center'}}>
             <span style={{color:'#9ca3af'}}>Warranty note:</span>
-            {editingSpec
-              ? <input type="text" value={specDraft.warranty_description||''} onChange={e=>setSpecDraft({...specDraft, warranty_description:e.target.value})} style={inpS}/>
-              : <span style={{color:'#374151'}}>{eq.warranty_description || '—'}</span>}
+            <input
+              type="text"
+              defaultValue={eq.warranty_description || ''}
+              onChange={e => queueFieldSave('warranty_description', e.target.value, 'text')}
+              style={{...inpS, padding:'4px 7px', background:'transparent'}}
+            />
           </div>
+          <div style={{display:'grid', gridTemplateColumns:'140px 1fr', gap:6, alignItems:'center'}}>
+            <span style={{color:'#9ca3af'}}>Fuel tank (gal):</span>
+            <input
+              type="number" min="0" step="0.1"
+              defaultValue={eq.fuel_tank_gal != null ? eq.fuel_tank_gal : ''}
+              onChange={e => queueFieldSave('fuel_tank_gal', e.target.value, 'number')}
+              style={{...inpS, padding:'4px 7px', background:'transparent'}}
+            />
+          </div>
+          {eq.takes_def && (
+            <div style={{display:'grid', gridTemplateColumns:'140px 1fr', gap:6, alignItems:'center'}}>
+              <span style={{color:'#9ca3af'}}>DEF tank (gal):</span>
+              <input
+                type="number" min="0" step="0.1"
+                defaultValue={eq.def_tank_gal != null ? eq.def_tank_gal : ''}
+                onChange={e => queueFieldSave('def_tank_gal', e.target.value, 'number')}
+                style={{...inpS, padding:'4px 7px', background:'transparent'}}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -166,21 +193,22 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
         {sortedFuelings.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No fueling entries yet.</div>}
         {sortedFuelings.length > 0 && (
           <div style={{border:'1px solid #f3f4f6', borderRadius:8, overflow:'hidden'}}>
-            <div style={{display:'grid', gridTemplateColumns:'90px 60px 60px 80px 120px 1fr', gap:0, background:'#f9fafb', padding:'6px 12px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5}}>
-              <div>Date</div><div>Fuel</div><div style={{textAlign:'right'}}>Gal</div><div style={{textAlign:'right'}}>Reading</div><div>Team</div><div>Notes</div>
+            <div style={{display:'grid', gridTemplateColumns:'90px 60px 60px 60px 80px 120px 1fr', gap:0, background:'#f9fafb', padding:'6px 12px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5}}>
+              <div>Date</div><div>Fuel</div><div style={{textAlign:'right'}}>Gal</div><div style={{textAlign:'right'}}>DEF</div><div style={{textAlign:'right'}}>{readingLabel}</div><div>Team</div><div>Notes</div>
             </div>
             {sortedFuelings.slice(0, 100).map(f => {
               const isExp = expandedFueling === f.id;
-              const reading = f.hours_reading != null ? f.hours_reading+' h' : (f.km_reading != null ? f.km_reading+' km' : '—');
+              const rdg = f.hours_reading != null ? Math.round(f.hours_reading) : (f.km_reading != null ? Math.round(f.km_reading) : null);
               return (
                 <div key={f.id} style={{borderTop:'1px solid #f3f4f6'}}>
-                  <div onClick={()=>setExpandedFueling(isExp?null:f.id)} style={{display:'grid', gridTemplateColumns:'90px 60px 60px 80px 120px 1fr', gap:0, padding:'6px 12px', fontSize:12, cursor:'pointer'}} className="hoverable-tile">
+                  <div onClick={()=>setExpandedFueling(isExp?null:f.id)} style={{display:'grid', gridTemplateColumns:'90px 60px 60px 60px 80px 120px 1fr', gap:0, padding:'6px 12px', fontSize:12, cursor:'pointer'}} className="hoverable-tile">
                     <div style={{color:'#111827'}}>{fmt(f.date)}</div>
                     <div style={{color:'#6b7280'}}>{f.fuel_type||'—'}</div>
                     <div style={{textAlign:'right', color:'#1e40af', fontWeight:600}}>{f.gallons ? Math.round(f.gallons*10)/10 : '—'}</div>
-                    <div style={{textAlign:'right', color:'#6b7280'}}>{reading}</div>
+                    <div style={{textAlign:'right', color:'#a16207', fontWeight:600}}>{f.def_gallons ? Math.round(f.def_gallons*10)/10 : '—'}</div>
+                    <div style={{textAlign:'right', color:'#6b7280'}}>{rdg != null ? rdg.toLocaleString() : '—'}</div>
                     <div style={{color:'#6b7280'}}>{f.team_member||'—'}</div>
-                    <div style={{color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontStyle:f.comments?'italic':'normal'}}>{f.comments || '—'}</div>
+                    <div style={{color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontStyle:stripPodioHtml(f.comments)?'italic':'normal'}}>{stripPodioHtml(f.comments) || '—'}</div>
                   </div>
                   {isExp && (
                     <div style={{background:'#fafafa', padding:'10px 14px', borderTop:'1px solid #f3f4f6', fontSize:11}}>

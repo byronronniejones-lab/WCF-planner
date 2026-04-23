@@ -95,6 +95,73 @@ export function soonestDue(intervals, completions, currentReading, windowHours =
   return upcoming[0] || null;
 }
 
+// Given the equipment's intervals + fueling history + the reading the team
+// just entered, compute which intervals are DUE RIGHT NOW. Ronnie's logic
+// (2026-04-23): require the team to enter current reading, then walk back
+// through prior fuel-up history to find intervals whose milestones were
+// passed but never ticked. Return an array sorted by most-missed first.
+//
+// For each interval X, count how many milestones (X, 2X, 3X, ...) are
+// between the last-completed reading and the current reading. If > 0,
+// the interval is due and we surface it with the miss count.
+export function computeDueIntervals(intervals, completions, currentReading) {
+  if (!Array.isArray(intervals) || intervals.length === 0) return [];
+  if (!Number.isFinite(Number(currentReading)) || currentReading <= 0) return [];
+
+  // Per-interval: latest reading at which this interval (or a bigger
+  // interval that divides it, per the divisor rule) was completed.
+  const lastDoneAt = new Map();
+  for (const c of (completions || [])) {
+    if (!c || !c.interval || !c.kind) continue;
+    const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
+    if (snap == null) continue;
+    // Direct
+    const key = c.kind + ':' + c.interval;
+    const ex = lastDoneAt.get(key);
+    if (!ex || snap > ex) lastDoneAt.set(key, snap);
+    // Divisors
+    for (const iv of intervals) {
+      if (iv.kind !== c.kind) continue;
+      if (iv.hours_or_km === c.interval) continue;
+      if (c.interval % iv.hours_or_km !== 0) continue;
+      const kk = iv.kind + ':' + iv.hours_or_km;
+      const ex2 = lastDoneAt.get(kk);
+      if (!ex2 || snap > ex2) lastDoneAt.set(kk, snap);
+    }
+  }
+
+  const due = [];
+  for (const iv of intervals) {
+    const last = lastDoneAt.get(iv.kind + ':' + iv.hours_or_km) || 0;
+    // Smallest multiple of interval strictly greater than last.
+    const firstMilestoneAfterLast = (Math.floor(last / iv.hours_or_km) + 1) * iv.hours_or_km;
+    if (firstMilestoneAfterLast > currentReading) continue; // not yet due
+    // Count missed milestones between last-done and current
+    const largestMilestoneAtOrBeforeCurrent = Math.floor(currentReading / iv.hours_or_km) * iv.hours_or_km;
+    const missedCount = ((largestMilestoneAtOrBeforeCurrent - firstMilestoneAfterLast) / iv.hours_or_km) + 1;
+    due.push({
+      ...iv,
+      last_done_at: last > 0 ? last : null,
+      first_missed_at: firstMilestoneAfterLast,
+      current_milestone: largestMilestoneAtOrBeforeCurrent,
+      missed_count: missedCount,
+    });
+  }
+
+  // Biggest intervals first (those that implicitly cover smaller ones).
+  return due.sort((a, b) => b.hours_or_km - a.hours_or_km);
+}
+
+// Strip Podio HTML tags (and trivial "None" placeholder) from comment text.
+// Podio stored comments as rendered HTML like "<p>None</p>" or "<p>Did not
+// do checklist</p>"; we want clean plain text in the UI.
+export function stripPodioHtml(s) {
+  if (s == null) return null;
+  const clean = String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean || clean.toLowerCase() === 'none' || clean === 'N/A' || clean.toLowerCase() === 'n/a') return null;
+  return clean;
+}
+
 // Days since an ISO date. Returns null for falsy/invalid input.
 export function daysSince(iso) {
   if (!iso) return null;
