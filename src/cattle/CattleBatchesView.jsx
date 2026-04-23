@@ -275,12 +275,12 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
                         <div key={r.cattle_id} style={{display:'grid', gridTemplateColumns:'70px 90px 1fr 1fr 60px 28px', gap:6, padding:'5px 10px', fontSize:12, borderTop:'1px solid #f3f4f6', alignItems:'center'}}>
                           <div style={{fontWeight:700, color:'#111827'}}>{'#'+(r.tag||cow?.tag||'?')}</div>
                           <div style={{fontSize:11, color:'#6b7280'}}>{cow?.breed||'\u2014'}</div>
-                          <input type="number" min="0" step="0.1" placeholder="\u2014"
+                          <input type="number" min="0" step="0.1" placeholder={'\u2014'}
                             value={draftVal(r.cattle_id,'live',r.live_weight)}
                             onChange={e => setCowDraft(p => ({...p, [draftKey(r.cattle_id,'live')]: e.target.value}))}
                             onBlur={e => { saveCowWeight(b, r.cattle_id, 'live_weight', e.target.value); setCowDraft(p => { const x={...p}; delete x[draftKey(r.cattle_id,'live')]; return x; }); }}
                             style={{fontSize:12, padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
-                          <input type="number" min="0" step="0.1" placeholder="\u2014"
+                          <input type="number" min="0" step="0.1" placeholder={'\u2014'}
                             value={draftVal(r.cattle_id,'hanging',r.hanging_weight)}
                             onChange={e => setCowDraft(p => ({...p, [draftKey(r.cattle_id,'hanging')]: e.target.value}))}
                             onBlur={e => { saveCowWeight(b, r.cattle_id, 'hanging_weight', e.target.value); setCowDraft(p => { const x={...p}; delete x[draftKey(r.cattle_id,'hanging')]; return x; }); }}
@@ -292,7 +292,7 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
                     })}
                   </div>
                 )}
-                {(() => {
+                {b.status !== 'complete' && (() => {
                   const inBatch = new Set(rows.map(r => r.cattle_id));
                   const available = cattle.filter(c => c.herd === 'finishers' && !c.processing_batch_id && !inBatch.has(c.id)).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0));
                   return (
