@@ -498,7 +498,7 @@ export default function BatchForm({
                     {(()=>{const ext=(doc.name||'').split('.').pop().toLowerCase();const ico=ext==='pdf'?'📄':ext==='csv'?'📊':'📗';return <span style={{fontSize:18,flexShrink:0}}>{ico}</span>;})()}
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:12,fontWeight:600,color:'#111827',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{doc.name}</div>
-                      <div style={{fontSize:10,color:'#9ca3af'}}>{doc.size?(Math.round(doc.size/1024)+' KB'):''}{doc.uploadedAt?' · '+new Date(doc.uploadedAt).toLocaleDateString():''}</div>
+                      <div style={{fontSize:10,color:'#9ca3af'}}>{doc.size?(Math.round(doc.size/1024)+' KB'):''}{doc.uploadedAt?' · '+fmt(doc.uploadedAt):''}</div>
                     </div>
                     <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#1d4ed8',fontWeight:600,textDecoration:'none',flexShrink:0}}>View</a>
                     <button onClick={()=>

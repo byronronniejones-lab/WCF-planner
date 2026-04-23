@@ -580,7 +580,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                   <span style={{fontSize:13, fontWeight:700, color:'#111827', minWidth:120}}>{s.batch_id||'Unknown batch'}</span>
                   {species==='broiler' && s.broiler_week && <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:'#fef3c7', color:'#92400e'}}>{'WK '+s.broiler_week}</span>}
                   <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:isComplete?'#d1fae5':'#fef3c7', color:isComplete?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
-                  <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{fmt(s.date)}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
                   <span style={{fontSize:11, fontWeight:600, color:'#1e40af'}}>{sEntries.length} {sEntries.length===1?'entry':'entries'}</span>
                   {avgWeight > 0 && <span style={{fontSize:12, fontWeight:700, color:'#065f46', padding:'2px 10px', borderRadius:10, background:'#d1fae5'}}>avg {Math.round(avgWeight*100)/100} lb</span>}
@@ -711,7 +711,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                                 {/* Col 3: note input OR sent/transferred badge */}
                                 <div style={{minWidth:0,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                                   {editable && <input type="text" placeholder="Note (optional)" defaultValue={e.note||''} onBlur={ev=>{const v=(ev.target.value||'').trim()||null; if(v!==(e.note||null)) updatePigEntry(e.id,{note:v});}} style={{...rowInpS, flex:1, minWidth:120}}/>}
-                                  {isSent && link && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#d1fae5', color:'#065f46', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 '+link.group.batchName+' \u00b7 '+link.trip.date}</span>}
+                                  {isSent && link && <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#d1fae5', color:'#065f46', fontWeight:600, whiteSpace:'nowrap'}}>{'\u2192 '+link.group.batchName+' \u00b7 '+fmt(link.trip.date)}</span>}
                                   {isSent && !link && <span style={{fontSize:11, color:'#b91c1c', fontStyle:'italic'}}>(missing trip)</span>}
                                   {isTransferred && (() => {
                                     let feedLb = parseFloat(e.feed_allocation_lbs);

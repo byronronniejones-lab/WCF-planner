@@ -6,6 +6,7 @@
 // — props carry session, selected entries, feeder groups, and callbacks.
 // ============================================================================
 import React from 'react';
+import { fmt } from '../lib/dateUtils.js';
 const PigSendToTripModal = ({session, selectedEntries, feederGroups, onClose, onConfirm}) => {
   const {useState} = React;
   const [groupId, setGroupId] = useState('');
@@ -54,7 +55,7 @@ const PigSendToTripModal = ({session, selectedEntries, feederGroups, onClose, on
             {mode === 'existing' && (
               <select value={tripId} onChange={e=>setTripId(e.target.value)} style={inpS}>
                 <option value=''>Select trip...</option>
-                {trips.map(t => <option key={t.id} value={t.id}>{t.date+' \u00b7 '+((t.pigCount||0))+' pigs'}</option>)}
+                {trips.map(t => <option key={t.id} value={t.id}>{fmt(t.date)+' \u00b7 '+((t.pigCount||0))+' pigs'}</option>)}
               </select>
             )}
             {mode === 'new' && (

@@ -1,6 +1,7 @@
 // Phase 2 Round 5 extraction (verbatim).
 import React from 'react';
 import { writeBroilerBatchAvg } from '../lib/broiler.js';
+import { fmt } from '../lib/dateUtils.js';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
 
 const WeighInsWebform = ({sb}) => {
@@ -664,7 +665,7 @@ const WeighInsWebform = ({sb}) => {
             {drafts.map(d => (
               <div key={d.id} onClick={() => resumeSession(d)} style={{background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8, padding:'10px 12px', marginBottom:6, cursor:'pointer'}} className="hoverable-tile">
                 <div style={{fontSize:13, fontWeight:600, color:'#111827'}}>{d.species==='cattle'||d.species==='sheep'?(d.herd||'?'):d.species==='broiler'?(d.batch_id||'?')+(d.broiler_week?' \u00b7 wk '+d.broiler_week:''):d.batch_id||'?'}</div>
-                <div style={{fontSize:11, color:'#6b7280'}}>{d.date} {'\u00b7'} {d.team_member} {'\u00b7'} started {(d.started_at||'').slice(11,16)}</div>
+                <div style={{fontSize:11, color:'#6b7280'}}>{fmt(d.date)} {'\u00b7'} {d.team_member} {'\u00b7'} started {(d.started_at||'').slice(11,16)}</div>
               </div>
             ))}
           </div>
@@ -772,7 +773,7 @@ const WeighInsWebform = ({sb}) => {
               <div style={{fontSize:14, fontWeight:700, color:'#111827'}}>
                 {species==='cattle'||species==='sheep'?(session.herd||'?'):species==='broiler'?(session.batch_id||'?')+' \u00b7 wk '+session.broiler_week:session.batch_id||'?'}
               </div>
-              <div style={{fontSize:11, color:'#6b7280'}}>{session.date} {'\u00b7'} {session.team_member}</div>
+              <div style={{fontSize:11, color:'#6b7280'}}>{fmt(session.date)} {'\u00b7'} {session.team_member}</div>
             </div>
             <div style={{textAlign:'right'}}>
               <div style={{fontSize:18, fontWeight:700, color:'#1e40af'}}>{entries.length}</div>

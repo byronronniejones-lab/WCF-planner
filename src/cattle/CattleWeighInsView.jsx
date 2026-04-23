@@ -336,7 +336,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                   {!tagQ && <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'\u25bc':'\u25b6'}</span>}
                   <span style={{fontSize:13, fontWeight:700, color:'#111827', minWidth:120}}>{HERD_LABELS[s.herd]||s.herd||'Unknown herd'}</span>
                   <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:s.status==='complete'?'#d1fae5':'#fef3c7', color:s.status==='complete'?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
-                  <span style={{fontSize:11, color:'#6b7280'}}>{s.date}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{fmt(s.date)}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
                   <span style={{fontSize:11, fontWeight:600, color:tagQ?'#065f46':'#1e40af'}}>{countLabel}</span>
                   {newTagCount > 0 && !tagQ && <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>{newTagCount + ' new tags'}</span>}
