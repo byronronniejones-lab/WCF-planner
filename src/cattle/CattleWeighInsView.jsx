@@ -406,11 +406,14 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                                     </select>
                                   )}
                                   <div style={{display:'flex', gap:4, justifyContent:'flex-end', alignItems:'center', flexWrap:'wrap'}}>
-                                    {s.herd === 'finishers' && (
+                                    {s.herd === 'finishers' && s.status === 'draft' && (
                                       <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this cow to the processor on session Complete'} style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
                                     )}
+                                    {s.herd === 'finishers' && s.status !== 'draft' && e.send_to_processor && (
+                                      <span title="This cow was flagged for the processor during the draft session." style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, background:'#991b1b', color:'white', fontFamily:'inherit'}}>{'✓ Processor'}</span>
+                                    )}
                                     {s.herd === 'finishers' && (
-                                      <button onClick={()=>setPushState({entry:e, session:s})} title="Attach this cow to a processing batch now (skip waiting for session Complete)" style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid #b45309', background:'white', color:'#92400e', cursor:'pointer', fontFamily:'inherit'}}>{'→ Batch'}</button>
+                                      <button onClick={()=>setPushState({entry:e, session:s})} title="Attach this cow to a processing batch now" style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid #b45309', background:'white', color:'#92400e', cursor:'pointer', fontFamily:'inherit'}}>{'→ Batch'}</button>
                                     )}
                                     <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
                                     <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
