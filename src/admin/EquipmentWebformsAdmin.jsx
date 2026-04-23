@@ -1,0 +1,399 @@
+// EquipmentWebformsAdmin — centralized admin editor for every equipment
+// piece's /fueling webform config. Lives under the /webforms admin tab.
+//
+// Lets admin edit, per selected piece:
+//   • Identity: name, serial, status (active / retired)
+//   • Webform help text: operator_notes (top banner) + fuel_gallons_help
+//   • Every-fillup items + every_fillup_help
+//   • Service intervals (per-interval help_text + per-task add/remove/edit)
+//   • Attachment checklists (for Ventrac etc.)
+//
+// One dropdown at the top picks which equipment piece is being edited. All
+// saves auto-persist on blur and reload the row from Supabase.
+
+import React from 'react';
+import { sb } from '../lib/supabase.js';
+import { EQUIPMENT_CATEGORIES } from '../lib/equipment.js';
+
+const inpS = {fontSize:12, padding:'6px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', width:'100%'};
+const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:8};
+const subTitle = {fontSize:10, color:'#6b7280', fontWeight:600, textTransform:'uppercase', letterSpacing:.4, marginBottom:4};
+const card = {background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px', marginBottom:14};
+
+export default function EquipmentWebformsAdmin() {
+  const [equipment, setEquipment] = React.useState([]);
+  const [selectedId, setSelectedId] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [missingSchema, setMissingSchema] = React.useState(false);
+
+  const loadAll = React.useCallback(async () => {
+    setLoading(true);
+    const {data, error} = await sb.from('equipment').select('*').order('category').order('name');
+    if (error && /does not exist|relation/i.test(error.message || '')) {
+      setMissingSchema(true); setLoading(false); return;
+    }
+    setEquipment(data || []);
+    setLoading(false);
+  }, []);
+  React.useEffect(() => { loadAll(); }, [loadAll]);
+
+  const selected = equipment.find(e => e.id === selectedId) || null;
+
+  if (missingSchema) {
+    return <div style={{padding:20, fontSize:13, color:'#b91c1c'}}>Equipment schema not applied. Run migrations 016–021 in Supabase.</div>;
+  }
+  if (loading) return <div style={{padding:20, fontSize:13, color:'#6b7280'}}>Loading equipment…</div>;
+
+  return (
+    <div>
+      <div style={card}>
+        <div style={sectionTitle}>Pick equipment to edit</div>
+        <select value={selectedId || ''} onChange={e => setSelectedId(e.target.value || null)} style={{...inpS, maxWidth:420}}>
+          <option value=''>Select…</option>
+          {EQUIPMENT_CATEGORIES.map(cat => {
+            const inCat = equipment.filter(e => e.category === cat.key);
+            if (inCat.length === 0) return null;
+            return (
+              <optgroup key={cat.key} label={cat.label}>
+                {inCat.map(e => <option key={e.id} value={e.id}>{e.name}{e.status !== 'active' ? ' ('+e.status+')' : ''}</option>)}
+              </optgroup>
+            );
+          })}
+        </select>
+        <div style={{fontSize:11, color:'#9ca3af', marginTop:8}}>
+          Changes auto-save on blur. Live on /fueling/&lt;slug&gt; immediately after save.
+        </div>
+      </div>
+
+      {selected && (
+        <>
+          <IdentityEditor equipment={selected} onReload={loadAll}/>
+          <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
+          <EveryFillupEditor equipment={selected} onReload={loadAll}/>
+          <ServiceIntervalEditor equipment={selected} onReload={loadAll}/>
+          {Array.isArray(selected.attachment_checklists) && selected.attachment_checklists.length > 0 && (
+            <AttachmentChecklistsEditor equipment={selected} onReload={loadAll}/>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── identity: name / serial / status ───────────────────────────────────────
+function IdentityEditor({equipment, onReload}) {
+  const [busy, setBusy] = React.useState(false);
+  async function save(col, val) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({[col]: (typeof val === 'string' && !val.trim()) ? null : val}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Identity <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Equipment name · serial · status · webform slug</span></div>
+      <div style={{display:'grid', gridTemplateColumns:'120px 1fr', gap:10, alignItems:'center', rowGap:10}}>
+        <div style={subTitle}>Name</div>
+        <input type="text" defaultValue={equipment.name || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (equipment.name||'')) save('name', v); }} style={inpS}/>
+        <div style={subTitle}>Serial</div>
+        <input type="text" defaultValue={equipment.serial_number || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v !== (equipment.serial_number||'')) save('serial_number', v); }} style={inpS}/>
+        <div style={subTitle}>Status</div>
+        <select value={equipment.status} disabled={busy} onChange={e => save('status', e.target.value)} style={{...inpS, maxWidth:180}}>
+          <option value="active">active</option>
+          <option value="retired">retired</option>
+        </select>
+        <div style={subTitle}>Slug</div>
+        <div style={{fontSize:12, color:'#6b7280'}}>/fueling/<strong>{equipment.slug}</strong> <span style={{fontSize:10, color:'#9ca3af', marginLeft:6}}>(not editable — used as the webform URL)</span></div>
+      </div>
+    </div>
+  );
+}
+
+// ── webform help text: operator_notes + fuel_gallons_help ─────────────────
+function WebformHelpTextEditor({equipment, onReload}) {
+  const [busy, setBusy] = React.useState(false);
+  async function save(col, val) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({[col]: (val && val.trim()) || null}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  const taS = {...inpS, resize:'vertical'};
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Webform Help Text <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Shown to the team on /fueling/{equipment.slug}</span></div>
+      <div style={{marginBottom:14}}>
+        <div style={subTitle}>Operator notes (yellow banner at top of form — between-fillup maintenance etc.)</div>
+        <textarea defaultValue={equipment.operator_notes || ''} disabled={busy} onBlur={e => { const v = e.target.value; if (v.trim() !== (equipment.operator_notes||'')) save('operator_notes', v); }} placeholder="e.g. Rotor bearings must be greased every 4 hours." rows={3} style={taS}/>
+      </div>
+      <div>
+        <div style={subTitle}>Gallons field help (shown below the gallons input)</div>
+        <textarea defaultValue={equipment.fuel_gallons_help || ''} disabled={busy} onBlur={e => { const v = e.target.value; if (v.trim() !== (equipment.fuel_gallons_help||'')) save('fuel_gallons_help', v); }} placeholder="e.g. Use 2.5 oz of Toro fuel conditioner per 5 gallons of gasoline." rows={2} style={taS}/>
+      </div>
+    </div>
+  );
+}
+
+// ── every-fillup items + every_fillup_help ─────────────────────────────────
+function EveryFillupEditor({equipment, onReload}) {
+  const [newLabel, setNewLabel] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const items = Array.isArray(equipment.every_fillup_items) ? equipment.every_fillup_items : [];
+
+  async function persist(next) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({every_fillup_items: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  async function addOne() {
+    const label = (newLabel || '').trim();
+    if (!label) return;
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item-' + Date.now();
+    await persist(items.concat([{id, label}]));
+    setNewLabel('');
+  }
+  async function removeOne(idx) { await persist(items.filter((_, i) => i !== idx)); }
+  async function editLabel(idx, label) {
+    const next = items.slice();
+    next[idx] = {...next[idx], label};
+    await persist(next);
+  }
+  async function editFillupHelp(help) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({every_fillup_help: help || null}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Every-fillup Items <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Ticked by the team on every /fueling submission</span></div>
+      <div style={{marginBottom:14}}>
+        <div style={subTitle}>Help text (shown above the checks on the webform)</div>
+        <textarea defaultValue={equipment.every_fillup_help || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v !== (equipment.every_fillup_help||'')) editFillupHelp(v); }} placeholder="e.g. Tire Pressure: 20 psi recommended." rows={2} style={{...inpS, resize:'vertical'}}/>
+      </div>
+      {items.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No items configured yet.</div>}
+      {items.length > 0 && (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:8, marginBottom:8, alignItems:'center'}}>
+          {items.map((it, i) => (
+            <React.Fragment key={i}>
+              <input type="text" defaultValue={it.label || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (it.label||'')) editLabel(i, v); }} style={inpS}/>
+              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+      <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:8, marginTop:10, padding:'10px', background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db', alignItems:'center'}}>
+        <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="e.g. CHECK OIL LEVEL" style={inpS}/>
+        <button onClick={addOne} disabled={busy || !newLabel.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newLabel.trim())?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newLabel.trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+      </div>
+    </div>
+  );
+}
+
+// ── service intervals + per-interval tasks + per-interval help text ───────
+function ServiceIntervalEditor({equipment, onReload}) {
+  const [newVal, setNewVal] = React.useState('');
+  const [newKind, setNewKind] = React.useState(equipment.tracking_unit || 'hours');
+  const [newLabel, setNewLabel] = React.useState('');
+  const [expandedIdx, setExpandedIdx] = React.useState(null);
+  const [newTaskLabels, setNewTaskLabels] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const intervals = Array.isArray(equipment.service_intervals) ? equipment.service_intervals : [];
+
+  async function persist(next) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({service_intervals: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  async function addOne() {
+    const v = parseInt(newVal, 10);
+    if (!Number.isFinite(v) || v <= 0) { alert('Enter a positive integer.'); return; }
+    const label = (newLabel || '').trim() || `Every ${v} ${newKind === 'km' ? 'km' : 'hours'} checklist`;
+    const next = intervals.concat([{hours_or_km: v, kind: newKind, label, tasks: []}]).sort((a, b) => a.hours_or_km - b.hours_or_km);
+    await persist(next);
+    setNewVal(''); setNewLabel('');
+  }
+  async function removeOne(idx) {
+    if (!confirm('Remove this interval + all its tasks?')) return;
+    await persist(intervals.filter((_, i) => i !== idx));
+  }
+  async function editLabel(idx, label) {
+    const next = intervals.slice();
+    next[idx] = {...next[idx], label};
+    await persist(next);
+  }
+  async function addTask(idx) {
+    const raw = (newTaskLabels[idx] || '').trim();
+    if (!raw) return;
+    const id = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'task-' + Date.now();
+    const tasks = Array.isArray(intervals[idx].tasks) ? intervals[idx].tasks : [];
+    const next = intervals.slice();
+    next[idx] = {...intervals[idx], tasks: tasks.concat([{id, label: raw}])};
+    await persist(next);
+    setNewTaskLabels(m => ({...m, [idx]: ''}));
+  }
+  async function removeTask(ii, ti) {
+    const tasks = Array.isArray(intervals[ii].tasks) ? intervals[ii].tasks : [];
+    const next = intervals.slice();
+    next[ii] = {...intervals[ii], tasks: tasks.filter((_, x) => x !== ti)};
+    await persist(next);
+  }
+  async function editTaskLabel(ii, ti, label) {
+    const tasks = Array.isArray(intervals[ii].tasks) ? intervals[ii].tasks : [];
+    const nextTasks = tasks.slice();
+    nextTasks[ti] = {...nextTasks[ti], label};
+    const next = intervals.slice();
+    next[ii] = {...intervals[ii], tasks: nextTasks};
+    await persist(next);
+  }
+  async function editHelpText(ii, help_text) {
+    const next = intervals.slice();
+    next[ii] = {...intervals[ii], help_text: help_text || null};
+    await persist(next);
+  }
+
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Service Intervals <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click an interval to edit its tasks + help text</span></div>
+      {intervals.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No intervals configured.</div>}
+      {intervals.length > 0 && (
+        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:8}}>
+          {intervals.map((iv, i) => {
+            const isExpanded = expandedIdx === i;
+            const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+            return (
+              <div key={i} style={{border:'1px solid #e5e7eb', borderRadius:6, background:isExpanded?'#f9fafb':'white'}}>
+                <div onClick={()=>setExpandedIdx(isExpanded?null:i)} style={{padding:'8px 12px', display:'grid', gridTemplateColumns:'20px 90px 70px 1fr 70px', gap:10, alignItems:'center', cursor:'pointer'}}>
+                  <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'▼':'▶'}</span>
+                  <span style={{fontSize:12, fontWeight:700, color:'#111827'}}>{iv.hours_or_km.toLocaleString()} {iv.kind}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{tasks.length} tasks</span>
+                  <input type="text" defaultValue={iv.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.label||'')) editLabel(i, v); }} onClick={e => e.stopPropagation()} style={inpS}/>
+                  <button onClick={(e)=>{e.stopPropagation(); removeOne(i);}} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+                </div>
+                {isExpanded && (
+                  <div style={{borderTop:'1px solid #e5e7eb', padding:'10px 12px'}}>
+                    <div style={subTitle}>Help text (torque specs, tire pressure, etc. — shown on the webform)</div>
+                    <textarea defaultValue={iv.help_text || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.help_text||'')) editHelpText(i, v); }} placeholder="e.g. Lugnut torque: 47lbs" rows={2} style={{...inpS, resize:'vertical', marginBottom:12}}/>
+                    <div style={subTitle}>Tasks at this interval</div>
+                    {tasks.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', marginBottom:6}}>No sub-tasks yet. Add below.</div>}
+                    {tasks.map((t, ti) => (
+                      <div key={ti} style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginBottom:4, alignItems:'center'}}>
+                        <input type="text" defaultValue={t.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (t.label||'')) editTaskLabel(i, ti, v); }} style={inpS}/>
+                        <button onClick={()=>removeTask(i, ti)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+                      </div>
+                    ))}
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginTop:8, padding:'8px', background:'white', borderRadius:5, border:'1px dashed #d1d5db', alignItems:'center'}}>
+                      <input type="text" value={newTaskLabels[i] || ''} onChange={e=>setNewTaskLabels(m=>({...m, [i]:e.target.value}))} placeholder="e.g. CHECK OIL LEVEL" style={inpS}/>
+                      <button onClick={()=>addTask(i)} disabled={busy || !(newTaskLabels[i]||'').trim()} style={{padding:'5px 10px', borderRadius:5, border:'none', background:(busy||!(newTaskLabels[i]||'').trim())?'#9ca3af':'#57534e', color:'white', fontSize:11, fontWeight:600, cursor:(busy||!(newTaskLabels[i]||'').trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{display:'grid', gridTemplateColumns:'80px 80px 1fr 110px', gap:8, marginTop:10, padding:'10px', background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db', alignItems:'center'}}>
+        <input type="number" min="1" value={newVal} onChange={e=>setNewVal(e.target.value)} placeholder="e.g. 50" style={inpS}/>
+        <select value={newKind} onChange={e=>setNewKind(e.target.value)} style={inpS}>
+          <option value="hours">hours</option>
+          <option value="km">km</option>
+        </select>
+        <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label (default 'Every N hours checklist')" style={inpS}/>
+        <button onClick={addOne} disabled={busy || !newVal} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVal)?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newVal)?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add interval</button>
+      </div>
+    </div>
+  );
+}
+
+// ── attachment checklists (Ventrac etc.) ───────────────────────────────────
+function AttachmentChecklistsEditor({equipment, onReload}) {
+  const [expandedIdx, setExpandedIdx] = React.useState(null);
+  const [newTaskLabels, setNewTaskLabels] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const items = Array.isArray(equipment.attachment_checklists) ? equipment.attachment_checklists : [];
+
+  async function persist(next) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({attachment_checklists: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  async function editHelpText(idx, help_text) {
+    const next = items.slice();
+    next[idx] = {...items[idx], help_text: help_text || null};
+    await persist(next);
+  }
+  async function addTask(idx) {
+    const raw = (newTaskLabels[idx] || '').trim();
+    if (!raw) return;
+    const id = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'task-' + Date.now();
+    const tasks = Array.isArray(items[idx].tasks) ? items[idx].tasks : [];
+    const next = items.slice();
+    next[idx] = {...items[idx], tasks: tasks.concat([{id, label: raw}])};
+    await persist(next);
+    setNewTaskLabels(m => ({...m, [idx]: ''}));
+  }
+  async function removeTask(ii, ti) {
+    const tasks = Array.isArray(items[ii].tasks) ? items[ii].tasks : [];
+    const next = items.slice();
+    next[ii] = {...items[ii], tasks: tasks.filter((_, x) => x !== ti)};
+    await persist(next);
+  }
+  async function editTaskLabel(ii, ti, label) {
+    const tasks = Array.isArray(items[ii].tasks) ? items[ii].tasks : [];
+    const nextTasks = tasks.slice();
+    nextTasks[ti] = {...nextTasks[ti], label};
+    const next = items.slice();
+    next[ii] = {...items[ii], tasks: nextTasks};
+    await persist(next);
+  }
+
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Attachment Checklists <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Shown as optional sections on the webform</span></div>
+      <div style={{display:'flex', flexDirection:'column', gap:6}}>
+        {items.map((a, i) => {
+          const isExpanded = expandedIdx === i;
+          const tasks = Array.isArray(a.tasks) ? a.tasks : [];
+          return (
+            <div key={i} style={{border:'1px solid #e5e7eb', borderRadius:6, background:isExpanded?'#f9fafb':'white'}}>
+              <div onClick={()=>setExpandedIdx(isExpanded?null:i)} style={{padding:'8px 12px', display:'grid', gridTemplateColumns:'20px 1fr 80px 60px', gap:10, alignItems:'center', cursor:'pointer'}}>
+                <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'▼':'▶'}</span>
+                <span style={{fontSize:12, fontWeight:700, color:'#111827'}}>{a.name}</span>
+                <span style={{fontSize:12, color:'#6b7280'}}>{a.hours_or_km} {a.kind}</span>
+                <span style={{fontSize:11, color:'#6b7280'}}>{tasks.length} tasks</span>
+              </div>
+              {isExpanded && (
+                <div style={{borderTop:'1px solid #e5e7eb', padding:'10px 12px'}}>
+                  <div style={subTitle}>Help text</div>
+                  <textarea defaultValue={a.help_text || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (a.help_text||'')) editHelpText(i, v); }} rows={2} style={{...inpS, resize:'vertical', marginBottom:12}}/>
+                  <div style={subTitle}>Tasks</div>
+                  {tasks.map((t, ti) => (
+                    <div key={ti} style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginBottom:4, alignItems:'center'}}>
+                      <input type="text" defaultValue={t.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (t.label||'')) editTaskLabel(i, ti, v); }} style={inpS}/>
+                      <button onClick={()=>removeTask(i, ti)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+                    </div>
+                  ))}
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginTop:8, padding:'8px', background:'white', borderRadius:5, border:'1px dashed #d1d5db', alignItems:'center'}}>
+                    <input type="text" value={newTaskLabels[i] || ''} onChange={e=>setNewTaskLabels(m=>({...m, [i]:e.target.value}))} placeholder="e.g. CHECK BLADE BOLTS" style={inpS}/>
+                    <button onClick={()=>addTask(i)} disabled={busy || !(newTaskLabels[i]||'').trim()} style={{padding:'5px 10px', borderRadius:5, border:'none', background:(busy||!(newTaskLabels[i]||'').trim())?'#9ca3af':'#57534e', color:'white', fontSize:11, fontWeight:600, cursor:(busy||!(newTaskLabels[i]||'').trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
