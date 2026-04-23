@@ -93,6 +93,19 @@ function collectFromConfig(configPath) {
   const every_fillup_help = fillup
     ? cleanHelp(fillup.config?.description || fillup.description)
     : null;
+  // Number field "Gallons of …" description — fuel conditioner notes etc.
+  const gallons = (config.fields || []).find(f =>
+    f.type === 'number' && /gallons?\s*of/i.test(f.label || '')
+  );
+  const fuel_gallons_help = gallons
+    ? cleanHelp(gallons.config?.description || gallons.description)
+    : null;
+  // Date field description — Podio admins used this as a catch-all for
+  // operator notes (e.g., Gyro-Trac rotor-bearings reminder).
+  const dateFld = (config.fields || []).find(f => f.type === 'date');
+  const operator_notes = dateFld
+    ? cleanHelp(dateFld.config?.description || dateFld.description)
+    : null;
   // Per-interval help text, keyed by `${kind}:${hours_or_km}`.
   const intervalHelp = new Map();
   for (const f of (config.fields || [])) {
@@ -108,7 +121,7 @@ function collectFromConfig(configPath) {
       intervalHelp.set(`${parsed.kind}:${v}`, help);
     }
   }
-  return {every_fillup_help, intervalHelp};
+  return {every_fillup_help, fuel_gallons_help, operator_notes, intervalHelp};
 }
 
 async function main() {
@@ -119,11 +132,13 @@ async function main() {
       console.log(`  · ${slug.padEnd(14)} — no config dump, skip`);
       continue;
     }
-    const {every_fillup_help, intervalHelp} = collectFromConfig(configPath);
-    patches.push({slug, every_fillup_help, intervalHelp});
+    const {every_fillup_help, fuel_gallons_help, operator_notes, intervalHelp} = collectFromConfig(configPath);
+    patches.push({slug, every_fillup_help, fuel_gallons_help, operator_notes, intervalHelp});
     const n = intervalHelp.size;
-    console.log(`  · ${slug.padEnd(14)} fillup=${every_fillup_help ? 'Y' : '—'}  intervals-with-help=${n}`);
-    if (every_fillup_help) console.log(`      fillup: "${every_fillup_help}"`);
+    console.log(`  · ${slug.padEnd(14)} fillup=${every_fillup_help?'Y':'—'}  gallons=${fuel_gallons_help?'Y':'—'}  notes=${operator_notes?'Y':'—'}  intervals=${n}`);
+    if (every_fillup_help)  console.log(`      fillup:  "${every_fillup_help}"`);
+    if (fuel_gallons_help)  console.log(`      gallons: "${fuel_gallons_help}"`);
+    if (operator_notes)     console.log(`      notes:   "${operator_notes.replace(/\n/g,' / ')}"`);
     for (const [k, v] of intervalHelp) console.log(`      ${k}: "${v}"`);
   }
 
@@ -145,7 +160,7 @@ async function main() {
   for (const p of patches) {
     const id = 'eq-' + p.slug;
     const {data: eq, error: eqErr} = await sb.from('equipment')
-      .select('id, service_intervals, every_fillup_help')
+      .select('id, service_intervals')
       .eq('id', id)
       .maybeSingle();
     if (eqErr) { console.error(`  ! ${p.slug}: select failed`, eqErr.message); continue; }
@@ -163,6 +178,8 @@ async function main() {
       .update({
         service_intervals: nextIntervals,
         every_fillup_help: p.every_fillup_help,
+        fuel_gallons_help: p.fuel_gallons_help,
+        operator_notes: p.operator_notes,
       })
       .eq('id', id);
     if (upErr) { console.error(`  ! ${p.slug}: update failed`, upErr.message); continue; }

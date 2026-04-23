@@ -224,11 +224,18 @@ function decodeHtmlEntities(s) {
 }
 function parseIntervalLabel(label) {
   // Podio checklist categories look like: "100 HOURS", "500 / 600 HOURS",
-  // "2000 HOURS", "INITIAL 50 HOURS", "200 KM", "5,000 KM", etc.
+  // "2000 HOURS", "INITIAL 50 HOURS", "200 KM", "5,000 KM",
+  // "FIRST 75 & EVERY 500 HOURS" (Toro — the 75 is a one-time break-in,
+  // not recurring; only 500 counts), etc.
   // Returns {kind:'hours'|'km', values:[50,100,...], label:original}
   if (!label) return null;
   const up = label.toUpperCase();
   const kind = up.includes('KM') ? 'km' : 'hours';
+  // Special case: "FIRST X & EVERY Y …" → keep only the recurring Y.
+  const firstEvery = /FIRST\s+(\d{1,3}(?:,\d{3})+|\d+)\s*[&+]?\s*EVERY\s+(\d{1,3}(?:,\d{3})+|\d+)/i.exec(up);
+  if (firstEvery) {
+    return {kind, values: [parseInt(firstEvery[2].replace(/,/g, ''), 10)], label};
+  }
   // Extract integers, stripping commas and treating "/ 600" as separate numbers.
   const nums = [];
   for (const m of up.matchAll(/(\d{1,3}(?:,\d{3})+|\d+)/g)) {
@@ -288,6 +295,9 @@ function buildEquipmentRows() {
       service_intervals: [],        // seeded below from checklist-app field options
       every_fillup_items: [],       // seeded below
       every_fillup_help: null,      // seeded below (torque spec etc. from Podio field desc)
+      fuel_gallons_help: null,      // seeded below (fuel conditioner spec etc.)
+      operator_notes: null,         // seeded below (top-of-form operator notes)
+      attachment_checklists: [],    // seeded below (Ventrac attachments etc.)
       notes: null,
     };
     rows.push(row);
@@ -319,6 +329,9 @@ function buildEquipmentRows() {
       service_intervals: [],
       every_fillup_items: [],
       every_fillup_help: null,
+      fuel_gallons_help: null,
+      operator_notes: null,
+      attachment_checklists: [],
       notes: 'Synthesized from Fuel Log references (not in Podio Equipment Maintenance).',
     });
   }
@@ -339,16 +352,29 @@ function seedIntervalsForEquipment(eqRows) {
     if (!fs.existsSync(configPath)) continue;
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
+    // Podio stashed some help text on non-checklist fields (Toro gallons note,
+    // Gyro-Trac date description). Pick those up too.
+    const gallonsFld = (config.fields || []).find(f =>
+      f.type === 'number' && /gallons?\s*of/i.test(f.label || '')
+    );
+    eq.fuel_gallons_help = decodeHtmlEntities(((gallonsFld && (gallonsFld.config?.description || gallonsFld.description)) || '').trim()) || null;
+    const dateFld = (config.fields || []).find(f => f.type === 'date');
+    eq.operator_notes = decodeHtmlEntities(((dateFld && (dateFld.config?.description || dateFld.description)) || '').trim()) || null;
+
     const fillup = (config.fields || []).find(f =>
       f.external_id === 'every-fuel-fill-up-checklist' ||
       f.external_id === 'every-fuel-fillup-checklist' ||
       /every.*fillup|every.*fill.*up/i.test(f.label || '')
     );
-    if (fillup && fillup.config && fillup.config.settings && Array.isArray(fillup.config.settings.options)) {
-      eq.every_fillup_items = fillup.config.settings.options.map(o => ({
-        id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) : String(o.id),
-        label: o.text || '',
-      })).filter(x => x.label);
+    // Podio marks stale template fields/options as status='deleted'. These
+    // still ship in the API but are hidden on the published webform. Skip them.
+    if (fillup && fillup.status !== 'deleted' && fillup.config && fillup.config.settings && Array.isArray(fillup.config.settings.options)) {
+      eq.every_fillup_items = fillup.config.settings.options
+        .filter(o => o.status !== 'deleted')
+        .map(o => ({
+          id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) : String(o.id),
+          label: o.text || '',
+        })).filter(x => x.label);
       // Field-level help text for the fill-up section (e.g., "Tire Pressure: 4.4 psi").
       eq.every_fillup_help = decodeHtmlEntities((fillup.config?.description || fillup.description || '').trim()) || null;
     }
@@ -356,27 +382,51 @@ function seedIntervalsForEquipment(eqRows) {
     // Each category field on the checklist app represents ONE service
     // interval. Its LABEL ("Every 100 hours checklist") carries the number;
     // its options are the tasks to perform at that interval. Capture both.
+    // Attachment-prefixed labels ("Tough Cut -- Every 50 Hours") are bucketed
+    // separately into attachment_checklists.
     const intervals = [];
+    const attachments = [];
     for (const f of (config.fields || [])) {
       if (f.type !== 'category') continue;
+      if (f.status === 'deleted') continue;           // skip Podio-deleted template fields
       if (f.external_id === 'every-fuel-fill-up-checklist') continue;
       const lbl = f.label || '';
       if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
       const parsed = parseIntervalLabel(lbl);
       if (!parsed) continue;
       // Options inside the category = the tasks the team performs when they
-      // check this interval.
-      const tasks = (f.config?.settings?.options || []).map(o => ({
-        id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) : String(o.id),
-        label: (o.text || '').trim(),
-      })).filter(t => t.label);
+      // check this interval. Skip status='deleted' options.
+      const tasks = (f.config?.settings?.options || [])
+        .filter(o => o.status !== 'deleted')
+        .map(o => ({
+          id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) : String(o.id),
+          label: (o.text || '').trim(),
+        })).filter(t => t.label);
       // Field-level help text (torque specs, gap specs, etc.) shown on webform.
       const help_text = decodeHtmlEntities((f.config?.description || f.description || '').trim()) || null;
-      for (const v of parsed.values) {
-        intervals.push({hours_or_km: v, kind: parsed.kind, label: lbl.trim(), tasks, help_text});
+      const isAttachment = /\s--\s|\s—\s/.test(lbl);
+      if (isAttachment) {
+        const name = lbl.split(/\s--\s|\s—\s/)[0].trim();
+        for (const v of parsed.values) {
+          attachments.push({name, hours_or_km: v, kind: parsed.kind, label: lbl.trim(), tasks, help_text});
+        }
+      } else {
+        for (const v of parsed.values) {
+          intervals.push({hours_or_km: v, kind: parsed.kind, label: lbl.trim(), tasks, help_text});
+        }
       }
     }
-    // Dedup by hours_or_km + kind. Sort ascending.
+    // Dedup attachments by (name, kind, value).
+    const aseen = new Set();
+    eq.attachment_checklists = attachments
+      .filter(a => {
+        const k = a.name + ':' + a.kind + ':' + a.hours_or_km;
+        if (aseen.has(k)) return false;
+        aseen.add(k);
+        return true;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name) || a.hours_or_km - b.hours_or_km);
+    // Dedup intervals by hours_or_km + kind. Sort ascending.
     const seen = new Set();
     eq.service_intervals = intervals
       .filter(iv => {
@@ -474,12 +524,21 @@ function buildFuelingRows(eqRows, unresolvedLog) {
       if (item.fields) {
         for (const f of item.fields) {
           if (f.type !== 'category') continue;
+          if (f.status === 'deleted') continue;       // Podio deleted template field
           if (f.external_id === 'every-fuel-fill-up-checklist') continue;
           const lbl = f.label || '';
           if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
-          const tickedLabels = (f.values || []).map(v => (v && v.value && v.value.text) || null).filter(Boolean);
+          // Only count ticks on options that are still active on the field.
+          const activeOptionIds = new Set(
+            (f.config?.settings?.options || [])
+              .filter(o => o.status !== 'deleted')
+              .map(o => o.id)
+          );
+          const tickedLabels = (f.values || [])
+            .filter(v => v && v.value && (activeOptionIds.size === 0 || activeOptionIds.has(v.value.id)))
+            .map(v => (v.value && v.value.text) || null).filter(Boolean);
           if (tickedLabels.length === 0) continue;
-          const totalTasks = (f.config?.settings?.options || []).length;
+          const totalTasks = (f.config?.settings?.options || []).filter(o => o.status !== 'deleted').length;
           const itemsCompleted = tickedLabels.map(t => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50));
           const parsed = parseIntervalLabel(lbl);
           if (!parsed) continue;

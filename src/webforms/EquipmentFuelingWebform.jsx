@@ -22,6 +22,8 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   const [intervalTicks, setIntervalTicks] = React.useState(new Set()); // keys 'kind:value'
   // Per-interval task ticks: Map<'kind:value', Set<taskId>>
   const [taskTicks, setTaskTicks] = React.useState({});
+  // Attachment-checklist ticks: Map<'name:kind:value', Set<taskId>>
+  const [attachmentTicks, setAttachmentTicks] = React.useState({});
   const [photos, setPhotos] = React.useState([]);
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
   const [comments, setComments] = React.useState('');
@@ -85,6 +87,13 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
       const current = new Set(prev[intervalKey] || []);
       if (current.has(taskId)) current.delete(taskId); else current.add(taskId);
       return {...prev, [intervalKey]: current};
+    });
+  }
+  function toggleAttachmentTask(attachmentKey, taskId) {
+    setAttachmentTicks(prev => {
+      const current = new Set(prev[attachmentKey] || []);
+      if (current.has(taskId)) current.delete(taskId); else current.add(taskId);
+      return {...prev, [attachmentKey]: current};
     });
   }
   async function uploadPhoto(file) {
@@ -171,6 +180,23 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
           total_tasks: subTasks.length,
         });
       }
+    }
+
+    // Attachment completions — stored in service_intervals_completed with an
+    // attachment_name key so the dashboard can distinguish from main intervals.
+    for (const a of (eq.attachment_checklists || [])) {
+      const key = a.name + ':' + a.kind + ':' + a.hours_or_km;
+      const ticks = attachmentTicks[key] instanceof Set ? attachmentTicks[key] : new Set();
+      if (ticks.size === 0) continue;
+      completed.push({
+        interval: a.hours_or_km,
+        kind: a.kind,
+        label: a.label,
+        attachment_name: a.name,
+        completed_at: date,
+        items_completed: Array.from(ticks),
+        total_tasks: (a.tasks || []).length,
+      });
     }
 
     const fillup = Array.from(fillupTicks).map(id => {
@@ -268,6 +294,14 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
           )}
         </div>
 
+        {/* Top-of-form operator notes (between-fillup maintenance guidance). */}
+        {eq && eq.operator_notes && (
+          <div style={{...cardS, background:'#fffbeb', borderColor:'#fde68a'}}>
+            <div style={{fontSize:12, fontWeight:700, color:'#92400e', marginBottom:6}}>⚠ Operator note</div>
+            <div style={{fontSize:12, color:'#78716c', whiteSpace:'pre-wrap', fontStyle:'italic'}}>{eq.operator_notes}</div>
+          </div>
+        )}
+
         {/* Date + Team Member on their own rows */}
         <div style={cardS}>
           <div style={{marginBottom:12}}>
@@ -289,6 +323,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             <div style={{marginBottom:12}}>
               <label style={lblS}>{fuelLabel} gallons *</label>
               <input type="number" min="0" step="0.1" value={gallons} onChange={e=>setGallons(e.target.value)} placeholder="0" style={inpS}/>
+              {eq.fuel_gallons_help && (
+                <div style={{fontSize:11, color:'#78716c', marginTop:6, fontStyle:'italic', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'6px 8px', whiteSpace:'pre-wrap'}}>{eq.fuel_gallons_help}</div>
+              )}
             </div>
             {eq.takes_def && (
               <div>
@@ -385,6 +422,49 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                           );
                         })}
                       </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Attachment-specific checklists (Ventrac — Tough Cut / AERO-Vator /
+            Landscape Rake). Only shown when this piece has attachments and a
+            reading is entered. Tick only the attachment you used. */}
+        {eq && hasReading && Array.isArray(eq.attachment_checklists) && eq.attachment_checklists.length > 0 && (
+          <div style={cardS}>
+            <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:4}}>Attachment-specific checklists</div>
+            <div style={{fontSize:11, color:'#6b7280', marginBottom:12}}>Only tick tasks for the attachment you actually used this session.</div>
+            <div style={{display:'flex', flexDirection:'column', gap:10}}>
+              {eq.attachment_checklists.map(a => {
+                const key = a.name + ':' + a.kind + ':' + a.hours_or_km;
+                const ticks = attachmentTicks[key] instanceof Set ? attachmentTicks[key] : new Set();
+                const tasks = Array.isArray(a.tasks) ? a.tasks : [];
+                const allTicked = tasks.length > 0 && ticks.size >= tasks.length;
+                const anyTicked = ticks.size > 0;
+                return (
+                  <div key={key} style={{borderRadius:8, background:allTicked?'#eff6ff':(anyTicked?'#fffbeb':'#fafafa'), border:'1px solid '+(allTicked?'#bfdbfe':(anyTicked?'#fde68a':'#e5e7eb')), padding:'12px 14px'}}>
+                    <div style={{fontWeight:700, color:'#57534e', fontSize:13, marginBottom:6}}>{a.name} <span style={{fontSize:11, color:'#6b7280', fontWeight:500}}>· {a.hours_or_km}{a.kind==='km'?'km':'h'}</span></div>
+                    {a.help_text && (
+                      <div style={{fontSize:11, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'6px 8px', marginBottom:8, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{a.help_text}</div>
+                    )}
+                    {tasks.length > 0 ? (
+                      <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                        {tasks.map(t => {
+                          const ticked = ticks.has(t.id);
+                          return (
+                            <label key={t.id} style={{display:'flex', alignItems:'flex-start', gap:8, padding:'6px 8px', borderRadius:5, background:ticked?'#dcfce7':'white', cursor:'pointer', fontSize:12}}>
+                              <input type="checkbox" checked={ticked} onChange={()=>toggleAttachmentTask(key, t.id)} style={{margin:'2px 0 0', flexShrink:0, width:16, height:16, padding:0, border:'1px solid #d1d5db'}}/>
+                              <span style={{color:ticked?'#065f46':'#374151', fontWeight:ticked?600:500}}>{t.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No tasks configured.</div>}
+                    {anyTicked && (
+                      <div style={{fontSize:11, color:allTicked?'#1e40af':'#92400e', marginTop:6, fontWeight:600}}>{ticks.size} of {tasks.length} tasks ticked{allTicked?' · full completion':''}</div>
                     )}
                   </div>
                 );
