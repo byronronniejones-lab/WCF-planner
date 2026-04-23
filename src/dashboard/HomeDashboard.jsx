@@ -256,9 +256,9 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
             ].filter(c => canAccessProgram(VIEW_TO_PROGRAM[c.view])).map(c=>(
               <div key={c.view} onClick={()=>setView(c.view)}
                 style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:12,padding:"16px 18px",cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,.05)",transition:"transform .1s",display:"flex",alignItems:"center",gap:14,minWidth:0}}>
-                <div style={{fontSize:38,flexShrink:0,lineHeight:1}}>{c.icon}</div>
+                <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>{c.icon}</div>
                 <div style={{minWidth:0,flex:1}}>
-                  <div style={{fontSize:20,fontWeight:700,color:c.color}}>{c.label}</div>
+                  <div style={{fontSize:18,fontWeight:700,color:c.color}}>{c.label}</div>
                 </div>
               </div>
             ))}
