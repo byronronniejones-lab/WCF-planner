@@ -312,7 +312,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             the checklist section doesn't open before we know what to show. */}
         {eq && hasReading && (eq.every_fillup_items || []).length > 0 && (
           <div style={cardS}>
-            <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:10}}>Every-fillup checks</div>
+            <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:eq.every_fillup_help?4:10}}>Every-fillup checks</div>
+            {eq.every_fillup_help && (
+              <div style={{fontSize:12, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, padding:'8px 10px', marginBottom:10, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{eq.every_fillup_help}</div>
+            )}
             <div style={{display:'flex', flexDirection:'column', gap:6}}>
               {eq.every_fillup_items.map(item => (
                 <label key={item.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:fillupTicks.has(item.id)?'#ecfdf5':'#f9fafb', cursor:'pointer', border:'1px solid '+(fillupTicks.has(item.id)?'#a7f3d0':'#e5e7eb'), fontSize:13}}>
@@ -365,6 +368,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                         )}
                       </div>
                     </div>
+                    {/* Field-level help text from Podio (torque specs, gap specs, etc.) */}
+                    {iv.help_text && (
+                      <div style={{fontSize:11, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'6px 8px', marginBottom:tasks.length>0?8:0, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{iv.help_text}</div>
+                    )}
                     {/* Sub-task list (when this interval has tasks) */}
                     {tasks.length > 0 && (
                       <div style={{display:'flex', flexDirection:'column', gap:4, marginLeft:0, borderTop:'1px solid '+(done?'#bfdbfe':'#fca5a5'), paddingTop:8}}>

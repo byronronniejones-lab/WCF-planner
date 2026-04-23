@@ -215,6 +215,13 @@ function normFuelType(s) {
 function deterministicFuelingId(podioSourceApp, podioItemId) {
   return 'fuel-' + podioSourceApp + '-' + podioItemId;
 }
+function decodeHtmlEntities(s) {
+  if (!s) return s;
+  return String(s)
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+}
 function parseIntervalLabel(label) {
   // Podio checklist categories look like: "100 HOURS", "500 / 600 HOURS",
   // "2000 HOURS", "INITIAL 50 HOURS", "200 KM", "5,000 KM", etc.
@@ -280,6 +287,7 @@ function buildEquipmentRows() {
       warranty_expiration: fieldDateValue(item, 'warranty-expirtion'),
       service_intervals: [],        // seeded below from checklist-app field options
       every_fillup_items: [],       // seeded below
+      every_fillup_help: null,      // seeded below (torque spec etc. from Podio field desc)
       notes: null,
     };
     rows.push(row);
@@ -310,6 +318,7 @@ function buildEquipmentRows() {
       warranty_description: null, warranty_expiration: null,
       service_intervals: [],
       every_fillup_items: [],
+      every_fillup_help: null,
       notes: 'Synthesized from Fuel Log references (not in Podio Equipment Maintenance).',
     });
   }
@@ -340,6 +349,8 @@ function seedIntervalsForEquipment(eqRows) {
         id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) : String(o.id),
         label: o.text || '',
       })).filter(x => x.label);
+      // Field-level help text for the fill-up section (e.g., "Tire Pressure: 4.4 psi").
+      eq.every_fillup_help = decodeHtmlEntities((fillup.config?.description || fillup.description || '').trim()) || null;
     }
 
     // Each category field on the checklist app represents ONE service
@@ -359,8 +370,10 @@ function seedIntervalsForEquipment(eqRows) {
         id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) : String(o.id),
         label: (o.text || '').trim(),
       })).filter(t => t.label);
+      // Field-level help text (torque specs, gap specs, etc.) shown on webform.
+      const help_text = decodeHtmlEntities((f.config?.description || f.description || '').trim()) || null;
       for (const v of parsed.values) {
-        intervals.push({hours_or_km: v, kind: parsed.kind, label: lbl.trim(), tasks});
+        intervals.push({hours_or_km: v, kind: parsed.kind, label: lbl.trim(), tasks, help_text});
       }
     }
     // Dedup by hours_or_km + kind. Sort ascending.

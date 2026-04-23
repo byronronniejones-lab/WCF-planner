@@ -375,11 +375,18 @@ function StatTile({label, value, color}) {
 }
 
 // Service-interval editor — inline add / remove / edit the jsonb list
-// that drives due-interval math. Each row is {hours_or_km, kind, label}.
+// that drives due-interval math. Each interval is
+// {hours_or_km, kind, label, tasks:[{id,label}]}.
+//
+// Each interval expands in place so admin can prune individual tasks
+// (the Podio imports pulled ALL the Podio options including ones
+// that don't apply — e.g. "3 PT HITCH GREASED" on an ATV checklist).
 function ServiceIntervalEditor({sb, equipment, onReload}) {
   const [newVal, setNewVal] = React.useState('');
   const [newKind, setNewKind] = React.useState(equipment.tracking_unit || 'hours');
   const [newLabel, setNewLabel] = React.useState('');
+  const [expandedIdx, setExpandedIdx] = React.useState(null);
+  const [newTaskLabels, setNewTaskLabels] = React.useState({}); // idx → pending new-task text
   const [busy, setBusy] = React.useState(false);
   const intervals = Array.isArray(equipment.service_intervals) ? equipment.service_intervals : [];
 
@@ -394,11 +401,12 @@ function ServiceIntervalEditor({sb, equipment, onReload}) {
     const v = parseInt(newVal, 10);
     if (!Number.isFinite(v) || v <= 0) { alert('Enter a positive integer.'); return; }
     const label = (newLabel || '').trim() || `Every ${v} ${newKind === 'km' ? 'km' : 'hours'} checklist`;
-    const next = intervals.concat([{hours_or_km: v, kind: newKind, label}]).sort((a, b) => a.hours_or_km - b.hours_or_km);
+    const next = intervals.concat([{hours_or_km: v, kind: newKind, label, tasks: []}]).sort((a, b) => a.hours_or_km - b.hours_or_km);
     await persist(next);
     setNewVal(''); setNewLabel('');
   }
   async function removeOne(idx) {
+    if (!confirm('Remove this interval + all its tasks?')) return;
     const next = intervals.filter((_, i) => i !== idx);
     await persist(next);
   }
@@ -407,28 +415,78 @@ function ServiceIntervalEditor({sb, equipment, onReload}) {
     next[idx] = {...next[idx], label};
     await persist(next);
   }
+  async function addTask(idx) {
+    const raw = (newTaskLabels[idx] || '').trim();
+    if (!raw) return;
+    const id = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'task-' + Date.now();
+    const tasks = Array.isArray(intervals[idx].tasks) ? intervals[idx].tasks : [];
+    const next = intervals.slice();
+    next[idx] = {...intervals[idx], tasks: tasks.concat([{id, label: raw}])};
+    await persist(next);
+    setNewTaskLabels(m => ({...m, [idx]: ''}));
+  }
+  async function removeTask(intervalIdx, taskIdx) {
+    const tasks = Array.isArray(intervals[intervalIdx].tasks) ? intervals[intervalIdx].tasks : [];
+    const next = intervals.slice();
+    next[intervalIdx] = {...intervals[intervalIdx], tasks: tasks.filter((_, i) => i !== taskIdx)};
+    await persist(next);
+  }
+  async function editTaskLabel(intervalIdx, taskIdx, label) {
+    const tasks = Array.isArray(intervals[intervalIdx].tasks) ? intervals[intervalIdx].tasks : [];
+    const nextTasks = tasks.slice();
+    nextTasks[taskIdx] = {...nextTasks[taskIdx], label};
+    const next = intervals.slice();
+    next[intervalIdx] = {...intervals[intervalIdx], tasks: nextTasks};
+    await persist(next);
+  }
+  async function editHelpText(intervalIdx, help_text) {
+    const next = intervals.slice();
+    next[intervalIdx] = {...intervals[intervalIdx], help_text: help_text || null};
+    await persist(next);
+  }
 
   const inpS = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box'};
   const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:8};
 
   return (
     <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
-      <div style={sectionTitle}>Service Intervals <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Drives Upcoming Service tiles + the fueling webform's due checklist</span></div>
+      <div style={sectionTitle}>Service Intervals <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click an interval to edit its sub-tasks · Drives Upcoming Service + the webform's due checklist</span></div>
       {intervals.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No intervals configured. Add one below — e.g. "50" hours for a 50-hour check.</div>}
       {intervals.length > 0 && (
-        <div style={{display:'grid', gridTemplateColumns:'80px 80px 1fr 60px', gap:8, marginBottom:8, alignItems:'center'}}>
-          <div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Interval</div>
-          <div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Unit</div>
-          <div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Label</div>
-          <div></div>
-          {intervals.map((iv, i) => (
-            <React.Fragment key={i}>
-              <div style={{fontSize:12, fontWeight:700, color:'#111827'}}>{iv.hours_or_km.toLocaleString()}</div>
-              <div style={{fontSize:12, color:'#6b7280'}}>{iv.kind}</div>
-              <input type="text" defaultValue={iv.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.label||'')) editLabel(i, v); }} style={{...inpS, width:'100%'}}/>
-              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
-            </React.Fragment>
-          ))}
+        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:8}}>
+          {intervals.map((iv, i) => {
+            const isExpanded = expandedIdx === i;
+            const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+            return (
+              <div key={i} style={{border:'1px solid #e5e7eb', borderRadius:6, background:isExpanded?'#f9fafb':'white'}}>
+                <div onClick={()=>setExpandedIdx(isExpanded?null:i)} style={{padding:'8px 12px', display:'grid', gridTemplateColumns:'20px 80px 60px 1fr 70px', gap:10, alignItems:'center', cursor:'pointer'}}>
+                  <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'▼':'▶'}</span>
+                  <span style={{fontSize:12, fontWeight:700, color:'#111827'}}>{iv.hours_or_km.toLocaleString()} {iv.kind}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{tasks.length} tasks</span>
+                  <input type="text" defaultValue={iv.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.label||'')) editLabel(i, v); }} onClick={e => e.stopPropagation()} style={{...inpS, width:'100%'}}/>
+                  <button onClick={(e)=>{e.stopPropagation(); removeOne(i);}} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+                </div>
+                {isExpanded && (
+                  <div style={{borderTop:'1px solid #e5e7eb', padding:'10px 12px'}}>
+                    <div style={{fontSize:10, color:'#6b7280', fontWeight:600, textTransform:'uppercase', letterSpacing:.4, marginBottom:4}}>Help text (torque specs, tire pressure, etc. — shown on the webform)</div>
+                    <textarea defaultValue={iv.help_text || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.help_text||'')) editHelpText(i, v); }} placeholder="e.g. Lugnut torque: 47lbs" rows={2} style={{...inpS, width:'100%', fontFamily:'inherit', resize:'vertical', marginBottom:12}}/>
+                    <div style={{fontSize:10, color:'#6b7280', fontWeight:600, textTransform:'uppercase', letterSpacing:.4, marginBottom:6}}>Tasks at this interval</div>
+                    {tasks.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', marginBottom:6}}>No sub-tasks yet. Add below.</div>}
+                    {tasks.map((t, ti) => (
+                      <div key={ti} style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginBottom:4, alignItems:'center'}}>
+                        <input type="text" defaultValue={t.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (t.label||'')) editTaskLabel(i, ti, v); }} style={{...inpS, width:'100%'}}/>
+                        <button onClick={()=>removeTask(i, ti)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+                      </div>
+                    ))}
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginTop:8, padding:'8px', background:'white', borderRadius:5, border:'1px dashed #d1d5db', alignItems:'center'}}>
+                      <input type="text" value={newTaskLabels[i] || ''} onChange={e=>setNewTaskLabels(m=>({...m, [i]:e.target.value}))} placeholder="e.g. CHECK OIL LEVEL" style={inpS}/>
+                      <button onClick={()=>addTask(i)} disabled={busy || !(newTaskLabels[i]||'').trim()} style={{padding:'5px 10px', borderRadius:5, border:'none', background:(busy||!(newTaskLabels[i]||'').trim())?'#9ca3af':'#57534e', color:'white', fontSize:11, fontWeight:600, cursor:(busy||!(newTaskLabels[i]||'').trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
       <div style={{display:'grid', gridTemplateColumns:'80px 80px 1fr 80px', gap:8, marginTop:10, padding:'10px', background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db', alignItems:'center'}}>
@@ -438,7 +496,7 @@ function ServiceIntervalEditor({sb, equipment, onReload}) {
           <option value="km">km</option>
         </select>
         <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label (default 'Every N hours checklist')" style={inpS}/>
-        <button onClick={addOne} disabled={busy || !newVal} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVal)?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newVal)?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+        <button onClick={addOne} disabled={busy || !newVal} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVal)?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newVal)?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add interval</button>
       </div>
     </div>
   );
@@ -475,6 +533,13 @@ function EveryFillupEditor({sb, equipment, onReload}) {
     next[idx] = {...next[idx], label};
     await persist(next);
   }
+  async function editFillupHelp(help) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({every_fillup_help: help || null}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
 
   const inpS = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box'};
   const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:8};
@@ -482,6 +547,10 @@ function EveryFillupEditor({sb, equipment, onReload}) {
   return (
     <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
       <div style={sectionTitle}>Every-fillup Items <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Ticked by the team on every /fueling submission</span></div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:10, color:'#6b7280', fontWeight:600, textTransform:'uppercase', letterSpacing:.4, marginBottom:4}}>Help text (shown above the checks on the webform)</div>
+        <textarea defaultValue={equipment.every_fillup_help || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (equipment.every_fillup_help||'')) editFillupHelp(v); }} placeholder="e.g. Tire Pressure: 20 psi recommended." rows={2} style={{...inpS, width:'100%', fontFamily:'inherit', resize:'vertical'}}/>
+      </div>
       {items.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No items configured yet.</div>}
       {items.length > 0 && (
         <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:8, marginBottom:8, alignItems:'center'}}>
