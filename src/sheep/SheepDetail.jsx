@@ -59,7 +59,10 @@ const SheepDetail = ({
   const [weightView, setWeightView] = React.useState('table');
   const [chartHover, setChartHover] = React.useState(null);
   const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:6};
-  const isEwe = sheep.flock === 'ewes';
+  // Ewes only — lambing history is sex-scoped so a retired ewe (now in
+  // 'processed'/'sold'/'deceased' flock) still shows her lambing records.
+  // Wethers / rams / lambs never see this section.
+  const isEwe = sheep.sex === 'ewe';
   async function submitLambing() {
     const ok = await onAddLambing(lambForm);
     if(ok) { setShowLambForm(false); setLambForm({lambing_date:new Date().toISOString().slice(0,10), total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''}); }
@@ -84,27 +87,38 @@ const SheepDetail = ({
           <span style={{fontSize:11, color:'#6b7280'}}>{'— you navigated here from another sheep'}</span>
         </div>
       )}
-      {/* Header: editable tag + sex/flock/breed selects + close X */}
-      <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
-        <span style={{fontSize:16, fontWeight:700, color:accentColor, marginRight:2}}>{'#'}</span>
-        <input type="text" defaultValue={sheep.tag||''} onBlur={patchOnBlur('tag','text')} placeholder="tag" style={{...editInp, width:80, fontWeight:700, fontSize:14, color:accentColor}}/>
-        <select defaultValue={sheep.flock||''} onChange={patchOnChange('flock')} style={{...editInp, width:140}}>
-          {(FLOCKS||[]).map(f => <option key={f} value={f}>{FLOCK_LABELS[f]||f}</option>)}
-        </select>
-        <select defaultValue={sheep.sex||''} onChange={patchOnChange('sex')} style={{...editInp, width:100}}>
-          <option value=''>{'— sex —'}</option>
-          <option value='ewe'>Ewe</option>
-          <option value='ram'>Ram</option>
-          <option value='wether'>Wether</option>
-          <option value='lamb'>Lamb</option>
-        </select>
-        <select defaultValue={sheep.breed||''} onChange={patchOnChange('breed')} style={{...editInp, width:200}}>
-          <option value=''>{'— breed —'}</option>
-          {(breedOpts||[]).map(b => <option key={b.id} value={b.label}>{b.label}</option>)}
-          {sheep.breed && !(breedOpts||[]).some(b=>b.label===sheep.breed) && (
-            <option value={sheep.breed}>{sheep.breed+' (historical)'}</option>
-          )}
-        </select>
+      {/* Header: editable tag + labeled flock/sex/breed selects + close X */}
+      <div style={{display:'flex', alignItems:'flex-end', gap:10, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:4}}>
+          <span style={{fontSize:16, fontWeight:700, color:accentColor}}>{'#'}</span>
+          <input type="text" defaultValue={sheep.tag||''} onBlur={patchOnBlur('tag','text')} placeholder="tag" style={{...editInp, width:90, fontWeight:700, fontSize:14, color:accentColor}}/>
+        </div>
+        <div>
+          <div style={{fontSize:10, color:'#6b7280', fontWeight:600, marginBottom:2, textTransform:'uppercase', letterSpacing:.4}}>Flock</div>
+          <select defaultValue={sheep.flock||''} onChange={patchOnChange('flock')} style={{...editInp, width:140}}>
+            {(FLOCKS||[]).map(f => <option key={f} value={f}>{FLOCK_LABELS[f]||f}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:10, color:'#6b7280', fontWeight:600, marginBottom:2, textTransform:'uppercase', letterSpacing:.4}}>Sex</div>
+          <select defaultValue={sheep.sex||''} onChange={patchOnChange('sex')} style={{...editInp, width:110}}>
+            <option value=''>{'— sex —'}</option>
+            <option value='ewe'>Ewe</option>
+            <option value='ram'>Ram</option>
+            <option value='wether'>Wether</option>
+            <option value='lamb'>Lamb</option>
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:10, color:'#6b7280', fontWeight:600, marginBottom:2, textTransform:'uppercase', letterSpacing:.4}}>Breed</div>
+          <select defaultValue={sheep.breed||''} onChange={patchOnChange('breed')} style={{...editInp, width:210}}>
+            <option value=''>{'— breed —'}</option>
+            {(breedOpts||[]).map(b => <option key={b.id} value={b.label}>{b.label}</option>)}
+            {sheep.breed && !(breedOpts||[]).some(b=>b.label===sheep.breed) && (
+              <option value={sheep.breed}>{sheep.breed+' (historical)'}</option>
+            )}
+          </select>
+        </div>
         {onClose && <button type="button" onClick={(e)=>{e.stopPropagation(); onClose();}} title="Close" style={{marginLeft:'auto', background:'none', border:'1px solid #d1d5db', borderRadius:6, color:'#6b7280', cursor:'pointer', fontSize:18, lineHeight:1, padding:'2px 10px', fontFamily:'inherit'}}>{'×'}</button>}
       </div>
 
@@ -113,8 +127,6 @@ const SheepDetail = ({
         <div>
           <div style={sectionTitle}>Identity</div>
           <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'120px 1fr', gap:'4px 8px', alignItems:'center'}}>
-            <span style={{color:'#9ca3af'}}>Reg #:</span>
-            <input type="text" defaultValue={sheep.registration_num||''} onBlur={patchOnBlur('registration_num','text')} style={editInp}/>
             <span style={{color:'#9ca3af'}}>Origin:</span>
             <select defaultValue={sheep.origin||''} onChange={patchOnChange('origin')} style={editInp}>
               <option value=''>{'— select —'}</option>
@@ -146,16 +158,12 @@ const SheepDetail = ({
           <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'120px 1fr', gap:'4px 8px', alignItems:'center'}}>
             <span style={{color:'#9ca3af'}}>Dam tag #:</span>
             <input type="text" defaultValue={sheep.dam_tag||''} onBlur={patchOnBlur('dam_tag','text')} style={editInp}/>
-            <span style={{color:'#9ca3af'}}>Dam reg #:</span>
-            <input type="text" defaultValue={sheep.dam_reg_num||''} onBlur={patchOnBlur('dam_reg_num','text')} style={editInp}/>
             {sheep.dam_tag && findByTag(sheep.dam_tag) && (<>
               <span style={{color:'#9ca3af'}}>{}</span>
               <span style={{fontSize:11, color:'#6b7280'}}><TagLink tag={sheep.dam_tag} prefix="View "/> {'('+(findByTag(sheep.dam_tag).breed||'?')+')'}</span>
             </>)}
             <span style={{color:'#9ca3af'}}>Sire tag #:</span>
             <input type="text" defaultValue={sheep.sire_tag||''} onBlur={patchOnBlur('sire_tag','text')} style={editInp}/>
-            <span style={{color:'#9ca3af'}}>Sire reg #:</span>
-            <input type="text" defaultValue={sheep.sire_reg_num||''} onBlur={patchOnBlur('sire_reg_num','text')} style={editInp}/>
             {sheep.sire_tag && findByTag(sheep.sire_tag) && (<>
               <span style={{color:'#9ca3af'}}>{}</span>
               <span style={{fontSize:11, color:'#6b7280'}}><TagLink tag={sheep.sire_tag} prefix="View "/> {'('+(findByTag(sheep.sire_tag).breed||'?')+')'}</span>
@@ -188,7 +196,7 @@ const SheepDetail = ({
       {/* Breeding blacklist (hidden for wethers — they can't breed) */}
       {sheep.sex !== 'wether' && (
         <div style={{marginTop:10, paddingTop:8, borderTop:'1px solid #f3f4f6'}}>
-          <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, whiteSpace:'nowrap'}}>
+          <label style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600}}>
             <input type="checkbox" checked={!!sheep.breeding_blacklist} onChange={patchOnChange('breeding_blacklist')} style={{margin:0,flexShrink:0}}/>
             <span>Breeding blacklist</span>
           </label>
@@ -384,18 +392,6 @@ const SheepDetail = ({
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {!isEwe && lambing && lambing.length > 0 && (
-        <div style={{marginTop:12}}>
-          <div style={sectionTitle}>Lambing History (historical)</div>
-          {lambing.map(r => (
-            <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap'}}>
-              <strong style={{color:'#111827'}}>{fmt(r.lambing_date)}</strong>
-              <span>{(r.total_born||0)} born, {(r.deaths||0)} died</span>
-            </div>
-          ))}
         </div>
       )}
 

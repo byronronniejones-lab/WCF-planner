@@ -255,11 +255,10 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
               {label:"Equipment", icon:"🚜", desc:`Tractors \u00b7 implements \u00b7 maintenance (coming soon)`, view:"equipmentHome", color:"#57534e", bg:"#fafaf9"},
             ].filter(c => canAccessProgram(VIEW_TO_PROGRAM[c.view])).map(c=>(
               <div key={c.view} onClick={()=>setView(c.view)}
-                style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:12,padding:"12px 14px",cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,.05)",transition:"transform .1s",display:"flex",alignItems:"center",gap:12,minWidth:0}}>
-                <div style={{fontSize:26,flexShrink:0}}>{c.icon}</div>
+                style={{background:c.bg,border:"1px solid #e5e7eb",borderRadius:12,padding:"16px 18px",cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,.05)",transition:"transform .1s",display:"flex",alignItems:"center",gap:14,minWidth:0}}>
+                <div style={{fontSize:38,flexShrink:0,lineHeight:1}}>{c.icon}</div>
                 <div style={{minWidth:0,flex:1}}>
-                  <div style={{fontSize:15,fontWeight:700,color:c.color,marginBottom:2}}>{c.label}</div>
-                  <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.desc}</div>
+                  <div style={{fontSize:20,fontWeight:700,color:c.color}}>{c.label}</div>
                 </div>
               </div>
             ))}

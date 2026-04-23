@@ -414,6 +414,7 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                       <div style={{background:bc.bg,borderBottom:'1px solid '+bc.bd,padding:'10px 20px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                         <span style={{fontSize:15,fontWeight:700,color:bc.tx}}>{batch.name}</span>
                         <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#d1fae5',color:'#065f46',textTransform:'uppercase'}}>{isRetHome?'Permanent':'Active'}</span>
+                        {(batch.brooder_entry_date||batch.arrival_date)&&(()=>{const anchor=batch.brooder_entry_date||batch.arrival_date;const months=+(((new Date()-new Date(anchor+'T12:00:00'))/86400000)/30.44).toFixed(1);return months>0?<span style={{fontSize:11,color:bc.tx,opacity:.85}}>{months+' months old'}</span>:null;})()}
                       </div>
                       <div style={{padding:'12px 20px',display:'flex',gap:20,alignItems:'flex-start'}}>
                       <div style={{flex:1}}>
@@ -454,6 +455,7 @@ const LayerBatchesView = ({sb, layerGroups, layerBatches, setLayerBatches, layer
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
                               <span style={{fontSize:14,fontWeight:700,color:'#374151'}}>{batch.name}</span>
                               <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#f3f4f6',color:'#6b7280',textTransform:'uppercase'}}>Retired</span>
+                              {(batch.brooder_entry_date||batch.arrival_date)&&(()=>{const anchor=batch.brooder_entry_date||batch.arrival_date;const months=+(((new Date()-new Date(anchor+'T12:00:00'))/86400000)/30.44).toFixed(1);return months>0?<span style={{fontSize:11,color:'#9ca3af'}}>{months+' months old'}</span>:null;})()}
                             </div>
                           </div>
                           <div style={{display:'flex',gap:20,flexShrink:0}}>

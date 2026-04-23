@@ -76,28 +76,39 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, f
           <span style={{fontSize:11, color:'#6b7280'}}>— you navigated here from another cow</span>
         </div>
       )}
-      {/* Header: editable tag + sex/herd/breed selects + close X */}
-      <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
-        <span style={{fontSize:16, fontWeight:700, color:accentColor, marginRight:2}}>{'#'}</span>
-        <input type="text" defaultValue={cow.tag||''} onBlur={patchOnBlur('tag','text')} placeholder="tag" style={{...editInp, width:80, fontWeight:700, fontSize:14, color:accentColor}}/>
-        <select defaultValue={cow.herd||''} onChange={patchOnChange('herd')} style={{...editInp, width:140}}>
-          {(HERDS||[]).map(h => <option key={h} value={h}>{HERD_LABELS[h]||h}</option>)}
-        </select>
-        <select defaultValue={cow.sex||''} onChange={patchOnChange('sex')} style={{...editInp, width:90}}>
-          <option value=''>{'\u2014 sex \u2014'}</option>
-          <option value='cow'>Cow</option>
-          <option value='heifer'>Heifer</option>
-          <option value='bull'>Bull</option>
-          <option value='steer'>Steer</option>
-          <option value='calf'>Calf</option>
-        </select>
-        <select defaultValue={cow.breed||''} onChange={patchOnChange('breed')} style={{...editInp, width:200}}>
-          <option value=''>{'\u2014 breed \u2014'}</option>
-          {(breedOpts||[]).filter(b=>b.active).map(b => <option key={b.id} value={b.label}>{b.label}</option>)}
-          {cow.breed && !(breedOpts||[]).some(b=>b.active && b.label===cow.breed) && (
-            <option value={cow.breed}>{cow.breed+' (historical)'}</option>
-          )}
-        </select>
+      {/* Header: editable tag + labeled herd/sex/breed selects + close X */}
+      <div style={{display:'flex', alignItems:'flex-end', gap:10, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:4}}>
+          <span style={{fontSize:16, fontWeight:700, color:accentColor}}>{'#'}</span>
+          <input type="text" defaultValue={cow.tag||''} onBlur={patchOnBlur('tag','text')} placeholder="tag" style={{...editInp, width:90, fontWeight:700, fontSize:14, color:accentColor}}/>
+        </div>
+        <div>
+          <div style={{fontSize:10, color:'#6b7280', fontWeight:600, marginBottom:2, textTransform:'uppercase', letterSpacing:.4}}>Herd</div>
+          <select defaultValue={cow.herd||''} onChange={patchOnChange('herd')} style={{...editInp, width:140}}>
+            {(HERDS||[]).map(h => <option key={h} value={h}>{HERD_LABELS[h]||h}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:10, color:'#6b7280', fontWeight:600, marginBottom:2, textTransform:'uppercase', letterSpacing:.4}}>Sex</div>
+          <select defaultValue={cow.sex||''} onChange={patchOnChange('sex')} style={{...editInp, width:100}}>
+            <option value=''>{'\u2014 sex \u2014'}</option>
+            <option value='cow'>Cow</option>
+            <option value='heifer'>Heifer</option>
+            <option value='bull'>Bull</option>
+            <option value='steer'>Steer</option>
+            <option value='calf'>Calf</option>
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:10, color:'#6b7280', fontWeight:600, marginBottom:2, textTransform:'uppercase', letterSpacing:.4}}>Breed</div>
+          <select defaultValue={cow.breed||''} onChange={patchOnChange('breed')} style={{...editInp, width:210}}>
+            <option value=''>{'\u2014 breed \u2014'}</option>
+            {(breedOpts||[]).filter(b=>b.active).map(b => <option key={b.id} value={b.label}>{b.label}</option>)}
+            {cow.breed && !(breedOpts||[]).some(b=>b.active && b.label===cow.breed) && (
+              <option value={cow.breed}>{cow.breed+' (historical)'}</option>
+            )}
+          </select>
+        </div>
         {onClose && <button type="button" onClick={(e)=>{e.stopPropagation(); onClose();}} title="Close" style={{marginLeft:'auto', background:'none', border:'1px solid #d1d5db', borderRadius:6, color:'#6b7280', cursor:'pointer', fontSize:18, lineHeight:1, padding:'2px 10px', fontFamily:'inherit'}}>{'\u00d7'}</button>}
       </div>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
@@ -176,7 +187,7 @@ const CowDetail = ({cow, weighIns, calving, comments, calves, dam, cattleList, f
       {/* Breeding blacklist (hidden for steers \u2014 they can't breed) */}
       {cow.sex !== 'steer' && (
         <div style={{marginTop:10, paddingTop:8, borderTop:'1px solid #f3f4f6'}}>
-          <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, whiteSpace:'nowrap'}}>
+          <label style={{display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600}}>
             <input type="checkbox" checked={!!cow.breeding_blacklist} onChange={patchOnChange('breeding_blacklist')} style={{margin:0,flexShrink:0}}/>
             <span>Breeding blacklist</span>
           </label>
