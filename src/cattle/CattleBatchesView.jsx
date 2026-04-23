@@ -19,6 +19,8 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
   // Per-cow weight input local state keyed by `${batchId}|${cattleId}|${field}`
   // so editing doesn't round-trip to Supabase on every keystroke.
   const [cowDraft, setCowDraft] = useState({});
+  // Which batch tile is currently expanded. null = all collapsed.
+  const [expandedBatchId, setExpandedBatchId] = useState(null);
 
   async function loadAll() {
     const [bR, cR, wAll] = await Promise.all([
@@ -26,7 +28,12 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
       sb.from('cattle').select('*'),
       loadCattleWeighInsCached(sb),
     ]);
-    if(bR.data) setBatches(bR.data);
+    if(bR.data) {
+      // Date-descending: prefer actual_process_date (real event), fall back
+      // to planned_process_date, then created_at. Newest first.
+      const byDate = (x) => x.actual_process_date || x.planned_process_date || x.created_at || '';
+      setBatches(bR.data.slice().sort((a,b) => byDate(b).localeCompare(byDate(a))));
+    }
     if(cR.data) setCattle(cR.data);
     setWeighIns(wAll);
     setLoading(false);
@@ -229,16 +236,20 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
               const k = draftKey(cid, field);
               return cowDraft[k] != null ? cowDraft[k] : (curr != null ? String(curr) : '');
             };
+            const isExpanded = expandedBatchId === b.id;
             return (
-              <div key={b.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 18px'}}>
-                <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap'}}>
+              <div key={b.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden'}}>
+                <div onClick={()=>setExpandedBatchId(isExpanded?null:b.id)} style={{padding:'12px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className="hoverable-tile">
+                  <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'▼':'▶'}</span>
                   <span style={{fontSize:14, fontWeight:700, color:'#111827'}}>{b.name}</span>
                   <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:b.status==='complete'?'#374151':'#1d4ed8', color:'white', textTransform:'uppercase'}}>{b.status}</span>
                   <span style={{fontSize:11, color:'#6b7280'}}>{rows.length} {rows.length===1?'cow':'cows'}</span>
                   {b.planned_process_date && <span style={{fontSize:11, color:'#6b7280'}}>planned {fmt(b.planned_process_date)}</span>}
                   {b.actual_process_date && <span style={{fontSize:11, color:'#065f46'}}>processed {fmt(b.actual_process_date)}</span>}
-                  <button onClick={()=>openEdit(b)} style={{marginLeft:'auto', fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer'}}>Edit</button>
+                  {yieldPct && <span style={{fontSize:11, fontWeight:600, color:'#065f46'}}>{yieldPct+'% yield'}</span>}
+                  <button onClick={(e)=>{e.stopPropagation(); openEdit(b);}} style={{marginLeft:'auto', fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>Edit</button>
                 </div>
+                {isExpanded && (<div style={{borderTop:'1px solid #f3f4f6', padding:'14px 18px', background:'#fafafa'}}>
                 <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:8, fontSize:11, color:'#4b5563', marginBottom:10}}>
                   <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Live wt total</div><div style={{fontWeight:600}}>{totalLive>0?Math.round(totalLive).toLocaleString()+' lb':'\u2014'}</div></div>
                   <div><div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Hanging wt</div><div style={{fontWeight:600}}>{totalHang>0?Math.round(totalHang).toLocaleString()+' lb':'\u2014'}</div></div>
@@ -292,6 +303,7 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
                   );
                 })()}
                 {b.notes && <div style={{marginTop:6, fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{b.notes}</div>}
+                </div>)}
               </div>
             );
           })}
