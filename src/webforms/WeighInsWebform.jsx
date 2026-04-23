@@ -157,6 +157,19 @@ const WeighInsWebform = ({sb}) => {
       });
   }, [species]);
 
+  // Sort cattle/sheep entries by tag # ascending (numeric where possible,
+  // locale fallback). Tagless entries sink by insertion time. Drives the
+  // Recent-entries + Going-to-processor rendering so teams see rows in
+  // ear-tag order as they weigh.
+  function sortEntriesByTagAsc(a, b) {
+    const at = a && a.tag, bt = b && b.tag;
+    if(at == null && bt == null) return (a.id||'').localeCompare(b.id||'');
+    if(at == null) return 1;
+    if(bt == null) return -1;
+    const an = parseFloat(at), bn = parseFloat(bt);
+    if(Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+    return String(at).localeCompare(String(bt));
+  }
   // ── Age / ADG helpers ─────────────────────────────────────────────────────
   // Age in years+months from a birth date string ('YYYY-MM-DD') to a reference
   // date. Returns '2y 3m' / '5m' / '—' (null birth → dash).
@@ -1026,20 +1039,20 @@ const WeighInsWebform = ({sb}) => {
               </div>
             );
           };
-          const unflagged = entries.filter(e => !e.send_to_processor);
-          const flagged = entries.filter(e => e.send_to_processor === true);
+          const unflagged = entries.filter(e => !e.send_to_processor).slice().sort(sortEntriesByTagAsc);
+          const flagged = entries.filter(e => e.send_to_processor === true).slice().sort(sortEntriesByTagAsc);
           return (
             <React.Fragment>
               <div style={cardS}>
-                <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
+                <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>{'Recent entries ('+unflagged.length+')'}</div>
                 {unflagged.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>All entries have been flagged for the processor. See below.</div>}
-                {unflagged.slice(-10).reverse().map(e => renderRow(e, false))}
+                {unflagged.map(e => renderRow(e, false))}
               </div>
               {isFinishers && flagged.length > 0 && (
                 <div style={{...cardS, border:'2px solid #fecaca', background:'#fef2f2'}}>
                   <div style={{fontSize:12, fontWeight:700, color:'#991b1b', marginBottom:4}}>{'🚩 Going to processor ('+flagged.length+')'}</div>
                   <div style={{fontSize:11, color:'#991b1b', marginBottom:8}}>These cows will be attached to a processing batch and moved to the Processed herd when you hit Complete. Still count toward the session's avg ADG.</div>
-                  {flagged.slice().reverse().map(e => renderRow(e, true))}
+                  {flagged.map(e => renderRow(e, true))}
                 </div>
               )}
             </React.Fragment>

@@ -28,7 +28,20 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   // completed; its flagged entries are passed to the modal. Mirrors the
   // webform's flow so the two surfaces land identical DB state.
   const [sessionForModal, setSessionForModal] = useState(null);
+  // Per-row "-> Batch" push state. When set, opens the same modal with a
+  // single entry; on confirm, the cow attaches to the chosen batch without
+  // flipping the session status (draft or complete is preserved).
+  const [pushState, setPushState] = useState(null); // {entry, session}
 
+  function sortEntriesByTagAsc(a, b) {
+    const at = a && a.tag, bt = b && b.tag;
+    if(at == null && bt == null) return (a.entered_at||'').localeCompare(b.entered_at||'');
+    if(at == null) return 1;
+    if(bt == null) return -1;
+    const an = parseFloat(at), bn = parseFloat(bt);
+    if(Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+    return String(at).localeCompare(String(bt));
+  }
   async function loadAll() {
     const [sR, eAll, cR] = await Promise.all([
       sb.from('weigh_in_sessions').select('*').eq('species','cattle').order('date',{ascending:false}).order('started_at',{ascending:false}),
@@ -36,10 +49,12 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
       sb.from('cattle').select('id, tag, herd, old_tags'),
     ]);
     if(sR.data) setSessions(sR.data);
-    // Group cache rows by session_id; entries within a session display oldest-first.
+    // Group cache rows by session_id; entries within a session display by
+    // ascending tag # (numeric where possible, locale fallback; tagless
+    // entries sink to the bottom by insertion time).
     const m = {};
     eAll.forEach(e => { if(!m[e.session_id]) m[e.session_id] = []; m[e.session_id].push(e); });
-    for(const k in m) m[k].sort((a,b) => (a.entered_at||'').localeCompare(b.entered_at||''));
+    for(const k in m) m[k].sort(sortEntriesByTagAsc);
     setEntries(m);
     if(cR.data) setCattle(cR.data);
     setLoading(false);
@@ -394,6 +409,9 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                                     {s.herd === 'finishers' && (
                                       <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this cow to the processor on session Complete'} style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
                                     )}
+                                    {s.herd === 'finishers' && (
+                                      <button onClick={()=>setPushState({entry:e, session:s})} title="Attach this cow to a processing batch now (skip waiting for session Complete)" style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid #b45309', background:'white', color:'#92400e', cursor:'pointer', fontFamily:'inherit'}}>{'→ Batch'}</button>
+                                    )}
                                     <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
                                     <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
                                   </div>
@@ -432,6 +450,24 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
           teamMember={(authState && authState.name) || null}
           onCancel={()=>setSessionForModal(null)}
           onConfirmed={async () => { const s = sessionForModal; setSessionForModal(null); await finalizeComplete(s); }}
+        />
+      )}
+      {pushState && (
+        <CattleSendToProcessorModal
+          sb={sb}
+          session={pushState.session}
+          flaggedEntries={[pushState.entry]}
+          cattleList={cattle}
+          teamMember={(authState && authState.name) || null}
+          onCancel={()=>setPushState(null)}
+          onConfirmed={async () => {
+            // Clear the -> Processor flag since the cow is now attached.
+            // Safe no-op if the flag was never set.
+            try { await sb.from('weigh_ins').update({send_to_processor:false}).eq('id', pushState.entry.id); } catch(err){}
+            setPushState(null);
+            invalidateCattleWeighInsCache();
+            await loadAll();
+          }}
         />
       )}
     </div>
