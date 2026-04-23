@@ -102,7 +102,7 @@ const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setS
       <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
         <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
           <div style={{fontSize:15, fontWeight:700, color:'#0f766e'}}>{'\ud83d\udc11 Sheep Weigh-Ins'}</div>
-          <input type="text" value={tagSearch} onChange={e=>setTagSearch(e.target.value)} placeholder="Search tag #\u2026" style={{...inpS, width:180}}/>
+          <input type="text" value={tagSearch} onChange={e=>setTagSearch(e.target.value)} placeholder={'Search tag #\u2026'} style={{...inpS, width:180}}/>
           <div style={{flex:1}}/>
           <button onClick={()=>setShowNewSession(true)} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Session</button>
         </div>

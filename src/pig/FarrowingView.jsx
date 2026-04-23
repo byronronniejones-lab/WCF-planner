@@ -376,8 +376,8 @@ export default function FarrowingView({ Header, loadUsers, persistFarrowing, con
                   <strong style={{fontSize:13,color:ht}}>{cycleLabel(c, cycleSeqMap)}</strong>
                   <span style={{fontSize:12,color:ht,opacity:.85}}>Boars in: {fmtS(c.exposureStart)} → {fmtS(tl.boarEnd)}</span>
                   <span style={{fontSize:12,color:ht,opacity:.85}}>Farrowing window: {fmtS(tl.farrowingStart)} → {fmtS(tl.farrowingEnd)}</span>
-                  {c.boar1Tags&&<span style={{fontSize:11,color:ht,opacity:.75}}>{boarNames.boar1}: {c.boar1Tags}</span>}
-                  {c.boar2Tags&&<span style={{fontSize:11,color:ht,opacity:.75}}>{boarNames.boar2}: {c.boar2Tags}</span>}
+                  {c.boar1Tags&&<span style={{fontSize:11,color:ht,opacity:.75}}>{(c.boar1Name||boarNames.boar1||'Boar 1')}: {c.boar1Tags}</span>}
+                  {c.boar2Tags&&<span style={{fontSize:11,color:ht,opacity:.75}}>{(c.boar2Name||boarNames.boar2||'Boar 2')}: {c.boar2Tags}</span>}
                   </>
                   ); })()}
                   <button onClick={()=>{setFarrowForm({...EMPTY_FARROW,group:c.group,exposureStart:c.exposureStart,exposureEnd:tl.boarEnd});setEditFarrowId(null);setShowFarrowForm(true);}}

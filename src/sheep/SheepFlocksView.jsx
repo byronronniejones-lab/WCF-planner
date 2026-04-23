@@ -209,7 +209,7 @@ const SheepFlocksView = ({sb, fmt, Header, authState, setView, showUsers, setSho
       <Header/>
       <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
         <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-          <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tag, dam, sire, breed, origin\u2026" style={{...inpS, flex:1, minWidth:200}}/>
+          <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder={'Search tag, dam, sire, breed, origin\u2026'} style={{...inpS, flex:1, minWidth:200}}/>
           <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{...inpS, width:'auto'}}>
             <option value="active">All Active Flocks</option>
             <option value="all">All (incl. outcomes)</option>

@@ -433,8 +433,16 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
               {breedingCycles.slice().sort((a,b)=>(b.exposureStart||'').localeCompare(a.exposureStart||'')).map(c=>{
                 const C=PIG_GROUP_COLORS[c.group];
                 const tl=calcBreedingTimeline(c.exposureStart)||c;
+                const openEdit = () => {
+                  const baseB1 = (c.boar1Tags||"").split(",").join("\n").split(", ").join("\n");
+                  const baseB2 = (c.boar2Tags||"").split(",").join("\n").split(", ").join("\n");
+                  const excluded = Array.isArray(c.excludedSows) ? c.excludedSows : [];
+                  const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2, excluded);
+                  setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,excludedSows:excluded,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
+                  setEditBreedId(c.id);setShowBreedForm(true);
+                };
                 return (
-                  <div key={c.id} style={{background:"white",border:`1px solid ${C.farrowing}`,borderRadius:10,padding:"10px 14px",fontSize:12}}>
+                  <div key={c.id} onClick={openEdit} className="hoverable-tile" style={{background:"white",border:`1px solid ${C.farrowing}`,borderRadius:10,padding:"10px 14px",fontSize:12,cursor:"pointer"}}>
                     <div style={{display:"flex",flexWrap:"wrap",gap:"6px 20px",alignItems:"center",marginBottom:6}}>
                       <strong>{cycleLabel(c, cycleSeqMap)}</strong>
                       <span style={{color:"#4b5563"}}>{c.sowCount||"?"} sows total</span>
@@ -443,14 +451,6 @@ export default function BreedingView({ Header, loadUsers, persistBreeding, breed
                       <span style={{color:"#4b5563"}}>Farrowing: {fmt(tl.farrowingStart)} {'\u2192'} {fmt(tl.farrowingEnd)}</span>
                       <span style={{color:"#4b5563"}}>Grow-out ends: {fmt(tl.growEnd)}</span>
                       <span style={S.badge(calcCycleStatus(c)==="completed"?"#4b5563":calcCycleStatus(c)==="active"?"#085041":"#374151","white")}>{c.status}</span>
-                      <button onClick={()=>{
-                        const baseB1 = (c.boar1Tags||"").split(",").join("\n").split(", ").join("\n");
-                        const baseB2 = (c.boar2Tags||"").split(",").join("\n").split(", ").join("\n");
-                        const excluded = Array.isArray(c.excludedSows) ? c.excludedSows : [];
-                        const liveB1 = isCycleLocked(c.exposureStart) ? baseB1 : mergeSowsIntoB1(c.group, baseB1, baseB2, excluded);
-                        setBreedForm({group:c.group,customSuffix:c.customSuffix||"",boar1Tags:liveB1,boar2Tags:baseB2,excludedSows:excluded,exposureStart:c.exposureStart,notes:c.notes||"",boar1Name:c.boar1Name||boarNames.boar1,boar2Name:c.boar2Name||boarNames.boar2});
-                        setEditBreedId(c.id);setShowBreedForm(true);
-                      }} style={{marginLeft:"auto",fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 20px",borderTop:"1px solid #e5e7eb",paddingTop:6}}>
                       <div style={{fontSize:11}}><span style={{color:"#9ca3af"}}>{c.boar1Name||boarNames.boar1} ({c.boar1Count||"?"} sows): </span><span style={{fontWeight:500}}>{c.boar1Tags||"—"}</span></div>

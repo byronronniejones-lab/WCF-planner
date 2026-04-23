@@ -15,7 +15,7 @@ const SheepDetail = ({sheep, weighIns, lambing, comments, lambs, dam, fmt, FLOCK
         <div style={{display:'flex', gap:6}}>
           <button onClick={onEdit} style={{fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#374151', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>Edit</button>
           <select onChange={e=>{ if(e.target.value){ onTransfer(e.target.value); e.target.value=''; }}} defaultValue="" style={{...inpS, width:'auto', padding:'4px 8px', fontSize:11}}>
-            <option value="">Transfer\u2026</option>
+            <option value="">{'Transfer\u2026'}</option>
             {Object.entries(FLOCK_LABELS).filter(([k])=>k!==sheep.flock).map(([k,l]) => <option key={k} value={k}>{l}</option>)}
           </select>
           <button onClick={onDelete} style={{fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #fecaca', background:'white', color:'#7f1d1d', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>Delete</button>
@@ -91,7 +91,7 @@ const SheepDetail = ({sheep, weighIns, lambing, comments, lambs, dam, fmt, FLOCK
       <div>
         <div style={sectionT}>Comments Timeline ({comments.length})</div>
         <div style={{display:'flex', gap:8, marginBottom:8}}>
-          <input type="text" value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder="Add a comment\u2026" style={{...inpS, flex:1}}/>
+          <input type="text" value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder={'Add a comment\u2026'} style={{...inpS, flex:1}}/>
           <button onClick={()=>{ if(commentText.trim()){ onComment(commentText.trim()); setCommentText(''); }}} style={{padding:'7px 14px', background:'#0f766e', color:'white', border:'none', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600, fontFamily:'inherit'}}>Add</button>
         </div>
         {comments.length === 0 ? <div style={{fontSize:12, color:'#9ca3af'}}>No comments yet.</div> : (
