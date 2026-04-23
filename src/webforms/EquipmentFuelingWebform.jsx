@@ -250,12 +250,13 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
           <div style={cardS}>
             <label style={lblS}>{readingLabel} *</label>
             <input type="number" min="0" step="0.1" value={reading} onChange={e=>setReading(e.target.value)} placeholder={'Current '+readingLabel.toLowerCase()} style={inpS}/>
-            <div style={{fontSize:11, color:'#9ca3af', marginTop:6}}>Service-interval checklist will surface below once you enter this.</div>
+            <div style={{fontSize:11, color:'#9ca3af', marginTop:6}}>Every-fillup and service-interval checklists appear below once you enter this.</div>
           </div>
         )}
 
-        {/* Every-fillup checks (always shown; independent of reading). */}
-        {eq && (eq.every_fillup_items || []).length > 0 && (
+        {/* Every-fillup checks — hidden until the team enters a reading so
+            the checklist section doesn't open before we know what to show. */}
+        {eq && hasReading && (eq.every_fillup_items || []).length > 0 && (
           <div style={cardS}>
             <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:10}}>Every-fillup checks</div>
             <div style={{display:'flex', flexDirection:'column', gap:6}}>
