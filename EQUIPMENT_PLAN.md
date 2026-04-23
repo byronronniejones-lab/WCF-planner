@@ -1,10 +1,26 @@
 # Equipment Module — Plan of Action
 
 **Session author:** 2026-04-21 (Ronnie + Claude Opus 4.7)
-**Status:** Plan. No code yet beyond the Podio pull script.
+**Status:** **v1 built and pushed 2026-04-23** — see end of file for cutover checklist.
 **Supersedes:** PROJECT.md §8 "Equipment module" deferred stub.
 
-Once the module ships, this file gets folded into PROJECT.md Parts 1–3 and archived, matching how the Vite-migration plan + sheep import plan were consolidated.
+## Cutover checklist (2026-04-23)
+
+Ronnie runs these in order to finish activation:
+
+1. **Apply migration 016** (Supabase SQL Editor): paste `supabase-migrations/016_equipment_module.sql` → Run. Creates the three tables, `equipment_tech` role value, `equipment-maintenance-docs` Storage bucket + RLS policies.
+2. **Dry-run the import**: `node scripts/import_equipment.cjs`. Review the summary lines — 15 equipment, ~1,790 fueling rows expected.
+3. **Commit the import**: `node scripts/import_equipment.cjs --commit`. Populates the DB.
+4. **Hard-refresh** the app. `/equipment` shows the Fleet; `/fueling` shows the public hub.
+5. **Smoke test**: open a piece → verify specs / intervals / fueling history look right. Submit a test fueling from `/fueling/c362`. Add a maintenance event with a photo.
+
+**Still TODO** (not in v1):
+- `equipment_tech` role gating on home dashboard + equipment sub-nav (role exists in DB; UI checks not yet added).
+- Admin panel tab split: Program Webforms / Equipment Webforms. Admin webform management for equipment forms still falls under the existing tab.
+- Podio photo import. Existing dump didn't include file attachments; needs a follow-up `pull_podio_equipment_photos.cjs` with the `/file/item/<item_id>` endpoint + upload-to-Storage step.
+- Fuel-bill parser (Phase 7, explicitly deferred).
+
+All ten open questions in §7 below were resolved in the 2026-04-23 session; the answers are baked into the schema and UI.
 
 ---
 
