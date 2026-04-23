@@ -138,7 +138,7 @@ import WebformsAdminView from './webforms/WebformsAdminView.jsx';
 import PigDailysWebform from './webforms/PigDailysWebform.jsx';
 
 // Phase 2 Round 8: equipment placeholder.
-import EquipmentPlaceholder from './equipment/EquipmentPlaceholder.jsx';
+import EquipmentHome from './equipment/EquipmentHome.jsx';
 
 // Phase 2 Round 2 tail: LayerBatchesView (deferred from the original Round 2
 // push). Now imports once the housing + broiler primitives live in lib/.
@@ -504,7 +504,10 @@ function App(){
     // such path as view='webformhub' so the browser back button can traverse
     // selector ↔ sub-form boundaries without the app snapping to home.
     const isWebformSubpath = location.pathname.startsWith('/webforms/');
-    const viewFromUrl = isWebformSubpath ? 'webformhub' : PATH_TO_VIEW[location.pathname];
+    const isEquipmentSubpath = location.pathname.startsWith('/equipment/') || location.pathname === '/equipment';
+    const viewFromUrl = isWebformSubpath ? 'webformhub'
+                      : isEquipmentSubpath ? 'equipmentHome'
+                      : PATH_TO_VIEW[location.pathname];
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -530,6 +533,8 @@ function App(){
     }
     // Don't clobber /webforms/<form> sub-paths — WebformHub owns them.
     if (view === 'webformhub' && location.pathname.startsWith('/webforms/')) return;
+    // Don't clobber /equipment/<slug> sub-paths — EquipmentHome owns them.
+    if (view === 'equipmentHome' && location.pathname.startsWith('/equipment/')) return;
     const pathFromView = VIEW_TO_PATH[view];
     if (pathFromView && pathFromView !== location.pathname) {
       navigate(pathFromView);
@@ -1605,7 +1610,7 @@ function App(){
   if(view==="sheepflocks")   return React.createElement(SheepFlocksView,   {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit});
   if(view==="sheepdailys")   return React.createElement(SheepDailysView,   {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
   if(view==="sheepweighins") return React.createElement(SheepWeighInsView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="equipmentHome") return React.createElement(EquipmentPlaceholder, {sb, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if(view==="equipmentHome") return React.createElement(EquipmentHome, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
 
   // ── LIST VIEW ──
   if(view==="list") return React.createElement(BroilerListView, {Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything});

@@ -62,6 +62,8 @@ export const VIEW_TO_PATH = {
 
   // Equipment
   equipmentHome:    '/equipment',
+  equipmentFleet:   '/equipment/fleet',
+  equipmentFuelLog: '/equipment/fuel-log',
 
   // Admin (logged-in only)
   webforms:         '/admin',
