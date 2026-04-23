@@ -87,8 +87,8 @@ const BroilerDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingE
       <div style={{padding:'1rem',maxWidth:1100,margin:'0 auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div>
-            <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>Broiler Daily Reports</div>
-            <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length} total · {filtered.length} shown · {Math.round(totalFeed).toLocaleString()} lbs feed · <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span></div>
+            <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>Daily Reports</div>
+            <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{records.length.toLocaleString()} total</div>
           </div>
           <div style={{display:'flex',gap:8}}>
             <button onClick={()=>setShowAddModal(true)} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>+ Add Report</button>

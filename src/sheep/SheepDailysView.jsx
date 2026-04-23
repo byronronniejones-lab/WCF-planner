@@ -187,10 +187,8 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
       <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8}}>
           <div>
-            <div style={{fontSize:15, fontWeight:700, color:'#111827'}}>{'🐑 Sheep Daily Reports'}</div>
-            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>
-              {records.length} total {'·'} {filtered.length} shown {'·'} {(Math.round(totalBales*100)/100).toLocaleString()} bales hay {'·'} {Math.round(totalAlfalfa).toLocaleString()} lb alfalfa {'·'} <span style={{color:totalMort>0?'#b91c1c':'inherit'}}>{totalMort} mort.</span>
-            </div>
+            <div style={{fontSize:15, fontWeight:700, color:'#111827'}}>Daily Reports</div>
+            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>{records.length.toLocaleString()} total</div>
           </div>
           <div style={{display:'flex', gap:8}}>
             <button onClick={() => setShowAddModal(true)} style={{padding:'8px 16px', borderRadius:8, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ Add Report</button>
