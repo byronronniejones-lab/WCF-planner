@@ -55,55 +55,98 @@ if (COMMIT) {
 const EQUIPMENT_DEFS = [
   // TRACTORS
   {slug:'5065',       category:'tractors',  tracking_unit:'hours', checklist_app:29677781, match_name:/5065/i},
-  {slug:'ps100',      category:'tractors',  tracking_unit:'hours', checklist_app:29670699, match_name:/ps\s*100|powerstar/i},
-  // ATVs
-  {slug:'honda-atv-1',category:'atvs',      tracking_unit:'hours', checklist_app:29711361, match_name:/#?\s*1\s*honda|honda.*#?\s*1/i},
-  {slug:'honda-atv-2',category:'atvs',      tracking_unit:'hours', checklist_app:29855781, match_name:/#?\s*2\s*honda|honda.*#?\s*2/i},
-  {slug:'honda-atv-3',category:'atvs',      tracking_unit:'hours', checklist_app:30126620, match_name:/#?\s*3\s*honda|honda.*#?\s*3/i},
-  {slug:'honda-atv-4',category:'atvs',      tracking_unit:'hours', checklist_app:30126621, match_name:/#?\s*4\s*honda|honda.*#?\s*4/i},
-  // HIJETS (km-based)
+  {slug:'ps100',      category:'tractors',  tracking_unit:'hours', checklist_app:29670699, match_name:/powerstar/i},
+  {slug:'great-plains-drill', category:'tractors', tracking_unit:'hours', checklist_app:null, match_name:/great\s*plains|no.?till\s*drill/i},
+  // ATVs (Honda Foreman Rubicons). Regex anchored on "#N" to avoid the
+  // #1-also-matches-UTV10 issue from v1.
+  {slug:'honda-atv-1',category:'atvs',      tracking_unit:'hours', checklist_app:29711361, match_name:/#\s*1[\s-]+honda/i},
+  {slug:'honda-atv-2',category:'atvs',      tracking_unit:'hours', checklist_app:29855781, match_name:/#\s*2[\s-]+honda/i},
+  {slug:'honda-atv-3',category:'atvs',      tracking_unit:'hours', checklist_app:30126620, match_name:/#\s*3[\s-]+honda/i},
+  {slug:'honda-atv-4',category:'atvs',      tracking_unit:'hours', checklist_app:30126621, match_name:/#\s*4[\s-]+honda/i},
+  // HIJETS + other UTVs (km-based for Daihatsus; hours for Gator/Kubota)
   {slug:'hijet-2018', category:'hijets',    tracking_unit:'km',    checklist_app:30104109, match_name:/2018.*hijet/i},
   {slug:'hijet-2020', category:'hijets',    tracking_unit:'km',    checklist_app:30123211, match_name:/2020.*hijet/i},
+  // Archived Podio checklist apps → imported as status='retired' so they
+  // drop off the active Fleet tab but keep their fuel-log history.
+  {slug:'jd-gator',   category:'hijets',    tracking_unit:'hours', checklist_app:null,     match_name:/gator\s*xuv|john\s*deere.*gator/i, archived:true},
+  {slug:'kubota-rtv', category:'hijets',    tracking_unit:'hours', checklist_app:null,     match_name:/kubota|rtv-?x/i, archived:true},
   // MOWERS
   {slug:'toro',       category:'mowers',    tracking_unit:'hours', checklist_app:29786608, match_name:/toro/i},
   {slug:'ventrac',    category:'mowers',    tracking_unit:'hours', checklist_app:30089562, match_name:/ventrac/i},
-  // SKIDSTEERS
+  // SKIDSTEERS (+ compact loaders like John Deere 317/333)
   {slug:'gehl',       category:'skidsteers',tracking_unit:'hours', checklist_app:30134561, match_name:/gehl/i},
-  {slug:'l328',       category:'skidsteers',tracking_unit:'hours', checklist_app:30473316, match_name:/l\s*328/i},
+  {slug:'l328',       category:'skidsteers',tracking_unit:'hours', checklist_app:30473316, match_name:/l\s*328|new\s*holland\s*l328/i},
+  {slug:'jd-317',     category:'skidsteers',tracking_unit:'hours', checklist_app:null,     match_name:/john\s*deere\s*317|jd\s*317/i, archived:true},
+  {slug:'jd-333',     category:'skidsteers',tracking_unit:'hours', checklist_app:null,     match_name:/john\s*deere\s*333|jd\s*333/i, archived:true},
   // FORESTRY
   {slug:'gyro-trac',  category:'forestry',  tracking_unit:'hours', checklist_app:29788050, match_name:/gyro/i},
   {slug:'c362',       category:'forestry',  tracking_unit:'hours', checklist_app:29673167, match_name:/c362|c\s*362/i},
-  {slug:'mini-ex',    category:'forestry',  tracking_unit:'hours', checklist_app:29673203, match_name:/mini.*ex/i},
+  {slug:'mini-ex',    category:'forestry',  tracking_unit:'hours', checklist_app:29673203, match_name:/mini.*ex|bobcat.*mini/i},
 ];
 
 // Category + slug used when Fuel Log entries reference a category that doesn't
 // uniquely resolve to a specific piece (e.g. "JOHN DEERE TRACTOR"). We make a
 // best-effort guess; unresolved rows get logged and skipped.
 const FUEL_LOG_CATEGORY_MAP = {
-  'JOHN DEERE TRACTOR': 'c362',    // older Fuel Log entries referenced the JD generically; most are C362 per Ronnie
+  // Tractors
+  'JOHN DEERE TRACTOR': '5065',        // Ronnie's historical category; modern fleet has one JD tractor (5065)
   '5065 JOHN DEERE': '5065',
   'POWERSTAR 100': 'ps100',
   'PS 100': 'ps100',
+  'NEW HOLLAND TRACTOR': 'ps100',      // generic NH tractor → PS100 (C362 is a compact track loader, logged under its own name)
+  // Forestry
   'C362': 'c362',
   'GYRO-TRAC': 'gyro-trac',
   'GYROTRAC': 'gyro-trac',
+  'MINI EX': 'mini-ex',
+  'MINI-EX': 'mini-ex',
+  'BOBCAT MINI EXCAVATOR': 'mini-ex',
+  // Mowers
   'TORO ZERO TURN': 'toro',
   'TORO': 'toro',
+  'ZERO TURN MOWER': 'toro',           // generic ZT → Toro (we only have one)
   'VENTRAC': 'ventrac',
+  // Skidsteers
   'GEHL': 'gehl',
   'GEHL RT165': 'gehl',
   'L328': 'l328',
-  'MINI EX': 'mini-ex',
-  'MINI-EX': 'mini-ex',
+  'NEW HOLLAND L328': 'l328',
+  'JOHN DEERE 317': 'jd-317',
+  'JD 317': 'jd-317',
+  'JOHN DEERE 333': 'jd-333',
+  'JD 333': 'jd-333',
+  // UTVs / Hijets / Gator / Kubota / Polaris
   '2018 HIJET': 'hijet-2018',
   '2020 HIJET': 'hijet-2020',
-  'HIJET': null,     // ambiguous; log and skip
+  'HIJET': null,                       // ambiguous 2018 vs 2020 — log + skip
   '#1 HONDA ATV': 'honda-atv-1',
   '#2 HONDA ATV': 'honda-atv-2',
   '#3 HONDA ATV': 'honda-atv-3',
   '#4 HONDA ATV': 'honda-atv-4',
-  'HONDA ATV': null,  // ambiguous
+  'HONDA ATV': null,
+  'JOHN DEERE DIESEL SXS': 'jd-gator', // 2023 JD Gator XUV865M is diesel
+  'JOHN DEERE GAS SXS': 'jd-gator',    // older Gator variant; still mapping to the JD Gator piece
+  'JOHN DEERE GATOR': 'jd-gator',
+  'KUBOTA RTV': 'kubota-rtv',
+  'KUBOTA': 'kubota-rtv',
+  'KUBOTA SXS': 'kubota-rtv',
+  '317': 'jd-317',                     // older shorthand for JD 317
+  '333': 'jd-333',
+  'POLARIS RANGER 4 SEATER': 'polaris-ranger',
+  'POLARIS RANGER': 'polaris-ranger',
+  'POLARIS': 'polaris-ranger',
+  // Skip / non-equipment
+  'FUEL TRUCK FUEL CELL': null,        // fueling the bulk storage tank, not a specific piece
+  'FUEL CELL': null,
+  'OTHER': null,                       // unknown; skip rather than pick a random piece
 };
+
+// Equipment that shows up in Fuel Log but has no row in the Equipment
+// Maintenance Podio app — synthesized here so their fuelings have a target.
+// Admin can edit / retire later via the normal Fleet UI.
+const SYNTHETIC_EQUIPMENT = [
+  {slug:'polaris-ranger', name:'Polaris Ranger 4-Seater', category:'hijets', tracking_unit:'hours', fuel_type:'gasoline', archived:true},
+];
 
 // ───── helpers ───────────────────────────────────────────────────────────────
 function loadJson(file) {
@@ -203,7 +246,7 @@ function buildEquipmentRows() {
       slug: defMatch.slug,
       category: defMatch.category,
       parent_equipment_id: null,
-      status: 'active',
+      status: defMatch.archived ? 'retired' : 'active',
       serial_number: fieldTextValue(item, 'serial-number'),
       fuel_type: null,              // inferred from fueling entries later
       fuel_tank_gal: fieldNumValue(item, 'fuel-tank-capacity-in-gallons'),
@@ -228,6 +271,34 @@ function buildEquipmentRows() {
       notes: null,
     };
     rows.push(row);
+  }
+
+  // Synthesize equipment that only shows up in Fuel Log (Polaris, etc.).
+  for (const syn of SYNTHETIC_EQUIPMENT) {
+    if (rows.some(r => r.slug === syn.slug)) continue;
+    rows.push({
+      id: 'eq-' + syn.slug,
+      podio_item_id: null,
+      name: syn.name,
+      slug: syn.slug,
+      category: syn.category,
+      parent_equipment_id: null,
+      status: syn.archived ? 'retired' : 'active',
+      serial_number: null,
+      fuel_type: syn.fuel_type || null,
+      fuel_tank_gal: null,
+      def_tank_gal: null,
+      tracking_unit: syn.tracking_unit,
+      current_hours: null,
+      current_km: null,
+      engine_oil: null, oil_filter: null, hydraulic_oil: null, hydraulic_filter: null,
+      coolant: null, brake_fluid: null, fuel_filter: null, def_filter: null,
+      gearbox_drive_oil: null, air_filters: null,
+      warranty_description: null, warranty_expiration: null,
+      service_intervals: [],
+      every_fillup_items: [],
+      notes: 'Synthesized from Fuel Log references (not in Podio Equipment Maintenance).',
+    });
   }
 
   return {rows, unmatched};

@@ -69,6 +69,12 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
           <span style={{fontSize:11, fontWeight:700, padding:'2px 10px', borderRadius:10, background:eq.status==='active'?'#d1fae5':'#f3f4f6', color:eq.status==='active'?'#065f46':'#374151', textTransform:'uppercase'}}>{eq.status}</span>
           {eq.serial_number && <span style={{fontSize:11, color:'#6b7280'}}>Serial: <strong>{eq.serial_number}</strong></span>}
           {eq.fuel_type && <span style={{fontSize:11, color:'#6b7280'}}>Fuel: <strong>{eq.fuel_type}</strong></span>}
+          <button onClick={async ()=>{
+            const next = eq.status === 'retired' ? 'active' : 'retired';
+            const {error} = await sb.from('equipment').update({status: next}).eq('id', eq.id);
+            if (error) { alert('Status update failed: '+error.message); return; }
+            onReload();
+          }} style={{marginLeft:'auto', padding:'5px 12px', borderRadius:6, border:'1px solid '+(eq.status==='retired'?'#047857':'#b45309'), background:'white', color:eq.status==='retired'?'#047857':'#92400e', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{eq.status === 'retired' ? '↻ Restore to active' : '↓ Archive'}</button>
         </div>
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, fontSize:12}}>
           <StatTile label={eq.tracking_unit==='km'?'Current KM':'Current Hours'} value={fmtReading(reading, eq.tracking_unit)} color="#111827"/>
