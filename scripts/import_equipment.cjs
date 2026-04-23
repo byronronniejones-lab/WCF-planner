@@ -448,22 +448,26 @@ function buildFuelingRows(eqRows, unresolvedLog) {
         id: v.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40),
         label: v, ok: true,
       }));
-      // Build service_intervals_completed from all category fields with HOUR/KM
-      // in their label that have any ticked value on this item.
+      // Build service_intervals_completed from each category field whose
+      // LABEL is "Every N hours checklist". If any option is ticked inside
+      // that field, attribute the completion to the interval parsed from
+      // the field's label — NOT from individual option texts (which are
+      // tasks like "CHECK HUB OIL — TORQUE 52 LB" that would otherwise
+      // pollute the completions with bogus interval values).
       const completions = [];
+      const completedAt = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0,10) : null);
       if (item.fields) {
         for (const f of item.fields) {
           if (f.type !== 'category') continue;
-          const lblU = (f.label || '').toUpperCase();
-          if (!/HOUR|KM|FIRST\s*\d|INITIAL\s*\d/.test(lblU)) continue;
           if (f.external_id === 'every-fuel-fill-up-checklist') continue;
-          const ticked = (f.values || []).map(v => (v.value && v.value.text) || null).filter(Boolean);
-          for (const lb of ticked) {
-            const parsed = parseIntervalLabel(lb);
-            if (!parsed) continue;
-            for (const val of parsed.values) {
-              completions.push({interval: val, kind: parsed.kind, label: lb, completed_at: fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0,10) : null)});
-            }
+          const lbl = f.label || '';
+          if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
+          const hasAnyTick = (f.values || []).some(v => v && v.value && v.value.text);
+          if (!hasAnyTick) continue;
+          const parsed = parseIntervalLabel(lbl);
+          if (!parsed) continue;
+          for (const val of parsed.values) {
+            completions.push({interval: val, kind: parsed.kind, label: lbl.trim(), completed_at: completedAt});
           }
         }
       }
