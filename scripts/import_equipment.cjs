@@ -344,9 +344,7 @@ function seedIntervalsForEquipment(eqRows) {
 
     // Each category field on the checklist app represents ONE service
     // interval. Its LABEL ("Every 100 hours checklist") carries the number;
-    // its options are just the tasks to perform at that interval.
-    // DON'T parse option texts — they're full of incidental numbers like
-    // torque values and tire pressures that aren't intervals.
+    // its options are the tasks to perform at that interval. Capture both.
     const intervals = [];
     for (const f of (config.fields || [])) {
       if (f.type !== 'category') continue;
@@ -355,8 +353,14 @@ function seedIntervalsForEquipment(eqRows) {
       if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
       const parsed = parseIntervalLabel(lbl);
       if (!parsed) continue;
+      // Options inside the category = the tasks the team performs when they
+      // check this interval.
+      const tasks = (f.config?.settings?.options || []).map(o => ({
+        id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) : String(o.id),
+        label: (o.text || '').trim(),
+      })).filter(t => t.label);
       for (const v of parsed.values) {
-        intervals.push({hours_or_km: v, kind: parsed.kind, label: lbl.trim()});
+        intervals.push({hours_or_km: v, kind: parsed.kind, label: lbl.trim(), tasks});
       }
     }
     // Dedup by hours_or_km + kind. Sort ascending.
@@ -448,12 +452,10 @@ function buildFuelingRows(eqRows, unresolvedLog) {
         id: v.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40),
         label: v, ok: true,
       }));
-      // Build service_intervals_completed from each category field whose
-      // LABEL is "Every N hours checklist". If any option is ticked inside
-      // that field, attribute the completion to the interval parsed from
-      // the field's label — NOT from individual option texts (which are
-      // tasks like "CHECK HUB OIL — TORQUE 52 LB" that would otherwise
-      // pollute the completions with bogus interval values).
+      // Build service_intervals_completed from each "Every N hours" category
+      // field. Each completion records the interval + which specific tasks
+      // were ticked on this entry. Interval is considered "fully done" only
+      // when items_completed.length === tasks.length (computed in the UI).
       const completions = [];
       const completedAt = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0,10) : null);
       if (item.fields) {
@@ -462,12 +464,21 @@ function buildFuelingRows(eqRows, unresolvedLog) {
           if (f.external_id === 'every-fuel-fill-up-checklist') continue;
           const lbl = f.label || '';
           if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
-          const hasAnyTick = (f.values || []).some(v => v && v.value && v.value.text);
-          if (!hasAnyTick) continue;
+          const tickedLabels = (f.values || []).map(v => (v && v.value && v.value.text) || null).filter(Boolean);
+          if (tickedLabels.length === 0) continue;
+          const totalTasks = (f.config?.settings?.options || []).length;
+          const itemsCompleted = tickedLabels.map(t => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50));
           const parsed = parseIntervalLabel(lbl);
           if (!parsed) continue;
           for (const val of parsed.values) {
-            completions.push({interval: val, kind: parsed.kind, label: lbl.trim(), completed_at: completedAt});
+            completions.push({
+              interval: val,
+              kind: parsed.kind,
+              label: lbl.trim(),
+              completed_at: completedAt,
+              items_completed: itemsCompleted,
+              total_tasks: totalTasks,
+            });
           }
         }
       }

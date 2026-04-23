@@ -9,7 +9,7 @@ import React from 'react';
 import { EQUIPMENT_COLOR, WARRANTY_WINDOW_DAYS, computeIntervalStatus, fmtReading, daysSince, stripPodioHtml } from '../lib/equipment.js';
 import EquipmentMaintenanceModal from './EquipmentMaintenanceModal.jsx';
 
-export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenance, authState, onReload}) {
+export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenance, authState, isEquipmentTech, onReload}) {
   const eq = equipment;
   const reading = eq.tracking_unit === 'km' ? eq.current_km : eq.current_hours;
   const readingLabel = eq.tracking_unit === 'km' ? 'KM' : 'Hours';
@@ -122,7 +122,9 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
 
       {/* Spec panel — always inline-editable with debounced auto-save.
           No Edit button. Click any field to type; autosaves 800ms after
-          you stop typing. Matches the cattle/sheep inline-edit pattern. */}
+          you stop typing. Matches the cattle/sheep inline-edit pattern.
+          Hidden from equipment_tech users (only admins edit specs). */}
+      {!isEquipmentTech && (
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
         <div style={sectionTitle}>Specs & Fluids <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click any field to edit · auto-saves</span></div>
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(360px, 1fr))', gap:'8px 18px', fontSize:12}}>
@@ -189,6 +191,12 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
           )}
         </div>
       </div>
+
+      )}
+
+      {/* Editors hidden from equipment_tech — admin-only surfaces. */}
+      {!isEquipmentTech && <ServiceIntervalEditor sb={sb} equipment={eq} onReload={onReload}/>}
+      {!isEquipmentTech && <EveryFillupEditor sb={sb} equipment={eq} onReload={onReload}/>}
 
       {/* Upcoming service calculator */}
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
@@ -302,7 +310,8 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
         )}
       </div>
 
-      {/* Maintenance events */}
+      {/* Maintenance events (admin only) */}
+      {!isEquipmentTech && (
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
           <div style={sectionTitle}>Maintenance Events ({maintenance.length})</div>
@@ -340,6 +349,7 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
           </div>
         )}
       </div>
+      )}
 
       {showMaintenanceModal && (
         <EquipmentMaintenanceModal
@@ -360,6 +370,133 @@ function StatTile({label, value, color}) {
     <div>
       <div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase', letterSpacing:.4}}>{label}</div>
       <div style={{fontSize:16, fontWeight:700, color:color}}>{value}</div>
+    </div>
+  );
+}
+
+// Service-interval editor — inline add / remove / edit the jsonb list
+// that drives due-interval math. Each row is {hours_or_km, kind, label}.
+function ServiceIntervalEditor({sb, equipment, onReload}) {
+  const [newVal, setNewVal] = React.useState('');
+  const [newKind, setNewKind] = React.useState(equipment.tracking_unit || 'hours');
+  const [newLabel, setNewLabel] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const intervals = Array.isArray(equipment.service_intervals) ? equipment.service_intervals : [];
+
+  async function persist(next) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({service_intervals: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  async function addOne() {
+    const v = parseInt(newVal, 10);
+    if (!Number.isFinite(v) || v <= 0) { alert('Enter a positive integer.'); return; }
+    const label = (newLabel || '').trim() || `Every ${v} ${newKind === 'km' ? 'km' : 'hours'} checklist`;
+    const next = intervals.concat([{hours_or_km: v, kind: newKind, label}]).sort((a, b) => a.hours_or_km - b.hours_or_km);
+    await persist(next);
+    setNewVal(''); setNewLabel('');
+  }
+  async function removeOne(idx) {
+    const next = intervals.filter((_, i) => i !== idx);
+    await persist(next);
+  }
+  async function editLabel(idx, label) {
+    const next = intervals.slice();
+    next[idx] = {...next[idx], label};
+    await persist(next);
+  }
+
+  const inpS = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box'};
+  const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:8};
+
+  return (
+    <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
+      <div style={sectionTitle}>Service Intervals <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Drives Upcoming Service tiles + the fueling webform's due checklist</span></div>
+      {intervals.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No intervals configured. Add one below — e.g. "50" hours for a 50-hour check.</div>}
+      {intervals.length > 0 && (
+        <div style={{display:'grid', gridTemplateColumns:'80px 80px 1fr 60px', gap:8, marginBottom:8, alignItems:'center'}}>
+          <div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Interval</div>
+          <div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Unit</div>
+          <div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4}}>Label</div>
+          <div></div>
+          {intervals.map((iv, i) => (
+            <React.Fragment key={i}>
+              <div style={{fontSize:12, fontWeight:700, color:'#111827'}}>{iv.hours_or_km.toLocaleString()}</div>
+              <div style={{fontSize:12, color:'#6b7280'}}>{iv.kind}</div>
+              <input type="text" defaultValue={iv.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.label||'')) editLabel(i, v); }} style={{...inpS, width:'100%'}}/>
+              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+      <div style={{display:'grid', gridTemplateColumns:'80px 80px 1fr 80px', gap:8, marginTop:10, padding:'10px', background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db', alignItems:'center'}}>
+        <input type="number" min="1" value={newVal} onChange={e=>setNewVal(e.target.value)} placeholder="e.g. 50" style={inpS}/>
+        <select value={newKind} onChange={e=>setNewKind(e.target.value)} style={inpS}>
+          <option value="hours">hours</option>
+          <option value="km">km</option>
+        </select>
+        <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label (default 'Every N hours checklist')" style={inpS}/>
+        <button onClick={addOne} disabled={busy || !newVal} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVal)?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newVal)?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+      </div>
+    </div>
+  );
+}
+
+// Every-fillup items editor — the check list team ticks on every fuel
+// fill-up (oil, coolant, etc). Each item is {id, label}.
+function EveryFillupEditor({sb, equipment, onReload}) {
+  const [newLabel, setNewLabel] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const items = Array.isArray(equipment.every_fillup_items) ? equipment.every_fillup_items : [];
+
+  async function persist(next) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({every_fillup_items: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  async function addOne() {
+    const label = (newLabel || '').trim();
+    if (!label) return;
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item-' + Date.now();
+    const next = items.concat([{id, label}]);
+    await persist(next);
+    setNewLabel('');
+  }
+  async function removeOne(idx) {
+    const next = items.filter((_, i) => i !== idx);
+    await persist(next);
+  }
+  async function editLabel(idx, label) {
+    const next = items.slice();
+    next[idx] = {...next[idx], label};
+    await persist(next);
+  }
+
+  const inpS = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box'};
+  const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:8};
+
+  return (
+    <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
+      <div style={sectionTitle}>Every-fillup Items <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Ticked by the team on every /fueling submission</span></div>
+      {items.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No items configured yet.</div>}
+      {items.length > 0 && (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:8, marginBottom:8, alignItems:'center'}}>
+          {items.map((it, i) => (
+            <React.Fragment key={i}>
+              <input type="text" defaultValue={it.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (it.label||'')) editLabel(i, v); }} style={{...inpS, width:'100%'}}/>
+              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+      <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:8, marginTop:10, padding:'10px', background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db', alignItems:'center'}}>
+        <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="e.g. CHECK OIL LEVEL" style={inpS}/>
+        <button onClick={addOne} disabled={busy || !newLabel.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newLabel.trim())?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newLabel.trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+      </div>
     </div>
   );
 }

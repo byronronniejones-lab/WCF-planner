@@ -3,9 +3,11 @@
 // "service due" or "overdue" badge when the upcoming-service calculator
 // says so. Click a tile → navigate to /equipment/<slug>.
 import React from 'react';
-import { EQUIPMENT_CATEGORIES, CATEGORY_BY_KEY, MISSED_FUELING_DAYS, WARRANTY_WINDOW_DAYS, soonestDue, daysSince, fmtReading } from '../lib/equipment.js';
+import { EQUIPMENT_CATEGORIES, CATEGORY_BY_KEY, MISSED_FUELING_DAYS, WARRANTY_WINDOW_DAYS, EQUIPMENT_COLOR, soonestDue, daysSince, fmtReading } from '../lib/equipment.js';
+import EquipmentAddModal from './EquipmentAddModal.jsx';
 
-export default function EquipmentFleetView({equipment, fuelings, fmt, onOpen}) {
+export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen, onReload}) {
+  const [showAdd, setShowAdd] = React.useState(false);
   if (!equipment || equipment.length === 0) {
     return (
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
@@ -87,6 +89,10 @@ export default function EquipmentFleetView({equipment, fuelings, fmt, onOpen}) {
 
   return (
     <div style={{display:'flex', flexDirection:'column', gap:18}}>
+      <div style={{display:'flex', justifyContent:'flex-end', marginBottom:-8}}>
+        <button onClick={()=>setShowAdd(true)} style={{padding:'8px 16px', borderRadius:8, border:'none', background:EQUIPMENT_COLOR, color:'white', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Add Equipment</button>
+      </div>
+      {showAdd && <EquipmentAddModal sb={sb} onClose={()=>setShowAdd(false)} onCreated={(rec)=>{ setShowAdd(false); if(onReload) onReload(); onOpen(rec.slug); }}/>}
       {grouped.map(g => (
         <div key={g.key}>
           <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8}}>

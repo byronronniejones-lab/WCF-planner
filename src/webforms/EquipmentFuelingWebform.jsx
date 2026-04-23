@@ -20,6 +20,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   const [reading, setReading] = React.useState('');
   const [fillupTicks, setFillupTicks] = React.useState(new Set());
   const [intervalTicks, setIntervalTicks] = React.useState(new Set()); // keys 'kind:value'
+  // Per-interval task ticks: Map<'kind:value', Set<taskId>>
+  const [taskTicks, setTaskTicks] = React.useState({});
+  const [photos, setPhotos] = React.useState([]);
+  const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
   const [comments, setComments] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const [done, setDone] = React.useState(false);
@@ -76,6 +80,29 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     if (next.has(k)) next.delete(k); else next.add(k);
     setIntervalTicks(next);
   }
+  function toggleTask(intervalKey, taskId) {
+    setTaskTicks(prev => {
+      const current = new Set(prev[intervalKey] || []);
+      if (current.has(taskId)) current.delete(taskId); else current.add(taskId);
+      return {...prev, [intervalKey]: current};
+    });
+  }
+  async function uploadPhoto(file) {
+    if (!eq) return;
+    setUploadingPhoto(true);
+    const safe = (file.name || 'photo').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const pathInBucket = 'fueling/' + eq.slug + '/' + Date.now() + '-' + safe;
+    const {error: upErr} = await sb.storage.from('equipment-maintenance-docs').upload(pathInBucket, file, {upsert: false});
+    if (upErr) { setErr('Photo upload failed: '+upErr.message); setUploadingPhoto(false); return; }
+    const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(pathInBucket);
+    setPhotos(p => [...p, {name:file.name, path:pathInBucket, url:pub.publicUrl, uploadedAt:new Date().toISOString()}]);
+    setUploadingPhoto(false);
+  }
+  async function removePhoto(idx) {
+    const p = photos[idx];
+    if (p && p.path) { try { await sb.storage.from('equipment-maintenance-docs').remove([p.path]); } catch(e){} }
+    setPhotos(arr => arr.filter((_, i) => i !== idx));
+  }
   // If the team ticks a big interval, the divisor rule implicitly covers
   // any smaller due interval that divides it. Surface this visually.
   function isImplicitlyCompleted(kind, value) {
@@ -97,17 +124,34 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     if (!gallons || parseFloat(gallons) <= 0) { setErr(fuelLabel + ' gallons required.'); return; }
     localStorage.setItem('wcf_team', teamMember);
 
-    // Build service_intervals_completed including divisor-rule auto-ticks.
+    // Build service_intervals_completed. Each due interval may contribute a
+    // completion if either (a) the parent box was ticked, OR (b) any of
+    // its sub-tasks were ticked. Record which task ids were ticked so the
+    // due-interval math can decide "full vs partial."
     const completed = [];
-    const explicit = new Set();
-    for (const key of intervalTicks) {
-      const [kind, v] = key.split(':');
-      const iv = dueIntervals.find(x => x.kind === kind && String(x.hours_or_km) === v);
-      if (!iv) continue;
-      completed.push({interval: iv.hours_or_km, kind: iv.kind, label: iv.label, completed_at: date});
-      explicit.add(key);
+    const fullyDoneExplicit = new Set(); // intervals that had ALL tasks ticked
+    for (const iv of dueIntervals) {
+      const key = iv.kind + ':' + iv.hours_or_km;
+      const ticks = taskTicks[key] instanceof Set ? taskTicks[key] : new Set();
+      const parentTicked = intervalTicks.has(key);
+      const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+      const items = Array.from(ticks);
+      const fullyDone = tasks.length === 0 ? parentTicked : (tasks.length > 0 && items.length >= tasks.length);
+      if (!parentTicked && items.length === 0) continue; // nothing ticked for this interval
+      completed.push({
+        interval: iv.hours_or_km,
+        kind: iv.kind,
+        label: iv.label,
+        completed_at: date,
+        items_completed: items,
+        total_tasks: tasks.length,
+      });
+      if (fullyDone) fullyDoneExplicit.add(key);
     }
-    for (const key of explicit) {
+    // Divisor rule: a fully-done big interval also counts as fully-done for
+    // any smaller interval it divides (e.g. 1000h fully done → 500/250/100
+    // also marked done at the same reading).
+    for (const key of fullyDoneExplicit) {
       const [kind, vStr] = key.split(':');
       const v = parseInt(vStr, 10);
       for (const iv of (eq.service_intervals || [])) {
@@ -115,8 +159,17 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         if (iv.hours_or_km === v) continue;
         if (v % iv.hours_or_km !== 0) continue;
         const kk = iv.kind + ':' + iv.hours_or_km;
-        if (explicit.has(kk)) continue;
-        completed.push({interval: iv.hours_or_km, kind: iv.kind, label: iv.label, completed_at: date, auto_from: v});
+        if (fullyDoneExplicit.has(kk)) continue;
+        const subTasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+        completed.push({
+          interval: iv.hours_or_km,
+          kind: iv.kind,
+          label: iv.label,
+          completed_at: date,
+          auto_from: v,
+          items_completed: subTasks.map(t => t.id),
+          total_tasks: subTasks.length,
+        });
       }
     }
 
@@ -139,6 +192,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
       km_reading:    eq.tracking_unit === 'km'    ? readingNum : null,
       every_fillup_check: fillup,
       service_intervals_completed: completed,
+      photos,
       comments: comments || null,
       source: 'fuel_log_webform',
       podio_source_app: null,
@@ -277,28 +331,83 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             <div style={{fontSize:11, color:'#6b7280', marginBottom:12}}>
               Based on {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any service you performed during this fill. A bigger interval auto-covers smaller ones that divide it.
             </div>
-            <div style={{display:'flex', flexDirection:'column', gap:6}}>
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
               {dueIntervals.map(iv => {
                 const k = iv.kind+':'+iv.hours_or_km;
                 const explicit = intervalTicks.has(k);
                 const implicit = isImplicitlyCompleted(iv.kind, iv.hours_or_km);
-                const done = explicit || implicit;
+                const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+                const ticks = taskTicks[k] instanceof Set ? taskTicks[k] : new Set();
+                const tickedCount = ticks.size;
+                const allTicked = tasks.length > 0 && tickedCount >= tasks.length;
+                const anyTicked = tickedCount > 0;
+                const done = (tasks.length === 0 ? explicit : allTicked) || implicit;
+                const unitShort = iv.kind === 'km' ? 'km' : 'h';
                 return (
-                  <label key={k} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:done?'#eff6ff':'#fef2f2', cursor:'pointer', border:'1px solid '+(done?'#bfdbfe':'#fca5a5'), fontSize:13}}>
-                    <input type="checkbox" checked={explicit} disabled={implicit} onChange={()=>toggleInterval(iv.kind, iv.hours_or_km)} style={{margin:0, flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700, color:done?'#1e40af':'#991b1b'}}>{iv.label}</div>
-                      <div style={{fontSize:11, color:'#6b7280', marginTop:2}}>
-                        {iv.missed_count > 1 ? `Missed ${iv.missed_count} times since ` : 'Passed at '}
-                        {iv.first_missed_at.toLocaleString()}{iv.kind === 'km' ? ' km' : ' h'}
-                        {iv.last_done_at ? ` · last done at ${iv.last_done_at.toLocaleString()}${iv.kind === 'km' ? ' km' : ' h'}` : ' · never completed'}
-                        {implicit ? ' · auto-covered' : ''}
+                  <div key={k} style={{borderRadius:8, background:done?'#eff6ff':'#fef2f2', border:'1px solid '+(done?'#bfdbfe':'#fca5a5'), padding:'12px 14px'}}>
+                    {/* Header line (always shown) */}
+                    <div style={{display:'flex', alignItems:'flex-start', gap:10, marginBottom:tasks.length>0?8:0}}>
+                      {tasks.length === 0 && (
+                        <input type="checkbox" checked={explicit} disabled={implicit} onChange={()=>toggleInterval(iv.kind, iv.hours_or_km)} style={{margin:'3px 0 0', flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
+                      )}
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:700, color:done?'#1e40af':'#991b1b', fontSize:14}}>{iv.label}</div>
+                        <div style={{fontSize:11, color:'#6b7280', marginTop:3}}>
+                          {iv.missed_count > 1 ? `Missed ${iv.missed_count} times since ${iv.first_missed_at.toLocaleString()}${unitShort}` : `Passed ${iv.first_missed_at.toLocaleString()}${unitShort}`}
+                          {iv.last_done_at ? ` · last full done at ${iv.last_done_at.toLocaleString()}${unitShort}` : ' · never fully completed'}
+                          {iv.last_partial ? ` · last attempt at ${iv.last_partial.at_reading.toLocaleString()}${unitShort}: ${iv.last_partial.items_done}/${iv.last_partial.total} items` : ''}
+                          {implicit ? ' · auto-covered by a bigger interval you ticked' : ''}
+                        </div>
+                        {tasks.length > 0 && (
+                          <div style={{fontSize:11, color:tickedCount>0?'#1e40af':'#991b1b', marginTop:4, fontWeight:600}}>
+                            {tickedCount} of {tasks.length} tasks ticked{allTicked ? ' · full completion' : anyTicked ? ' · partial (will remain due)' : ''}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </label>
+                    {/* Sub-task list (when this interval has tasks) */}
+                    {tasks.length > 0 && (
+                      <div style={{display:'flex', flexDirection:'column', gap:4, marginLeft:0, borderTop:'1px solid '+(done?'#bfdbfe':'#fca5a5'), paddingTop:8}}>
+                        {tasks.map(t => {
+                          const ticked = ticks.has(t.id);
+                          return (
+                            <label key={t.id} style={{display:'flex', alignItems:'flex-start', gap:8, padding:'6px 8px', borderRadius:5, background:ticked?'#dcfce7':'white', cursor:implicit?'not-allowed':'pointer', fontSize:12, opacity:implicit?0.6:1}}>
+                              <input type="checkbox" checked={ticked} disabled={implicit} onChange={()=>toggleTask(k, t.id)} style={{margin:'2px 0 0', flexShrink:0, width:16, height:16, padding:0, border:'1px solid #d1d5db'}}/>
+                              <span style={{color:ticked?'#065f46':'#374151', fontWeight:ticked?600:500}}>{t.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Photo upload (always shown when there's a reading — some tasks
+            ask for "TAKE PICTURES SHOWING EACH SIDE"). */}
+        {eq && hasReading && (
+          <div style={cardS}>
+            <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:4}}>Photos</div>
+            <div style={{fontSize:11, color:'#6b7280', marginBottom:10}}>Attach photos of the machine, damage, or anything else the next team member should see.</div>
+            {photos.length > 0 && (
+              <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:10}}>
+                {photos.map((p, i) => (
+                  <div key={i} style={{position:'relative'}}>
+                    <img src={p.url} alt={p.name} style={{width:80, height:80, objectFit:'cover', borderRadius:6, border:'1px solid #e5e7eb'}}/>
+                    <button type="button" onClick={()=>removePhoto(i)} style={{position:'absolute', top:-6, right:-6, width:22, height:22, borderRadius:'50%', border:'none', background:'#b91c1c', color:'white', cursor:'pointer', fontSize:12, lineHeight:1}}>{'×'}</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input type="file" accept="image/*" multiple onChange={async e => {
+              const files = Array.from(e.target.files || []);
+              for (const f of files) await uploadPhoto(f);
+              e.target.value = '';
+            }} disabled={uploadingPhoto} style={{fontSize:13}}/>
+            {uploadingPhoto && <div style={{fontSize:11, color:'#9ca3af', marginTop:6}}>Uploading{'…'}</div>}
           </div>
         )}
 

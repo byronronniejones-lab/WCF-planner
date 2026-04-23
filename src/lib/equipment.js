@@ -108,18 +108,26 @@ export function computeDueIntervals(intervals, completions, currentReading) {
   if (!Array.isArray(intervals) || intervals.length === 0) return [];
   if (!Number.isFinite(Number(currentReading)) || currentReading <= 0) return [];
 
-  // Per-interval: latest reading at which this interval (or a bigger
-  // interval that divides it, per the divisor rule) was completed.
+  // "Fully complete" = items_completed.length === total_tasks (all sub-items
+  // ticked on a single fueling). A partial completion doesn't reset the
+  // clock; the interval stays in the due list until someone does it all.
+  function isFullCompletion(c) {
+    if (!c.total_tasks || c.total_tasks === 0) return true; // no sub-items == just the parent tick
+    const count = Array.isArray(c.items_completed) ? c.items_completed.length : 0;
+    return count >= c.total_tasks;
+  }
+
   const lastDoneAt = new Map();
   for (const c of (completions || [])) {
     if (!c || !c.interval || !c.kind) continue;
     const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
     if (snap == null) continue;
-    // Direct
+    if (!isFullCompletion(c)) continue;
     const key = c.kind + ':' + c.interval;
     const ex = lastDoneAt.get(key);
     if (!ex || snap > ex) lastDoneAt.set(key, snap);
-    // Divisors
+    // Divisor rule: completing 1000hr also completes 500/250/100/50 at the
+    // same snapshot if those are intervals on this machine.
     for (const iv of intervals) {
       if (iv.kind !== c.kind) continue;
       if (iv.hours_or_km === c.interval) continue;
@@ -130,13 +138,32 @@ export function computeDueIntervals(intervals, completions, currentReading) {
     }
   }
 
+  // Latest PARTIAL attempt per interval (for the "7/10 done at 1,596h" hint).
+  const lastPartialAt = new Map();
+  const lastPartialDetail = new Map();
+  for (const c of (completions || [])) {
+    if (!c || !c.interval || !c.kind) continue;
+    if (isFullCompletion(c)) continue;
+    const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
+    if (snap == null) continue;
+    const key = c.kind + ':' + c.interval;
+    const ex = lastPartialAt.get(key);
+    if (!ex || snap > ex) {
+      lastPartialAt.set(key, snap);
+      lastPartialDetail.set(key, {
+        items_done: Array.isArray(c.items_completed) ? c.items_completed.length : 0,
+        total: c.total_tasks || 0,
+        at_reading: snap,
+      });
+    }
+  }
+
   const due = [];
   for (const iv of intervals) {
-    const last = lastDoneAt.get(iv.kind + ':' + iv.hours_or_km) || 0;
-    // Smallest multiple of interval strictly greater than last.
+    const key = iv.kind + ':' + iv.hours_or_km;
+    const last = lastDoneAt.get(key) || 0;
     const firstMilestoneAfterLast = (Math.floor(last / iv.hours_or_km) + 1) * iv.hours_or_km;
-    if (firstMilestoneAfterLast > currentReading) continue; // not yet due
-    // Count missed milestones between last-done and current
+    if (firstMilestoneAfterLast > currentReading) continue;
     const largestMilestoneAtOrBeforeCurrent = Math.floor(currentReading / iv.hours_or_km) * iv.hours_or_km;
     const missedCount = ((largestMilestoneAtOrBeforeCurrent - firstMilestoneAfterLast) / iv.hours_or_km) + 1;
     due.push({
@@ -145,10 +172,10 @@ export function computeDueIntervals(intervals, completions, currentReading) {
       first_missed_at: firstMilestoneAfterLast,
       current_milestone: largestMilestoneAtOrBeforeCurrent,
       missed_count: missedCount,
+      last_partial: lastPartialDetail.get(key) || null,
     });
   }
 
-  // Biggest intervals first (those that implicitly cover smaller ones).
   return due.sort((a, b) => b.hours_or_km - a.hours_or_km);
 }
 

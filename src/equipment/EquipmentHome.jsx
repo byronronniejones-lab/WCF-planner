@@ -24,6 +24,11 @@ export default function EquipmentHome({sb, fmt, Header, authState, setView, show
   const location = useLocation();
   const navigate = useNavigate();
 
+  // equipment_tech users only see the per-equipment tabs + fueling history.
+  // Fleet + Fuel Log sub-nav are hidden; detail page hides Spec / Upcoming
+  // Service / Maintenance sections (handled inside EquipmentDetail).
+  const isEquipmentTech = authState?.role === 'equipment_tech';
+
   async function loadAll() {
     setLoading(true);
     const [eR, fR, mR] = await Promise.all([
@@ -69,11 +74,18 @@ export default function EquipmentHome({sb, fmt, Header, authState, setView, show
       {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
       <Header/>
 
-      {/* Secondary sub-nav within /equipment */}
+      {/* Secondary sub-nav within /equipment. equipment_tech users see
+          a simplified nav — just a quick-pick list of equipment tiles,
+          not the Fleet + Fuel Log admin surfaces. */}
       <div style={{background:'white', borderBottom:'1px solid #e5e7eb', padding:'8px 1.25rem', display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
-        <button onClick={()=>navigate('/equipment')} style={subNavBtn(subView==='fleet')}>🚜 Fleet</button>
-        <button onClick={()=>navigate('/equipment/fuel-log')} style={subNavBtn(subView==='fuel-log')}>⛽ Fuel Log</button>
-        {detailSlug && activeEq && (
+        {!isEquipmentTech && <>
+          <button onClick={()=>navigate('/equipment')} style={subNavBtn(subView==='fleet')}>🚜 Fleet</button>
+          <button onClick={()=>navigate('/equipment/fuel-log')} style={subNavBtn(subView==='fuel-log')}>⛽ Fuel Log</button>
+        </>}
+        {isEquipmentTech && equipment.filter(e=>e.status==='active').sort((a,b)=>a.name.localeCompare(b.name)).map(e => (
+          <button key={e.id} onClick={()=>navigate('/equipment/'+e.slug)} style={subNavBtn(subView==='detail' && detailSlug === e.slug)}>{e.name}</button>
+        ))}
+        {detailSlug && activeEq && !isEquipmentTech && (
           <>
             <span style={{color:'#9ca3af', fontSize:12}}>{'›'}</span>
             <span style={{padding:'7px 14px', borderRadius:8, background:'#57534e', color:'white', fontSize:12, fontWeight:700}}>{activeEq.name}</span>
@@ -90,15 +102,22 @@ export default function EquipmentHome({sb, fmt, Header, authState, setView, show
 
         {loading && !missingSchema && <div style={{textAlign:'center', padding:'3rem', color:'#9ca3af'}}>Loading{'…'}</div>}
 
-        {!loading && !missingSchema && subView === 'fleet' && (
+        {!loading && !missingSchema && subView === 'fleet' && !isEquipmentTech && (
           <EquipmentFleetView
+            sb={sb}
             equipment={equipment}
             fuelings={fuelings}
             fmt={fmt}
             onOpen={(slug)=>navigate('/equipment/'+slug)}
+            onReload={loadAll}
           />
         )}
-        {!loading && !missingSchema && subView === 'fuel-log' && (
+        {!loading && !missingSchema && subView === 'fleet' && isEquipmentTech && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            Pick a piece of equipment above.
+          </div>
+        )}
+        {!loading && !missingSchema && subView === 'fuel-log' && !isEquipmentTech && (
           <EquipmentFuelLogView
             equipment={equipment}
             fuelings={fuelings}
@@ -113,6 +132,7 @@ export default function EquipmentHome({sb, fmt, Header, authState, setView, show
             fuelings={fuelings.filter(f => f.equipment_id === activeEq.id)}
             maintenance={maintenance.filter(m => m.equipment_id === activeEq.id)}
             authState={authState}
+            isEquipmentTech={isEquipmentTech}
             onReload={loadAll}
           />
         )}
