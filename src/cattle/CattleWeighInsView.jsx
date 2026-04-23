@@ -6,6 +6,7 @@
 // ============================================================================
 import React from 'react';
 import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
+import CattleSendToProcessorModal from './CattleSendToProcessorModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 import { loadCattleWeighInsCached, invalidateCattleWeighInsCache } from '../lib/cattleCache.js';
 const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
@@ -23,6 +24,10 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   const [editForm, setEditForm] = useState({tag:'', weight:'', note:''});
   // Add-entry form per session
   const [addEntryForm, setAddEntryForm] = useState({tag:'', weight:'', note:'', priorTag:''});
+  // Send-to-processor modal state. sessionForModal is the session being
+  // completed; its flagged entries are passed to the modal. Mirrors the
+  // webform's flow so the two surfaces land identical DB state.
+  const [sessionForModal, setSessionForModal] = useState(null);
 
   async function loadAll() {
     const [sR, eAll, cR] = await Promise.all([
@@ -85,8 +90,31 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   }
 
   async function completeSession(s) {
+    // Finishers: if any entries are flagged -> Processor, intercept to open
+    // the batch modal. Modal confirms attach, then calls finalizeComplete.
+    if(s.herd === 'finishers') {
+      const flagged = (entries[s.id] || []).filter(e => e.send_to_processor === true);
+      if(flagged.length > 0) { setSessionForModal(s); return; }
+    }
+    await finalizeComplete(s);
+  }
+  async function finalizeComplete(s) {
     await sb.from('weigh_in_sessions').update({status:'complete', completed_at:new Date().toISOString()}).eq('id', s.id);
+    invalidateCattleWeighInsCache();
     await loadAll();
+  }
+  async function toggleProcessor(e, next) {
+    const {error} = await sb.from('weigh_ins').update({send_to_processor: !!next}).eq('id', e.id);
+    if(error) { alert('Could not update: '+error.message); return; }
+    invalidateCattleWeighInsCache();
+    // Local update so the row re-renders without a full reload round-trip.
+    setEntries(prev => {
+      const next2 = {...prev};
+      for(const sid in next2) {
+        next2[sid] = next2[sid].map(x => x.id === e.id ? {...x, send_to_processor: !!next} : x);
+      }
+      return next2;
+    });
   }
   function startEditEntry(e) {
     setEditingEntryId(e.id);
@@ -331,7 +359,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                           const prior = priors[e.tag];
                           const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
                           return (
-                            <div key={e.id} style={{background:'white', border:'1px solid '+(e.new_tag_flag?'#fca5a5':'#e5e7eb'), borderRadius:6, padding:'6px 10px', fontSize:12}}>
+                            <div key={e.id} style={{background:e.send_to_processor?'#fef2f2':'white', border:'1px solid '+(e.send_to_processor?'#fca5a5':(e.new_tag_flag?'#fca5a5':'#e5e7eb')), borderRadius:6, padding:'6px 10px', fontSize:12}}>
                               {isEditing ? (
                                 <div style={{display:'flex', flexDirection:'column', gap:4}}>
                                   <div style={{display:'flex', gap:4}}>
@@ -362,7 +390,10 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                                       {cattle.filter(c => c.tag).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(c => <option key={c.id} value={c.id}>{'#'+c.tag+' ('+(c.herd||'?')+')'}</option>)}
                                     </select>
                                   )}
-                                  <div style={{display:'flex', gap:4, justifyContent:'flex-end'}}>
+                                  <div style={{display:'flex', gap:4, justifyContent:'flex-end', alignItems:'center', flexWrap:'wrap'}}>
+                                    {s.herd === 'finishers' && (
+                                      <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this cow to the processor on session Complete'} style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
+                                    )}
                                     <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
                                     <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
                                   </div>
@@ -392,6 +423,17 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
         </div>
       </div>
       {showNewModal && <CattleNewWeighInModal sb={sb} onClose={()=>setShowNewModal(false)} onCreate={createNewSession}/>}
+      {sessionForModal && (
+        <CattleSendToProcessorModal
+          sb={sb}
+          session={sessionForModal}
+          flaggedEntries={(entries[sessionForModal.id] || []).filter(e => e.send_to_processor === true)}
+          cattleList={cattle}
+          teamMember={(authState && authState.name) || null}
+          onCancel={()=>setSessionForModal(null)}
+          onConfirmed={async () => { const s = sessionForModal; setSessionForModal(null); await finalizeComplete(s); }}
+        />
+      )}
     </div>
   );
 };

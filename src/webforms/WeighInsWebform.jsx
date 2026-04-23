@@ -1,6 +1,7 @@
 // Phase 2 Round 5 extraction (verbatim).
 import React from 'react';
 import { writeBroilerBatchAvg } from '../lib/broiler.js';
+import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
 
 const WeighInsWebform = ({sb}) => {
   const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'
@@ -60,6 +61,9 @@ const WeighInsWebform = ({sb}) => {
   // the wrong cow was selected.
   const [editingEntryId, setEditingEntryId] = React.useState(null);
   const [editDraft, setEditDraft] = React.useState({weight:'', note:''});
+  // Send-to-processor modal shown at Complete time when a cattle finishers
+  // session has at least one send_to_processor=true entry.
+  const [showProcessorModal, setShowProcessorModal] = React.useState(false);
 
   React.useEffect(() => {
     const d = new Date();
@@ -269,6 +273,18 @@ const WeighInsWebform = ({sb}) => {
   }
   async function completeSession() {
     if(!session) return;
+    // Cattle finishers: if anyone ticked "-> Processor" on any entry, pop
+    // the batch modal before flipping the session status. The modal attaches
+    // the flagged cows to the chosen batch, moves them to the processed herd,
+    // then calls finalizeSession() to finish the normal complete flow.
+    if(species === 'cattle' && session.herd === 'finishers') {
+      const flagged = entries.filter(e => e.send_to_processor === true);
+      if(flagged.length > 0) { setShowProcessorModal(true); return; }
+    }
+    await finalizeSession();
+  }
+  async function finalizeSession() {
+    if(!session) return;
     // Broiler still uses the grid -> flush any pending edits to DB before
     // flipping status. Pigs now save per-entry, so nothing to batch-flush.
     if(species === 'broiler') {
@@ -285,6 +301,13 @@ const WeighInsWebform = ({sb}) => {
     }
     setBusy(false);
     setStage('done');
+  }
+  // Toggle the send_to_processor flag on an individual entry. Finishers-only
+  // in the UI; no herd gate here so the admin tab can override if needed.
+  async function toggleProcessor(entry, next) {
+    const {error} = await sb.from('weigh_ins').update({send_to_processor: !!next}).eq('id', entry.id);
+    if(error) { setErr('Could not update: '+error.message); return; }
+    setEntries(prev => prev.map(e => e.id === entry.id ? {...e, send_to_processor: !!next} : e));
   }
   // Find a cow by prior tag, walking through current tag → import old_tags →
   // weigh_in old_tags, in that order (per the retag spec from Ronnie).
@@ -956,51 +979,70 @@ const WeighInsWebform = ({sb}) => {
         })()}
 
         {/* Recent entries — cattle + sheep. Each row shows tag, age,
-            prior weight, current weight, and ADG (when a prior exists). */}
+            prior weight, current weight, and ADG (when a prior exists).
+            Cattle finisher sessions split flagged (-> Processor) entries
+            out to their own 'Going to processor' section below. */}
         {(species === 'cattle' || species === 'sheep') && entries.length > 0 && (() => {
           const directory = species === 'cattle' ? cattleList : sheepList;
           const curDate = (session && session.date) || new Date().toISOString().slice(0,10);
+          const isFinishers = species === 'cattle' && session && session.herd === 'finishers';
+          const renderRow = (e, highlight) => {
+            const animal = directory.find(a => a.tag === e.tag);
+            const age = ageYM(animal ? animal.birth_date : null, curDate);
+            const prior = priorByTag[e.tag];
+            const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
+            const isEditing = editingEntryId === e.id;
+            if(isEditing) return (
+              <div key={e.id} style={{padding:'8px 0', borderBottom:'1px solid #f3f4f6', display:'flex', flexDirection:'column', gap:6}}>
+                <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+                  {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50, fontSize:12}}>#{e.tag}</span>}
+                  <input type="number" min="0" step="0.1" value={editDraft.weight} onChange={ev=>setEditDraft(d=>({...d, weight:ev.target.value}))} placeholder="lb" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:90}}/>
+                </div>
+                <input type="text" value={editDraft.note} onChange={ev=>setEditDraft(d=>({...d, note:ev.target.value}))} placeholder="Note (optional)" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                <div style={{display:'flex', gap:6, justifyContent:'flex-end'}}>
+                  <button onClick={()=>setEditingEntryId(null)} style={{padding:'5px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                  <button onClick={()=>saveEditEntry(e)} disabled={busy||!(parseFloat(editDraft.weight)>0)} style={{padding:'5px 14px', borderRadius:6, border:'none', background:(busy||!(parseFloat(editDraft.weight)>0))?'#9ca3af':(species==='sheep'?'#0f766e':'#1e40af'), color:'white', fontSize:12, fontWeight:600, cursor:(busy||!(parseFloat(editDraft.weight)>0))?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving…':'Save'}</button>
+                </div>
+              </div>
+            );
+            return (
+              <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', flexDirection:'column', gap:2}}>
+                <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                  {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50}}>#{e.tag}</span>}
+                  <span style={{fontSize:11, color:'#6b7280'}}>{age}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{prior ? ('prior '+Math.round(prior.weight)+' lb') : 'no prior'}</span>
+                  <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                  {adg != null && <span style={{fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:4, background:adg>=0?'#ecfdf5':'#fef2f2', color:adg>=0?'#065f46':'#b91c1c', border:'1px solid '+(adg>=0?'#a7f3d0':'#fecaca')}}>{(adg>=0?'+':'')+adg.toFixed(2)+' lb/d'}</span>}
+                  {e.new_tag_flag && <span style={{fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
+                  <div style={{marginLeft:'auto', display:'flex', gap:4, alignItems:'center'}}>
+                    {isFinishers && (
+                      <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this cow to the processor on session Complete'} style={{fontSize:11, fontWeight:700, padding:'3px 8px', borderRadius:5, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
+                    )}
+                    <button onClick={()=>startEditEntry(e)} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
+                    <button onClick={()=>deleteEntry(e)} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
+                  </div>
+                </div>
+                {e.note && <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</div>}
+              </div>
+            );
+          };
+          const unflagged = entries.filter(e => !e.send_to_processor);
+          const flagged = entries.filter(e => e.send_to_processor === true);
           return (
-            <div style={cardS}>
-              <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
-              {entries.slice(-10).reverse().map(e => {
-                const animal = directory.find(a => a.tag === e.tag);
-                const age = ageYM(animal ? animal.birth_date : null, curDate);
-                const prior = priorByTag[e.tag];
-                const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
-                const isEditing = editingEntryId === e.id;
-                if(isEditing) return (
-                  <div key={e.id} style={{padding:'8px 0', borderBottom:'1px solid #f3f4f6', display:'flex', flexDirection:'column', gap:6}}>
-                    <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
-                      {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50, fontSize:12}}>#{e.tag}</span>}
-                      <input type="number" min="0" step="0.1" value={editDraft.weight} onChange={ev=>setEditDraft(d=>({...d, weight:ev.target.value}))} placeholder="lb" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:90}}/>
-                    </div>
-                    <input type="text" value={editDraft.note} onChange={ev=>setEditDraft(d=>({...d, note:ev.target.value}))} placeholder="Note (optional)" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
-                    <div style={{display:'flex', gap:6, justifyContent:'flex-end'}}>
-                      <button onClick={()=>setEditingEntryId(null)} style={{padding:'5px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
-                      <button onClick={()=>saveEditEntry(e)} disabled={busy||!(parseFloat(editDraft.weight)>0)} style={{padding:'5px 14px', borderRadius:6, border:'none', background:(busy||!(parseFloat(editDraft.weight)>0))?'#9ca3af':(species==='sheep'?'#0f766e':'#1e40af'), color:'white', fontSize:12, fontWeight:600, cursor:(busy||!(parseFloat(editDraft.weight)>0))?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving…':'Save'}</button>
-                    </div>
-                  </div>
-                );
-                return (
-                  <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', flexDirection:'column', gap:2}}>
-                    <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-                      {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50}}>#{e.tag}</span>}
-                      <span style={{fontSize:11, color:'#6b7280'}}>{age}</span>
-                      <span style={{fontSize:11, color:'#6b7280'}}>{prior ? ('prior '+Math.round(prior.weight)+' lb') : 'no prior'}</span>
-                      <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
-                      {adg != null && <span style={{fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:4, background:adg>=0?'#ecfdf5':'#fef2f2', color:adg>=0?'#065f46':'#b91c1c', border:'1px solid '+(adg>=0?'#a7f3d0':'#fecaca')}}>{(adg>=0?'+':'')+adg.toFixed(2)+' lb/d'}</span>}
-                      {e.new_tag_flag && <span style={{fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
-                      <div style={{marginLeft:'auto', display:'flex', gap:4}}>
-                        <button onClick={()=>startEditEntry(e)} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
-                        <button onClick={()=>deleteEntry(e)} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
-                      </div>
-                    </div>
-                    {e.note && <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</div>}
-                  </div>
-                );
-              })}
-            </div>
+            <React.Fragment>
+              <div style={cardS}>
+                <div style={{fontSize:12, fontWeight:700, color:'#4b5563', marginBottom:8}}>Recent entries (latest 10)</div>
+                {unflagged.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>All entries have been flagged for the processor. See below.</div>}
+                {unflagged.slice(-10).reverse().map(e => renderRow(e, false))}
+              </div>
+              {isFinishers && flagged.length > 0 && (
+                <div style={{...cardS, border:'2px solid #fecaca', background:'#fef2f2'}}>
+                  <div style={{fontSize:12, fontWeight:700, color:'#991b1b', marginBottom:4}}>{'🚩 Going to processor ('+flagged.length+')'}</div>
+                  <div style={{fontSize:11, color:'#991b1b', marginBottom:8}}>These cows will be attached to a processing batch and moved to the Processed herd when you hit Complete. Still count toward the session's avg ADG.</div>
+                  {flagged.slice().reverse().map(e => renderRow(e, true))}
+                </div>
+              )}
+            </React.Fragment>
           );
         })()}
 
@@ -1053,6 +1095,17 @@ const WeighInsWebform = ({sb}) => {
           );
         })()}
       </div>
+      {showProcessorModal && (
+        <CattleSendToProcessorModal
+          sb={sb}
+          session={session}
+          flaggedEntries={entries.filter(e => e.send_to_processor === true)}
+          cattleList={cattleList}
+          teamMember={teamMember}
+          onCancel={()=>setShowProcessorModal(false)}
+          onConfirmed={async () => { setShowProcessorModal(false); await finalizeSession(); }}
+        />
+      )}
     </div>
   );
 
