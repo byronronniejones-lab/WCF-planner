@@ -52,36 +52,40 @@ if (COMMIT) {
 // Maps each Podio per-equipment checklist app to the target equipment row.
 // slug is what the URL uses (/equipment/<slug>, /fueling/<slug>); category
 // drives the public hub clusters; tracking_unit flags Hijets as km-based.
+// Per-piece hardcoded: fuel_type (diesel|gasoline|null) and takes_def (bool).
+// Ronnie's call 2026-04-23:
+//   Gas (no DEF): Hijets, Honda ATVs, Toro, Ventrac
+//   Diesel no DEF: 5065, Gehl, L328, Mini Ex
+//   Diesel + DEF: C362, PS100, Gyro-Trac, JD Gator, JD 317, JD 333,
+//                 Kubota RTV, Polaris Ranger
+//   No fuel at all: Great Plains Drill (implement)
 const EQUIPMENT_DEFS = [
   // TRACTORS
-  {slug:'5065',       category:'tractors',  tracking_unit:'hours', checklist_app:29677781, match_name:/5065/i},
-  {slug:'ps100',      category:'tractors',  tracking_unit:'hours', checklist_app:29670699, match_name:/powerstar/i},
-  {slug:'great-plains-drill', category:'tractors', tracking_unit:'hours', checklist_app:null, match_name:/great\s*plains|no.?till\s*drill/i},
-  // ATVs (Honda Foreman Rubicons). Regex anchored on "#N" to avoid the
-  // #1-also-matches-UTV10 issue from v1.
-  {slug:'honda-atv-1',category:'atvs',      tracking_unit:'hours', checklist_app:29711361, match_name:/#\s*1[\s-]+honda/i},
-  {slug:'honda-atv-2',category:'atvs',      tracking_unit:'hours', checklist_app:29855781, match_name:/#\s*2[\s-]+honda/i},
-  {slug:'honda-atv-3',category:'atvs',      tracking_unit:'hours', checklist_app:30126620, match_name:/#\s*3[\s-]+honda/i},
-  {slug:'honda-atv-4',category:'atvs',      tracking_unit:'hours', checklist_app:30126621, match_name:/#\s*4[\s-]+honda/i},
-  // HIJETS + other UTVs (km-based for Daihatsus; hours for Gator/Kubota)
-  {slug:'hijet-2018', category:'hijets',    tracking_unit:'km',    checklist_app:30104109, match_name:/2018.*hijet/i},
-  {slug:'hijet-2020', category:'hijets',    tracking_unit:'km',    checklist_app:30123211, match_name:/2020.*hijet/i},
-  // Archived Podio checklist apps → imported as status='retired' so they
-  // drop off the active Fleet tab but keep their fuel-log history.
-  {slug:'jd-gator',   category:'hijets',    tracking_unit:'hours', checklist_app:null,     match_name:/gator\s*xuv|john\s*deere.*gator/i, archived:true},
-  {slug:'kubota-rtv', category:'hijets',    tracking_unit:'hours', checklist_app:null,     match_name:/kubota|rtv-?x/i, archived:true},
+  {slug:'5065',       category:'tractors',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:29677781, match_name:/5065/i},
+  {slug:'ps100',      category:'tractors',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:29670699, match_name:/powerstar/i},
+  {slug:'great-plains-drill', category:'tractors', tracking_unit:'hours', fuel_type:null, takes_def:false, checklist_app:null, match_name:/great\s*plains|no.?till\s*drill/i},
+  // ATVs (Honda Foreman Rubicons).
+  {slug:'honda-atv-1',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:29711361, match_name:/#\s*1[\s-]+honda/i},
+  {slug:'honda-atv-2',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:29855781, match_name:/#\s*2[\s-]+honda/i},
+  {slug:'honda-atv-3',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:30126620, match_name:/#\s*3[\s-]+honda/i},
+  {slug:'honda-atv-4',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:30126621, match_name:/#\s*4[\s-]+honda/i},
+  // HIJETS + other UTVs
+  {slug:'hijet-2018', category:'hijets',    tracking_unit:'km',    fuel_type:'gasoline', takes_def:false, checklist_app:30104109, match_name:/2018.*hijet/i},
+  {slug:'hijet-2020', category:'hijets',    tracking_unit:'km',    fuel_type:'gasoline', takes_def:false, checklist_app:30123211, match_name:/2020.*hijet/i},
+  {slug:'jd-gator',   category:'hijets',    tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/gator\s*xuv|john\s*deere.*gator/i, archived:true},
+  {slug:'kubota-rtv', category:'hijets',    tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/kubota|rtv-?x/i, archived:true},
   // MOWERS
-  {slug:'toro',       category:'mowers',    tracking_unit:'hours', checklist_app:29786608, match_name:/toro/i},
-  {slug:'ventrac',    category:'mowers',    tracking_unit:'hours', checklist_app:30089562, match_name:/ventrac/i},
-  // SKIDSTEERS (+ compact loaders like John Deere 317/333)
-  {slug:'gehl',       category:'skidsteers',tracking_unit:'hours', checklist_app:30134561, match_name:/gehl/i},
-  {slug:'l328',       category:'skidsteers',tracking_unit:'hours', checklist_app:30473316, match_name:/l\s*328|new\s*holland\s*l328/i},
-  {slug:'jd-317',     category:'skidsteers',tracking_unit:'hours', checklist_app:null,     match_name:/john\s*deere\s*317|jd\s*317/i, archived:true},
-  {slug:'jd-333',     category:'skidsteers',tracking_unit:'hours', checklist_app:null,     match_name:/john\s*deere\s*333|jd\s*333/i, archived:true},
+  {slug:'toro',       category:'mowers',    tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:29786608, match_name:/toro/i},
+  {slug:'ventrac',    category:'mowers',    tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:30089562, match_name:/ventrac/i},
+  // SKIDSTEERS (+ compact loaders)
+  {slug:'gehl',       category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:30134561, match_name:/gehl/i},
+  {slug:'l328',       category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:30473316, match_name:/l\s*328|new\s*holland\s*l328/i},
+  {slug:'jd-317',     category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/john\s*deere\s*317|jd\s*317/i, archived:true},
+  {slug:'jd-333',     category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/john\s*deere\s*333|jd\s*333/i, archived:true},
   // FORESTRY
-  {slug:'gyro-trac',  category:'forestry',  tracking_unit:'hours', checklist_app:29788050, match_name:/gyro/i},
-  {slug:'c362',       category:'forestry',  tracking_unit:'hours', checklist_app:29673167, match_name:/c362|c\s*362/i},
-  {slug:'mini-ex',    category:'forestry',  tracking_unit:'hours', checklist_app:29673203, match_name:/mini.*ex|bobcat.*mini/i},
+  {slug:'gyro-trac',  category:'forestry',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:29788050, match_name:/gyro/i},
+  {slug:'c362',       category:'forestry',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:29673167, match_name:/c362|c\s*362/i},
+  {slug:'mini-ex',    category:'forestry',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:29673203, match_name:/mini.*ex|bobcat.*mini/i},
 ];
 
 // Category + slug used when Fuel Log entries reference a category that doesn't
@@ -145,7 +149,7 @@ const FUEL_LOG_CATEGORY_MAP = {
 // Maintenance Podio app — synthesized here so their fuelings have a target.
 // Admin can edit / retire later via the normal Fleet UI.
 const SYNTHETIC_EQUIPMENT = [
-  {slug:'polaris-ranger', name:'Polaris Ranger 4-Seater', category:'hijets', tracking_unit:'hours', fuel_type:'gasoline', archived:true},
+  {slug:'polaris-ranger', name:'Polaris Ranger 4-Seater', category:'hijets', tracking_unit:'hours', fuel_type:'diesel', takes_def:true, archived:true},
 ];
 
 // ───── helpers ───────────────────────────────────────────────────────────────
@@ -248,7 +252,8 @@ function buildEquipmentRows() {
       parent_equipment_id: null,
       status: defMatch.archived ? 'retired' : 'active',
       serial_number: fieldTextValue(item, 'serial-number'),
-      fuel_type: null,              // inferred from fueling entries later
+      fuel_type: defMatch.fuel_type || null,
+      takes_def: !!defMatch.takes_def,
       fuel_tank_gal: fieldNumValue(item, 'fuel-tank-capacity-in-gallons'),
       def_tank_gal: fieldNumValue(item, 'def-tank-capacity-in-gallons'),
       tracking_unit: defMatch.tracking_unit,
@@ -286,6 +291,7 @@ function buildEquipmentRows() {
       status: syn.archived ? 'retired' : 'active',
       serial_number: null,
       fuel_type: syn.fuel_type || null,
+      takes_def: !!syn.takes_def,
       fuel_tank_gal: null,
       def_tank_gal: null,
       tracking_unit: syn.tracking_unit,
@@ -329,20 +335,21 @@ function seedIntervalsForEquipment(eqRows) {
       })).filter(x => x.label);
     }
 
-    // Any category field whose name contains "HOUR" or "KM" is an interval check.
+    // Each category field on the checklist app represents ONE service
+    // interval. Its LABEL ("Every 100 hours checklist") carries the number;
+    // its options are just the tasks to perform at that interval.
+    // DON'T parse option texts — they're full of incidental numbers like
+    // torque values and tire pressures that aren't intervals.
     const intervals = [];
     for (const f of (config.fields || [])) {
       if (f.type !== 'category') continue;
-      if (!f.config || !f.config.settings || !Array.isArray(f.config.settings.options)) continue;
-      const lbl = (f.label || '').toUpperCase();
-      if (!/HOUR|KM|FIRST\s*\d|INITIAL\s*\d/.test(lbl)) continue;
-      // Each option is one tick, labeled with the actual interval value.
-      for (const opt of f.config.settings.options) {
-        const parsed = parseIntervalLabel(opt.text || f.label);
-        if (!parsed) continue;
-        for (const v of parsed.values) {
-          intervals.push({hours_or_km: v, kind: parsed.kind, label: parsed.label});
-        }
+      if (f.external_id === 'every-fuel-fill-up-checklist') continue;
+      const lbl = f.label || '';
+      if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
+      const parsed = parseIntervalLabel(lbl);
+      if (!parsed) continue;
+      for (const v of parsed.values) {
+        intervals.push({hours_or_km: v, kind: parsed.kind, label: lbl.trim()});
       }
     }
     // Dedup by hours_or_km + kind. Sort ascending.
