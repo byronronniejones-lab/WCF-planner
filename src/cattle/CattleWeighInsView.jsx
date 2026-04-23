@@ -187,6 +187,44 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     setShowNewModal(false);
   }
 
+  // ADG helpers — mirror the webform's computation so the admin tab and the
+  // webform show identical numbers for the same session.
+  function adgLbPerDay(priorWt, priorDate, curWt, curDate) {
+    if(priorWt == null || curWt == null || !priorDate || !curDate) return null;
+    const pd = new Date(priorDate+'T12:00:00');
+    const cd = new Date(curDate+'T12:00:00');
+    const days = Math.round((cd - pd) / 86400000);
+    if(!Number.isFinite(days) || days < 1) return null;
+    const adg = (parseFloat(curWt) - parseFloat(priorWt)) / days;
+    return Number.isFinite(adg) ? adg : null;
+  }
+  // For a given session, build {tag -> {weight, date}} from the most recent
+  // COMPLETED session strictly earlier than this one. Computed on demand as
+  // sessions expand, using the entries map already in memory.
+  function computePriorsForSession(sess) {
+    const byTag = {};
+    if(!sess) return byTag;
+    const sessionById = {};
+    sessions.forEach(o => { sessionById[o.id] = o; });
+    const earlier = sessions.filter(o => {
+      if(o.id === sess.id) return false;
+      if(o.status !== 'complete') return false;
+      if((o.date||'') < (sess.date||'')) return true;
+      if((o.date||'') === (sess.date||'')) return (o.started_at||'') < (sess.started_at||'');
+      return false;
+    });
+    for(const o of earlier) {
+      const es = entries[o.id] || [];
+      for(const e of es) {
+        if(!e.tag) continue;
+        const existing = byTag[e.tag];
+        const sd = o.date;
+        if(!existing || sd > existing.date) byTag[e.tag] = {weight: parseFloat(e.weight)||0, date: sd};
+      }
+    }
+    return byTag;
+  }
+
   // Tag search: filter both sessions and the entries-within-session. When a
   // search is active, sessions with zero matching entries drop out, and within
   // each surviving session only the matching entries render.
@@ -264,11 +302,24 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                   <span style={{fontSize:11, fontWeight:600, color:tagQ?'#065f46':'#1e40af'}}>{countLabel}</span>
                   {newTagCount > 0 && !tagQ && <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>{newTagCount + ' new tags'}</span>}
                 </div>
-                {isExpanded && (
+                {isExpanded && (() => {
+                  const priors = computePriorsForSession(s);
+                  const curDate = s.date;
+                  const adgs = sEntriesAll.map(e => {
+                    const p = priors[e.tag];
+                    return p ? adgLbPerDay(p.weight, p.date, e.weight, curDate) : null;
+                  }).filter(a => a != null);
+                  const avgAdg = adgs.length > 0 ? (adgs.reduce((x,v) => x+v, 0) / adgs.length) : null;
+                  return (
                   <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
-                    <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap'}}>
+                    <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap', alignItems:'center'}}>
                       {s.status === 'draft' && <button onClick={()=>completeSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #047857', background:'#047857', color:'white', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'\u2713 Complete Session'}</button>}
                       {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Session</button>}
+                      {avgAdg != null && (
+                        <span title={adgs.length+' of '+sEntriesAll.length+' entries have a prior weigh-in'} style={{padding:'3px 10px', borderRadius:6, background:avgAdg>=0?'#ecfdf5':'#fef2f2', color:avgAdg>=0?'#065f46':'#b91c1c', border:'1px solid '+(avgAdg>=0?'#a7f3d0':'#fecaca'), fontSize:11, fontWeight:700}}>
+                          {'avg ADG '+(avgAdg>=0?'+':'')+avgAdg.toFixed(2)+' lb/d ('+adgs.length+' of '+sEntriesAll.length+')'}
+                        </span>
+                      )}
                       <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Session</button>
                     </div>
                     {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No entries in this session.</div>}
@@ -277,6 +328,8 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                         {sEntries.map(e => {
                           const cow = cattle.find(c => c.tag === e.tag);
                           const isEditing = editingEntryId === e.id;
+                          const prior = priors[e.tag];
+                          const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
                           return (
                             <div key={e.id} style={{background:'white', border:'1px solid '+(e.new_tag_flag?'#fca5a5':'#e5e7eb'), borderRadius:6, padding:'6px 10px', fontSize:12}}>
                               {isEditing ? (
@@ -296,6 +349,8 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                                   <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                                     {e.tag ? <span style={{fontWeight:700, color:'#111827'}}>{'#'+e.tag}</span> : <span style={{color:'#9ca3af'}}>(no tag)</span>}
                                     <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
+                                    {prior && <span style={{fontSize:10, color:'#6b7280'}} title={'prior '+prior.date}>{'prior '+Math.round(prior.weight)+' lb'}</span>}
+                                    {adg != null && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:adg>=0?'#ecfdf5':'#fef2f2', color:adg>=0?'#065f46':'#b91c1c', border:'1px solid '+(adg>=0?'#a7f3d0':'#fecaca')}}>{(adg>=0?'+':'')+adg.toFixed(2)+' lb/d'}</span>}
                                     {e.new_tag_flag && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
                                     {!e.new_tag_flag && cow && <span style={{fontSize:11, color:'#6b7280'}}>{HERD_LABELS[cow.herd]||cow.herd}</span>}
                                     <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
@@ -329,7 +384,8 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
                       <button onClick={()=>addEntryToSession(s)} disabled={!(parseFloat(addEntryForm.weight)>0)} style={{padding:'4px 12px', borderRadius:5, border:'none', background:(parseFloat(addEntryForm.weight)>0)?'#1e40af':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(addEntryForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>{addEntryForm.priorTag?'Swap + Add':'Add'}</button>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })}

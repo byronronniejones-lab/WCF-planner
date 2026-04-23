@@ -53,6 +53,13 @@ const WeighInsWebform = ({sb}) => {
   const [columnLabels, setColumnLabels] = React.useState(['1','2']);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // Inline edit of a Recent-entries row (cattle/sheep/pig). editingEntryId =
+  // the weigh_ins row being edited; editDraft holds the pending changes. Tag
+  // is intentionally not editable on the webform -- the admin weigh-ins tab
+  // is the sophisticated fix-it surface. Delete + re-add via tag picker if
+  // the wrong cow was selected.
+  const [editingEntryId, setEditingEntryId] = React.useState(null);
+  const [editDraft, setEditDraft] = React.useState({weight:'', note:''});
 
   React.useEffect(() => {
     const d = new Date();
@@ -412,6 +419,58 @@ const WeighInsWebform = ({sb}) => {
     try {
       await sb.from('cattle_comments').update({cattle_id: cowId, cattle_tag: newTag}).eq('reference_id', entry.id);
     } catch(e){ /* table may not exist yet */ }
+    setBusy(false);
+  }
+  function startEditEntry(entry) {
+    setEditingEntryId(entry.id);
+    setEditDraft({weight: String(entry.weight ?? ''), note: entry.note || ''});
+    setErr('');
+  }
+  async function saveEditEntry(entry) {
+    const w = parseFloat(editDraft.weight);
+    if(!Number.isFinite(w) || w <= 0) { setErr('Weight must be greater than 0.'); return; }
+    setErr(''); setBusy(true);
+    const newNote = (editDraft.note || '').trim();
+    const {error} = await sb.from('weigh_ins').update({weight: w, note: newNote || null}).eq('id', entry.id);
+    if(error) { setBusy(false); setErr('Save failed: '+error.message); return; }
+    // Cattle: keep cattle_comments in sync with the entry's note. Delete any
+    // prior comment, then re-insert if the new note is non-empty. Keeps the
+    // cow's timeline accurate if a team member fat-fingers a note.
+    if(species === 'cattle' && entry.tag) {
+      try {
+        await sb.from('cattle_comments').delete().eq('source','weigh_in').eq('reference_id', entry.id);
+        if(newNote) {
+          const cow = cattleList.find(c => c.tag === entry.tag);
+          await sb.from('cattle_comments').insert({
+            id: String(Date.now())+Math.random().toString(36).slice(2,6),
+            cattle_id: cow ? cow.id : null,
+            cattle_tag: entry.tag,
+            comment: newNote,
+            team_member: teamMember || null,
+            source: 'weigh_in',
+            reference_id: entry.id,
+          });
+        }
+      } catch(e){ /* table may not exist yet */ }
+    }
+    setEntries(prev => prev.map(e => e.id === entry.id ? {...e, weight: w, note: newNote || null} : e));
+    setEditingEntryId(null);
+    setBusy(false);
+  }
+  async function deleteEntry(entry) {
+    // Webform is anon-accessible -- _wcfConfirmDelete (App-scoped) isn't
+    // mounted here, so fall back to window.confirm unconditionally.
+    if(!window.confirm('Delete this entry? This cannot be undone.')) return;
+    setBusy(true);
+    // Cattle: clean up the linked comment before dropping the weigh-in.
+    if(species === 'cattle') {
+      try { await sb.from('cattle_comments').delete().eq('source','weigh_in').eq('reference_id', entry.id); }
+      catch(e){}
+    }
+    const {error} = await sb.from('weigh_ins').delete().eq('id', entry.id);
+    if(error) { setBusy(false); setErr('Delete failed: '+error.message); return; }
+    setEntries(prev => prev.filter(e => e.id !== entry.id));
+    if(editingEntryId === entry.id) setEditingEntryId(null);
     setBusy(false);
   }
   // Pig/broiler: the grid is the source of truth for the session.
@@ -865,12 +924,30 @@ const WeighInsWebform = ({sb}) => {
             {tail.map((e, i) => {
               // i=0 is the oldest in the tail. 1-based number = firstNum + i.
               const entryNum = firstNum + i;
+              const isEditing = editingEntryId === e.id;
+              if(isEditing) return (
+                <div key={e.id} style={{padding:'8px 0', borderBottom:'1px solid #f3f4f6', display:'flex', flexDirection:'column', gap:6}}>
+                  <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700, color:'#111827', minWidth:40, fontSize:12}}>#{entryNum}</span>
+                    <input type="number" min="0" step="0.1" value={editDraft.weight} onChange={ev=>setEditDraft(d=>({...d, weight:ev.target.value}))} placeholder="lb" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:90}}/>
+                    <input type="text" value={editDraft.note} onChange={ev=>setEditDraft(d=>({...d, note:ev.target.value}))} placeholder="Note (optional)" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', flex:1, minWidth:100}}/>
+                  </div>
+                  <div style={{display:'flex', gap:6, justifyContent:'flex-end'}}>
+                    <button onClick={()=>setEditingEntryId(null)} style={{padding:'5px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                    <button onClick={()=>saveEditEntry(e)} disabled={busy||!(parseFloat(editDraft.weight)>0)} style={{padding:'5px 14px', borderRadius:6, border:'none', background:(busy||!(parseFloat(editDraft.weight)>0))?'#9ca3af':'#1e40af', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!(parseFloat(editDraft.weight)>0))?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving…':'Save'}</button>
+                  </div>
+                </div>
+              );
               return (
                 <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
                   <span style={{fontWeight:700, color:'#111827', minWidth:40}}>#{entryNum}</span>
                   <span style={{color:'#9ca3af'}}>{'·'}</span>
                   <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
                   {e.note && <><span style={{color:'#9ca3af'}}>{'·'}</span><span style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</span></>}
+                  <div style={{marginLeft:'auto', display:'flex', gap:4}}>
+                    <button onClick={()=>startEditEntry(e)} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
+                    <button onClick={()=>deleteEntry(e)} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
+                  </div>
                 </div>
               );
             })}
@@ -891,6 +968,20 @@ const WeighInsWebform = ({sb}) => {
                 const age = ageYM(animal ? animal.birth_date : null, curDate);
                 const prior = priorByTag[e.tag];
                 const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
+                const isEditing = editingEntryId === e.id;
+                if(isEditing) return (
+                  <div key={e.id} style={{padding:'8px 0', borderBottom:'1px solid #f3f4f6', display:'flex', flexDirection:'column', gap:6}}>
+                    <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+                      {e.tag && <span style={{fontWeight:700, color:'#111827', minWidth:50, fontSize:12}}>#{e.tag}</span>}
+                      <input type="number" min="0" step="0.1" value={editDraft.weight} onChange={ev=>setEditDraft(d=>({...d, weight:ev.target.value}))} placeholder="lb" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:90}}/>
+                    </div>
+                    <input type="text" value={editDraft.note} onChange={ev=>setEditDraft(d=>({...d, note:ev.target.value}))} placeholder="Note (optional)" style={{fontSize:13, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                    <div style={{display:'flex', gap:6, justifyContent:'flex-end'}}>
+                      <button onClick={()=>setEditingEntryId(null)} style={{padding:'5px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                      <button onClick={()=>saveEditEntry(e)} disabled={busy||!(parseFloat(editDraft.weight)>0)} style={{padding:'5px 14px', borderRadius:6, border:'none', background:(busy||!(parseFloat(editDraft.weight)>0))?'#9ca3af':(species==='sheep'?'#0f766e':'#1e40af'), color:'white', fontSize:12, fontWeight:600, cursor:(busy||!(parseFloat(editDraft.weight)>0))?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Saving…':'Save'}</button>
+                    </div>
+                  </div>
+                );
                 return (
                   <div key={e.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12, display:'flex', flexDirection:'column', gap:2}}>
                     <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
@@ -900,6 +991,10 @@ const WeighInsWebform = ({sb}) => {
                       <span style={{fontWeight:600, color:'#1e40af'}}>{e.weight} lb</span>
                       {adg != null && <span style={{fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:4, background:adg>=0?'#ecfdf5':'#fef2f2', color:adg>=0?'#065f46':'#b91c1c', border:'1px solid '+(adg>=0?'#a7f3d0':'#fecaca')}}>{(adg>=0?'+':'')+adg.toFixed(2)+' lb/d'}</span>}
                       {e.new_tag_flag && <span style={{fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
+                      <div style={{marginLeft:'auto', display:'flex', gap:4}}>
+                        <button onClick={()=>startEditEntry(e)} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
+                        <button onClick={()=>deleteEntry(e)} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
+                      </div>
                     </div>
                     {e.note && <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{e.note}</div>}
                   </div>
