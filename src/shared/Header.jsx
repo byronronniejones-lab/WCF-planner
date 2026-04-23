@@ -33,7 +33,8 @@ export default function Header({ showDailyForm, signOut, backupData, restoreData
     const inLayers     = ['layersHome','layerbatches','layerdailys','eggdailys'].includes(view);
     const inCattle     = cattleViews.includes(view);
     const inSheep      = sheepViews.includes(view);
-    const inSection    = inPoultry || inPigs || inLayers || inCattle || inSheep;
+    const inEquipment  = view === 'equipmentHome';
+    const inSection    = inPoultry || inPigs || inLayers || inCattle || inSheep || inEquipment;
     const nb = (active) => ({
       padding:'7px 16px', borderRadius:8, cursor:'pointer', fontFamily:'inherit',
       fontSize:12, fontWeight:active?700:500, whiteSpace:'nowrap',
@@ -56,6 +57,7 @@ export default function Header({ showDailyForm, signOut, backupData, restoreData
           {inLayers&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>LAYERS</span>}
           {inCattle&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>CATTLE</span>}
           {inSheep&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>SHEEP</span>}
+          {inEquipment&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>EQUIPMENT</span>}
         </button>
         <div style={{fontSize:11,display:"flex",alignItems:"center",gap:5,opacity:.75}}>
           {saveStatus==='saving'&&<span style={{color:"#a7f3d0",fontWeight:500}}>Saving…</span>}
