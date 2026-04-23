@@ -74,6 +74,7 @@ export const VIEW_TO_PATH = {
   addfeed:          '/addfeed',
   weighins:         '/weighins',
   webform:          '/webform-pigs',   // legacy standalone pig-dailys public form (rare)
+  fuelingHub:       '/fueling',
 };
 
 // Reverse map: path → view. Used by the URL sync adapter on mount and on
