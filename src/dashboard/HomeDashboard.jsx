@@ -42,6 +42,23 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
     const todayStr = todayISO();
     const in30 = toISO(addDays(today, 30));
 
+    // Equipment data for missed-fueling + stat card. Loaded defensively so
+    // the home page still renders if migration 016 hasn't been applied.
+    const [equipment, setEquipment] = React.useState([]);
+    const [equipmentLastFueling, setEquipmentLastFueling] = React.useState({}); // eq.id → last date
+    React.useEffect(() => {
+      sb.from('equipment').select('id,slug,name,status,tracking_unit,current_hours,current_km,warranty_expiration,service_intervals').eq('status','active').then(({data, error}) => {
+        if (error || !data) return;
+        setEquipment(data);
+      });
+      sb.from('equipment_fuelings').select('equipment_id,date').order('date',{ascending:false}).limit(5000).then(({data, error}) => {
+        if (error || !data) return;
+        const m = {};
+        for (const r of data) { if (!m[r.equipment_id]) m[r.equipment_id] = r.date; }
+        setEquipmentLastFueling(m);
+      });
+    }, []);
+
     // Auto-status counts for poultry
     const activeBatches = batches.filter(b => calcPoultryStatus(b)==='active');
     const plannedBatches = batches.filter(b => calcPoultryStatus(b)==='planned');
@@ -183,6 +200,24 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
           allMissed.push({key,label:f.charAt(0).toUpperCase()+f.slice(1),icon:'🐑',type:'Sheep',date:checkDate});
       });
     }
+    // Equipment — flag active pieces that haven't logged a fueling in 14+ days.
+    // One entry per piece (not per day) since equipment runs sporadically.
+    const MISSED_FUELING_DAYS = 14;
+    equipment.forEach(eq => {
+      const last = equipmentLastFueling[eq.id];
+      if (!last) {
+        // Never fueled — only flag if it's an older piece (we assume any active
+        // piece should have at least one fueling on record). Use a per-piece key.
+        const key = `equip-nofuel-${eq.id}`;
+        if (!missedCleared.has(key)) allMissed.push({key, label:eq.name, icon:'🚜', type:'Equipment — no fueling on record', date: todayStr});
+        return;
+      }
+      const daysSince = Math.floor((new Date(todayStr+'T12:00:00') - new Date(last+'T12:00:00')) / 86400000);
+      if (daysSince > MISSED_FUELING_DAYS) {
+        const key = `equip-${eq.id}|${last}`;
+        if (!missedCleared.has(key)) allMissed.push({key, label:eq.name, icon:'🚜', type:`Equipment — ${daysSince}d since last fueling`, date: last});
+      }
+    });
     // Sort newest first
     allMissed.sort((a,b)=>b.date.localeCompare(a.date));
     const activeBroilerBatches2 = batches.filter(b=>calcPoultryStatus(b)==='active');
