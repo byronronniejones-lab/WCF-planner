@@ -1,109 +1,465 @@
-// Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
+// Sheep detail pane — inline-editable expanded tile, mirrors CowDetail.jsx
+// byte-for-byte functionality; only field names (sheep / flock / lambing /
+// dam_reg_num / sire_reg_num / ewe-ram-wether) differ. Ronnie's request
+// 2026-04-23: sheep flocks tab should match cattle herds tab exactly,
+// with only the fields and data distinct.
 import React from 'react';
 
-const SheepDetail = ({sheep, weighIns, lambing, comments, lambs, dam, fmt, FLOCK_LABELS, onEdit, onTransfer, onDelete, onComment, onAddLambing, onDeleteLambing}) => {
-  const {useState} = React;
-  const [commentText, setCommentText] = useState('');
-  const [showLambForm, setShowLambForm] = useState(false);
-  const [lambForm, setLambForm] = useState({lambing_date:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''});
-  const sectionT = {fontSize:11, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, fontWeight:700, marginBottom:6};
-  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', boxSizing:'border-box', width:'100%'};
-  const wiSorted = [...weighIns].sort((a,b)=>(b.entered_at||'').localeCompare(a.entered_at||''));
+const SheepDetail = ({
+  sheep, weighIns, lambing, comments, lambs, dam, sheepList,
+  fmt, FLOCKS, FLOCK_LABELS, FLOCK_COLORS,
+  onEdit, onTransfer, onDelete, onComment, onEditComment, onDeleteComment,
+  onAddLambing, onDeleteLambing,
+  onNavigateToSheep, onNavigateBack, canNavigateBack, backToTag,
+  onPatch, onClose, originOpts, breedOpts,
+}) => {
+  const patchOnBlur = (field, parser) => (ev) => {
+    if(!onPatch) return;
+    const raw = ev.target.value;
+    const cur = sheep[field];
+    let next;
+    if(parser === 'number') {
+      next = raw === '' ? null : parseFloat(raw);
+      if(Number.isNaN(next)) next = null;
+    } else {
+      next = (raw||'').trim() || null;
+    }
+    const curNorm = (cur === '' ? null : cur);
+    if(String(next) === String(curNorm)) return;
+    onPatch({[field]: next});
+  };
+  const patchOnChange = (field) => (ev) => {
+    if(!onPatch) return;
+    const v = ev.target.type === 'checkbox' ? ev.target.checked : (ev.target.value || null);
+    onPatch({[field]: v});
+  };
+  function patchOldTagAt(idx, field, value) {
+    if(!onPatch) return;
+    const next = (Array.isArray(sheep.old_tags) ? sheep.old_tags : []).slice();
+    next[idx] = {...next[idx], [field]: value};
+    onPatch({old_tags: next});
+  }
+  function addOldTag() {
+    if(!onPatch) return;
+    const next = [...(Array.isArray(sheep.old_tags) ? sheep.old_tags : []), {tag:'', changed_at:'', source:'manual'}];
+    onPatch({old_tags: next});
+  }
+  function removeOldTag(idx) {
+    if(!onPatch) return;
+    const next = (Array.isArray(sheep.old_tags) ? sheep.old_tags : []).filter((_, i) => i !== idx);
+    onPatch({old_tags: next});
+  }
+  const editInp = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', width:'100%', background:'white'};
+  const [commentText, setCommentText] = React.useState('');
+  const [showTransfer, setShowTransfer] = React.useState(false);
+  const [showLambForm, setShowLambForm] = React.useState(false);
+  const [editingCommentId, setEditingCommentId] = React.useState(null);
+  const [editingCommentText, setEditingCommentText] = React.useState('');
+  const [lambForm, setLambForm] = React.useState({lambing_date:new Date().toISOString().slice(0,10), total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''});
+  const [weightView, setWeightView] = React.useState('table');
+  const [chartHover, setChartHover] = React.useState(null);
+  const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:6};
+  const isEwe = sheep.flock === 'ewes';
+  async function submitLambing() {
+    const ok = await onAddLambing(lambForm);
+    if(ok) { setShowLambForm(false); setLambForm({lambing_date:new Date().toISOString().slice(0,10), total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''}); }
+  }
+  const inpC = {fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const lblC = {fontSize:10, color:'#6b7280', display:'block', marginBottom:2, fontWeight:500};
+
+  const findByTag = (t) => t && Array.isArray(sheepList) ? sheepList.find(x => x.tag === t) : null;
+  const accentColor = (FLOCK_COLORS && FLOCK_COLORS[sheep.flock] && FLOCK_COLORS[sheep.flock].tx) || '#0f766e';
+  const linkStyle = {color:'#1d4ed8', cursor:'pointer', textDecoration:'underline', background:'none', border:'none', padding:0, font:'inherit'};
+  const TagLink = ({tag, prefix, label}) => {
+    const t = findByTag(tag);
+    if(!t || !onNavigateToSheep) return <span>{(prefix||'')+(label||('#'+tag))}</span>;
+    return <button type="button" onClick={(e)=>{e.stopPropagation(); onNavigateToSheep(t);}} style={linkStyle}>{(prefix||'')+(label||('#'+tag))}</button>;
+  };
+
   return (
-    <div style={{padding:'14px 18px', background:'#f9fafb', borderTop:'2px solid #0f766e', borderBottom:'2px solid #0f766e', borderLeft:'2px solid #0f766e', borderRight:'2px solid #0f766e', borderRadius:8, margin:'0 8px 8px'}}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, gap:8, flexWrap:'wrap'}}>
-        <div style={{display:'flex', gap:6}}>
-          <button onClick={onEdit} style={{fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#374151', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>Edit</button>
-          <select onChange={e=>{ if(e.target.value){ onTransfer(e.target.value); e.target.value=''; }}} defaultValue="" style={{...inpS, width:'auto', padding:'4px 8px', fontSize:11}}>
-            <option value="">{'Transfer\u2026'}</option>
-            {Object.entries(FLOCK_LABELS).filter(([k])=>k!==sheep.flock).map(([k,l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
-          <button onClick={onDelete} style={{fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #fecaca', background:'white', color:'#7f1d1d', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>Delete</button>
+    <div style={{background:'#ffffff', padding:'14px 18px', border:'2px solid '+accentColor, borderRadius:8, boxShadow:'0 2px 6px rgba(0,0,0,.06)', margin:'8px 12px 14px'}}>
+      {canNavigateBack && onNavigateBack && (
+        <div style={{marginBottom:10, padding:'6px 10px', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:6, display:'flex', alignItems:'center', gap:8}}>
+          <button type="button" onClick={(e)=>{e.stopPropagation(); onNavigateBack();}} style={{...linkStyle, fontWeight:600}}>{'← Back'+(backToTag?(' to #'+backToTag):'')}</button>
+          <span style={{fontSize:11, color:'#6b7280'}}>{'— you navigated here from another sheep'}</span>
         </div>
+      )}
+      {/* Header: editable tag + sex/flock/breed selects + close X */}
+      <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10, paddingBottom:8, borderBottom:'1px solid #f3f4f6', flexWrap:'wrap'}}>
+        <span style={{fontSize:16, fontWeight:700, color:accentColor, marginRight:2}}>{'#'}</span>
+        <input type="text" defaultValue={sheep.tag||''} onBlur={patchOnBlur('tag','text')} placeholder="tag" style={{...editInp, width:80, fontWeight:700, fontSize:14, color:accentColor}}/>
+        <select defaultValue={sheep.flock||''} onChange={patchOnChange('flock')} style={{...editInp, width:140}}>
+          {(FLOCKS||[]).map(f => <option key={f} value={f}>{FLOCK_LABELS[f]||f}</option>)}
+        </select>
+        <select defaultValue={sheep.sex||''} onChange={patchOnChange('sex')} style={{...editInp, width:100}}>
+          <option value=''>{'— sex —'}</option>
+          <option value='ewe'>Ewe</option>
+          <option value='ram'>Ram</option>
+          <option value='wether'>Wether</option>
+          <option value='lamb'>Lamb</option>
+        </select>
+        <select defaultValue={sheep.breed||''} onChange={patchOnChange('breed')} style={{...editInp, width:200}}>
+          <option value=''>{'— breed —'}</option>
+          {(breedOpts||[]).map(b => <option key={b.id} value={b.label}>{b.label}</option>)}
+          {sheep.breed && !(breedOpts||[]).some(b=>b.label===sheep.breed) && (
+            <option value={sheep.breed}>{sheep.breed+' (historical)'}</option>
+          )}
+        </select>
+        {onClose && <button type="button" onClick={(e)=>{e.stopPropagation(); onClose();}} title="Close" style={{marginLeft:'auto', background:'none', border:'1px solid #d1d5db', borderRadius:6, color:'#6b7280', cursor:'pointer', fontSize:18, lineHeight:1, padding:'2px 10px', fontFamily:'inherit'}}>{'×'}</button>}
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:18, marginBottom:18}}>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+        {/* Identity (editable) */}
         <div>
-          <div style={sectionT}>Identity</div>
-          <div style={{fontSize:12, color:'#374151', lineHeight:1.7}}>
-            <div>Tag: <strong>{sheep.tag||'\u2014'}</strong></div>
-            <div>Sex: <strong>{(sheep.sex||'\u2014').toUpperCase()}</strong></div>
-            <div>Breed: <strong>{sheep.breed||'\u2014'}</strong></div>
-            <div>Origin: <strong>{sheep.origin||'\u2014'}</strong></div>
-            <div>DOB: <strong>{sheep.birth_date ? fmt(sheep.birth_date) : '\u2014'}</strong></div>
-            <div>Purchased: <strong>{sheep.purchase_date ? fmt(sheep.purchase_date)+(sheep.purchase_amount?' \u00b7 $'+Number(sheep.purchase_amount).toLocaleString():'') : '\u2014'}</strong></div>
-            <div>Breeding: <strong>{sheep.breeding_status||'\u2014'}</strong></div>
+          <div style={sectionTitle}>Identity</div>
+          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'120px 1fr', gap:'4px 8px', alignItems:'center'}}>
+            <span style={{color:'#9ca3af'}}>Reg #:</span>
+            <input type="text" defaultValue={sheep.registration_num||''} onBlur={patchOnBlur('registration_num','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Origin:</span>
+            <select defaultValue={sheep.origin||''} onChange={patchOnChange('origin')} style={editInp}>
+              <option value=''>{'— select —'}</option>
+              {(originOpts||[]).map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+              {sheep.origin && !(originOpts||[]).some(o=>o.label===sheep.origin) && (
+                <option value={sheep.origin}>{sheep.origin}</option>
+              )}
+            </select>
+            <span style={{color:'#9ca3af'}}>Birth:</span>
+            <input type="date" defaultValue={sheep.birth_date||''} onBlur={patchOnBlur('birth_date','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Purchased:</span>
+            <input type="date" defaultValue={sheep.purchase_date||''} onBlur={patchOnBlur('purchase_date','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Purchase $:</span>
+            <input type="number" min="0" step="0.01" defaultValue={sheep.purchase_amount==null?'':sheep.purchase_amount} onBlur={patchOnBlur('purchase_amount','number')} style={editInp}/>
+            {sheep.sex === 'ewe' && (<>
+              <span style={{color:'#9ca3af'}}>Breeding:</span>
+              <select defaultValue={sheep.breeding_status||''} onChange={patchOnChange('breeding_status')} style={editInp}>
+                <option value=''>{'— not set —'}</option>
+                <option value='Open'>Open</option>
+                <option value='Pregnant'>Pregnant</option>
+                <option value='N/A'>N/A</option>
+              </select>
+            </>)}
           </div>
         </div>
+        {/* Lineage (editable) */}
         <div>
-          <div style={sectionT}>Lineage</div>
-          <div style={{fontSize:12, color:'#374151', lineHeight:1.7}}>
-            <div>Dam: <strong>{sheep.dam_tag||'\u2014'}</strong>{sheep.dam_reg_num?' (reg '+sheep.dam_reg_num+')':''}{dam ? ' \u00b7 in '+(FLOCK_LABELS[dam.flock]||dam.flock):''}</div>
-            <div>Sire: <strong>{sheep.sire_tag||'\u2014'}</strong>{sheep.sire_reg_num?' (reg '+sheep.sire_reg_num+')':''}</div>
-            <div>Lambs in directory: <strong>{lambs.length}</strong></div>
-            {Array.isArray(sheep.old_tags) && sheep.old_tags.length > 0 && <div>Prior tags: <strong>{sheep.old_tags.map(t=>'#'+t.tag).join(', ')}</strong></div>}
+          <div style={sectionTitle}>Lineage</div>
+          <div style={{fontSize:12, color:'#374151', display:'grid', gridTemplateColumns:'120px 1fr', gap:'4px 8px', alignItems:'center'}}>
+            <span style={{color:'#9ca3af'}}>Dam tag #:</span>
+            <input type="text" defaultValue={sheep.dam_tag||''} onBlur={patchOnBlur('dam_tag','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Dam reg #:</span>
+            <input type="text" defaultValue={sheep.dam_reg_num||''} onBlur={patchOnBlur('dam_reg_num','text')} style={editInp}/>
+            {sheep.dam_tag && findByTag(sheep.dam_tag) && (<>
+              <span style={{color:'#9ca3af'}}>{}</span>
+              <span style={{fontSize:11, color:'#6b7280'}}><TagLink tag={sheep.dam_tag} prefix="View "/> {'('+(findByTag(sheep.dam_tag).breed||'?')+')'}</span>
+            </>)}
+            <span style={{color:'#9ca3af'}}>Sire tag #:</span>
+            <input type="text" defaultValue={sheep.sire_tag||''} onBlur={patchOnBlur('sire_tag','text')} style={editInp}/>
+            <span style={{color:'#9ca3af'}}>Sire reg #:</span>
+            <input type="text" defaultValue={sheep.sire_reg_num||''} onBlur={patchOnBlur('sire_reg_num','text')} style={editInp}/>
+            {sheep.sire_tag && findByTag(sheep.sire_tag) && (<>
+              <span style={{color:'#9ca3af'}}>{}</span>
+              <span style={{fontSize:11, color:'#6b7280'}}><TagLink tag={sheep.sire_tag} prefix="View "/> {'('+(findByTag(sheep.sire_tag).breed||'?')+')'}</span>
+            </>)}
           </div>
         </div>
       </div>
 
-      <div style={{marginBottom:18}}>
-        <div style={sectionT}>Weight History ({wiSorted.length})</div>
-        {wiSorted.length === 0 ? <div style={{fontSize:12, color:'#9ca3af'}}>No weigh-ins yet.</div> : (
-          <div style={{maxHeight:200, overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:6}}>
-            <table style={{width:'100%', fontSize:12, borderCollapse:'collapse'}}>
-              <thead><tr style={{background:'#f3f4f6'}}><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Date</th><th style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>Weight</th><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Note</th></tr></thead>
-              <tbody>
-                {wiSorted.map(w => <tr key={w.id} style={{borderTop:'1px solid #f3f4f6'}}><td style={{padding:'5px 10px'}}>{fmt(w.entered_at?w.entered_at.slice(0,10):'')}</td><td style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>{w.weight} lb</td><td style={{padding:'5px 10px', color:'#6b7280'}}>{w.note||'\u2014'}</td></tr>)}
-              </tbody>
-            </table>
+      {/* Prior Tags editor */}
+      <div style={{marginTop:12, paddingTop:10, borderTop:'1px solid #f3f4f6'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+          <div style={sectionTitle}>Prior Tags</div>
+          <button type="button" onClick={addOldTag} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'1px dashed #bfdbfe', borderRadius:5, padding:'3px 10px', cursor:'pointer', fontFamily:'inherit'}}>+ Add Prior Tag</button>
+        </div>
+        {(sheep.old_tags||[]).length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No prior tags recorded.</div>}
+        {(sheep.old_tags||[]).map((t, ti) => (
+          <div key={ti} style={{display:'grid', gridTemplateColumns:'100px 140px 1fr 30px', gap:8, marginBottom:6, alignItems:'center'}}>
+            <input type="text" placeholder="Tag #" defaultValue={t.tag||''} onBlur={ev=>patchOldTagAt(ti, 'tag', ev.target.value)} style={editInp}/>
+            <input type="date" defaultValue={(t.changed_at||'').slice(0,10)} onBlur={ev=>patchOldTagAt(ti, 'changed_at', ev.target.value)} style={editInp}/>
+            <select defaultValue={t.source||'manual'} onChange={ev=>patchOldTagAt(ti, 'source', ev.target.value)} style={editInp}>
+              <option value='import'>Purchase tag (selling farm)</option>
+              <option value='weigh_in'>Swapped tag (weigh-in)</option>
+              <option value='manual'>Other / manual entry</option>
+            </select>
+            <button type="button" title="Remove" onClick={()=>removeOldTag(ti)} style={{background:'none', border:'1px solid #F09595', borderRadius:5, color:'#b91c1c', cursor:'pointer', fontSize:14, lineHeight:1, padding:'4px 6px', fontFamily:'inherit'}}>{'×'}</button>
           </div>
-        )}
+        ))}
       </div>
 
-      {sheep.sex === 'ewe' && (
-        <div style={{marginBottom:18}}>
+      {/* Breeding blacklist (hidden for wethers — they can't breed) */}
+      {sheep.sex !== 'wether' && (
+        <div style={{marginTop:10, paddingTop:8, borderTop:'1px solid #f3f4f6'}}>
+          <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#7f1d1d', fontWeight:600, whiteSpace:'nowrap'}}>
+            <input type="checkbox" checked={!!sheep.breeding_blacklist} onChange={patchOnChange('breeding_blacklist')} style={{margin:0,flexShrink:0}}/>
+            <span>Breeding blacklist</span>
+          </label>
+          <div style={{fontSize:11, color:'#9ca3af', marginLeft:26, marginTop:4}}>Use the comments timeline to record why.</div>
+        </div>
+      )}
+
+      {/* Weight history — table/chart toggle + per-row ADG + lifetime footer */}
+      {weighIns && weighIns.length > 0 && (() => {
+        const asc = [...weighIns].sort((a,b) => (a.entered_at||'').localeCompare(b.entered_at||''));
+        const rows = asc.map((w, i) => {
+          const d = (w.entered_at||'').slice(0,10);
+          const wt = parseFloat(w.weight) || 0;
+          const prev = i > 0 ? asc[i-1] : null;
+          const prevD = prev ? (prev.entered_at||'').slice(0,10) : null;
+          const prevW = prev ? parseFloat(prev.weight) || 0 : 0;
+          const dDays = prev ? Math.round((new Date(d+'T12:00:00') - new Date(prevD+'T12:00:00')) / 86400000) : null;
+          const dWt   = prev ? Math.round((wt - prevW) * 10) / 10 : null;
+          const lbDay = (prev && dDays > 0) ? Math.round((dWt / dDays) * 100) / 100 : null;
+          return { ...w, date: d, wt, dDays, dWt, lbDay };
+        });
+        const desc = [...rows].reverse();
+        const first = rows[0], last = rows[rows.length-1];
+        const lifetimeDays = first && last && first.date && last.date
+          ? Math.round((new Date(last.date+'T12:00:00') - new Date(first.date+'T12:00:00')) / 86400000)
+          : 0;
+        const lifetimeWt  = last && first ? Math.round((last.wt - first.wt) * 10) / 10 : 0;
+        const lifetimeADG = lifetimeDays > 0 ? Math.round((lifetimeWt / lifetimeDays) * 100) / 100 : null;
+        const colorFor = v => v == null ? '#9ca3af' : v < 0 ? '#b91c1c' : v >= 0.3 ? '#065f46' : '#a16207';
+        const fmtSigned = (v, suffix) => v == null ? '—' : (v > 0 ? '+' : '') + v + (suffix||'');
+
+        const W = 620, H = 120, padT = 14, padB = 22, padL = 8, padR = 40;
+        const chartW = W - padL - padR, chartH = H - padT - padB;
+        const weights = rows.map(r => r.wt);
+        const minW = Math.min(...weights), maxW = Math.max(...weights);
+        const spanW = Math.max(1, maxW - minW);
+        const dates = rows.map(r => new Date(r.date+'T12:00:00').getTime());
+        const minT = Math.min(...dates), maxT = Math.max(...dates);
+        const spanT = Math.max(1, maxT - minT);
+        const pts = rows.map((r, i) => {
+          const x = padL + (rows.length === 1 ? chartW/2 : ((new Date(r.date+'T12:00:00').getTime() - minT) / spanT) * chartW);
+          const y = padT + (1 - (r.wt - minW) / spanW) * chartH;
+          return { x, y, row: r, i };
+        });
+        const linePath = pts.map((p,i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
+
+        return (
+          <div style={{marginTop:12}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+              <div style={{...sectionTitle, marginBottom:0}}>Weight History ({rows.length})</div>
+              <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+                {[{k:'table', l:'Table'}, {k:'chart', l:'Chart'}].map((o, oi) => (
+                  <button key={o.k} onClick={()=>setWeightView(o.k)} style={{padding:'3px 10px', border:'none', borderRight:oi<1?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:10, fontWeight:600, cursor:'pointer', background:weightView===o.k?'#0f766e':'white', color:weightView===o.k?'white':'#6b7280'}}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {weightView === 'table' && (
+              <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:8, overflow:'hidden', maxWidth:640}}>
+                <div style={{display:'grid', gridTemplateColumns:'120px 80px 80px 80px 90px', gap:0, background:'#f9fafb', padding:'6px 12px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, borderBottom:'1px solid #e5e7eb'}}>
+                  <div>Date</div>
+                  <div style={{textAlign:'right'}}>Weight</div>
+                  <div style={{textAlign:'right'}}>Days Since</div>
+                  <div style={{textAlign:'right'}}>Change</div>
+                  <div style={{textAlign:'right'}}>Lb / Day</div>
+                </div>
+                {desc.map((r, i) => (
+                  <div key={r.id} style={{display:'grid', gridTemplateColumns:'120px 80px 80px 80px 90px', gap:0, padding:'6px 12px', fontSize:12, borderBottom:i < desc.length-1 ? '1px solid #f3f4f6' : 'none', fontVariantNumeric:'tabular-nums'}}>
+                    <div style={{color:'#111827'}}>{fmt(r.date)}</div>
+                    <div style={{textAlign:'right', fontWeight:700, color:'#111827'}}>{r.wt.toLocaleString()} lb</div>
+                    <div style={{textAlign:'right', color:'#6b7280'}}>{r.dDays != null ? r.dDays : '—'}</div>
+                    <div style={{textAlign:'right', color:colorFor(r.dWt != null && r.dDays > 0 ? r.dWt / r.dDays : null), fontWeight:600}}>{fmtSigned(r.dWt)}</div>
+                    <div style={{textAlign:'right', color:colorFor(r.lbDay), fontWeight:700}}>{r.lbDay != null ? fmtSigned(r.lbDay) : '—'}</div>
+                  </div>
+                ))}
+                {rows.length > 1 && (
+                  <div style={{padding:'8px 12px', fontSize:11, background:'#f3f4f6', borderTop:'2px solid #d1d5db', color:'#374151', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+                    <div style={{fontWeight:700, textTransform:'uppercase', letterSpacing:.5, fontSize:10, color:'#6b7280'}}>Lifetime</div>
+                    <strong>{first.wt} {'→'} {last.wt} lb</strong>
+                    <span style={{color:colorFor(lifetimeWt / Math.max(1, lifetimeDays))}}>{fmtSigned(lifetimeWt, ' lb')}</span>
+                    <span>{'over '+lifetimeDays.toLocaleString()+'d'}</span>
+                    <strong style={{color:colorFor(lifetimeADG)}}>{lifetimeADG != null ? fmtSigned(lifetimeADG, ' lb/day') : '—'}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {weightView === 'chart' && (
+              <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:8, padding:'10px 12px'}}>
+                <svg viewBox={'0 0 '+W+' '+H} preserveAspectRatio="none" style={{width:'100%', height:140, display:'block', overflow:'visible'}} onMouseLeave={()=>setChartHover(null)}>
+                  <line x1={padL} y1={padT+chartH} x2={padL+chartW} y2={padT+chartH} stroke="#e5e7eb" strokeWidth="1"/>
+                  {pts.length > 1 && (
+                    <path d={linePath + ' L '+pts[pts.length-1].x+','+(padT+chartH)+' L '+pts[0].x+','+(padT+chartH)+' Z'} fill="#f0fdfa" opacity="0.8"/>
+                  )}
+                  {pts.length > 1 && <path d={linePath} fill="none" stroke="#0f766e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
+                  {pts.map(p => (
+                    <g key={p.row.id}>
+                      <circle cx={p.x} cy={p.y} r={chartHover && chartHover.idx === p.i ? 5 : 3} fill="#0f766e" stroke="white" strokeWidth="1.5"/>
+                      <circle cx={p.x} cy={p.y} r="12" fill="transparent" style={{cursor:'pointer'}} onMouseEnter={()=>setChartHover({idx:p.i, x:p.x, y:p.y})}/>
+                    </g>
+                  ))}
+                  <text x={padL+chartW+4} y={padT+4} fontSize="10" fill="#6b7280" fontFamily="inherit">{maxW+' lb'}</text>
+                  <text x={padL+chartW+4} y={padT+chartH+4} fontSize="10" fill="#6b7280" fontFamily="inherit">{minW+' lb'}</text>
+                  <text x={padL} y={H-6} fontSize="10" fill="#9ca3af" fontFamily="inherit">{fmt(rows[0].date)}</text>
+                  <text x={padL+chartW} y={H-6} fontSize="10" fill="#9ca3af" fontFamily="inherit" textAnchor="end">{fmt(rows[rows.length-1].date)}</text>
+                  {chartHover && (() => {
+                    const p = pts[chartHover.idx];
+                    if(!p) return null;
+                    const tx = Math.min(Math.max(p.x, padL+60), padL+chartW-60);
+                    const ty = Math.max(p.y - 30, padT+10);
+                    return (
+                      <g pointerEvents="none">
+                        <rect x={tx-55} y={ty-14} width="110" height="30" rx="4" fill="#111827" opacity="0.92"/>
+                        <text x={tx} y={ty-1} fontSize="11" fontWeight="700" fill="white" fontFamily="inherit" textAnchor="middle">{p.row.wt + ' lb'}</text>
+                        <text x={tx} y={ty+11} fontSize="9" fill="#d1d5db" fontFamily="inherit" textAnchor="middle">{fmt(p.row.date)}{p.row.lbDay != null ? ('  '+fmtSigned(p.row.lbDay, ' lb/d')) : ''}</text>
+                      </g>
+                    );
+                  })()}
+                </svg>
+                {rows.length > 1 && (
+                  <div style={{marginTop:6, paddingTop:8, borderTop:'1px solid #f3f4f6', fontSize:11, color:'#374151', textAlign:'center'}}>
+                    <strong>{first.wt} {'→'} {last.wt} lb</strong>
+                    {'  ·  '}<span style={{color:colorFor(lifetimeWt / Math.max(1, lifetimeDays))}}>{fmtSigned(lifetimeWt, ' lb')}</span>
+                    {'  over '+lifetimeDays.toLocaleString()+' days  ·  '}
+                    <strong style={{color:colorFor(lifetimeADG)}}>{lifetimeADG != null ? fmtSigned(lifetimeADG, ' lb/day') : '—'} lifetime ADG</strong>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Lambing history + add (Ewes only) */}
+      {isEwe && (
+        <div style={{marginTop:12}}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-            <div style={sectionT}>Lambing History ({lambing.length})</div>
-            <button onClick={()=>setShowLambForm(s=>!s)} style={{fontSize:11, padding:'3px 10px', borderRadius:5, border:'1px solid #0f766e', background:showLambForm?'#0f766e':'white', color:showLambForm?'white':'#0f766e', cursor:'pointer', fontWeight:600, fontFamily:'inherit'}}>{showLambForm?'Cancel':'+ Add Lambing'}</button>
+            <div style={sectionTitle}>Lambing History</div>
+            {!showLambForm && <button type="button" onClick={()=>setShowLambForm(true)} style={{fontSize:11, color:'#0f766e', background:'none', border:'1px solid #5eead4', borderRadius:5, padding:'3px 8px', cursor:'pointer', fontFamily:'inherit'}}>+ Add Lambing</button>}
           </div>
           {showLambForm && (
-            <div style={{padding:10, background:'white', border:'1px solid #d1d5db', borderRadius:6, marginBottom:8, display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8}}>
-              <div><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Date</label><input type="date" value={lambForm.lambing_date} onChange={e=>setLambForm({...lambForm, lambing_date:e.target.value})} style={inpS}/></div>
-              <div><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Total born</label><input type="number" value={lambForm.total_born} onChange={e=>setLambForm({...lambForm, total_born:e.target.value})} style={inpS}/></div>
-              <div><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Deaths</label><input type="number" value={lambForm.deaths} onChange={e=>setLambForm({...lambForm, deaths:e.target.value})} style={inpS}/></div>
-              <div style={{gridColumn:'1/-1'}}><label style={{fontSize:10, color:'#6b7280', display:'block', marginBottom:2}}>Notes</label><input type="text" value={lambForm.notes} onChange={e=>setLambForm({...lambForm, notes:e.target.value})} style={inpS}/></div>
-              <button onClick={async ()=>{ const ok = await onAddLambing(lambForm); if(ok){ setLambForm({lambing_date:'', total_born:'', deaths:'', complications_flag:false, complications_desc:'', notes:''}); setShowLambForm(false); }}} style={{gridColumn:'1/-1', padding:'7px 14px', background:'#0f766e', color:'white', border:'none', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600, fontFamily:'inherit'}}>Save Lambing Record</button>
+            <div style={{background:'#f0fdfa', border:'1px solid #5eead4', borderRadius:8, padding:'10px 12px', marginBottom:8}}>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:6}}>
+                <div><label style={lblC}>Lambing date *</label><input type="date" value={lambForm.lambing_date} onChange={e=>setLambForm({...lambForm, lambing_date:e.target.value})} style={inpC}/></div>
+                <div></div>
+                <div><label style={lblC}>Total born</label><input type="number" min="0" value={lambForm.total_born} onChange={e=>setLambForm({...lambForm, total_born:e.target.value})} placeholder="0" style={inpC}/></div>
+                <div><label style={lblC}>Deaths</label><input type="number" min="0" value={lambForm.deaths} onChange={e=>setLambForm({...lambForm, deaths:e.target.value})} placeholder="0" style={inpC}/></div>
+                <div style={{gridColumn:'1/-1'}}>
+                  <label style={{display:'flex', alignItems:'center', gap:6, fontSize:11, color:'#7f1d1d', cursor:'pointer'}}>
+                    <input type="checkbox" checked={lambForm.complications_flag} onChange={e=>setLambForm({...lambForm, complications_flag:e.target.checked})}/>
+                    Complications flag
+                  </label>
+                  {lambForm.complications_flag && (
+                    <textarea value={lambForm.complications_desc} onChange={e=>setLambForm({...lambForm, complications_desc:e.target.value})} placeholder="Required: describe complications" rows={2} style={{...inpC, marginTop:4, resize:'vertical'}}/>
+                  )}
+                </div>
+                <div style={{gridColumn:'1/-1'}}>
+                  <label style={lblC}>Notes</label>
+                  <textarea value={lambForm.notes} onChange={e=>setLambForm({...lambForm, notes:e.target.value})} rows={2} style={{...inpC, resize:'vertical'}}/>
+                </div>
+              </div>
+              <div style={{display:'flex', gap:6}}>
+                <button type="button" onClick={submitLambing} style={{padding:'6px 14px', borderRadius:6, border:'none', background:'#0f766e', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Save Lambing</button>
+                <button type="button" onClick={()=>setShowLambForm(false)} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+              </div>
             </div>
           )}
-          {lambing.length === 0 ? <div style={{fontSize:12, color:'#9ca3af'}}>No lambing records yet.</div> : (
-            <div style={{maxHeight:160, overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:6}}>
-              <table style={{width:'100%', fontSize:12, borderCollapse:'collapse'}}>
-                <thead><tr style={{background:'#f3f4f6'}}><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Date</th><th style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>Born</th><th style={{padding:'5px 10px', textAlign:'right', fontWeight:600}}>Deaths</th><th style={{padding:'5px 10px', textAlign:'left', fontWeight:600}}>Notes</th><th></th></tr></thead>
-                <tbody>
-                  {lambing.map(r => <tr key={r.id} style={{borderTop:'1px solid #f3f4f6'}}><td style={{padding:'5px 10px'}}>{fmt(r.lambing_date)}</td><td style={{padding:'5px 10px', textAlign:'right'}}>{r.total_born}</td><td style={{padding:'5px 10px', textAlign:'right', color:r.deaths>0?'#b91c1c':'#9ca3af'}}>{r.deaths}</td><td style={{padding:'5px 10px', color:'#6b7280'}}>{r.notes||'\u2014'}</td><td style={{padding:'5px 10px'}}><button onClick={()=>onDeleteLambing(r.id)} style={{fontSize:10, padding:'2px 6px', borderRadius:4, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>{'\u00d7'}</button></td></tr>)}
-                </tbody>
-              </table>
+          {(() => {
+            const combined = [...(lambing||[])].sort((a,b) => (b.lambing_date||'').localeCompare(a.lambing_date||''));
+            if(combined.length === 0) {
+              if(showLambForm) return null;
+              return <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No lambing records yet.</div>;
+            }
+            return combined.map(r => (
+              <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+                <strong style={{color:'#111827'}}>{r.lambing_date ? fmt(r.lambing_date) : 'date unknown'}</strong>
+                <span>{(r.total_born||0)+' born, '+(r.deaths||0)+' died'}</span>
+                {r.complications_flag && <span style={{color:'#b91c1c', fontWeight:600}}>{'⚠ complications'}</span>}
+                {r.notes && <span style={{color:'#6b7280', fontStyle:'italic'}}>{r.notes}</span>}
+                {onDeleteLambing && <button type="button" onClick={()=>onDeleteLambing(r.id)} style={{marginLeft:'auto', fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Delete</button>}
+              </div>
+            ));
+          })()}
+
+          {/* Lambs linked to this dam by dam_tag */}
+          {lambs && lambs.length > 0 && (
+            <div style={{marginTop:8}}>
+              <div style={{fontSize:10, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, fontWeight:600, marginBottom:4}}>Lambs in directory ({lambs.length})</div>
+              <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                {lambs.map(l => (
+                  <button type="button" key={l.id} onClick={()=>onNavigateToSheep && onNavigateToSheep(l)} style={{fontSize:11, padding:'3px 8px', borderRadius:5, border:'1px solid #5eead4', background:'#f0fdfa', color:'#0f766e', cursor:onNavigateToSheep?'pointer':'default', fontFamily:'inherit'}}>{'#'+l.tag}</button>
+                ))}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      <div>
-        <div style={sectionT}>Comments Timeline ({comments.length})</div>
-        <div style={{display:'flex', gap:8, marginBottom:8}}>
-          <input type="text" value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder={'Add a comment\u2026'} style={{...inpS, flex:1}}/>
-          <button onClick={()=>{ if(commentText.trim()){ onComment(commentText.trim()); setCommentText(''); }}} style={{padding:'7px 14px', background:'#0f766e', color:'white', border:'none', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600, fontFamily:'inherit'}}>Add</button>
+      {!isEwe && lambing && lambing.length > 0 && (
+        <div style={{marginTop:12}}>
+          <div style={sectionTitle}>Lambing History (historical)</div>
+          {lambing.map(r => (
+            <div key={r.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11, display:'flex', gap:10, flexWrap:'wrap'}}>
+              <strong style={{color:'#111827'}}>{fmt(r.lambing_date)}</strong>
+              <span>{(r.total_born||0)} born, {(r.deaths||0)} died</span>
+            </div>
+          ))}
         </div>
-        {comments.length === 0 ? <div style={{fontSize:12, color:'#9ca3af'}}>No comments yet.</div> : (
-          <div style={{maxHeight:200, overflowY:'auto'}}>
-            {comments.map(c => (
-              <div key={c.id} style={{padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12}}>
-                <div style={{color:'#374151'}}>{c.comment}</div>
-                <div style={{color:'#9ca3af', fontSize:10, marginTop:2}}>{fmt(c.created_at?c.created_at.slice(0,10):'')} {c.team_member?' \u00b7 '+c.team_member:''} {c.source?' \u00b7 '+c.source:''}</div>
-              </div>
-            ))}
+      )}
+
+      {/* Comments timeline + add */}
+      <div style={{marginTop:12}}>
+        <div style={sectionTitle}>Comments Timeline</div>
+        <div style={{display:'flex', gap:6, marginBottom:6}}>
+          <input type="text" value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder={'Add a comment…'} style={{flex:1, fontSize:12, padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit'}}/>
+          <button onClick={()=>{onComment(commentText); setCommentText('');}} disabled={!commentText.trim()} style={{padding:'6px 14px', borderRadius:6, border:'none', background:commentText.trim()?'#0f766e':'#d1d5db', color:'white', fontSize:12, fontWeight:600, cursor:commentText.trim()?'pointer':'not-allowed', fontFamily:'inherit'}}>Add</button>
+        </div>
+        {comments && comments.length > 0 ? (
+          <div style={{maxHeight:260, overflowY:'auto'}}>
+            {comments.map(c => {
+              const isEditing = editingCommentId === c.id;
+              return (
+                <div key={c.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:6, padding:'6px 10px', marginBottom:4, fontSize:11}}>
+                  <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:2, flexWrap:'wrap'}}>
+                    <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:c.source==='weigh_in'?'#eff6ff':c.source==='lambing'?'#f0fdfa':c.source==='daily_report'?'#ecfdf5':c.source==='import'?'#fef3c7':'#f3f4f6', color:c.source==='weigh_in'?'#1e40af':c.source==='lambing'?'#0f766e':c.source==='daily_report'?'#065f46':c.source==='import'?'#92400e':'#374151'}}>{c.source}</span>
+                    <span style={{color:'#9ca3af'}}>{fmt((c.created_at||'').slice(0,10))}</span>
+                    {c.team_member && <span style={{color:'#9ca3af', fontWeight:600}}>{'· '+c.team_member}</span>}
+                    {!isEditing && onEditComment && (
+                      <button type="button" onClick={()=>{setEditingCommentId(c.id); setEditingCommentText(c.comment||'');}} style={{marginLeft:'auto', fontSize:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 4px', fontFamily:'inherit'}}>Edit</button>
+                    )}
+                    {!isEditing && onDeleteComment && (
+                      <button type="button" onClick={()=>onDeleteComment(c.id)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 4px', fontFamily:'inherit'}}>Delete</button>
+                    )}
+                  </div>
+                  {isEditing ? (
+                    <div>
+                      <textarea value={editingCommentText} onChange={e=>setEditingCommentText(e.target.value)} rows={2} style={{width:'100%', fontSize:11, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', resize:'vertical'}}/>
+                      <div style={{display:'flex', gap:6, marginTop:4}}>
+                        <button type="button" onClick={()=>{onEditComment(c.id, editingCommentText); setEditingCommentId(null); setEditingCommentText('');}} disabled={!editingCommentText.trim()} style={{padding:'3px 10px', borderRadius:5, border:'none', background:editingCommentText.trim()?'#0f766e':'#d1d5db', color:'white', fontSize:10, fontWeight:600, cursor:editingCommentText.trim()?'pointer':'not-allowed', fontFamily:'inherit'}}>Save</button>
+                        <button type="button" onClick={()=>{setEditingCommentId(null); setEditingCommentText('');}} style={{padding:'3px 10px', borderRadius:5, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:10, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{color:'#374151'}}>{c.comment}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No comments yet.</div>
+        )}
+        {sheep.breeding_blacklist && (
+          <div style={{marginTop:8, background:'#fecaca', border:'1px solid #f87171', borderRadius:6, padding:'6px 10px', fontSize:11, display:'flex', gap:8, alignItems:'center'}}>
+            <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#0f766e', color:'white'}}>BREEDING BLACKLIST</span>
+            <span style={{color:'#0f5248', fontWeight:600}}>{'Flagged — do not breed.'}</span>
           </div>
         )}
+      </div>
+
+      {/* Action buttons (Edit removed — fields are inline-editable above) */}
+      <div style={{marginTop:12, display:'flex', gap:6, flexWrap:'wrap', borderTop:'1px solid #e5e7eb', paddingTop:10}}>
+        {!showTransfer && <button onClick={()=>setShowTransfer(true)} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#1d4ed8', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Transfer</button>}
+        {showTransfer && (
+          <select onChange={e=>{if(e.target.value){onTransfer(e.target.value); setShowTransfer(false);}}} style={{fontSize:12, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit'}}>
+            <option value=''>Select target flock...</option>
+            {(FLOCKS||[]).filter(f => f !== sheep.flock).map(f => <option key={f} value={f}>Move to {FLOCK_LABELS[f]}</option>)}
+          </select>
+        )}
+        {showTransfer && <button onClick={()=>setShowTransfer(false)} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>}
+        <button onClick={onDelete} style={{padding:'6px 12px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginLeft:'auto'}}>Delete</button>
       </div>
     </div>
   );
