@@ -55,6 +55,32 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
   const warrantyDays = eq.warranty_expiration ? daysSince(eq.warranty_expiration) : null;
   const warrantyExpiresSoon = warrantyDays != null && warrantyDays < 0 && warrantyDays > -WARRANTY_WINDOW_DAYS;
 
+  // Per-fueling-row debounced auto-save. Same pattern as the spec panel
+  // above, but scoped per fueling row so we can have multiple rows open
+  // and editing independently.
+  const fuelingTimers = React.useRef({});
+  function queueFuelingSave(fuelingId, field, rawValue, parser) {
+    const key = fuelingId + ':' + field;
+    if (fuelingTimers.current[key]) clearTimeout(fuelingTimers.current[key]);
+    fuelingTimers.current[key] = setTimeout(async () => {
+      let next;
+      if (parser === 'number') {
+        const n = parseFloat(rawValue);
+        next = Number.isFinite(n) && n >= 0 ? n : null;
+      } else {
+        next = (rawValue || '').trim() || null;
+      }
+      const {error} = await sb.from('equipment_fuelings').update({[field]: next}).eq('id', fuelingId);
+      if (error) { alert('Save failed: '+error.message); return; }
+      onReload();
+    }, 800);
+  }
+  async function deleteFueling(fuelingId) {
+    if (!confirm('Delete this fueling entry? This cannot be undone.')) return;
+    const {error} = await sb.from('equipment_fuelings').delete().eq('id', fuelingId);
+    if (error) { alert('Delete failed: '+error.message); return; }
+    onReload();
+  }
   async function deleteMaintenance(id) {
     if (!confirm('Delete this maintenance event?')) return;
     await sb.from('equipment_maintenance_events').delete().eq('id', id);
@@ -211,7 +237,36 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
                     <div style={{color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontStyle:stripPodioHtml(f.comments)?'italic':'normal'}}>{stripPodioHtml(f.comments) || '—'}</div>
                   </div>
                   {isExp && (
-                    <div style={{background:'#fafafa', padding:'10px 14px', borderTop:'1px solid #f3f4f6', fontSize:11}}>
+                    <div style={{background:'#fafafa', padding:'12px 14px', borderTop:'1px solid #f3f4f6', fontSize:11}}>
+                      <div style={{fontSize:10, color:'#9ca3af', textTransform:'uppercase', letterSpacing:.4, fontWeight:600, marginBottom:8}}>Edit entry (auto-saves)</div>
+                      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(130px, 1fr))', gap:8, marginBottom:10}}>
+                        <div>
+                          <div style={{fontSize:10, color:'#9ca3af'}}>Date</div>
+                          <input type="date" defaultValue={f.date||''} onChange={e=>queueFuelingSave(f.id,'date',e.target.value,'text')} style={{fontSize:12, padding:'4px 7px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:10, color:'#9ca3af'}}>Team</div>
+                          <input type="text" defaultValue={f.team_member||''} onChange={e=>queueFuelingSave(f.id,'team_member',e.target.value,'text')} style={{fontSize:12, padding:'4px 7px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:10, color:'#9ca3af'}}>Gallons</div>
+                          <input type="number" min="0" step="0.1" defaultValue={f.gallons!=null?f.gallons:''} onChange={e=>queueFuelingSave(f.id,'gallons',e.target.value,'number')} style={{fontSize:12, padding:'4px 7px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                        </div>
+                        {eq.takes_def && (
+                          <div>
+                            <div style={{fontSize:10, color:'#9ca3af'}}>DEF gallons</div>
+                            <input type="number" min="0" step="0.1" defaultValue={f.def_gallons!=null?f.def_gallons:''} onChange={e=>queueFuelingSave(f.id,'def_gallons',e.target.value,'number')} style={{fontSize:12, padding:'4px 7px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                          </div>
+                        )}
+                        <div>
+                          <div style={{fontSize:10, color:'#9ca3af'}}>{readingLabel}</div>
+                          <input type="number" min="0" step="0.1" defaultValue={eq.tracking_unit==='km' ? (f.km_reading||'') : (f.hours_reading||'')} onChange={e=>queueFuelingSave(f.id, eq.tracking_unit==='km'?'km_reading':'hours_reading', e.target.value,'number')} style={{fontSize:12, padding:'4px 7px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
+                        </div>
+                      </div>
+                      <div style={{marginBottom:10}}>
+                        <div style={{fontSize:10, color:'#9ca3af'}}>Comments</div>
+                        <textarea defaultValue={stripPodioHtml(f.comments) || ''} onChange={e=>queueFuelingSave(f.id,'comments',e.target.value,'text')} rows={2} style={{fontSize:12, padding:'4px 7px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box', resize:'vertical'}}/>
+                      </div>
                       {(f.every_fillup_check||[]).length > 0 && (
                         <div style={{marginBottom:6}}>
                           <strong style={{color:'#374151'}}>Every-fillup checks:</strong>{' '}
@@ -219,11 +274,14 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
                         </div>
                       )}
                       {(f.service_intervals_completed||[]).length > 0 && (
-                        <div>
+                        <div style={{marginBottom:6}}>
                           <strong style={{color:'#374151'}}>Service intervals completed:</strong>{' '}
                           {f.service_intervals_completed.map((c, i) => <span key={i} style={{fontSize:10, padding:'1px 6px', borderRadius:4, background:'#eff6ff', color:'#1e40af', marginRight:4}}>{c.label || (c.interval+c.kind.charAt(0))}</span>)}
                         </div>
                       )}
+                      <div style={{display:'flex', justifyContent:'flex-end', marginTop:8}}>
+                        <button onClick={()=>deleteFueling(f.id)} style={{padding:'4px 10px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete entry</button>
+                      </div>
                     </div>
                   )}
                 </div>

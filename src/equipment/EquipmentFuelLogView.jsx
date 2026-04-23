@@ -30,6 +30,7 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
   const totals = {
     count: filtered.length,
     gallons: filtered.reduce((s, f) => s + (parseFloat(f.gallons) || 0), 0),
+    def_gallons: filtered.reduce((s, f) => s + (parseFloat(f.def_gallons) || 0), 0),
     cost: filtered.reduce((s, f) => s + ((parseFloat(f.gallons) || 0) * (parseFloat(f.fuel_cost_per_gal) || 0)), 0),
   };
 
@@ -66,6 +67,12 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
           <div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Gallons</div>
           <div style={{fontSize:18, fontWeight:700, color:'#1e40af'}}>{Math.round(totals.gallons).toLocaleString()}</div>
         </div>
+        {totals.def_gallons > 0 && (
+          <div>
+            <div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>DEF Gal</div>
+            <div style={{fontSize:18, fontWeight:700, color:'#a16207'}}>{Math.round(totals.def_gallons).toLocaleString()}</div>
+          </div>
+        )}
         {totals.cost > 0 && (
           <div>
             <div style={{color:'#9ca3af', fontSize:10, textTransform:'uppercase'}}>Cost</div>
@@ -75,19 +82,20 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
       </div>
 
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
-        <div style={{display:'grid', gridTemplateColumns:'90px 1fr 100px 80px 80px 120px 1fr', gap:0, background:'#f9fafb', padding:'8px 14px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, borderBottom:'1px solid #e5e7eb'}}>
-          <div>Date</div><div>Equipment</div><div>Fuel</div><div style={{textAlign:'right'}}>Gallons</div><div style={{textAlign:'right'}}>Reading</div><div>Team</div><div>Comments</div>
+        <div style={{display:'grid', gridTemplateColumns:'90px 1fr 90px 70px 60px 80px 110px 1fr', gap:0, background:'#f9fafb', padding:'8px 14px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, borderBottom:'1px solid #e5e7eb'}}>
+          <div>Date</div><div>Equipment</div><div>Fuel</div><div style={{textAlign:'right'}}>Gal</div><div style={{textAlign:'right'}}>DEF</div><div style={{textAlign:'right'}}>Reading</div><div>Team</div><div>Comments</div>
         </div>
         {filtered.length === 0 && <div style={{padding:'2rem', textAlign:'center', color:'#9ca3af', fontSize:13}}>No fueling entries match the current filters.</div>}
         {filtered.slice(0, 500).map((f, i) => {
           const eq = eqById[f.equipment_id];
-          const reading = f.hours_reading != null ? f.hours_reading+' h' : (f.km_reading != null ? f.km_reading+' km' : '—');
+          const reading = f.hours_reading != null ? Math.round(f.hours_reading)+' h' : (f.km_reading != null ? Math.round(f.km_reading)+' km' : '—');
           return (
-            <div key={f.id} style={{display:'grid', gridTemplateColumns:'90px 1fr 100px 80px 80px 120px 1fr', gap:0, padding:'6px 14px', fontSize:12, borderBottom:i < Math.min(500, filtered.length) - 1 ? '1px solid #f3f4f6' : 'none', fontVariantNumeric:'tabular-nums'}}>
+            <div key={f.id} style={{display:'grid', gridTemplateColumns:'90px 1fr 90px 70px 60px 80px 110px 1fr', gap:0, padding:'6px 14px', fontSize:12, borderBottom:i < Math.min(500, filtered.length) - 1 ? '1px solid #f3f4f6' : 'none', fontVariantNumeric:'tabular-nums'}}>
               <div style={{color:'#111827'}}>{fmt(f.date)}</div>
               <div style={{fontWeight:600, color:'#111827', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{eq ? eq.name : f.equipment_id}</div>
               <div style={{color:'#6b7280'}}>{f.fuel_type || '—'}</div>
               <div style={{textAlign:'right', color:'#1e40af', fontWeight:600}}>{f.gallons ? Math.round(f.gallons*10)/10 : '—'}</div>
+              <div style={{textAlign:'right', color:'#a16207', fontWeight:600}}>{f.def_gallons ? Math.round(f.def_gallons*10)/10 : '—'}</div>
               <div style={{textAlign:'right', color:'#6b7280'}}>{reading}</div>
               <div style={{color:'#6b7280'}}>{f.team_member || '—'}</div>
               <div style={{color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontStyle:stripPodioHtml(f.comments)?'italic':'normal'}}>{stripPodioHtml(f.comments) || '—'}</div>

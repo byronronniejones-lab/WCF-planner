@@ -149,7 +149,7 @@ const FUEL_LOG_CATEGORY_MAP = {
 // Maintenance Podio app — synthesized here so their fuelings have a target.
 // Admin can edit / retire later via the normal Fleet UI.
 const SYNTHETIC_EQUIPMENT = [
-  {slug:'polaris-ranger', name:'Polaris Ranger 4-Seater', category:'hijets', tracking_unit:'hours', fuel_type:'diesel', takes_def:true, archived:true},
+  {slug:'polaris-ranger', name:'Polaris Ranger 4-Seater', category:'hijets', tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, archived:true},
 ];
 
 // ───── helpers ───────────────────────────────────────────────────────────────
@@ -562,7 +562,8 @@ function deriveCurrentReading(eqRows, fuelingRows) {
   console.log(`\n[3/4] Built ${fuelingRows.length} fueling rows; ${unresolvedLog.length} unresolved Fuel Log entries:`);
   unresolvedLog.slice(0, 20).forEach(u => console.log('  ✗', u.podio_item_id, u.eqCategory, '-', u.reason));
 
-  inferFuelTypes(eqRows, fuelingRows);
+  // Fuel type is hardcoded per piece via EQUIPMENT_DEFS. Skip the old
+  // inference-from-history step — hardcode is authoritative now.
   deriveCurrentReading(eqRows, fuelingRows);
 
   // Summary
