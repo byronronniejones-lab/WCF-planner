@@ -261,7 +261,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             <div style={{display:'flex', flexDirection:'column', gap:6}}>
               {eq.every_fillup_items.map(item => (
                 <label key={item.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:fillupTicks.has(item.id)?'#ecfdf5':'#f9fafb', cursor:'pointer', border:'1px solid '+(fillupTicks.has(item.id)?'#a7f3d0':'#e5e7eb'), fontSize:13}}>
-                  <input type="checkbox" checked={fillupTicks.has(item.id)} onChange={()=>toggleFillup(item.id)} style={{margin:0, flexShrink:0}}/>
+                  <input type="checkbox" checked={fillupTicks.has(item.id)} onChange={()=>toggleFillup(item.id)} style={{margin:0, flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
                   <span style={{color:fillupTicks.has(item.id)?'#065f46':'#374151', fontWeight:fillupTicks.has(item.id)?600:500}}>{item.label}</span>
                 </label>
               ))}
@@ -284,7 +284,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                 const done = explicit || implicit;
                 return (
                   <label key={k} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:done?'#eff6ff':'#fef2f2', cursor:'pointer', border:'1px solid '+(done?'#bfdbfe':'#fca5a5'), fontSize:13}}>
-                    <input type="checkbox" checked={explicit} disabled={implicit} onChange={()=>toggleInterval(iv.kind, iv.hours_or_km)} style={{margin:0, flexShrink:0}}/>
+                    <input type="checkbox" checked={explicit} disabled={implicit} onChange={()=>toggleInterval(iv.kind, iv.hours_or_km)} style={{margin:0, flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
                     <div style={{flex:1}}>
                       <div style={{fontWeight:700, color:done?'#1e40af':'#991b1b'}}>{iv.label}</div>
                       <div style={{fontSize:11, color:'#6b7280', marginTop:2}}>
