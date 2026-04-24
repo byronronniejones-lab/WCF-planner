@@ -122,6 +122,7 @@ export default function EquipmentWebformsAdmin() {
               <TeamMembersEditor equipment={selected} onReload={loadAll}/>
               <SpecsEditor equipment={selected} onReload={loadAll}/>
               <ManualsEditor equipment={selected} onReload={loadAll}/>
+              <DocumentsEditor equipment={selected} onReload={loadAll}/>
               <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
               <EveryFillupEditor equipment={selected} onReload={loadAll}/>
               <ServiceIntervalEditor equipment={selected} onReload={loadAll}/>
@@ -165,15 +166,22 @@ function IdentityEditor({equipment, onReload}) {
 }
 
 // ── team members: who typically operates this piece ───────────────────────
+// Reads + writes the MASTER list (webform_config.team_members) so admins
+// can add/remove team members from the whole system right here, not just
+// toggle per-piece assignments.
 function TeamMembersEditor({equipment, onReload}) {
   const [allTM, setAllTM] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => {
-    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => {
-      if (data && Array.isArray(data.data)) setAllTM(data.data);
-    });
-  }, []);
+  const [newName, setNewName] = React.useState('');
+
+  async function loadMaster() {
+    const {data} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
+    if (data && Array.isArray(data.data)) setAllTM(data.data);
+  }
+  React.useEffect(() => { loadMaster(); }, []);
+
   const assigned = Array.isArray(equipment.team_members) ? equipment.team_members : [];
+
   async function toggle(name) {
     setBusy(true);
     const next = assigned.includes(name) ? assigned.filter(n => n !== name) : [...assigned, name];
@@ -182,26 +190,65 @@ function TeamMembersEditor({equipment, onReload}) {
     if (error) { alert('Save failed: '+error.message); return; }
     onReload();
   }
+
+  async function addMaster() {
+    const n = (newName || '').trim();
+    if (!n) return;
+    if (allTM.includes(n)) { alert('"' + n + '" is already in the list.'); return; }
+    setBusy(true);
+    const next = [...allTM, n].sort((a, b) => a.localeCompare(b));
+    const {error} = await sb.from('webform_config').upsert({key:'team_members', data: next}, {onConflict:'key'});
+    setBusy(false);
+    if (error) { alert('Add failed: '+error.message); return; }
+    setAllTM(next);
+    setNewName('');
+  }
+
+  async function removeMaster(name) {
+    if (!confirm('Remove "' + name + '" from the team-member list?\n\nThey will also be removed from every piece of equipment they were assigned to. Past fueling records by this person are NOT affected.')) return;
+    setBusy(true);
+    // 1. Remove from master list.
+    const next = allTM.filter(n => n !== name);
+    const {error: mErr} = await sb.from('webform_config').upsert({key:'team_members', data: next}, {onConflict:'key'});
+    if (mErr) { setBusy(false); alert('Remove failed: '+mErr.message); return; }
+    // 2. Cascade: strip from every equipment.team_members array that included them.
+    const {data: eqs} = await sb.from('equipment').select('id,team_members');
+    const hits = (eqs || []).filter(e => Array.isArray(e.team_members) && e.team_members.includes(name));
+    for (const e of hits) {
+      const filtered = e.team_members.filter(n => n !== name);
+      await sb.from('equipment').update({team_members: filtered}).eq('id', e.id);
+    }
+    setBusy(false);
+    setAllTM(next);
+    onReload();
+  }
+
   return (
     <div style={card}>
-      <div style={sectionTitle}>Team Members <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Who typically operates this piece</span></div>
+      <div style={sectionTitle}>Team Members <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Assign operators to this piece · master list shared across all webforms</span></div>
       {allTM.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>Loading team members…</div>}
       {allTM.length > 0 && (
-        <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+        <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:10}}>
           {allTM.map(name => {
             const on = assigned.includes(name);
             return (
-              <button key={name} onClick={()=>toggle(name)} disabled={busy}
-                style={{fontSize:12, padding:'5px 11px', borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontFamily:'inherit', cursor:busy?'not-allowed':'pointer', fontWeight:on?600:400}}>
-                {on ? '✓ ' : ''}{name}
-              </button>
+              <span key={name} style={{display:'inline-flex', alignItems:'center', fontSize:12, borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontWeight:on?600:400, overflow:'hidden'}}>
+                <button onClick={()=>toggle(name)} disabled={busy} style={{fontSize:12, padding:'5px 11px 5px 11px', border:'none', background:'transparent', color:'inherit', fontWeight:'inherit', cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>
+                  {on ? '✓ ' : ''}{name}
+                </button>
+                <button onClick={()=>removeMaster(name)} disabled={busy} title={'Remove "'+name+'" from master list'} style={{padding:'5px 8px 5px 2px', border:'none', borderLeft:'1px solid '+(on?'#a7f3d0':'#e5e7eb'), background:'transparent', color:'#9ca3af', cursor:busy?'not-allowed':'pointer', fontSize:13, lineHeight:1, fontFamily:'inherit'}}>×</button>
+              </span>
             );
           })}
         </div>
       )}
       {assigned.length === 0 && allTM.length > 0 && (
-        <div style={{fontSize:11, color:'#9ca3af', marginTop:6, fontStyle:'italic'}}>None assigned yet.</div>
+        <div style={{fontSize:11, color:'#9ca3af', marginBottom:8, fontStyle:'italic'}}>None assigned to this piece yet.</div>
       )}
+      <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:6, padding:10, background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db'}}>
+        <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="New team member name (e.g. COTY)" onKeyDown={e=>{if(e.key==='Enter') addMaster();}} style={inpS}/>
+        <button onClick={addMaster} disabled={busy || !newName.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newName.trim())?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newName.trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+      </div>
     </div>
   );
 }
@@ -371,6 +418,78 @@ function ManualsEditor({equipment, onReload}) {
             <button onClick={addVideo} disabled={busy||!newVideoUrl.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVideoUrl.trim())?'#9ca3af':'#991b1b', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── admin-only documents (invoices, contracts, warranty paperwork, etc.)
+// NOT shown on the public /fueling webform or /equipment detail page —
+// visible only inside this admin modal. Separate column from `manuals`
+// so the two buckets can't mix up.
+function DocumentsEditor({equipment, onReload}) {
+  const [busy, setBusy] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const docs = Array.isArray(equipment.documents) ? equipment.documents : [];
+
+  async function persist(next) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({documents: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+
+  async function uploadPdf(file) {
+    if (!file) return;
+    setUploading(true);
+    const safe = (file.name || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const bucketPath = 'documents/' + equipment.slug + '/' + Date.now() + '-' + safe;
+    const {error: upErr} = await sb.storage.from('equipment-maintenance-docs').upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
+    if (upErr) { alert('Upload failed: '+upErr.message); setUploading(false); return; }
+    const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(bucketPath);
+    const title = file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
+    await persist([...docs, {type:'pdf', title, url: pub.publicUrl, path: bucketPath, uploadedAt: new Date().toISOString()}]);
+    setUploading(false);
+  }
+
+  async function editTitle(idx, title) {
+    const next = docs.slice(); next[idx] = {...next[idx], title};
+    await persist(next);
+  }
+
+  async function removeOne(idx) {
+    const entry = docs[idx];
+    if (!entry) return;
+    if (!confirm('Remove "' + (entry.title||'this document') + '"?')) return;
+    if (entry.type === 'pdf' && entry.path) {
+      try { await sb.storage.from('equipment-maintenance-docs').remove([entry.path]); } catch(e){/*ignore*/}
+    }
+    await persist(docs.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Admin Documents <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Internal only — invoices, contracts, warranty paperwork. NOT shown on /fueling or /equipment.</span></div>
+      {docs.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No admin documents uploaded yet.</div>}
+      {docs.length > 0 && (
+        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:10}}>
+          {docs.map((d, i) => (
+            <div key={i} style={{display:'grid', gridTemplateColumns:'60px 1fr 80px', gap:8, alignItems:'center', padding:'8px 10px', background:'#fafafa', border:'1px solid #e5e7eb', borderRadius:6}}>
+              <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, textAlign:'center', background:'#e0e7ff', color:'#3730a3'}}>📄 PDF</span>
+              <div>
+                <input type="text" defaultValue={d.title || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (d.title||'')) editTitle(i, v); }} style={{...inpS, padding:'3px 7px', fontSize:12}}/>
+                <a href={d.url} target="_blank" rel="noopener noreferrer" style={{fontSize:10, color:'#1d4ed8', textDecoration:'none', wordBreak:'break-all'}}>{d.url}</a>
+              </div>
+              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'4px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{padding:'10px', background:'#eef2ff', borderRadius:6, border:'1px dashed #c7d2fe'}}>
+        <div style={{...subTitle, color:'#3730a3'}}>Upload PDF</div>
+        <input type="file" accept="application/pdf" disabled={uploading||busy} onChange={e => { if (e.target.files && e.target.files[0]) uploadPdf(e.target.files[0]); e.target.value=''; }} style={{fontSize:12}}/>
+        {uploading && <div style={{fontSize:10, color:'#3730a3', marginTop:4}}>Uploading…</div>}
       </div>
     </div>
   );
