@@ -45,20 +45,21 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   // Load this piece's fueling history to compute due intervals.
   React.useEffect(() => {
     if (!eq) { setHistory([]); return; }
-    sb.from('equipment_fuelings').select('date,hours_reading,km_reading,service_intervals_completed').eq('equipment_id', eq.id).order('date', {ascending:false}).limit(500).then(({data}) => {
+    sb.from('equipment_fuelings').select('date,team_member,hours_reading,km_reading,service_intervals_completed').eq('equipment_id', eq.id).order('date', {ascending:false}).limit(500).then(({data}) => {
       if (data) setHistory(data);
     });
   }, [eq]);
 
-  // Build the completions list with reading_at_completion baked in for the
-  // due-interval math.
+  // Build the completions list with reading_at_completion + team_member baked
+  // in for the due-interval math (team_member is surfaced on partial rows so
+  // the operator knows who left items unfinished).
   const completions = React.useMemo(() => {
     const out = [];
     for (const h of history) {
       const snap = h.hours_reading != null ? Number(h.hours_reading) : (h.km_reading != null ? Number(h.km_reading) : null);
       if (snap == null) continue;
       for (const c of (h.service_intervals_completed || [])) {
-        out.push({...c, reading_at_completion: snap});
+        out.push({...c, reading_at_completion: snap, team_member: h.team_member || null});
       }
     }
     return out;
@@ -131,6 +132,19 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     if (!teamMember) { setErr('Pick a team member.'); return; }
     if (!date) { setErr('Date required.'); return; }
     if (!gallons || parseFloat(gallons) <= 0) { setErr(fuelLabel + ' gallons required.'); return; }
+
+    // Check Oil enforcement: every non-ATV, non-Toro piece must have its
+    // oil-check ticked before the submit goes through. "Oil" match is broad
+    // so "CHECK OIL" and "CHECK ENGINE OIL LEVEL" both count.
+    const exemptFromOil = eq.category === 'atvs' || eq.slug === 'toro';
+    if (!exemptFromOil) {
+      const items = Array.isArray(eq.every_fillup_items) ? eq.every_fillup_items : [];
+      const oilItem = items.find(it => /oil/i.test(it.label || ''));
+      if (oilItem && !fillupTicks.has(oilItem.id)) {
+        setErr('"' + oilItem.label + '" must be ticked before submitting.');
+        return;
+      }
+    }
     localStorage.setItem('wcf_team', teamMember);
 
     // Build service_intervals_completed. Each due interval may contribute a
@@ -354,22 +368,40 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               <div style={{fontSize:12, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, padding:'8px 10px', marginBottom:10, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{eq.every_fillup_help}</div>
             )}
             <div style={{display:'flex', flexDirection:'column', gap:6}}>
-              {eq.every_fillup_items.map(item => (
-                <label key={item.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:fillupTicks.has(item.id)?'#ecfdf5':'#f9fafb', cursor:'pointer', border:'1px solid '+(fillupTicks.has(item.id)?'#a7f3d0':'#e5e7eb'), fontSize:13}}>
+              {eq.every_fillup_items.map(item => {
+                // Mark oil-check items as required for non-ATV / non-Toro pieces.
+                const isOil = /oil/i.test(item.label || '');
+                const exemptFromOil = eq.category === 'atvs' || eq.slug === 'toro';
+                const required = isOil && !exemptFromOil;
+                const unticked = !fillupTicks.has(item.id);
+                const needsAttention = required && unticked;
+                const bd = needsAttention ? '#fca5a5' : (fillupTicks.has(item.id)?'#a7f3d0':'#e5e7eb');
+                const bg = needsAttention ? '#fef2f2' : (fillupTicks.has(item.id)?'#ecfdf5':'#f9fafb');
+                return (
+                <label key={item.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:bg, cursor:'pointer', border:'1px solid '+bd, fontSize:13}}>
                   <input type="checkbox" checked={fillupTicks.has(item.id)} onChange={()=>toggleFillup(item.id)} style={{margin:0, flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
-                  <span style={{color:fillupTicks.has(item.id)?'#065f46':'#374151', fontWeight:fillupTicks.has(item.id)?600:500}}>{item.label}</span>
+                  <span style={{color:fillupTicks.has(item.id)?'#065f46':(needsAttention?'#b91c1c':'#374151'), fontWeight:fillupTicks.has(item.id)?600:(needsAttention?600:500)}}>{item.label}{required && <span style={{color:'#b91c1c', marginLeft:4}}>*</span>}</span>
                 </label>
-              ))}
+              );})}
             </div>
           </div>
         )}
 
         {/* Service intervals — ONLY those that are due given the reading. */}
-        {eq && hasReading && dueIntervals.length > 0 && (
+        {eq && hasReading && dueIntervals.length > 0 && (() => {
+          // Most recent full completion across all due intervals — shown in
+          // the blurb so the operator sees where the machine last stood.
+          const mostRecentFull = dueIntervals
+            .filter(iv => iv.last_done_at)
+            .sort((a, b) => (b.last_done_at || 0) - (a.last_done_at || 0))[0];
+          return (
           <div style={cardS}>
             <div style={{fontSize:13, fontWeight:700, color:'#991b1b', marginBottom:4}}>⚠ Service due</div>
             <div style={{fontSize:11, color:'#6b7280', marginBottom:12}}>
-              Based on {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any service you performed during this fill. A bigger interval auto-covers smaller ones that divide it.
+              Based on {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any service you performed during this fill.
+              {mostRecentFull && (
+                <> Last {mostRecentFull.hours_or_km}{mostRecentFull.kind === 'km' ? '-km' : '-hour'} checklist done at {mostRecentFull.last_done_at.toLocaleString()}{mostRecentFull.kind === 'km' ? 'km' : 'h'}.</>
+              )}
             </div>
             <div style={{display:'flex', flexDirection:'column', gap:8}}>
               {dueIntervals.map(iv => {
@@ -395,9 +427,24 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                         <div style={{fontSize:11, color:'#6b7280', marginTop:3}}>
                           {iv.missed_count > 1 ? `Missed ${iv.missed_count} times since ${iv.first_missed_at.toLocaleString()}${unitShort}` : `Passed ${iv.first_missed_at.toLocaleString()}${unitShort}`}
                           {iv.last_done_at ? ` · last full done at ${iv.last_done_at.toLocaleString()}${unitShort}` : ' · never fully completed'}
-                          {iv.last_partial ? ` · last attempt at ${iv.last_partial.at_reading.toLocaleString()}${unitShort}: ${iv.last_partial.items_done}/${iv.last_partial.total} items` : ''}
-                          {implicit ? ' · auto-covered by a bigger interval you ticked' : ''}
                         </div>
+                        {iv.last_partial && (() => {
+                          // Only rendered when no full completion exists after this
+                          // partial (filtered in computeDueIntervals). Resolve the
+                          // ticked-item IDs against current task labels to show
+                          // exactly what was missed and by whom.
+                          const doneIds = new Set(iv.last_partial.items_completed || []);
+                          const missing = (Array.isArray(iv.tasks) ? iv.tasks : []).filter(t => !doneIds.has(t.id));
+                          const who = iv.last_partial.team_member || 'someone';
+                          return (
+                            <div style={{fontSize:11, color:'#92400e', marginTop:4, background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'5px 8px'}}>
+                              <strong>Partial at {iv.last_partial.at_reading.toLocaleString()}{unitShort}</strong> by {who} — {iv.last_partial.items_done}/{iv.last_partial.total} done.
+                              {missing.length > 0 && (
+                                <> Missing: <span style={{fontStyle:'italic'}}>{missing.map(m => m.label).join(', ')}</span></>
+                              )}
+                            </div>
+                          );
+                        })()}
                         {tasks.length > 0 && (
                           <div style={{fontSize:11, color:tickedCount>0?'#1e40af':'#991b1b', marginTop:4, fontWeight:600}}>
                             {tickedCount} of {tasks.length} tasks ticked{allTicked ? ' · full completion' : anyTicked ? ' · partial (will remain due)' : ''}
@@ -428,7 +475,8 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               })}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Attachment-specific checklists (Ventrac — Tough Cut / AERO-Vator /
             Landscape Rake). Only shown when this piece has attachments and a
@@ -446,7 +494,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                 const anyTicked = ticks.size > 0;
                 return (
                   <div key={key} style={{borderRadius:8, background:allTicked?'#eff6ff':(anyTicked?'#fffbeb':'#fafafa'), border:'1px solid '+(allTicked?'#bfdbfe':(anyTicked?'#fde68a':'#e5e7eb')), padding:'12px 14px'}}>
-                    <div style={{fontWeight:700, color:'#57534e', fontSize:13, marginBottom:6}}>{a.name} <span style={{fontSize:11, color:'#6b7280', fontWeight:500}}>· {a.hours_or_km}{a.kind==='km'?'km':'h'}</span></div>
+                    <div style={{fontWeight:700, color:'#57534e', fontSize:13, marginBottom:6}}>{a.name} <span style={{fontSize:11, color:'#6b7280', fontWeight:500}}>· {a.hours_or_km === 0 ? 'Every Use' : (a.hours_or_km+(a.kind==='km'?'km':'h'))}</span></div>
                     {a.help_text && (
                       <div style={{fontSize:11, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'6px 8px', marginBottom:8, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{a.help_text}</div>
                     )}

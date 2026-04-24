@@ -231,6 +231,11 @@ function parseIntervalLabel(label) {
   if (!label) return null;
   const up = label.toUpperCase();
   const kind = up.includes('KM') ? 'km' : 'hours';
+  // "Every Use" / "Every Session" — per-session checks (Ventrac attachments).
+  // No milestone number; represented as hours_or_km: 0.
+  if (/\bEVERY\s+(USE|SESSION)\b/i.test(up)) {
+    return {kind: 'hours', values: [0], label: label.trim()};
+  }
   // Special case: "FIRST X & EVERY Y …" → keep only the recurring Y.
   const firstEvery = /FIRST\s+(\d{1,3}(?:,\d{3})+|\d+)\s*[&+]?\s*EVERY\s+(\d{1,3}(?:,\d{3})+|\d+)/i.exec(up);
   if (firstEvery) {
@@ -271,7 +276,7 @@ function buildEquipmentRows() {
       slug: defMatch.slug,
       category: defMatch.category,
       parent_equipment_id: null,
-      status: defMatch.archived ? 'retired' : 'active',
+      status: defMatch.archived ? 'sold' : 'active',
       serial_number: fieldTextValue(item, 'serial-number'),
       fuel_type: defMatch.fuel_type || null,
       takes_def: !!defMatch.takes_def,
@@ -313,7 +318,7 @@ function buildEquipmentRows() {
       slug: syn.slug,
       category: syn.category,
       parent_equipment_id: null,
-      status: syn.archived ? 'retired' : 'active',
+      status: syn.archived ? 'sold' : 'active',
       serial_number: null,
       fuel_type: syn.fuel_type || null,
       takes_def: !!syn.takes_def,
@@ -510,8 +515,12 @@ function buildFuelingRows(eqRows, unresolvedLog) {
     for (const item of items) {
       const relatedLogIds = fieldAppRelations(item, 'fuel-log-app').concat(
                               fieldAppRelations(item, 'fuel-log'));
-      // Build the per-fillup check list
-      const fillupTicks = fieldCategoryValues(item, 'every-fuel-fill-up-checklist').map(v => ({
+      // Build the per-fillup check list. Podio apps use either
+      // external_id='every-fuel-fill-up-checklist' (most) or just
+      // 'every-fuel-fill-up' (2018 Hijet + a few others). Try both.
+      const fillupRaw = fieldCategoryValues(item, 'every-fuel-fill-up-checklist');
+      const fillupLabels = fillupRaw.length > 0 ? fillupRaw : fieldCategoryValues(item, 'every-fuel-fill-up');
+      const fillupTicks = fillupLabels.map(v => ({
         id: v.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40),
         label: v, ok: true,
       }));
@@ -525,7 +534,7 @@ function buildFuelingRows(eqRows, unresolvedLog) {
         for (const f of item.fields) {
           if (f.type !== 'category') continue;
           if (f.status === 'deleted') continue;       // Podio deleted template field
-          if (f.external_id === 'every-fuel-fill-up-checklist') continue;
+          if (f.external_id === 'every-fuel-fill-up-checklist' || f.external_id === 'every-fuel-fill-up') continue;
           const lbl = f.label || '';
           if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
           // Only count ticks on options that are still active on the field.

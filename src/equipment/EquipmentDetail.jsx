@@ -100,12 +100,20 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
           {eq.serial_number && <span style={{fontSize:11, color:'#6b7280'}}>Serial: <strong>{eq.serial_number}</strong></span>}
           {eq.fuel_type && <span style={{fontSize:11, color:'#6b7280'}}>Fuel: <strong>{eq.fuel_type}</strong></span>}
           <button onClick={async ()=>{
-            const next = eq.status === 'retired' ? 'active' : 'retired';
+            const next = eq.status === 'sold' ? 'active' : 'sold';
             const {error} = await sb.from('equipment').update({status: next}).eq('id', eq.id);
             if (error) { alert('Status update failed: '+error.message); return; }
             onReload();
-          }} style={{marginLeft:'auto', padding:'5px 12px', borderRadius:6, border:'1px solid '+(eq.status==='retired'?'#047857':'#b45309'), background:'white', color:eq.status==='retired'?'#047857':'#92400e', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{eq.status === 'retired' ? '↻ Restore to active' : '↓ Archive'}</button>
+          }} style={{marginLeft:'auto', padding:'5px 12px', borderRadius:6, border:'1px solid '+(eq.status==='sold'?'#047857':'#b45309'), background:'white', color:eq.status==='sold'?'#047857':'#92400e', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{eq.status === 'sold' ? '↻ Restore to active' : '↓ Mark sold'}</button>
         </div>
+        {Array.isArray(eq.team_members) && eq.team_members.length > 0 && (
+          <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:10, fontSize:11, color:'#6b7280'}}>
+            <span style={{fontWeight:600, color:'#4b5563'}}>Operators:</span>
+            {eq.team_members.map(n => (
+              <span key={n} style={{padding:'2px 8px', borderRadius:10, background:'#f1f5f9', color:'#475569', border:'1px solid #e2e8f0', fontSize:11, fontWeight:600}}>{n}</span>
+            ))}
+          </div>
+        )}
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, fontSize:12}}>
           <StatTile label={eq.tracking_unit==='km'?'Current KM':'Current Hours'} value={fmtReading(reading, eq.tracking_unit)} color="#111827"/>
           <StatTile label="Fuel tank" value={eq.fuel_tank_gal ? eq.fuel_tank_gal+' gal' : '—'} color="#6b7280"/>

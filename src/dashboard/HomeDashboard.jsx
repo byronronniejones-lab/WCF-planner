@@ -10,10 +10,12 @@
 // verbatim inline block, unindented by one level.
 // ============================================================================
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { sb } from '../lib/supabase.js';
 import { fmt, fmtS, toISO, addDays, todayISO } from '../lib/dateUtils.js';
 import { calcPoultryStatus, calcBroilerStatsFromDailys, calcTimeline } from '../lib/broiler.js';
 import { calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus } from '../lib/pig.js';
+import { computeIntervalStatus, daysSince, WARRANTY_WINDOW_DAYS } from '../lib/equipment.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useBatches } from '../contexts/BatchesContext.jsx';
@@ -35,6 +37,7 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
   const { sheepForHome } = useSheepHome();
   const { missedCleared, setMissedCleared } = useFeedCosts();
   const { setView, setPendingEdit } = useUI();
+  const navigate = useNavigate();
 
   const role = authState?.role;
   const isAdmin = role === 'admin';
@@ -42,20 +45,34 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
     const todayStr = todayISO();
     const in30 = toISO(addDays(today, 30));
 
-    // Equipment data for missed-fueling + stat card. Loaded defensively so
-    // the home page still renders if migration 016 hasn't been applied.
+    // Equipment data for missed-fueling + EQUIPMENT ATTENTION section. Loaded
+    // defensively so the home page still renders if migration 016 isn't in.
     const [equipment, setEquipment] = React.useState([]);
     const [equipmentLastFueling, setEquipmentLastFueling] = React.useState({}); // eq.id → last date
+    const [equipmentCompletions, setEquipmentCompletions] = React.useState({}); // eq.id → [completion {...with reading_at_completion}]
     React.useEffect(() => {
       sb.from('equipment').select('id,slug,name,status,tracking_unit,current_hours,current_km,warranty_expiration,service_intervals').eq('status','active').then(({data, error}) => {
         if (error || !data) return;
         setEquipment(data);
       });
-      sb.from('equipment_fuelings').select('equipment_id,date').order('date',{ascending:false}).limit(5000).then(({data, error}) => {
+      sb.from('equipment_fuelings').select('equipment_id,date,current_hours,current_km,service_intervals_completed').order('date',{ascending:false}).limit(5000).then(({data, error}) => {
         if (error || !data) return;
-        const m = {};
-        for (const r of data) { if (!m[r.equipment_id]) m[r.equipment_id] = r.date; }
-        setEquipmentLastFueling(m);
+        const lastM = {};
+        const compM = {};
+        for (const r of data) {
+          if (!lastM[r.equipment_id]) lastM[r.equipment_id] = r.date;
+          const comps = Array.isArray(r.service_intervals_completed) ? r.service_intervals_completed : [];
+          if (comps.length > 0) {
+            const fallbackReading = r.current_hours != null ? Number(r.current_hours) : (r.current_km != null ? Number(r.current_km) : null);
+            const normalized = comps.map(c => ({
+              ...c,
+              reading_at_completion: (c && c.reading_at_completion != null) ? Number(c.reading_at_completion) : fallbackReading,
+            }));
+            compM[r.equipment_id] = [...(compM[r.equipment_id] || []), ...normalized];
+          }
+        }
+        setEquipmentLastFueling(lastM);
+        setEquipmentCompletions(compM);
       });
     }, []);
 
@@ -220,6 +237,58 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
     });
     // Sort newest first
     allMissed.sort((a,b)=>b.date.localeCompare(a.date));
+
+    // ── Equipment attention: overdue services + warranty expiring ──
+    // One row per piece (shows the smallest-interval overdue + a "+N more"
+    // hint when multiple intervals are overdue on the same machine).
+    const equipmentAttention = [];
+    equipment.forEach(eq => {
+      const unit = eq.tracking_unit === 'km' ? 'km' : 'hours';
+      const unitLabel = unit === 'km' ? 'km' : 'h';
+      const currentReading = unit === 'km' ? Number(eq.current_km) : Number(eq.current_hours);
+      const intervals = Array.isArray(eq.service_intervals) ? eq.service_intervals : [];
+      const completions = equipmentCompletions[eq.id] || [];
+
+      if (Number.isFinite(currentReading) && currentReading > 0 && intervals.length > 0) {
+        const statuses = computeIntervalStatus(intervals, completions, currentReading);
+        const overdue = statuses.filter(s => s.overdue).sort((a, b) => a.hours_or_km - b.hours_or_km);
+        if (overdue.length > 0) {
+          const soonest = overdue[0];
+          const over = currentReading - soonest.next_due;
+          const intervalLbl = soonest.label || (soonest.hours_or_km + unitLabel + ' service');
+          const moreLbl = overdue.length > 1 ? ` · +${overdue.length - 1} more interval${overdue.length - 1 === 1 ? '' : 's'}` : '';
+          equipmentAttention.push({
+            kind: 'overdue',
+            slug: eq.slug,
+            label: eq.name,
+            detail: `${intervalLbl} · ${Math.round(over).toLocaleString()} ${unitLabel} overdue${moreLbl}`,
+          });
+        }
+      }
+
+      // Warranty: daysSince returns positive when past, negative when ahead.
+      if (eq.warranty_expiration) {
+        const d = daysSince(eq.warranty_expiration);
+        if (d != null && d >= -WARRANTY_WINDOW_DAYS) {
+          let detail;
+          if (d > 0)       detail = `Warranty expired ${d} day${d === 1 ? '' : 's'} ago`;
+          else if (d === 0) detail = 'Warranty expires today';
+          else             detail = `Warranty expires in ${-d} day${-d === 1 ? '' : 's'}`;
+          equipmentAttention.push({
+            kind: 'warranty',
+            slug: eq.slug,
+            label: eq.name,
+            detail,
+          });
+        }
+      }
+    });
+    // Overdue first, warranty after; alphabetical within each group.
+    equipmentAttention.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'overdue' ? -1 : 1;
+      return a.label.localeCompare(b.label);
+    });
+
     const activeBroilerBatches2 = batches.filter(b=>calcPoultryStatus(b)==='active');
     const activePigBatches2     = feederGroups.filter(g=>g.status==='active');
     const activeLayerGroups2    = (layerGroups||[]).filter(g=>g.status==='active');
@@ -385,6 +454,32 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
             <div style={{background:'#ecfdf5',border:'1px solid #a7f3d0',borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:10}}>
               <span style={{fontSize:16}}>✅</span>
               <div style={{fontSize:12,color:'#065f46',fontWeight:500}}>All active batches had daily reports entered for the past 7 days</div>
+            </div>
+          )}
+
+{/* ── Equipment Attention ── */}
+          {equipmentAttention.length>0&&(
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'#92400e',letterSpacing:.3,marginBottom:8}}>🔧 EQUIPMENT ATTENTION</div>
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {equipmentAttention.map(a=>{
+                  const isOverdue=a.kind==='overdue';
+                  const bg=isOverdue?'#fef2f2':'#fffbeb';
+                  const bd=isOverdue?'#fecaca':'#fde68a';
+                  const tx=isOverdue?'#b91c1c':'#92400e';
+                  const icon=isOverdue?'🔧':'🛡';
+                  return (
+                    <div key={a.kind+':'+a.slug} onClick={()=>navigate('/equipment/'+a.slug)}
+                      style={{background:bg,border:'1px solid '+bd,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
+                      <span style={{fontSize:18}}>{icon}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:600,color:tx}}>{a.label}</div>
+                        <div style={{fontSize:11,color:'#9ca3af'}}>{a.detail}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

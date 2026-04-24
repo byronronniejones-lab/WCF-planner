@@ -35,10 +35,10 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
   // Group equipment by category, active first.
   const grouped = EQUIPMENT_CATEGORIES.map(cat => ({
     ...cat,
-    rows: equipment.filter(e => e.category === cat.key && e.status !== 'retired')
+    rows: equipment.filter(e => e.category === cat.key && e.status !== 'sold')
                    .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
   })).filter(g => g.rows.length > 0);
-  const retired = equipment.filter(e => e.status === 'retired').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const sold = equipment.filter(e => e.status === 'sold').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   const tile = (eq) => {
     const reading = eq.tracking_unit === 'km' ? eq.current_km : eq.current_hours;
@@ -105,11 +105,11 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           </div>
         </div>
       ))}
-      {retired.length > 0 && (
+      {sold.length > 0 && (
         <div style={{marginTop:10}}>
-          <div style={{fontSize:12, fontWeight:600, color:'#6b7280', marginBottom:6}}>RETIRED ({retired.length})</div>
+          <div style={{fontSize:12, fontWeight:600, color:'#6b7280', marginBottom:6}}>SOLD ({sold.length})</div>
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))', gap:8}}>
-            {retired.map(eq => (
+            {sold.map(eq => (
               <div key={eq.id} onClick={()=>onOpen(eq.slug)} className="hoverable-tile"
                 style={{background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:10, padding:'10px 14px', cursor:'pointer', opacity:.8}}>
                 <div style={{fontSize:13, fontWeight:700, color:'#374151'}}>{eq.name}</div>

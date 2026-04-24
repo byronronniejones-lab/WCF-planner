@@ -44,23 +44,51 @@ export default function EquipmentWebformsAdmin() {
   }
   if (loading) return <div style={{padding:20, fontSize:13, color:'#6b7280'}}>Loading equipment…</div>;
 
+  const soldList = equipment.filter(e => e.status === 'sold').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
   return (
     <div>
       <div style={card}>
-        <div style={sectionTitle}>Pick equipment to edit</div>
-        <select value={selectedId || ''} onChange={e => setSelectedId(e.target.value || null)} style={{...inpS, maxWidth:420}}>
-          <option value=''>Select…</option>
-          {EQUIPMENT_CATEGORIES.map(cat => {
-            const inCat = equipment.filter(e => e.category === cat.key);
-            if (inCat.length === 0) return null;
-            return (
-              <optgroup key={cat.key} label={cat.label}>
-                {inCat.map(e => <option key={e.id} value={e.id}>{e.name}{e.status !== 'active' ? ' ('+e.status+')' : ''}</option>)}
-              </optgroup>
-            );
-          })}
-        </select>
-        <div style={{fontSize:11, color:'#9ca3af', marginTop:8}}>
+        <div style={sectionTitle}>Equipment <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click a piece to edit</span></div>
+        {EQUIPMENT_CATEGORIES.map(cat => {
+          const inCat = equipment.filter(e => e.category === cat.key && e.status !== 'sold').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          if (inCat.length === 0) return null;
+          return (
+            <div key={cat.key} style={{marginBottom:12}}>
+              <div style={{fontSize:11, fontWeight:700, color:cat.color, textTransform:'uppercase', letterSpacing:.5, marginBottom:5}}>{cat.icon} {cat.label}</div>
+              <div style={{display:'flex', flexDirection:'column', gap:3}}>
+                {inCat.map(e => {
+                  const on = selectedId === e.id;
+                  return (
+                    <div key={e.id} onClick={()=>setSelectedId(e.id)}
+                      style={{padding:'7px 12px', border:'1px solid '+(on?cat.color:'#e5e7eb'), background:on?cat.bg:'white', borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', gap:10, fontSize:13}}>
+                      <span style={{fontWeight:on?700:500, color:'#111827', flex:1}}>{e.name}</span>
+                      {e.status !== 'active' && <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#fef3c7', color:'#92400e', textTransform:'uppercase', fontWeight:600}}>{e.status}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {soldList.length > 0 && (
+          <div style={{marginTop:18, paddingTop:12, borderTop:'1px solid #e5e7eb'}}>
+            <div style={{fontSize:11, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, marginBottom:5}}>Sold</div>
+            <div style={{display:'flex', flexDirection:'column', gap:3}}>
+              {soldList.map(e => {
+                const on = selectedId === e.id;
+                return (
+                  <div key={e.id} onClick={()=>setSelectedId(e.id)}
+                    style={{padding:'7px 12px', border:'1px solid '+(on?'#6b7280':'#e5e7eb'), background:on?'#f3f4f6':'white', borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', gap:10, fontSize:13, color:'#6b7280'}}>
+                    <span style={{fontWeight:on?700:500, flex:1}}>{e.name}</span>
+                    <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#e5e7eb', color:'#6b7280', textTransform:'uppercase', fontWeight:600}}>sold</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div style={{fontSize:11, color:'#9ca3af', marginTop:10}}>
           Changes auto-save on blur. Live on /fueling/&lt;slug&gt; immediately after save.
         </div>
       </div>
@@ -68,6 +96,7 @@ export default function EquipmentWebformsAdmin() {
       {selected && (
         <>
           <IdentityEditor equipment={selected} onReload={loadAll}/>
+          <TeamMembersEditor equipment={selected} onReload={loadAll}/>
           <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
           <EveryFillupEditor equipment={selected} onReload={loadAll}/>
           <ServiceIntervalEditor equipment={selected} onReload={loadAll}/>
@@ -101,11 +130,53 @@ function IdentityEditor({equipment, onReload}) {
         <div style={subTitle}>Status</div>
         <select value={equipment.status} disabled={busy} onChange={e => save('status', e.target.value)} style={{...inpS, maxWidth:180}}>
           <option value="active">active</option>
-          <option value="retired">retired</option>
+          <option value="sold">sold</option>
         </select>
         <div style={subTitle}>Slug</div>
         <div style={{fontSize:12, color:'#6b7280'}}>/fueling/<strong>{equipment.slug}</strong> <span style={{fontSize:10, color:'#9ca3af', marginLeft:6}}>(not editable — used as the webform URL)</span></div>
       </div>
+    </div>
+  );
+}
+
+// ── team members: who typically operates this piece ───────────────────────
+function TeamMembersEditor({equipment, onReload}) {
+  const [allTM, setAllTM] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => {
+      if (data && Array.isArray(data.data)) setAllTM(data.data);
+    });
+  }, []);
+  const assigned = Array.isArray(equipment.team_members) ? equipment.team_members : [];
+  async function toggle(name) {
+    setBusy(true);
+    const next = assigned.includes(name) ? assigned.filter(n => n !== name) : [...assigned, name];
+    const {error} = await sb.from('equipment').update({team_members: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Team Members <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Who typically operates this piece</span></div>
+      {allTM.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>Loading team members…</div>}
+      {allTM.length > 0 && (
+        <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+          {allTM.map(name => {
+            const on = assigned.includes(name);
+            return (
+              <button key={name} onClick={()=>toggle(name)} disabled={busy}
+                style={{fontSize:12, padding:'5px 11px', borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontFamily:'inherit', cursor:busy?'not-allowed':'pointer', fontWeight:on?600:400}}>
+                {on ? '✓ ' : ''}{name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {assigned.length === 0 && allTM.length > 0 && (
+        <div style={{fontSize:11, color:'#9ca3af', marginTop:6, fontStyle:'italic'}}>None assigned yet.</div>
+      )}
     </div>
   );
 }

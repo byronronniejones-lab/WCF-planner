@@ -138,7 +138,10 @@ export function computeDueIntervals(intervals, completions, currentReading) {
     }
   }
 
-  // Latest PARTIAL attempt per interval (for the "7/10 done at 1,596h" hint).
+  // Latest PARTIAL attempt per interval — but ONLY if no full completion has
+  // happened since. Once someone does a full pass, stale partials stop
+  // mattering. Caller gets items_completed (IDs), total, team_member, and the
+  // reading, so it can list what's still unfinished and by whom.
   const lastPartialAt = new Map();
   const lastPartialDetail = new Map();
   for (const c of (completions || [])) {
@@ -147,13 +150,18 @@ export function computeDueIntervals(intervals, completions, currentReading) {
     const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
     if (snap == null) continue;
     const key = c.kind + ':' + c.interval;
+    // Skip if a full completion has happened at/after this reading.
+    const fullSnap = lastDoneAt.get(key);
+    if (fullSnap != null && fullSnap >= snap) continue;
     const ex = lastPartialAt.get(key);
     if (!ex || snap > ex) {
       lastPartialAt.set(key, snap);
       lastPartialDetail.set(key, {
         items_done: Array.isArray(c.items_completed) ? c.items_completed.length : 0,
+        items_completed: Array.isArray(c.items_completed) ? c.items_completed.slice() : [],
         total: c.total_tasks || 0,
         at_reading: snap,
+        team_member: c.team_member || null,
       });
     }
   }
