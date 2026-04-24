@@ -43,6 +43,14 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     });
   }, []);
 
+  // Filter the team-member dropdown to the operators assigned to THIS piece
+  // (equipment.team_members). If none are assigned yet, fall back to the
+  // full master list so the form still works.
+  const assignedTM = Array.isArray(eq?.team_members) ? eq.team_members : [];
+  const visibleTeamMembers = assignedTM.length > 0
+    ? teamMembers.filter(n => assignedTM.includes(n))
+    : teamMembers;
+
   // Load this piece's fueling history to compute due intervals.
   React.useEffect(() => {
     if (!eq) { setHistory([]); return; }
@@ -330,7 +338,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             <label style={lblS}>Team Member *</label>
             <select value={teamMember} onChange={e=>setTeamMember(e.target.value)} style={inpS}>
               <option value=''>Select...</option>
-              {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+              {visibleTeamMembers.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
         </div>

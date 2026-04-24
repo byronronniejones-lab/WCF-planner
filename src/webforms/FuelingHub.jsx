@@ -16,7 +16,7 @@ export default function FuelingHub({sb}) {
   const navigate = useNavigate();
 
   React.useEffect(() => {
-    sb.from('equipment').select('id,name,slug,category,tracking_unit,fuel_type,every_fillup_items,every_fillup_help,fuel_gallons_help,operator_notes,service_intervals,attachment_checklists,current_hours,current_km,takes_def').eq('status','active').order('name').then(({data, error}) => {
+    sb.from('equipment').select('id,name,slug,category,tracking_unit,fuel_type,every_fillup_items,every_fillup_help,fuel_gallons_help,operator_notes,service_intervals,attachment_checklists,current_hours,current_km,takes_def,team_members,manuals').eq('status','active').order('name').then(({data, error}) => {
       if (error && /does not exist|relation/i.test(error.message||'')) { setMissingSchema(true); setLoading(false); return; }
       if (data) setEquipment(data);
       setLoading(false);
