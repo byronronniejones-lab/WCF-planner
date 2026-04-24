@@ -55,15 +55,16 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
         if (error || !data) return;
         setEquipment(data);
       });
-      sb.from('equipment_fuelings').select('equipment_id,date,current_hours,current_km,service_intervals_completed').order('date',{ascending:false}).limit(5000).then(({data, error}) => {
-        if (error || !data) return;
+      sb.from('equipment_fuelings').select('equipment_id,date,hours_reading,km_reading,service_intervals_completed').order('date',{ascending:false}).limit(5000).then(({data, error}) => {
+        if (error) { console.error('equipment_fuelings fetch:', error); return; }
+        if (!data) return;
         const lastM = {};
         const compM = {};
         for (const r of data) {
           if (!lastM[r.equipment_id]) lastM[r.equipment_id] = r.date;
           const comps = Array.isArray(r.service_intervals_completed) ? r.service_intervals_completed : [];
           if (comps.length > 0) {
-            const fallbackReading = r.current_hours != null ? Number(r.current_hours) : (r.current_km != null ? Number(r.current_km) : null);
+            const fallbackReading = r.hours_reading != null ? Number(r.hours_reading) : (r.km_reading != null ? Number(r.km_reading) : null);
             const normalized = comps.map(c => ({
               ...c,
               reading_at_completion: (c && c.reading_at_completion != null) ? Number(c.reading_at_completion) : fallbackReading,
