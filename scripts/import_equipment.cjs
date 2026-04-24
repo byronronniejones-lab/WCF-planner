@@ -699,11 +699,16 @@ function deriveCurrentReading(eqRows, fuelingRows) {
   }
 
   console.log('\n── Writing to Supabase ──');
-  // Upsert equipment by id
-  {
+  const FUELINGS_ONLY = process.argv.includes('--fuelings-only');
+  // Upsert equipment by id (skipped when --fuelings-only, to preserve
+  // post-import admin patches like operator_notes, team_members,
+  // attachment_checklists, and manuals).
+  if (!FUELINGS_ONLY) {
     const {error} = await sb.from('equipment').upsert(eqRows, {onConflict:'id'});
     if (error) { console.error('Equipment upsert failed:', error); process.exit(1); }
     console.log(`✓ ${eqRows.length} equipment rows upserted`);
+  } else {
+    console.log(`· --fuelings-only: skipping equipment table upsert (preserves admin patches)`);
   }
   // Batch-insert fuelings in chunks of 500
   for (let i=0; i<fuelingRows.length; i+=500) {

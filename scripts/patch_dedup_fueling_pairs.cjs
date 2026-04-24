@@ -52,7 +52,9 @@ function isEmptyArr(x) { return !Array.isArray(x) || x.length === 0; }
 function mergeScore(r) {
   // Higher score = more likely to be the "good" row we keep.
   let s = 0;
-  if (r.gallons != null) s += 10;
+  const gal = Number(r.gallons) || 0;
+  if (gal > 0) s += 12;           // prefer non-zero gallons strongly
+  else if (r.gallons != null) s += 1;  // gallons=0 is weak evidence
   if (!isEmptyArr(r.every_fillup_check)) s += 5;
   if (!isEmptyArr(r.service_intervals_completed)) s += 5;
   if (!isEmptyArr(r.photos)) s += 3;
@@ -110,7 +112,8 @@ function mergeScore(r) {
       if (isEmptyArr(merged.every_fillup_check) && !isEmptyArr(l.every_fillup_check)) merged.every_fillup_check = l.every_fillup_check;
       if (isEmptyArr(merged.service_intervals_completed) && !isEmptyArr(l.service_intervals_completed)) merged.service_intervals_completed = l.service_intervals_completed;
       if (isEmptyArr(merged.photos) && !isEmptyArr(l.photos)) merged.photos = l.photos;
-      if (merged.gallons == null && l.gallons != null) merged.gallons = l.gallons;
+      // Prefer non-zero gallons over null OR zero.
+      if ((merged.gallons == null || Number(merged.gallons) === 0) && Number(l.gallons) > 0) merged.gallons = l.gallons;
       if (merged.def_gallons == null && l.def_gallons != null) merged.def_gallons = l.def_gallons;
       if (!merged.comments && l.comments) merged.comments = l.comments;
       if (!merged.fuel_type && l.fuel_type) merged.fuel_type = l.fuel_type;
