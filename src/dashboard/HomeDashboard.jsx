@@ -217,26 +217,34 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
           allMissed.push({key,label:f.charAt(0).toUpperCase()+f.slice(1),icon:'🐑',type:'Sheep',date:checkDate});
       });
     }
-    // Equipment — flag active pieces that haven't logged a fueling in 14+ days.
-    // One entry per piece (not per day) since equipment runs sporadically.
+    // Sort newest first
+    allMissed.sort((a,b)=>b.date.localeCompare(a.date));
+
+    // ── Equipment outstanding fuel checklists — separate from animal daily
+    // reports. An active piece that hasn't logged a fueling in 14+ days
+    // gets surfaced here, NOT in the missed-daily-reports section above
+    // (equipment doesn't get daily reports, only fuel checklists).
     const MISSED_FUELING_DAYS = 14;
+    const outstandingFuelings = [];
     equipment.forEach(eq => {
       const last = equipmentLastFueling[eq.id];
       if (!last) {
-        // Never fueled — only flag if it's an older piece (we assume any active
-        // piece should have at least one fueling on record). Use a per-piece key.
         const key = `equip-nofuel-${eq.id}`;
-        if (!missedCleared.has(key)) allMissed.push({key, label:eq.name, icon:'🚜', type:'Equipment — no fueling on record', date: todayStr});
+        if (!missedCleared.has(key)) outstandingFuelings.push({key, label:eq.name, slug:eq.slug, type:'No fueling on record', date: todayStr, daysSince:null});
         return;
       }
       const daysSince = Math.floor((new Date(todayStr+'T12:00:00') - new Date(last+'T12:00:00')) / 86400000);
       if (daysSince > MISSED_FUELING_DAYS) {
         const key = `equip-${eq.id}|${last}`;
-        if (!missedCleared.has(key)) allMissed.push({key, label:eq.name, icon:'🚜', type:`Equipment — ${daysSince}d since last fueling`, date: last});
+        if (!missedCleared.has(key)) outstandingFuelings.push({key, label:eq.name, slug:eq.slug, type:`${daysSince}d since last fueling`, date: last, daysSince});
       }
     });
-    // Sort newest first
-    allMissed.sort((a,b)=>b.date.localeCompare(a.date));
+    outstandingFuelings.sort((a,b)=>{
+      // Never-fueled first, then oldest last-fueling
+      if (a.daysSince == null && b.daysSince != null) return -1;
+      if (a.daysSince != null && b.daysSince == null) return 1;
+      return (b.daysSince||0) - (a.daysSince||0);
+    });
 
     // ── Equipment attention: overdue services + warranty expiring ──
     // One row per piece (shows the smallest-interval overdue + a "+N more"
@@ -454,6 +462,28 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
             <div style={{background:'#ecfdf5',border:'1px solid #a7f3d0',borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:10}}>
               <span style={{fontSize:16}}>✅</span>
               <div style={{fontSize:12,color:'#065f46',fontWeight:500}}>All active batches had daily reports entered for the past 7 days</div>
+            </div>
+          )}
+
+{/* ── Outstanding Fuel Checklists (equipment) ── */}
+          {outstandingFuelings.length>0&&(
+            <div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#a16207',letterSpacing:.3}}>⛽ OUTSTANDING FUEL CHECKLISTS</div>
+                <button onClick={()=>clearAllMissed(outstandingFuelings.map(m=>m.key))} style={{fontSize:11,color:'#6b7280',background:'none',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit'}}>Clear all</button>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {outstandingFuelings.map(m=>(
+                  <div key={m.key} onClick={()=>navigate('/fueling/'+m.slug)} style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
+                    <span style={{fontSize:18}}>🚜</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:600,color:'#92400e'}}>{m.label}</div>
+                      <div style={{fontSize:11,color:'#9ca3af'}}>{m.type}{m.date&&m.daysSince!=null?' · last '+fmt(m.date):''}</div>
+                    </div>
+                    <button onClick={e=>{e.stopPropagation();clearMissedEntry(m.key);}} style={{fontSize:11,color:'#6b7280',background:'white',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Clear</button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

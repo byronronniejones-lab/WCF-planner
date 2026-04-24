@@ -132,79 +132,8 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
       {/* Manuals & Videos — shown to everyone (including equipment_tech). */}
       <ManualsCard equipment={eq}/>
 
-      {/* Spec panel — always inline-editable with debounced auto-save.
-          No Edit button. Click any field to type; autosaves 800ms after
-          you stop typing. Matches the cattle/sheep inline-edit pattern.
-          Hidden from equipment_tech users (only admins edit specs). */}
-      {!isEquipmentTech && (
-      <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px'}}>
-        <div style={sectionTitle}>Specs & Fluids <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click any field to edit · auto-saves</span></div>
-        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(360px, 1fr))', gap:'8px 18px', fontSize:12}}>
-          {[
-            ['engine_oil','Engine Oil'],
-            ['oil_filter','Oil Filter'],
-            ['hydraulic_oil','Hydraulic Oil'],
-            ['hydraulic_filter','Hydraulic Filter'],
-            ['coolant','Coolant'],
-            ['brake_fluid','Brake Fluid'],
-            ['fuel_filter','Fuel Filter'],
-            ['def_filter','DEF Filter'],
-            ['gearbox_drive_oil','Gearbox / Drive Oil'],
-            ['air_filters','Air Filters'],
-            ['serial_number','Serial Number'],
-          ].map(([k, label]) => (
-            <div key={k} style={{display:'grid', gridTemplateColumns:'130px 1fr', gap:6, alignItems:'center'}}>
-              <span style={{color:'#9ca3af'}}>{label}:</span>
-              <input
-                type="text"
-                defaultValue={eq[k] || ''}
-                onChange={e => queueFieldSave(k, e.target.value, 'text')}
-                style={{...inpS, padding:'4px 7px', background:'transparent'}}
-              />
-            </div>
-          ))}
-          <div style={{display:'grid', gridTemplateColumns:'130px 1fr', gap:6, alignItems:'center'}}>
-            <span style={{color:'#9ca3af'}}>Warranty ends:</span>
-            <input
-              type="date"
-              defaultValue={eq.warranty_expiration || ''}
-              onChange={e => queueFieldSave('warranty_expiration', e.target.value, 'text')}
-              style={{...inpS, padding:'4px 7px', background:'transparent'}}
-            />
-          </div>
-          <div style={{display:'grid', gridTemplateColumns:'130px 1fr', gap:6, alignItems:'center'}}>
-            <span style={{color:'#9ca3af'}}>Warranty note:</span>
-            <input
-              type="text"
-              defaultValue={eq.warranty_description || ''}
-              onChange={e => queueFieldSave('warranty_description', e.target.value, 'text')}
-              style={{...inpS, padding:'4px 7px', background:'transparent'}}
-            />
-          </div>
-          <div style={{display:'grid', gridTemplateColumns:'130px 1fr', gap:6, alignItems:'center'}}>
-            <span style={{color:'#9ca3af'}}>Fuel tank (gal):</span>
-            <input
-              type="number" min="0" step="0.1"
-              defaultValue={eq.fuel_tank_gal != null ? eq.fuel_tank_gal : ''}
-              onChange={e => queueFieldSave('fuel_tank_gal', e.target.value, 'number')}
-              style={{...inpS, padding:'4px 7px', background:'transparent'}}
-            />
-          </div>
-          {eq.takes_def && (
-            <div style={{display:'grid', gridTemplateColumns:'130px 1fr', gap:6, alignItems:'center'}}>
-              <span style={{color:'#9ca3af'}}>DEF tank (gal):</span>
-              <input
-                type="number" min="0" step="0.1"
-                defaultValue={eq.def_tank_gal != null ? eq.def_tank_gal : ''}
-                onChange={e => queueFieldSave('def_tank_gal', e.target.value, 'number')}
-                style={{...inpS, padding:'4px 7px', background:'transparent'}}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      )}
+      {/* Specs & Fluids moved to /admin → Equipment modal (admin-only).
+          This page is a read view of the piece itself. */}
 
       {/* Webform config editing (intervals, tasks, help text, every-fillup,
           attachment checklists) lives in /webforms → Equipment admin tab,

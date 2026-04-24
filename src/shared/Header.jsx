@@ -59,7 +59,17 @@ export default function Header({ showDailyForm, signOut, backupData, restoreData
           {inSheep&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>SHEEP</span>}
           {inEquipment&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,.6)",borderLeft:"1px solid rgba(255,255,255,.25)",paddingLeft:10,letterSpacing:.5}}>EQUIPMENT</span>}
         </button>
-        <div style={{fontSize:11,display:"flex",alignItems:"center",gap:5,opacity:.75}}>
+        <div style={{display:"flex",gap:6,alignItems:"center",marginLeft:16}}>
+          <button onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView("webformhub");}}
+            style={{padding:"5px 12px",borderRadius:7,border:"1px solid rgba(255,255,255,.3)",cursor:"pointer",fontSize:12,fontWeight:500,background:view==='webformhub'?"rgba(255,255,255,.25)":"rgba(255,255,255,.1)",color:"white",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            📝 Dailys
+          </button>
+          <button onClick={()=>{setShowForm(false);setShowBreedForm(false);setShowFarrowForm(false);setView("fuelingHub");}}
+            style={{padding:"5px 12px",borderRadius:7,border:"1px solid rgba(255,255,255,.3)",cursor:"pointer",fontSize:12,fontWeight:500,background:view==='fuelingHub'?"rgba(255,255,255,.25)":"rgba(255,255,255,.1)",color:"white",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            ⛽ Fueling
+          </button>
+        </div>
+        <div style={{fontSize:11,display:"flex",alignItems:"center",gap:5,opacity:.75,marginLeft:"auto"}}>
           {saveStatus==='saving'&&<span style={{color:"#a7f3d0",fontWeight:500}}>Saving…</span>}
           {saveStatus==='saved'&&<span style={{color:"#a7f3d0",fontWeight:500}}>✓ Saved</span>}
           {saveStatus==='error'&&<span style={{color:"#fca5a5",fontWeight:500}}>⚠ Save failed — check connection</span>}
