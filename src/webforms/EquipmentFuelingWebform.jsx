@@ -8,6 +8,7 @@
 // are actually due given the reading the team just entered + history.
 import React from 'react';
 import { computeDueIntervals } from '../lib/equipment.js';
+import ManualsCard from '../equipment/ManualsCard.jsx';
 
 export default function EquipmentFuelingWebform({sb, equipment, equipmentList, onBack}) {
   const isQuick = !equipment;
@@ -315,6 +316,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             <div style={{fontSize:12, color:'#78716c', whiteSpace:'pre-wrap', fontStyle:'italic'}}>{eq.operator_notes}</div>
           </div>
         )}
+
+        {/* Expandable Manuals & Videos card — reference materials for operators. */}
+        <ManualsCard equipment={eq}/>
 
         {/* Date + Team Member on their own rows */}
         <div style={cardS}>

@@ -565,7 +565,26 @@ function buildFuelingRows(eqRows, unresolvedLog) {
       }
 
       const dateRaw = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0,10) : null);
-      const relatedLogRow = relatedLogIds.map(id => logByPodio.get(id)).find(Boolean);
+      let relatedLogRow = relatedLogIds.map(id => logByPodio.get(id)).find(Boolean);
+
+      // Fallback match when Podio's fuel-log-app relation is missing: same
+      // equipment + same date + same reading (±1) + same team. Prevents the
+      // import from creating a duplicate "naked checklist" row next to a
+      // Fuel Log row for the same fueling. (2026-04-24: 187 such pairs
+      // surfaced on a live planner, hence this backstop.)
+      if (!relatedLogRow && dateRaw) {
+        const hoursKm = fieldNumValue(item, 'hours') || fieldNumValue(item, 'km');
+        const teamNorm = (fieldTextValue(item, 'team-member') || '').trim().toLowerCase();
+        if (hoursKm != null) {
+          relatedLogRow = rows.find(r =>
+            r.equipment_id === eq.id &&
+            r.date === dateRaw &&
+            ((eq.tracking_unit === 'hours' ? r.hours_reading : r.km_reading) != null) &&
+            Math.abs(Number(eq.tracking_unit === 'hours' ? r.hours_reading : r.km_reading) - Number(hoursKm)) <= 1 &&
+            ((r.team_member || '').trim().toLowerCase() === teamNorm || !teamNorm || !r.team_member)
+          );
+        }
+      }
 
       if (relatedLogRow) {
         // Merge into existing Fuel Log row

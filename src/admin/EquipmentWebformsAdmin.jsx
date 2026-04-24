@@ -97,6 +97,7 @@ export default function EquipmentWebformsAdmin() {
         <>
           <IdentityEditor equipment={selected} onReload={loadAll}/>
           <TeamMembersEditor equipment={selected} onReload={loadAll}/>
+          <ManualsEditor equipment={selected} onReload={loadAll}/>
           <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
           <EveryFillupEditor equipment={selected} onReload={loadAll}/>
           <ServiceIntervalEditor equipment={selected} onReload={loadAll}/>
@@ -177,6 +178,112 @@ function TeamMembersEditor({equipment, onReload}) {
       {assigned.length === 0 && allTM.length > 0 && (
         <div style={{fontSize:11, color:'#9ca3af', marginTop:6, fontStyle:'italic'}}>None assigned yet.</div>
       )}
+    </div>
+  );
+}
+
+// ── manuals & videos (operator reference materials) ──────────────────────
+// PDFs go into Supabase Storage at manuals/<slug>/<timestamp>-<safe-name>.
+// Videos are YouTube URLs only — we derive the thumbnail at render time.
+function youtubeId(url) {
+  if (!url) return null;
+  const patterns = [
+    /youtu\.be\/([A-Za-z0-9_-]{6,})/,
+    /youtube\.com\/watch\?.*v=([A-Za-z0-9_-]{6,})/,
+    /youtube\.com\/embed\/([A-Za-z0-9_-]{6,})/,
+    /youtube\.com\/shorts\/([A-Za-z0-9_-]{6,})/,
+  ];
+  for (const re of patterns) { const m = re.exec(url); if (m) return m[1]; }
+  return null;
+}
+
+function ManualsEditor({equipment, onReload}) {
+  const [busy, setBusy] = React.useState(false);
+  const [newVideoUrl, setNewVideoUrl] = React.useState('');
+  const [newVideoTitle, setNewVideoTitle] = React.useState('');
+  const [uploading, setUploading] = React.useState(false);
+  const manuals = Array.isArray(equipment.manuals) ? equipment.manuals : [];
+
+  async function persist(next) {
+    setBusy(true);
+    const {error} = await sb.from('equipment').update({manuals: next}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+
+  async function uploadPdf(file) {
+    if (!file) return;
+    setUploading(true);
+    const safe = (file.name || 'manual.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const bucketPath = 'manuals/' + equipment.slug + '/' + Date.now() + '-' + safe;
+    const {error: upErr} = await sb.storage.from('equipment-maintenance-docs').upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
+    if (upErr) { alert('Upload failed: '+upErr.message); setUploading(false); return; }
+    const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(bucketPath);
+    const title = file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
+    const next = [...manuals, {type:'pdf', title, url: pub.publicUrl, path: bucketPath, uploadedAt: new Date().toISOString()}];
+    await persist(next);
+    setUploading(false);
+  }
+
+  async function addVideo() {
+    const url = newVideoUrl.trim();
+    if (!url) return;
+    const vid = youtubeId(url);
+    if (!vid) { alert('Doesn’t look like a YouTube URL. Try https://youtu.be/... or https://youtube.com/watch?v=...'); return; }
+    const title = newVideoTitle.trim() || url;
+    await persist([...manuals, {type:'video', title, url, youtube_id: vid}]);
+    setNewVideoUrl(''); setNewVideoTitle('');
+  }
+
+  async function editTitle(idx, title) {
+    const next = manuals.slice(); next[idx] = {...next[idx], title};
+    await persist(next);
+  }
+
+  async function removeOne(idx) {
+    const entry = manuals[idx];
+    if (!entry) return;
+    if (!confirm('Remove "' + (entry.title||'this manual') + '"?')) return;
+    if (entry.type === 'pdf' && entry.path) {
+      try { await sb.storage.from('equipment-maintenance-docs').remove([entry.path]); } catch(e){/*ignore*/}
+    }
+    await persist(manuals.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Manuals &amp; Videos <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Operator reference — shows on /fueling and /equipment</span></div>
+      {manuals.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No manuals or videos added yet.</div>}
+      {manuals.length > 0 && (
+        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:10}}>
+          {manuals.map((m, i) => (
+            <div key={i} style={{display:'grid', gridTemplateColumns:'60px 1fr 80px', gap:8, alignItems:'center', padding:'8px 10px', background:'#fafafa', border:'1px solid #e5e7eb', borderRadius:6}}>
+              <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, textAlign:'center', background: m.type==='pdf' ? '#fef3c7' : '#fee2e2', color: m.type==='pdf' ? '#92400e' : '#991b1b'}}>{m.type==='pdf' ? '📄 PDF' : '▶ VIDEO'}</span>
+              <div>
+                <input type="text" defaultValue={m.title || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (m.title||'')) editTitle(i, v); }} style={{...inpS, padding:'3px 7px', fontSize:12}}/>
+                <a href={m.url} target="_blank" rel="noopener noreferrer" style={{fontSize:10, color:'#1d4ed8', textDecoration:'none', wordBreak:'break-all'}}>{m.url}</a>
+              </div>
+              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'4px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+        <div style={{padding:'10px', background:'#fffbeb', borderRadius:6, border:'1px dashed #fde68a'}}>
+          <div style={{...subTitle, color:'#92400e'}}>Upload PDF</div>
+          <input type="file" accept="application/pdf" disabled={uploading||busy} onChange={e => { if (e.target.files && e.target.files[0]) uploadPdf(e.target.files[0]); e.target.value=''; }} style={{fontSize:12}}/>
+          {uploading && <div style={{fontSize:10, color:'#92400e', marginTop:4}}>Uploading…</div>}
+        </div>
+        <div style={{padding:'10px', background:'#fef2f2', borderRadius:6, border:'1px dashed #fecaca'}}>
+          <div style={{...subTitle, color:'#991b1b'}}>Add YouTube video</div>
+          <input type="text" value={newVideoTitle} onChange={e=>setNewVideoTitle(e.target.value)} placeholder="Title (optional)" style={{...inpS, marginBottom:4, fontSize:12}}/>
+          <div style={{display:'flex', gap:6}}>
+            <input type="text" value={newVideoUrl} onChange={e=>setNewVideoUrl(e.target.value)} placeholder="https://youtu.be/..." style={{...inpS, fontSize:12, flex:1}}/>
+            <button onClick={addVideo} disabled={busy||!newVideoUrl.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVideoUrl.trim())?'#9ca3af':'#991b1b', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

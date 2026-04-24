@@ -8,6 +8,7 @@
 import React from 'react';
 import { EQUIPMENT_COLOR, WARRANTY_WINDOW_DAYS, computeIntervalStatus, fmtReading, daysSince, stripPodioHtml } from '../lib/equipment.js';
 import EquipmentMaintenanceModal from './EquipmentMaintenanceModal.jsx';
+import ManualsCard from './ManualsCard.jsx';
 
 export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenance, authState, isEquipmentTech, onReload}) {
   const eq = equipment;
@@ -127,6 +128,9 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
           </div>
         )}
       </div>
+
+      {/* Manuals & Videos — shown to everyone (including equipment_tech). */}
+      <ManualsCard equipment={eq}/>
 
       {/* Spec panel — always inline-editable with debounced auto-save.
           No Edit button. Click any field to type; autosaves 800ms after
