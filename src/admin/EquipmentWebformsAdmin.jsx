@@ -39,6 +39,14 @@ export default function EquipmentWebformsAdmin() {
 
   const selected = equipment.find(e => e.id === selectedId) || null;
 
+  // Close modal on Esc key.
+  React.useEffect(() => {
+    if (!selected) return;
+    const h = e => { if (e.key === 'Escape') setSelectedId(null); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [selected]);
+
   if (missingSchema) {
     return <div style={{padding:20, fontSize:13, color:'#b91c1c'}}>Equipment schema not applied. Run migrations 016–021 in Supabase.</div>;
   }
@@ -94,17 +102,34 @@ export default function EquipmentWebformsAdmin() {
       </div>
 
       {selected && (
-        <>
-          <IdentityEditor equipment={selected} onReload={loadAll}/>
-          <TeamMembersEditor equipment={selected} onReload={loadAll}/>
-          <ManualsEditor equipment={selected} onReload={loadAll}/>
-          <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
-          <EveryFillupEditor equipment={selected} onReload={loadAll}/>
-          <ServiceIntervalEditor equipment={selected} onReload={loadAll}/>
-          {Array.isArray(selected.attachment_checklists) && selected.attachment_checklists.length > 0 && (
-            <AttachmentChecklistsEditor equipment={selected} onReload={loadAll}/>
-          )}
-        </>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setSelectedId(null); }}
+          style={{
+            position:'fixed', inset:0, background:'rgba(17,24,39,.6)',
+            display:'flex', alignItems:'flex-start', justifyContent:'center',
+            padding:'24px 16px', overflowY:'auto', zIndex:1000,
+          }}>
+          <div style={{background:'#f1f3f2', borderRadius:14, width:'100%', maxWidth:880, boxShadow:'0 20px 40px rgba(0,0,0,.3)', overflow:'hidden'}}>
+            <div style={{position:'sticky', top:0, zIndex:2, background:'white', borderBottom:'1px solid #e5e7eb', padding:'14px 20px', display:'flex', alignItems:'center', gap:12}}>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5}}>Editing</div>
+                <div style={{fontSize:16, fontWeight:700, color:'#111827', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{selected.name}</div>
+              </div>
+              <button onClick={()=>setSelectedId(null)} style={{fontSize:14, padding:'6px 14px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#374151', cursor:'pointer', fontFamily:'inherit', fontWeight:600}} title="Close (Esc)">✕ Close</button>
+            </div>
+            <div style={{padding:'14px 20px'}}>
+              <IdentityEditor equipment={selected} onReload={loadAll}/>
+              <TeamMembersEditor equipment={selected} onReload={loadAll}/>
+              <ManualsEditor equipment={selected} onReload={loadAll}/>
+              <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
+              <EveryFillupEditor equipment={selected} onReload={loadAll}/>
+              <ServiceIntervalEditor equipment={selected} onReload={loadAll}/>
+              {Array.isArray(selected.attachment_checklists) && selected.attachment_checklists.length > 0 && (
+                <AttachmentChecklistsEditor equipment={selected} onReload={loadAll}/>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
