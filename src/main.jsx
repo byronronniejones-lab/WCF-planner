@@ -135,6 +135,7 @@ import AddFeedWebform from './webforms/AddFeedWebform.jsx';
 import WeighInsWebform from './webforms/WeighInsWebform.jsx';
 import WebformHub from './webforms/WebformHub.jsx';
 import FuelingHub from './webforms/FuelingHub.jsx';
+import FuelSupplyWebform from './webforms/FuelSupplyWebform.jsx';
 import WebformsAdminView from './webforms/WebformsAdminView.jsx';
 import PigDailysWebform from './webforms/PigDailysWebform.jsx';
 
@@ -704,7 +705,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepdailys','sheepweighins','equipmentHome','fuelingHub'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepdailys','sheepweighins','equipmentHome','fuelingHub','fuelSupply'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   // Per-program access. profiles.program_access is null/empty = full access,
@@ -1562,6 +1563,7 @@ function App(){
   if(view==="weighins") return React.createElement(WeighInsWebform, {sb});
   if(view==="webformhub") return React.createElement(WebformHub, {sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig});
   if(view==="fuelingHub") return React.createElement(FuelingHub, {sb});
+  if(view==="fuelSupply") return React.createElement(FuelSupplyWebform, {sb});
 
   // ── AUTH GATES ──
   // SetPasswordScreen comes first: a recovery / invite link gives the user a

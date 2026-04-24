@@ -120,6 +120,7 @@ export default function EquipmentWebformsAdmin() {
             <div style={{padding:'14px 20px'}}>
               <IdentityEditor equipment={selected} onReload={loadAll}/>
               <TeamMembersEditor equipment={selected} onReload={loadAll}/>
+              <SpecsEditor equipment={selected} onReload={loadAll}/>
               <ManualsEditor equipment={selected} onReload={loadAll}/>
               <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
               <EveryFillupEditor equipment={selected} onReload={loadAll}/>
@@ -147,7 +148,7 @@ function IdentityEditor({equipment, onReload}) {
   }
   return (
     <div style={card}>
-      <div style={sectionTitle}>Identity <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Equipment name · serial · status · webform slug</span></div>
+      <div style={sectionTitle}>Identity <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Equipment name · serial · status</span></div>
       <div style={{display:'grid', gridTemplateColumns:'120px 1fr', gap:10, alignItems:'center', rowGap:10}}>
         <div style={subTitle}>Name</div>
         <input type="text" defaultValue={equipment.name || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (equipment.name||'')) save('name', v); }} style={inpS}/>
@@ -158,8 +159,6 @@ function IdentityEditor({equipment, onReload}) {
           <option value="active">active</option>
           <option value="sold">sold</option>
         </select>
-        <div style={subTitle}>Slug</div>
-        <div style={{fontSize:12, color:'#6b7280'}}>/fueling/<strong>{equipment.slug}</strong> <span style={{fontSize:10, color:'#9ca3af', marginLeft:6}}>(not editable — used as the webform URL)</span></div>
       </div>
     </div>
   );
@@ -203,6 +202,70 @@ function TeamMembersEditor({equipment, onReload}) {
       {assigned.length === 0 && allTM.length > 0 && (
         <div style={{fontSize:11, color:'#9ca3af', marginTop:6, fontStyle:'italic'}}>None assigned yet.</div>
       )}
+    </div>
+  );
+}
+
+// ── specs & fluids (filters, oils, capacities, warranty) ─────────────────
+// Part numbers, oil types, tank capacities, warranty info. Debounced
+// auto-save on blur, matching the inline /equipment/<slug> spec panel.
+function SpecsEditor({equipment, onReload}) {
+  const [busy, setBusy] = React.useState(false);
+  async function save(col, val) {
+    setBusy(true);
+    const payload = (typeof val === 'string' && !val.trim()) ? null : val;
+    const {error} = await sb.from('equipment').update({[col]: payload}).eq('id', equipment.id);
+    setBusy(false);
+    if (error) { alert('Save failed: ' + error.message); return; }
+    onReload();
+  }
+  const FIELDS = [
+    ['engine_oil',           'Engine Oil'],
+    ['oil_filter',           'Oil Filter'],
+    ['hydraulic_oil',        'Hydraulic Oil'],
+    ['hydraulic_filter',     'Hydraulic Filter'],
+    ['coolant',              'Coolant'],
+    ['brake_fluid',          'Brake Fluid'],
+    ['fuel_filter',          'Fuel Filter'],
+    ['def_filter',           'DEF Filter'],
+    ['gearbox_drive_oil',    'Gearbox / Drive Oil'],
+    ['air_filters',          'Air Filters'],
+    ['warranty_description', 'Warranty note'],
+  ];
+  const taS = {...inpS, resize:'vertical'};
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Specs &amp; Fluids <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Part numbers, oils, capacities — auto-saves on blur</span></div>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'8px 14px'}}>
+        {FIELDS.map(([k, label]) => (
+          <div key={k}>
+            <div style={subTitle}>{label}</div>
+            <textarea rows={1} defaultValue={equipment[k] || ''} disabled={busy}
+              onBlur={e => { const v = e.target.value; if (v.trim() !== (equipment[k]||'')) save(k, v); }}
+              style={taS}/>
+          </div>
+        ))}
+        <div>
+          <div style={subTitle}>Fuel tank (gal)</div>
+          <input type="number" min="0" step="0.1" defaultValue={equipment.fuel_tank_gal != null ? equipment.fuel_tank_gal : ''} disabled={busy}
+            onBlur={e => { const v = e.target.value === '' ? null : Number(e.target.value); if (v !== equipment.fuel_tank_gal) save('fuel_tank_gal', v); }}
+            style={inpS}/>
+        </div>
+        {equipment.takes_def && (
+          <div>
+            <div style={subTitle}>DEF tank (gal)</div>
+            <input type="number" min="0" step="0.1" defaultValue={equipment.def_tank_gal != null ? equipment.def_tank_gal : ''} disabled={busy}
+              onBlur={e => { const v = e.target.value === '' ? null : Number(e.target.value); if (v !== equipment.def_tank_gal) save('def_tank_gal', v); }}
+              style={inpS}/>
+          </div>
+        )}
+        <div>
+          <div style={subTitle}>Warranty ends</div>
+          <input type="date" defaultValue={equipment.warranty_expiration || ''} disabled={busy}
+            onBlur={e => { const v = e.target.value || null; if (v !== equipment.warranty_expiration) save('warranty_expiration', v); }}
+            style={inpS}/>
+        </div>
+      </div>
     </div>
   );
 }

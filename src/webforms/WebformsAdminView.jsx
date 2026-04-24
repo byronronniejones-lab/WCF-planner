@@ -16,6 +16,7 @@ import FeedCostByMonthPanel from '../admin/FeedCostByMonthPanel.jsx';
 import LivestockFeedInputsPanel from '../admin/LivestockFeedInputsPanel.jsx';
 import NutritionTargetsPanel from '../admin/NutritionTargetsPanel.jsx';
 import EquipmentWebformsAdmin from '../admin/EquipmentWebformsAdmin.jsx';
+import FuelLogAdmin from '../admin/FuelLogAdmin.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useFeedCosts } from '../contexts/FeedCostsContext.jsx';
 import { useWebformsConfig } from '../contexts/WebformsConfigContext.jsx';
@@ -174,7 +175,7 @@ export default function WebformsAdminView({
         <div style={{background:"white",borderBottom:"1px solid #e5e7eb",padding:"8px 1.25rem",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setView('home')} style={{padding:'7px 12px',borderRadius:8,border:'1px solid #d1d5db',cursor:'pointer',fontSize:12,fontWeight:500,background:'white',color:'#6b7280',fontFamily:'inherit',whiteSpace:'nowrap'}}>⌂ Home</button>
           <div style={{width:1,height:20,background:"#e5e7eb",margin:"0 4px"}}/>
-          {[{id:'webforms',label:'Webforms'},{id:'equipment',label:'Equipment'},{id:'feedcosts',label:'Feed'},{id:'costsbymonth',label:'Cost by Month'}].map(t=>{
+          {[{id:'webforms',label:'Webforms'},{id:'equipment',label:'Equipment'},{id:'fuellog',label:'Fuel Log'},{id:'feedcosts',label:'Feed'},{id:'costsbymonth',label:'Cost by Month'}].map(t=>{
             const active=adminTab===t.id&&!editWfId;
             return (
               <button key={t.id} onClick={()=>{setAdminTab(t.id);setEditWfId(null);setWfView('list');}}
@@ -189,7 +190,12 @@ export default function WebformsAdminView({
             <EquipmentWebformsAdmin/>
           </div>
         )}
-        <div style={{padding:"1rem",maxWidth:720,margin:"0 auto", display: adminTab==='equipment' ? 'none' : 'block'}}>
+        {adminTab==='fuellog' && (
+          <div style={{padding:"1rem",maxWidth:1100,margin:"0 auto"}}>
+            <FuelLogAdmin/>
+          </div>
+        )}
+        <div style={{padding:"1rem",maxWidth:720,margin:"0 auto", display: (adminTab==='equipment' || adminTab==='fuellog') ? 'none' : 'block'}}>
           {showUsers&&<UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
 
           {adminTab==='feedcosts'&&(

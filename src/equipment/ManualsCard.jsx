@@ -21,10 +21,9 @@ function youtubeId(url) {
 export default function ManualsCard({equipment}) {
   const [open, setOpen] = React.useState(false);
   const manuals = Array.isArray(equipment?.manuals) ? equipment.manuals : [];
-  if (manuals.length === 0) return null;
-
   const pdfs = manuals.filter(m => m.type === 'pdf');
   const videos = manuals.filter(m => m.type === 'video');
+  const isEmpty = manuals.length === 0;
 
   return (
     <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, marginBottom:12, overflow:'hidden'}}>
@@ -42,7 +41,14 @@ export default function ManualsCard({equipment}) {
         </span>
         <span style={{fontSize:12, color:'#9ca3af'}}>{open ? '▾' : '▸'}</span>
       </button>
-      {open && (
+      {open && isEmpty && (
+        <div style={{padding:'0 16px 14px'}}>
+          <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', padding:'10px 12px', background:'#fafafa', borderRadius:6, border:'1px dashed #e5e7eb'}}>
+            No instructional manuals or videos added for this piece yet. Admins can add them via <code style={{background:'white', padding:'1px 5px', borderRadius:3, border:'1px solid #e5e7eb'}}>/admin</code> → Equipment → (click piece) → Manuals &amp; Videos.
+          </div>
+        </div>
+      )}
+      {open && !isEmpty && (
         <div style={{padding:'0 16px 14px'}}>
           {pdfs.length > 0 && (
             <div style={{marginBottom: videos.length > 0 ? 12 : 0}}>
