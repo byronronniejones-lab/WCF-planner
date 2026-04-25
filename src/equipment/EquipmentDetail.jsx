@@ -17,6 +17,21 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
   const [expandedFueling, setExpandedFueling] = React.useState(null);
   const [showMaintenanceModal, setShowMaintenanceModal] = React.useState(false);
   const [editingMaintenance, setEditingMaintenance] = React.useState(null);
+  // Lightbox: photos array + active index. Null when closed. Drives the
+  // full-screen viewer with prev/next/close.
+  const [lightbox, setLightbox] = React.useState(null);
+
+  // Keyboard shortcuts for the lightbox.
+  React.useEffect(() => {
+    if (!lightbox) return;
+    const onKey = e => {
+      if (e.key === 'Escape') setLightbox(null);
+      else if (e.key === 'ArrowLeft') setLightbox(lb => lb ? {...lb, index: (lb.index - 1 + lb.photos.length) % lb.photos.length} : lb);
+      else if (e.key === 'ArrowRight') setLightbox(lb => lb ? {...lb, index: (lb.index + 1) % lb.photos.length} : lb);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox]);
 
   // Debounced inline auto-save: any spec field is live-edited; after 800ms
   // of no typing the field patches to Supabase. Matches the cattle/sheep
@@ -198,6 +213,20 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
             {sortedFuelings.slice(0, 100).map(f => {
               const isExp = expandedFueling === f.id;
               const rdg = f.hours_reading != null ? Math.round(f.hours_reading) : (f.km_reading != null ? Math.round(f.km_reading) : null);
+              // Checklist chips: derived from service_intervals_completed.
+              // Each chip shows the interval label + a full/partial indicator.
+              // Photo count chip shows when at least one photo is attached.
+              const completed = Array.isArray(f.service_intervals_completed) ? f.service_intervals_completed : [];
+              const chips = completed.map(c => {
+                const total = c.total_tasks || 0;
+                const done = Array.isArray(c.items_completed) ? c.items_completed.length : 0;
+                const isFull = total === 0 ? true : done >= total;
+                const unitChar = c.kind === 'km' ? 'k' : 'h';
+                const label = (c.attachment_name ? c.attachment_name + ' ' : '') + c.interval + unitChar;
+                return {label, isFull};
+              });
+              const photoCount = Array.isArray(f.photos) ? f.photos.length : 0;
+              const noteText = stripPodioHtml(f.comments);
               return (
                 <div key={f.id} style={{borderTop:'1px solid #f3f4f6'}}>
                   <div onClick={()=>setExpandedFueling(isExp?null:f.id)} style={{display:'grid', gridTemplateColumns:eq.takes_def?'90px 110px 80px 80px 100px 1fr':'90px 110px 80px 100px 1fr', gap:'0 14px', padding:'6px 12px', fontSize:12, cursor:'pointer'}} className="hoverable-tile">
@@ -206,7 +235,26 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
                     {eq.takes_def && <div style={{textAlign:'right', color:'#a16207', fontWeight:600}}>{f.def_gallons ? Math.round(f.def_gallons*10)/10 : '—'}</div>}
                     <div style={{textAlign:'right', color:'#6b7280'}}>{rdg != null ? rdg.toLocaleString() : '—'}</div>
                     <div style={{color:'#6b7280'}}>{f.team_member||'—'}</div>
-                    <div style={{color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontStyle:stripPodioHtml(f.comments)?'italic':'normal'}}>{stripPodioHtml(f.comments) || '—'}</div>
+                    <div style={{color:'#6b7280', display:'flex', alignItems:'center', gap:6, overflow:'hidden'}}>
+                      {chips.map((c, i) => (
+                        <span key={i} title={c.isFull ? 'Full completion' : 'Partial — some sub-tasks not ticked'}
+                          style={{flexShrink:0, fontSize:10, padding:'1px 6px', borderRadius:3, fontWeight:700, letterSpacing:.3,
+                            background: c.isFull ? '#dbeafe' : '#fef3c7',
+                            color:      c.isFull ? '#1e40af' : '#92400e',
+                            border:'1px solid '+(c.isFull ? '#bfdbfe' : '#fde68a')}}>
+                          {c.label}{c.isFull ? ' ✓' : ' ◐'}
+                        </span>
+                      ))}
+                      {photoCount > 0 && (
+                        <span title={photoCount + ' photo' + (photoCount===1?'':'s')} style={{flexShrink:0, fontSize:10, padding:'1px 6px', borderRadius:3, fontWeight:700, background:'#f3f4f6', color:'#374151', border:'1px solid #e5e7eb'}}>
+                          📷 {photoCount}
+                        </span>
+                      )}
+                      {noteText && (
+                        <span style={{fontStyle:'italic', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0}}>{noteText}</span>
+                      )}
+                      {!noteText && chips.length === 0 && photoCount === 0 && <span>—</span>}
+                    </div>
                   </div>
                   {isExp && (
                     <div style={{background:'#fafafa', padding:'12px 14px', borderTop:'1px solid #f3f4f6', fontSize:11}}>
@@ -285,9 +333,9 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
                           <div style={{fontSize:11, fontWeight:700, color:'#374151', marginBottom:4}}>Photos ({f.photos.length})</div>
                           <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
                             {f.photos.map((p, i) => (
-                              <a key={i} href={p.url} target="_blank" rel="noopener noreferrer" title={p.name || ''} style={{display:'inline-block'}}>
+                              <button key={i} onClick={()=>setLightbox({photos: f.photos, index: i})} title={p.name || ''} style={{padding:0, border:'none', background:'transparent', cursor:'pointer'}}>
                                 <img src={p.url} alt={p.name || ''} style={{width:90, height:90, objectFit:'cover', borderRadius:6, border:'1px solid #e5e7eb', cursor:'pointer'}}/>
-                              </a>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -360,6 +408,52 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
           onSaved={()=>{setShowMaintenanceModal(false); onReload();}}
         />
       )}
+
+      {/* Photo lightbox — full-screen viewer with prev/next/close. Esc closes;
+          ← → arrow keys navigate; click backdrop to close. */}
+      {lightbox && (() => {
+        const photos = lightbox.photos || [];
+        const cur = photos[lightbox.index] || photos[0];
+        if (!cur) { setLightbox(null); return null; }
+        const goPrev = e => { e.stopPropagation(); setLightbox(lb => ({...lb, index: (lb.index - 1 + photos.length) % photos.length})); };
+        const goNext = e => { e.stopPropagation(); setLightbox(lb => ({...lb, index: (lb.index + 1) % photos.length})); };
+        return (
+          <div onClick={()=>setLightbox(null)} style={{
+            position:'fixed', inset:0, background:'rgba(0,0,0,.92)', zIndex:2000,
+            display:'flex', alignItems:'center', justifyContent:'center', padding:20,
+          }}>
+            <button onClick={e=>{e.stopPropagation(); setLightbox(null);}} aria-label="Close" style={{
+              position:'absolute', top:16, right:16, width:40, height:40, borderRadius:20, border:'none',
+              background:'rgba(255,255,255,.15)', color:'white', fontSize:22, cursor:'pointer', fontFamily:'inherit',
+            }}>✕</button>
+            {photos.length > 1 && (
+              <button onClick={goPrev} aria-label="Previous" style={{
+                position:'absolute', left:16, top:'50%', transform:'translateY(-50%)', width:48, height:64, borderRadius:8, border:'none',
+                background:'rgba(255,255,255,.12)', color:'white', fontSize:28, cursor:'pointer', fontFamily:'inherit',
+              }}>‹</button>
+            )}
+            <img onClick={e=>e.stopPropagation()} src={cur.url} alt={cur.name||''} style={{
+              maxWidth:'100%', maxHeight:'calc(100vh - 80px)', objectFit:'contain', borderRadius:6, boxShadow:'0 10px 40px rgba(0,0,0,.4)',
+            }}/>
+            {photos.length > 1 && (
+              <button onClick={goNext} aria-label="Next" style={{
+                position:'absolute', right:16, top:'50%', transform:'translateY(-50%)', width:48, height:64, borderRadius:8, border:'none',
+                background:'rgba(255,255,255,.12)', color:'white', fontSize:28, cursor:'pointer', fontFamily:'inherit',
+              }}>›</button>
+            )}
+            <div onClick={e=>e.stopPropagation()} style={{
+              position:'absolute', bottom:16, left:'50%', transform:'translateX(-50%)',
+              background:'rgba(0,0,0,.65)', color:'white', padding:'8px 16px', borderRadius:8, fontSize:12,
+              maxWidth:'80%', textAlign:'center', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+            }}>
+              <span style={{opacity:.7}}>{lightbox.index + 1} / {photos.length}</span>
+              {cur.name && <> · {cur.name}</>}
+              {' · '}
+              <a href={cur.url} target="_blank" rel="noopener noreferrer" style={{color:'#93c5fd'}} onClick={e=>e.stopPropagation()}>Open in new tab</a>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
