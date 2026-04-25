@@ -160,7 +160,7 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
         {intervalStatus.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No service intervals configured yet. Edit equipment to add.</div>}
         {intervalStatus.length > 0 && (
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:8}}>
-            {intervalStatus.sort((a, b) => (a.next_due - (reading||0)) - (b.next_due - (reading||0))).map(iv => {
+            {intervalStatus.slice().sort((a, b) => a.hours_or_km - b.hours_or_km).map(iv => {
               // Two colors only: red for overdue, amber for upcoming.
               const color = iv.overdue ? '#b91c1c' : '#92400e';
               const bg    = iv.overdue ? '#fef2f2' : '#fffbeb';

@@ -62,15 +62,22 @@ export function computeIntervalStatus(intervals, completions, currentReading) {
       lastSnapped.set(key, snappedMilestone);
       lastRaw.set(key, snapReading);
     }
-    // Divisor rule cascades the parent's snapped milestone down.
+    // Divisor rule: doing the parent (e.g. 600hr) completes the sub-interval
+    // (e.g. 50hr) at the time of the parent's actual work. Cascade the
+    // PARENT'S RAW READING down, then let each sub-interval do its own
+    // independent snap. (Cascading the parent's snapped milestone instead
+    // would over-credit sub-intervals — e.g. a 600hr done at 1596 snapping
+    // to 1800 would falsely satisfy the 50hr's 1800 milestone, when actually
+    // the 50hr work happened at 1596 and should satisfy 1600.)
     for (const iv of intervals) {
       if (iv.kind !== c.kind) continue;
       if (iv.hours_or_km === c.interval) continue;
       if (c.interval % iv.hours_or_km !== 0) continue;
       const kk = iv.kind + ':' + iv.hours_or_km;
+      const subSnapped = snapToNearestMilestone(snapReading, iv.hours_or_km);
       const ex2 = lastSnapped.get(kk);
-      if (!ex2 || snappedMilestone > ex2) {
-        lastSnapped.set(kk, snappedMilestone);
+      if (!ex2 || subSnapped > ex2) {
+        lastSnapped.set(kk, subSnapped);
         lastRaw.set(kk, snapReading);
       }
     }
@@ -165,20 +172,22 @@ export function computeDueIntervals(intervals, completions, currentReading) {
       lastDoneSnapped.set(key, snappedMilestone);
       lastDoneAtRaw.set(key, snap);
     }
-    // Divisor rule: completing 1000hr also completes 500/250/100/50 at the
-    // PARENT'S SNAPPED MILESTONE if those are intervals on this machine.
-    // The parent's snap is always a multiple of the parent interval, and
-    // the sub-interval divides the parent, so the snap is also a multiple
-    // of the sub. (E.g., 500hr@968 snaps to 1000, divisor cascades 1000 down
-    // to the 50hr interval — next 50hr due at 1050, not 1000.)
+    // Divisor rule: doing the parent (e.g. 600hr) completes the sub-interval
+    // (e.g. 50hr) at the time of the parent's actual work. Cascade the
+    // PARENT'S RAW READING down, then let each sub-interval do its own
+    // independent snap. (Cascading the parent's snapped milestone instead
+    // would over-credit sub-intervals — e.g. a 600hr done at 1596 snapping
+    // to 1800 would falsely satisfy the 50hr's 1800 milestone, when actually
+    // the 50hr work happened at 1596 and should satisfy 1600.)
     for (const iv of intervals) {
       if (iv.kind !== c.kind) continue;
       if (iv.hours_or_km === c.interval) continue;
       if (c.interval % iv.hours_or_km !== 0) continue;
       const kk = iv.kind + ':' + iv.hours_or_km;
+      const subSnapped = snapToNearestMilestone(snap, iv.hours_or_km);
       const ex2 = lastDoneSnapped.get(kk);
-      if (!ex2 || snappedMilestone > ex2) {
-        lastDoneSnapped.set(kk, snappedMilestone);
+      if (!ex2 || subSnapped > ex2) {
+        lastDoneSnapped.set(kk, subSnapped);
         lastDoneAtRaw.set(kk, snap);
       }
     }
