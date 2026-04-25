@@ -345,12 +345,25 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               </select>
             </div>
           )}
-          {eq && !isQuick && (
-            <div>
-              <div style={{fontSize:18, fontWeight:700, color:'#57534e'}}>{eq.name}</div>
-              <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>{eq.fuel_type ? eq.fuel_type.charAt(0).toUpperCase()+eq.fuel_type.slice(1) : ''}{eq.takes_def ? ' + DEF' : ''} · tracks {readingLabel}</div>
-            </div>
-          )}
+          {eq && !isQuick && (() => {
+            const lastFueling = (history || []).find(h => (h.hours_reading != null || h.km_reading != null));
+            const lastReadingNum = lastFueling ? (eq.tracking_unit === 'km' ? lastFueling.km_reading : lastFueling.hours_reading) : null;
+            const lastUnit = eq.tracking_unit === 'km' ? 'km' : 'h';
+            const fmtDate = s => { if (!s) return ''; const [y,m,d] = String(s).slice(0,10).split('-'); return `${m}/${d}/${y.slice(2)}`; };
+            return (
+              <div>
+                <div style={{fontSize:18, fontWeight:700, color:'#57534e'}}>{eq.name}</div>
+                <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>{eq.fuel_type ? eq.fuel_type.charAt(0).toUpperCase()+eq.fuel_type.slice(1) : ''}{eq.takes_def ? ' + DEF' : ''} · tracks {readingLabel}</div>
+                {lastReadingNum != null && (
+                  <div style={{fontSize:12, color:'#1e40af', marginTop:6, fontWeight:600}}>
+                    Last reading: {Number(lastReadingNum).toLocaleString()} {lastUnit}
+                    {lastFueling.team_member ? ` · ${lastFueling.team_member}` : ''}
+                    {lastFueling.date ? ` · ${fmtDate(lastFueling.date)}` : ''}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Top-of-form operator notes (between-fillup maintenance guidance). */}

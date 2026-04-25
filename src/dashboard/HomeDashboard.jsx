@@ -48,32 +48,43 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
     // Equipment data for missed-fueling + EQUIPMENT ATTENTION section. Loaded
     // defensively so the home page still renders if migration 016 isn't in.
     const [equipment, setEquipment] = React.useState([]);
-    const [equipmentLastFueling, setEquipmentLastFueling] = React.useState({}); // eq.id → last date
     const [equipmentCompletions, setEquipmentCompletions] = React.useState({}); // eq.id → [completion {...with reading_at_completion}]
+    const [equipmentFuelings, setEquipmentFuelings] = React.useState({});       // eq.id → [{date, team_member, hours_reading, km_reading, every_fillup_check}] sorted reading desc
     React.useEffect(() => {
-      sb.from('equipment').select('id,slug,name,status,tracking_unit,current_hours,current_km,warranty_expiration,service_intervals').eq('status','active').then(({data, error}) => {
+      sb.from('equipment').select('id,slug,name,status,tracking_unit,current_hours,current_km,warranty_expiration,service_intervals,every_fillup_items').eq('status','active').then(({data, error}) => {
         if (error || !data) return;
         setEquipment(data);
       });
-      sb.from('equipment_fuelings').select('equipment_id,date,hours_reading,km_reading,service_intervals_completed').order('date',{ascending:false}).limit(5000).then(({data, error}) => {
+      sb.from('equipment_fuelings').select('equipment_id,date,team_member,hours_reading,km_reading,service_intervals_completed,every_fillup_check').order('date',{ascending:false}).limit(5000).then(({data, error}) => {
         if (error) { console.error('equipment_fuelings fetch:', error); return; }
         if (!data) return;
-        const lastM = {};
         const compM = {};
+        const fuelM = {};
         for (const r of data) {
-          if (!lastM[r.equipment_id]) lastM[r.equipment_id] = r.date;
+          if (!fuelM[r.equipment_id]) fuelM[r.equipment_id] = [];
+          fuelM[r.equipment_id].push(r);
           const comps = Array.isArray(r.service_intervals_completed) ? r.service_intervals_completed : [];
           if (comps.length > 0) {
             const fallbackReading = r.hours_reading != null ? Number(r.hours_reading) : (r.km_reading != null ? Number(r.km_reading) : null);
             const normalized = comps.map(c => ({
               ...c,
               reading_at_completion: (c && c.reading_at_completion != null) ? Number(c.reading_at_completion) : fallbackReading,
+              team_member: c && c.team_member != null ? c.team_member : (r.team_member || null),
             }));
             compM[r.equipment_id] = [...(compM[r.equipment_id] || []), ...normalized];
           }
         }
-        setEquipmentLastFueling(lastM);
+        // Sort each equipment's fuelings by reading desc (date as tiebreaker) — same as the streak feature.
+        for (const id in fuelM) {
+          fuelM[id].sort((a, b) => {
+            const ra = a.hours_reading != null ? Number(a.hours_reading) : (a.km_reading != null ? Number(a.km_reading) : null);
+            const rb = b.hours_reading != null ? Number(b.hours_reading) : (b.km_reading != null ? Number(b.km_reading) : null);
+            if (ra != null && rb != null && ra !== rb) return rb - ra;
+            return String(b.date || '').localeCompare(String(a.date || ''));
+          });
+        }
         setEquipmentCompletions(compM);
+        setEquipmentFuelings(fuelM);
       });
     }, []);
 
@@ -221,35 +232,11 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
     // Sort newest first
     allMissed.sort((a,b)=>b.date.localeCompare(a.date));
 
-    // ── Equipment outstanding fuel checklists — separate from animal daily
-    // reports. An active piece that hasn't logged a fueling in 14+ days
-    // gets surfaced here, NOT in the missed-daily-reports section above
-    // (equipment doesn't get daily reports, only fuel checklists).
-    const MISSED_FUELING_DAYS = 14;
-    const outstandingFuelings = [];
-    equipment.forEach(eq => {
-      const last = equipmentLastFueling[eq.id];
-      if (!last) {
-        const key = `equip-nofuel-${eq.id}`;
-        if (!missedCleared.has(key)) outstandingFuelings.push({key, label:eq.name, slug:eq.slug, type:'No fueling on record', date: todayStr, daysSince:null});
-        return;
-      }
-      const daysSince = Math.floor((new Date(todayStr+'T12:00:00') - new Date(last+'T12:00:00')) / 86400000);
-      if (daysSince > MISSED_FUELING_DAYS) {
-        const key = `equip-${eq.id}|${last}`;
-        if (!missedCleared.has(key)) outstandingFuelings.push({key, label:eq.name, slug:eq.slug, type:`${daysSince}d since last fueling`, date: last, daysSince});
-      }
-    });
-    outstandingFuelings.sort((a,b)=>{
-      // Never-fueled first, then oldest last-fueling
-      if (a.daysSince == null && b.daysSince != null) return -1;
-      if (a.daysSince != null && b.daysSince == null) return 1;
-      return (b.daysSince||0) - (a.daysSince||0);
-    });
-
-    // ── Equipment attention: overdue services + warranty expiring ──
-    // One row per piece (shows the smallest-interval overdue + a "+N more"
-    // hint when multiple intervals are overdue on the same machine).
+    // ── Equipment attention: overdue services + every-fillup item streaks +
+    // warranty. One row per actionable item (each overdue interval is its
+    // own row so multiples on the same piece all surface). Clear buttons
+    // hide a row via missedCleared for the user's session — same mechanism
+    // used by missed daily reports.
     const equipmentAttention = [];
     equipment.forEach(eq => {
       const unit = eq.tracking_unit === 'km' ? 'km' : 'hours';
@@ -258,20 +245,56 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
       const intervals = Array.isArray(eq.service_intervals) ? eq.service_intervals : [];
       const completions = equipmentCompletions[eq.id] || [];
 
+      // Each overdue interval = its own row.
       if (Number.isFinite(currentReading) && currentReading > 0 && intervals.length > 0) {
         const statuses = computeIntervalStatus(intervals, completions, currentReading);
         const overdue = statuses.filter(s => s.overdue).sort((a, b) => a.hours_or_km - b.hours_or_km);
-        if (overdue.length > 0) {
-          const soonest = overdue[0];
-          const over = currentReading - soonest.next_due;
-          const intervalLbl = soonest.label || (soonest.hours_or_km + unitLabel + ' service');
-          const moreLbl = overdue.length > 1 ? ` · +${overdue.length - 1} more interval${overdue.length - 1 === 1 ? '' : 's'}` : '';
+        for (const s of overdue) {
+          const over = currentReading - s.next_due;
+          const intervalLbl = s.label || (s.hours_or_km + unitLabel + ' service');
+          const key = `equip-overdue-${eq.id}|${s.kind}|${s.hours_or_km}`;
+          if (missedCleared.has(key)) continue;
           equipmentAttention.push({
+            key,
             kind: 'overdue',
             slug: eq.slug,
             label: eq.name,
-            detail: `${intervalLbl} · ${Math.round(over).toLocaleString()} ${unitLabel} overdue${moreLbl}`,
+            detail: `${intervalLbl} · ${Math.round(over).toLocaleString()} ${unitLabel} overdue`,
           });
+        }
+      }
+
+      // Every-fillup streaks: one row per piece summarizing item-level misses.
+      // Mirrors the per-item badges shown on the /fueling/<slug> webform; this
+      // is the home-page roll-up so admins/managers see the action queue.
+      const fillupItems = Array.isArray(eq.every_fillup_items) ? eq.every_fillup_items : [];
+      const fuelings = equipmentFuelings[eq.id] || [];
+      if (fillupItems.length > 0 && fuelings.length > 0) {
+        const itemsWithStreak = [];
+        for (const item of fillupItems) {
+          let streak = 0;
+          for (const h of fuelings) {
+            const ticks = Array.isArray(h.every_fillup_check) ? h.every_fillup_check : [];
+            const wasTicked = ticks.some(t => t && t.id === item.id);
+            if (wasTicked) break;
+            streak++;
+          }
+          if (streak > 0) itemsWithStreak.push({label: item.label || item.id, streak});
+        }
+        if (itemsWithStreak.length > 0) {
+          const maxStreak = Math.max(...itemsWithStreak.map(i => i.streak));
+          const sample = itemsWithStreak.slice(0, 2).map(i => i.label).join(', ');
+          const more = itemsWithStreak.length > 2 ? ` +${itemsWithStreak.length - 2} more` : '';
+          const key = `equip-fillup-${eq.id}|streak${maxStreak}|n${itemsWithStreak.length}`;
+          if (!missedCleared.has(key)) {
+            equipmentAttention.push({
+              key,
+              kind: 'fillup_streak',
+              slug: eq.slug,
+              label: eq.name,
+              detail: `${itemsWithStreak.length} fillup item${itemsWithStreak.length===1?'':'s'} skipped (${maxStreak}× max streak): ${sample}${more}`,
+            });
+          }
         }
       }
 
@@ -283,18 +306,24 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
           if (d > 0)       detail = `Warranty expired ${d} day${d === 1 ? '' : 's'} ago`;
           else if (d === 0) detail = 'Warranty expires today';
           else             detail = `Warranty expires in ${-d} day${-d === 1 ? '' : 's'}`;
-          equipmentAttention.push({
-            kind: 'warranty',
-            slug: eq.slug,
-            label: eq.name,
-            detail,
-          });
+          const key = `equip-warranty-${eq.id}|${eq.warranty_expiration}`;
+          if (!missedCleared.has(key)) {
+            equipmentAttention.push({
+              key,
+              kind: 'warranty',
+              slug: eq.slug,
+              label: eq.name,
+              detail,
+            });
+          }
         }
       }
     });
-    // Overdue first, warranty after; alphabetical within each group.
+    // Order: overdue → fillup_streak → warranty; alphabetical within each kind.
+    const KIND_ORDER = {overdue: 0, fillup_streak: 1, warranty: 2};
     equipmentAttention.sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'overdue' ? -1 : 1;
+      const ko = (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9);
+      if (ko !== 0) return ko;
       return a.label.localeCompare(b.label);
     });
 
@@ -466,47 +495,29 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
             </div>
           )}
 
-{/* ── Outstanding Fuel Checklists (equipment) ── */}
-          {outstandingFuelings.length>0&&(
-            <div>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:600,color:'#a16207',letterSpacing:.3}}>⛽ OUTSTANDING FUEL CHECKLISTS</div>
-                <button onClick={()=>clearAllMissed(outstandingFuelings.map(m=>m.key))} style={{fontSize:11,color:'#6b7280',background:'none',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit'}}>Clear all</button>
-              </div>
-              <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                {outstandingFuelings.map(m=>(
-                  <div key={m.key} onClick={()=>navigate('/fueling/'+m.slug)} style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
-                    <span style={{fontSize:18}}>🚜</span>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:13,fontWeight:600,color:'#92400e'}}>{m.label}</div>
-                      <div style={{fontSize:11,color:'#9ca3af'}}>{m.type}{m.date&&m.daysSince!=null?' · last '+fmt(m.date):''}</div>
-                    </div>
-                    <button onClick={e=>{e.stopPropagation();clearMissedEntry(m.key);}} style={{fontSize:11,color:'#6b7280',background:'white',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Clear</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-{/* ── Equipment Attention ── */}
+{/* ── Equipment Attention ── overdue intervals + every-fillup streaks + warranty */}
           {equipmentAttention.length>0&&(
             <div>
-              <div style={{fontSize:13,fontWeight:600,color:'#92400e',letterSpacing:.3,marginBottom:8}}>🔧 EQUIPMENT ATTENTION</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#92400e',letterSpacing:.3}}>🔧 EQUIPMENT ATTENTION</div>
+                <button onClick={()=>clearAllMissed(equipmentAttention.map(a=>a.key))} style={{fontSize:11,color:'#6b7280',background:'none',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit'}}>Clear all</button>
+              </div>
               <div style={{display:'flex',flexDirection:'column',gap:6}}>
                 {equipmentAttention.map(a=>{
-                  const isOverdue=a.kind==='overdue';
-                  const bg=isOverdue?'#fef2f2':'#fffbeb';
-                  const bd=isOverdue?'#fecaca':'#fde68a';
-                  const tx=isOverdue?'#b91c1c':'#92400e';
-                  const icon=isOverdue?'🔧':'🛡';
+                  const palette = a.kind === 'overdue'
+                    ? {bg:'#fef2f2', bd:'#fecaca', tx:'#b91c1c', icon:'🔧'}
+                    : a.kind === 'fillup_streak'
+                      ? {bg:'#fffbeb', bd:'#fde68a', tx:'#92400e', icon:'⛽'}
+                      : {bg:'#fef3c7', bd:'#fcd34d', tx:'#92400e', icon:'🛡'};
                   return (
-                    <div key={a.kind+':'+a.slug} onClick={()=>navigate('/equipment/'+a.slug)}
-                      style={{background:bg,border:'1px solid '+bd,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
-                      <span style={{fontSize:18}}>{icon}</span>
+                    <div key={a.key} onClick={()=>navigate(a.kind==='fillup_streak'?'/fueling/'+a.slug:'/equipment/'+a.slug)}
+                      style={{background:palette.bg,border:'1px solid '+palette.bd,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
+                      <span style={{fontSize:18}}>{palette.icon}</span>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:600,color:tx}}>{a.label}</div>
+                        <div style={{fontSize:13,fontWeight:600,color:palette.tx}}>{a.label}</div>
                         <div style={{fontSize:11,color:'#9ca3af'}}>{a.detail}</div>
                       </div>
+                      <button onClick={e=>{e.stopPropagation();clearMissedEntry(a.key);}} style={{fontSize:11,color:'#6b7280',background:'white',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Clear</button>
                     </div>
                   );
                 })}
