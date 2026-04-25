@@ -54,7 +54,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   // Load this piece's fueling history to compute due intervals.
   React.useEffect(() => {
     if (!eq) { setHistory([]); return; }
-    sb.from('equipment_fuelings').select('date,team_member,hours_reading,km_reading,service_intervals_completed').eq('equipment_id', eq.id).order('date', {ascending:false}).limit(500).then(({data}) => {
+    sb.from('equipment_fuelings').select('date,team_member,hours_reading,km_reading,service_intervals_completed,every_fillup_check').eq('equipment_id', eq.id).order('date', {ascending:false}).limit(500).then(({data}) => {
       if (data) setHistory(data);
     });
   }, [eq]);
@@ -80,6 +80,42 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     if (!eq || !hasReading) return [];
     return computeDueIntervals(eq.service_intervals || [], completions, readingNum);
   }, [eq, completions, readingNum, hasReading]);
+
+  // Every-fillup miss streaks. For each every_fillup_items[].id, count
+  // consecutive prior fuelings (ordered by reading desc, falling back to
+  // date) where the item was NOT in every_fillup_check. As soon as a prior
+  // fueling DID tick the item, the streak ends. Time/calendar dates do not
+  // factor into the math — this is purely "how many sequential fuelings,
+  // most recent first, lacked this item." Display only includes the oldest
+  // miss's reading + operator name as context.
+  const fillupStreaks = React.useMemo(() => {
+    const out = new Map(); // itemId -> {count, oldest:{reading, name, date}}
+    if (!eq) return out;
+    const items = Array.isArray(eq.every_fillup_items) ? eq.every_fillup_items : [];
+    if (items.length === 0) return out;
+    // Build prior-fuelings list. Order by reading desc; if reading missing,
+    // fall back to date. Newest first.
+    const sorted = (history || []).slice().sort((a, b) => {
+      const ra = a.hours_reading != null ? Number(a.hours_reading) : (a.km_reading != null ? Number(a.km_reading) : null);
+      const rb = b.hours_reading != null ? Number(b.hours_reading) : (b.km_reading != null ? Number(b.km_reading) : null);
+      if (ra != null && rb != null && ra !== rb) return rb - ra;
+      return String(b.date || '').localeCompare(String(a.date || ''));
+    });
+    for (const item of items) {
+      let count = 0;
+      let oldest = null;
+      for (const h of sorted) {
+        const ticks = Array.isArray(h.every_fillup_check) ? h.every_fillup_check : [];
+        const wasTicked = ticks.some(t => t && t.id === item.id);
+        if (wasTicked) break;
+        count++;
+        const r = h.hours_reading != null ? Number(h.hours_reading) : (h.km_reading != null ? Number(h.km_reading) : null);
+        oldest = {reading: r, name: h.team_member || null, date: h.date || null};
+      }
+      if (count > 0) out.set(item.id, {count, oldest});
+    }
+    return out;
+  }, [eq, history]);
 
   function toggleFillup(id) {
     const next = new Set(fillupTicks);
@@ -389,11 +425,22 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                 const needsAttention = required && unticked;
                 const bd = needsAttention ? '#fca5a5' : (fillupTicks.has(item.id)?'#a7f3d0':'#e5e7eb');
                 const bg = needsAttention ? '#fef2f2' : (fillupTicks.has(item.id)?'#ecfdf5':'#f9fafb');
+                const streak = fillupStreaks.get(item.id);
+                const unitShort = eq.tracking_unit === 'km' ? 'km' : 'h';
                 return (
-                <label key={item.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:bg, cursor:'pointer', border:'1px solid '+bd, fontSize:13}}>
-                  <input type="checkbox" checked={fillupTicks.has(item.id)} onChange={()=>toggleFillup(item.id)} style={{margin:0, flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
-                  <span style={{color:fillupTicks.has(item.id)?'#065f46':(needsAttention?'#b91c1c':'#374151'), fontWeight:fillupTicks.has(item.id)?600:(needsAttention?600:500)}}>{item.label}{required && <span style={{color:'#b91c1c', marginLeft:4}}>*</span>}</span>
-                </label>
+                <div key={item.id}>
+                  <label style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:bg, cursor:'pointer', border:'1px solid '+bd, fontSize:13}}>
+                    <input type="checkbox" checked={fillupTicks.has(item.id)} onChange={()=>toggleFillup(item.id)} style={{margin:0, flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
+                    <span style={{color:fillupTicks.has(item.id)?'#065f46':(needsAttention?'#b91c1c':'#374151'), fontWeight:fillupTicks.has(item.id)?600:(needsAttention?600:500)}}>{item.label}{required && <span style={{color:'#b91c1c', marginLeft:4}}>*</span>}</span>
+                  </label>
+                  {streak && streak.count > 0 && !fillupTicks.has(item.id) && (
+                    <div style={{margin:'4px 0 2px 30px', fontSize:11, color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'5px 8px'}}>
+                      ⚠ <strong>Not done at last {streak.count} fillup{streak.count===1?'':'s'}</strong>
+                      {streak.oldest && streak.oldest.reading != null && <> · oldest {streak.oldest.reading.toLocaleString()}{unitShort}</>}
+                      {streak.oldest && streak.oldest.name && <> by {streak.oldest.name}</>}
+                    </div>
+                  )}
+                </div>
               );})}
             </div>
           </div>
