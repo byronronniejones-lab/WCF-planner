@@ -32,9 +32,6 @@ export default function FuelSupplyWebform({sb, onBack}) {
   const [gallons, setGallons] = React.useState('');
   const [fuelType, setFuelType] = React.useState('diesel');
   const [destination, setDestination] = React.useState('cell');
-  const [supplier, setSupplier] = React.useState('');
-  const [costPerGal, setCostPerGal] = React.useState('');
-  const [totalCost, setTotalCost] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [err, setErr] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
@@ -57,17 +54,6 @@ export default function FuelSupplyWebform({sb, onBack}) {
     return () => { cancelled = true; };
   }, [sb]);
 
-  // Auto-derive total from per-gal cost when both gallons + per-gal are set
-  // (and user hasn't manually typed a total).
-  const [totalManual, setTotalManual] = React.useState(false);
-  React.useEffect(() => {
-    if (totalManual) return;
-    const g = parseFloat(gallons), c = parseFloat(costPerGal);
-    if (Number.isFinite(g) && Number.isFinite(c) && g > 0 && c > 0) {
-      setTotalCost((g * c).toFixed(2));
-    }
-  }, [gallons, costPerGal, totalManual]);
-
   async function submit() {
     setErr('');
     if (!team) { setErr('Pick a team member.'); return; }
@@ -78,15 +64,11 @@ export default function FuelSupplyWebform({sb, onBack}) {
     setSubmitting(true);
 
     const id = 'fs-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-    const cpg = parseFloat(costPerGal); const tc = parseFloat(totalCost);
     const rec = {
       id,
       date,
       gallons: gal,
       fuel_type: fuelType || null,
-      supplier: supplier.trim() || null,
-      cost_per_gal: Number.isFinite(cpg) && cpg > 0 ? cpg : null,
-      total_cost: Number.isFinite(tc) && tc > 0 ? tc : null,
       destination,
       team_member: team,
       notes: notes.trim() || null,
@@ -98,7 +80,7 @@ export default function FuelSupplyWebform({sb, onBack}) {
     if (error) { setErr('Save failed: ' + error.message); return; }
     setDone(true);
     // Reset for a fresh entry
-    setGallons(''); setCostPerGal(''); setTotalCost(''); setSupplier(''); setNotes(''); setTotalManual(false);
+    setGallons(''); setNotes('');
   }
 
   const cardS = {background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 18px', marginBottom:14};
@@ -162,24 +144,8 @@ export default function FuelSupplyWebform({sb, onBack}) {
           </div>
 
           <div style={{marginBottom:12}}>
-            <label style={lblS}>Supplier <span style={{color:'#9ca3af', textTransform:'none', fontWeight:400}}>(optional)</span></label>
-            <input type="text" value={supplier} onChange={e=>setSupplier(e.target.value)} placeholder="e.g. Local Fuel Co." style={inpS}/>
-          </div>
-
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12}}>
-            <div>
-              <label style={lblS}>Cost / gal <span style={{color:'#9ca3af', textTransform:'none', fontWeight:400}}>(optional)</span></label>
-              <input type="number" min="0" step="0.01" value={costPerGal} onChange={e=>{setCostPerGal(e.target.value); setTotalManual(false);}} placeholder="$" style={inpS}/>
-            </div>
-            <div>
-              <label style={lblS}>Total cost <span style={{color:'#9ca3af', textTransform:'none', fontWeight:400}}>(auto)</span></label>
-              <input type="number" min="0" step="0.01" value={totalCost} onChange={e=>{setTotalCost(e.target.value); setTotalManual(true);}} placeholder="$" style={inpS}/>
-            </div>
-          </div>
-
-          <div style={{marginBottom:12}}>
             <label style={lblS}>Notes <span style={{color:'#9ca3af', textTransform:'none', fontWeight:400}}>(optional)</span></label>
-            <textarea rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Invoice #, anything worth noting" style={{...inpS, resize:'vertical'}}/>
+            <textarea rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything worth noting" style={{...inpS, resize:'vertical'}}/>
           </div>
 
           {err && <div style={{background:'#fef2f2', border:'1px solid #fecaca', color:'#b91c1c', padding:'8px 12px', borderRadius:6, fontSize:12, marginBottom:12}}>{err}</div>}
