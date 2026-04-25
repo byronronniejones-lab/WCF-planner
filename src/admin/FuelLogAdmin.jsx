@@ -7,6 +7,8 @@
 
 import React from 'react';
 import { sb } from '../lib/supabase.js';
+import FuelBillsView from './FuelBillsView.jsx';
+import FuelReconcileView from './FuelReconcileView.jsx';
 
 const DESTINATIONS = [
   {value:'cell',       label:'Portable fuel cell', color:'#92400e', bg:'#fef3c7'},
@@ -28,6 +30,7 @@ function money(n) {
 }
 
 export default function FuelLogAdmin() {
+  const [mode, setMode] = React.useState('supplies'); // 'supplies' | 'bills' | 'reconcile'
   const [rows, setRows] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [missingSchema, setMissingSchema] = React.useState(false);
@@ -45,12 +48,11 @@ export default function FuelLogAdmin() {
   }
   React.useEffect(() => { load(); }, []);
 
-  if (missingSchema) {
-    return <div style={{padding:20, fontSize:13, color:'#b91c1c'}}>fuel_supplies table missing. Apply supabase-migrations/024_fuel_supplies_and_suppressed_flag.sql in the SQL Editor first.</div>;
-  }
-  if (loading) return <div style={{padding:20, fontSize:13, color:'#6b7280'}}>Loading fuel supplies…</div>;
+  // NOTE: missingSchema/loading checks are handled inside the supplies tab.
+  // Bills + Reconcile tabs are independent and shouldn't be blocked by a
+  // fuel_supplies query state.
 
-  // Aggregates
+  // Aggregates (safe even when rows is empty).
   const today = new Date();
   const ytdStart = today.getFullYear() + '-01-01';
   const thirtyAgo = new Date(today.getTime() - 30*86400000).toISOString().slice(0, 10);
@@ -74,8 +76,25 @@ export default function FuelLogAdmin() {
   const th = {fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.4, padding:'6px 10px', textAlign:'left', background:'#f9fafb', borderBottom:'1px solid #e5e7eb'};
   const td = {fontSize:12, padding:'8px 10px', borderBottom:'1px solid #f3f4f6', color:'#111827'};
 
+  const tabBtn = (id, label) => {
+    const on = mode === id;
+    return <button key={id} onClick={()=>setMode(id)} style={{padding:'7px 14px', borderRadius:6, border:on?'2px solid #085041':'1px solid #d1d5db', background:on?'#085041':'white', color:on?'white':'#374151', fontSize:12, fontWeight:on?700:500, cursor:'pointer', fontFamily:'inherit'}}>{label}</button>;
+  };
+
   return (
     <div>
+      <div style={{display:'flex', gap:8, marginBottom:14, flexWrap:'wrap'}}>
+        {tabBtn('supplies', 'Supplies ledger')}
+        {tabBtn('bills', 'Bills')}
+        {tabBtn('reconcile', 'Reconciliation')}
+      </div>
+
+      {mode === 'bills' && <FuelBillsView/>}
+      {mode === 'reconcile' && <FuelReconcileView/>}
+      {mode !== 'supplies' ? null : <>
+      {missingSchema && <div style={{padding:20, fontSize:13, color:'#b91c1c'}}>fuel_supplies table missing. Apply supabase-migrations/024_fuel_supplies_and_suppressed_flag.sql in the SQL Editor first.</div>}
+      {loading && !missingSchema && <div style={{padding:20, fontSize:13, color:'#6b7280'}}>Loading fuel supplies…</div>}
+      {!loading && !missingSchema && <>
       {/* Header + public URL */}
       <div style={{...card, background:'#f0fdf4', borderColor:'#86efac'}}>
         <div style={{display:'flex', alignItems:'flex-start', gap:14, flexWrap:'wrap'}}>
@@ -157,6 +176,8 @@ export default function FuelLogAdmin() {
           </table>
         )}
       </div>
+      </>}
+      </>}
     </div>
   );
 }
