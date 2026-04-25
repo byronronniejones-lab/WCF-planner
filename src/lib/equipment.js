@@ -40,53 +40,23 @@ export const WARRANTY_WINDOW_DAYS = 60;
 export function computeIntervalStatus(intervals, completions, currentReading) {
   if (!Array.isArray(intervals) || intervals.length === 0) return [];
 
-  // Map interval value -> SNAPPED milestone of the latest completion.
-  // Snap-to-nearest milestone: a completion at reading R for interval I gets
-  // credited to whichever milestone is closer (tie favors previous). So
-  // 500hr@968 satisfies the 1000h milestone, scheduling next 500hr at 1500h.
-  // Divisor rule: completing 1000hr also satisfies 500/250/100/50 at the
-  // PARENT'S snapped milestone (since the snap is always a multiple of the
-  // sub-interval, this works out cleanly).
-  const lastSnapped = new Map(); // key = kind+':'+value -> snapped milestone
-  const lastRaw     = new Map(); // raw reading at completion, for display
-  for (const c of (completions || [])) {
-    if (!c || !c.interval || !c.kind) continue;
-    const snapReading = Number.isFinite(c.reading_at_completion)
+  // Defer to aggregateCompletionsByMilestone for the snap + cumulative-partial
+  // logic. The same union-of-items rule applies: maintenance split across
+  // sessions toward the same milestone counts as one virtual full completion.
+  // Completions with a missing reading_at_completion fall back to the current
+  // reading (matches prior behavior for legacy data without a snapshot).
+  const normalized = (completions || []).map(c => ({
+    ...c,
+    reading_at_completion: Number.isFinite(c?.reading_at_completion)
       ? c.reading_at_completion
-      : currentReading;
-    if (snapReading == null) continue;
-    const snappedMilestone = snapToNearestMilestone(snapReading, c.interval);
-    const key = c.kind + ':' + c.interval;
-    const existing = lastSnapped.get(key);
-    if (!existing || snappedMilestone > existing) {
-      lastSnapped.set(key, snappedMilestone);
-      lastRaw.set(key, snapReading);
-    }
-    // Divisor rule: doing the parent (e.g. 600hr) completes the sub-interval
-    // (e.g. 50hr) at the time of the parent's actual work. Cascade the
-    // PARENT'S RAW READING down, then let each sub-interval do its own
-    // independent snap. (Cascading the parent's snapped milestone instead
-    // would over-credit sub-intervals — e.g. a 600hr done at 1596 snapping
-    // to 1800 would falsely satisfy the 50hr's 1800 milestone, when actually
-    // the 50hr work happened at 1596 and should satisfy 1600.)
-    for (const iv of intervals) {
-      if (iv.kind !== c.kind) continue;
-      if (iv.hours_or_km === c.interval) continue;
-      if (c.interval % iv.hours_or_km !== 0) continue;
-      const kk = iv.kind + ':' + iv.hours_or_km;
-      const subSnapped = snapToNearestMilestone(snapReading, iv.hours_or_km);
-      const ex2 = lastSnapped.get(kk);
-      if (!ex2 || subSnapped > ex2) {
-        lastSnapped.set(kk, subSnapped);
-        lastRaw.set(kk, snapReading);
-      }
-    }
-  }
+      : currentReading,
+  }));
+  const {milestoneSatisfied, milestoneSatisfiedRaw} = aggregateCompletionsByMilestone(intervals, normalized);
 
   return intervals.map(iv => {
     const key = iv.kind + ':' + iv.hours_or_km;
-    const lastM = lastSnapped.get(key) || 0; // already a multiple of iv.hours_or_km
-    const lastR = lastRaw.get(key) || null;
+    const lastM = milestoneSatisfied.get(key) || 0; // already a multiple of iv.hours_or_km
+    const lastR = milestoneSatisfiedRaw.get(key) || null;
     const nextDue = lastM > 0 ? lastM + iv.hours_or_km : iv.hours_or_km;
     const overdue = currentReading != null && currentReading > nextDue;
     return {
@@ -145,97 +115,37 @@ export function computeDueIntervals(intervals, completions, currentReading) {
   if (!Array.isArray(intervals) || intervals.length === 0) return [];
   if (!Number.isFinite(Number(currentReading)) || currentReading <= 0) return [];
 
-  // "Fully complete" = items_completed.length === total_tasks (all sub-items
-  // ticked on a single fueling). A partial completion doesn't reset the
-  // clock; the interval stays in the due list until someone does it all.
-  function isFullCompletion(c) {
-    if (!c.total_tasks || c.total_tasks === 0) return true; // no sub-items == just the parent tick
-    const count = Array.isArray(c.items_completed) ? c.items_completed.length : 0;
-    return count >= c.total_tasks;
-  }
-
-  // lastDoneSnapped tracks the SNAPPED milestone (multiple of interval) for
-  // each interval — drives the next-due math. lastDoneAtRaw tracks the actual
-  // reading at completion for display purposes (so the form still shows
-  // "last full done at 968h", not "last full done at 1000h").
-  const lastDoneSnapped = new Map();
-  const lastDoneAtRaw = new Map();
-  for (const c of (completions || [])) {
-    if (!c || !c.interval || !c.kind) continue;
-    const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
-    if (snap == null) continue;
-    if (!isFullCompletion(c)) continue;
-    const key = c.kind + ':' + c.interval;
-    const snappedMilestone = snapToNearestMilestone(snap, c.interval);
-    const ex = lastDoneSnapped.get(key);
-    if (!ex || snappedMilestone > ex) {
-      lastDoneSnapped.set(key, snappedMilestone);
-      lastDoneAtRaw.set(key, snap);
-    }
-    // Divisor rule: doing the parent (e.g. 600hr) completes the sub-interval
-    // (e.g. 50hr) at the time of the parent's actual work. Cascade the
-    // PARENT'S RAW READING down, then let each sub-interval do its own
-    // independent snap. (Cascading the parent's snapped milestone instead
-    // would over-credit sub-intervals — e.g. a 600hr done at 1596 snapping
-    // to 1800 would falsely satisfy the 50hr's 1800 milestone, when actually
-    // the 50hr work happened at 1596 and should satisfy 1600.)
-    for (const iv of intervals) {
-      if (iv.kind !== c.kind) continue;
-      if (iv.hours_or_km === c.interval) continue;
-      if (c.interval % iv.hours_or_km !== 0) continue;
-      const kk = iv.kind + ':' + iv.hours_or_km;
-      const subSnapped = snapToNearestMilestone(snap, iv.hours_or_km);
-      const ex2 = lastDoneSnapped.get(kk);
-      if (!ex2 || subSnapped > ex2) {
-        lastDoneSnapped.set(kk, subSnapped);
-        lastDoneAtRaw.set(kk, snap);
-      }
-    }
-  }
-
-  // Latest PARTIAL attempt per interval — but ONLY if no full completion has
-  // happened since. Once someone does a full pass, stale partials stop
-  // mattering. Caller gets items_completed (IDs), total, team_member, and the
-  // reading, so it can list what's still unfinished and by whom.
-  const lastPartialAt = new Map();
-  const lastPartialDetail = new Map();
-  for (const c of (completions || [])) {
-    if (!c || !c.interval || !c.kind) continue;
-    if (isFullCompletion(c)) continue;
-    const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
-    if (snap == null) continue;
-    const key = c.kind + ':' + c.interval;
-    // Skip if a full completion has happened at/after this reading. Compare
-    // against the full's RAW reading (not its snapped milestone) so a partial
-    // recorded in real time before a later full doesn't get suppressed by
-    // the full's snap-forward.
-    const fullRaw = lastDoneAtRaw.get(key);
-    if (fullRaw != null && fullRaw >= snap) continue;
-    const ex = lastPartialAt.get(key);
-    if (!ex || snap > ex) {
-      lastPartialAt.set(key, snap);
-      lastPartialDetail.set(key, {
-        items_done: Array.isArray(c.items_completed) ? c.items_completed.length : 0,
-        items_completed: Array.isArray(c.items_completed) ? c.items_completed.slice() : [],
-        total: c.total_tasks || 0,
-        at_reading: snap,
-        team_member: c.team_member || null,
-      });
-    }
-  }
+  // Group ALL completions (full + partial) by (interval, snapped milestone).
+  // Within a group, the union of items_completed is what's been done toward
+  // that milestone. If the union covers all tasks → virtual full completion.
+  // This handles the real-world flow where maintenance spans sessions: e.g.
+  // a 500hr partial at 440h (14/16) + a 500hr partial at 444h (the missing
+  // 2 of 16, done after parts arrived) = full coverage of the 500h milestone.
+  const {milestoneSatisfied, milestoneSatisfiedRaw, partialState} =
+    aggregateCompletionsByMilestone(intervals, completions);
 
   const due = [];
   for (const iv of intervals) {
     const key = iv.kind + ':' + iv.hours_or_km;
     // The snapped milestone drives next-due math; the raw reading is for display.
-    const lastSnapped = lastDoneSnapped.get(key) || 0;
-    const lastRaw = lastDoneAtRaw.get(key) || 0;
+    const lastSnapped = milestoneSatisfied.get(key) || 0;
+    const lastRaw = milestoneSatisfiedRaw.get(key) || 0;
     const firstMilestoneAfterLast = lastSnapped > 0
       ? lastSnapped + iv.hours_or_km
       : iv.hours_or_km; // no completion ever — first due at the first milestone
     if (firstMilestoneAfterLast > currentReading) continue;
     const largestMilestoneAtOrBeforeCurrent = Math.floor(currentReading / iv.hours_or_km) * iv.hours_or_km;
     const missedCount = ((largestMilestoneAtOrBeforeCurrent - firstMilestoneAfterLast) / iv.hours_or_km) + 1;
+    // Partial display: the cumulative state of the highest UNSATISFIED milestone.
+    const ps = partialState.get(key);
+    const lastPartial = (ps && ps.milestone > lastSnapped) ? {
+      items_done:      ps.items_done,
+      items_completed: ps.items_completed,
+      total:           ps.total,
+      at_reading:      ps.latestSnap,
+      team_member:     ps.latestTeam,
+      milestone:       ps.milestone,
+    } : null;
     due.push({
       ...iv,
       last_done_at: lastRaw > 0 ? lastRaw : null,
@@ -243,12 +153,126 @@ export function computeDueIntervals(intervals, completions, currentReading) {
       first_missed_at: firstMilestoneAfterLast,
       current_milestone: largestMilestoneAtOrBeforeCurrent,
       missed_count: missedCount,
-      last_partial: lastPartialDetail.get(key) || null,
+      last_partial: lastPartial,
     });
   }
 
   // Ascending — smallest interval first (50h before 600h before 1200h).
   return due.sort((a, b) => a.hours_or_km - b.hours_or_km);
+}
+
+// Internal helper used by both computeDueIntervals and computeIntervalStatus.
+// Aggregates completions by (interval, snapped milestone) and decides which
+// milestones are satisfied (full or virtual full from cumulative partials).
+//
+// A "virtual full" happens when the union of items_completed across all
+// completions in the same milestone group covers the interval's task count.
+// This handles the real-world flow where maintenance is split across multiple
+// sessions before the next milestone hits.
+//
+// Returns:
+//   milestoneSatisfied:    Map<kind:value, milestoneNumber>
+//   milestoneSatisfiedRaw: Map<kind:value, latestRawReading>
+//   partialState:          Map<kind:value, {milestone, latestSnap, latestTeam,
+//                                            items_completed, items_done, total}>
+function aggregateCompletionsByMilestone(intervals, completions) {
+  function isFullCompletion(c) {
+    if (!c.total_tasks || c.total_tasks === 0) return true;
+    const count = Array.isArray(c.items_completed) ? c.items_completed.length : 0;
+    return count >= c.total_tasks;
+  }
+
+  // Authoritative task count per interval — uses CURRENT equipment config so
+  // historical completions get re-evaluated against today's task list.
+  const currentTotals = new Map();
+  for (const iv of intervals) {
+    currentTotals.set(iv.kind + ':' + iv.hours_or_km, Array.isArray(iv.tasks) ? iv.tasks.length : 0);
+  }
+
+  // Group by (kind, interval, snapped milestone).
+  const groups = new Map();
+  for (const c of (completions || [])) {
+    if (!c || !c.interval || !c.kind) continue;
+    const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
+    if (snap == null) continue;
+    const milestone = snapToNearestMilestone(snap, c.interval);
+    const key = c.kind + ':' + c.interval + ':' + milestone;
+    if (!groups.has(key)) groups.set(key, {
+      kind: c.kind, interval: c.interval, milestone, entries: [],
+    });
+    groups.get(key).entries.push(c);
+  }
+
+  const milestoneSatisfied = new Map();
+  const milestoneSatisfiedRaw = new Map();
+  const partialState = new Map();
+
+  for (const g of groups.values()) {
+    const ivKey = g.kind + ':' + g.interval;
+    // currentTotals may be 0 for an interval that has no sub-tasks (parent-tick only).
+    const total = currentTotals.has(ivKey)
+      ? currentTotals.get(ivKey)
+      : (g.entries[0] && g.entries[0].total_tasks) || 0;
+
+    const allItems = new Set();
+    let hasFullEntry = false;
+    let latestSnap = 0, latestTeam = null;
+    for (const e of g.entries) {
+      const items = Array.isArray(e.items_completed) ? e.items_completed : [];
+      for (const id of items) allItems.add(id);
+      if (isFullCompletion(e)) hasFullEntry = true;
+      if (e.reading_at_completion > latestSnap) {
+        latestSnap = e.reading_at_completion;
+        latestTeam = e.team_member || null;
+      }
+    }
+
+    // For sub-tasks check the union; for parent-tick-only intervals (total=0)
+    // a single full entry is enough.
+    const isCumulativeFull = hasFullEntry || (total > 0 && allItems.size >= total);
+
+    if (isCumulativeFull) {
+      const ex = milestoneSatisfied.get(ivKey);
+      if (!ex || g.milestone > ex) {
+        milestoneSatisfied.set(ivKey, g.milestone);
+        milestoneSatisfiedRaw.set(ivKey, latestSnap);
+      }
+    } else {
+      const ex = partialState.get(ivKey);
+      if (!ex || g.milestone > ex.milestone) {
+        partialState.set(ivKey, {
+          milestone: g.milestone,
+          latestSnap, latestTeam,
+          items_completed: Array.from(allItems),
+          items_done: allItems.size,
+          total,
+        });
+      }
+    }
+  }
+
+  // Divisor rule: a satisfied parent milestone implicitly satisfies any
+  // sub-interval that divides it. Cascade the parent's RAW reading to each
+  // sub-interval; each sub does its own independent snap.
+  for (const ivKey of Array.from(milestoneSatisfied.keys())) {
+    const rawOfParent = milestoneSatisfiedRaw.get(ivKey);
+    const [kind, vStr] = ivKey.split(':');
+    const parentInterval = parseInt(vStr, 10);
+    for (const iv of intervals) {
+      if (iv.kind !== kind) continue;
+      if (iv.hours_or_km === parentInterval) continue;
+      if (parentInterval % iv.hours_or_km !== 0) continue;
+      const subKey = iv.kind + ':' + iv.hours_or_km;
+      const subSnapped = snapToNearestMilestone(rawOfParent, iv.hours_or_km);
+      const ex = milestoneSatisfied.get(subKey);
+      if (!ex || subSnapped > ex) {
+        milestoneSatisfied.set(subKey, subSnapped);
+        milestoneSatisfiedRaw.set(subKey, rawOfParent);
+      }
+    }
+  }
+
+  return {milestoneSatisfied, milestoneSatisfiedRaw, partialState};
 }
 
 // Strip Podio HTML tags (and trivial "None" placeholder) from comment text.

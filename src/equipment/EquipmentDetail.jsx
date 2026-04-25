@@ -81,6 +81,23 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
     if (error) alert('Save failed: '+error.message);
   }
 
+  // Delete a single interval entry from a fueling row's
+  // service_intervals_completed. Used when an interval was recorded by mistake
+  // (e.g. duplicate work logged twice on adjacent fuelings — admin keeps the
+  // earlier one and removes the redundant entry from the later row).
+  async function deleteIntervalEntry(fueling, intervalIdx) {
+    const merged = withPatch(fueling);
+    const completed = Array.isArray(merged.service_intervals_completed) ? merged.service_intervals_completed : [];
+    const target = completed[intervalIdx];
+    if (!target) return;
+    const label = (target.attachment_name ? target.attachment_name + ' — ' : '') + (target.label || (target.interval + (target.kind === 'km' ? 'k' : 'h')));
+    if (!confirm('Remove the "' + label + '" entry from this fueling row?\n\nThis only deletes that one interval entry. Photos, fillup ticks, comments, and other intervals on this row stay intact.')) return;
+    const next = completed.filter((_, i) => i !== intervalIdx);
+    setFuelingPatches(p => ({...p, [fueling.id]: {...(p[fueling.id]||{}), service_intervals_completed: next}}));
+    const {error} = await sb.from('equipment_fuelings').update({service_intervals_completed: next}).eq('id', fueling.id);
+    if (error) alert('Save failed: '+error.message);
+  }
+
   // Toggle a sub-task within a recorded interval completion on a historical
   // fueling. Optimistic update; total_tasks is refreshed from the current
   // equipment config in case admin added/removed tasks since the original
@@ -386,9 +403,12 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
                             const orphanIds = items.filter(id => !knownIds.has(id));
                             return (
                               <div key={i} style={{marginBottom:8, padding:'8px 10px', background:'white', border:'1px solid '+(isFull?'#bfdbfe':'#fde68a'), borderRadius:6}}>
-                                <div style={{fontSize:11, fontWeight:700, color:isFull?'#1e40af':'#92400e', marginBottom:4}}>
-                                  {c.attachment_name ? c.attachment_name+' — ' : ''}{c.label || (c.interval+c.kind.charAt(0))}
-                                  <span style={{fontSize:10, fontWeight:500, marginLeft:8, color:'#6b7280'}}>{items.length}/{totalNow} tasks {isFull?'· full':(items.length>0?'· partial':'')} · click to toggle</span>
+                                <div style={{fontSize:11, fontWeight:700, color:isFull?'#1e40af':'#92400e', marginBottom:4, display:'flex', alignItems:'center', gap:6}}>
+                                  <span style={{flex:1}}>
+                                    {c.attachment_name ? c.attachment_name+' — ' : ''}{c.label || (c.interval+c.kind.charAt(0))}
+                                    <span style={{fontSize:10, fontWeight:500, marginLeft:8, color:'#6b7280'}}>{items.length}/{totalNow} tasks {isFull?'· full':(items.length>0?'· partial':'')} · click to toggle</span>
+                                  </span>
+                                  <button onClick={()=>deleteIntervalEntry(rawF, i)} title="Remove this interval entry from this fueling row" style={{flexShrink:0, padding:'2px 8px', borderRadius:4, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:10, fontFamily:'inherit', fontWeight:600, cursor:'pointer'}}>✕ Remove</button>
                                 </div>
                                 {(allTasks.length > 0 || orphanIds.length > 0) && (
                                   <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
