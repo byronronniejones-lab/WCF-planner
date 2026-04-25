@@ -1,8 +1,10 @@
-// Public /fuel-supply webform. Tracks fuel DELIVERED TO THE FARM — portable
-// fuel cell fills, gas cans, farm truck top-offs, direct deliveries — not
-// per-equipment usage. Supply events never count as consumption; they're
-// tracked in a separate fuel_supplies table so balance math (supply −
-// equipment fuelings) works cleanly.
+// Public Fuel Supply Log webform. Canonical URL is /fueling/supply (tile on
+// the FuelingHub). Legacy /fuel-supply alias is still wired in main.jsx + routes.js
+// so any direct bookmarks keep working.
+//
+// Logged when there's no fueling checklist for what's being filled with fuel
+// (portable cell fills, gas cans, farm-truck top-offs, etc). Writes to
+// fuel_supplies — never counts as equipment consumption.
 //
 // Anonymous access (RLS policy on fuel_supplies allows anon insert). No
 // auth required.
@@ -13,7 +15,6 @@ const DESTINATIONS = [
   {value:'cell',       label:'Portable fuel cell'},
   {value:'gas_can',    label:'Gas can(s)'},
   {value:'farm_truck', label:'Farm truck'},
-  {value:'direct',     label:'Direct to equipment'},
   {value:'other',      label:'Other'},
 ];
 
@@ -40,9 +41,20 @@ export default function FuelSupplyWebform({sb, onBack}) {
   const [done, setDone] = React.useState(false);
 
   React.useEffect(() => {
-    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => {
-      if (data && Array.isArray(data.data)) setTeamMembers(data.data);
-    });
+    let cancelled = false;
+    (async () => {
+      // Per-form override (admin > Equipment > Fuel Supply) wins.
+      const {data: pf} = await sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle();
+      const pfList = pf && pf.data && Array.isArray(pf.data['fuel-supply']) ? pf.data['fuel-supply'] : null;
+      if (pfList && pfList.length) {
+        if (!cancelled) setTeamMembers(pfList);
+        return;
+      }
+      // Fall back to the master list.
+      const {data} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
+      if (!cancelled && data && Array.isArray(data.data)) setTeamMembers(data.data);
+    })();
+    return () => { cancelled = true; };
   }, [sb]);
 
   // Auto-derive total from per-gal cost when both gallons + per-gal are set
@@ -105,7 +117,7 @@ export default function FuelSupplyWebform({sb, onBack}) {
         <div style={{...cardS, background:'#fffbeb', borderColor:'#fde68a'}}>
           <div style={{fontSize:12, fontWeight:700, color:'#92400e', marginBottom:6}}>⚠ When to use this form</div>
           <div style={{fontSize:12, color:'#78716c'}}>
-            Log here when fuel is <strong>delivered to the farm</strong> — portable fuel cell fills, gas cans, farm truck top-offs, direct deliveries. Do NOT use this form for fueling a specific piece of equipment — those go under <a href="/fueling" style={{color:'#1d4ed8'}}>/fueling</a> instead.
+            Use this form when there is no fueling checklist for what is being filled with fuel.
           </div>
         </div>
 

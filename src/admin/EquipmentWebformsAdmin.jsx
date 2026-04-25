@@ -56,6 +56,7 @@ export default function EquipmentWebformsAdmin() {
 
   return (
     <div>
+      <FuelSupplyAdminSection/>
       <div style={card}>
         <div style={sectionTitle}>Equipment <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click a piece to edit</span></div>
         {EQUIPMENT_CATEGORIES.map(cat => {
@@ -779,6 +780,70 @@ function AttachmentChecklistsEditor({equipment, onReload}) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Fuel Supply Webform admin ──────────────────────────────────────────────
+// Configures the public /fueling/supply form (operators logging fuel without a
+// per-piece checklist). Team-member list is stored at
+// webform_config.per_form_team_members['fuel-supply']; empty means "fall back
+// to the master list" — same pattern as the other per-form lists.
+function FuelSupplyAdminSection() {
+  const [allTM, setAllTM] = React.useState([]);
+  const [assigned, setAssigned] = React.useState([]);
+  const [allMap, setAllMap] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [loaded, setLoaded] = React.useState(false);
+
+  async function load() {
+    const [{data: master}, {data: pf}] = await Promise.all([
+      sb.from('webform_config').select('data').eq('key','team_members').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle(),
+    ]);
+    if (master && Array.isArray(master.data)) setAllTM(master.data);
+    const pfMap = (pf && pf.data && typeof pf.data === 'object') ? pf.data : {};
+    setAllMap(pfMap);
+    setAssigned(Array.isArray(pfMap['fuel-supply']) ? pfMap['fuel-supply'] : []);
+    setLoaded(true);
+  }
+  React.useEffect(() => { load(); }, []);
+
+  async function toggle(name) {
+    setBusy(true);
+    const next = assigned.includes(name) ? assigned.filter(n => n !== name) : [...assigned, name];
+    const nextMap = {...allMap, 'fuel-supply': next};
+    const {error} = await sb.from('webform_config').upsert({key:'per_form_team_members', data: nextMap}, {onConflict:'key'});
+    setBusy(false);
+    if (error) { alert('Save failed: '+error.message); return; }
+    setAssigned(next); setAllMap(nextMap);
+  }
+
+  return (
+    <div style={{...card, background:'#fffbeb', borderColor:'#fde68a'}}>
+      <div style={sectionTitle}>⛽ Fuel Supply Webform <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Public form at /fueling/supply · pick which team members appear in the dropdown</span></div>
+      {!loaded && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>Loading…</div>}
+      {loaded && allTM.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No team members in master list yet.</div>}
+      {loaded && allTM.length > 0 && (
+        <>
+          <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:8}}>
+            {allTM.map(name => {
+              const on = assigned.includes(name);
+              return (
+                <button key={name} onClick={()=>toggle(name)} disabled={busy}
+                  style={{fontSize:12, padding:'5px 11px', borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontWeight:on?600:400, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>
+                  {on ? '✓ ' : ''}{name}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:11, color:'#92400e', fontStyle:'italic'}}>
+            {assigned.length === 0
+              ? 'Empty selection → form falls back to the master team-member list.'
+              : assigned.length + ' selected · only these names show in the form.'}
+          </div>
+        </>
+      )}
     </div>
   );
 }

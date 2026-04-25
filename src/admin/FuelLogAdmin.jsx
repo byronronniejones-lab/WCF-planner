@@ -2,7 +2,7 @@
 // farm). Lives under /webforms → Fuel Log tab. Shows the supply history,
 // YTD + 30-day totals by destination, and inline edit/delete per row.
 //
-// Also surfaces the /fuel-supply public webform URL so admin can share it
+// Also surfaces the /fueling/supply public webform URL so admin can share it
 // to operators.
 
 import React from 'react';
@@ -12,7 +12,6 @@ const DESTINATIONS = [
   {value:'cell',       label:'Portable fuel cell', color:'#92400e', bg:'#fef3c7'},
   {value:'gas_can',    label:'Gas can(s)',         color:'#7f1d1d', bg:'#fee2e2'},
   {value:'farm_truck', label:'Farm truck',         color:'#1e40af', bg:'#dbeafe'},
-  {value:'direct',     label:'Direct to equip.',   color:'#065f46', bg:'#d1fae5'},
   {value:'other',      label:'Other',              color:'#374151', bg:'#f3f4f6'},
 ];
 const FUEL_TYPES = ['diesel', 'gasoline', 'def'];
@@ -87,7 +86,7 @@ export default function FuelLogAdmin() {
           </div>
           <div>
             <div style={{fontSize:10, fontWeight:700, color:'#065f46', textTransform:'uppercase', letterSpacing:.4}}>URL</div>
-            <a href="/fuel-supply" target="_blank" rel="noopener noreferrer" style={{fontSize:13, color:'#1d4ed8', fontFamily:'monospace'}}>/fuel-supply</a>
+            <a href="/fueling/supply" target="_blank" rel="noopener noreferrer" style={{fontSize:13, color:'#1d4ed8', fontFamily:'monospace'}}>/fueling/supply</a>
           </div>
         </div>
       </div>

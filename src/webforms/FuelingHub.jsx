@@ -7,6 +7,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { EQUIPMENT_CATEGORIES, CATEGORY_BY_KEY } from '../lib/equipment.js';
 import EquipmentFuelingWebform from './EquipmentFuelingWebform.jsx';
+import FuelSupplyWebform from './FuelSupplyWebform.jsx';
 
 export default function FuelingHub({sb}) {
   const [equipment, setEquipment] = React.useState([]);
@@ -28,6 +29,7 @@ export default function FuelingHub({sb}) {
   let subRoute = 'hub';
   let slug = null;
   if (path === '/fueling/quick') subRoute = 'quick';
+  else if (path === '/fueling/supply') subRoute = 'supply';
   else if (path.startsWith('/fueling/')) {
     slug = path.slice('/fueling/'.length);
     subRoute = 'form';
@@ -78,6 +80,10 @@ export default function FuelingHub({sb}) {
     return <EquipmentFuelingWebform sb={sb} equipment={null} equipmentList={equipment} onBack={()=>navigate('/fueling')}/>;
   }
 
+  if (subRoute === 'supply') {
+    return <FuelSupplyWebform sb={sb} onBack={()=>navigate('/fueling')}/>;
+  }
+
   // HUB — category clusters
   const grouped = EQUIPMENT_CATEGORIES.map(cat => ({
     ...cat,
@@ -118,6 +124,11 @@ export default function FuelingHub({sb}) {
               style={{background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'14px 14px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}}>
               <div style={{fontSize:14, fontWeight:700, color:'#92400e'}}>⛽ Quick Fuel Log</div>
               <div style={{fontSize:11, color:'#92400e', opacity:.8}}>Fast entry, no checklist</div>
+            </button>
+            <button onClick={()=>navigate('/fueling/supply')}
+              style={{background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'14px 14px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}}>
+              <div style={{fontSize:14, fontWeight:700, color:'#92400e'}}>⛽ Fuel Supply Log</div>
+              <div style={{fontSize:11, color:'#92400e', opacity:.8}}>Use when there's no checklist for what's being filled</div>
             </button>
           </div>
         </div>

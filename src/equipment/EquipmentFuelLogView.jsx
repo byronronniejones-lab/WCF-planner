@@ -82,7 +82,7 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
       </div>
 
       <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
-        <div style={{display:'grid', gridTemplateColumns:'90px 1fr 90px 70px 60px 80px 110px 1fr', gap:0, background:'#f9fafb', padding:'8px 14px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, borderBottom:'1px solid #e5e7eb'}}>
+        <div style={{display:'grid', gridTemplateColumns:'90px 1fr 90px 70px 60px 80px 110px 1fr', columnGap:14, background:'#f9fafb', padding:'8px 14px', fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, borderBottom:'1px solid #e5e7eb'}}>
           <div>Date</div><div>Equipment</div><div>Fuel</div><div style={{textAlign:'right'}}>Gal</div><div style={{textAlign:'right'}}>DEF</div><div style={{textAlign:'right'}}>Reading</div><div>Team</div><div>Comments</div>
         </div>
         {filtered.length === 0 && <div style={{padding:'2rem', textAlign:'center', color:'#9ca3af', fontSize:13}}>No fueling entries match the current filters.</div>}
@@ -90,7 +90,7 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
           const eq = eqById[f.equipment_id];
           const reading = f.hours_reading != null ? Math.round(f.hours_reading)+' h' : (f.km_reading != null ? Math.round(f.km_reading)+' km' : '—');
           return (
-            <div key={f.id} style={{display:'grid', gridTemplateColumns:'90px 1fr 90px 70px 60px 80px 110px 1fr', gap:0, padding:'6px 14px', fontSize:12, borderBottom:i < Math.min(500, filtered.length) - 1 ? '1px solid #f3f4f6' : 'none', fontVariantNumeric:'tabular-nums'}}>
+            <div key={f.id} style={{display:'grid', gridTemplateColumns:'90px 1fr 90px 70px 60px 80px 110px 1fr', columnGap:14, padding:'6px 14px', fontSize:12, borderBottom:i < Math.min(500, filtered.length) - 1 ? '1px solid #f3f4f6' : 'none', fontVariantNumeric:'tabular-nums'}}>
               <div style={{color:'#111827'}}>{fmt(f.date)}</div>
               <div style={{fontWeight:600, color:'#111827', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{eq ? eq.name : f.equipment_id}</div>
               <div style={{color:'#6b7280'}}>{f.fuel_type || '—'}</div>
