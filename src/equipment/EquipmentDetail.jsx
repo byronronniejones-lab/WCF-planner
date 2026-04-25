@@ -21,6 +21,16 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
   // full-screen viewer with prev/next/close.
   const [lightbox, setLightbox] = React.useState(null);
 
+  // Optimistic local patches for fueling rows — keyed by fueling id. Lets
+  // the user toggle checklist items without triggering a full re-fetch
+  // (which collapses the expanded row + scrolls the page). DB save happens
+  // in the background; on next page load the data is already in sync.
+  const [fuelingPatches, setFuelingPatches] = React.useState({});
+  function withPatch(f) {
+    const p = fuelingPatches[f.id];
+    return p ? {...f, ...p} : f;
+  }
+
   // Keyboard shortcuts for the lightbox.
   React.useEffect(() => {
     if (!lightbox) return;
@@ -56,25 +66,28 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
     }, 800);
   }
 
-  // Toggle an every-fillup item on a historical fueling. Adds/removes from
-  // every_fillup_check and patches the row.
+  // Toggle an every-fillup item on a historical fueling. Optimistic: updates
+  // local state immediately and patches the row in the background. No reload,
+  // so the expanded row stays open and the page doesn't scroll.
   async function toggleFillupItem(fueling, item) {
-    const current = Array.isArray(fueling.every_fillup_check) ? fueling.every_fillup_check : [];
+    const merged = withPatch(fueling);
+    const current = Array.isArray(merged.every_fillup_check) ? merged.every_fillup_check : [];
     const has = current.some(c => c && c.id === item.id);
     const next = has
       ? current.filter(c => c && c.id !== item.id)
       : [...current, {id: item.id, label: item.label, ok: true}];
+    setFuelingPatches(p => ({...p, [fueling.id]: {...(p[fueling.id]||{}), every_fillup_check: next}}));
     const {error} = await sb.from('equipment_fuelings').update({every_fillup_check: next}).eq('id', fueling.id);
-    if (error) { alert('Save failed: '+error.message); return; }
-    onReload();
+    if (error) alert('Save failed: '+error.message);
   }
 
   // Toggle a sub-task within a recorded interval completion on a historical
-  // fueling. Updates items_completed + refreshes total_tasks from the current
-  // equipment config (tasks may have been added/removed since the original
-  // completion was recorded).
+  // fueling. Optimistic update; total_tasks is refreshed from the current
+  // equipment config in case admin added/removed tasks since the original
+  // submission.
   async function toggleIntervalTask(fueling, intervalIdx, taskId, currentTasks) {
-    const completed = Array.isArray(fueling.service_intervals_completed) ? fueling.service_intervals_completed : [];
+    const merged = withPatch(fueling);
+    const completed = Array.isArray(merged.service_intervals_completed) ? merged.service_intervals_completed : [];
     const target = completed[intervalIdx];
     if (!target) return;
     const items = Array.isArray(target.items_completed) ? target.items_completed : [];
@@ -84,9 +97,9 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
     const next = completed.map((c, i) => i === intervalIdx
       ? {...c, items_completed: nextItems, total_tasks: totalNow}
       : c);
+    setFuelingPatches(p => ({...p, [fueling.id]: {...(p[fueling.id]||{}), service_intervals_completed: next}}));
     const {error} = await sb.from('equipment_fuelings').update({service_intervals_completed: next}).eq('id', fueling.id);
-    if (error) { alert('Save failed: '+error.message); return; }
-    onReload();
+    if (error) alert('Save failed: '+error.message);
   }
 
   const sortedFuelings = [...(fuelings || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -243,7 +256,8 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
               <div>Team</div>
               <div>Notes</div>
             </div>
-            {sortedFuelings.slice(0, 100).map(f => {
+            {sortedFuelings.slice(0, 100).map(rawF => {
+              const f = withPatch(rawF);
               const isExp = expandedFueling === f.id;
               const rdg = f.hours_reading != null ? Math.round(f.hours_reading) : (f.km_reading != null ? Math.round(f.km_reading) : null);
               // Checklist chips: derived from service_intervals_completed.
