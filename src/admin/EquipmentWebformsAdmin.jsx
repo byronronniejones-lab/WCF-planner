@@ -810,10 +810,20 @@ function FuelSupplyAdminSection() {
   }
   React.useEffect(() => { load(); }, []);
 
+  // Read-fresh-then-write avoids clobbering OTHER per-form keys when the local
+  // allMap state is stale. The data jsonb is upserted whole, so we must merge
+  // against the latest stored value rather than the cached React state.
+  async function readPerFormFresh() {
+    const {data} = await sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle();
+    return (data && data.data && typeof data.data === 'object') ? data.data : {};
+  }
+
   async function toggle(name) {
     setBusy(true);
-    const next = assigned.includes(name) ? assigned.filter(n => n !== name) : [...assigned, name];
-    const nextMap = {...allMap, 'fuel-supply': next};
+    const fresh = await readPerFormFresh();
+    const currentList = Array.isArray(fresh['fuel-supply']) ? fresh['fuel-supply'] : [];
+    const next = currentList.includes(name) ? currentList.filter(n => n !== name) : [...currentList, name];
+    const nextMap = {...fresh, 'fuel-supply': next};
     const {error} = await sb.from('webform_config').upsert({key:'per_form_team_members', data: nextMap}, {onConflict:'key'});
     setBusy(false);
     if (error) { alert('Save failed: '+error.message); return; }
@@ -823,9 +833,12 @@ function FuelSupplyAdminSection() {
   async function addMaster() {
     const n = (newName || '').trim();
     if (!n) return;
-    if (allTM.includes(n)) { alert('"' + n + '" is already in the list.'); return; }
     setBusy(true);
-    const next = [...allTM, n].sort((a, b) => a.localeCompare(b));
+    // Read fresh — local allTM might be stale.
+    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
+    const masterFresh = (masterRow && Array.isArray(masterRow.data)) ? masterRow.data : [];
+    if (masterFresh.includes(n)) { setBusy(false); alert('"' + n + '" is already in the list.'); setAllTM(masterFresh); return; }
+    const next = [...masterFresh, n].sort((a, b) => a.localeCompare(b));
     const {error} = await sb.from('webform_config').upsert({key:'team_members', data: next}, {onConflict:'key'});
     setBusy(false);
     if (error) { alert('Add failed: '+error.message); return; }
@@ -836,14 +849,18 @@ function FuelSupplyAdminSection() {
   async function removeMaster(name) {
     if (!confirm('Remove "' + name + '" from the master team-member list?\n\nThey will also be removed from every per-form selection (fuel supply, dailys, weigh-ins, equipment) where they appear. Past records by this person are NOT affected.')) return;
     setBusy(true);
-    // 1. Remove from master list.
-    const nextMaster = allTM.filter(n => n !== name);
+    // 1. Remove from master list (read fresh first to avoid clobbering).
+    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
+    const masterFresh = (masterRow && Array.isArray(masterRow.data)) ? masterRow.data : allTM;
+    const nextMaster = masterFresh.filter(n => n !== name);
     const {error: mErr} = await sb.from('webform_config').upsert({key:'team_members', data: nextMaster}, {onConflict:'key'});
     if (mErr) { setBusy(false); alert('Remove failed: '+mErr.message); return; }
-    // 2. Cascade: strip from every per_form_team_members list.
+    // 2. Cascade: strip from every per_form_team_members list. Read fresh
+    //    so toggles that landed since component mount aren't lost.
+    const fresh = await readPerFormFresh();
     const nextPerForm = {};
     let perFormChanged = false;
-    for (const [key, list] of Object.entries(allMap || {})) {
+    for (const [key, list] of Object.entries(fresh)) {
       if (Array.isArray(list)) {
         const filtered = list.filter(n => n !== name);
         nextPerForm[key] = filtered;
