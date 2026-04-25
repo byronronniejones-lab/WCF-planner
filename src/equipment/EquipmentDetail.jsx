@@ -56,6 +56,39 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
     }, 800);
   }
 
+  // Toggle an every-fillup item on a historical fueling. Adds/removes from
+  // every_fillup_check and patches the row.
+  async function toggleFillupItem(fueling, item) {
+    const current = Array.isArray(fueling.every_fillup_check) ? fueling.every_fillup_check : [];
+    const has = current.some(c => c && c.id === item.id);
+    const next = has
+      ? current.filter(c => c && c.id !== item.id)
+      : [...current, {id: item.id, label: item.label, ok: true}];
+    const {error} = await sb.from('equipment_fuelings').update({every_fillup_check: next}).eq('id', fueling.id);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+
+  // Toggle a sub-task within a recorded interval completion on a historical
+  // fueling. Updates items_completed + refreshes total_tasks from the current
+  // equipment config (tasks may have been added/removed since the original
+  // completion was recorded).
+  async function toggleIntervalTask(fueling, intervalIdx, taskId, currentTasks) {
+    const completed = Array.isArray(fueling.service_intervals_completed) ? fueling.service_intervals_completed : [];
+    const target = completed[intervalIdx];
+    if (!target) return;
+    const items = Array.isArray(target.items_completed) ? target.items_completed : [];
+    const has = items.includes(taskId);
+    const nextItems = has ? items.filter(i => i !== taskId) : [...items, taskId];
+    const totalNow = (currentTasks && currentTasks.length) || target.total_tasks || 0;
+    const next = completed.map((c, i) => i === intervalIdx
+      ? {...c, items_completed: nextItems, total_tasks: totalNow}
+      : c);
+    const {error} = await sb.from('equipment_fuelings').update({service_intervals_completed: next}).eq('id', fueling.id);
+    if (error) { alert('Save failed: '+error.message); return; }
+    onReload();
+  }
+
   const sortedFuelings = [...(fuelings || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const totalGallons = sortedFuelings.reduce((s, f) => s + (parseFloat(f.gallons) || 0), 0);
 
@@ -287,38 +320,81 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
                         <div style={{fontSize:10, color:'#9ca3af'}}>Comments</div>
                         <textarea defaultValue={stripPodioHtml(f.comments) || ''} onChange={e=>queueFuelingSave(f.id,'comments',e.target.value,'text')} rows={2} style={{fontSize:12, padding:'4px 7px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box', resize:'vertical'}}/>
                       </div>
-                      {(f.every_fillup_check||[]).length > 0 && (
-                        <div style={{marginBottom:10}}>
-                          <div style={{fontSize:11, fontWeight:700, color:'#065f46', marginBottom:4}}>Every fuel fill up checklist</div>
-                          <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
-                            {f.every_fillup_check.map((c, i) => <span key={i} style={{fontSize:10, padding:'3px 8px', borderRadius:4, background:'#d1fae5', color:'#065f46', border:'1px solid #a7f3d0'}}>{c.label || c.id}</span>)}
+                      {(() => {
+                        const allFillupItems = Array.isArray(eq.every_fillup_items) ? eq.every_fillup_items : [];
+                        const tickedIds = new Set((Array.isArray(f.every_fillup_check) ? f.every_fillup_check : []).map(c => c && c.id).filter(Boolean));
+                        // Show every configured item, plus any historic ticks for items that have since been removed from the equipment config.
+                        const knownIds = new Set(allFillupItems.map(i => i.id));
+                        const orphanTicked = (Array.isArray(f.every_fillup_check) ? f.every_fillup_check : []).filter(c => c && c.id && !knownIds.has(c.id));
+                        if (allFillupItems.length === 0 && orphanTicked.length === 0) return null;
+                        return (
+                          <div style={{marginBottom:10}}>
+                            <div style={{fontSize:11, fontWeight:700, color:'#065f46', marginBottom:4}}>Every fuel fill up checklist <span style={{color:'#6b7280', fontWeight:500, fontSize:10, marginLeft:6}}>{tickedIds.size}/{allFillupItems.length} ticked · click to toggle</span></div>
+                            <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
+                              {allFillupItems.map(item => {
+                                const ticked = tickedIds.has(item.id);
+                                return (
+                                  <button key={item.id} onClick={()=>toggleFillupItem(f, item)}
+                                    style={{fontSize:10, padding:'3px 8px', borderRadius:4, fontFamily:'inherit', cursor:'pointer',
+                                      background: ticked ? '#d1fae5' : 'white',
+                                      color: ticked ? '#065f46' : '#9ca3af',
+                                      border: '1px solid '+(ticked ? '#a7f3d0' : '#e5e7eb'),
+                                      textDecoration: ticked ? 'none' : 'line-through',
+                                    }}>
+                                    {ticked ? '✓ ' : ''}{item.label}
+                                  </button>
+                                );
+                              })}
+                              {orphanTicked.map(c => (
+                                <span key={c.id} title="Ticked at the time but item has since been removed from the equipment config" style={{fontSize:10, padding:'3px 8px', borderRadius:4, background:'#f3f4f6', color:'#6b7280', border:'1px dashed #d1d5db'}}>
+                                  ✓ {c.label || c.id} <span style={{fontStyle:'italic', opacity:.7}}>(removed)</span>
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                       {(f.service_intervals_completed||[]).length > 0 && (
                         <div style={{marginBottom:10}}>
                           {f.service_intervals_completed.map((c, i) => {
-                            // Resolve items_completed IDs → task labels using the
-                            // current equipment config (tasks are kept in service_intervals
-                            // or attachment_checklists). Falls back to raw ID if not found.
+                            // Resolve to current config so we can show ALL tasks
+                            // (ticked + missing) and let admin tick the missing
+                            // ones after the fact.
                             const iv = c.attachment_name
                               ? (eq.attachment_checklists || []).find(a => a.name === c.attachment_name && a.kind === c.kind && a.hours_or_km === c.interval)
                               : (eq.service_intervals || []).find(x => x.kind === c.kind && x.hours_or_km === c.interval);
-                            const taskById = new Map((iv?.tasks || []).map(t => [t.id, t.label]));
+                            const allTasks = (iv && Array.isArray(iv.tasks)) ? iv.tasks : [];
                             const items = Array.isArray(c.items_completed) ? c.items_completed : [];
-                            const totalNow = iv?.tasks?.length || c.total_tasks || 0;
+                            const tickedSet = new Set(items);
+                            const totalNow = allTasks.length || c.total_tasks || 0;
                             const isFull = totalNow > 0 && items.length >= totalNow;
+                            const knownIds = new Set(allTasks.map(t => t.id));
+                            const orphanIds = items.filter(id => !knownIds.has(id));
                             return (
                               <div key={i} style={{marginBottom:8, padding:'8px 10px', background:'white', border:'1px solid '+(isFull?'#bfdbfe':'#fde68a'), borderRadius:6}}>
                                 <div style={{fontSize:11, fontWeight:700, color:isFull?'#1e40af':'#92400e', marginBottom:4}}>
                                   {c.attachment_name ? c.attachment_name+' — ' : ''}{c.label || (c.interval+c.kind.charAt(0))}
-                                  <span style={{fontSize:10, fontWeight:500, marginLeft:8, color:'#6b7280'}}>{items.length}/{totalNow} tasks {isFull?'· full':(items.length>0?'· partial':'')}</span>
+                                  <span style={{fontSize:10, fontWeight:500, marginLeft:8, color:'#6b7280'}}>{items.length}/{totalNow} tasks {isFull?'· full':(items.length>0?'· partial':'')} · click to toggle</span>
                                 </div>
-                                {items.length > 0 && (
+                                {(allTasks.length > 0 || orphanIds.length > 0) && (
                                   <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
-                                    {items.map((id, ii) => (
-                                      <span key={ii} style={{fontSize:10, padding:'3px 8px', borderRadius:4, background:'#eff6ff', color:'#1e40af', border:'1px solid #bfdbfe'}}>
-                                        {taskById.get(id) || id}
+                                    {allTasks.map(t => {
+                                      const ticked = tickedSet.has(t.id);
+                                      return (
+                                        <button key={t.id} onClick={()=>toggleIntervalTask(f, i, t.id, allTasks)}
+                                          style={{fontSize:10, padding:'3px 8px', borderRadius:4, fontFamily:'inherit', cursor:'pointer',
+                                            background: ticked ? '#eff6ff' : 'white',
+                                            color: ticked ? '#1e40af' : '#9ca3af',
+                                            border: '1px solid '+(ticked ? '#bfdbfe' : '#fde68a'),
+                                            textDecoration: ticked ? 'none' : 'line-through',
+                                          }}>
+                                          {ticked ? '✓ ' : ''}{t.label}
+                                        </button>
+                                      );
+                                    })}
+                                    {orphanIds.map(id => (
+                                      <span key={id} title="Ticked at the time but task has since been removed from the equipment config" style={{fontSize:10, padding:'3px 8px', borderRadius:4, background:'#f3f4f6', color:'#6b7280', border:'1px dashed #d1d5db'}}>
+                                        ✓ {id} <span style={{fontStyle:'italic', opacity:.7}}>(removed)</span>
                                       </span>
                                     ))}
                                   </div>
