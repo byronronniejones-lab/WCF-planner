@@ -245,17 +245,17 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
       const intervals = Array.isArray(eq.service_intervals) ? eq.service_intervals : [];
       const completions = equipmentCompletions[eq.id] || [];
 
-      // Each overdue interval = its own row.
+      // Each overdue interval = its own row. NOT manually clearable — only
+      // auto-clears when an operator completes the checklist on a fueling
+      // (which moves the next-due milestone past current reading).
       if (Number.isFinite(currentReading) && currentReading > 0 && intervals.length > 0) {
         const statuses = computeIntervalStatus(intervals, completions, currentReading);
         const overdue = statuses.filter(s => s.overdue).sort((a, b) => a.hours_or_km - b.hours_or_km);
         for (const s of overdue) {
           const over = currentReading - s.next_due;
           const intervalLbl = s.label || (s.hours_or_km + unitLabel + ' service');
-          const key = `equip-overdue-${eq.id}|${s.kind}|${s.hours_or_km}`;
-          if (missedCleared.has(key)) continue;
           equipmentAttention.push({
-            key,
+            key: `equip-overdue-${eq.id}|${s.kind}|${s.hours_or_km}`,
             kind: 'overdue',
             slug: eq.slug,
             label: eq.name,
@@ -285,16 +285,14 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
           const maxStreak = Math.max(...itemsWithStreak.map(i => i.streak));
           const sample = itemsWithStreak.slice(0, 2).map(i => i.label).join(', ');
           const more = itemsWithStreak.length > 2 ? ` +${itemsWithStreak.length - 2} more` : '';
-          const key = `equip-fillup-${eq.id}|streak${maxStreak}|n${itemsWithStreak.length}`;
-          if (!missedCleared.has(key)) {
-            equipmentAttention.push({
-              key,
-              kind: 'fillup_streak',
-              slug: eq.slug,
-              label: eq.name,
-              detail: `${itemsWithStreak.length} fillup item${itemsWithStreak.length===1?'':'s'} skipped (${maxStreak}× max streak): ${sample}${more}`,
-            });
-          }
+          // Auto-clears when next fueling ticks every previously-missed item.
+          equipmentAttention.push({
+            key: `equip-fillup-${eq.id}|streak${maxStreak}|n${itemsWithStreak.length}`,
+            kind: 'fillup_streak',
+            slug: eq.slug,
+            label: eq.name,
+            detail: `${itemsWithStreak.length} fillup item${itemsWithStreak.length===1?'':'s'} skipped (${maxStreak}× max streak): ${sample}${more}`,
+          });
         }
       }
 
@@ -306,16 +304,15 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
           if (d > 0)       detail = `Warranty expired ${d} day${d === 1 ? '' : 's'} ago`;
           else if (d === 0) detail = 'Warranty expires today';
           else             detail = `Warranty expires in ${-d} day${-d === 1 ? '' : 's'}`;
-          const key = `equip-warranty-${eq.id}|${eq.warranty_expiration}`;
-          if (!missedCleared.has(key)) {
-            equipmentAttention.push({
-              key,
-              kind: 'warranty',
-              slug: eq.slug,
-              label: eq.name,
-              detail,
-            });
-          }
+          // Not manually clearable. Auto-clears only if admin updates
+          // warranty_expiration on the equipment row.
+          equipmentAttention.push({
+            key: `equip-warranty-${eq.id}|${eq.warranty_expiration}`,
+            kind: 'warranty',
+            slug: eq.slug,
+            label: eq.name,
+            detail,
+          });
         }
       }
     });
@@ -495,13 +492,13 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
             </div>
           )}
 
-{/* ── Equipment Attention ── overdue intervals + every-fillup streaks + warranty */}
+{/* ── Equipment Attention ── overdue intervals + every-fillup streaks + warranty.
+              NOT manually clearable. Each row auto-clears when its underlying
+              state resolves: interval ticked complete on a fueling, every-fillup
+              items ticked on next fueling, or warranty_expiration updated. */}
           {equipmentAttention.length>0&&(
             <div>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:600,color:'#92400e',letterSpacing:.3}}>🔧 EQUIPMENT ATTENTION</div>
-                <button onClick={()=>clearAllMissed(equipmentAttention.map(a=>a.key))} style={{fontSize:11,color:'#6b7280',background:'none',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit'}}>Clear all</button>
-              </div>
+              <div style={{fontSize:13,fontWeight:600,color:'#92400e',letterSpacing:.3,marginBottom:8}}>🔧 EQUIPMENT ATTENTION</div>
               <div style={{display:'flex',flexDirection:'column',gap:6}}>
                 {equipmentAttention.map(a=>{
                   const palette = a.kind === 'overdue'
@@ -517,7 +514,6 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                         <div style={{fontSize:13,fontWeight:600,color:palette.tx}}>{a.label}</div>
                         <div style={{fontSize:11,color:'#9ca3af'}}>{a.detail}</div>
                       </div>
-                      <button onClick={e=>{e.stopPropagation();clearMissedEntry(a.key);}} style={{fontSize:11,color:'#6b7280',background:'white',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Clear</button>
                     </div>
                   );
                 })}
