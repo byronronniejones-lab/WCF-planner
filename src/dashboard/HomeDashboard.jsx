@@ -304,15 +304,18 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
           if (d > 0)       detail = `Warranty expired ${d} day${d === 1 ? '' : 's'} ago`;
           else if (d === 0) detail = 'Warranty expires today';
           else             detail = `Warranty expires in ${-d} day${-d === 1 ? '' : 's'}`;
-          // Not manually clearable. Auto-clears only if admin updates
-          // warranty_expiration on the equipment row.
-          equipmentAttention.push({
-            key: `equip-warranty-${eq.id}|${eq.warranty_expiration}`,
-            kind: 'warranty',
-            slug: eq.slug,
-            label: eq.name,
-            detail,
-          });
+          // Warranty IS manually clearable — no checklist resolves it. Admin
+          // dismisses with the Clear button or by updating the warranty date.
+          const key = `equip-warranty-${eq.id}|${eq.warranty_expiration}`;
+          if (!missedCleared.has(key)) {
+            equipmentAttention.push({
+              key,
+              kind: 'warranty',
+              slug: eq.slug,
+              label: eq.name,
+              detail,
+            });
+          }
         }
       }
     });
@@ -506,6 +509,7 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                     : a.kind === 'fillup_streak'
                       ? {bg:'#fffbeb', bd:'#fde68a', tx:'#92400e', icon:'⛽'}
                       : {bg:'#fef3c7', bd:'#fcd34d', tx:'#92400e', icon:'🛡'};
+                  const isClearable = a.kind === 'warranty';
                   return (
                     <div key={a.key} onClick={()=>navigate(a.kind==='fillup_streak'?'/fueling/'+a.slug:'/equipment/'+a.slug)}
                       style={{background:palette.bg,border:'1px solid '+palette.bd,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
@@ -514,6 +518,9 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                         <div style={{fontSize:13,fontWeight:600,color:palette.tx}}>{a.label}</div>
                         <div style={{fontSize:11,color:'#9ca3af'}}>{a.detail}</div>
                       </div>
+                      {isClearable && (
+                        <button onClick={e=>{e.stopPropagation();clearMissedEntry(a.key);}} style={{fontSize:11,color:'#6b7280',background:'white',border:'1px solid #d1d5db',borderRadius:6,padding:'3px 10px',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Clear</button>
+                      )}
                     </div>
                   );
                 })}
