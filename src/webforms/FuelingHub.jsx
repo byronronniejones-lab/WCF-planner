@@ -28,8 +28,7 @@ export default function FuelingHub({sb}) {
   const path = location.pathname;
   let subRoute = 'hub';
   let slug = null;
-  if (path === '/fueling/quick') subRoute = 'quick';
-  else if (path === '/fueling/supply') subRoute = 'supply';
+  if (path === '/fueling/supply') subRoute = 'supply';
   else if (path.startsWith('/fueling/')) {
     slug = path.slice('/fueling/'.length);
     subRoute = 'form';
@@ -75,11 +74,6 @@ export default function FuelingHub({sb}) {
     return <EquipmentFuelingWebform sb={sb} equipment={eq} onBack={()=>navigate('/fueling')}/>;
   }
 
-  if (subRoute === 'quick') {
-    // Quick Fuel Log — same form but prompts user to pick equipment at top.
-    return <EquipmentFuelingWebform sb={sb} equipment={null} equipmentList={equipment} onBack={()=>navigate('/fueling')}/>;
-  }
-
   if (subRoute === 'supply') {
     return <FuelSupplyWebform sb={sb} onBack={()=>navigate('/fueling')}/>;
   }
@@ -120,15 +114,10 @@ export default function FuelingHub({sb}) {
             <span style={{fontSize:13, fontWeight:700, color:'#92400e', textTransform:'uppercase', letterSpacing:.4}}>Other</span>
           </div>
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8}}>
-            <button onClick={()=>navigate('/fueling/quick')}
-              style={{background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'14px 14px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}}>
-              <div style={{fontSize:14, fontWeight:700, color:'#92400e'}}>⛽ Quick Fuel Log</div>
-              <div style={{fontSize:11, color:'#92400e', opacity:.8}}>Fast entry, no checklist</div>
-            </button>
             <button onClick={()=>navigate('/fueling/supply')}
               style={{background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'14px 14px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}}>
               <div style={{fontSize:14, fontWeight:700, color:'#92400e'}}>⛽ Fuel Supply Log</div>
-              <div style={{fontSize:11, color:'#92400e', opacity:.8}}>Use when there's no checklist for what's being filled</div>
+              <div style={{fontSize:11, color:'#92400e', opacity:.8}}>Mobile fuel cell, gas cans, off-checklist trucks</div>
             </button>
           </div>
         </div>
