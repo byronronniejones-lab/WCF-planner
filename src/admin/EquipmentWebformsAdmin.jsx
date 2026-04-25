@@ -795,6 +795,7 @@ function FuelSupplyAdminSection() {
   const [allMap, setAllMap] = React.useState({});
   const [busy, setBusy] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
+  const [newName, setNewName] = React.useState('');
 
   async function load() {
     const [{data: master}, {data: pf}] = await Promise.all([
@@ -819,28 +820,84 @@ function FuelSupplyAdminSection() {
     setAssigned(next); setAllMap(nextMap);
   }
 
+  async function addMaster() {
+    const n = (newName || '').trim();
+    if (!n) return;
+    if (allTM.includes(n)) { alert('"' + n + '" is already in the list.'); return; }
+    setBusy(true);
+    const next = [...allTM, n].sort((a, b) => a.localeCompare(b));
+    const {error} = await sb.from('webform_config').upsert({key:'team_members', data: next}, {onConflict:'key'});
+    setBusy(false);
+    if (error) { alert('Add failed: '+error.message); return; }
+    setAllTM(next);
+    setNewName('');
+  }
+
+  async function removeMaster(name) {
+    if (!confirm('Remove "' + name + '" from the master team-member list?\n\nThey will also be removed from every per-form selection (fuel supply, dailys, weigh-ins, equipment) where they appear. Past records by this person are NOT affected.')) return;
+    setBusy(true);
+    // 1. Remove from master list.
+    const nextMaster = allTM.filter(n => n !== name);
+    const {error: mErr} = await sb.from('webform_config').upsert({key:'team_members', data: nextMaster}, {onConflict:'key'});
+    if (mErr) { setBusy(false); alert('Remove failed: '+mErr.message); return; }
+    // 2. Cascade: strip from every per_form_team_members list.
+    const nextPerForm = {};
+    let perFormChanged = false;
+    for (const [key, list] of Object.entries(allMap || {})) {
+      if (Array.isArray(list)) {
+        const filtered = list.filter(n => n !== name);
+        nextPerForm[key] = filtered;
+        if (filtered.length !== list.length) perFormChanged = true;
+      } else {
+        nextPerForm[key] = list;
+      }
+    }
+    if (perFormChanged) {
+      const {error: pfErr} = await sb.from('webform_config').upsert({key:'per_form_team_members', data: nextPerForm}, {onConflict:'key'});
+      if (pfErr) { setBusy(false); alert('Per-form cleanup failed: '+pfErr.message); return; }
+    }
+    // 3. Cascade: strip from every equipment.team_members array.
+    const {data: eqs} = await sb.from('equipment').select('id,team_members');
+    const hits = (eqs || []).filter(e => Array.isArray(e.team_members) && e.team_members.includes(name));
+    for (const e of hits) {
+      const filtered = e.team_members.filter(n => n !== name);
+      await sb.from('equipment').update({team_members: filtered}).eq('id', e.id);
+    }
+    setBusy(false);
+    setAllTM(nextMaster);
+    setAssigned(prev => prev.filter(n => n !== name));
+    setAllMap(nextPerForm);
+  }
+
   return (
     <div style={{...card, background:'#fffbeb', borderColor:'#fde68a'}}>
-      <div style={sectionTitle}>⛽ Fuel Supply Webform <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Public form at /fueling/supply · pick which team members appear in the dropdown</span></div>
+      <div style={sectionTitle}>⛽ Fuel Supply Webform <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Public form at /fueling/supply · click a name to assign · ✕ removes from master list</span></div>
       {!loaded && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>Loading…</div>}
-      {loaded && allTM.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No team members in master list yet.</div>}
-      {loaded && allTM.length > 0 && (
+      {loaded && (
         <>
-          <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:8}}>
-            {allTM.map(name => {
-              const on = assigned.includes(name);
-              return (
-                <button key={name} onClick={()=>toggle(name)} disabled={busy}
-                  style={{fontSize:12, padding:'5px 11px', borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontWeight:on?600:400, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>
-                  {on ? '✓ ' : ''}{name}
-                </button>
-              );
-            })}
+          {allTM.length > 0 && (
+            <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:10}}>
+              {allTM.map(name => {
+                const on = assigned.includes(name);
+                return (
+                  <span key={name} style={{display:'inline-flex', alignItems:'center', fontSize:12, borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontWeight:on?600:400, overflow:'hidden'}}>
+                    <button onClick={()=>toggle(name)} disabled={busy} style={{fontSize:12, padding:'5px 11px', border:'none', background:'transparent', color:'inherit', fontWeight:'inherit', cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>
+                      {on ? '✓ ' : ''}{name}
+                    </button>
+                    <button onClick={()=>removeMaster(name)} disabled={busy} title={'Remove "'+name+'" from master list (cascades to all forms + equipment)'} style={{padding:'5px 8px 5px 2px', border:'none', borderLeft:'1px solid '+(on?'#a7f3d0':'#e5e7eb'), background:'transparent', color:'#9ca3af', cursor:busy?'not-allowed':'pointer', fontSize:13, lineHeight:1, fontFamily:'inherit'}}>×</button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:6, padding:10, background:'rgba(255,255,255,.6)', borderRadius:6, border:'1px dashed #d1d5db', marginBottom:8}}>
+            <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="New team member name (e.g. COTY)" onKeyDown={e=>{if(e.key==='Enter') addMaster();}} style={inpS}/>
+            <button onClick={addMaster} disabled={busy || !newName.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newName.trim())?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newName.trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
           </div>
           <div style={{fontSize:11, color:'#92400e', fontStyle:'italic'}}>
             {assigned.length === 0
-              ? 'Empty selection → form falls back to the master team-member list.'
-              : assigned.length + ' selected · only these names show in the form.'}
+              ? 'No names ✓-assigned → /fueling/supply falls back to the full master list.'
+              : assigned.length + ' assigned · only these show on the public form.'}
           </div>
         </>
       )}
