@@ -59,13 +59,18 @@ export function computeIntervalStatus(intervals, completions, currentReading) {
     const lastR = milestoneSatisfiedRaw.get(key) || null;
     const nextDue = lastM > 0 ? lastM + iv.hours_or_km : iv.hours_or_km;
     const overdue = currentReading != null && currentReading > nextDue;
+    // Round to 1 decimal to dodge float-subtraction garbage
+    // (e.g. 550 - 509.3 producing 40.69999999999999).
+    const untilDue = currentReading != null
+      ? Math.round((nextDue - currentReading) * 10) / 10
+      : null;
     return {
       ...iv,
       last_at_reading: lastR,
       last_satisfied_milestone: lastM > 0 ? lastM : null,
       next_due: nextDue,
       overdue: !!overdue,
-      until_due: currentReading != null ? nextDue - currentReading : null,
+      until_due: untilDue,
     };
   });
 }
