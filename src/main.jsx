@@ -1151,11 +1151,29 @@ function App(){
         ...(weighinsBySpecies.pig||[]),
         ...(weighinsBySpecies.broiler||[]),
       ])].sort();
-      const allTeamMembers = [...new Set([
+      // Master team_members must NOT be reset to the union — admin can add
+      // names directly in /admin > Equipment > Fuel Supply Webform that
+      // aren't yet attached to any webform's teamMembers. Preserve those by
+      // merging the derived union INTO the existing stored master.
+      const derivedUnion = [...new Set([
         ...(cfg.webforms||[]).flatMap(wf=>wf.teamMembers||[]),
         ...weighinsUnion,
-      ])].sort();
+      ])];
+      const {data: existingMasterRow} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
+      const existingMaster = (existingMasterRow && Array.isArray(existingMasterRow.data)) ? existingMasterRow.data : [];
+      const allTeamMembers = [...new Set([...existingMaster, ...derivedUnion])].sort();
+      // per_form_team_members has keys for each webform AND for non-webform
+      // forms like 'fuel-supply'. Preserve any keys not derived from webforms
+      // so the fuel-supply selection set survives across syncs.
+      const {data: existingPfRow} = await sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle();
+      const existingPf = (existingPfRow && existingPfRow.data && typeof existingPfRow.data === 'object') ? existingPfRow.data : {};
+      const knownWfIds = new Set((cfg.webforms||[]).map(wf=>wf.id));
       const perFormTeamMembers = {};
+      // Carry over any keys not owned by a webform (fuel-supply etc.).
+      for (const [k, v] of Object.entries(existingPf)) {
+        if (!knownWfIds.has(k)) perFormTeamMembers[k] = v;
+      }
+      // Then overwrite/add the per-webform entries.
       (cfg.webforms||[]).forEach(wf=>{ perFormTeamMembers[wf.id]=wf.teamMembers||[]; });
       // Use explicit batchData param to avoid stale closure — batches state may not be set yet
       const batchList = batchData || batches || [];
