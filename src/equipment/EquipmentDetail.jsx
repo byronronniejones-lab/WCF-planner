@@ -150,12 +150,29 @@ export default function EquipmentDetail({sb, fmt, equipment, fuelings, maintenan
               const color = iv.overdue ? '#b91c1c' : '#92400e';
               const bg    = iv.overdue ? '#fef2f2' : '#fffbeb';
               const bd    = iv.overdue ? '#fca5a5' : '#fde68a';
+              const unitChar = iv.kind.charAt(0);
+              // Show what was last done on this interval, if anything. The
+              // raw reading is when the operator actually did the work; the
+              // snapped milestone is which scheduled milestone it satisfied.
+              // When they differ (early or late completion) show both for
+              // transparency on the next-due math.
+              const lastRaw = iv.last_at_reading;
+              const lastMilestone = iv.last_satisfied_milestone;
               return (
                 <div key={iv.kind+'-'+iv.hours_or_km} style={{background:bg, border:'1px solid '+bd, borderRadius:8, padding:'8px 10px', fontSize:11}}>
                   <div style={{fontWeight:700, color:color, fontSize:12}}>{iv.label}</div>
-                  <div style={{color:'#6b7280', marginTop:2}}>Next at <strong>{iv.next_due.toLocaleString()}{iv.kind.charAt(0)}</strong></div>
+                  <div style={{color:'#6b7280', marginTop:2}}>Next at <strong>{iv.next_due.toLocaleString()}{unitChar}</strong></div>
                   {iv.until_due != null && (
-                    <div style={{color:color, fontWeight:600, marginTop:2}}>{iv.overdue ? 'OVERDUE by '+Math.abs(iv.until_due)+iv.kind.charAt(0) : iv.until_due+iv.kind.charAt(0)+' away'}</div>
+                    <div style={{color:color, fontWeight:600, marginTop:2}}>{iv.overdue ? 'OVERDUE by '+Math.abs(iv.until_due)+unitChar : iv.until_due+unitChar+' away'}</div>
+                  )}
+                  {lastRaw != null && (
+                    <div style={{color:'#6b7280', marginTop:6, paddingTop:6, borderTop:'1px solid '+bd, fontSize:10}}>
+                      Last done at <strong>{Math.round(lastRaw).toLocaleString()}{unitChar}</strong>
+                      {lastMilestone && Math.round(lastRaw) !== lastMilestone && <> · counted as {lastMilestone.toLocaleString()}{unitChar}</>}
+                    </div>
+                  )}
+                  {lastRaw == null && (
+                    <div style={{color:'#9ca3af', marginTop:6, paddingTop:6, borderTop:'1px solid '+bd, fontSize:10, fontStyle:'italic'}}>Never completed</div>
                   )}
                 </div>
               );
