@@ -166,6 +166,49 @@ export function pigTripPigsAttributed(trips) {
   return n;
 }
 
+// FCR (feed conversion ratio) for a pig feeder group: adjusted feed
+// (raw − transfer credits) ÷ total live weight produced by completed trips.
+// Returns null when no trips have happened yet — caller falls back to the
+// industry default (3.5).
+//
+// Same accounting frame as the post-overhaul lbs-per-pig math: numerator
+// excludes feed credited to transferred-to-breeding pigs (their feed left
+// with them), denominator excludes those pigs (they didn't go to processor).
+//
+// `dailysForName` is a closure-captured helper from PigBatchesView that
+// matches a sub-batch / parent name against pig_dailys rows. Lifted as an
+// arg so this helper stays React-free.
+export function computePigBatchFCR(group, dailysForName, breeders) {
+  if (!group) return null;
+  const trips = group.processingTrips || [];
+  let totalLive = 0;
+  for (const t of trips) {
+    const wts = (t.liveWeights || '').split(/[\s,]+/).map(parseFloat).filter(v => !isNaN(v) && v > 0);
+    totalLive += wts.reduce((a,b) => a + b, 0);
+  }
+  if (!(totalLive > 0)) return null;
+  const subs = group.subBatches || [];
+  let rawFeed = parseFloat(group.legacyFeedLbs) || 0;
+  if (subs.length > 0) {
+    for (const sb of subs) {
+      rawFeed += parseFloat(sb.legacyFeedLbs) || 0;
+      const rows = (typeof dailysForName === 'function') ? (dailysForName(sb.name) || []) : [];
+      for (const d of rows) rawFeed += parseFloat(d.feed_lbs) || 0;
+    }
+  } else {
+    const rows = (typeof dailysForName === 'function') ? (dailysForName(group.batchName) || []) : [];
+    for (const d of rows) rawFeed += parseFloat(d.feed_lbs) || 0;
+  }
+  // Transfer credit: prefer sum-of-subs from the breeders[] audit log
+  // (canonical, per-sub split). Fall back to parent.feedAllocatedToTransfers
+  // for parent-only batches that never had subs.
+  const agg = pigTransfersForBatch(breeders, group.batchName);
+  const credit = agg.feedAllocLbs > 0 ? agg.feedAllocLbs : (parseFloat(group.feedAllocatedToTransfers) || 0);
+  const adjFeed = Math.max(0, rawFeed - credit);
+  if (!(adjFeed > 0)) return null;
+  return Math.round((adjFeed / totalLive) * 1000) / 1000;
+}
+
 export function pigMortalityForSub(group, subName) {
   let n = 0;
   for (const m of (group && group.pigMortalities || [])) {

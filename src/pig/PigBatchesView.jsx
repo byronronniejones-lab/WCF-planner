@@ -23,6 +23,7 @@ import {
   pigTripPigsAttributed,
   pigMortalityForSub,
   pigMortalityForBatch,
+  computePigBatchFCR,
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -396,7 +397,19 @@ export default function PigBatchesView({
         const trip = {...existing, ...tripFormNum, id: tripId};
         const updated = currentTripId ? trips.map(t=>t.id===currentTripId?trip:t) : [...trips,trip];
         updated.sort((a,b)=>a.date.localeCompare(b.date));
-        return {...g, processingTrips:updated};
+        const next = {...g, processingTrips:updated};
+        // Stamp parent.fcrCached so Transfer-to-Breeding (which reads it
+        // from the persisted record) gets the real adjusted-feed / total-
+        // live-weight ratio instead of falling back to the 3.5 industry
+        // default. Recomputed here on every trip add/edit because the
+        // numerator (raw feed) and denominator (trip live wt) both change
+        // when trips change. If the helper returns null (no valid trips
+        // remaining, or rawFeed <= credits), CLEAR the cache so the transfer
+        // flow falls back to the default rather than using a stale ratio.
+        const fcr = computePigBatchFCR(next, dailysForName, breeders);
+        if (fcr != null) next.fcrCached = fcr;
+        else delete next.fcrCached;
+        return next;
       });
       persistFeeders(nb);
       if(!editTripId) setEditTripId(tripId);
@@ -424,7 +437,15 @@ export default function PigBatchesView({
       confirmDelete("Delete this processing trip? This cannot be undone.",()=>{
         const nb = feederGroups.map(g=>{
           if(g.id!==batchId) return g;
-          return {...g, processingTrips:(g.processingTrips||[]).filter(t=>t.id!==tripId)};
+          const next = {...g, processingTrips:(g.processingTrips||[]).filter(t=>t.id!==tripId)};
+          // Recompute fcrCached after the trip's live weight is removed.
+          // If no valid trips remain, CLEAR the cache so the transfer flow
+          // falls back to the 3.5 industry default rather than driving
+          // future allocations off a stale ratio.
+          const fcr = computePigBatchFCR(next, dailysForName, breeders);
+          if (fcr != null) next.fcrCached = fcr;
+          else delete next.fcrCached;
+          return next;
         });
         persistFeeders(nb);
       });
