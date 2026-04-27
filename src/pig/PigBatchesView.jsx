@@ -183,7 +183,10 @@ export default function PigBatchesView({
       const nb = feederGroups.map(g=>{
         if(g.id!==batchId) return g;
         const subs = g.subBatches||[];
-        const sub = {id:subId, status:"active", ...subFormNum};
+        // Preserve status (sticky processed flag) + any other ad-hoc fields
+        // on the existing sub. Form fields override; id is pinned last.
+        const existing = currentSubId ? (subs.find(s=>s.id===currentSubId) || {}) : {};
+        const sub = {status:"active", ...existing, ...subFormNum, id:subId};
         const updated = currentSubId ? subs.map(s=>s.id===currentSubId?sub:s) : [...subs,sub];
         return {...g, subBatches:updated};
       });
