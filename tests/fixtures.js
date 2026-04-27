@@ -1,5 +1,6 @@
 import { test as base } from '@playwright/test';
 import { getTestAdminClient, resetTestDatabase } from './setup/reset.js';
+import { seedP2601Scenario } from './scenarios/p2601_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -24,6 +25,15 @@ export const test = base.extend({
     await use(async () => {
       await resetTestDatabase();
     });
+  },
+  // p2601Scenario — resets the test DB then seeds the P-26-01 pig batch
+  // scenario fresh for the spec. beforeEach-style isolation per Codex's
+  // A4 review (pick beforeEach reset + reseed; accumulating state would
+  // make accounting regressions harder to interpret).
+  p2601Scenario: async ({ supabaseAdmin }, use) => {
+    await resetTestDatabase();
+    const ids = await seedP2601Scenario(supabaseAdmin);
+    await use(ids);
   },
 });
 
