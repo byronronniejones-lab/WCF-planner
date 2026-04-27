@@ -88,3 +88,138 @@ export function calcCycleStatus(cycle) {
   if(today > tl.growEnd) return 'completed';
   return 'active';
 }
+
+// ── PIG BATCH LEDGER HELPERS ────────────────────────────────────────────────
+// Sub-batches are partitions of their parent feeder group. "Started counts"
+// (giltCount/boarCount/originalPigCount on both parent and sub) are
+// authoritative — they record what entered the batch. Transfers, processing
+// trips, and mortality are events recorded in audit logs (breeders[],
+// processingTrips, pigMortalities). "Current" is derived ledger-style from
+// started − Σ events.
+
+export function pigSlug(s) {
+  return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+}
+
+// Resolve a session.batch_id (slug or exact name) to a sub-batch id on the
+// parent feeder group. Returns null if no match.
+export function resolveSubByBatchId(parentGroup, batchId) {
+  if (!batchId || !parentGroup || !Array.isArray(parentGroup.subBatches)) return null;
+  const s = pigSlug(batchId);
+  for (const sb of parentGroup.subBatches) {
+    if (pigSlug(sb.name) === s) return sb.id;
+  }
+  return null;
+}
+
+// Sum breeders[] transferred from a specific sub of a specific parent batch.
+// Returns {count, feedAllocLbs, gilts, boars}.
+export function pigTransfersForSub(breeders, parentBatchName, subBatchName) {
+  const out = {count: 0, feedAllocLbs: 0, gilts: 0, boars: 0};
+  if (!Array.isArray(breeders)) return out;
+  for (const b of breeders) {
+    if (!b || !b.transferredFromBatch) continue;
+    if (b.transferredFromBatch.batchName !== parentBatchName) continue;
+    if (b.transferredFromBatch.subBatchName !== subBatchName) continue;
+    out.count++;
+    out.feedAllocLbs += parseFloat(b.transferredFromBatch.feedAllocationLbs)||0;
+    if (b.sex === 'Boar') out.boars++; else out.gilts++;
+  }
+  return out;
+}
+
+// Aggregated to the parent (any sub).
+export function pigTransfersForBatch(breeders, parentBatchName) {
+  const out = {count: 0, feedAllocLbs: 0, gilts: 0, boars: 0};
+  if (!Array.isArray(breeders)) return out;
+  for (const b of breeders) {
+    if (!b || !b.transferredFromBatch) continue;
+    if (b.transferredFromBatch.batchName !== parentBatchName) continue;
+    out.count++;
+    out.feedAllocLbs += parseFloat(b.transferredFromBatch.feedAllocationLbs)||0;
+    if (b.sex === 'Boar') out.boars++; else out.gilts++;
+  }
+  return out;
+}
+
+// Sum trip pigs attributed to a specific sub via trip.subAttributions.
+export function pigTripPigsForSub(trips, subId) {
+  if (!Array.isArray(trips)) return 0;
+  let n = 0;
+  for (const t of trips) {
+    const atts = t && Array.isArray(t.subAttributions) ? t.subAttributions : [];
+    for (const a of atts) if (a && a.subId === subId) n += parseInt(a.count)||0;
+  }
+  return n;
+}
+
+// Total trip pigs across all subAttributions (sum may be < trip.pigCount
+// when legacy trips have no attribution; the unattributed remainder is the
+// difference).
+export function pigTripPigsAttributed(trips) {
+  if (!Array.isArray(trips)) return 0;
+  let n = 0;
+  for (const t of trips) {
+    const atts = t && Array.isArray(t.subAttributions) ? t.subAttributions : [];
+    for (const a of atts) n += parseInt(a.count)||0;
+  }
+  return n;
+}
+
+export function pigMortalityForSub(group, subName) {
+  let n = 0;
+  for (const m of (group && group.pigMortalities || [])) {
+    if (m && m.sub_batch_name === subName) n += parseInt(m.count)||0;
+  }
+  return n;
+}
+export function pigMortalityForBatch(group) {
+  let n = 0;
+  for (const m of (group && group.pigMortalities || [])) n += parseInt(m.count)||0;
+  return n;
+}
+
+// Reconcile sub-batches against parent. Auto-load repair is intentionally
+// NARROW: it only enforces the deterministic invariant
+//   sub.originalPigCount === sub.giltCount + sub.boarCount
+// for subs whose sum-of-gilts and sum-of-boars already match the parent.
+//
+// When sub totals don't match the parent (sex-specific: sum giltCount === parent
+// giltCount AND sum boarCount === parent boarCount), the function does NOT
+// redistribute counts automatically — that's a structural decision an admin
+// must make via the parent partition UI. We log a console warning per
+// mismatched batch so the inconsistency is visible in dev tools without a
+// silent prod rewrite.
+//
+// Returns {changed, groups, warnings} so callers can surface unresolved
+// mismatches to the user.
+export function reconcileFeederGroupsFromBreeders(feederGroups) {
+  let changed = false;
+  const warnings = [];
+  const groups = (feederGroups||[]).map(g => {
+    const subs = g.subBatches || [];
+    if (subs.length === 0) return g;
+    const sumGilts = subs.reduce((s,sb)=>s+(parseInt(sb.giltCount)||0), 0);
+    const sumBoars = subs.reduce((s,sb)=>s+(parseInt(sb.boarCount)||0), 0);
+    const parentGilts = parseInt(g.giltCount)||0;
+    const parentBoars = parseInt(g.boarCount)||0;
+    if (sumGilts !== parentGilts || sumBoars !== parentBoars) {
+      const msg = '[reconcile] '+(g.batchName||g.id)+' sub totals don\'t match parent: gilts '+sumGilts+'/'+parentGilts+', boars '+sumBoars+'/'+parentBoars+' (skipped — admin to resolve via partition UI)';
+      warnings.push(msg);
+      if (typeof console !== 'undefined' && console.warn) console.warn(msg);
+      return g;
+    }
+    // Sex sums match — only enforce the OPC = gilt+boar invariant. This
+    // is a deterministic, lossless rewrite (every sub has a single right
+    // answer and we're rewriting only that field).
+    let needsOPC = false;
+    const newSubs = subs.map(sb => {
+      const opc = (parseInt(sb.giltCount)||0) + (parseInt(sb.boarCount)||0);
+      if ((parseInt(sb.originalPigCount)||0) !== opc) { needsOPC = true; return {...sb, originalPigCount: opc}; }
+      return sb;
+    });
+    if (needsOPC) { changed = true; return {...g, subBatches: newSubs}; }
+    return g;
+  });
+  return {changed, groups, warnings};
+}

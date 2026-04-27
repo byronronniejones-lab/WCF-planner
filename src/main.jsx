@@ -109,7 +109,7 @@ import { DEFAULT_WEBFORMS_CONFIG } from './lib/defaults.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
 import { BROODER_DAYS, CC_SCHOONER, WR_SCHOONER, WEEKS_SHOWN, LEGACY_BREEDS, RESOURCES, BREED_STYLE, STATUS_STYLE, BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps, STATUSES, ALL_HATCHERIES, LEGACY_HATCHERIES, getFeedSchedule, calcBatchFeed, calcBatchFeedForMonth, calcLayerFeedForMonth, calcTimeline, calcPoultryStatus, calcBroilerStatsFromDailys, getBatchColor, breedLabel, isNearHoliday, calcTargetHatch, suggestHatchDates } from './lib/broiler.js';
-import { BOAR_EXPOSURE_DAYS, GESTATION_DAYS, WEANING_DAYS, GROW_OUT_DAYS, PIG_GROUPS, BREEDING_STATUSES, PIG_GROUP_COLORS, PIG_GROUP_TEXT, PHASE_LABELS, calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus } from './lib/pig.js';
+import { BOAR_EXPOSURE_DAYS, GESTATION_DAYS, WEANING_DAYS, GROW_OUT_DAYS, PIG_GROUPS, BREEDING_STATUSES, PIG_GROUP_COLORS, PIG_GROUP_TEXT, PHASE_LABELS, calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus, reconcileFeederGroupsFromBreeders } from './lib/pig.js';
 import { detectConflicts } from './lib/conflicts.js';
 if (typeof window !== 'undefined') { window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache; }
 
@@ -838,7 +838,14 @@ function App(){
       if(store['ppp-breeding-v1']) setBreedingCycles(store['ppp-breeding-v1']);
       if(store['ppp-farrowing-v1']) setFarrowingRecs(store['ppp-farrowing-v1']||INITIAL_FARROWING);
       if(store['ppp-boars-v1']) setBoarNames(store['ppp-boars-v1']);
-      if(store['ppp-feeders-v1']) setFeederGroups(store['ppp-feeders-v1']);
+      if(store['ppp-feeders-v1']) {
+        // Reconcile sub-batch counts against parent. Repairs data left in
+        // an inconsistent state by the old (now-removed) Transfer-to-
+        // Breeding mutation path. Persists once if anything changed.
+        const fr = reconcileFeederGroupsFromBreeders(store['ppp-feeders-v1']);
+        setFeederGroups(fr.groups);
+        if(fr.changed) sb.from('app_store').upsert({key:'ppp-feeders-v1', data: fr.groups},{onConflict:'key'}).then(()=>{});
+      }
       if(store['ppp-feed-costs-v1']) setFeedCosts({starter:0,grower:0,layer:0,pig:0,grit:0,...store['ppp-feed-costs-v1']});
       if(store['ppp-archived-sows-v1']) setArchivedSows(store['ppp-archived-sows-v1']||[]);
       if(store['ppp-breeders-v1']) setBreeders(store['ppp-breeders-v1'].length>0?store['ppp-breeders-v1']:INITIAL_BREEDERS); else setBreeders(INITIAL_BREEDERS);

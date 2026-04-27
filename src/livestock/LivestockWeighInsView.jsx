@@ -9,6 +9,7 @@ import React from 'react';
 import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 import { writeBroilerBatchAvg } from '../lib/broiler.js';
+import { pigSlug } from '../lib/pig.js';
 import PigSendToTripModal from './PigSendToTripModal.jsx';
 const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species}) => {
   const {useState, useEffect} = React;
@@ -293,24 +294,16 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       const brW = await sb.from('app_store').upsert({key:'ppp-breeders-v1', data: newBreeders}, {onConflict:'key'});
       if(brW.error) { alert('Could not save new breeder: '+brW.error.message); setTransferBusy(false); return; }
 
-      // 2. Decrement parent + sub batch counts and accumulate feed allocation.
+      // 2. Accumulate feed allocation only. Started counts (giltCount /
+      //    boarCount / originalPigCount on parent + sub) are NOT mutated —
+      //    they're started counts. Transfer events live in breeders[]; the
+      //    pig-batches view derives "current" ledger-style on display.
       const updatedFeederGroups = feederGroups.map(g => {
         if(g.id !== parent.id) return g;
-        const dec = transferForm.sex === 'Boar' ? 'boarCount' : 'giltCount';
-        const next = {...g};
-        next[dec] = Math.max(0, (parseInt(g[dec])||0) - 1);
-        next.originalPigCount = Math.max(0, (parseInt(g.originalPigCount)||0) - 1);
-        next.feedAllocatedToTransfers = (parseFloat(g.feedAllocatedToTransfers)||0) + feedAllocLbs;
-        if(sub && Array.isArray(g.subBatches)) {
-          next.subBatches = g.subBatches.map(s => {
-            if(s.id !== sub.id) return s;
-            const ns = {...s};
-            ns[dec] = Math.max(0, (parseInt(s[dec])||0) - 1);
-            ns.originalPigCount = Math.max(0, (parseInt(s.originalPigCount)||0) - 1);
-            return ns;
-          });
-        }
-        return next;
+        return {
+          ...g,
+          feedAllocatedToTransfers: (parseFloat(g.feedAllocatedToTransfers)||0) + feedAllocLbs,
+        };
       });
       setFeederGroups(updatedFeederGroups);
       const fW = await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: updatedFeederGroups}, {onConflict:'key'});
@@ -404,7 +397,22 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
     const trips = (g.processingTrips||[]).slice();
     const addWeights = selectedEntries.map(e => parseFloat(e.weight)||0).filter(w => w > 0);
     const addCount = selectedEntries.length;
+    // Resolve session.batch_id (a slug like "p-26-01-a-gilts-") to the
+    // sub-batch on this parent group. We capture id, name, AND sex onto
+    // the trip's subAttributions row so the schema is human-readable in
+    // the JSON blob (sub IDs are timestamps; names + sex give context).
+    // Sex is inferred from the sub's existing giltCount/boarCount layout.
     let effectiveTripId = tripId;
+    const sourceSub = (() => {
+      if (!session || !session.batch_id) return null;
+      const s = pigSlug(session.batch_id);
+      for (const sb of (g.subBatches||[])) if (pigSlug(sb.name) === s) return sb;
+      return null;
+    })();
+    function attRow(sub, count) {
+      const isBoars = (parseInt(sub.boarCount)||0) > 0 && (parseInt(sub.giltCount)||0) === 0;
+      return {subId: sub.id, subBatchName: sub.name, sex: isBoars ? 'Boars' : 'Gilts', count};
+    }
     if(!tripId && createNewWithDate) {
       // Create a new trip with this selection seeded
       effectiveTripId = String(Date.now())+Math.random().toString(36).slice(2,6);
@@ -415,6 +423,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
         liveWeights: addWeights.join(' '),
         hangingWeight: 0,
         notes: '',
+        subAttributions: sourceSub ? [attRow(sourceSub, addCount)] : [],
       });
     } else {
       const ti = trips.findIndex(t => t.id === tripId);
@@ -423,6 +432,13 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       t.pigCount = (parseInt(t.pigCount)||0) + addCount;
       const existing = (t.liveWeights||'').trim();
       t.liveWeights = (existing ? existing + ' ' : '') + addWeights.join(' ');
+      const atts = Array.isArray(t.subAttributions) ? t.subAttributions.slice() : [];
+      if (sourceSub) {
+        const ai = atts.findIndex(a => a && a.subId === sourceSub.id);
+        if (ai >= 0) atts[ai] = {...atts[ai], count: (parseInt(atts[ai].count)||0) + addCount, subBatchName: sourceSub.name};
+        else atts.push(attRow(sourceSub, addCount));
+      }
+      t.subAttributions = atts;
       trips[ti] = t;
     }
     trips.sort((a,b) => (a.date||'').localeCompare(b.date||''));
@@ -485,39 +501,27 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       return;
     }
     // 1. Drop the breeder if still present.
-    let breederSex = 'Gilt';
     if(breederId) {
       const brR = await sb.from('app_store').select('data').eq('key','ppp-breeders-v1').maybeSingle();
       if(!brR.error) {
         const cur = (brR.data && Array.isArray(brR.data.data)) ? brR.data.data : [];
-        const found = cur.find(b => b.id === breederId);
-        if(found && found.sex) breederSex = found.sex;
         const next = cur.filter(b => b.id !== breederId);
         if(next.length !== cur.length) {
           await sb.from('app_store').upsert({key:'ppp-breeders-v1', data: next}, {onConflict:'key'});
         }
       }
     }
-    // 2. Find parent + sub from session.batch_id and reverse counts + feed alloc.
-    const {parent, sub} = resolveBatchAndSub(session.batch_id);
+    // 2. Reverse the parent feed allocation. Started counts are not mutated
+    //    by transfers (and therefore not reversed by undo) — see the
+    //    transfer flow above.
+    const {parent} = resolveBatchAndSub(session.batch_id);
     if(parent) {
-      const inc = breederSex === 'Boar' ? 'boarCount' : 'giltCount';
       const updated = feederGroups.map(g => {
         if(g.id !== parent.id) return g;
-        const next = {...g};
-        next[inc] = (parseInt(g[inc])||0) + 1;
-        next.originalPigCount = (parseInt(g.originalPigCount)||0) + 1;
-        next.feedAllocatedToTransfers = Math.max(0, (parseFloat(g.feedAllocatedToTransfers)||0) - feedAlloc);
-        if(sub && Array.isArray(g.subBatches)) {
-          next.subBatches = g.subBatches.map(s => {
-            if(s.id !== sub.id) return s;
-            const ns = {...s};
-            ns[inc] = (parseInt(s[inc])||0) + 1;
-            ns.originalPigCount = (parseInt(s.originalPigCount)||0) + 1;
-            return ns;
-          });
-        }
-        return next;
+        return {
+          ...g,
+          feedAllocatedToTransfers: Math.max(0, (parseFloat(g.feedAllocatedToTransfers)||0) - feedAlloc),
+        };
       });
       setFeederGroups(updated);
       await sb.from('app_store').upsert({key:'ppp-feeders-v1', data: updated}, {onConflict:'key'});

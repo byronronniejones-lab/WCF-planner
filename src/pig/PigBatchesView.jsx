@@ -17,6 +17,12 @@ import {
   cycleLabel,
   PIG_GROUP_COLORS,
   getReadableText,
+  pigTransfersForSub,
+  pigTransfersForBatch,
+  pigTripPigsForSub,
+  pigTripPigsAttributed,
+  pigMortalityForSub,
+  pigMortalityForBatch,
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -34,6 +40,11 @@ export default function PigBatchesView({
   collapsedMonths, setCollapsedMonths,
   showArchBatches, setShowArchBatches,
 }) {
+  // Tracks whether the parent modal's partition editor has unsaved sub-batch
+  // count changes. closeFeederForm reads this so a fast close (<1.5s) still
+  // flushes the pending partition write — the shared pigAutoSaveTimer would
+  // otherwise be cleared by closeFeederForm and the change lost on reload.
+  const partitionDirtyRef = React.useRef(false);
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
   const {
     breedingCycles,
@@ -170,23 +181,39 @@ export default function PigBatchesView({
       persistFeeders(nb);
     }
     // Persist a sub-batch using the given form state. Returns the new subId on success.
-    // For new sub-batches: only persists if name is non-empty (so in-progress new entries don't pollute the list).
-    // For edit mode (editSubId set): always persists.
+    //
+    // NEW sub-batches: form provides {name, sex:'Gilts'|'Boars', count, notes}.
+    // We translate that into giltCount/boarCount/originalPigCount with the
+    // single non-zero count on the chosen side. The new count must not push
+    // sum-of-subs past the parent's gilt/boar total — caller validates.
+    //
+    // EDIT mode: form provides {name, notes} only. Counts + status + id are
+    // preserved verbatim from the existing sub. To rebalance counts, the
+    // admin edits the parent partition UI.
     function persistSubBatch(batchId, formState, currentSubId){
-      // Parse numeric form fields back to numbers (form state holds raw strings during typing)
-      const subFormNum = {...formState};
-      ['giltCount','boarCount','originalPigCount'].forEach(key=>{
-        const v = subFormNum[key];
-        subFormNum[key] = (v===''||v==null) ? 0 : (parseFloat(v)||0);
-      });
       const subId = currentSubId || String(Date.now());
       const nb = feederGroups.map(g=>{
         if(g.id!==batchId) return g;
         const subs = g.subBatches||[];
-        // Preserve status (sticky processed flag) + any other ad-hoc fields
-        // on the existing sub. Form fields override; id is pinned last.
         const existing = currentSubId ? (subs.find(s=>s.id===currentSubId) || {}) : {};
-        const sub = {status:"active", ...existing, ...subFormNum, id:subId};
+        let sub;
+        if (currentSubId) {
+          // Edit mode: only name + notes mutate.
+          sub = {...existing, name: formState.name, notes: formState.notes||"", id: subId};
+        } else {
+          // New mode: derive gilt/boar counts from sex + count.
+          const sex = formState.sex || 'Gilts';
+          const c = (formState.count===''||formState.count==null) ? 0 : (parseInt(formState.count)||0);
+          sub = {
+            id: subId,
+            status: "active",
+            name: formState.name,
+            notes: formState.notes||"",
+            giltCount: sex === 'Gilts' ? c : 0,
+            boarCount: sex === 'Boars' ? c : 0,
+            originalPigCount: c,
+          };
+        }
         const updated = currentSubId ? subs.map(s=>s.id===currentSubId?sub:s) : [...subs,sub];
         return {...g, subBatches:updated};
       });
@@ -194,35 +221,85 @@ export default function PigBatchesView({
       return subId;
     }
 
+    // Validate a new sub-batch against parent's available gilt/boar pool.
+    // Returns null when valid, or a string error message. Edit mode skips
+    // validation (counts are locked).
+    function validateNewSub(batchId, formState) {
+      if (!formState.name || !formState.name.trim()) return 'Sub-batch name is required.';
+      const c = (formState.count===''||formState.count==null) ? 0 : (parseInt(formState.count)||0);
+      if (c <= 0) return 'Count must be 1 or more.';
+      const sex = formState.sex || 'Gilts';
+      const g = feederGroups.find(x => x.id === batchId);
+      if (!g) return null;
+      const parentTotal = sex === 'Boars' ? (parseInt(g.boarCount)||0) : (parseInt(g.giltCount)||0);
+      const usedBy = (g.subBatches||[]).reduce((a, s) => a + (sex==='Boars' ? (parseInt(s.boarCount)||0) : (parseInt(s.giltCount)||0)), 0);
+      const remaining = Math.max(0, parentTotal - usedBy);
+      if (c > remaining) return 'Only '+remaining+' '+sex.toLowerCase()+' available on parent batch (has '+parentTotal+', already used '+usedBy+').';
+      return null;
+    }
+
     function updSub(batchId, k, v){
       const next = {...subForm, [k]: v};
       setSubForm(next);
-      // Only autosave once name is set (otherwise creating an empty sub-batch on every keystroke)
       if(!next.name || !next.name.trim()) return;
+      // New mode requires a valid count before autosaving (otherwise we'd
+      // persist a 0-count sub on the first keystroke). Edit mode autosaves
+      // on any name/notes change.
+      if (!editSubId) {
+        const c = (next.count===''||next.count==null) ? 0 : (parseInt(next.count)||0);
+        if (c <= 0) return;
+      }
       clearTimeout(subAutoSaveTimer.current);
       subAutoSaveTimer.current = setTimeout(()=>{
+        if (!editSubId) {
+          const err = validateNewSub(batchId, next);
+          if (err) { alert(err); return; }
+        }
         const newId = persistSubBatch(batchId, next, editSubId);
-        // For new sub-batch: after first autosave, switch to edit mode so subsequent saves update the same row
-        if(!editSubId) setEditSubId(newId);
+        // After first autosave, hand the form to edit mode so subsequent
+        // saves update the same row (and lock counts). Reshape subForm to
+        // match the locked-display shape (giltCount/boarCount/originalPigCount).
+        if(!editSubId) {
+          setEditSubId(newId);
+          const sex = next.sex || 'Gilts';
+          const c = parseInt(next.count)||0;
+          setSubForm({
+            name: next.name,
+            notes: next.notes||"",
+            giltCount: sex==='Gilts' ? c : 0,
+            boarCount: sex==='Boars' ? c : 0,
+            originalPigCount: c,
+          });
+        }
       }, 1500);
     }
 
     function closeSubForm(batchId){
       clearTimeout(subAutoSaveTimer.current);
-      // Flush any pending changes synchronously on close (only if name is filled)
-      if(subForm.name && subForm.name.trim()){
-        persistSubBatch(batchId, subForm, editSubId);
+      // Flush any pending changes synchronously on close, but only if the
+      // form is in a valid persistable shape.
+      if (subForm.name && subForm.name.trim()) {
+        if (editSubId) {
+          persistSubBatch(batchId, subForm, editSubId);
+        } else {
+          const err = validateNewSub(batchId, subForm);
+          if (!err) persistSubBatch(batchId, subForm, editSubId);
+        }
       }
       setShowSubForm(null);
       setEditSubId(null);
-      setSubForm({name:"",giltCount:0,boarCount:0,originalPigCount:0,notes:""});
+      setSubForm({name:"",sex:"Gilts",count:0,notes:""});
     }
 
     function saveSubBatch(batchId){
       if(!subForm.name.trim()){alert("Please enter a sub-batch name.");return;}
+      if (!editSubId) {
+        const err = validateNewSub(batchId, subForm);
+        if (err) { alert(err); return; }
+      }
       clearTimeout(subAutoSaveTimer.current);
       persistSubBatch(batchId, subForm, editSubId);
-      setShowSubForm(null); setEditSubId(null); setSubForm({name:"",giltCount:0,boarCount:0,originalPigCount:0,notes:""});
+      setShowSubForm(null); setEditSubId(null); setSubForm({name:"",sex:"Gilts",count:0,notes:""});
     }
     function deleteSubBatch(batchId, subId){
       confirmDelete("Delete this sub-batch? This cannot be undone.",()=>{
@@ -309,10 +386,14 @@ export default function PigBatchesView({
         tripFormNum[key] = (v===''||v==null) ? 0 : (parseFloat(v)||0);
       });
       const tripId = currentTripId || String(Date.now());
-      const trip = {id:tripId, ...tripFormNum};
       const nb = feederGroups.map(g=>{
         if(g.id!==batchId) return g;
         const trips = g.processingTrips||[];
+        // Preserve fields not present in the form (subAttributions, any
+        // future ad-hoc keys) by spreading the existing trip first when
+        // editing. Same shape rule as persistSubBatch.
+        const existing = currentTripId ? (trips.find(t=>t.id===currentTripId) || {}) : {};
+        const trip = {...existing, ...tripFormNum, id: tripId};
         const updated = currentTripId ? trips.map(t=>t.id===currentTripId?trip:t) : [...trips,trip];
         updated.sort((a,b)=>a.date.localeCompare(b.date));
         return {...g, processingTrips:updated};
@@ -349,6 +430,31 @@ export default function PigBatchesView({
       });
     }
 
+    // Sub-batch partition: edit a sub's count from inside the parent modal.
+    // Sub's existing sex (giltCount-only or boarCount-only) is locked; this
+    // function only adjusts the magnitude. Uses pigAutoSaveTimer for the
+    // 1.5s debounce shared with the parent's other fields.
+    function updSubPartition(batchId, subId, newCountStr) {
+      const c = (newCountStr === '' || newCountStr == null) ? 0 : (parseInt(newCountStr) || 0);
+      const nb = feederGroups.map(g => {
+        if (g.id !== batchId) return g;
+        const subs = (g.subBatches || []).map(sb => {
+          if (sb.id !== subId) return sb;
+          const isBoars = (parseInt(sb.boarCount)||0) > 0 && (parseInt(sb.giltCount)||0) === 0;
+          if (isBoars) return {...sb, giltCount: 0, boarCount: c, originalPigCount: c};
+          return {...sb, giltCount: c, boarCount: 0, originalPigCount: c};
+        });
+        return {...g, subBatches: subs};
+      });
+      setFeederGroups(nb);
+      partitionDirtyRef.current = true;
+      clearTimeout(pigAutoSaveTimer.current);
+      pigAutoSaveTimer.current = setTimeout(() => {
+        persistFeeders(nb);
+        partitionDirtyRef.current = false;
+      }, 1500);
+    }
+
     function updFeeder(k, v) {
       const f = {...feederForm, [k]: v};
       // Auto-compute originalPigCount from gilts + boars
@@ -375,9 +481,12 @@ export default function PigBatchesView({
       clearTimeout(pigAutoSaveTimer.current);
       if (editFeederId && originalFeederForm) {
         const FEEDER_KEYS = ['batchName','cycleId','giltCount','boarCount','startDate','originalPigCount','perLbFeedCost','legacyFeedLbs','notes','status','feedAllocatedToTransfers'];
-        const changed = FEEDER_KEYS.some(k => String(feederForm[k]||'') !== String(originalFeederForm[k]||''));
-        if (changed) {
-          // Parse numeric form fields back to numbers
+        const parentChanged = FEEDER_KEYS.some(k => String(feederForm[k]||'') !== String(originalFeederForm[k]||''));
+        if (parentChanged) {
+          // Parse numeric form fields back to numbers. nb uses current
+          // feederGroups state, which already includes any optimistic
+          // partition edits (setFeederGroups was called in updSubPartition),
+          // so a single persist covers both kinds of change.
           const fNum = {...feederForm};
           ['giltCount','boarCount','originalPigCount','perLbFeedCost','legacyFeedLbs','feedAllocatedToTransfers'].forEach(key=>{
             const v2 = fNum[key];
@@ -387,6 +496,13 @@ export default function PigBatchesView({
           const grp = {processingTrips:[], subBatches:[], ...existing, ...fNum, id: editFeederId};
           const nb = feederGroups.map(g => g.id === editFeederId ? grp : g);
           persistFeeders(nb);
+          partitionDirtyRef.current = false;
+        } else if (partitionDirtyRef.current) {
+          // Parent fields didn't change but a partition edit is pending —
+          // flush the in-memory feederGroups state so the close-before-1.5s
+          // race doesn't drop the partition repair.
+          persistFeeders(feederGroups);
+          partitionDirtyRef.current = false;
         }
       }
       setShowFeederForm(false);
@@ -514,6 +630,45 @@ export default function PigBatchesView({
                   <div style={{padding:'8px 11px',background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:6,fontSize:13,fontWeight:600,color:'#374151'}}>{(parseInt(feederForm.giltCount)||0)+(parseInt(feederForm.boarCount)||0)}</div>
                   <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Auto-calculated: gilts + boars</div>
                 </div>
+                {editFeederId && (() => {
+                  const liveGroup = feederGroups.find(x => x.id === editFeederId);
+                  const subs = (liveGroup && liveGroup.subBatches) || [];
+                  if (subs.length === 0) return null;
+                  const sumG = subs.reduce((s,sb)=>s+(parseInt(sb.giltCount)||0), 0);
+                  const sumB = subs.reduce((s,sb)=>s+(parseInt(sb.boarCount)||0), 0);
+                  const tgtG = parseInt(feederForm.giltCount)||0;
+                  const tgtB = parseInt(feederForm.boarCount)||0;
+                  const okG = sumG === tgtG;
+                  const okB = sumB === tgtB;
+                  return (
+                    <div style={{gridColumn:"1/-1",border:"1px solid #e5e7eb",borderRadius:8,padding:"10px 12px",background:"#fafafa"}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#374151",marginBottom:6}}>Distribute across sub-batches</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {subs.map(sb => {
+                          const isBoars = (parseInt(sb.boarCount)||0) > 0 && (parseInt(sb.giltCount)||0) === 0;
+                          const sex = isBoars ? 'Boars' : 'Gilts';
+                          const c = isBoars ? (parseInt(sb.boarCount)||0) : (parseInt(sb.giltCount)||0);
+                          return (
+                            <div key={sb.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 100px",gap:8,alignItems:"center"}}>
+                              <span style={{fontSize:12,color:"#111827",fontWeight:600}}>{sb.name}</span>
+                              <span style={{fontSize:11,padding:"3px 8px",borderRadius:5,background:isBoars?"#dbeafe":"#d1fae5",color:isBoars?"#1e40af":"#065f46",textAlign:"center",fontWeight:600}}>{sex}</span>
+                              <input type="number" min="0" value={c||''} onChange={e=>updSubPartition(editFeederId, sb.id, e.target.value)}/>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{display:"flex",gap:14,marginTop:8,fontSize:11}}>
+                        <span style={{color:okG?"#065f46":"#b91c1c",fontWeight:600}}>Gilts: {sumG} / {tgtG} {okG?"✓":"⚠"}</span>
+                        <span style={{color:okB?"#1e40af":"#b91c1c",fontWeight:600}}>Boars: {sumB} / {tgtB} {okB?"✓":"⚠"}</span>
+                      </div>
+                      {(!okG||!okB) && (
+                        <div style={{marginTop:6,fontSize:11,color:"#b91c1c",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:5,padding:"5px 9px"}}>
+                          Sub totals don’t match parent gilts/boars. Adjust counts above so they sum exactly.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div style={{gridColumn:"1/-1"}}>
                   <label style={S.label}>Feed credited to breeding transfers (lbs) <span style={{fontWeight:400,color:'#9ca3af',fontSize:11}}>{'(subtracted from total feed; set to 0 to clear)'}</span></label>
                   <input type="number" min="0" step="0.1" value={feederForm.feedAllocatedToTransfers||''} onChange={e=>updFeeder('feedAllocatedToTransfers',e.target.value)} placeholder="0"/>
@@ -581,40 +736,68 @@ export default function PigBatchesView({
             const dailyFeedTotal = batchDailys.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0);
             const legacyFeed = parseFloat(g.legacyFeedLbs)||parseFloat(g.totalFeedLbs)||0;
 
-            // Sub-batch feed totals
+            // Per-sub ledger metrics. Started counts come from stored fields
+            // (no longer mutated by transfers). Transfers + trip attribution
+            // + mortality are derived from audit logs. Sub adjusted feed
+            // subtracts the per-sub transfer credit (sourced from breeders[],
+            // not the parent-aggregate g.feedAllocatedToTransfers, so sub
+            // and parent reconcile cleanly).
             const subFeedTotals = subBatches.map(sb=>{
               const sd = dailysForName(sb.name);
-              const feed = sd.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0) + (parseFloat(sb.legacyFeedLbs)||0);
+              const rawFeedSub = sd.reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0) + (parseFloat(sb.legacyFeedLbs)||0);
               const latest = [...sd].sort((a,b)=>b.date.localeCompare(a.date)||b.submitted_at?.localeCompare(a.submitted_at||'')||0)[0]||null;
-              // Once a sub-batch is marked processed, force current=0 — the
-              // pigs are gone (to processor / breeding) regardless of whatever
-              // the most recent daily report happened to log.
-              const rawCount = latest?.pig_count??null;
-              const currentCount = sb.status === 'processed' ? 0 : rawCount;
-              return {sb, dailys:sd, feedTotal:feed, latestDaily:latest, currentCount};
+              const transfers = pigTransfersForSub(breeders, g.batchName, sb.name);
+              const tripPigs = pigTripPigsForSub(g.processingTrips||[], sb.id);
+              const mortality = pigMortalityForSub(g, sb.name);
+              const started = (parseInt(sb.giltCount)||0) + (parseInt(sb.boarCount)||0);
+              const ledgerCurrent = Math.max(0, started - tripPigs - transfers.count - mortality);
+              const currentCount = sb.status === 'processed' ? 0 : ledgerCurrent;
+              const dailyCount = latest?.pig_count;
+              const adjustedFeed = Math.max(0, rawFeedSub - transfers.feedAllocLbs);
+              return {sb, dailys:sd, latestDaily:latest, started,
+                rawFeed: rawFeedSub, transferFeedCredit: transfers.feedAllocLbs, adjustedFeed,
+                feedTotal: adjustedFeed,                             // back-compat alias
+                transferCount: transfers.count, tripPigs, mortality,
+                ledgerCurrent, currentCount, dailyCount};
             });
-            const subFeedGrandTotal = subFeedTotals.reduce((s,sf)=>s+sf.feedTotal,0);
-            const rawFeed = hasSubBatches ? subFeedGrandTotal + legacyFeed : dailyFeedTotal + legacyFeed;
-            // Subtract feed already credited to pigs transferred out to the
-            // breeders registry (computed at transfer time as weight × FCR).
-            const feedAllocatedOut = parseFloat(g.feedAllocatedToTransfers) || 0;
+            const subAdjustedFeedTotal = subFeedTotals.reduce((s,sf)=>s+sf.adjustedFeed,0);
+            const subRawFeedTotal      = subFeedTotals.reduce((s,sf)=>s+sf.rawFeed,0);
+            const rawFeed = hasSubBatches ? subRawFeedTotal + legacyFeed : dailyFeedTotal + legacyFeed;
+            // Parent aggregate transfer credit: prefer sum-of-subs (canonical
+            // from breeders[]); fall back to g.feedAllocatedToTransfers for
+            // parent-only batches that never had subs.
+            const subTransferFeedTotal = subFeedTotals.reduce((s,sf)=>s+sf.transferFeedCredit,0);
+            const parentTransferAgg    = pigTransfersForBatch(breeders, g.batchName);
+            const feedAllocatedOut     = hasSubBatches
+              ? subTransferFeedTotal
+              : (parentTransferAgg.feedAllocLbs || (parseFloat(g.feedAllocatedToTransfers) || 0));
             const totalFeed = Math.max(0, rawFeed - feedAllocatedOut);
 
-            // Current pig count — from most recent daily across all sub-batches or parent
+            // Current pig count: ledger-derived for batches with subs;
+            // latest-daily fallback for parent-only batches (no sub
+            // attribution available without weigh_in linkage).
             const sortedDailys = hasSubBatches
               ? subFeedTotals.flatMap(sf=>sf.dailys).sort((a,b)=>b.date.localeCompare(a.date)||b.submitted_at?.localeCompare(a.submitted_at||'')||0)
               : [...batchDailys].sort((a,b)=>b.date.localeCompare(a.date)||b.submitted_at?.localeCompare(a.submitted_at||'')||0);
             const latestDaily = sortedDailys[0]||null;
-            // Sum only subs that have a known count (skip subs that never had
-            // a daily report). Processed subs return 0 explicitly so they
-            // count toward "all done" rather than "no data".
-            const subsWithCount = subFeedTotals.filter(sf=>sf.currentCount!=null);
-            const currentPigCount = hasSubBatches
-              ? (subsWithCount.length > 0 ? subsWithCount.reduce((s,sf)=>s+(sf.currentCount||0),0) : null)
-              : latestDaily?.pig_count??null;
+            let currentPigCount;
+            if (hasSubBatches) {
+              currentPigCount = subFeedTotals.reduce((s,sf)=>s+(sf.currentCount||0),0);
+            } else {
+              const parentTrips = (g.processingTrips||[]).reduce((s,t)=>s+(parseInt(t.pigCount)||0),0);
+              const parentTransfers = parentTransferAgg.count;
+              const parentMort = pigMortalityForBatch(g);
+              const parentStarted = (parseInt(g.giltCount)||0) + (parseInt(g.boarCount)||0);
+              currentPigCount = parentStarted > 0
+                ? Math.max(0, parentStarted - parentTrips - parentTransfers - parentMort)
+                : (latestDaily?.pig_count??null);
+            }
+            // Started count for denominators: sum-of-subs (for hasSubBatches)
+            // or parent stored gilts+boars. Both are now stable across
+            // transfers — they reflect what entered the batch.
             const originalPigCount = hasSubBatches
-              ? subBatches.reduce((s,sb)=>s+(parseInt(sb.originalPigCount)||0),0)||parseInt(g.originalPigCount)||0
-              : parseInt(g.originalPigCount)||0;
+              ? subFeedTotals.reduce((s,sf)=>s+sf.started,0)
+              : (parseInt(g.giltCount)||0) + (parseInt(g.boarCount)||0) || (parseInt(g.originalPigCount)||0);
             // Feed cost
             const perLbCost = parseFloat(g.perLbFeedCost)||0;
             const totalFeedCost = totalFeed>0&&perLbCost>0 ? totalFeed*perLbCost : null;
@@ -666,7 +849,7 @@ export default function PigBatchesView({
                     {[
                       {label:"Total feed",val:totalFeed>0?`${Math.round(totalFeed).toLocaleString()} lbs`:"—",color:"#92400e",hint:feedAllocatedOut>0?`raw ${Math.round(rawFeed).toLocaleString()} − ${Math.round(feedAllocatedOut).toLocaleString()} transferred out`:dailyFeedTotal>0&&legacyFeed>0?`${Math.round(dailyFeedTotal).toLocaleString()} from dailys + ${Math.round(legacyFeed).toLocaleString()} legacy`:dailyFeedTotal>0?`from ${batchDailys.length} daily reports`:null},
                       ...(feedAllocatedOut>0 ? [{label:"Feed → Breeding",val:`−${Math.round(feedAllocatedOut).toLocaleString()} lbs`,color:"#5b21b6",hint:'credited to transferred pigs (subtracted above)'}] : []),
-                      {label:"Lbs per pig",val:(()=>{const op=hasSubBatches?subFeedTotals.reduce((s,sf)=>s+(parseInt(sf.sb.originalPigCount)||0),0):parseInt(g.originalPigCount)||0;return totalFeed>0&&op>0?`${Math.round(totalFeed/op)} lbs/pig`:"—";})(),color:"#78350f",hint:null},
+                      {label:"Lbs per pig",val:(totalFeed>0&&originalPigCount>0)?`${Math.round(totalFeed/originalPigCount)} lbs/pig`:"—",color:"#78350f",hint:originalPigCount>0?`adjusted feed ÷ ${originalPigCount} started`:null},
                       {label:"Feed cost",val:totalFeedCost?`$${totalFeedCost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—",color:"#92400e",hint:perLbCost>0?`$${perLbCost}/lb`:null},
                       {label:"Feed conversion",val:feedConversion?`${feedConversion} lbs/lb`:"—",color:"#78350f"},
                       {label:"Pigs processed",val:trips.reduce((s,t)=>s+(parseInt(t.pigCount)||0),0),color:"#111827"},
@@ -719,7 +902,7 @@ export default function PigBatchesView({
                     <div style={{display:"flex",gap:6}}>
                       {showSubForm===g.id&&!editSubId
                         ? <button onClick={()=>closeSubForm(g.id)} style={{fontSize:11,color:"#6b7280",background:"none",border:"none",cursor:"pointer"}}>Close</button>
-                        : <button onClick={()=>{setShowSubForm(g.id);setEditSubId(null);setSubForm({name:"",giltCount:0,boarCount:0,originalPigCount:0,notes:""}); }} style={{padding:"3px 10px",borderRadius:5,border:"none",background:"#ecfdf5",color:"#083d30",cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>+ Add sub-batch</button>
+                        : <button onClick={()=>{setShowSubForm(g.id);setEditSubId(null);setSubForm({name:"",sex:"Gilts",count:0,notes:""}); }} style={{padding:"3px 10px",borderRadius:5,border:"none",background:"#ecfdf5",color:"#083d30",cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>+ Add sub-batch</button>
                       }
                     </div>
                   </div>
@@ -738,19 +921,35 @@ export default function PigBatchesView({
                             <input value={subForm.name} onChange={e=>updSub(g.id,'name',e.target.value)} placeholder="e.g. P-26-01 A (GILTS)"/>
                             <div style={{fontSize:10,color:"#9ca3af",marginTop:2}}>Must match the label used on daily reports</div>
                           </div>
-                          <div>
-                            <label style={S.label}>Gilts count</label>
-                            <input type="number" min="0" value={subForm.giltCount||''} onChange={e=>updSub(g.id,'giltCount',e.target.value)}/>
-                          </div>
-                          <div>
-                            <label style={S.label}>Boars count</label>
-                            <input type="number" min="0" value={subForm.boarCount||''} onChange={e=>updSub(g.id,'boarCount',e.target.value)}/>
-                          </div>
-                          <div>
-                            <label style={S.label}>Original count</label>
-                            <input type="number" min="0" value={subForm.originalPigCount||''} onChange={e=>updSub(g.id,'originalPigCount',e.target.value)}/>
-                          </div>
-                          <div>
+                          {!editSubId ? (<>
+                            <div>
+                              <label style={S.label}>Sex *</label>
+                              <select value={subForm.sex||'Gilts'} onChange={e=>updSub(g.id,'sex',e.target.value)}>
+                                <option value="Gilts">Gilts</option>
+                                <option value="Boars">Boars</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={S.label}>Count *</label>
+                              <input type="number" min="0" value={subForm.count||''} onChange={e=>updSub(g.id,'count',e.target.value)} placeholder={(()=>{
+                                const sex=subForm.sex||'Gilts';
+                                const parentTotal = sex==='Boars' ? (parseInt(g.boarCount)||0) : (parseInt(g.giltCount)||0);
+                                const usedBy = (g.subBatches||[]).filter(s=>(sex==='Boars'?(parseInt(s.boarCount)||0):(parseInt(s.giltCount)||0))>0).reduce((a,s)=>a+(sex==='Boars'?(parseInt(s.boarCount)||0):(parseInt(s.giltCount)||0)),0);
+                                const remaining = Math.max(0, parentTotal - usedBy);
+                                return remaining > 0 ? `Up to ${remaining} available` : '0 available';
+                              })()}/>
+                            </div>
+                          </>) : (<>
+                            <div style={{gridColumn:"1/-1",padding:"10px 12px",background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8}}>
+                              <div style={{fontSize:11,color:"#9ca3af",marginBottom:4}}>Sex + count are locked. Edit the parent batch to redistribute.</div>
+                              <div style={{display:"flex",gap:14,fontSize:13,color:"#111827",fontWeight:600}}>
+                                {(parseInt(subForm.giltCount)||0)>0 && <span>Gilts: {subForm.giltCount}</span>}
+                                {(parseInt(subForm.boarCount)||0)>0 && <span>Boars: {subForm.boarCount}</span>}
+                                <span style={{color:"#6b7280"}}>Original count: {(parseInt(subForm.giltCount)||0)+(parseInt(subForm.boarCount)||0)}</span>
+                              </div>
+                            </div>
+                          </>)}
+                          <div style={{gridColumn:"1/-1"}}>
                             <label style={S.label}>Notes</label>
                             <input value={subForm.notes} onChange={e=>updSub(g.id,'notes',e.target.value)} placeholder="Optional"/>
                           </div>
@@ -767,17 +966,19 @@ export default function PigBatchesView({
                   )}
 
                   {subBatches.map(sb=>{
-                    const sft = subFeedTotals.find(x=>x.sb.id===sb.id)||{feedTotal:0,dailys:[],latestDaily:null,currentCount:null};
+                    const sft = subFeedTotals.find(x=>x.sb.id===sb.id)||{adjustedFeed:0,rawFeed:0,transferFeedCredit:0,dailys:[],latestDaily:null,currentCount:null,started:0,transferCount:0,tripPigs:0,mortality:0,dailyCount:null};
                     const sbSc = statusColors[sb.status]||statusColors.active;
+                    const dailyVsLedger = (sft.dailyCount!=null && sb.status!=='processed' && Math.abs((parseInt(sft.dailyCount)||0) - sft.ledgerCurrent) > 2);
                     return (
                       <div key={sb.id} style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"6px 12px",padding:"8px 10px",borderRadius:7,border:"1px solid #e5e7eb",marginBottom:6,background:sb.status==="processed"?"#f9fafb":"white",opacity:sb.status==="processed"?.7:1}}>
                         <strong style={{fontSize:12,color:"#111827"}}>{sb.name}</strong>
                         <span style={S.badge(sbSc.bg,sbSc.tx)}>{sb.status}</span>
-                        {sb.giltCount>0&&<span style={{fontSize:11,color:"#065f46"}}>Gilts: {sb.giltCount}</span>}
-                        {sb.boarCount>0&&<span style={{fontSize:11,color:"#1e40af"}}>Boars: {sb.boarCount}</span>}
-                        {sft.feedTotal>0&&<span style={{fontSize:11,color:"#92400e",fontWeight:600}}>🌾 {Math.round(sft.feedTotal).toLocaleString()} lbs feed</span>}
-                        {sft.feedTotal>0&&(parseInt(sb.originalPigCount)||0)>0&&<span style={{fontSize:11,color:"#78350f"}}>({Math.round(sft.feedTotal/(parseInt(sb.originalPigCount)||1))} lbs/pig)</span>}
-                        {sft.currentCount!=null&&<span style={{fontSize:11,color:"#111827"}}>🐷 {sft.currentCount} current</span>}
+                        {sft.started>0&&<span style={{fontSize:11,color:"#374151"}}>Started: <strong>{sft.started}</strong></span>}
+                        {sft.adjustedFeed>0&&<span style={{fontSize:11,color:"#92400e",fontWeight:600}}>🌾 {Math.round(sft.adjustedFeed).toLocaleString()} lbs feed</span>}
+                        {sft.adjustedFeed>0&&sft.started>0&&<span style={{fontSize:11,color:"#78350f"}}>({Math.round(sft.adjustedFeed/sft.started)} lbs/pig)</span>}
+                        {sft.transferFeedCredit>0&&<span style={{fontSize:10,color:"#6b7280"}} title={`raw ${Math.round(sft.rawFeed).toLocaleString()} − ${Math.round(sft.transferFeedCredit).toLocaleString()} credited to ${sft.transferCount} transferred`}>(−{Math.round(sft.transferFeedCredit).toLocaleString()} → breeding)</span>}
+                        <span style={{fontSize:11,color:"#111827"}}>🐷 {sft.currentCount} current</span>
+                        {dailyVsLedger&&<span style={{fontSize:10,color:"#b91c1c",background:"#fef2f2",border:"1px solid #fecaca",padding:"1px 6px",borderRadius:4}} title="Latest daily count differs from ledger by more than 2">⚠ daily {sft.dailyCount}</span>}
                         {sft.dailys.length>0&&<span style={{fontSize:11,color:"#6b7280"}}>📋 {sft.dailys.length} reports</span>}
 
                         <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
@@ -785,7 +986,7 @@ export default function PigBatchesView({
                             ? <button onClick={()=>archiveSubBatch(g.id, sb.id)} style={{fontSize:11,padding:"2px 8px",borderRadius:5,border:"1px solid #d1d5db",color:"#6b7280",background:"white",cursor:"pointer",fontFamily:"inherit"}}>Mark Processed</button>
                             : <button onClick={()=>unarchiveSubBatch(g.id, sb.id)} style={{fontSize:11,padding:"2px 8px",borderRadius:5,border:"1px solid #085041",color:"#085041",background:"white",cursor:"pointer",fontFamily:"inherit"}}>Reactivate</button>
                           }
-                          <button onClick={()=>{clearTimeout(subAutoSaveTimer.current);setShowSubForm(g.id);setEditSubId(sb.id);setSubForm({name:sb.name,giltCount:sb.giltCount||0,boarCount:sb.boarCount||0,originalPigCount:sb.originalPigCount||0,notes:sb.notes||""});}} style={{fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Edit</button>
+                          <button onClick={()=>{clearTimeout(subAutoSaveTimer.current);setShowSubForm(g.id);setEditSubId(sb.id);setSubForm({name:sb.name,giltCount:sb.giltCount||0,boarCount:sb.boarCount||0,originalPigCount:sb.originalPigCount||0,notes:sb.notes||""});}} style={{fontSize:11,color:"#1d4ed8",background:"none",border:"none",cursor:"pointer"}}>Rename</button>
                         </div>
 
                       </div>
@@ -797,10 +998,7 @@ export default function PigBatchesView({
                 <div style={{padding:"10px 16px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                     <div style={{fontSize:12,fontWeight:600,color:"#4b5563"}}>Processing trips {trips.length>0?`(${trips.length})`:""}</div>
-                    <button onClick={()=>{setActiveTripBatchId(showTripForm?null:g.id);setTripForm({date:toISO(new Date()),pigCount:0,liveWeights:"",hangingWeight:0,notes:""});setEditTripId(null);}}
-                      style={{padding:"4px 12px",borderRadius:5,border:"none",background:"#ecfdf5",color:"#083d30",cursor:"pointer",fontSize:11,fontWeight:600}}>
-                      {showTripForm?"Cancel":"+ Add Trip"}
-                    </button>
+                    <span style={{fontSize:10,color:"#9ca3af",fontStyle:"italic"}}>Trips originate from weigh-ins via Send-to-Trip</span>
                   </div>
 
                   {/* Trip form (modal) */}
@@ -862,7 +1060,7 @@ export default function PigBatchesView({
                   )}
 
                   {/* Trip list */}
-                  {trips.length===0&&!showTripForm&&<div style={{color:"#9ca3af",fontSize:11,padding:"4px 0 8px"}}>No processing trips yet — click "+ Add Trip" to record a sub-batch sent to processor</div>}
+                  {trips.length===0&&!showTripForm&&<div style={{color:"#9ca3af",fontSize:11,padding:"4px 0 8px"}}>No processing trips yet — they’ll appear here once you Send-to-Trip from /pig/weighins</div>}
                   {trips.map((t,ti)=>{
                     const live = tripTotalLive(t);
                     const yld  = tripYield(t);
