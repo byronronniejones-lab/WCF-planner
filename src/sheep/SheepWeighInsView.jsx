@@ -1,183 +1,494 @@
-// Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
+// ============================================================================
+// SheepWeighInsView — Phase 3 rewrite (full feature parity with cattle)
+// ============================================================================
+// Mirrors CattleWeighInsView structure for sheep:
+//   * Status filter (all / draft / complete) + tag search
+//   * SheepNewWeighInModal for session creation (flock selector)
+//   * Per-row Edit (tag/weight/note)
+//   * Per-row Delete (with detach-first if entry attached a sheep to a batch)
+//   * Add-entry Swap Tag flow (priorTag → updates sheep.tag + stamps old_tags)
+//   * Add-entry Missing Tag flow (new_tag_flag set when tag isn't in directory)
+//   * Reconcile-new-tag dropdown (assign an unrecognized tag to a known sheep)
+//   * Send-to-Processor toggle (gated to feeders flock + draft session)
+//   * SheepSendToProcessorModal triggered on completeSession when flagged
+//   * Session delete: detach attached sheep first, prompt continue if any block
+//   * ADG vs prior completed session, identical math to cattle
+// ============================================================================
 import React from 'react';
+import SheepNewWeighInModal from './SheepNewWeighInModal.jsx';
+import SheepSendToProcessorModal from './SheepSendToProcessorModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
+import { loadSheepWeighInsCached, invalidateSheepWeighInsCache } from '../lib/sheepCache.js';
+import { detachSheepFromBatch } from '../lib/sheepProcessingBatch.js';
 
 const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;
   const [sessions, setSessions] = useState([]);
-  const [entries, setEntries] = useState({}); // session_id → entries[]
-  const [sheep, setSheep] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState(null);
-  const [showNewSession, setShowNewSession] = useState(false);
-  const [newSessForm, setNewSessForm] = useState({date: new Date().toISOString().slice(0,10), team_member:(authState && authState.name) || '', herd:'ewes', notes:''});
-  const [tagSearch, setTagSearch] = useState('');
-  const [addEntry, setAddEntry] = useState({tag:'', weight:'', note:''});
-  const [busy, setBusy] = useState(false);
-  const FLOCKS = ['rams','ewes','feeders'];
+  const [entries, setEntries]   = useState({}); // session_id -> [entries]
+  const [sheep, setSheep]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [expandedSession, setExpandedSession] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all'); // all | draft | complete
+  const [showNewModal, setShowNewModal]   = useState(false);
+  const [tagSearch,    setTagSearch]      = useState('');
+  // Inline entry editing
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [editForm, setEditForm] = useState({tag:'', weight:'', note:''});
+  // Add-entry form per session
+  const [addEntryForm, setAddEntryForm] = useState({tag:'', weight:'', note:'', priorTag:''});
+  // Send-to-processor modal state.
+  const [sessionForModal, setSessionForModal] = useState(null);
+
   const FLOCK_LABELS = {rams:'Rams', ewes:'Ewes', feeders:'Feeders'};
 
+  function sortEntriesByTagAsc(a, b) {
+    const at = a && a.tag, bt = b && b.tag;
+    if(at == null && bt == null) return (a.entered_at||'').localeCompare(b.entered_at||'');
+    if(at == null) return 1;
+    if(bt == null) return -1;
+    const an = parseFloat(at), bn = parseFloat(bt);
+    if(Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+    return String(at).localeCompare(String(bt));
+  }
   async function loadAll() {
-    setLoading(true);
-    const sR = await sb.from('weigh_in_sessions').select('*').eq('species','sheep').order('date',{ascending:false}).limit(200);
-    const sessIds = (sR.data||[]).map(s => s.id);
-    const eR = sessIds.length > 0 ? await sb.from('weigh_ins').select('*').in('session_id', sessIds).order('entered_at',{ascending:true}) : {data:[]};
-    const shR = await sb.from('sheep').select('id,tag,flock').order('tag');
+    const [sR, eAll, shR] = await Promise.all([
+      sb.from('weigh_in_sessions').select('*').eq('species','sheep').order('date',{ascending:false}).order('started_at',{ascending:false}),
+      loadSheepWeighInsCached(sb),
+      sb.from('sheep').select('id, tag, flock, old_tags'),
+    ]);
     if(sR.data) setSessions(sR.data);
-    if(eR.data) {
-      const grouped = {};
-      eR.data.forEach(e => { (grouped[e.session_id] = grouped[e.session_id] || []).push(e); });
-      setEntries(grouped);
-    }
+    const m = {};
+    eAll.forEach(e => { if(!m[e.session_id]) m[e.session_id] = []; m[e.session_id].push(e); });
+    for(const k in m) m[k].sort(sortEntriesByTagAsc);
+    setEntries(m);
     if(shR.data) setSheep(shR.data);
     setLoading(false);
   }
-  useEffect(()=>{ loadAll(); }, []);
+  useEffect(() => { loadAll(); }, []);
 
-  async function createSession() {
-    if(!newSessForm.team_member) { alert('Pick a team member.'); return; }
-    setBusy(true);
-    const id = String(Date.now())+Math.random().toString(36).slice(2,6);
-    const rec = {id, date:newSessForm.date, team_member:newSessForm.team_member, species:'sheep', herd:newSessForm.herd, status:'draft', notes:newSessForm.notes||null};
-    const {error} = await sb.from('weigh_in_sessions').insert(rec);
-    setBusy(false);
-    if(error) { alert('Could not create session: '+error.message); return; }
-    setShowNewSession(false);
-    setNewSessForm({date: new Date().toISOString().slice(0,10), team_member:(authState && authState.name) || '', herd:'ewes', notes:''});
+  async function reopenSession(s) {
+    await sb.from('weigh_in_sessions').update({status:'draft', completed_at:null}).eq('id', s.id);
+    invalidateSheepWeighInsCache();
     await loadAll();
-    setExpandedId(id);
   }
-  async function addNewEntry(sessionId) {
-    if(!addEntry.tag.trim() || !addEntry.weight || parseFloat(addEntry.weight) <= 0) { alert('Tag and weight are required.'); return; }
-    setBusy(true);
+  async function deleteSession(s) {
+    if(!window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete this weigh-in session and all its entries? Attached sheep will be detached and reverted to prior flocks where possible.', async () => {
+      // Detach any sheep attached via this session's weigh-in entries first,
+      // so processing batches don't carry orphan sheep_detail rows after the
+      // cascade. Detach reports any sheep that can't be auto-reverted.
+      const sessEntries = (entries[s.id] || []).filter(e => e.target_processing_batch_id);
+      const blocked = [];
+      for(const e of sessEntries) {
+        const sh = e.tag ? sheep.find(x => x.tag === e.tag) : null;
+        if(!sh) { blocked.push({tag: e.tag||'?', reason:'no_sheep_for_tag'}); continue; }
+        const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {teamMember: authState && authState.name ? authState.name : null});
+        if(!r.ok && r.reason !== 'not_in_batch') blocked.push({tag: e.tag||'?', reason: r.reason});
+      }
+      if(blocked.length > 0) {
+        const lines = blocked.map(x => '#'+x.tag+' ('+x.reason+')').join('\n');
+        if(!window.confirm('Some sheep could not be auto-reverted from their batches:\n\n'+lines+'\n\nDelete the session anyway?')) return;
+      }
+      // sheep_comments has reference_id pointing at weigh_ins.id (no FK).
+      // Wipe matching comments before the session cascade lands.
+      const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
+      const wiIds = (wis && wis.data || []).map(r => r.id);
+      if(wiIds.length > 0) {
+        try { await sb.from('sheep_comments').delete().eq('source','weigh_in').in('reference_id', wiIds); }
+        catch(e){ /* tolerated on legacy schemas */ }
+      }
+      await sb.from('weigh_in_sessions').delete().eq('id', s.id);
+      invalidateSheepWeighInsCache();
+      await loadAll();
+    });
+  }
+  async function reconcileNewTag(entry, knownSheepId) {
+    if(!knownSheepId) return;
+    const sh = sheep.find(x => x.id === knownSheepId);
+    if(!sh) return;
+    // Tag-swap pattern: the WEIGH-IN keeps its new tag; the SHEEP's tag gets
+    // updated with the prior tag pushed to old_tags (source='weigh_in').
+    const priorTag = sh.tag;
+    const newTag   = entry.tag;
+    const updatedOldTags = (Array.isArray(sh.old_tags) ? sh.old_tags : [])
+      .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'weigh_in'}]);
+    await sb.from('sheep').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownSheepId);
+    await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
+    try { await sb.from('sheep_comments').update({sheep_id: knownSheepId, sheep_tag: newTag}).eq('reference_id', entry.id); } catch(e){}
+    invalidateSheepWeighInsCache();
+    await loadAll();
+  }
+
+  async function completeSession(s) {
+    // Feeders: if any entries are flagged → Processor, intercept to open the
+    // batch modal. Modal confirms attach, then calls finalizeComplete.
+    if(s.herd === 'feeders') {
+      const flagged = (entries[s.id] || []).filter(e => e.send_to_processor === true);
+      if(flagged.length > 0) { setSessionForModal(s); return; }
+    }
+    await finalizeComplete(s);
+  }
+  async function finalizeComplete(s) {
+    await sb.from('weigh_in_sessions').update({status:'complete', completed_at:new Date().toISOString()}).eq('id', s.id);
+    invalidateSheepWeighInsCache();
+    await loadAll();
+  }
+  async function toggleProcessor(e, next) {
+    // Clearing the flag on an already-attached entry: detach first via the
+    // prior_herd_or_flock fallback hierarchy. If detach blocks, surface the
+    // reason and abort the toggle so the UI doesn't show a stale state.
+    if(!next && e.target_processing_batch_id) {
+      const sh = e.tag ? sheep.find(x => x.tag === e.tag) : null;
+      if(sh) {
+        const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {teamMember: authState && authState.name ? authState.name : null});
+        if(!r.ok && r.reason !== 'not_in_batch') {
+          alert('Cannot clear flag for #'+(e.tag||'?')+': '+(r.reason==='no_prior_flock'?'no prior flock recorded for this sheep + batch. Manually move via the Flocks tab if needed.':r.reason+(r.error?' — '+r.error:'')));
+          return;
+        }
+      }
+    }
+    const {error} = await sb.from('weigh_ins').update({send_to_processor: !!next}).eq('id', e.id);
+    if(error) { alert('Could not update: '+error.message); return; }
+    invalidateSheepWeighInsCache();
+    setEntries(prev => {
+      const next2 = {...prev};
+      for(const sid in next2) {
+        next2[sid] = next2[sid].map(x => x.id === e.id ? {...x, send_to_processor: !!next} : x);
+      }
+      return next2;
+    });
+    if(!next && e.target_processing_batch_id) await loadAll();
+  }
+  function startEditEntry(e) {
+    setEditingEntryId(e.id);
+    setEditForm({tag: e.tag || '', weight: String(e.weight ?? ''), note: e.note || ''});
+  }
+  async function saveEntryEdit(e) {
+    const newTag    = (editForm.tag||'').trim() || null;
+    const newWeight = parseFloat(editForm.weight);
+    if(!Number.isFinite(newWeight) || newWeight <= 0) return;
+    const sheepWithTag = newTag ? sheep.find(x => x.tag === newTag) : null;
+    const newTagFlag = newTag && !sheepWithTag;
+    await sb.from('weigh_ins').update({tag: newTag, weight: newWeight, note: editForm.note || null, new_tag_flag: newTagFlag}).eq('id', e.id);
+    invalidateSheepWeighInsCache();
+    setEditingEntryId(null);
+    await loadAll();
+  }
+  async function deleteEntry(e) {
+    async function doDelete() {
+      if(e.target_processing_batch_id) {
+        const sh = e.tag ? sheep.find(x => x.tag === e.tag) : null;
+        if(sh) {
+          const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {teamMember: authState && authState.name ? authState.name : null});
+          if(!r.ok && r.reason !== 'not_in_batch') {
+            if(!window.confirm('Sheep #'+(e.tag||'?')+' could not be auto-reverted ('+r.reason+'). Delete the entry anyway?')) return;
+          }
+        }
+      }
+      await sb.from('weigh_ins').delete().eq('id', e.id);
+      try { await sb.from('sheep_comments').delete().eq('reference_id', e.id); } catch(err){}
+      invalidateSheepWeighInsCache();
+      await loadAll();
+    }
+    if(!window._wcfConfirmDelete) {
+      if(!window.confirm('Delete this weigh-in entry?')) return;
+      await doDelete();
+      return;
+    }
+    window._wcfConfirmDelete('Delete this weigh-in entry? Attached sheep will be detached and reverted where possible.', doDelete);
+  }
+  // Walk current tag → import old_tags → weigh_in old_tags. Same fallback
+  // order as the cattle admin (mirrors the public webform's findCowByPriorTag).
+  function findSheepByPriorTagAdmin(priorTag) {
+    if(!priorTag) return null;
+    const pt = String(priorTag).trim();
+    const byCurrent = sheep.find(x => x.tag === pt);
+    if(byCurrent) return byCurrent;
+    const byImport = sheep.find(x => Array.isArray(x.old_tags) && x.old_tags.some(ot => ot && ot.tag === pt && ot.source === 'import'));
+    if(byImport) return byImport;
+    const byWeighIn = sheep.find(x => Array.isArray(x.old_tags) && x.old_tags.some(ot => ot && ot.tag === pt && ot.source === 'weigh_in'));
+    return byWeighIn || null;
+  }
+  async function addEntryToSession(s) {
+    const tag    = (addEntryForm.tag||'').trim() || null;
+    const weight = parseFloat(addEntryForm.weight);
+    if(!Number.isFinite(weight) || weight <= 0) return;
+    const priorTag = (addEntryForm.priorTag||'').trim();
+    // Swap-Tag flow: prior tag supplied → swap matching sheep's tag + stamp
+    // her old_tags. Mirrors webform retag mode.
+    if(priorTag) {
+      if(!tag) { alert('Enter a New tag # for the swap.'); return; }
+      if(priorTag === tag) { alert('Prior tag and new tag cannot be the same.'); return; }
+      const existingAtNewTag = sheep.find(x => x.tag === tag);
+      if(existingAtNewTag) { alert('Tag #'+tag+' is already assigned to another sheep.'); return; }
+      const sh = findSheepByPriorTagAdmin(priorTag);
+      if(!sh) { alert('No sheep found with prior tag #'+priorTag+'.'); return; }
+      const updatedOldTags = (Array.isArray(sh.old_tags) ? sh.old_tags : [])
+        .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'import'}]);
+      const sUpd = await sb.from('sheep').update({tag, old_tags: updatedOldTags}).eq('id', sh.id);
+      if(sUpd.error) { alert('Tag swap failed: '+sUpd.error.message); return; }
+      const id = String(Date.now())+Math.random().toString(36).slice(2,6);
+      await sb.from('weigh_ins').insert({
+        id, session_id: s.id, tag, weight,
+        note: addEntryForm.note || null,
+        new_tag_flag: false,
+        reconcile_intent: 'retag',
+        entered_at: new Date().toISOString(),
+      });
+      invalidateSheepWeighInsCache();
+      setAddEntryForm({tag:'', weight:'', note:'', priorTag:''});
+      await loadAll();
+      return;
+    }
+    const sheepWithTag = tag ? sheep.find(x => x.tag === tag) : null;
+    const newTagFlag   = tag && !sheepWithTag;
     const id = String(Date.now())+Math.random().toString(36).slice(2,6);
-    const rec = {id, session_id:sessionId, tag:addEntry.tag.trim(), weight:parseFloat(addEntry.weight), note:addEntry.note||null};
-    const {error} = await sb.from('weigh_ins').insert(rec);
-    setBusy(false);
-    if(error) { alert('Save failed: '+error.message); return; }
-    if(addEntry.note && addEntry.note.trim()) {
-      const cow = sheep.find(s => s.tag === rec.tag);
+    await sb.from('weigh_ins').insert({
+      id, session_id: s.id, tag, weight,
+      note: addEntryForm.note || null,
+      new_tag_flag: !!newTagFlag,
+      entered_at: new Date().toISOString(),
+    });
+    // Auto-publish the note onto the sheep's timeline (matches cattle pattern).
+    if(addEntryForm.note && addEntryForm.note.trim()) {
       try {
         await sb.from('sheep_comments').insert({
           id: String(Date.now())+Math.random().toString(36).slice(2,6),
-          sheep_id: cow ? cow.id : null, sheep_tag: rec.tag,
-          comment: addEntry.note.trim(), team_member: newSessForm.team_member,
-          source:'weigh_in', reference_id: id,
+          sheep_id: sheepWithTag ? sheepWithTag.id : null,
+          sheep_tag: tag,
+          comment: addEntryForm.note.trim(),
+          team_member: (authState && authState.name) || null,
+          source: 'weigh_in',
+          reference_id: id,
         });
-      } catch(e){}
+      } catch(err){ /* tolerated */ }
     }
-    setAddEntry({tag:'', weight:'', note:''});
+    invalidateSheepWeighInsCache();
+    setAddEntryForm({tag:'', weight:'', note:'', priorTag:''});
     await loadAll();
   }
-  async function delEntry(id) {
-    if(!confirm('Delete this entry?')) return;
-    await sb.from('weigh_ins').delete().eq('id', id);
-    try { await sb.from('sheep_comments').delete().eq('reference_id', id); } catch(e){}
+  async function createNewSession(opts) {
+    const id = 'wsess-' + String(Date.now()) + Math.random().toString(36).slice(2,6);
+    const rec = {
+      id, date: opts.date, team_member: opts.team_member,
+      species: 'sheep', herd: opts.herd,
+      status: 'draft', started_at: new Date().toISOString(),
+    };
+    await sb.from('weigh_in_sessions').insert(rec);
     await loadAll();
-  }
-  async function completeSession(id) {
-    if(!confirm('Mark session complete?')) return;
-    await sb.from('weigh_in_sessions').update({status:'complete', completed_at:new Date().toISOString()}).eq('id', id);
-    await loadAll();
-  }
-  async function delSession(id) {
-    if(!confirm('Delete this session AND all its entries?')) return;
-    await sb.from('weigh_ins').delete().eq('session_id', id);
-    await sb.from('weigh_in_sessions').delete().eq('id', id);
-    setExpandedId(null);
-    await loadAll();
+    setExpandedSession(id);
+    setShowNewModal(false);
   }
 
-  const filteredSessions = !tagSearch.trim() ? sessions : sessions.filter(s => {
-    const ents = entries[s.id] || [];
-    return ents.some(e => (e.tag||'').toLowerCase().includes(tagSearch.toLowerCase().trim()));
-  });
-  const inpS = {fontSize:13, padding:'7px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', boxSizing:'border-box'};
-  const tagSet = new Set(sheep.map(s => s.tag).filter(Boolean));
+  // ADG helpers — mirror cattle's so admin tab + webform show identical numbers.
+  function adgLbPerDay(priorWt, priorDate, curWt, curDate) {
+    if(priorWt == null || curWt == null || !priorDate || !curDate) return null;
+    const pd = new Date(priorDate+'T12:00:00');
+    const cd = new Date(curDate+'T12:00:00');
+    const days = Math.round((cd - pd) / 86400000);
+    if(!Number.isFinite(days) || days < 1) return null;
+    const adg = (parseFloat(curWt) - parseFloat(priorWt)) / days;
+    return Number.isFinite(adg) ? adg : null;
+  }
+  function computePriorsForSession(sess) {
+    const byTag = {};
+    if(!sess) return byTag;
+    const earlier = sessions.filter(o => {
+      if(o.id === sess.id) return false;
+      if(o.status !== 'complete') return false;
+      if((o.date||'') < (sess.date||'')) return true;
+      if((o.date||'') === (sess.date||'')) return (o.started_at||'') < (sess.started_at||'');
+      return false;
+    });
+    for(const o of earlier) {
+      const es = entries[o.id] || [];
+      for(const e of es) {
+        if(!e.tag) continue;
+        const existing = byTag[e.tag];
+        const sd = o.date;
+        if(!existing || sd > existing.date) byTag[e.tag] = {weight: parseFloat(e.weight)||0, date: sd};
+      }
+    }
+    return byTag;
+  }
+
+  const tagQ = tagSearch.trim().toLowerCase();
+  const entryMatchesTag = (e) => !tagQ || (e.tag||'').toLowerCase().includes(tagQ);
+  const statusFiltered = sessions.filter(s => statusFilter === 'all' || s.status === statusFilter);
+  const filtered = tagQ
+    ? statusFiltered.filter(s => (entries[s.id]||[]).some(entryMatchesTag))
+    : statusFiltered;
+  const visibleEntriesFor = (sid) => (entries[sid]||[]).filter(entryMatchesTag);
+  const totalEntries = filtered.reduce((s,sess) => s + visibleEntriesFor(sess.id).length, 0);
+  const matchedSessionCount = tagQ ? filtered.length : null;
 
   return (
     <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
       {showUsers && <UsersModal sb={sb} authState={authState} allUsers={allUsers} setAllUsers={setAllUsers} setShowUsers={setShowUsers} loadUsers={loadUsers}/>}
       <Header/>
-      <div style={{padding:'1rem', maxWidth:1200, margin:'0 auto'}}>
-        <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-          <div style={{fontSize:15, fontWeight:700, color:'#0f766e'}}>{'\ud83d\udc11 Sheep Weigh-Ins'}</div>
-          <input type="text" value={tagSearch} onChange={e=>setTagSearch(e.target.value)} placeholder={'Search tag #\u2026'} style={{...inpS, width:180}}/>
-          <div style={{flex:1}}/>
-          <button onClick={()=>setShowNewSession(true)} style={{padding:'7px 16px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>+ New Session</button>
+      <div style={{padding:'1rem', maxWidth:1100, margin:'0 auto'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8}}>
+          <div>
+            <div style={{fontSize:16, fontWeight:700, color:'#111827'}}>Sheep Weigh-In Sessions</div>
+            <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>
+              {tagQ
+                ? <span>Search <strong>{'#'+tagSearch}</strong>: {matchedSessionCount} session{matchedSessionCount===1?'':'s'} {'·'} {totalEntries} matching {totalEntries===1?'entry':'entries'}</span>
+                : <span>{filtered.length} sessions {'·'} {totalEntries} total entries</span>}
+            </div>
+          </div>
+          <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+            <div style={{position:'relative'}}>
+              <input
+                type="search"
+                value={tagSearch}
+                onChange={e=>{ setTagSearch(e.target.value); if(e.target.value) setExpandedSession(null); }}
+                placeholder="Search by tag #..."
+                style={{fontFamily:'inherit', fontSize:12, padding:'6px 28px 6px 10px', border:'1px solid #d1d5db', borderRadius:6, width:160, boxSizing:'border-box', background:'white', color:'#111827', outline:'none'}}
+              />
+              {tagSearch && <button type="button" onClick={()=>setTagSearch('')} title="Clear search" style={{position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', fontSize:16, lineHeight:1, color:'#9ca3af', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>{'×'}</button>}
+            </div>
+            <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
+              {[{k:'all',l:'All'},{k:'draft',l:'Drafts'},{k:'complete',l:'Complete'}].map((o,oi) => (
+                <button key={o.k} onClick={()=>setStatusFilter(o.k)} style={{padding:'5px 10px', border:'none', borderRight:oi<2?'1px solid #d1d5db':'none', fontFamily:'inherit', fontSize:11, fontWeight:600, cursor:'pointer', background:statusFilter===o.k?'#0f766e':'white', color:statusFilter===o.k?'white':'#6b7280'}}>{o.l}</button>
+              ))}
+            </div>
+            <button onClick={()=>setShowNewModal(true)} style={{padding:'7px 14px', borderRadius:7, border:'none', background:'#0f766e', color:'white', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>{'⚖️ New Weigh-In'}</button>
+          </div>
         </div>
 
-        {showNewSession && (
-          <div style={{background:'white', border:'1px solid #0f766e', borderRadius:10, padding:'14px 18px', marginBottom:14, display:'grid', gridTemplateColumns:'1fr 1fr 1fr 2fr auto', gap:10, alignItems:'end'}}>
-            <div><label style={{fontSize:11, color:'#6b7280'}}>Date</label><input type="date" value={newSessForm.date} onChange={e=>setNewSessForm({...newSessForm, date:e.target.value})} style={inpS}/></div>
-            <div><label style={{fontSize:11, color:'#6b7280'}}>Team Member</label><input type="text" value={newSessForm.team_member} onChange={e=>setNewSessForm({...newSessForm, team_member:e.target.value})} style={inpS}/></div>
-            <div><label style={{fontSize:11, color:'#6b7280'}}>Flock</label><select value={newSessForm.herd} onChange={e=>setNewSessForm({...newSessForm, herd:e.target.value})} style={inpS}>{FLOCKS.map(f => <option key={f} value={f}>{FLOCK_LABELS[f]}</option>)}</select></div>
-            <div><label style={{fontSize:11, color:'#6b7280'}}>Notes (optional)</label><input type="text" value={newSessForm.notes} onChange={e=>setNewSessForm({...newSessForm, notes:e.target.value})} style={inpS}/></div>
-            <div style={{display:'flex', gap:6}}>
-              <button onClick={()=>setShowNewSession(false)} style={{padding:'7px 14px', borderRadius:6, border:'1px solid #d1d5db', background:'white', fontSize:12, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
-              <button onClick={createSession} disabled={busy} style={{padding:'7px 16px', borderRadius:6, border:'none', background:'#0f766e', color:'white', fontSize:12, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>Create</button>
-            </div>
+        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'…'}</div>}
+        {!loading && filtered.length === 0 && (
+          <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
+            No weigh-in sessions yet. Click <strong>{'⚖️ New Weigh-In'}</strong> to start one.
           </div>
         )}
 
-        {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
-        {!loading && filteredSessions.length === 0 && <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>{tagSearch ? 'No sessions match that tag.' : 'No sheep weigh-in sessions yet. Click + New Session.'}</div>}
-
-        {!loading && filteredSessions.map(s => {
-          const isExp = expandedId === s.id;
-          const ents = entries[s.id] || [];
-          const visibleEnts = !tagSearch.trim() ? ents : ents.filter(e => (e.tag||'').toLowerCase().includes(tagSearch.toLowerCase().trim()));
-          const totalWt = ents.reduce((sum,e)=>sum+(parseFloat(e.weight)||0), 0);
-          const isComplete = s.status === 'complete';
-          return (
-            <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, marginBottom:10, overflow:'hidden'}}>
-              <div onClick={()=>setExpandedId(isExp?null:s.id)} style={{padding:'10px 16px', display:'flex', alignItems:'center', gap:10, cursor:'pointer', borderBottom:isExp?'1px solid #e5e7eb':'none'}}>
-                <span style={{fontSize:11, color:'#9ca3af'}}>{isExp?'\u25bc':'\u25b6'}</span>
-                <span style={{fontSize:13, fontWeight:700, color:'#111827'}}>{fmt(s.date)}</span>
-                <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#f0fdfa', color:'#0f766e', border:'1px solid #5eead4', fontWeight:600}}>{FLOCK_LABELS[s.herd] || s.herd || '\u2014'}</span>
-                <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member||'\u2014'}</span>
-                <span style={{fontSize:11, color:'#6b7280'}}>{visibleEnts.length}{tagSearch?' of '+ents.length:''} {ents.length===1?'entry':'entries'}</span>
-                {totalWt > 0 && <span style={{fontSize:11, color:'#065f46', fontWeight:600}}>{Math.round(totalWt).toLocaleString()} lb total</span>}
-                {isComplete ? <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#dcfce7', color:'#166534', fontWeight:700}}>COMPLETE</span> : <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#fef3c7', color:'#92400e', fontWeight:700}}>DRAFT</span>}
-                <div style={{flex:1}}/>
-                {!isComplete && <button onClick={(e)=>{e.stopPropagation();completeSession(s.id);}} style={{fontSize:11, padding:'3px 10px', borderRadius:5, border:'1px solid #166534', color:'#166534', background:'white', cursor:'pointer', fontFamily:'inherit', fontWeight:600}}>Mark Complete</button>}
-                <button onClick={(e)=>{e.stopPropagation();delSession(s.id);}} style={{fontSize:11, padding:'3px 10px', borderRadius:5, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>Delete</button>
-              </div>
-              {isExp && (
-                <div style={{padding:'12px 16px'}}>
-                  {!isComplete && (
-                    <div style={{display:'grid', gridTemplateColumns:'120px 100px 1fr auto', gap:8, marginBottom:12, alignItems:'end', padding:10, background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8}}>
-                      <div><label style={{fontSize:11, color:'#6b7280'}}>Tag #</label><input list="sheep-tags" type="text" value={addEntry.tag} onChange={e=>setAddEntry({...addEntry, tag:e.target.value})} style={inpS}/></div>
-                      <div><label style={{fontSize:11, color:'#6b7280'}}>Weight (lb)</label><input type="number" value={addEntry.weight} onChange={e=>setAddEntry({...addEntry, weight:e.target.value})} style={inpS}/></div>
-                      <div><label style={{fontSize:11, color:'#6b7280'}}>Note (optional)</label><input type="text" value={addEntry.note} onChange={e=>setAddEntry({...addEntry, note:e.target.value})} style={inpS}/></div>
-                      <button onClick={()=>addNewEntry(s.id)} disabled={busy} style={{padding:'7px 14px', borderRadius:6, border:'none', background:'#0f766e', color:'white', fontSize:12, fontWeight:600, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add Entry</button>
-                      <datalist id="sheep-tags">{sheep.map(sh => <option key={sh.id} value={sh.tag}/>)}</datalist>
-                    </div>
-                  )}
-                  {visibleEnts.length === 0 ? <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>No entries yet.</div> : (
-                    <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8}}>
-                      {visibleEnts.map(e => {
-                        const known = tagSet.has(e.tag);
-                        return (
-                          <div key={e.id} style={{padding:'8px 10px', background:known?'white':'#fef3c7', border:'1px solid '+(known?'#e5e7eb':'#fde68a'), borderRadius:8, display:'flex', flexDirection:'column', gap:2}}>
-                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                              <span style={{fontSize:13, fontWeight:700, color:known?'#111827':'#92400e'}}>{'#'+e.tag}{!known && ' \u2009*'}</span>
-                              <button onClick={()=>delEntry(e.id)} style={{fontSize:10, padding:'1px 6px', borderRadius:3, border:'1px solid #fecaca', color:'#7f1d1d', background:'white', cursor:'pointer', fontFamily:'inherit'}}>{'\u00d7'}</button>
-                            </div>
-                            <div style={{fontSize:14, fontWeight:600, color:'#065f46'}}>{e.weight} lb</div>
-                            {e.note && <div style={{fontSize:10, color:'#6b7280'}}>{e.note}</div>}
-                            {!known && <div style={{fontSize:9, color:'#92400e'}}>* tag not in directory</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          {filtered.map(s => {
+            const sEntriesAll = entries[s.id] || [];
+            const isExpanded  = tagQ ? true : (expandedSession === s.id);
+            const sEntries    = tagQ ? sEntriesAll.filter(entryMatchesTag) : sEntriesAll;
+            const newTagCount = sEntriesAll.filter(e => e.new_tag_flag).length;
+            const countLabel  = tagQ
+              ? (sEntries.length + ' of ' + sEntriesAll.length + ' match')
+              : (sEntriesAll.length + ' ' + (sEntriesAll.length===1?'entry':'entries'));
+            return (
+              <div key={s.id} style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, overflow:'hidden'}}>
+                <div onClick={()=>{ if(tagQ) return; setExpandedSession(isExpanded?null:s.id); }} style={{padding:'10px 16px', cursor:tagQ?'default':'pointer', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}} className={tagQ?'':'hoverable-tile'}>
+                  {!tagQ && <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'▼':'▶'}</span>}
+                  <span style={{fontSize:13, fontWeight:700, color:'#111827', minWidth:120}}>{FLOCK_LABELS[s.herd]||s.herd||'Unknown flock'}</span>
+                  <span style={{fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:s.status==='complete'?'#d1fae5':'#fef3c7', color:s.status==='complete'?'#065f46':'#92400e', textTransform:'uppercase'}}>{s.status}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{fmt(s.date)}</span>
+                  <span style={{fontSize:11, color:'#6b7280'}}>{s.team_member}</span>
+                  <span style={{fontSize:11, fontWeight:600, color:tagQ?'#065f46':'#0f766e'}}>{countLabel}</span>
+                  {newTagCount > 0 && !tagQ && <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>{newTagCount + ' new tags'}</span>}
                 </div>
-              )}
-            </div>
-          );
-        })}
+                {isExpanded && (() => {
+                  const priors = computePriorsForSession(s);
+                  const curDate = s.date;
+                  const adgs = sEntriesAll.map(e => {
+                    const p = priors[e.tag];
+                    return p ? adgLbPerDay(p.weight, p.date, e.weight, curDate) : null;
+                  }).filter(a => a != null);
+                  const avgAdg = adgs.length > 0 ? (adgs.reduce((x,v) => x+v, 0) / adgs.length) : null;
+                  return (
+                  <div style={{borderTop:'1px solid #f3f4f6', padding:'10px 16px', background:'#fafafa'}}>
+                    <div style={{display:'flex', gap:8, marginBottom:10, flexWrap:'wrap', alignItems:'center'}}>
+                      {s.status === 'draft' && <button onClick={()=>completeSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #047857', background:'#047857', color:'white', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>{'✓ Complete Session'}</button>}
+                      {s.status === 'complete' && <button onClick={()=>reopenSession(s)} style={{padding:'4px 10px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#0f766e', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Reopen Session</button>}
+                      {avgAdg != null && (
+                        <span title={adgs.length+' of '+sEntriesAll.length+' entries have a prior weigh-in'} style={{padding:'3px 10px', borderRadius:6, background:avgAdg>=0?'#ecfdf5':'#fef2f2', color:avgAdg>=0?'#065f46':'#b91c1c', border:'1px solid '+(avgAdg>=0?'#a7f3d0':'#fecaca'), fontSize:11, fontWeight:700}}>
+                          {'avg ADG '+(avgAdg>=0?'+':'')+avgAdg.toFixed(2)+' lb/d ('+adgs.length+' of '+sEntriesAll.length+')'}
+                        </span>
+                      )}
+                      <button onClick={()=>deleteSession(s)} style={{marginLeft:'auto', padding:'4px 10px', borderRadius:6, border:'1px solid #F09595', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Delete Session</button>
+                    </div>
+                    {sEntries.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No entries in this session.</div>}
+                    {sEntries.length > 0 && (
+                      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:6, marginBottom:8}}>
+                        {sEntries.map(e => {
+                          const sh = sheep.find(x => x.tag === e.tag);
+                          const isEditing = editingEntryId === e.id;
+                          const prior = priors[e.tag];
+                          const adg   = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
+                          return (
+                            <div key={e.id} style={{background:e.send_to_processor?'#fef2f2':'white', border:'1px solid '+(e.send_to_processor?'#fca5a5':(e.new_tag_flag?'#fca5a5':'#e5e7eb')), borderRadius:6, padding:'6px 10px', fontSize:12}}>
+                              {isEditing ? (
+                                <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                                  <div style={{display:'flex', gap:4}}>
+                                    <input type="text" placeholder="Tag #" value={editForm.tag} onChange={ev=>setEditForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:'0 0 80px', minWidth:0}}/>
+                                    <input type="number" min="0" step="0.1" placeholder="lb" value={editForm.weight} onChange={ev=>setEditForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:0}}/>
+                                  </div>
+                                  <input type="text" placeholder="Note (optional)" value={editForm.note} onChange={ev=>setEditForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit'}}/>
+                                  <div style={{display:'flex', gap:4, justifyContent:'flex-end'}}>
+                                    <button onClick={()=>setEditingEntryId(null)} style={{padding:'3px 10px', borderRadius:5, border:'1px solid #d1d5db', background:'white', color:'#6b7280', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Cancel</button>
+                                    <button onClick={()=>saveEntryEdit(e)} disabled={!(parseFloat(editForm.weight)>0)} style={{padding:'3px 10px', borderRadius:5, border:'none', background:(parseFloat(editForm.weight)>0)?'#0f766e':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(editForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>Save</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                                  <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                                    {e.tag ? <span style={{fontWeight:700, color:'#111827'}}>{'#'+e.tag}</span> : <span style={{color:'#9ca3af'}}>(no tag)</span>}
+                                    <span style={{fontWeight:600, color:'#0f766e'}}>{e.weight} lb</span>
+                                    {prior && <span style={{fontSize:10, color:'#6b7280'}} title={'prior '+prior.date}>{'prior '+Math.round(prior.weight)+' lb'}</span>}
+                                    {adg != null && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:adg>=0?'#ecfdf5':'#fef2f2', color:adg>=0?'#065f46':'#b91c1c', border:'1px solid '+(adg>=0?'#a7f3d0':'#fecaca')}}>{(adg>=0?'+':'')+adg.toFixed(2)+' lb/d'}</span>}
+                                    {e.new_tag_flag && <span style={{fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
+                                    {!e.new_tag_flag && sh && <span style={{fontSize:11, color:'#6b7280'}}>{FLOCK_LABELS[sh.flock]||sh.flock}</span>}
+                                    <span style={{fontSize:10, color:'#9ca3af', marginLeft:'auto'}}>{(e.entered_at||'').slice(11,16)}</span>
+                                  </div>
+                                  {e.note && <div style={{fontSize:11, color:'#92400e', fontStyle:'italic'}}>{e.note}</div>}
+                                  {e.new_tag_flag && (
+                                    <select onChange={ev=>{if(ev.target.value){reconcileNewTag(e, ev.target.value);}}} defaultValue='' style={{fontSize:11, padding:'3px 6px', border:'1px solid #d1d5db', borderRadius:4, fontFamily:'inherit', width:'100%'}}>
+                                      <option value=''>Reconcile to known sheep...</option>
+                                      {sheep.filter(x => x.tag).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0)).map(x => <option key={x.id} value={x.id}>{'#'+x.tag+' ('+(x.flock||'?')+')'}</option>)}
+                                    </select>
+                                  )}
+                                  <div style={{display:'flex', gap:4, justifyContent:'flex-end', alignItems:'center', flexWrap:'wrap'}}>
+                                    {s.herd === 'feeders' && s.status === 'draft' && (
+                                      <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this sheep to the processor on session Complete'} style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
+                                    )}
+                                    {s.herd === 'feeders' && s.status !== 'draft' && e.send_to_processor && (
+                                      <span title="This sheep was flagged for the processor during the draft session." style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, background:'#991b1b', color:'white', fontFamily:'inherit'}}>{'✓ Processor'}</span>
+                                    )}
+                                    <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#0f766e', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
+                                    <button onClick={()=>deleteEntry(e)} style={{fontSize:10, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/* Add entry row. Prior tag # triggers Swap-Tag flow. */}
+                    <div style={{marginTop:8, background:'#f0fdfa', border:'1px dashed #5eead4', borderRadius:6, padding:'8px 10px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                      <span style={{fontSize:11, fontWeight:600, color:'#0f766e'}}>+ Add entry:</span>
+                      <input type="text" placeholder="Prior tag (swap)" title="Optional. Fill to swap a known sheep's tag on the spot." value={addEntryForm.priorTag} onChange={ev=>setAddEntryForm(f=>({...f, priorTag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:130, background:addEntryForm.priorTag?'#ccfbf1':'white'}}/>
+                      <input type="text" placeholder={addEntryForm.priorTag?'New tag #':'Tag #'} value={addEntryForm.tag} onChange={ev=>setAddEntryForm(f=>({...f, tag:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:90}}/>
+                      <input type="number" min="0" step="0.1" placeholder="lb" value={addEntryForm.weight} onChange={ev=>setAddEntryForm(f=>({...f, weight:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:70}}/>
+                      <input type="text" placeholder="Note (optional)" value={addEntryForm.note} onChange={ev=>setAddEntryForm(f=>({...f, note:ev.target.value}))} style={{fontSize:12, padding:'4px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', flex:1, minWidth:100}}/>
+                      <button onClick={()=>addEntryToSession(s)} disabled={!(parseFloat(addEntryForm.weight)>0)} style={{padding:'4px 12px', borderRadius:5, border:'none', background:(parseFloat(addEntryForm.weight)>0)?'#0f766e':'#d1d5db', color:'white', fontSize:11, fontWeight:600, cursor:(parseFloat(addEntryForm.weight)>0)?'pointer':'not-allowed', fontFamily:'inherit'}}>{addEntryForm.priorTag?'Swap + Add':'Add'}</button>
+                    </div>
+                  </div>
+                  );
+                })()}
+              </div>
+            );
+          })}
+        </div>
       </div>
+      {showNewModal && <SheepNewWeighInModal sb={sb} onClose={()=>setShowNewModal(false)} onCreate={createNewSession}/>}
+      {sessionForModal && (
+        <SheepSendToProcessorModal
+          sb={sb}
+          session={sessionForModal}
+          flaggedEntries={(entries[sessionForModal.id] || []).filter(e => e.send_to_processor === true)}
+          sheepList={sheep}
+          teamMember={(authState && authState.name) || null}
+          onCancel={()=>setSessionForModal(null)}
+          onConfirmed={async () => { const s = sessionForModal; setSessionForModal(null); await finalizeComplete(s); }}
+        />
+      )}
     </div>
   );
 };

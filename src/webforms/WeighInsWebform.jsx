@@ -3,7 +3,9 @@ import React from 'react';
 import { writeBroilerBatchAvg } from '../lib/broiler.js';
 import { fmt } from '../lib/dateUtils.js';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
+import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import { detachCowFromBatch } from '../lib/cattleProcessingBatch.js';
+import { detachSheepFromBatch } from '../lib/sheepProcessingBatch.js';
 
 const WeighInsWebform = ({sb}) => {
   const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'
@@ -296,6 +298,10 @@ const WeighInsWebform = ({sb}) => {
       const flagged = entries.filter(e => e.send_to_processor === true);
       if(flagged.length > 0) { setShowProcessorModal(true); return; }
     }
+    if(species === 'sheep' && session.herd === 'feeders') {
+      const flagged = entries.filter(e => e.send_to_processor === true);
+      if(flagged.length > 0) { setShowProcessorModal(true); return; }
+    }
     await finalizeSession();
   }
   async function finalizeSession() {
@@ -329,6 +335,16 @@ const WeighInsWebform = ({sb}) => {
         const r = await detachCowFromBatch(sb, cow.id, entry.target_processing_batch_id, {teamMember: teamMember || null});
         if(!r.ok && r.reason !== 'not_in_batch') {
           setErr('Cannot clear flag for #'+(entry.tag||'?')+': '+(r.reason==='no_prior_herd'?'no prior herd recorded — manually move via admin if needed':r.reason+(r.error?' — '+r.error:'')));
+          return;
+        }
+      }
+    }
+    if(!next && entry.target_processing_batch_id && species === 'sheep') {
+      const sh = entry.tag ? sheepList.find(s => s.tag === entry.tag) : null;
+      if(sh) {
+        const r = await detachSheepFromBatch(sb, sh.id, entry.target_processing_batch_id, {teamMember: teamMember || null});
+        if(!r.ok && r.reason !== 'not_in_batch') {
+          setErr('Cannot clear flag for #'+(entry.tag||'?')+': '+(r.reason==='no_prior_flock'?'no prior flock recorded — manually move via admin if needed':r.reason+(r.error?' — '+r.error:'')));
           return;
         }
       }
@@ -513,8 +529,8 @@ const WeighInsWebform = ({sb}) => {
     // mounted here, so fall back to window.confirm unconditionally.
     if(!window.confirm('Delete this entry? This cannot be undone.')) return;
     setBusy(true);
-    // If this entry attached a cow to a processing batch, detach first so
-    // batch.cows_detail and cow.processing_batch_id stay consistent.
+    // If this entry attached a cow/sheep to a processing batch, detach first
+    // so batch detail rows and animal.processing_batch_id stay consistent.
     if(species === 'cattle' && entry.target_processing_batch_id) {
       const cow = entry.tag ? cattleList.find(c => c.tag === entry.tag) : null;
       if(cow) {
@@ -524,9 +540,22 @@ const WeighInsWebform = ({sb}) => {
         }
       }
     }
-    // Cattle: clean up the linked comment before dropping the weigh-in.
+    if(species === 'sheep' && entry.target_processing_batch_id) {
+      const sh = entry.tag ? sheepList.find(s => s.tag === entry.tag) : null;
+      if(sh) {
+        const r = await detachSheepFromBatch(sb, sh.id, entry.target_processing_batch_id, {teamMember: teamMember || null});
+        if(!r.ok && r.reason !== 'not_in_batch') {
+          if(!window.confirm('Sheep #'+(entry.tag||'?')+' could not be auto-reverted ('+r.reason+'). Delete anyway?')) { setBusy(false); return; }
+        }
+      }
+    }
+    // Cattle / sheep: clean up the linked comment before dropping the weigh-in.
     if(species === 'cattle') {
       try { await sb.from('cattle_comments').delete().eq('source','weigh_in').eq('reference_id', entry.id); }
+      catch(e){}
+    }
+    if(species === 'sheep') {
+      try { await sb.from('sheep_comments').delete().eq('source','weigh_in').eq('reference_id', entry.id); }
       catch(e){}
     }
     const {error} = await sb.from('weigh_ins').delete().eq('id', entry.id);
@@ -1025,6 +1054,8 @@ const WeighInsWebform = ({sb}) => {
           const directory = species === 'cattle' ? cattleList : sheepList;
           const curDate = (session && session.date) || new Date().toISOString().slice(0,10);
           const isFinishers = species === 'cattle' && session && session.herd === 'finishers';
+          const isFeeders   = species === 'sheep'  && session && session.herd === 'feeders';
+          const showProcessorBtn = isFinishers || isFeeders;
           const renderRow = (e, highlight) => {
             const animal = directory.find(a => a.tag === e.tag);
             const age = ageYM(animal ? animal.birth_date : null, curDate);
@@ -1054,8 +1085,8 @@ const WeighInsWebform = ({sb}) => {
                   {adg != null && <span style={{fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:4, background:adg>=0?'#ecfdf5':'#fef2f2', color:adg>=0?'#065f46':'#b91c1c', border:'1px solid '+(adg>=0?'#a7f3d0':'#fecaca')}}>{(adg>=0?'+':'')+adg.toFixed(2)+' lb/d'}</span>}
                   {e.new_tag_flag && <span style={{fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4, background:'#fef2f2', color:'#b91c1c'}}>NEW TAG</span>}
                   <div style={{marginLeft:'auto', display:'flex', gap:4, alignItems:'center'}}>
-                    {isFinishers && (
-                      <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this cow to the processor on session Complete'} style={{fontSize:11, fontWeight:700, padding:'3px 8px', borderRadius:5, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
+                    {showProcessorBtn && (
+                      <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this '+(isFeeders?'sheep':'cow')+' to the processor on session Complete'} style={{fontSize:11, fontWeight:700, padding:'3px 8px', borderRadius:5, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
                     )}
                     <button onClick={()=>startEditEntry(e)} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
                     <button onClick={()=>deleteEntry(e)} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Delete</button>
@@ -1074,10 +1105,10 @@ const WeighInsWebform = ({sb}) => {
                 {unflagged.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>All entries have been flagged for the processor. See below.</div>}
                 {unflagged.map(e => renderRow(e, false))}
               </div>
-              {isFinishers && flagged.length > 0 && (
+              {showProcessorBtn && flagged.length > 0 && (
                 <div style={{...cardS, border:'2px solid #fecaca', background:'#fef2f2'}}>
                   <div style={{fontSize:12, fontWeight:700, color:'#991b1b', marginBottom:4}}>{'🚩 Going to processor ('+flagged.length+')'}</div>
-                  <div style={{fontSize:11, color:'#991b1b', marginBottom:8}}>These cows will be attached to a processing batch and moved to the Processed herd when you hit Complete. Still count toward the session's avg ADG.</div>
+                  <div style={{fontSize:11, color:'#991b1b', marginBottom:8}}>{'These '+(isFeeders?'sheep':'cows')+' will be attached to a processing batch and moved to the Processed '+(isFeeders?'flock':'herd')+' when you hit Complete. Still count toward the session’s avg ADG.'}</div>
                   {flagged.map(e => renderRow(e, true))}
                 </div>
               )}
@@ -1134,12 +1165,23 @@ const WeighInsWebform = ({sb}) => {
           );
         })()}
       </div>
-      {showProcessorModal && (
+      {showProcessorModal && species === 'cattle' && (
         <CattleSendToProcessorModal
           sb={sb}
           session={session}
           flaggedEntries={entries.filter(e => e.send_to_processor === true)}
           cattleList={cattleList}
+          teamMember={teamMember}
+          onCancel={()=>setShowProcessorModal(false)}
+          onConfirmed={async () => { setShowProcessorModal(false); await finalizeSession(); }}
+        />
+      )}
+      {showProcessorModal && species === 'sheep' && (
+        <SheepSendToProcessorModal
+          sb={sb}
+          session={session}
+          flaggedEntries={entries.filter(e => e.send_to_processor === true)}
+          sheepList={sheepList}
           teamMember={teamMember}
           onCancel={()=>setShowProcessorModal(false)}
           onConfirmed={async () => { setShowProcessorModal(false); await finalizeSession(); }}
