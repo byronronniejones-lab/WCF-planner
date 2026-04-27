@@ -298,7 +298,10 @@ const WeighInsWebform = ({sb}) => {
       const flagged = entries.filter(e => e.send_to_processor === true);
       if(flagged.length > 0) { setShowProcessorModal(true); return; }
     }
-    if(species === 'sheep' && session.herd === 'feeders') {
+    if(species === 'sheep') {
+      // Looser than cattle's finishers-only gate (per Ronnie 2026-04-27):
+      // any sheep session with flagged entries opens the modal regardless
+      // of flock — handles rams / ewes / feeders / null-herd imports.
       const flagged = entries.filter(e => e.send_to_processor === true);
       if(flagged.length > 0) { setShowProcessorModal(true); return; }
     }
@@ -1054,7 +1057,9 @@ const WeighInsWebform = ({sb}) => {
           const directory = species === 'cattle' ? cattleList : sheepList;
           const curDate = (session && session.date) || new Date().toISOString().slice(0,10);
           const isFinishers = species === 'cattle' && session && session.herd === 'finishers';
-          const isFeeders   = species === 'sheep'  && session && session.herd === 'feeders';
+          // Sheep gate is loosened: any sheep session can flag entries
+          // (rams / ewes / feeders / null). Ronnie 2026-04-27.
+          const isFeeders   = species === 'sheep'  && !!session;
           const showProcessorBtn = isFinishers || isFeeders;
           const renderRow = (e, highlight) => {
             const animal = directory.find(a => a.tag === e.tag);

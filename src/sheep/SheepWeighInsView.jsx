@@ -120,12 +120,11 @@ const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setS
   }
 
   async function completeSession(s) {
-    // Feeders: if any entries are flagged → Processor, intercept to open the
-    // batch modal. Modal confirms attach, then calls finalizeComplete.
-    if(s.herd === 'feeders') {
-      const flagged = (entries[s.id] || []).filter(e => e.send_to_processor === true);
-      if(flagged.length > 0) { setSessionForModal(s); return; }
-    }
+    // Any sheep session with flagged entries opens the batch modal. Sheep
+    // gate is intentionally looser than cattle (per Ronnie 2026-04-27): rams
+    // / ewes / feeders / null-herd imports can all send animals to processor.
+    const flagged = (entries[s.id] || []).filter(e => e.send_to_processor === true);
+    if(flagged.length > 0) { setSessionForModal(s); return; }
     await finalizeComplete(s);
   }
   async function finalizeComplete(s) {
@@ -444,10 +443,10 @@ const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setS
                                     </select>
                                   )}
                                   <div style={{display:'flex', gap:4, justifyContent:'flex-end', alignItems:'center', flexWrap:'wrap'}}>
-                                    {s.herd === 'feeders' && s.status === 'draft' && (
+                                    {s.status === 'draft' && (
                                       <button onClick={()=>toggleProcessor(e, !e.send_to_processor)} title={e.send_to_processor?'Remove from processor run':'Send this sheep to the processor on session Complete'} style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, border:'1px solid '+(e.send_to_processor?'#991b1b':'#d1d5db'), background:e.send_to_processor?'#991b1b':'white', color:e.send_to_processor?'white':'#6b7280', cursor:'pointer', fontFamily:'inherit'}}>{e.send_to_processor?'✓ Processor':'→ Processor'}</button>
                                     )}
-                                    {s.herd === 'feeders' && s.status !== 'draft' && e.send_to_processor && (
+                                    {s.status !== 'draft' && e.send_to_processor && (
                                       <span title="This sheep was flagged for the processor during the draft session." style={{fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:4, background:'#991b1b', color:'white', fontFamily:'inherit'}}>{'✓ Processor'}</span>
                                     )}
                                     <button onClick={()=>startEditEntry(e)} style={{fontSize:10, color:'#0f766e', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', fontFamily:'inherit'}}>Edit</button>
