@@ -11,11 +11,15 @@
 
 import React from 'react';
 
+// destination drives whether this row counts as CONSUMPTION in the admin
+// reconciliation view. cell-refill rows are inventory movement (the cell is a
+// storage tank — fuel going INTO it is delivery, not use), and are excluded.
+// All other destinations count as consumption.
 const DESTINATIONS = [
-  {value:'cell',       label:'Portable fuel cell'},
   {value:'gas_can',    label:'Gas can(s)'},
   {value:'farm_truck', label:'Farm truck'},
-  {value:'other',      label:'Other'},
+  {value:'other',      label:'Other equipment / use'},
+  {value:'cell',       label:'⚠ Cell refill (inventory only — not consumption)'},
 ];
 
 const FUEL_TYPES = [
@@ -98,8 +102,10 @@ export default function FuelSupplyWebform({sb, onBack}) {
       <div style={{maxWidth:560, margin:'0 auto', padding:'16px'}}>
         <div style={{...cardS, background:'#fffbeb', borderColor:'#fde68a'}}>
           <div style={{fontSize:12, fontWeight:700, color:'#92400e', marginBottom:6}}>⚠ When to use this form</div>
-          <div style={{fontSize:12, color:'#78716c'}}>
-            Use this form when there is no fueling checklist for what is being filled with fuel.
+          <div style={{fontSize:12, color:'#78716c', lineHeight:1.5}}>
+            Use this form when there is <strong>no fueling checklist</strong> for what is being filled with fuel — e.g. gas can fills, farm truck top-offs, generators, chainsaws.
+            <br/><br/>
+            <strong>Cell refills</strong> (fuel pumped INTO the portable cell from a supplier delivery) are inventory storage, not consumption. Use the cell-refill destination only if there is no bill on file covering the same delivery.
           </div>
         </div>
 

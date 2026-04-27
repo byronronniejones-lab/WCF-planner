@@ -229,16 +229,41 @@ function BillUploadModal({onClose, onSaved}) {
     if (!parsed || !parsed.lines.length) { setErr('Nothing to save — parse a PDF first.'); return; }
     if (!parsed.header.total) { setErr('Invoice total is required.'); return; }
     if (!parsed.header.delivery_date) { setErr('Delivery date is required for monthly reconciliation.'); return; }
+    // Reconciliation cost adds line_total even when fuel_type is null, but
+    // the gallons land in no fuel-type column. Force a fuel_type per line so
+    // month totals stay coherent.
+    const unclassified = parsed.lines.filter(l => !l.fuel_type);
+    if (unclassified.length > 0) {
+      setErr(`${unclassified.length} line${unclassified.length===1?'':'s'} missing fuel type — pick one for each before save.`);
+      return;
+    }
     setBusy(true);
 
     const id = 'fb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     let pdf_path = null;
+    let pdfUploaded = false;
+    let billInserted = false;
+
+    // Roll back partial state on any post-PDF failure so the next retry
+    // starts clean (no orphan bill row + no orphan PDF in storage).
+    async function rollback(reason) {
+      if (billInserted) {
+        // ON DELETE CASCADE on fuel_bill_lines.bill_id clears any partial lines.
+        await sb.from('fuel_bills').delete().eq('id', id);
+      }
+      if (pdfUploaded && pdf_path) {
+        await sb.storage.from('fuel-bills').remove([pdf_path]);
+      }
+      setErr(reason);
+      setBusy(false);
+    }
 
     if (file) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
       pdf_path = id + '/' + safeName;
       const {error: upErr} = await sb.storage.from('fuel-bills').upload(pdf_path, file, {upsert: false});
       if (upErr) { setErr('PDF upload failed: '+upErr.message); setBusy(false); return; }
+      pdfUploaded = true;
     }
 
     const {error: bErr} = await sb.from('fuel_bills').insert({
@@ -255,7 +280,8 @@ function BillUploadModal({onClose, onSaved}) {
       parsed_data:     {warnings: parsed.warnings, rawTextLength: parsed.rawText ? parsed.rawText.length : 0},
       notes:           null,
     });
-    if (bErr) { setErr('Bill insert failed: '+bErr.message); setBusy(false); return; }
+    if (bErr) { await rollback('Bill insert failed: '+bErr.message); return; }
+    billInserted = true;
 
     const lineRows = parsed.lines.map((l, i) => ({
       id:                'fbl-' + id + '-' + i,
@@ -272,7 +298,7 @@ function BillUploadModal({onClose, onSaved}) {
     }));
     if (lineRows.length) {
       const {error: lErr} = await sb.from('fuel_bill_lines').insert(lineRows);
-      if (lErr) { setErr('Line items failed: '+lErr.message); setBusy(false); return; }
+      if (lErr) { await rollback('Line items failed: '+lErr.message); return; }
     }
 
     setBusy(false);
