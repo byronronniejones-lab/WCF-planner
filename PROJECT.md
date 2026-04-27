@@ -534,7 +534,6 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 
 ### Near-term (known & actionable)
 
-- **Podio equipment photos pull — DONE 2026-04-25.** All 15 checklist apps pulled (599 file entries). Initial `--upload` run linked 48 fuelings due to the dedup-podio_item_id mismatch. `scripts/patch_relink_photos_by_date.cjs --commit` re-matched by (equipment_id, date) → final coverage 167 of 668 fuelings linked / 552 photos. Largest gainers: ventrac 1→23, hijet-2018 0→17, hijet-2020 0→11, gehl 1→11, c362 10→31. Honda ATV fleet picked up small but real coverage (atv-1: 0→12, atv-2: 0→7, atv-3: 0→3, atv-4: 0→3). Pieces with 0 photos remaining are pieces with no photos in Podio for that operator era — not a script bug.
 - **Import more Podio apps** (Ronnie has more workspaces coming over — animal dailys, breeding records, etc.). Budget time for each: inventory fields via dump, filter `status='deleted'`, match external_id variants (e.g. `every-fuel-fill-up` vs `-checklist`), design per-app → planner table mapping, add per-app Fuel-Log-style category map if applicable, add `--fuelings-only`-style flag if it touches a patched-admin table, dry-run, audit against Podio XLSX exports. All pitfalls in `HANDOFF_NEXT_SESSION.md` apply to each new import. **For photo links, prefer `(equipment_id, date)` matching from day 1** to avoid the 147-orphan problem we hit on the equipment apps.
 - **Fuel Log smoke test** — `/fueling/supply` public webform + `/admin → Fuel Log → Supplies` ledger have shipped through several iterations. As of 2026-04-25 the form is stripped to date / team / destination / fuel type / gallons / notes (supplier + cost dropped — bills handle financial info). Still not yet operator-tested end-to-end. Ronnie should submit one entry to confirm RLS + dropdown filtering.
 - **Fuel-bill PDF parser broader test.** `src/lib/fuelBillParser.js` (lazy-loaded `pdfjs-dist`) is built for the Home Oil format. Pull a handful of recent bills through `/admin → Fuel Log → Bills → + Upload bill` to validate the regex against month-to-month variation. Tax allocation is proportional-by-gallons in v1; for an obvious mis-attribution (e.g. a bill that itemizes a road tax on gasoline only), admin can override `allocated_tax` per line. v2 enhancement: basis-aware tax allocation reading the bill's per-line "Basis" column.
@@ -557,10 +556,7 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 - **Splitting `app_store` jsonb blobs into dedicated tables** (per-feature).
 - **Full router migration** (replace `setView('X')` with `useNavigate('/path')` across every view). The adapter works fine; this is pure churn for "idiomatic React Router" without user-visible benefit.
 - **ESLint + Prettier.**
-- **Equipment module.** Currently a placeholder stub at `/equipment`. See `EQUIPMENT_PLAN.md` for the 6-phase plan.
 - **Sheep module Phase 2** — nutrition targets, retag flow.
-- **Send-to-trip on pig weigh-ins.** Done 2026-04-22 — admin per-row checkbox + bottom Send-to-Trip button + Undo Send. Trips track origin sub-batch via `weigh_ins.session_id` join; PigBatchesView trip rows show "From: P-26-01A (GILTS) (2), P-26-01B (BOARS) (2)".
-- **Pig batch sub-status** — done 2026-04-22 via per-sub-batch Mark Processed / Reactivate buttons. No third batch status added; sub-batch processed is enough to drop it from the public webform without retiring the parent batch.
 
 ### Known gotchas (watch for these)
 
