@@ -1,13 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { addDays, toISO, fmt, fmtS, todayISO } from './dateUtils.js';
 
-// thisMonday() is intentionally NOT tested here — its behavior diverges from
-// its name (d.setDate(d.getDate()-d.getDay()) returns Sunday, since
-// getDay()===0 is Sunday). See PROJECT.md §8 "Known gotchas" — needs a UX
-// decision (anchor broiler timeline to Sunday or Monday?) before a test can
-// assert correct behavior. Asserting current Sunday behavior would freeze a
-// suspected bug; asserting Monday behavior would fail today.
-
 describe('addDays', () => {
   it('adds days to an ISO date string and returns a Date object', () => {
     const result = addDays('2026-04-25', 5);

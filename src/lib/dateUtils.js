@@ -31,10 +31,5 @@ export function fmtS(iso){
   return mm+"/"+dd;
 }
 export function todayISO(){ return toISO(new Date()); }
-export function thisMonday(){
-  const d=new Date();
-  d.setDate(d.getDate()-d.getDay());
-  return toISO(d);
-}
 
 // ── HOLIDAY LOGIC ──────────────────────────────────────────────────────────

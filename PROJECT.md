@@ -240,7 +240,7 @@ WCF-planner/
 ```
 <BrowserRouter>
   <AuthProvider>
-    <BatchesProvider formInit={EMPTY_FORM} tlStartInit={thisMonday}>
+    <BatchesProvider formInit={EMPTY_FORM}>
       <PigProvider initialFarrowing={INITIAL_FARROWING} initialBreeders={INITIAL_BREEDERS} breedTlStartInit={…}>
         <LayerProvider>
           <DailysRecentProvider>
@@ -259,7 +259,7 @@ WCF-planner/
 | `supabase.js` | `sb` (the Supabase client, `detectSessionInUrl:false` + `storageKey:'farm-planner-auth'`) |
 | `email.js` | `wcfSendEmail(type, data)` — fire-and-forget edge-function call |
 | `pagination.js` | `wcfSelectAll(buildRangeQuery, pageSize)` — the `.range(from, from+999)` loop pattern (don't touch — see §7) |
-| `dateUtils.js` | `addDays`, `toISO`, `fmt`, `fmtS`, `todayISO`, `thisMonday` |
+| `dateUtils.js` | `addDays`, `toISO`, `fmt`, `fmtS`, `todayISO` |
 | `styles.js` | `S` — shared style constants |
 | `defaults.js` | `DEFAULT_WEBFORMS_CONFIG` |
 | `layerHousing.js` | `setHousingAnchorFromReport`, `computeProjectedCount`, `computeLayerFeedCost` |
@@ -563,7 +563,6 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 - **The `housingBatchMap` shape** was not directly SQL-verified during the Add Feed design. Existing code treats it as `{housingName: batchName}` (flat object). If layer `batch_id` resolution misbehaves at runtime, that's the first place to look.
 - **The `source` column** on dailys tables is nullable. Filter logic: `r.source !== 'add_feed_webform'` handles null correctly (returns true). No null guard needed.
 - **Historical B-24-* broiler batches** use legacy manual feed fields. B-25+ batches pull from dailys. Don't unify these without backfilling the older data.
-- **`dateUtils.thisMonday()` appears to return Sunday, not Monday.** `d.setDate(d.getDate() - d.getDay())` lands on Sunday (`getDay()===0`). Used by `BroilerTimelineView.jsx`'s "this monday" reset button + as `tlStartInit` in `BatchesProvider`. Needs a UX decision before changing — anchor the broiler timeline to Sunday or Monday? — because either fixing the impl or renaming the function/button shifts the timeline display by 1-2 days. Found 2026-04-27 while writing the test slice; deliberately left untested so the suspected bug isn't frozen in by the test suite.
 
 ---
 

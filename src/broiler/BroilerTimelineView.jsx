@@ -3,14 +3,17 @@
 // ----------------------------------------------------------------------------
 // Broiler + layer timeline Gantt view. Consumes contexts via hooks; Header,
 // loadUsers, and openEdit come in as props because their extractions are
-// still deferred in App. Derives tlS/tlE/totalDays/pct/wkHdrs from the
-// tlStart context value — these were previously computed in App's body.
+// still deferred in App. The visible date range is derived from data:
+// left bound = today − 90 days; right bound = max(today + 30d, latest
+// rendered end date + 30d). Width grows with the data span; the container
+// scrolls horizontally and lands on today (~12% from the left edge) on
+// first paint. Vertical "today" line is preserved.
 // ============================================================================
-import React from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { sb } from '../lib/supabase.js';
-import { toISO, addDays, fmt, fmtS, todayISO, thisMonday } from '../lib/dateUtils.js';
+import { toISO, addDays, fmt, fmtS, todayISO } from '../lib/dateUtils.js';
 import { S } from '../lib/styles.js';
-import { calcTimeline, WEEKS_SHOWN, RESOURCES, getBatchColor, breedLabel } from '../lib/broiler.js';
+import { calcTimeline, RESOURCES, getBatchColor, breedLabel } from '../lib/broiler.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useBatches } from '../contexts/BatchesContext.jsx';
@@ -19,16 +22,58 @@ import { useUI } from '../contexts/UIContext.jsx';
 
 export default function BroilerTimelineView({ Header, loadUsers, openEdit }) {
   const { authState, showUsers, setShowUsers, allUsers, setAllUsers } = useAuth();
-  const { batches, tlStart, setTlStart, tooltip, setTooltip } = useBatches();
+  const { batches, tooltip, setTooltip } = useBatches();
   const { layerBatches } = useLayer();
   const { setView, setPendingEdit } = useUI();
 
-  // Timeline-grid derivations (previously App-scope)
-  const tlS       = new Date(tlStart+"T12:00:00");
-  const tlE       = addDays(tlS, WEEKS_SHOWN*7);
-  const totalDays = WEEKS_SHOWN*7;
-  const pct       = iso => ((new Date(iso+"T12:00:00")-tlS)/86400000/totalDays)*100;
-  const wkHdrs    = Array.from({length:WEEKS_SHOWN},(_,i)=>addDays(tlS,i*7));
+  const today   = todayISO();
+  const tlStart = toISO(addDays(today, -90));
+
+  const latestEndISO = useMemo(() => {
+    let latest = today;
+    const bump = iso => { if (iso && iso > latest) latest = iso; };
+    for (const b of (batches||[])) {
+      bump(b.brooderOut);
+      bump(b.schoonerOut);
+      bump(b.processingDate);
+      // Cover planned batches whose phases haven't been written to the row yet.
+      if (b.hatchDate && b.breed) {
+        const live = calcTimeline(b.hatchDate, b.breed, b.processingDate);
+        if (live) { bump(live.brooderOut); bump(live.schoonerOut); }
+      }
+    }
+    for (const lb of (layerBatches||[])) {
+      if (lb.status !== 'active') continue;
+      if (lb.name === 'Retirement Home') continue;
+      const bs = lb.brooder_entry_date;
+      if (bs) bump(lb.brooder_exit_date  || toISO(addDays(new Date(bs+'T12:00:00'), 21)));
+      const ss = lb.schooner_entry_date;
+      if (ss) bump(lb.schooner_exit_date || toISO(addDays(new Date(ss+'T12:00:00'), 119)));
+    }
+    return latest;
+  }, [batches, layerBatches, today]);
+
+  const tlEndISO   = toISO(addDays(latestEndISO, 30));
+  const tlS        = new Date(tlStart+"T12:00:00");
+  const tlE        = new Date(tlEndISO+"T12:00:00");
+  const totalDays  = Math.max(1, Math.round((tlE - tlS) / 86400000));
+  const weeksShown = Math.max(1, Math.ceil(totalDays / 7));
+  const pct        = iso => ((new Date(iso+"T12:00:00")-tlS)/86400000/totalDays)*100;
+  const wkHdrs     = Array.from({length:weeksShown},(_,i)=>addDays(tlS,i*7));
+
+  // Land today near the left edge on first paint. Self-terminating so the
+  // user's manual scroll isn't yanked back on later renders.
+  const scrollRef        = useRef(null);
+  const didInitialScroll = useRef(false);
+  useEffect(() => {
+    if (didInitialScroll.current) return;
+    const el = scrollRef.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const ganttPx = weeksShown * 120;
+    const targetX = (pct(today) / 100) * ganttPx - el.clientWidth * 0.12;
+    el.scrollLeft = Math.max(0, targetX);
+    didInitialScroll.current = true;
+  });
 
   return (
     <div style={{minHeight:"100vh",background:"#f1f3f2"}}>
@@ -36,18 +81,9 @@ export default function BroilerTimelineView({ Header, loadUsers, openEdit }) {
       <Header/>
       <div style={{padding:"1rem"}}>
 
-        {/* Nav */}
-        <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
-          <button onClick={()=>setTlStart(thisMonday())}
-            style={{padding:"5px 14px",borderRadius:5,border:"none",background:"#085041",color:"white",cursor:"pointer",fontSize:11,fontWeight:600}}>
-            Today
-          </button>
-          <span style={{fontSize:11,color:"#9ca3af"}}>{fmtS(tlStart)} — {fmtS(toISO(tlE))}</span>
-        </div>
-
         {/* Gantt */}
-        <div style={{...S.card,overflowX:"auto"}}>
-          <div style={{width:`${WEEKS_SHOWN*120}px`,position:"relative"}} data-gantt="1">
+        <div ref={scrollRef} style={{...S.card,overflowX:"auto"}}>
+          <div style={{width:`${weeksShown*120}px`,position:"relative"}} data-gantt="1">
 
             {/* Floating tooltip */}
             {tooltip&&(()=>{

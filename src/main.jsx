@@ -28,7 +28,7 @@ import { wcfSelectAll } from './lib/pagination.js';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 
 // Phase 2.0.2: BatchesContext owns the broiler batch + edit-form hooks.
-// EMPTY_FORM + thisMonday are passed in as initializers (module-scope here).
+// EMPTY_FORM is passed in as the form initializer (module-scope here).
 import { BatchesProvider, useBatches } from './contexts/BatchesContext.jsx';
 
 // Phase 2.0.3: PigContext owns all pig-scoped useState hooks. INITIAL_FARROWING,
@@ -103,7 +103,7 @@ import CattleWeighInsView from './cattle/CattleWeighInsView.jsx';
 // Phase 2.3 prep: helpers needed by Round 3 views extracted to src/lib/.
 import { loadCattleWeighInsCached, invalidateCattleWeighInsCache } from './lib/cattleCache.js';
 import { calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel } from './lib/cattleBreeding.js';
-import { addDays, toISO, fmt, fmtS, todayISO, thisMonday } from './lib/dateUtils.js';
+import { addDays, toISO, fmt, fmtS, todayISO } from './lib/dateUtils.js';
 import { S } from './lib/styles.js';
 import { DEFAULT_WEBFORMS_CONFIG } from './lib/defaults.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
@@ -408,7 +408,6 @@ function App(){
     form,            setForm,
     originalForm,    setOriginalForm,
     conflicts,       setConflicts,
-    tlStart,         setTlStart,
     tooltip,         setTooltip,
     override,        setOverride,
     showLegacy,      setShowLegacy,
@@ -1859,7 +1858,7 @@ const breedTlStartInit = () => {
 root.render(
   <BrowserRouter>
     <AuthProvider>
-      <BatchesProvider formInit={EMPTY_FORM} tlStartInit={thisMonday}>
+      <BatchesProvider formInit={EMPTY_FORM}>
         <PigProvider
           initialFarrowing={INITIAL_FARROWING}
           initialBreeders={INITIAL_BREEDERS}
