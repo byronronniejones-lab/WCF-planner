@@ -849,7 +849,33 @@ export default function PigBatchesView({
                     {[
                       {label:"Total feed",val:totalFeed>0?`${Math.round(totalFeed).toLocaleString()} lbs`:"—",color:"#92400e",hint:feedAllocatedOut>0?`raw ${Math.round(rawFeed).toLocaleString()} − ${Math.round(feedAllocatedOut).toLocaleString()} transferred out`:dailyFeedTotal>0&&legacyFeed>0?`${Math.round(dailyFeedTotal).toLocaleString()} from dailys + ${Math.round(legacyFeed).toLocaleString()} legacy`:dailyFeedTotal>0?`from ${batchDailys.length} daily reports`:null},
                       ...(feedAllocatedOut>0 ? [{label:"Feed → Breeding",val:`−${Math.round(feedAllocatedOut).toLocaleString()} lbs`,color:"#5b21b6",hint:'credited to transferred pigs (subtracted above)'}] : []),
-                      {label:"Lbs per pig",val:(totalFeed>0&&originalPigCount>0)?`${Math.round(totalFeed/originalPigCount)} lbs/pig`:"—",color:"#78350f",hint:originalPigCount>0?`adjusted feed ÷ ${originalPigCount} started`:null},
+                      {label:"Lbs per pig",val:(()=>{
+                        const transferredCount = hasSubBatches
+                          ? subFeedTotals.reduce((s,sf)=>s+sf.transferCount,0)
+                          : parentTransferAgg.count;
+                        const mortalityCount = hasSubBatches
+                          ? subFeedTotals.reduce((s,sf)=>s+sf.mortality,0)
+                          : pigMortalityForBatch(g);
+                        const finishers = Math.max(0, originalPigCount - transferredCount - mortalityCount);
+                        return totalFeed>0&&finishers>0 ? `${Math.round(totalFeed/finishers)} lbs/pig` : '—';
+                      })(),color:"#78350f",hint:(()=>{
+                        const transferredCount = hasSubBatches
+                          ? subFeedTotals.reduce((s,sf)=>s+sf.transferCount,0)
+                          : parentTransferAgg.count;
+                        const mortalityCount = hasSubBatches
+                          ? subFeedTotals.reduce((s,sf)=>s+sf.mortality,0)
+                          : pigMortalityForBatch(g);
+                        const finishers = Math.max(0, originalPigCount - transferredCount - mortalityCount);
+                        if (finishers <= 0) return null;
+                        const parts = [`adjusted feed ÷ ${finishers}`];
+                        if (transferredCount>0 || mortalityCount>0) {
+                          const subParts = [`${originalPigCount} started`];
+                          if (transferredCount>0) subParts.push(`− ${transferredCount} transferred`);
+                          if (mortalityCount>0) subParts.push(`− ${mortalityCount} mortality`);
+                          parts.push(`(${subParts.join(' ')})`);
+                        }
+                        return parts.join(' ');
+                      })()},
                       {label:"Feed cost",val:totalFeedCost?`$${totalFeedCost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—",color:"#92400e",hint:perLbCost>0?`$${perLbCost}/lb`:null},
                       {label:"Feed conversion",val:feedConversion?`${feedConversion} lbs/lb`:"—",color:"#78350f"},
                       {label:"Pigs processed",val:trips.reduce((s,t)=>s+(parseInt(t.pigCount)||0),0),color:"#111827"},
@@ -975,7 +1001,7 @@ export default function PigBatchesView({
                         <span style={S.badge(sbSc.bg,sbSc.tx)}>{sb.status}</span>
                         {sft.started>0&&<span style={{fontSize:11,color:"#374151"}}>Started: <strong>{sft.started}</strong></span>}
                         {sft.adjustedFeed>0&&<span style={{fontSize:11,color:"#92400e",fontWeight:600}}>🌾 {Math.round(sft.adjustedFeed).toLocaleString()} lbs feed</span>}
-                        {sft.adjustedFeed>0&&sft.started>0&&<span style={{fontSize:11,color:"#78350f"}}>({Math.round(sft.adjustedFeed/sft.started)} lbs/pig)</span>}
+                        {(()=>{const finishers=Math.max(0,sft.started-sft.transferCount-sft.mortality);return sft.adjustedFeed>0&&finishers>0?<span style={{fontSize:11,color:"#78350f"}} title={`adjusted feed ÷ ${finishers} (started ${sft.started}${sft.transferCount?` − ${sft.transferCount} transferred`:''}${sft.mortality?` − ${sft.mortality} mortality`:''})`}>({Math.round(sft.adjustedFeed/finishers)} lbs/pig)</span>:null;})()}
                         {sft.transferFeedCredit>0&&<span style={{fontSize:10,color:"#6b7280"}} title={`raw ${Math.round(sft.rawFeed).toLocaleString()} − ${Math.round(sft.transferFeedCredit).toLocaleString()} credited to ${sft.transferCount} transferred`}>(−{Math.round(sft.transferFeedCredit).toLocaleString()} → breeding)</span>}
                         <span style={{fontSize:11,color:"#111827"}}>🐷 {sft.currentCount} current</span>
                         {dailyVsLedger&&<span style={{fontSize:10,color:"#b91c1c",background:"#fef2f2",border:"1px solid #fecaca",padding:"1px 6px",borderRadius:4}} title="Latest daily count differs from ledger by more than 2">⚠ daily {sft.dailyCount}</span>}
