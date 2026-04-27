@@ -212,15 +212,19 @@ export async function detachCowFromBatch(sb, cowId, batchId, opts = {}) {
     });
   } catch (err) { /* audit log nice-to-have */ }
 
-  // Step 5: clear the matching weigh_ins so a subsequent flag-clear doesn't
-  // double-fire. Don't clear send_to_processor itself — the caller may have
-  // initiated this from a flag-clear and we'd race them, OR it might be
-  // set elsewhere intentionally. Just unset the target so attach-state is
-  // consistent with the cow being out of the batch.
+  // Step 5: clear the matching weigh_ins. We unset BOTH target_processing_
+  // batch_id (the link to this batch) AND send_to_processor (the flag that
+  // would otherwise still render as a red "✓ Processor" chip on the
+  // weigh-in row). Setting send_to_processor=false twice when this detach
+  // was triggered FROM a flag-clear is harmless (idempotent — both writes
+  // land the same value).
   const cleared = [];
   for (const w of wis) {
     try {
-      await sb.from('weigh_ins').update({target_processing_batch_id: null}).eq('id', w.id);
+      await sb.from('weigh_ins').update({
+        target_processing_batch_id: null,
+        send_to_processor: false,
+      }).eq('id', w.id);
       cleared.push(w.id);
     } catch (err) { /* tolerated */ }
   }

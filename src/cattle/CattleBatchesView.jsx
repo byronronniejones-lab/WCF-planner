@@ -6,7 +6,7 @@ import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
 import PigSendToTripModal from '../livestock/PigSendToTripModal.jsx';
 import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
 import LivestockWeighInsView from '../livestock/LivestockWeighInsView.jsx';
-import { loadCattleWeighInsCached } from '../lib/cattleCache.js';
+import { loadCattleWeighInsCached, invalidateCattleWeighInsCache } from '../lib/cattleCache.js';
 import { detachCowFromBatch } from '../lib/cattleProcessingBatch.js';
 const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;
@@ -137,6 +137,7 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
       // detach failures + rows that were FK'd but absent from cows_detail).
       await sb.from('cattle').update({processing_batch_id: null}).eq('processing_batch_id', id);
       await sb.from('cattle_processing_batches').delete().eq('id', id);
+      invalidateCattleWeighInsCache();
       if(blocked.length > 0) {
         const lines = blocked.map(b => '#'+(b.cow?.tag || b.cowId || '?') + ' (' + b.reason + ')').join('\n');
         alert('Batch deleted. ' + reverted.length + ' cow' + (reverted.length===1?'':'s') + ' reverted. ' + blocked.length + ' could not be auto-reverted:\n\n' + lines + '\n\nManually move them via the Herds tab if needed.');
@@ -147,6 +148,8 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
   }
   // Per-cow detach button on an expanded batch row. Shows the reason if
   // the detach can't auto-revert (no prior_herd_or_flock + no audit row).
+  // Invalidates the cattle weigh-ins cache so the weigh-in view re-fetches
+  // and the now-cleared "✓ Processor" chip disappears on next render.
   async function detachCowAndReport(batch, cow) {
     if(!cow || !cow.id) return;
     const r = await detachCowFromBatch(sb, cow.id, batch.id, {teamMember: authState && authState.name ? authState.name : null});
@@ -158,6 +161,7 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
         alert('Detach failed for #'+tag+': '+r.reason+(r.error?' — '+r.error:''));
       }
     }
+    invalidateCattleWeighInsCache();
     await loadAll();
   }
   async function saveCowWeight(batch, cattleId, field, value) {
