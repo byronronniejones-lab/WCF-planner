@@ -532,6 +532,16 @@ If a change modifies any of the following, **stop and ask first.** These are ong
 
 ## 8. Open items / roadmap
 
+### Recommended sequencing (set 2026-04-27)
+
+The order CC + Codex agreed on for upcoming work, in priority order. Items below are still individually documented in Near-term / Deferred — this is the "what's next" queue, not a replacement.
+
+1. **Cattle/sheep processor workflow** (in progress as of this note). Phase 1: cattle bidirectional Send-to-Processor sync via `weigh_ins.prior_herd_or_flock` (mig 027). Phase 2: sheep scaffolding (`sheep_processing_batches` + `sheep_transfers` migrations + view + modal + lib + routes + home tile). Phase 3: sheep weigh-in feature parity (Swap Tag / Missing Tag / Send-to-Processor flag). Business-critical, touches production data — finish + smoke before anything else.
+2. **Pig FCR cache.** Now that pig batch ledger math is correct, finish the FCR cache while the model is fresh. Wire a side effect on trip add/edit (PigBatchesView) to recompute parent FCR (`adjustedFeed / totalLive` for finishers) and stamp `parent.fcrCached`. Transfer-to-breeding then uses real FCR instead of the 3.5 default. See full description below in Near-term.
+3. **Playwright integration tests.** Highest-value tooling next — locks down workflows that have repeatedly broken: pig batch math, cattle/sheep send-to-processor, broiler timeline, fuel bills + reconciliation.
+4. **ESLint + Prettier** in a separate focused pass. Will surface cleanup noise; keep it isolated from feature work.
+5. **PWA shell / mobile install.** Lowest urgency. Useful but doesn't protect data workflows.
+
 ### Near-term (known & actionable)
 
 - **Import more Podio apps** (Ronnie has more workspaces coming over — animal dailys, breeding records, etc.). Budget time for each: inventory fields via dump, filter `status='deleted'`, match external_id variants (e.g. `every-fuel-fill-up` vs `-checklist`), design per-app → planner table mapping, add per-app Fuel-Log-style category map if applicable, add `--fuelings-only`-style flag if it touches a patched-admin table, dry-run, audit against Podio XLSX exports. All pitfalls in `HANDOFF_NEXT_SESSION.md` apply to each new import. **For photo links, prefer `(equipment_id, date)` matching from day 1** to avoid the 147-orphan problem we hit on the equipment apps.

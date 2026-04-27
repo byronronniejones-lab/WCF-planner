@@ -9,6 +9,7 @@ import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
 import CattleSendToProcessorModal from './CattleSendToProcessorModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 import { loadCattleWeighInsCached, invalidateCattleWeighInsCache } from '../lib/cattleCache.js';
+import { detachCowFromBatch } from '../lib/cattleProcessingBatch.js';
 const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;
   const [sessions, setSessions] = useState([]);
@@ -63,13 +64,26 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
   }
   async function deleteSession(s) {
     if(!window._wcfConfirmDelete) return;
-    window._wcfConfirmDelete('Delete this weigh-in session and all its entries? This cannot be undone.', async () => {
+    window._wcfConfirmDelete('Delete this weigh-in session and all its entries? Attached cows will be detached and reverted to prior herds where possible.', async () => {
+      // Detach any cows attached via this session's weigh-in entries first,
+      // so processing batches don't carry orphan cows_detail rows after
+      // the cascade. (Codex Edge Case: detach reports any cow that can't
+      // be auto-reverted instead of silently dropping the link.)
+      const sessEntries = (entries[s.id] || []).filter(e => e.target_processing_batch_id);
+      const blocked = [];
+      for(const e of sessEntries) {
+        const cow = e.tag ? cattle.find(c => c.tag === e.tag) : null;
+        if(!cow) { blocked.push({tag: e.tag||'?', reason:'no_cow_for_tag'}); continue; }
+        const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {teamMember: authState && authState.name ? authState.name : null});
+        if(!r.ok && r.reason !== 'not_in_batch') blocked.push({tag: e.tag||'?', reason: r.reason});
+      }
+      if(blocked.length > 0) {
+        const lines = blocked.map(x => '#'+x.tag+' ('+x.reason+')').join('\n');
+        if(!window.confirm('Some cows could not be auto-reverted from their batches:\n\n'+lines+'\n\nDelete the session anyway?')) return;
+      }
       // Cattle weigh-ins auto-publish a row into cattle_comments whenever an
       // entry has a note. cattle_comments has no FK to weigh_ins (reference_id
       // is plain text), so the cascade on weigh_in_sessions doesn't reach them.
-      // Look up the session's weigh-in IDs first and wipe the matching comments
-      // before the session itself is deleted -- otherwise they linger as
-      // orphans on the cow's timeline.
       const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
       const wiIds = (wis && wis.data || []).map(r => r.id);
       if(wiIds.length > 0) {
@@ -115,6 +129,21 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     await loadAll();
   }
   async function toggleProcessor(e, next) {
+    // Clearing the flag on an already-attached entry: detach the cow first
+    // (revert herd via prior_herd_or_flock fallback hierarchy) before
+    // clearing send_to_processor itself. If detach blocks (no_prior_herd),
+    // surface the reason and abort the toggle so the UI doesn't show a
+    // stale state.
+    if(!next && e.target_processing_batch_id) {
+      const cow = e.tag ? cattle.find(c => c.tag === e.tag) : null;
+      if(cow) {
+        const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {teamMember: authState && authState.name ? authState.name : null});
+        if(!r.ok && r.reason !== 'not_in_batch') {
+          alert('Cannot clear flag for #'+(e.tag||'?')+': '+(r.reason==='no_prior_herd'?'no prior herd recorded for this cow + batch. Manually move via the Herds tab if needed.':r.reason+(r.error?' — '+r.error:'')));
+          return;
+        }
+      }
+    }
     const {error} = await sb.from('weigh_ins').update({send_to_processor: !!next}).eq('id', e.id);
     if(error) { alert('Could not update: '+error.message); return; }
     invalidateCattleWeighInsCache();
@@ -126,6 +155,8 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
       }
       return next2;
     });
+    // Refresh batches list if we just detached.
+    if(!next && e.target_processing_batch_id) await loadAll();
   }
   function startEditEntry(e) {
     setEditingEntryId(e.id);
@@ -144,18 +175,28 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
     await loadAll();
   }
   async function deleteEntry(e) {
+    // If this entry attached a cow to a processing batch, detach first so
+    // the batch.cows_detail and cow.processing_batch_id stay consistent.
+    async function doDelete() {
+      if(e.target_processing_batch_id) {
+        const cow = e.tag ? cattle.find(c => c.tag === e.tag) : null;
+        if(cow) {
+          const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {teamMember: authState && authState.name ? authState.name : null});
+          if(!r.ok && r.reason !== 'not_in_batch') {
+            if(!window.confirm('Cow #'+(e.tag||'?')+' could not be auto-reverted ('+r.reason+'). Delete the entry anyway?')) return;
+          }
+        }
+      }
+      await sb.from('weigh_ins').delete().eq('id', e.id);
+      invalidateCattleWeighInsCache();
+      await loadAll();
+    }
     if(!window._wcfConfirmDelete) {
       if(!window.confirm('Delete this weigh-in entry?')) return;
-      await sb.from('weigh_ins').delete().eq('id', e.id);
-      invalidateCattleWeighInsCache();
-      await loadAll();
+      await doDelete();
       return;
     }
-    window._wcfConfirmDelete('Delete this weigh-in entry? This cannot be undone.', async () => {
-      await sb.from('weigh_ins').delete().eq('id', e.id);
-      invalidateCattleWeighInsCache();
-      await loadAll();
-    });
+    window._wcfConfirmDelete('Delete this weigh-in entry? Attached cow will be detached and reverted where possible.', doDelete);
   }
   // Same walk as the webform's findCowByPriorTag: current tag →
   // import old_tags → weigh_in old_tags.

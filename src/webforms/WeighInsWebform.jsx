@@ -3,6 +3,7 @@ import React from 'react';
 import { writeBroilerBatchAvg } from '../lib/broiler.js';
 import { fmt } from '../lib/dateUtils.js';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
+import { detachCowFromBatch } from '../lib/cattleProcessingBatch.js';
 
 const WeighInsWebform = ({sb}) => {
   const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'
@@ -318,7 +319,20 @@ const WeighInsWebform = ({sb}) => {
   }
   // Toggle the send_to_processor flag on an individual entry. Finishers-only
   // in the UI; no herd gate here so the admin tab can override if needed.
+  // Clearing the flag on an already-attached entry triggers a detach so the
+  // batch.cows_detail and cow.processing_batch_id stay in sync. Detach uses
+  // the prior_herd_or_flock fallback hierarchy and surfaces any block reason.
   async function toggleProcessor(entry, next) {
+    if(!next && entry.target_processing_batch_id && species === 'cattle') {
+      const cow = entry.tag ? cattleList.find(c => c.tag === entry.tag) : null;
+      if(cow) {
+        const r = await detachCowFromBatch(sb, cow.id, entry.target_processing_batch_id, {teamMember: teamMember || null});
+        if(!r.ok && r.reason !== 'not_in_batch') {
+          setErr('Cannot clear flag for #'+(entry.tag||'?')+': '+(r.reason==='no_prior_herd'?'no prior herd recorded — manually move via admin if needed':r.reason+(r.error?' — '+r.error:'')));
+          return;
+        }
+      }
+    }
     const {error} = await sb.from('weigh_ins').update({send_to_processor: !!next}).eq('id', entry.id);
     if(error) { setErr('Could not update: '+error.message); return; }
     setEntries(prev => prev.map(e => e.id === entry.id ? {...e, send_to_processor: !!next} : e));
@@ -499,6 +513,17 @@ const WeighInsWebform = ({sb}) => {
     // mounted here, so fall back to window.confirm unconditionally.
     if(!window.confirm('Delete this entry? This cannot be undone.')) return;
     setBusy(true);
+    // If this entry attached a cow to a processing batch, detach first so
+    // batch.cows_detail and cow.processing_batch_id stay consistent.
+    if(species === 'cattle' && entry.target_processing_batch_id) {
+      const cow = entry.tag ? cattleList.find(c => c.tag === entry.tag) : null;
+      if(cow) {
+        const r = await detachCowFromBatch(sb, cow.id, entry.target_processing_batch_id, {teamMember: teamMember || null});
+        if(!r.ok && r.reason !== 'not_in_batch') {
+          if(!window.confirm('Cow #'+(entry.tag||'?')+' could not be auto-reverted ('+r.reason+'). Delete anyway?')) { setBusy(false); return; }
+        }
+      }
+    }
     // Cattle: clean up the linked comment before dropping the weigh-in.
     if(species === 'cattle') {
       try { await sb.from('cattle_comments').delete().eq('source','weigh_in').eq('reference_id', entry.id); }

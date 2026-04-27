@@ -7,6 +7,7 @@ import PigSendToTripModal from '../livestock/PigSendToTripModal.jsx';
 import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
 import LivestockWeighInsView from '../livestock/LivestockWeighInsView.jsx';
 import { loadCattleWeighInsCached } from '../lib/cattleCache.js';
+import { detachCowFromBatch } from '../lib/cattleProcessingBatch.js';
 const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers}) => {
   const {useState, useEffect} = React;
   const [batches, setBatches] = useState([]);
@@ -78,7 +79,7 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
     const yr = new Date().getFullYear().toString().slice(-2);
     const existing = batches.filter(b => b.name && b.name.startsWith('C-'+yr+'-')).map(b => parseInt(b.name.slice(5))||0);
     const next = (Math.max(0, ...existing)+1).toString().padStart(2,'0');
-    setForm({name:'C-'+yr+'-'+next, planned_process_date:'', actual_process_date:'', processing_cost:'', notes:'', status:'planned', selectedCowIds:[]});
+    setForm({name:'C-'+yr+'-'+next, planned_process_date:'', actual_process_date:'', processing_cost:'', notes:'', status:'planned'});
     setEditId(null);
     setShowForm(true);
   }
@@ -90,11 +91,13 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
       processing_cost: b.processing_cost != null ? String(b.processing_cost) : '',
       notes: b.notes || '',
       status: b.status || 'planned',
-      selectedCowIds: [],
     });
     setEditId(b.id);
     setShowForm(true);
   }
+  // Save a batch shell (name + dates + status + notes). Cattle membership
+  // is exclusively controlled by the Send-to-Processor flag on a finisher
+  // weigh-in entry — there's no manual cow attach in this view anymore.
   async function saveBatch() {
     if(!form.name.trim()) { alert('Batch name required.'); return; }
     const rec = {
@@ -107,93 +110,54 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
     };
     if(editId) {
       await sb.from('cattle_processing_batches').update(rec).eq('id', editId);
-      // If marking complete, auto-move all linked cattle to 'processed'
-      if(rec.status === 'complete') {
-        const linked = cattle.filter(c => c.processing_batch_id === editId);
-        for(const c of linked) {
-          if(c.herd !== 'processed') {
-            await sb.from('cattle').update({herd:'processed'}).eq('id', c.id);
-            await sb.from('cattle_transfers').insert({
-              id: String(Date.now())+Math.random().toString(36).slice(2,6),
-              cattle_id: c.id,
-              from_herd: c.herd,
-              to_herd: 'processed',
-              reason: 'processing_batch',
-              reference_id: editId,
-              team_member: authState && authState.name ? authState.name : null,
-            });
-          }
-        }
-      }
+      // Marking complete keeps any linked cattle as 'processed' (which they
+      // already are if they were attached via the Send-to-Processor flow).
+      // No automatic herd movement needed here anymore.
     } else {
       const id = String(Date.now())+Math.random().toString(36).slice(2,6);
-      // Build cows_detail from selected cows + wire processing_batch_id + transfers
-      const selected = (form.selectedCowIds||[]).map(cid => cattle.find(c => c.id === cid)).filter(Boolean);
-      const cows_detail = selected.map(c => ({
-        cattle_id: c.id,
-        tag: c.tag || null,
-        live_weight: lastWeight(c),
-        hanging_weight: null,
-      }));
-      const tots = recomputeTotals(cows_detail);
-      await sb.from('cattle_processing_batches').insert({id, ...rec, cows_detail, ...tots});
-      for(const c of selected) {
-        await sb.from('cattle').update({processing_batch_id: id, herd:'processed'}).eq('id', c.id);
-        if(c.herd !== 'processed') {
-          await sb.from('cattle_transfers').insert({
-            id: String(Date.now())+Math.random().toString(36).slice(2,6),
-            cattle_id: c.id,
-            from_herd: c.herd,
-            to_herd: 'processed',
-            reason: 'processing_batch',
-            reference_id: id,
-            team_member: authState && authState.name ? authState.name : null,
-          });
-        }
-      }
+      await sb.from('cattle_processing_batches').insert({id, ...rec, cows_detail: [], total_live_weight: null, total_hanging_weight: null});
     }
     await loadAll();
     setShowForm(false); setEditId(null); setForm(null);
   }
+  // Detach every cow from this batch (with success/failure reporting per
+  // Codex Edge Case #2), then delete the batch row. Failures are surfaced
+  // with their reason so admin can manually move any blocked cows.
   async function deleteBatch(id) {
     if(!window._wcfConfirmDelete) return;
-    window._wcfConfirmDelete('Delete this processing batch? Linked cattle will keep their processed_batch_id set to NULL.', async () => {
-      // Clear processing_batch_id on all linked cows so they don't hold stale FKs.
+    window._wcfConfirmDelete('Delete this processing batch? Linked cattle will be detached and reverted to their prior herds where possible.', async () => {
+      const batch = batches.find(b => b.id === id);
+      const cowIds = (batch && Array.isArray(batch.cows_detail) ? batch.cows_detail : []).map(r => r.cattle_id).filter(Boolean);
+      const reverted = []; const blocked = [];
+      for(const cowId of cowIds) {
+        const r = await detachCowFromBatch(sb, cowId, id, {teamMember: authState && authState.name ? authState.name : null});
+        if(r.ok) reverted.push(r); else blocked.push(r);
+      }
+      // Clear any cattle still pointing at this batch (defensive — covers
+      // detach failures + rows that were FK'd but absent from cows_detail).
       await sb.from('cattle').update({processing_batch_id: null}).eq('processing_batch_id', id);
       await sb.from('cattle_processing_batches').delete().eq('id', id);
+      if(blocked.length > 0) {
+        const lines = blocked.map(b => '#'+(b.cow?.tag || b.cowId || '?') + ' (' + b.reason + ')').join('\n');
+        alert('Batch deleted. ' + reverted.length + ' cow' + (reverted.length===1?'':'s') + ' reverted. ' + blocked.length + ' could not be auto-reverted:\n\n' + lines + '\n\nManually move them via the Herds tab if needed.');
+      }
       await loadAll();
       setShowForm(false); setEditId(null); setForm(null);
     });
   }
-  async function addCowToBatch(batch, cowId) {
-    const cow = cattle.find(c => c.id === cowId);
-    if(!cow) return;
-    // Append to cows_detail if not already present
-    const rows = cowsDetailOf(batch);
-    if(!rows.some(r => r.cattle_id === cowId)) {
-      const newRows = [...rows, {cattle_id: cowId, tag: cow.tag || null, live_weight: lastWeight(cow), hanging_weight: null}];
-      const tots = recomputeTotals(newRows);
-      await sb.from('cattle_processing_batches').update({cows_detail: newRows, ...tots}).eq('id', batch.id);
+  // Per-cow detach button on an expanded batch row. Shows the reason if
+  // the detach can't auto-revert (no prior_herd_or_flock + no audit row).
+  async function detachCowAndReport(batch, cow) {
+    if(!cow || !cow.id) return;
+    const r = await detachCowFromBatch(sb, cow.id, batch.id, {teamMember: authState && authState.name ? authState.name : null});
+    if(!r.ok) {
+      const tag = cow.tag || r.cow?.tag || '?';
+      if(r.reason === 'no_prior_herd') {
+        alert('Cannot auto-detach #'+tag+': no prior herd recorded for this cow + batch. Manually move via the Herds tab.');
+      } else {
+        alert('Detach failed for #'+tag+': '+r.reason+(r.error?' — '+r.error:''));
+      }
     }
-    await sb.from('cattle').update({processing_batch_id: batch.id, herd: 'processed'}).eq('id', cowId);
-    if(cow.herd !== 'processed') {
-      await sb.from('cattle_transfers').insert({
-        id: String(Date.now())+Math.random().toString(36).slice(2,6),
-        cattle_id: cowId,
-        from_herd: cow.herd,
-        to_herd: 'processed',
-        reason: 'processing_batch',
-        reference_id: batch.id,
-        team_member: authState && authState.name ? authState.name : null,
-      });
-    }
-    await loadAll();
-  }
-  async function removeCowFromBatch(batch, cow) {
-    const rows = cowsDetailOf(batch).filter(r => r.cattle_id !== cow.id);
-    const tots = recomputeTotals(rows);
-    await sb.from('cattle_processing_batches').update({cows_detail: rows, ...tots}).eq('id', batch.id);
-    await sb.from('cattle').update({processing_batch_id: null}).eq('id', cow.id);
     await loadAll();
   }
   async function saveCowWeight(batch, cattleId, field, value) {
@@ -286,22 +250,17 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
                             onBlur={e => { saveCowWeight(b, r.cattle_id, 'hanging_weight', e.target.value); setCowDraft(p => { const x={...p}; delete x[draftKey(r.cattle_id,'hanging')]; return x; }); }}
                             style={{fontSize:12, padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:5, fontFamily:'inherit', width:'100%', boxSizing:'border-box'}}/>
                           <div style={{textAlign:'right', fontSize:11, color:y?'#065f46':'#9ca3af', fontWeight:y?600:400}}>{y?y+'%':'\u2014'}</div>
-                          <button onClick={()=>removeCowFromBatch(b, cow||{id:r.cattle_id})} title="Remove from batch" style={{background:'none', border:'none', color:'#b91c1c', cursor:'pointer', fontSize:14, lineHeight:1, padding:'0 2px', fontFamily:'inherit'}}>{'\u00d7'}</button>
+                          <button onClick={()=>detachCowAndReport(b, cow||{id:r.cattle_id, tag:r.tag})} title="Detach cow from batch (reverts herd)" style={{background:'none', border:'none', color:'#b91c1c', cursor:'pointer', fontSize:14, lineHeight:1, padding:'0 2px', fontFamily:'inherit'}}>{'\u00d7'}</button>
                         </div>
                       );
                     })}
                   </div>
                 )}
-                {b.status !== 'complete' && (() => {
-                  const inBatch = new Set(rows.map(r => r.cattle_id));
-                  const available = cattle.filter(c => c.herd === 'finishers' && !c.processing_batch_id && !inBatch.has(c.id)).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0));
-                  return (
-                    <select value="" onChange={e => { if(e.target.value) addCowToBatch(b, e.target.value); e.target.value=''; }} style={{fontSize:11, padding:'4px 8px', borderRadius:5, border:'1px solid #d1d5db', fontFamily:'inherit', maxWidth:320}}>
-                      <option value="">{'+ Add cow from finishers ('+available.length+' available)'}</option>
-                      {available.map(c => <option key={c.id} value={c.id}>{'#'+c.tag+(c.breed?' \u00b7 '+c.breed:'')+(lastWeight(c)?' \u00b7 '+Math.round(lastWeight(c))+' lb':'')}</option>)}
-                    </select>
-                  );
-                })()}
+                {b.status !== 'complete' && (
+                  <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>
+                    Cattle enter this batch only via the Send-to-Processor flag on a finisher weigh-in entry.
+                  </div>
+                )}
                 {b.notes && <div style={{marginTop:6, fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{b.notes}</div>}
                 </div>)}
               </div>
@@ -331,44 +290,9 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
                 <div><label style={lbl}>Actual Process Date</label><input type="date" value={form.actual_process_date} onChange={e=>setForm({...form, actual_process_date:e.target.value})} style={inpS}/></div>
                 <div style={{gridColumn:'1/-1'}}><label style={lbl}>Notes</label><textarea value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})} rows={2} style={{...inpS, resize:'vertical'}}/></div>
               </div>
-              {!editId && (() => {
-                const available = cattle.filter(c => c.herd === 'finishers' && !c.processing_batch_id).sort((a,b)=>(parseFloat(a.tag)||0)-(parseFloat(b.tag)||0));
-                const selectedSet = new Set(form.selectedCowIds||[]);
-                const toggle = (cowId) => {
-                  const next = new Set(selectedSet);
-                  if(next.has(cowId)) next.delete(cowId); else next.add(cowId);
-                  setForm({...form, selectedCowIds:[...next]});
-                };
-                return (
-                  <div style={{marginTop:12}}>
-                    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6}}>
-                      <label style={{...lbl, margin:0}}>{'Add cows from finishers ('+available.length+' available, '+selectedSet.size+' selected)'}</label>
-                      {available.length > 0 && (
-                        <button type="button" onClick={()=>setForm({...form, selectedCowIds: selectedSet.size===available.length?[]:available.map(c=>c.id)})} style={{fontSize:11, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit'}}>{selectedSet.size===available.length?'Clear all':'Select all'}</button>
-                      )}
-                    </div>
-                    {available.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No unassigned finishers available.</div>}
-                    {available.length > 0 && (
-                      <div style={{maxHeight:220, overflowY:'auto', border:'1px solid #e5e7eb', borderRadius:6, padding:6, display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(140px, 1fr))', gap:4}}>
-                        {available.map(c => {
-                          const selected = selectedSet.has(c.id);
-                          const lw = lastWeight(c);
-                          return (
-                            <label key={c.id} style={{display:'flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:5, background:selected?'#dbeafe':'transparent', cursor:'pointer', fontSize:12}}>
-                              <input type="checkbox" checked={selected} onChange={()=>toggle(c.id)} style={{margin:0}}/>
-                              <span style={{fontWeight:700, color:'#111827'}}>{'#'+c.tag}</span>
-                              {lw && <span style={{fontSize:11, color:'#6b7280', marginLeft:'auto'}}>{Math.round(lw)} lb</span>}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-              {form.status === 'complete' && editId && (
-                <div style={{marginTop:10, padding:'8px 12px', background:'#fef3c7', border:'1px solid #fde68a', borderRadius:6, fontSize:11, color:'#92400e'}}>
-                  {'\u26a0 Marking this batch complete will auto-move all linked cattle to the Processed herd.'}
+              {!editId && (
+                <div style={{marginTop:12, padding:'10px 12px', background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:6, fontSize:11, color:'#6b7280'}}>
+                  Cattle enter this batch only via the Send-to-Processor flag on a finisher weigh-in entry. Create the empty batch shell here; cows attach themselves once they're flagged at the chute.
                 </div>
               )}
             </div>
