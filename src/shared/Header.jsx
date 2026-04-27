@@ -27,7 +27,7 @@ export default function Header({ showDailyForm, signOut, backupData, restoreData
     const poultryViews = ['broilerHome','timeline','list','feed','broilerdailys','broilerweighins'];
     const pigViews     = ['pigsHome','breeding','farrowing','sows','pigbatches','pigs','pigdailys','pigweighins'];
     const cattleViews  = ['cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches'];
-    const sheepViews   = ['sheepHome','sheepflocks','sheepdailys','sheepweighins'];
+    const sheepViews   = ['sheepHome','sheepflocks','sheepdailys','sheepweighins','sheepbatches'];
     const inPoultry    = poultryViews.includes(view) || showForm;
     const inPigs       = pigViews.includes(view) || showBreedForm || showFarrowForm || showDailyForm;
     const inLayers     = ['layersHome','layerbatches','layerdailys','eggdailys'].includes(view);
@@ -129,7 +129,7 @@ export default function Header({ showDailyForm, signOut, backupData, restoreData
           {inCattle&&[["cattleHome","Dashboard"],["cattleherds","Herds"],["cattlebreeding","Breeding"],["cattleweighins","Weigh-Ins"],["cattledailys","Dailys"],["cattlebatches","Batches"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
-          {inSheep&&[["sheepHome","Dashboard"],["sheepflocks","Flocks"],["sheepweighins","Weigh-Ins"],["sheepdailys","Dailys"]].map(([v,l])=>(
+          {inSheep&&[["sheepHome","Dashboard"],["sheepflocks","Flocks"],["sheepweighins","Weigh-Ins"],["sheepdailys","Dailys"],["sheepbatches","Batches"]].map(([v,l])=>(
             <button key={v} style={nb(view===v)} onClick={()=>setView(v)}>{l}</button>
           ))}
         </div>

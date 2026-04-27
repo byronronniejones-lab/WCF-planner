@@ -57,6 +57,7 @@ export const VIEW_TO_PATH = {
   // Sheep
   sheepHome:        '/sheep',
   sheepflocks:      '/sheep/flocks',
+  sheepbatches:     '/sheep/batches',
   sheepdailys:      '/sheep/dailys',
   sheepweighins:    '/sheep/weighins',
 

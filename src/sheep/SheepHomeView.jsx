@@ -7,6 +7,7 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
   const [sheep, setSheep] = useState([]);
   const [dailys, setDailys] = useState([]);
   const [weighIns, setWeighIns] = useState([]);
+  const [batchCounts, setBatchCounts] = useState({total:0, planned:0});
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(30);
   const FLOCKS = ['rams','ewes','feeders'];
@@ -29,6 +30,16 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
       if(sR.data) setSheep(sR.data);
       if(dR.data) setDailys(dR.data);
       if(wR.data) setWeighIns(wR.data);
+      // Processing batch counts for the dashboard tile. Tolerate missing
+      // table on legacy schemas (pre-migration-028).
+      try {
+        const bR = await sb.from('sheep_processing_batches').select('id,status');
+        if(bR.data) {
+          const all     = bR.data.length;
+          const planned = bR.data.filter(b => b.status === 'planned').length;
+          setBatchCounts({total: all, planned});
+        }
+      } catch(e) { /* table only exists post-migration-028 */ }
       setLoading(false);
     })();
   }, []);
@@ -137,6 +148,15 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
         <div>
           <div style={{fontSize:13, fontWeight:600, color:'#4b5563', marginBottom:8, letterSpacing:.3}}>FLOCK BREAKDOWN</div>
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:10}}>
+            {/* Processing-batches shortcut tile — discoverable nav alongside flock tiles. */}
+            <div onClick={()=>setView('sheepbatches')} style={{background:'white', border:'1px solid #5eead4', borderLeft:'4px solid #0f766e', borderRadius:12, padding:'14px 16px', cursor:'pointer'}} className="hoverable-tile">
+              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:6}}>
+                <span style={{fontSize:14, fontWeight:700, color:'#0f766e'}}>Processing Batches</span>
+                <span style={{fontSize:11, color:'#6b7280'}}>{batchCounts.total} {batchCounts.total===1?'batch':'batches'}</span>
+              </div>
+              <div style={{fontSize:12, color:'#374151'}}>{batchCounts.planned > 0 ? <span><strong>{batchCounts.planned}</strong> planned</span> : <span style={{color:'#9ca3af'}}>No planned batches</span>}</div>
+              <div style={{fontSize:11, color:'#9ca3af', marginTop:4}}>Sheep enter via the Send-to-Processor flag on a feeders weigh-in.</div>
+            </div>
             {FLOCKS.map(f => {
               const flockSheep = sheep.filter(s => s.flock === f);
               const lw = flockTotalWeight(f);

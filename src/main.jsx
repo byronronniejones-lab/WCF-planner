@@ -119,6 +119,7 @@ import LayersHomeView from './layer/LayersHomeView.jsx';
 import LayersView from './layer/LayersView.jsx';
 import CattleHomeView from './cattle/CattleHomeView.jsx';
 import SheepFlocksView from './sheep/SheepFlocksView.jsx';
+import SheepBatchesView from './sheep/SheepBatchesView.jsx';
 import SheepHomeView from './sheep/SheepHomeView.jsx';
 import CattleHerdsView from './cattle/CattleHerdsView.jsx';
 import CattleBreedingView from './cattle/CattleBreedingView.jsx';
@@ -704,7 +705,7 @@ function App(){
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepdailys','sheepweighins','equipmentHome','fuelingHub','fuelSupply'];
+  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepbatches','sheepdailys','sheepweighins','equipmentHome','fuelingHub','fuelSupply'];
   useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
 
   // Per-program access. profiles.program_access is null/empty = full access,
@@ -716,7 +717,7 @@ function App(){
     layersHome:'layer',   layerbatches:'layer', layerdailys:'layer', eggdailys:'layer', layers:'layer',
     pigsHome:'pig',       breeding:'pig', farrowing:'pig', sows:'pig', pigbatches:'pig', pigs:'pig', pigfeed:'pig', pigdailys:'pig', pigweighins:'pig',
     cattleHome:'cattle',  cattleherds:'cattle', cattledailys:'cattle', cattleweighins:'cattle', cattlebreeding:'cattle', cattlebatches:'cattle',
-    sheepHome:'sheep',    sheepflocks:'sheep', sheepdailys:'sheep', sheepweighins:'sheep',
+    sheepHome:'sheep',    sheepflocks:'sheep', sheepbatches:'sheep', sheepdailys:'sheep', sheepweighins:'sheep',
     equipmentHome:'equipment',
   };
   function canAccessProgram(prog) {
@@ -1640,6 +1641,7 @@ function App(){
   if(view==="pigweighins")return React.createElement(LivestockWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species:'pig'});
   if(view==="sheepHome")     return React.createElement(SheepHomeView,     {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
   if(view==="sheepflocks")   return React.createElement(SheepFlocksView,   {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit});
+  if(view==="sheepbatches")  return React.createElement(SheepBatchesView,  {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
   if(view==="sheepdailys")   return React.createElement(SheepDailysView,   {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
   if(view==="sheepweighins") return React.createElement(SheepWeighInsView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
   if(view==="equipmentHome") return React.createElement(EquipmentHome, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});

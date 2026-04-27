@@ -214,10 +214,24 @@ const SheepFlocksView = ({sb, fmt, Header, authState, setView, showUsers, setSho
   }
   async function transferSheep(id, newFlock) {
     const s = sheep.find(x => x.id === id); if(!s) return;
+    const oldFlock = s.flock;
     const updates = {flock: newFlock};
     if(newFlock === 'deceased' && !s.death_date) updates.death_date = new Date().toISOString().slice(0,10);
     if(newFlock === 'sold' && !s.sale_date) updates.sale_date = new Date().toISOString().slice(0,10);
     await sb.from('sheep').update(updates).eq('id', id);
+    // Append to sheep_transfers audit log (mirrors cattle_transfers writes
+    // in CattleHerdsView.transferCow). Tolerated if the table is missing
+    // on legacy schemas.
+    try {
+      await sb.from('sheep_transfers').insert({
+        id: String(Date.now())+Math.random().toString(36).slice(2,6),
+        sheep_id: id,
+        from_flock: oldFlock,
+        to_flock: newFlock,
+        reason: 'manual',
+        team_member: authState && authState.name ? authState.name : null,
+      });
+    } catch(e) { /* table only exists post-migration-029 */ }
     await loadAll();
   }
   async function addQuickComment(sheepId, sheepTag, text) {
