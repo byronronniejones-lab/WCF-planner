@@ -145,3 +145,11 @@ vite.config.ts.timestamp-*
 # Local-only CLI script secrets + Podio/other data dumps
 scripts/.env
 scripts/podio_equipment_dump/
+
+# Playwright artifacts
+playwright-report/
+test-results/
+tests/.auth/
+
+# Generated test bootstrap (rebuild via scripts/build_test_bootstrap.js)
+scripts/test-bootstrap.sql
