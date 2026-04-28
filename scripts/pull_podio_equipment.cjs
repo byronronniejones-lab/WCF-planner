@@ -38,11 +38,11 @@ function loadEnv() {
 }
 loadEnv();
 
-const CLIENT_ID     = process.env.PODIO_CLIENT_ID;
+const CLIENT_ID = process.env.PODIO_CLIENT_ID;
 const CLIENT_SECRET = process.env.PODIO_CLIENT_SECRET;
-const USERNAME      = process.env.PODIO_USERNAME;
-const PASSWORD      = process.env.PODIO_PASSWORD;
-const SPACE_NAME    = process.env.PODIO_SPACE_NAME || 'Equipment';
+const USERNAME = process.env.PODIO_USERNAME;
+const PASSWORD = process.env.PODIO_PASSWORD;
+const SPACE_NAME = process.env.PODIO_SPACE_NAME || 'Equipment';
 
 if (!CLIENT_ID || !CLIENT_SECRET || !USERNAME || !PASSWORD) {
   console.error('Missing PODIO_* env vars in scripts/.env. See file header for required keys.');
@@ -54,15 +54,15 @@ let ACCESS_TOKEN = null;
 
 async function auth() {
   const body = new URLSearchParams({
-    grant_type:    'password',
-    client_id:     CLIENT_ID,
+    grant_type: 'password',
+    client_id: CLIENT_ID,
     client_secret: CLIENT_SECRET,
-    username:      USERNAME,
-    password:      PASSWORD,
+    username: USERNAME,
+    password: PASSWORD,
   });
   const res = await fetch('https://podio.com/oauth/token', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: body.toString(),
   });
   const data = await res.json();
@@ -87,21 +87,33 @@ async function api(pathname, opts = {}) {
   });
   const text = await res.text();
   let data;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
   if (!res.ok) {
-    throw new Error(`API ${res.status} ${pathname}: ${typeof data === 'string' ? data.slice(0, 300) : JSON.stringify(data).slice(0, 300)}`);
+    throw new Error(
+      `API ${res.status} ${pathname}: ${typeof data === 'string' ? data.slice(0, 300) : JSON.stringify(data).slice(0, 300)}`,
+    );
   }
   return data;
 }
 
 function slugify(s) {
-  return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'untitled';
+  return (
+    String(s || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'untitled'
+  );
 }
 
 // ───── main ────────────────────────────────────────────────────────────────
 (async () => {
   const outDir = path.join(__dirname, 'podio_equipment_dump');
-  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(outDir, {recursive: true});
 
   await auth();
 
@@ -124,7 +136,7 @@ function slugify(s) {
   if (!targetSpace) {
     console.error(`No space named "${SPACE_NAME}" found. Available:`);
     for (const org of orgs) {
-      console.error(`  org="${org.name}": ` + (org.spaces || []).map(s => s.name).join(', '));
+      console.error(`  org="${org.name}": ` + (org.spaces || []).map((s) => s.name).join(', '));
     }
     process.exit(1);
   }
@@ -133,12 +145,12 @@ function slugify(s) {
   // 3. List apps in the space
   const apps = await api(`/app/space/${spaceId}/`);
   console.log(`\nApps in "${SPACE_NAME}" space: ${apps.length}`);
-  apps.forEach(a => console.log(`  [${a.app_id}] ${a.config?.name || a.name || '(unnamed)'}`));
+  apps.forEach((a) => console.log(`  [${a.app_id}] ${a.config?.name || a.name || '(unnamed)'}`));
 
   // 4. For each app, pull config + all items
   const summary = {
     pulled_at: new Date().toISOString(),
-    space: { id: spaceId, name: targetSpace.name },
+    space: {id: spaceId, name: targetSpace.name},
     apps: [],
   };
   for (const app of apps) {
@@ -159,7 +171,7 @@ function slugify(s) {
     while (true) {
       const page = await api(`/item/app/${appId}/filter/`, {
         method: 'POST',
-        body: { limit, offset, sort_by: 'created_on', sort_desc: false },
+        body: {limit, offset, sort_by: 'created_on', sort_desc: false},
       });
       const items = page.items || [];
       allItems.push(...items);
@@ -181,5 +193,8 @@ function slugify(s) {
 
   fs.writeFileSync(path.join(outDir, '_summary.json'), JSON.stringify(summary, null, 2));
   console.log(`\n✓ Done. Dumped ${summary.apps.length} apps to ${outDir}`);
-  console.log(`  Total items: ${summary.apps.reduce((s,a) => s + a.item_count, 0)}`);
-})().catch(e => { console.error('\nERROR:', e.message); process.exit(1); });
+  console.log(`  Total items: ${summary.apps.reduce((s, a) => s + a.item_count, 0)}`);
+})().catch((e) => {
+  console.error('\nERROR:', e.message);
+  process.exit(1);
+});

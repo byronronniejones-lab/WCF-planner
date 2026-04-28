@@ -20,20 +20,28 @@
 //
 // Idempotent: only touches sessions with herd IS NULL.
 
-const fs = require('fs'); const path = require('path');
-for (const l of fs.readFileSync(path.join(__dirname,'.env'),'utf8').split(/\r?\n/)) {
+const fs = require('fs');
+const path = require('path');
+for (const l of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split(/\r?\n/)) {
   const m = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/.exec(l);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g,'');
+  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
 }
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!URL || !KEY) { console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in scripts/.env'); process.exit(1); }
-const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };
+if (!URL || !KEY) {
+  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in scripts/.env');
+  process.exit(1);
+}
+const H = {apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json'};
 
 async function fetchAll(table, query) {
-  let out = []; let from = 0; const page = 1000;
+  let out = [];
+  let from = 0;
+  const page = 1000;
   while (true) {
-    const r = await fetch(`${URL}/rest/v1/${table}?${query}`, { headers: { ...H, Range: `${from}-${from+page-1}`, 'Range-Unit': 'items' } });
+    const r = await fetch(`${URL}/rest/v1/${table}?${query}`, {
+      headers: {...H, Range: `${from}-${from + page - 1}`, 'Range-Unit': 'items'},
+    });
     if (!r.ok) throw new Error(`Fetch ${table} failed: ${r.status} ${await r.text()}`);
     const rows = await r.json();
     out = out.concat(rows);
@@ -61,11 +69,11 @@ function buildCowTagIndex(cattle) {
 
 function majority(tally) {
   // tally: {herd: count}. Returns {herd, count} or null on tie/empty.
-  const entries = Object.entries(tally).sort((a,b) => b[1] - a[1]);
+  const entries = Object.entries(tally).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) return null;
-  if (entries.length === 1) return { herd: entries[0][0], count: entries[0][1] };
+  if (entries.length === 1) return {herd: entries[0][0], count: entries[0][1]};
   if (entries[0][1] === entries[1][1]) return null; // tie
-  return { herd: entries[0][0], count: entries[0][1] };
+  return {herd: entries[0][0], count: entries[0][1]};
 }
 
 async function main() {
@@ -77,7 +85,9 @@ async function main() {
     fetchAll('weigh_in_sessions', 'species=eq.cattle&herd=is.null&select=id,date,species,herd,notes'),
     fetchAll('weigh_ins', 'select=id,session_id,tag'),
   ]);
-  console.log(`  ${cattle.length} cattle, ${allSessions.length} cattle sessions with herd=null, ${allWIs.length} total weigh_ins`);
+  console.log(
+    `  ${cattle.length} cattle, ${allSessions.length} cattle sessions with herd=null, ${allWIs.length} total weigh_ins`,
+  );
 
   const tagIndex = buildCowTagIndex(cattle);
 
@@ -104,11 +114,11 @@ async function main() {
     }
     const m = majority(tally);
     if (!m) {
-      if (Object.keys(tally).length === 0) noMatch.push({ session: s, entries: wis.length });
-      else ties.push({ session: s, tally });
+      if (Object.keys(tally).length === 0) noMatch.push({session: s, entries: wis.length});
+      else ties.push({session: s, tally});
       continue;
     }
-    toUpdate.push({ session: s, herd: m.herd, matched, total: wis.length, tally });
+    toUpdate.push({session: s, herd: m.herd, matched, total: wis.length, tally});
   }
 
   console.log(`\n${toUpdate.length} sessions → herd assignment found.`);
@@ -117,26 +127,45 @@ async function main() {
 
   console.log('\nPreview (first 10):');
   for (const u of toUpdate.slice(0, 10)) {
-    console.log(`  ${u.session.date}  session=${u.session.id.slice(0,12)}  →  ${u.herd}  (${u.matched}/${u.total} tags matched, tally=${JSON.stringify(u.tally)})`);
+    console.log(
+      `  ${u.session.date}  session=${u.session.id.slice(0, 12)}  →  ${u.herd}  (${u.matched}/${u.total} tags matched, tally=${JSON.stringify(u.tally)})`,
+    );
   }
   if (ties.length) {
     console.log('\nTies:');
-    for (const t of ties) console.log(`  ${t.session.date}  session=${t.session.id.slice(0,12)}  tally=${JSON.stringify(t.tally)}`);
+    for (const t of ties)
+      console.log(`  ${t.session.date}  session=${t.session.id.slice(0, 12)}  tally=${JSON.stringify(t.tally)}`);
   }
 
-  if (!commit) { console.log('\nPreview only. Re-run with --commit to apply.'); return; }
-  if (toUpdate.length === 0) { console.log('\nNothing to update.'); return; }
+  if (!commit) {
+    console.log('\nPreview only. Re-run with --commit to apply.');
+    return;
+  }
+  if (toUpdate.length === 0) {
+    console.log('\nNothing to update.');
+    return;
+  }
 
   console.log('\nApplying updates...');
-  let ok = 0, fail = 0;
+  let ok = 0,
+    fail = 0;
   for (const u of toUpdate) {
     const pr = await fetch(`${URL}/rest/v1/weigh_in_sessions?id=eq.${encodeURIComponent(u.session.id)}`, {
-      method: 'PATCH', headers: H,
-      body: JSON.stringify({ herd: u.herd }),
+      method: 'PATCH',
+      headers: H,
+      body: JSON.stringify({herd: u.herd}),
     });
-    if (pr.ok) { ok++; } else { fail++; console.error(`  FAIL: ${u.session.id}: ${pr.status} ${await pr.text()}`); }
+    if (pr.ok) {
+      ok++;
+    } else {
+      fail++;
+      console.error(`  FAIL: ${u.session.id}: ${pr.status} ${await pr.text()}`);
+    }
   }
   console.log(`Done. ${ok} updated, ${fail} failed.`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

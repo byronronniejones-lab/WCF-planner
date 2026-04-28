@@ -33,10 +33,16 @@ function loadEnv() {
 loadEnv();
 
 const {createClient} = require('@supabase/supabase-js');
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {persistSession: false},
+});
 
 function slug(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50);
 }
 
 const EVERY_USE_ATTACHMENTS = [
@@ -52,7 +58,8 @@ const EVERY_USE_ATTACHMENTS = [
       'FLIP UP DECK & CLEAN ANY OVERLY BUILT UP DEBRIS',
       'INSPECT BLADES - SHARPEN AS NEEDED',
     ],
-    help_text: 'To flip the deck up: 1. Both hitch arm pins have to be removed. 2. Remove deck cover and set aside. 3. Remove pin from belt tension handle and rotate 180 degrees. 4. Raise the deck to highest position and then use the smaller hydraulic arm to tilt the deck up all the way. 5. Reverse actions 1-4 when done under the deck. Ensure to pin belt tensioner handle over the top of the red lever that goes over the top of the hydraulic arm.',
+    help_text:
+      'To flip the deck up: 1. Both hitch arm pins have to be removed. 2. Remove deck cover and set aside. 3. Remove pin from belt tension handle and rotate 180 degrees. 4. Raise the deck to highest position and then use the smaller hydraulic arm to tilt the deck up all the way. 5. Reverse actions 1-4 when done under the deck. Ensure to pin belt tensioner handle over the top of the red lever that goes over the top of the hydraulic arm.',
   },
   {
     name: 'AERO-Vator',
@@ -66,7 +73,8 @@ const EVERY_USE_ATTACHMENTS = [
       'INSPECT PTO BELT',
       'ENSURE TINE ASSEMBLY STOPS WHEN DECK IS RAISED, IF IT DOESNT THEN TRIPLE DRIVE BELT NEEDS ADJUSTING.',
     ],
-    help_text: 'When attaching/detaching the AERA-Vator the Clutch Handle (left side of unit) should have the pin in the lockout position. Place pin in the upper frame hole for storage when in operation.',
+    help_text:
+      'When attaching/detaching the AERA-Vator the Clutch Handle (left side of unit) should have the pin in the lockout position. Place pin in the upper frame hole for storage when in operation.',
   },
   {
     name: 'Landscape Rake',
@@ -83,20 +91,32 @@ const EVERY_USE_ATTACHMENTS = [
 ];
 
 (async () => {
-  const {data: eq} = await sb.from('equipment').select('id,slug,name,attachment_checklists').eq('slug','ventrac').maybeSingle();
-  if (!eq) { console.error('ventrac not found in equipment table'); process.exit(1); }
+  const {data: eq} = await sb
+    .from('equipment')
+    .select('id,slug,name,attachment_checklists')
+    .eq('slug', 'ventrac')
+    .maybeSingle();
+  if (!eq) {
+    console.error('ventrac not found in equipment table');
+    process.exit(1);
+  }
 
   const existing = Array.isArray(eq.attachment_checklists) ? eq.attachment_checklists : [];
-  const existingKeys = new Set(existing.map(a => `${(a.name||'').trim().toLowerCase()}:${a.kind}:${a.hours_or_km}`));
+  const existingKeys = new Set(
+    existing.map((a) => `${(a.name || '').trim().toLowerCase()}:${a.kind}:${a.hours_or_km}`),
+  );
 
   const next = existing.slice();
   const additions = [];
   for (const att of EVERY_USE_ATTACHMENTS) {
     const k = `${att.name.toLowerCase()}:${att.kind}:${att.hours_or_km}`;
-    if (existingKeys.has(k)) { console.log(`  · ${att.label} already present — skipping`); continue; }
+    if (existingKeys.has(k)) {
+      console.log(`  · ${att.label} already present — skipping`);
+      continue;
+    }
     const withTaskIds = {
       ...att,
-      tasks: att.tasks.map(t => ({id: slug(t), label: t})),
+      tasks: att.tasks.map((t) => ({id: slug(t), label: t})),
     };
     next.push(withTaskIds);
     additions.push(att);
@@ -108,7 +128,8 @@ const EVERY_USE_ATTACHMENTS = [
   }
 
   console.log(`\n${additions.length} new attachment(s) will be added to Ventrac:`);
-  for (const a of additions) console.log(`  + ${a.label} (${a.tasks.length} tasks)${a.help_text?' [with help_text]':''}`);
+  for (const a of additions)
+    console.log(`  + ${a.label} (${a.tasks.length} tasks)${a.help_text ? ' [with help_text]' : ''}`);
 
   if (!COMMIT) {
     console.log('\nPreview only — rerun with --commit to apply.');
@@ -116,6 +137,12 @@ const EVERY_USE_ATTACHMENTS = [
   }
 
   const {error} = await sb.from('equipment').update({attachment_checklists: next}).eq('id', eq.id);
-  if (error) { console.error('Update failed:', error.message); process.exit(1); }
+  if (error) {
+    console.error('Update failed:', error.message);
+    process.exit(1);
+  }
   console.log(`\n✓ ventrac.attachment_checklists updated — now has ${next.length} entries.`);
-})().catch(e => { console.error(e); process.exit(1); });
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

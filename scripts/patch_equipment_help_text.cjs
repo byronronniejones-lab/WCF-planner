@@ -34,26 +34,26 @@ loadEnv();
 // Slug ↔ checklist app id map. Keep in sync with EQUIPMENT_DEFS in
 // import_equipment.cjs. Only slugs with a Podio checklist app are listed.
 const SLUG_TO_APP = {
-  '5065':        29677781,
-  'ps100':       29670699,
+  5065: 29677781,
+  ps100: 29670699,
   'honda-atv-1': 29711361,
   'honda-atv-2': 29855781,
   'honda-atv-3': 30126620,
   'honda-atv-4': 30126621,
-  'hijet-2018':  30104109,
-  'hijet-2020':  30123211,
-  'toro':        29786608,
-  'ventrac':     30089562,
-  'gehl':        30134561,
-  'l328':        30473316,
-  'mini-ex':     29673203,
-  'gyro-trac':   29788050,
-  'c362':        29673167,
+  'hijet-2018': 30104109,
+  'hijet-2020': 30123211,
+  toro: 29786608,
+  ventrac: 30089562,
+  gehl: 30134561,
+  l328: 30473316,
+  'mini-ex': 29673203,
+  'gyro-trac': 29788050,
+  c362: 29673167,
 };
 
 function configPathForApp(appId) {
   const entries = fs.readdirSync(DUMP_DIR);
-  const hit = entries.find(e => e.startsWith(`${appId}.`) && e.endsWith('.config.json'));
+  const hit = entries.find((e) => e.startsWith(`${appId}.`) && e.endsWith('.config.json'));
   return hit ? path.join(DUMP_DIR, hit) : null;
 }
 
@@ -73,8 +73,11 @@ function parseIntervalLabel(label) {
 function decodeEntities(s) {
   if (!s) return s;
   return String(s)
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
 }
 function cleanHelp(s) {
@@ -85,30 +88,23 @@ function cleanHelp(s) {
 function collectFromConfig(configPath) {
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   // Every-fillup field help text
-  const fillup = (config.fields || []).find(f =>
-    f.external_id === 'every-fuel-fill-up-checklist' ||
-    f.external_id === 'every-fuel-fillup-checklist' ||
-    /every.*fillup|every.*fill.*up/i.test(f.label || '')
+  const fillup = (config.fields || []).find(
+    (f) =>
+      f.external_id === 'every-fuel-fill-up-checklist' ||
+      f.external_id === 'every-fuel-fillup-checklist' ||
+      /every.*fillup|every.*fill.*up/i.test(f.label || ''),
   );
-  const every_fillup_help = fillup
-    ? cleanHelp(fillup.config?.description || fillup.description)
-    : null;
+  const every_fillup_help = fillup ? cleanHelp(fillup.config?.description || fillup.description) : null;
   // Number field "Gallons of …" description — fuel conditioner notes etc.
-  const gallons = (config.fields || []).find(f =>
-    f.type === 'number' && /gallons?\s*of/i.test(f.label || '')
-  );
-  const fuel_gallons_help = gallons
-    ? cleanHelp(gallons.config?.description || gallons.description)
-    : null;
+  const gallons = (config.fields || []).find((f) => f.type === 'number' && /gallons?\s*of/i.test(f.label || ''));
+  const fuel_gallons_help = gallons ? cleanHelp(gallons.config?.description || gallons.description) : null;
   // Date field description — Podio admins used this as a catch-all for
   // operator notes (e.g., Gyro-Trac rotor-bearings reminder).
-  const dateFld = (config.fields || []).find(f => f.type === 'date');
-  const operator_notes = dateFld
-    ? cleanHelp(dateFld.config?.description || dateFld.description)
-    : null;
+  const dateFld = (config.fields || []).find((f) => f.type === 'date');
+  const operator_notes = dateFld ? cleanHelp(dateFld.config?.description || dateFld.description) : null;
   // Per-interval help text, keyed by `${kind}:${hours_or_km}`.
   const intervalHelp = new Map();
-  for (const f of (config.fields || [])) {
+  for (const f of config.fields || []) {
     if (f.type !== 'category') continue;
     if (f.external_id === 'every-fuel-fill-up-checklist') continue;
     const lbl = f.label || '';
@@ -135,10 +131,12 @@ async function main() {
     const {every_fillup_help, fuel_gallons_help, operator_notes, intervalHelp} = collectFromConfig(configPath);
     patches.push({slug, every_fillup_help, fuel_gallons_help, operator_notes, intervalHelp});
     const n = intervalHelp.size;
-    console.log(`  · ${slug.padEnd(14)} fillup=${every_fillup_help?'Y':'—'}  gallons=${fuel_gallons_help?'Y':'—'}  notes=${operator_notes?'Y':'—'}  intervals=${n}`);
-    if (every_fillup_help)  console.log(`      fillup:  "${every_fillup_help}"`);
-    if (fuel_gallons_help)  console.log(`      gallons: "${fuel_gallons_help}"`);
-    if (operator_notes)     console.log(`      notes:   "${operator_notes.replace(/\n/g,' / ')}"`);
+    console.log(
+      `  · ${slug.padEnd(14)} fillup=${every_fillup_help ? 'Y' : '—'}  gallons=${fuel_gallons_help ? 'Y' : '—'}  notes=${operator_notes ? 'Y' : '—'}  intervals=${n}`,
+    );
+    if (every_fillup_help) console.log(`      fillup:  "${every_fillup_help}"`);
+    if (fuel_gallons_help) console.log(`      gallons: "${fuel_gallons_help}"`);
+    if (operator_notes) console.log(`      notes:   "${operator_notes.replace(/\n/g, ' / ')}"`);
     for (const [k, v] of intervalHelp) console.log(`      ${k}: "${v}"`);
   }
 
@@ -148,33 +146,41 @@ async function main() {
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!SUPABASE_URL || !SERVICE_KEY) {
     console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in scripts/.env');
     process.exit(1);
   }
   const {createClient} = require('@supabase/supabase-js');
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth:{persistSession:false}});
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth: {persistSession: false}});
 
   let updated = 0;
   for (const p of patches) {
     const id = 'eq-' + p.slug;
-    const {data: eq, error: eqErr} = await sb.from('equipment')
+    const {data: eq, error: eqErr} = await sb
+      .from('equipment')
       .select('id, service_intervals')
       .eq('id', id)
       .maybeSingle();
-    if (eqErr) { console.error(`  ! ${p.slug}: select failed`, eqErr.message); continue; }
-    if (!eq) { console.error(`  ! ${p.slug}: row ${id} not found in Supabase`); continue; }
+    if (eqErr) {
+      console.error(`  ! ${p.slug}: select failed`, eqErr.message);
+      continue;
+    }
+    if (!eq) {
+      console.error(`  ! ${p.slug}: row ${id} not found in Supabase`);
+      continue;
+    }
 
     const intervals = Array.isArray(eq.service_intervals) ? eq.service_intervals : [];
-    const nextIntervals = intervals.map(iv => {
+    const nextIntervals = intervals.map((iv) => {
       const key = `${iv.kind}:${iv.hours_or_km}`;
       const help = p.intervalHelp.get(key);
       if (!help) return iv;
       return {...iv, help_text: help};
     });
 
-    const {error: upErr} = await sb.from('equipment')
+    const {error: upErr} = await sb
+      .from('equipment')
       .update({
         service_intervals: nextIntervals,
         every_fillup_help: p.every_fillup_help,
@@ -182,11 +188,17 @@ async function main() {
         operator_notes: p.operator_notes,
       })
       .eq('id', id);
-    if (upErr) { console.error(`  ! ${p.slug}: update failed`, upErr.message); continue; }
+    if (upErr) {
+      console.error(`  ! ${p.slug}: update failed`, upErr.message);
+      continue;
+    }
     updated++;
     console.log(`  ✓ ${p.slug} patched`);
   }
   console.log(`\nDone. ${updated}/${patches.length} rows updated.`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

@@ -44,17 +44,24 @@ function loadEnv() {
 loadEnv();
 
 const {createClient} = require('@supabase/supabase-js');
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {persistSession: false},
+});
 
-function normTeam(t) { return (t || '').trim().toLowerCase(); }
-function isEmptyArr(x) { return !Array.isArray(x) || x.length === 0; }
+function normTeam(t) {
+  return (t || '').trim().toLowerCase();
+}
+function isEmptyArr(x) {
+  return !Array.isArray(x) || x.length === 0;
+}
 
 function mergeScore(r) {
   // Higher score = more likely to be the "good" row we keep.
   let s = 0;
   const gal = Number(r.gallons) || 0;
-  if (gal > 0) s += 12;           // prefer non-zero gallons strongly
-  else if (r.gallons != null) s += 1;  // gallons=0 is weak evidence
+  if (gal > 0)
+    s += 12; // prefer non-zero gallons strongly
+  else if (r.gallons != null) s += 1; // gallons=0 is weak evidence
   if (!isEmptyArr(r.every_fillup_check)) s += 5;
   if (!isEmptyArr(r.service_intervals_completed)) s += 5;
   if (!isEmptyArr(r.photos)) s += 3;
@@ -64,18 +71,28 @@ function mergeScore(r) {
 
 (async () => {
   const {data: eqs} = await sb.from('equipment').select('id,slug,name');
-  const slugById = new Map(eqs.map(e => [e.id, e.slug]));
-  const filterSlugId = ONLY_SLUG ? eqs.find(e => e.slug === ONLY_SLUG)?.id : null;
-  if (ONLY_SLUG && !filterSlugId) { console.error(`No equipment with slug=${ONLY_SLUG}`); process.exit(1); }
+  const slugById = new Map(eqs.map((e) => [e.id, e.slug]));
+  const filterSlugId = ONLY_SLUG ? eqs.find((e) => e.slug === ONLY_SLUG)?.id : null;
+  if (ONLY_SLUG && !filterSlugId) {
+    console.error(`No equipment with slug=${ONLY_SLUG}`);
+    process.exit(1);
+  }
 
   console.log('Loading fuelings (paginated)...');
   const rows = [];
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
-    let q = sb.from('equipment_fuelings').select('*').order('date', {ascending:false}).range(from, from + PAGE - 1);
+    let q = sb
+      .from('equipment_fuelings')
+      .select('*')
+      .order('date', {ascending: false})
+      .range(from, from + PAGE - 1);
     if (filterSlugId) q = q.eq('equipment_id', filterSlugId);
     const {data, error} = await q;
-    if (error) { console.error(error); process.exit(1); }
+    if (error) {
+      console.error(error);
+      process.exit(1);
+    }
     rows.push(...(data || []));
     if (!data || data.length < PAGE) break;
   }
@@ -84,10 +101,16 @@ function mergeScore(r) {
   // Bucket by (equipment_id | date | reading | team).
   const groups = new Map();
   for (const r of rows) {
-    const reading = r.hours_reading != null ? Math.round(Number(r.hours_reading)) :
-                    r.km_reading    != null ? Math.round(Number(r.km_reading))    : null;
+    const reading =
+      r.hours_reading != null
+        ? Math.round(Number(r.hours_reading))
+        : r.km_reading != null
+          ? Math.round(Number(r.km_reading))
+          : null;
     const key = [r.equipment_id, r.date || '', reading == null ? 'null' : reading, normTeam(r.team_member)].join('|');
-    const arr = groups.get(key) || []; arr.push(r); groups.set(key, arr);
+    const arr = groups.get(key) || [];
+    arr.push(r);
+    groups.set(key, arr);
   }
 
   let totalDupes = 0;
@@ -109,8 +132,10 @@ function mergeScore(r) {
       fuel_type: winner.fuel_type,
     };
     for (const l of losers) {
-      if (isEmptyArr(merged.every_fillup_check) && !isEmptyArr(l.every_fillup_check)) merged.every_fillup_check = l.every_fillup_check;
-      if (isEmptyArr(merged.service_intervals_completed) && !isEmptyArr(l.service_intervals_completed)) merged.service_intervals_completed = l.service_intervals_completed;
+      if (isEmptyArr(merged.every_fillup_check) && !isEmptyArr(l.every_fillup_check))
+        merged.every_fillup_check = l.every_fillup_check;
+      if (isEmptyArr(merged.service_intervals_completed) && !isEmptyArr(l.service_intervals_completed))
+        merged.service_intervals_completed = l.service_intervals_completed;
       if (isEmptyArr(merged.photos) && !isEmptyArr(l.photos)) merged.photos = l.photos;
       // Prefer non-zero gallons over null OR zero.
       if ((merged.gallons == null || Number(merged.gallons) === 0) && Number(l.gallons) > 0) merged.gallons = l.gallons;
@@ -125,22 +150,39 @@ function mergeScore(r) {
   const bySlug = new Map();
   for (const p of mergePlans) {
     const s = slugById.get(p.winner.equipment_id) || '(unknown)';
-    const c = bySlug.get(s) || {groups:0, loserRows:0}; c.groups++; c.loserRows += p.losers.length; bySlug.set(s, c);
+    const c = bySlug.get(s) || {groups: 0, loserRows: 0};
+    c.groups++;
+    c.loserRows += p.losers.length;
+    bySlug.set(s, c);
   }
-  for (const [slug, c] of [...bySlug.entries()].sort((a,b)=>b[1].groups-a[1].groups)) {
+  for (const [slug, c] of [...bySlug.entries()].sort((a, b) => b[1].groups - a[1].groups)) {
     console.log(`  ${slug.padEnd(20)} ${c.groups} group(s) · ${c.loserRows} row(s) to delete`);
   }
 
-  if (mergePlans.length === 0) { console.log('\nNo dedup needed.'); return; }
+  if (mergePlans.length === 0) {
+    console.log('\nNo dedup needed.');
+    return;
+  }
 
   // Sample one group for preview
   const sample = mergePlans[0];
   console.log('\nSample group (' + (slugById.get(sample.winner.equipment_id) || '?') + '):');
   console.log('  key:', sample.key);
   for (const r of [sample.winner, ...sample.losers]) {
-    console.log(`    ${r === sample.winner ? '★ KEEP ' : '  drop '} id=${r.id.slice(0,28).padEnd(28)} src=${(r.podio_source_app||'').padEnd(35)} gal=${r.gallons==null?'—':r.gallons} ticks=${(r.every_fillup_check||[]).length} svc=${(r.service_intervals_completed||[]).length} photos=${(r.photos||[]).length}`);
+    console.log(
+      `    ${r === sample.winner ? '★ KEEP ' : '  drop '} id=${r.id.slice(0, 28).padEnd(28)} src=${(r.podio_source_app || '').padEnd(35)} gal=${r.gallons == null ? '—' : r.gallons} ticks=${(r.every_fillup_check || []).length} svc=${(r.service_intervals_completed || []).length} photos=${(r.photos || []).length}`,
+    );
   }
-  console.log('  → merged: gallons='+sample.merged.gallons+' ticks='+(sample.merged.every_fillup_check||[]).length+' svc='+(sample.merged.service_intervals_completed||[]).length+' photos='+(sample.merged.photos||[]).length);
+  console.log(
+    '  → merged: gallons=' +
+      sample.merged.gallons +
+      ' ticks=' +
+      (sample.merged.every_fillup_check || []).length +
+      ' svc=' +
+      (sample.merged.service_intervals_completed || []).length +
+      ' photos=' +
+      (sample.merged.photos || []).length,
+  );
 
   if (!COMMIT) {
     console.log('\nPreview only — rerun with --commit to apply.');
@@ -148,17 +190,30 @@ function mergeScore(r) {
   }
 
   console.log('\nApplying...');
-  let mergesDone = 0, deletesDone = 0, errs = 0;
+  let mergesDone = 0,
+    deletesDone = 0,
+    errs = 0;
   for (const p of mergePlans) {
     const {error: uErr} = await sb.from('equipment_fuelings').update(p.merged).eq('id', p.winner.id);
-    if (uErr) { console.error('  ✗ merge into', p.winner.id, ':', uErr.message); errs++; continue; }
+    if (uErr) {
+      console.error('  ✗ merge into', p.winner.id, ':', uErr.message);
+      errs++;
+      continue;
+    }
     mergesDone++;
     for (const l of p.losers) {
       const {error: dErr} = await sb.from('equipment_fuelings').delete().eq('id', l.id);
-      if (dErr) { console.error('  ✗ delete', l.id, ':', dErr.message); errs++; continue; }
+      if (dErr) {
+        console.error('  ✗ delete', l.id, ':', dErr.message);
+        errs++;
+        continue;
+      }
       deletesDone++;
     }
     if (mergesDone % 50 === 0) process.stdout.write(`\r  ${mergesDone}/${mergePlans.length} groups`);
   }
   console.log(`\n✓ merged ${mergesDone} winners, deleted ${deletesDone} losers${errs ? ', ' + errs + ' errors' : ''}.`);
-})().catch(e => { console.error(e); process.exit(1); });
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

@@ -27,16 +27,22 @@ function loadEnv() {
 loadEnv();
 
 const {createClient} = require('@supabase/supabase-js');
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {persistSession: false},
+});
 
 (async () => {
   const rows = [];
   for (let from = 0; ; from += 1000) {
-    const {data, error} = await sb.from('equipment_fuelings')
+    const {data, error} = await sb
+      .from('equipment_fuelings')
       .select('id,equipment_id,date,gallons')
       .eq('podio_source_app', 'fuel_log')
       .range(from, from + 999);
-    if (error) { console.error('Query failed:', error.message); process.exit(1); }
+    if (error) {
+      console.error('Query failed:', error.message);
+      process.exit(1);
+    }
     rows.push(...(data || []));
     if (!data || data.length < 1000) break;
   }
@@ -47,19 +53,30 @@ const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
 
   // Per-equipment breakdown so we can eyeball damage before committing.
   const {data: eqs} = await sb.from('equipment').select('id,slug');
-  const bySlug = new Map(eqs.map(e => [e.id, e.slug]));
+  const bySlug = new Map(eqs.map((e) => [e.id, e.slug]));
   const tally = {};
   for (const r of rows) {
     const s = bySlug.get(r.equipment_id) || '?';
     tally[s] = tally[s] || {n: 0, gal: 0};
-    tally[s].n++; tally[s].gal += Number(r.gallons) || 0;
+    tally[s].n++;
+    tally[s].gal += Number(r.gallons) || 0;
   }
   console.log('\nPer piece:');
   for (const [s, t] of Object.entries(tally).sort((a, b) => b[1].n - a[1].n)) {
-    console.log('  ' + s.padEnd(18) + String(t.n).padStart(4) + ' rows · ' + Math.round(t.gal).toLocaleString().padStart(6) + ' gal');
+    console.log(
+      '  ' +
+        s.padEnd(18) +
+        String(t.n).padStart(4) +
+        ' rows · ' +
+        Math.round(t.gal).toLocaleString().padStart(6) +
+        ' gal',
+    );
   }
 
-  if (rows.length === 0) { console.log('\nNothing to delete.'); return; }
+  if (rows.length === 0) {
+    console.log('\nNothing to delete.');
+    return;
+  }
 
   if (!COMMIT) {
     console.log('\nPreview only — rerun with --commit to HARD DELETE these rows. Not reversible.');
@@ -67,14 +84,20 @@ const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
   }
 
   console.log('\nDeleting...');
-  const ids = rows.map(r => r.id);
+  const ids = rows.map((r) => r.id);
   let done = 0;
   for (let i = 0; i < ids.length; i += 500) {
     const chunk = ids.slice(i, i + 500);
     const {error} = await sb.from('equipment_fuelings').delete().in('id', chunk);
-    if (error) { console.error('  ✗ chunk', i, error.message); continue; }
+    if (error) {
+      console.error('  ✗ chunk', i, error.message);
+      continue;
+    }
     done += chunk.length;
     process.stdout.write(`\r  ${done}/${ids.length}`);
   }
   console.log(`\n✓ deleted ${done} rows.`);
-})().catch(e => { console.error(e); process.exit(1); });
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

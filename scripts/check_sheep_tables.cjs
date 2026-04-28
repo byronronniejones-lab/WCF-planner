@@ -8,12 +8,21 @@ for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const tables = ['sheep', 'sheep_breeds', 'sheep_origins', 'sheep_dailys', 'sheep_lambing_records', 'sheep_comments', 'weigh_in_sessions', 'weigh_ins'];
+const tables = [
+  'sheep',
+  'sheep_breeds',
+  'sheep_origins',
+  'sheep_dailys',
+  'sheep_lambing_records',
+  'sheep_comments',
+  'weigh_in_sessions',
+  'weigh_ins',
+];
 
 (async () => {
   for (const t of tables) {
     const res = await fetch(`${URL}/rest/v1/${t}?select=*&limit=1`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+      headers: {apikey: KEY, Authorization: `Bearer ${KEY}`},
     });
     const body = await res.text();
     const status = res.ok ? 'OK' : `HTTP ${res.status}`;

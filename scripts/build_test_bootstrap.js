@@ -31,7 +31,7 @@ const MIGRATION_RX = /^(\d{3})_.+\.sql$/;
 
 function listMigrations(dir) {
   return fs
-    .readdirSync(dir, { withFileTypes: true })
+    .readdirSync(dir, {withFileTypes: true})
     .filter((d) => d.isFile() && MIGRATION_RX.test(d.name))
     .map((d) => d.name)
     .sort();
@@ -266,5 +266,5 @@ revoke execute on function public.exec_sql(text) from authenticated;
 fs.writeFileSync(OUT_PATH, out, 'utf8');
 const sizeKb = (out.length / 1024).toFixed(1);
 console.log(
-  `Wrote ${path.relative(ROOT, OUT_PATH)} (${archived.length + parent.length} migrations + exec_sql, ${sizeKb} KB).`
+  `Wrote ${path.relative(ROOT, OUT_PATH)} (${archived.length + parent.length} migrations + exec_sql, ${sizeKb} KB).`,
 );

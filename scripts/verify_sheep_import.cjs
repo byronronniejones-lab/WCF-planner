@@ -10,14 +10,14 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function count(q) {
   const res = await fetch(`${URL}/rest/v1/${q}&select=*`, {
-    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, Prefer: 'count=exact', Range: '0-0' },
+    headers: {apikey: KEY, Authorization: `Bearer ${KEY}`, Prefer: 'count=exact', Range: '0-0'},
   });
   const cr = res.headers.get('content-range');
   return cr ? cr.split('/')[1] : 'unknown';
 }
 async function row(q) {
   const res = await fetch(`${URL}/rest/v1/${q}`, {
-    headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    headers: {apikey: KEY, Authorization: `Bearer ${KEY}`},
   });
   return await res.json();
 }
@@ -41,16 +41,22 @@ async function row(q) {
   console.log(`  sheep_dailys (feeders):${await count('sheep_dailys?flock=eq.feeders')}`);
 
   console.log('\nSample new lambs:');
-  const newOnes = await row('sheep?id=like.sheep-new-%25&select=tag,sex,flock,breed,origin,purchase_date,purchase_amount&order=tag');
-  newOnes.forEach(s => console.log(`  tag="${s.tag}" sex=${s.sex} flock=${s.flock} breed=${s.breed} origin=${s.origin} $${s.purchase_amount}`));
+  const newOnes = await row(
+    'sheep?id=like.sheep-new-%25&select=tag,sex,flock,breed,origin,purchase_date,purchase_amount&order=tag',
+  );
+  newOnes.forEach((s) =>
+    console.log(
+      `  tag="${s.tag}" sex=${s.sex} flock=${s.flock} breed=${s.breed} origin=${s.origin} $${s.purchase_amount}`,
+    ),
+  );
 
   console.log('\nSample historical weigh-in (tag 55):');
   const w55 = await row('weigh_ins?tag=eq.55&select=tag,weight,session_id,note');
-  w55.forEach(w => console.log(`  tag=${w.tag} weight=${w.weight} session=${w.session_id}`));
+  w55.forEach((w) => console.log(`  tag=${w.tag} weight=${w.weight} session=${w.session_id}`));
 
   console.log('\nSample lambing record:');
   const lr = await row('sheep_lambing_records?select=dam_tag,lambing_date,lamb_tag&order=lambing_date.desc&limit=3');
-  lr.forEach(l => console.log(`  dam=${l.dam_tag} → lamb=${l.lamb_tag} (${l.lambing_date})`));
+  lr.forEach((l) => console.log(`  dam=${l.dam_tag} → lamb=${l.lamb_tag} (${l.lambing_date})`));
 
   console.log('\nDate range of sheep_dailys:');
   const first = await row('sheep_dailys?select=date&order=date.asc&limit=1');

@@ -37,34 +37,37 @@ loadEnv();
 
 // Keep in sync with EQUIPMENT_DEFS in import_equipment.cjs.
 const SLUG_TO_APP = {
-  '5065':        29677781,
-  'ps100':       29670699,
+  5065: 29677781,
+  ps100: 29670699,
   'honda-atv-1': 29711361,
   'honda-atv-2': 29855781,
   'honda-atv-3': 30126620,
   'honda-atv-4': 30126621,
-  'hijet-2018':  30104109,
-  'hijet-2020':  30123211,
-  'toro':        29786608,
-  'ventrac':     30089562,
-  'gehl':        30134561,
-  'l328':        30473316,
-  'mini-ex':     29673203,
-  'gyro-trac':   29788050,
-  'c362':        29673167,
+  'hijet-2018': 30104109,
+  'hijet-2020': 30123211,
+  toro: 29786608,
+  ventrac: 30089562,
+  gehl: 30134561,
+  l328: 30473316,
+  'mini-ex': 29673203,
+  'gyro-trac': 29788050,
+  c362: 29673167,
 };
 
 function decodeEntities(s) {
   if (!s) return s;
   return String(s)
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
 }
 
 function configPathForApp(appId) {
   const entries = fs.readdirSync(DUMP_DIR);
-  const hit = entries.find(e => e.startsWith(`${appId}.`) && e.endsWith('.config.json'));
+  const hit = entries.find((e) => e.startsWith(`${appId}.`) && e.endsWith('.config.json'));
   return hit ? path.join(DUMP_DIR, hit) : null;
 }
 
@@ -87,7 +90,11 @@ function parseIntervalLabel(label) {
 }
 
 function slugify(text, max) {
-  return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, max);
+  return (text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, max);
 }
 
 // Attachment-checklist fields have labels like "Tough Cut -- Every 50 Hours" —
@@ -103,28 +110,29 @@ function rebuildFromConfig(configPath) {
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
   // Every-fillup field
-  const fillup = (config.fields || []).find(f =>
-    f.status !== 'deleted' && (
-      f.external_id === 'every-fuel-fill-up-checklist' ||
-      f.external_id === 'every-fuel-fillup-checklist' ||
-      /every.*fillup|every.*fill.*up/i.test(f.label || '')
-    )
+  const fillup = (config.fields || []).find(
+    (f) =>
+      f.status !== 'deleted' &&
+      (f.external_id === 'every-fuel-fill-up-checklist' ||
+        f.external_id === 'every-fuel-fillup-checklist' ||
+        /every.*fillup|every.*fill.*up/i.test(f.label || '')),
   );
   let every_fillup_items = [];
   if (fillup && fillup.config?.settings?.options) {
     every_fillup_items = fillup.config.settings.options
-      .filter(o => o.status !== 'deleted')
-      .map(o => ({
+      .filter((o) => o.status !== 'deleted')
+      .map((o) => ({
         id: slugify(o.text, 40) || String(o.id),
         label: o.text || '',
-      })).filter(x => x.label);
+      }))
+      .filter((x) => x.label);
   }
 
   // Per-interval fields + tasks. Attachment-prefixed fields get bucketed
   // separately so they don't collide on (kind,value) with the main intervals.
   const intervalsRaw = [];
   const attachmentRaw = [];
-  for (const f of (config.fields || [])) {
+  for (const f of config.fields || []) {
     if (f.type !== 'category') continue;
     if (f.status === 'deleted') continue;
     if (f.external_id === 'every-fuel-fill-up-checklist') continue;
@@ -133,16 +141,24 @@ function rebuildFromConfig(configPath) {
     const parsed = parseIntervalLabel(lbl);
     if (!parsed) continue;
     const tasks = (f.config?.settings?.options || [])
-      .filter(o => o.status !== 'deleted')
-      .map(o => ({
+      .filter((o) => o.status !== 'deleted')
+      .map((o) => ({
         id: slugify(o.text, 50) || String(o.id),
         label: (o.text || '').trim(),
-      })).filter(t => t.label);
+      }))
+      .filter((t) => t.label);
     const help_text = decodeEntities((f.config?.description || f.description || '').trim()) || null;
     if (isAttachmentLabel(lbl)) {
       const attachmentName = lbl.split(/\s--\s|\s—\s/)[0].trim();
       for (const v of parsed.values) {
-        attachmentRaw.push({name: attachmentName, hours_or_km: v, kind: parsed.kind, label: lbl.trim(), tasks, help_text});
+        attachmentRaw.push({
+          name: attachmentName,
+          hours_or_km: v,
+          kind: parsed.kind,
+          label: lbl.trim(),
+          tasks,
+          help_text,
+        });
       }
     } else {
       for (const v of parsed.values) {
@@ -153,7 +169,7 @@ function rebuildFromConfig(configPath) {
   // Dedup on (kind,value). First-one-wins by source order.
   const seen = new Set();
   const service_intervals = intervalsRaw
-    .filter(iv => {
+    .filter((iv) => {
       const k = iv.kind + ':' + iv.hours_or_km;
       if (seen.has(k)) return false;
       seen.add(k);
@@ -164,7 +180,7 @@ function rebuildFromConfig(configPath) {
   // Attachments keyed on (name,kind,value). Sort by name then ascending interval.
   const aseen = new Set();
   const attachment_checklists = attachmentRaw
-    .filter(a => {
+    .filter((a) => {
       const k = a.name + ':' + a.kind + ':' + a.hours_or_km;
       if (aseen.has(k)) return false;
       aseen.add(k);
@@ -185,10 +201,12 @@ async function main() {
     }
     const {service_intervals, every_fillup_items, attachment_checklists} = rebuildFromConfig(configPath);
     const ivSummary = service_intervals
-      .map(iv => `${iv.hours_or_km}${iv.kind==='km'?'km':'h'}(${iv.tasks.length}t)`)
+      .map((iv) => `${iv.hours_or_km}${iv.kind === 'km' ? 'km' : 'h'}(${iv.tasks.length}t)`)
       .join(', ');
     const attSummary = attachment_checklists.length
-      ? '  attachments=[' + attachment_checklists.map(a => `${a.name}@${a.hours_or_km}${a.kind[0]}(${a.tasks.length}t)`).join(', ') + ']'
+      ? '  attachments=[' +
+        attachment_checklists.map((a) => `${a.name}@${a.hours_or_km}${a.kind[0]}(${a.tasks.length}t)`).join(', ') +
+        ']'
       : '';
     console.log(`  · ${slug.padEnd(14)} fillup=${every_fillup_items.length}  intervals=[${ivSummary}]${attSummary}`);
     plans.push({slug, service_intervals, every_fillup_items, attachment_checklists});
@@ -200,29 +218,38 @@ async function main() {
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!SUPABASE_URL || !SERVICE_KEY) {
     console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in scripts/.env');
     process.exit(1);
   }
   const {createClient} = require('@supabase/supabase-js');
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth:{persistSession:false}});
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth: {persistSession: false}});
 
   let updated = 0;
   for (const p of plans) {
     const id = 'eq-' + p.slug;
-    const {error} = await sb.from('equipment')
+    const {error} = await sb
+      .from('equipment')
       .update({
         service_intervals: p.service_intervals,
         every_fillup_items: p.every_fillup_items,
         attachment_checklists: p.attachment_checklists,
       })
       .eq('id', id);
-    if (error) { console.error(`  ! ${p.slug}: update failed`, error.message); continue; }
+    if (error) {
+      console.error(`  ! ${p.slug}: update failed`, error.message);
+      continue;
+    }
     updated++;
     console.log(`  ✓ ${p.slug} re-seeded`);
   }
-  console.log(`\nDone. ${updated}/${plans.length} rows re-seeded. Completions preserved (they attribute by kind+value).`);
+  console.log(
+    `\nDone. ${updated}/${plans.length} rows re-seeded. Completions preserved (they attribute by kind+value).`,
+  );
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

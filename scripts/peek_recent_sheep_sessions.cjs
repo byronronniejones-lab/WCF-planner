@@ -12,14 +12,20 @@ function loadEnv() {
 loadEnv();
 (async () => {
   const {createClient} = require('@supabase/supabase-js');
-  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
-  const {data, error} = await sb.from('weigh_in_sessions')
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {persistSession: false},
+  });
+  const {data, error} = await sb
+    .from('weigh_in_sessions')
     .select('id,date,started_at,status,herd,team_member')
-    .eq('species','sheep')
-    .order('started_at',{ascending:false})
+    .eq('species', 'sheep')
+    .order('started_at', {ascending: false})
     .limit(5);
-  if (error) { console.error(error); process.exit(1); }
-  for (const s of (data||[])) {
+  if (error) {
+    console.error(error);
+    process.exit(1);
+  }
+  for (const s of data || []) {
     console.log(`  date=${s.date}  herd=${s.herd}  status=${s.status}  team=${s.team_member}  id=${s.id}`);
   }
 })();

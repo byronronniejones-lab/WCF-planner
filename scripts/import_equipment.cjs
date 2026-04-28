@@ -36,7 +36,7 @@ function loadEnv() {
 loadEnv();
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (COMMIT && (!SUPABASE_URL || !SERVICE_KEY)) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in scripts/.env');
   process.exit(1);
@@ -45,7 +45,7 @@ if (COMMIT && (!SUPABASE_URL || !SERVICE_KEY)) {
 let sb = null;
 if (COMMIT) {
   const {createClient} = require('@supabase/supabase-js');
-  sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth:{persistSession:false}});
+  sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth: {persistSession: false}});
 }
 
 // ───── equipment app_id → slug / category / tracking_unit / parent ──────────
@@ -61,31 +61,195 @@ if (COMMIT) {
 //   No fuel at all: Great Plains Drill (implement)
 const EQUIPMENT_DEFS = [
   // TRACTORS
-  {slug:'5065',       category:'tractors',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:29677781, match_name:/5065/i},
-  {slug:'ps100',      category:'tractors',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:29670699, match_name:/powerstar/i},
-  {slug:'great-plains-drill', category:'tractors', tracking_unit:'hours', fuel_type:null, takes_def:false, checklist_app:null, match_name:/great\s*plains|no.?till\s*drill/i},
+  {
+    slug: '5065',
+    category: 'tractors',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: false,
+    checklist_app: 29677781,
+    match_name: /5065/i,
+  },
+  {
+    slug: 'ps100',
+    category: 'tractors',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: true,
+    checklist_app: 29670699,
+    match_name: /powerstar/i,
+  },
+  {
+    slug: 'great-plains-drill',
+    category: 'tractors',
+    tracking_unit: 'hours',
+    fuel_type: null,
+    takes_def: false,
+    checklist_app: null,
+    match_name: /great\s*plains|no.?till\s*drill/i,
+  },
   // ATVs (Honda Foreman Rubicons).
-  {slug:'honda-atv-1',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:29711361, match_name:/#\s*1[\s-]+honda/i},
-  {slug:'honda-atv-2',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:29855781, match_name:/#\s*2[\s-]+honda/i},
-  {slug:'honda-atv-3',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:30126620, match_name:/#\s*3[\s-]+honda/i},
-  {slug:'honda-atv-4',category:'atvs',      tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:30126621, match_name:/#\s*4[\s-]+honda/i},
+  {
+    slug: 'honda-atv-1',
+    category: 'atvs',
+    tracking_unit: 'hours',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 29711361,
+    match_name: /#\s*1[\s-]+honda/i,
+  },
+  {
+    slug: 'honda-atv-2',
+    category: 'atvs',
+    tracking_unit: 'hours',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 29855781,
+    match_name: /#\s*2[\s-]+honda/i,
+  },
+  {
+    slug: 'honda-atv-3',
+    category: 'atvs',
+    tracking_unit: 'hours',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 30126620,
+    match_name: /#\s*3[\s-]+honda/i,
+  },
+  {
+    slug: 'honda-atv-4',
+    category: 'atvs',
+    tracking_unit: 'hours',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 30126621,
+    match_name: /#\s*4[\s-]+honda/i,
+  },
   // HIJETS + other UTVs
-  {slug:'hijet-2018', category:'hijets',    tracking_unit:'km',    fuel_type:'gasoline', takes_def:false, checklist_app:30104109, match_name:/2018.*hijet/i},
-  {slug:'hijet-2020', category:'hijets',    tracking_unit:'km',    fuel_type:'gasoline', takes_def:false, checklist_app:30123211, match_name:/2020.*hijet/i},
-  {slug:'jd-gator',   category:'hijets',    tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/gator\s*xuv|john\s*deere.*gator/i, archived:true},
-  {slug:'kubota-rtv', category:'hijets',    tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/kubota|rtv-?x/i, archived:true},
+  {
+    slug: 'hijet-2018',
+    category: 'hijets',
+    tracking_unit: 'km',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 30104109,
+    match_name: /2018.*hijet/i,
+  },
+  {
+    slug: 'hijet-2020',
+    category: 'hijets',
+    tracking_unit: 'km',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 30123211,
+    match_name: /2020.*hijet/i,
+  },
+  {
+    slug: 'jd-gator',
+    category: 'hijets',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: true,
+    checklist_app: null,
+    match_name: /gator\s*xuv|john\s*deere.*gator/i,
+    archived: true,
+  },
+  {
+    slug: 'kubota-rtv',
+    category: 'hijets',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: true,
+    checklist_app: null,
+    match_name: /kubota|rtv-?x/i,
+    archived: true,
+  },
   // MOWERS
-  {slug:'toro',       category:'mowers',    tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:29786608, match_name:/toro/i},
-  {slug:'ventrac',    category:'mowers',    tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, checklist_app:30089562, match_name:/ventrac/i},
+  {
+    slug: 'toro',
+    category: 'mowers',
+    tracking_unit: 'hours',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 29786608,
+    match_name: /toro/i,
+  },
+  {
+    slug: 'ventrac',
+    category: 'mowers',
+    tracking_unit: 'hours',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    checklist_app: 30089562,
+    match_name: /ventrac/i,
+  },
   // SKIDSTEERS (+ compact loaders)
-  {slug:'gehl',       category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:30134561, match_name:/gehl/i},
-  {slug:'l328',       category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:30473316, match_name:/l\s*328|new\s*holland\s*l328/i},
-  {slug:'jd-317',     category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/john\s*deere\s*317|jd\s*317/i, archived:true},
-  {slug:'jd-333',     category:'skidsteers',tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:null,     match_name:/john\s*deere\s*333|jd\s*333/i, archived:true},
+  {
+    slug: 'gehl',
+    category: 'skidsteers',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: false,
+    checklist_app: 30134561,
+    match_name: /gehl/i,
+  },
+  {
+    slug: 'l328',
+    category: 'skidsteers',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: false,
+    checklist_app: 30473316,
+    match_name: /l\s*328|new\s*holland\s*l328/i,
+  },
+  {
+    slug: 'jd-317',
+    category: 'skidsteers',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: true,
+    checklist_app: null,
+    match_name: /john\s*deere\s*317|jd\s*317/i,
+    archived: true,
+  },
+  {
+    slug: 'jd-333',
+    category: 'skidsteers',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: true,
+    checklist_app: null,
+    match_name: /john\s*deere\s*333|jd\s*333/i,
+    archived: true,
+  },
   // FORESTRY
-  {slug:'gyro-trac',  category:'forestry',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:29788050, match_name:/gyro/i},
-  {slug:'c362',       category:'forestry',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:true,  checklist_app:29673167, match_name:/c362|c\s*362/i},
-  {slug:'mini-ex',    category:'forestry',  tracking_unit:'hours', fuel_type:'diesel',   takes_def:false, checklist_app:29673203, match_name:/mini.*ex|bobcat.*mini/i},
+  {
+    slug: 'gyro-trac',
+    category: 'forestry',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: true,
+    checklist_app: 29788050,
+    match_name: /gyro/i,
+  },
+  {
+    slug: 'c362',
+    category: 'forestry',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: true,
+    checklist_app: 29673167,
+    match_name: /c362|c\s*362/i,
+  },
+  {
+    slug: 'mini-ex',
+    category: 'forestry',
+    tracking_unit: 'hours',
+    fuel_type: 'diesel',
+    takes_def: false,
+    checklist_app: 29673203,
+    match_name: /mini.*ex|bobcat.*mini/i,
+  },
 ];
 
 // Category + slug used when Fuel Log entries reference a category that doesn't
@@ -93,27 +257,27 @@ const EQUIPMENT_DEFS = [
 // best-effort guess; unresolved rows get logged and skipped.
 const FUEL_LOG_CATEGORY_MAP = {
   // Tractors
-  'JOHN DEERE TRACTOR': '5065',        // Ronnie's historical category; modern fleet has one JD tractor (5065)
+  'JOHN DEERE TRACTOR': '5065', // Ronnie's historical category; modern fleet has one JD tractor (5065)
   '5065 JOHN DEERE': '5065',
   'POWERSTAR 100': 'ps100',
   'PS 100': 'ps100',
-  'NEW HOLLAND TRACTOR': 'ps100',      // generic NH tractor → PS100 (C362 is a compact track loader, logged under its own name)
+  'NEW HOLLAND TRACTOR': 'ps100', // generic NH tractor → PS100 (C362 is a compact track loader, logged under its own name)
   // Forestry
-  'C362': 'c362',
+  C362: 'c362',
   'GYRO-TRAC': 'gyro-trac',
-  'GYROTRAC': 'gyro-trac',
+  GYROTRAC: 'gyro-trac',
   'MINI EX': 'mini-ex',
   'MINI-EX': 'mini-ex',
   'BOBCAT MINI EXCAVATOR': 'mini-ex',
   // Mowers
   'TORO ZERO TURN': 'toro',
-  'TORO': 'toro',
-  'ZERO TURN MOWER': 'toro',           // generic ZT → Toro (we only have one)
-  'VENTRAC': 'ventrac',
+  TORO: 'toro',
+  'ZERO TURN MOWER': 'toro', // generic ZT → Toro (we only have one)
+  VENTRAC: 'ventrac',
   // Skidsteers
-  'GEHL': 'gehl',
+  GEHL: 'gehl',
   'GEHL RT165': 'gehl',
-  'L328': 'l328',
+  L328: 'l328',
   'NEW HOLLAND L328': 'l328',
   'JOHN DEERE 317': 'jd-317',
   'JD 317': 'jd-317',
@@ -122,34 +286,42 @@ const FUEL_LOG_CATEGORY_MAP = {
   // UTVs / Hijets / Gator / Kubota / Polaris
   '2018 HIJET': 'hijet-2018',
   '2020 HIJET': 'hijet-2020',
-  'HIJET': null,                       // ambiguous 2018 vs 2020 — log + skip
+  HIJET: null, // ambiguous 2018 vs 2020 — log + skip
   '#1 HONDA ATV': 'honda-atv-1',
   '#2 HONDA ATV': 'honda-atv-2',
   '#3 HONDA ATV': 'honda-atv-3',
   '#4 HONDA ATV': 'honda-atv-4',
   'HONDA ATV': null,
   'JOHN DEERE DIESEL SXS': 'jd-gator', // 2023 JD Gator XUV865M is diesel
-  'JOHN DEERE GAS SXS': 'jd-gator',    // older Gator variant; still mapping to the JD Gator piece
+  'JOHN DEERE GAS SXS': 'jd-gator', // older Gator variant; still mapping to the JD Gator piece
   'JOHN DEERE GATOR': 'jd-gator',
   'KUBOTA RTV': 'kubota-rtv',
-  'KUBOTA': 'kubota-rtv',
+  KUBOTA: 'kubota-rtv',
   'KUBOTA SXS': 'kubota-rtv',
-  '317': 'jd-317',                     // older shorthand for JD 317
-  '333': 'jd-333',
+  317: 'jd-317', // older shorthand for JD 317
+  333: 'jd-333',
   'POLARIS RANGER 4 SEATER': 'polaris-ranger',
   'POLARIS RANGER': 'polaris-ranger',
-  'POLARIS': 'polaris-ranger',
+  POLARIS: 'polaris-ranger',
   // Skip / non-equipment
-  'FUEL TRUCK FUEL CELL': null,        // fueling the bulk storage tank, not a specific piece
+  'FUEL TRUCK FUEL CELL': null, // fueling the bulk storage tank, not a specific piece
   'FUEL CELL': null,
-  'OTHER': null,                       // unknown; skip rather than pick a random piece
+  OTHER: null, // unknown; skip rather than pick a random piece
 };
 
 // Equipment that shows up in Fuel Log but has no row in the Equipment
 // Maintenance Podio app — synthesized here so their fuelings have a target.
 // Admin can edit / retire later via the normal Fleet UI.
 const SYNTHETIC_EQUIPMENT = [
-  {slug:'polaris-ranger', name:'Polaris Ranger 4-Seater', category:'hijets', tracking_unit:'hours', fuel_type:'gasoline', takes_def:false, archived:true},
+  {
+    slug: 'polaris-ranger',
+    name: 'Polaris Ranger 4-Seater',
+    category: 'hijets',
+    tracking_unit: 'hours',
+    fuel_type: 'gasoline',
+    takes_def: false,
+    archived: true,
+  },
 ];
 
 // ───── helpers ───────────────────────────────────────────────────────────────
@@ -159,7 +331,7 @@ function loadJson(file) {
 }
 function findField(item, external_id) {
   if (!item.fields) return null;
-  return item.fields.find(f => f.external_id === external_id);
+  return item.fields.find((f) => f.external_id === external_id);
 }
 function fieldTextValue(item, external_id) {
   const f = findField(item, external_id);
@@ -172,7 +344,10 @@ function fieldTextValue(item, external_id) {
 // Strip <p>…</p> and placeholder 'None' text from Podio's HTML comments.
 function stripHtml(s) {
   if (s == null) return null;
-  const clean = String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const clean = String(s)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!clean || clean.toLowerCase() === 'none' || clean === 'N/A' || clean.toLowerCase() === 'n/a') return null;
   return clean;
 }
@@ -193,16 +368,18 @@ function fieldDateValue(item, external_id) {
 function fieldCategoryValues(item, external_id) {
   const f = findField(item, external_id);
   if (!f || !f.values) return [];
-  return f.values.map(v => {
-    if (v.value && typeof v.value === 'object' && v.value.text) return v.value.text.trim();
-    if (typeof v.value === 'string') return v.value.trim();
-    return null;
-  }).filter(Boolean);
+  return f.values
+    .map((v) => {
+      if (v.value && typeof v.value === 'object' && v.value.text) return v.value.text.trim();
+      if (typeof v.value === 'string') return v.value.trim();
+      return null;
+    })
+    .filter(Boolean);
 }
 function fieldAppRelations(item, external_id) {
   const f = findField(item, external_id);
   if (!f || !f.values) return [];
-  return f.values.map(v => (v.value && v.value.item_id) ? v.value.item_id : null).filter(Boolean);
+  return f.values.map((v) => (v.value && v.value.item_id ? v.value.item_id : null)).filter(Boolean);
 }
 function normFuelType(s) {
   if (!s) return null;
@@ -218,8 +395,11 @@ function deterministicFuelingId(podioSourceApp, podioItemId) {
 function decodeHtmlEntities(s) {
   if (!s) return s;
   return String(s)
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
 }
 function parseIntervalLabel(label) {
@@ -262,7 +442,7 @@ function buildEquipmentRows() {
     if (!name) continue;
 
     // Match this item to one of our EQUIPMENT_DEFS by name regex.
-    const defMatch = EQUIPMENT_DEFS.find(d => d.match_name.test(name));
+    const defMatch = EQUIPMENT_DEFS.find((d) => d.match_name.test(name));
     if (!defMatch) {
       unmatched.push({podio_item_id: item.item_id, name});
       continue;
@@ -284,7 +464,7 @@ function buildEquipmentRows() {
       def_tank_gal: fieldNumValue(item, 'def-tank-capacity-in-gallons'),
       tracking_unit: defMatch.tracking_unit,
       current_hours: defMatch.tracking_unit === 'hours' ? currentUnits : null,
-      current_km:    defMatch.tracking_unit === 'km'    ? currentUnits : null,
+      current_km: defMatch.tracking_unit === 'km' ? currentUnits : null,
       engine_oil: fieldTextValue(item, 'engine-oil'),
       oil_filter: fieldTextValue(item, 'oil-filter'),
       hydraulic_oil: fieldTextValue(item, 'hydraulic-oil'),
@@ -297,12 +477,12 @@ function buildEquipmentRows() {
       air_filters: fieldTextValue(item, 'cabin-air-filters'),
       warranty_description: fieldTextValue(item, 'warranty-description'),
       warranty_expiration: fieldDateValue(item, 'warranty-expirtion'),
-      service_intervals: [],        // seeded below from checklist-app field options
-      every_fillup_items: [],       // seeded below
-      every_fillup_help: null,      // seeded below (torque spec etc. from Podio field desc)
-      fuel_gallons_help: null,      // seeded below (fuel conditioner spec etc.)
-      operator_notes: null,         // seeded below (top-of-form operator notes)
-      attachment_checklists: [],    // seeded below (Ventrac attachments etc.)
+      service_intervals: [], // seeded below from checklist-app field options
+      every_fillup_items: [], // seeded below
+      every_fillup_help: null, // seeded below (torque spec etc. from Podio field desc)
+      fuel_gallons_help: null, // seeded below (fuel conditioner spec etc.)
+      operator_notes: null, // seeded below (top-of-form operator notes)
+      attachment_checklists: [], // seeded below (Ventrac attachments etc.)
       notes: null,
     };
     rows.push(row);
@@ -310,7 +490,7 @@ function buildEquipmentRows() {
 
   // Synthesize equipment that only shows up in Fuel Log (Polaris, etc.).
   for (const syn of SYNTHETIC_EQUIPMENT) {
-    if (rows.some(r => r.slug === syn.slug)) continue;
+    if (rows.some((r) => r.slug === syn.slug)) continue;
     rows.push({
       id: 'eq-' + syn.slug,
       podio_item_id: null,
@@ -327,10 +507,18 @@ function buildEquipmentRows() {
       tracking_unit: syn.tracking_unit,
       current_hours: null,
       current_km: null,
-      engine_oil: null, oil_filter: null, hydraulic_oil: null, hydraulic_filter: null,
-      coolant: null, brake_fluid: null, fuel_filter: null, def_filter: null,
-      gearbox_drive_oil: null, air_filters: null,
-      warranty_description: null, warranty_expiration: null,
+      engine_oil: null,
+      oil_filter: null,
+      hydraulic_oil: null,
+      hydraulic_filter: null,
+      coolant: null,
+      brake_fluid: null,
+      fuel_filter: null,
+      def_filter: null,
+      gearbox_drive_oil: null,
+      air_filters: null,
+      warranty_description: null,
+      warranty_expiration: null,
       service_intervals: [],
       every_fillup_items: [],
       every_fillup_help: null,
@@ -350,7 +538,7 @@ function seedIntervalsForEquipment(eqRows) {
   // represent service-interval checkpoints. The generic
   // 'every-fuel-fill-up-checklist' field holds every-fillup items.
   for (const def of EQUIPMENT_DEFS) {
-    const eq = eqRows.find(r => r.slug === def.slug);
+    const eq = eqRows.find((r) => r.slug === def.slug);
     if (!eq) continue;
     const configFile = `${def.checklist_app}.${checklistSlug(def.checklist_app)}.config.json`;
     const configPath = path.join(DUMP_DIR, configFile);
@@ -359,29 +547,45 @@ function seedIntervalsForEquipment(eqRows) {
 
     // Podio stashed some help text on non-checklist fields (Toro gallons note,
     // Gyro-Trac date description). Pick those up too.
-    const gallonsFld = (config.fields || []).find(f =>
-      f.type === 'number' && /gallons?\s*of/i.test(f.label || '')
-    );
-    eq.fuel_gallons_help = decodeHtmlEntities(((gallonsFld && (gallonsFld.config?.description || gallonsFld.description)) || '').trim()) || null;
-    const dateFld = (config.fields || []).find(f => f.type === 'date');
-    eq.operator_notes = decodeHtmlEntities(((dateFld && (dateFld.config?.description || dateFld.description)) || '').trim()) || null;
+    const gallonsFld = (config.fields || []).find((f) => f.type === 'number' && /gallons?\s*of/i.test(f.label || ''));
+    eq.fuel_gallons_help =
+      decodeHtmlEntities(((gallonsFld && (gallonsFld.config?.description || gallonsFld.description)) || '').trim()) ||
+      null;
+    const dateFld = (config.fields || []).find((f) => f.type === 'date');
+    eq.operator_notes =
+      decodeHtmlEntities(((dateFld && (dateFld.config?.description || dateFld.description)) || '').trim()) || null;
 
-    const fillup = (config.fields || []).find(f =>
-      f.external_id === 'every-fuel-fill-up-checklist' ||
-      f.external_id === 'every-fuel-fillup-checklist' ||
-      /every.*fillup|every.*fill.*up/i.test(f.label || '')
+    const fillup = (config.fields || []).find(
+      (f) =>
+        f.external_id === 'every-fuel-fill-up-checklist' ||
+        f.external_id === 'every-fuel-fillup-checklist' ||
+        /every.*fillup|every.*fill.*up/i.test(f.label || ''),
     );
     // Podio marks stale template fields/options as status='deleted'. These
     // still ship in the API but are hidden on the published webform. Skip them.
-    if (fillup && fillup.status !== 'deleted' && fillup.config && fillup.config.settings && Array.isArray(fillup.config.settings.options)) {
+    if (
+      fillup &&
+      fillup.status !== 'deleted' &&
+      fillup.config &&
+      fillup.config.settings &&
+      Array.isArray(fillup.config.settings.options)
+    ) {
       eq.every_fillup_items = fillup.config.settings.options
-        .filter(o => o.status !== 'deleted')
-        .map(o => ({
-          id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) : String(o.id),
+        .filter((o) => o.status !== 'deleted')
+        .map((o) => ({
+          id: o.text
+            ? o.text
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '')
+                .slice(0, 40)
+            : String(o.id),
           label: o.text || '',
-        })).filter(x => x.label);
+        }))
+        .filter((x) => x.label);
       // Field-level help text for the fill-up section (e.g., "Tire Pressure: 4.4 psi").
-      eq.every_fillup_help = decodeHtmlEntities((fillup.config?.description || fillup.description || '').trim()) || null;
+      eq.every_fillup_help =
+        decodeHtmlEntities((fillup.config?.description || fillup.description || '').trim()) || null;
     }
 
     // Each category field on the checklist app represents ONE service
@@ -391,9 +595,9 @@ function seedIntervalsForEquipment(eqRows) {
     // separately into attachment_checklists.
     const intervals = [];
     const attachments = [];
-    for (const f of (config.fields || [])) {
+    for (const f of config.fields || []) {
       if (f.type !== 'category') continue;
-      if (f.status === 'deleted') continue;           // skip Podio-deleted template fields
+      if (f.status === 'deleted') continue; // skip Podio-deleted template fields
       if (f.external_id === 'every-fuel-fill-up-checklist') continue;
       const lbl = f.label || '';
       if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
@@ -402,11 +606,18 @@ function seedIntervalsForEquipment(eqRows) {
       // Options inside the category = the tasks the team performs when they
       // check this interval. Skip status='deleted' options.
       const tasks = (f.config?.settings?.options || [])
-        .filter(o => o.status !== 'deleted')
-        .map(o => ({
-          id: o.text ? o.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) : String(o.id),
+        .filter((o) => o.status !== 'deleted')
+        .map((o) => ({
+          id: o.text
+            ? o.text
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '')
+                .slice(0, 50)
+            : String(o.id),
           label: (o.text || '').trim(),
-        })).filter(t => t.label);
+        }))
+        .filter((t) => t.label);
       // Field-level help text (torque specs, gap specs, etc.) shown on webform.
       const help_text = decodeHtmlEntities((f.config?.description || f.description || '').trim()) || null;
       const isAttachment = /\s--\s|\s—\s/.test(lbl);
@@ -424,7 +635,7 @@ function seedIntervalsForEquipment(eqRows) {
     // Dedup attachments by (name, kind, value).
     const aseen = new Set();
     eq.attachment_checklists = attachments
-      .filter(a => {
+      .filter((a) => {
         const k = a.name + ':' + a.kind + ':' + a.hours_or_km;
         if (aseen.has(k)) return false;
         aseen.add(k);
@@ -434,7 +645,7 @@ function seedIntervalsForEquipment(eqRows) {
     // Dedup intervals by hours_or_km + kind. Sort ascending.
     const seen = new Set();
     eq.service_intervals = intervals
-      .filter(iv => {
+      .filter((iv) => {
         const k = iv.kind + ':' + iv.hours_or_km;
         if (seen.has(k)) return false;
         seen.add(k);
@@ -447,9 +658,9 @@ function seedIntervalsForEquipment(eqRows) {
 function checklistSlug(appId) {
   // Find the slug used in the dump filename from EQUIPMENT_DEFS.
   const entries = fs.readdirSync(DUMP_DIR);
-  const hit = entries.find(e => e.startsWith(`${appId}.`) && e.endsWith('.config.json'));
+  const hit = entries.find((e) => e.startsWith(`${appId}.`) && e.endsWith('.config.json'));
   if (!hit) return '';
-  return hit.slice((String(appId) + '.').length, -('.config.json'.length));
+  return hit.slice((String(appId) + '.').length, -'.config.json'.length);
 }
 
 // ───── build fueling rows (Fuel Log + 15 checklist apps, deduped) ──────────
@@ -460,17 +671,19 @@ function buildFuelingRows(eqRows, unresolvedLog) {
   // 1. Fuel Log app → one row per item
   const fuelLog = loadJson('29645966.fuel-log.items.json');
   for (const item of fuelLog) {
-    const fuelCategory = fieldCategoryValues(item, 'type-of-fuel')[0]
-                       || fieldTextValue(item, 'type-of-fuel');
-    const eqCategory = fieldCategoryValues(item, 'equipment-being-fueled')[0]
-                     || fieldTextValue(item, 'equipment-being-fueled');
+    const fuelCategory = fieldCategoryValues(item, 'type-of-fuel')[0] || fieldTextValue(item, 'type-of-fuel');
+    const eqCategory =
+      fieldCategoryValues(item, 'equipment-being-fueled')[0] || fieldTextValue(item, 'equipment-being-fueled');
     const slug = eqCategory ? FUEL_LOG_CATEGORY_MAP[eqCategory.toUpperCase()] : null;
     if (!slug) {
-      unresolvedLog.push({podio_item_id: item.item_id, eqCategory, reason:'no equipment mapping'});
+      unresolvedLog.push({podio_item_id: item.item_id, eqCategory, reason: 'no equipment mapping'});
       continue;
     }
-    const eq = eqRows.find(r => r.slug === slug);
-    if (!eq) { unresolvedLog.push({podio_item_id: item.item_id, eqCategory, reason:'equipment not in registry'}); continue; }
+    const eq = eqRows.find((r) => r.slug === slug);
+    if (!eq) {
+      unresolvedLog.push({podio_item_id: item.item_id, eqCategory, reason: 'equipment not in registry'});
+      continue;
+    }
 
     const dateRaw = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0, 10) : null);
     if (!dateRaw) continue;
@@ -487,7 +700,7 @@ function buildFuelingRows(eqRows, unresolvedLog) {
       fuel_type: normFuelType(fuelCategory),
       gallons: gallons,
       hours_reading: eq.tracking_unit === 'hours' ? reading : null,
-      km_reading:    eq.tracking_unit === 'km'    ? reading : null,
+      km_reading: eq.tracking_unit === 'km' ? reading : null,
       every_fillup_check: [],
       service_intervals_completed: [],
       comments: stripHtml(fieldTextValue(item, 'comments')),
@@ -502,53 +715,62 @@ function buildFuelingRows(eqRows, unresolvedLog) {
   //    entry exists (checklist references its Fuel Log row via an app-relation
   //    field). We dedup by prefering the Fuel Log id when the checklist's
   //    related Fuel Log item is in our byPodioId set.
-  const logByPodio = new Map(rows.map(r => [r.podio_item_id, r]));
+  const logByPodio = new Map(rows.map((r) => [r.podio_item_id, r]));
 
   for (const def of EQUIPMENT_DEFS) {
     const itemsFile = `${def.checklist_app}.${checklistSlug(def.checklist_app)}.items.json`;
     const p = path.join(DUMP_DIR, itemsFile);
     if (!fs.existsSync(p)) continue;
-    const eq = eqRows.find(r => r.slug === def.slug);
+    const eq = eqRows.find((r) => r.slug === def.slug);
     if (!eq) continue;
     const items = JSON.parse(fs.readFileSync(p, 'utf8'));
 
     for (const item of items) {
-      const relatedLogIds = fieldAppRelations(item, 'fuel-log-app').concat(
-                              fieldAppRelations(item, 'fuel-log'));
+      const relatedLogIds = fieldAppRelations(item, 'fuel-log-app').concat(fieldAppRelations(item, 'fuel-log'));
       // Build the per-fillup check list. Podio apps use either
       // external_id='every-fuel-fill-up-checklist' (most) or just
       // 'every-fuel-fill-up' (2018 Hijet + a few others). Try both.
       const fillupRaw = fieldCategoryValues(item, 'every-fuel-fill-up-checklist');
       const fillupLabels = fillupRaw.length > 0 ? fillupRaw : fieldCategoryValues(item, 'every-fuel-fill-up');
-      const fillupTicks = fillupLabels.map(v => ({
-        id: v.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40),
-        label: v, ok: true,
+      const fillupTicks = fillupLabels.map((v) => ({
+        id: v
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 40),
+        label: v,
+        ok: true,
       }));
       // Build service_intervals_completed from each "Every N hours" category
       // field. Each completion records the interval + which specific tasks
       // were ticked on this entry. Interval is considered "fully done" only
       // when items_completed.length === tasks.length (computed in the UI).
       const completions = [];
-      const completedAt = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0,10) : null);
+      const completedAt = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0, 10) : null);
       if (item.fields) {
         for (const f of item.fields) {
           if (f.type !== 'category') continue;
-          if (f.status === 'deleted') continue;       // Podio deleted template field
+          if (f.status === 'deleted') continue; // Podio deleted template field
           if (f.external_id === 'every-fuel-fill-up-checklist' || f.external_id === 'every-fuel-fill-up') continue;
           const lbl = f.label || '';
           if (!/hour|km|first\s*\d|initial\s*\d/i.test(lbl)) continue;
           // Only count ticks on options that are still active on the field.
           const activeOptionIds = new Set(
-            (f.config?.settings?.options || [])
-              .filter(o => o.status !== 'deleted')
-              .map(o => o.id)
+            (f.config?.settings?.options || []).filter((o) => o.status !== 'deleted').map((o) => o.id),
           );
           const tickedLabels = (f.values || [])
-            .filter(v => v && v.value && (activeOptionIds.size === 0 || activeOptionIds.has(v.value.id)))
-            .map(v => (v.value && v.value.text) || null).filter(Boolean);
+            .filter((v) => v && v.value && (activeOptionIds.size === 0 || activeOptionIds.has(v.value.id)))
+            .map((v) => (v.value && v.value.text) || null)
+            .filter(Boolean);
           if (tickedLabels.length === 0) continue;
-          const totalTasks = (f.config?.settings?.options || []).filter(o => o.status !== 'deleted').length;
-          const itemsCompleted = tickedLabels.map(t => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50));
+          const totalTasks = (f.config?.settings?.options || []).filter((o) => o.status !== 'deleted').length;
+          const itemsCompleted = tickedLabels.map((t) =>
+            t
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '')
+              .slice(0, 50),
+          );
           const parsed = parseIntervalLabel(lbl);
           if (!parsed) continue;
           for (const val of parsed.values) {
@@ -564,8 +786,8 @@ function buildFuelingRows(eqRows, unresolvedLog) {
         }
       }
 
-      const dateRaw = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0,10) : null);
-      let relatedLogRow = relatedLogIds.map(id => logByPodio.get(id)).find(Boolean);
+      const dateRaw = fieldDateValue(item, 'date') || (item.created_on ? item.created_on.slice(0, 10) : null);
+      let relatedLogRow = relatedLogIds.map((id) => logByPodio.get(id)).find(Boolean);
 
       // Fallback match when Podio's fuel-log-app relation is missing: same
       // equipment + same date + same reading (±1) + same team. Prevents the
@@ -576,12 +798,13 @@ function buildFuelingRows(eqRows, unresolvedLog) {
         const hoursKm = fieldNumValue(item, 'hours') || fieldNumValue(item, 'km');
         const teamNorm = (fieldTextValue(item, 'team-member') || '').trim().toLowerCase();
         if (hoursKm != null) {
-          relatedLogRow = rows.find(r =>
-            r.equipment_id === eq.id &&
-            r.date === dateRaw &&
-            ((eq.tracking_unit === 'hours' ? r.hours_reading : r.km_reading) != null) &&
-            Math.abs(Number(eq.tracking_unit === 'hours' ? r.hours_reading : r.km_reading) - Number(hoursKm)) <= 1 &&
-            ((r.team_member || '').trim().toLowerCase() === teamNorm || !teamNorm || !r.team_member)
+          relatedLogRow = rows.find(
+            (r) =>
+              r.equipment_id === eq.id &&
+              r.date === dateRaw &&
+              (eq.tracking_unit === 'hours' ? r.hours_reading : r.km_reading) != null &&
+              Math.abs(Number(eq.tracking_unit === 'hours' ? r.hours_reading : r.km_reading) - Number(hoursKm)) <= 1 &&
+              ((r.team_member || '').trim().toLowerCase() === teamNorm || !teamNorm || !r.team_member),
           );
         }
       }
@@ -590,16 +813,16 @@ function buildFuelingRows(eqRows, unresolvedLog) {
         // Merge into existing Fuel Log row
         relatedLogRow.every_fillup_check = fillupTicks;
         relatedLogRow.service_intervals_completed = completions;
-        relatedLogRow.podio_source_app = 'fuel_log+checklist_' + def.slug.replace(/-/g,'_');
+        relatedLogRow.podio_source_app = 'fuel_log+checklist_' + def.slug.replace(/-/g, '_');
       } else {
         // No matching Fuel Log row — this checklist is standalone.
         if (!dateRaw) continue;
         const hoursKm = fieldNumValue(item, 'hours') || fieldNumValue(item, 'km');
         const gallons = fieldNumValue(item, 'gallons');
         rows.push({
-          id: deterministicFuelingId('checklist_' + def.slug.replace(/-/g,'_'), item.item_id),
+          id: deterministicFuelingId('checklist_' + def.slug.replace(/-/g, '_'), item.item_id),
           podio_item_id: item.item_id,
-          podio_source_app: 'checklist_' + def.slug.replace(/-/g,'_'),
+          podio_source_app: 'checklist_' + def.slug.replace(/-/g, '_'),
           equipment_id: eq.id,
           date: dateRaw,
           team_member: fieldTextValue(item, 'team-member'),
@@ -607,7 +830,7 @@ function buildFuelingRows(eqRows, unresolvedLog) {
           gallons: gallons,
           fuel_cost_per_gal: null,
           hours_reading: eq.tracking_unit === 'hours' ? hoursKm : null,
-          km_reading:    eq.tracking_unit === 'km'    ? hoursKm : null,
+          km_reading: eq.tracking_unit === 'km' ? hoursKm : null,
           every_fillup_check: fillupTicks,
           service_intervals_completed: completions,
           comments: stripHtml(fieldTextValue(item, 'issues-comments')),
@@ -633,8 +856,13 @@ function inferFuelTypes(eqRows, fuelingRows) {
   for (const eq of eqRows) {
     const m = counts.get(eq.id);
     if (!m) continue;
-    let best = null, bestN = 0;
-    for (const [ft, n] of Object.entries(m)) if (n > bestN) { best = ft; bestN = n; }
+    let best = null,
+      bestN = 0;
+    for (const [ft, n] of Object.entries(m))
+      if (n > bestN) {
+        best = ft;
+        bestN = n;
+      }
     if (best) eq.fuel_type = best;
   }
 }
@@ -651,7 +879,7 @@ function deriveCurrentReading(eqRows, fuelingRows) {
     const latest = byEq.get(eq.id);
     if (!latest) continue;
     if (eq.tracking_unit === 'hours' && latest.hours_reading != null) eq.current_hours = latest.hours_reading;
-    if (eq.tracking_unit === 'km'    && latest.km_reading    != null) eq.current_km    = latest.km_reading;
+    if (eq.tracking_unit === 'km' && latest.km_reading != null) eq.current_km = latest.km_reading;
   }
 }
 
@@ -663,19 +891,19 @@ function deriveCurrentReading(eqRows, fuelingRows) {
 
   const {rows: eqRows, unmatched} = buildEquipmentRows();
   console.log(`\n[1/4] Built ${eqRows.length} equipment rows; ${unmatched.length} unmatched:`);
-  unmatched.forEach(u => console.log('  ✗', u.podio_item_id, u.name));
+  unmatched.forEach((u) => console.log('  ✗', u.podio_item_id, u.name));
 
   seedIntervalsForEquipment(eqRows);
   console.log('[2/4] Seeded service_intervals + every_fillup_items from checklist app configs');
-  eqRows.forEach(eq => {
-    const iv = (eq.service_intervals || []).map(i => i.hours_or_km+i.kind.charAt(0)).join(', ');
-    console.log(`  • ${eq.slug.padEnd(16)} intervals=[${iv}] fillup=${(eq.every_fillup_items||[]).length}`);
+  eqRows.forEach((eq) => {
+    const iv = (eq.service_intervals || []).map((i) => i.hours_or_km + i.kind.charAt(0)).join(', ');
+    console.log(`  • ${eq.slug.padEnd(16)} intervals=[${iv}] fillup=${(eq.every_fillup_items || []).length}`);
   });
 
   const unresolvedLog = [];
   const fuelingRows = buildFuelingRows(eqRows, unresolvedLog);
   console.log(`\n[3/4] Built ${fuelingRows.length} fueling rows; ${unresolvedLog.length} unresolved Fuel Log entries:`);
-  unresolvedLog.slice(0, 20).forEach(u => console.log('  ✗', u.podio_item_id, u.eqCategory, '-', u.reason));
+  unresolvedLog.slice(0, 20).forEach((u) => console.log('  ✗', u.podio_item_id, u.eqCategory, '-', u.reason));
 
   // Fuel type is hardcoded per piece via EQUIPMENT_DEFS. Skip the old
   // inference-from-history step — hardcode is authoritative now.
@@ -683,14 +911,16 @@ function deriveCurrentReading(eqRows, fuelingRows) {
 
   // Summary
   const bySlug = new Map();
-  fuelingRows.forEach(r => {
-    const eq = eqRows.find(e => e.id === r.equipment_id);
+  fuelingRows.forEach((r) => {
+    const eq = eqRows.find((e) => e.id === r.equipment_id);
     const slug = eq ? eq.slug : '?';
     bySlug.set(slug, (bySlug.get(slug) || 0) + 1);
   });
   console.log('\n[4/4] Fueling rows by equipment:');
   for (const eq of eqRows) {
-    console.log(`  • ${eq.slug.padEnd(16)} ${eq.fuel_type||'?'.padEnd(9)} ${eq.tracking_unit==='hours'?(eq.current_hours||'?')+'h':(eq.current_km||'?')+'km'}  ${(bySlug.get(eq.slug)||0)} fuelings`);
+    console.log(
+      `  • ${eq.slug.padEnd(16)} ${eq.fuel_type || '?'.padEnd(9)} ${eq.tracking_unit === 'hours' ? (eq.current_hours || '?') + 'h' : (eq.current_km || '?') + 'km'}  ${bySlug.get(eq.slug) || 0} fuelings`,
+    );
   }
 
   if (!COMMIT) {
@@ -704,18 +934,24 @@ function deriveCurrentReading(eqRows, fuelingRows) {
   // post-import admin patches like operator_notes, team_members,
   // attachment_checklists, and manuals).
   if (!FUELINGS_ONLY) {
-    const {error} = await sb.from('equipment').upsert(eqRows, {onConflict:'id'});
-    if (error) { console.error('Equipment upsert failed:', error); process.exit(1); }
+    const {error} = await sb.from('equipment').upsert(eqRows, {onConflict: 'id'});
+    if (error) {
+      console.error('Equipment upsert failed:', error);
+      process.exit(1);
+    }
     console.log(`✓ ${eqRows.length} equipment rows upserted`);
   } else {
     console.log(`· --fuelings-only: skipping equipment table upsert (preserves admin patches)`);
   }
   // Batch-insert fuelings in chunks of 500
-  for (let i=0; i<fuelingRows.length; i+=500) {
-    const chunk = fuelingRows.slice(i, i+500);
-    const {error} = await sb.from('equipment_fuelings').upsert(chunk, {onConflict:'id'});
-    if (error) { console.error(`Fueling upsert (chunk ${i}) failed:`, error); process.exit(1); }
-    process.stdout.write(`\r  fuelings: ${Math.min(i+500, fuelingRows.length)}/${fuelingRows.length}`);
+  for (let i = 0; i < fuelingRows.length; i += 500) {
+    const chunk = fuelingRows.slice(i, i + 500);
+    const {error} = await sb.from('equipment_fuelings').upsert(chunk, {onConflict: 'id'});
+    if (error) {
+      console.error(`Fueling upsert (chunk ${i}) failed:`, error);
+      process.exit(1);
+    }
+    process.stdout.write(`\r  fuelings: ${Math.min(i + 500, fuelingRows.length)}/${fuelingRows.length}`);
   }
   console.log(`\n✓ ${fuelingRows.length} fueling rows upserted`);
 

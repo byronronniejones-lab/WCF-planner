@@ -37,21 +37,21 @@ const DUMP_DIR = path.join(__dirname, 'podio_equipment_dump');
 // Per-checklist Podio app_slug → equipment.slug. Fuel Log items resolve their
 // equipment differently (via the equipment-being-fueled category field).
 const APP_SLUG_TO_EQ_SLUG = {
-  'ps-100-fueling-checklists':       'ps100',
-  'c362-fueling-checklists':         'c362',
-  '5065-fueling-checklists':         '5065',
-  '1-honda-atv-fueling-checklists':  'honda-atv-1',
-  '2-honda-atv-fueling-checklists':  'honda-atv-2',
-  '3-honda-atv-fueling-checklists':  'honda-atv-3',
-  '4-honda-atv-fueling-checklists':  'honda-atv-4',
-  '2018-hijet-fueling-checklists':   'hijet-2018',
-  '2020-hijet-fueling-checklists':   'hijet-2020',
-  'gyro-trac-fueling-checklists':    'gyro-trac',
-  'toro-zero-turn-lawnmower':        'toro',
-  'ventrac-fueling-checklists':      'ventrac',
-  'mini-ex-fueling-checklists':      'mini-ex',
-  'gehl-rt165-fueling-checklists':   'gehl',
-  'l328-fueling-checklists':         'l328',
+  'ps-100-fueling-checklists': 'ps100',
+  'c362-fueling-checklists': 'c362',
+  '5065-fueling-checklists': '5065',
+  '1-honda-atv-fueling-checklists': 'honda-atv-1',
+  '2-honda-atv-fueling-checklists': 'honda-atv-2',
+  '3-honda-atv-fueling-checklists': 'honda-atv-3',
+  '4-honda-atv-fueling-checklists': 'honda-atv-4',
+  '2018-hijet-fueling-checklists': 'hijet-2018',
+  '2020-hijet-fueling-checklists': 'hijet-2020',
+  'gyro-trac-fueling-checklists': 'gyro-trac',
+  'toro-zero-turn-lawnmower': 'toro',
+  'ventrac-fueling-checklists': 'ventrac',
+  'mini-ex-fueling-checklists': 'mini-ex',
+  'gehl-rt165-fueling-checklists': 'gehl',
+  'l328-fueling-checklists': 'l328',
 };
 
 // Fuel Log's equipment-being-fueled category strings → equipment.slug.
@@ -59,34 +59,34 @@ const APP_SLUG_TO_EQ_SLUG = {
 // 15 "real piece of equipment" categories matter here. Cell / can / truck /
 // other / etc. don't get fueling rows.)
 const FUEL_LOG_EQUIP_CATS = {
-  'JOHN DEERE TRACTOR':                  'c362',
-  'NEW HOLLAND TRACTOR':                 'ps100',
-  '5065 TRACTOR':                        '5065',
-  'JD 5065 TRACTOR':                     '5065',
-  'POWERSTAR 100':                       'ps100',
-  'POWERSTAR':                           'ps100',
-  'C362':                                'c362',
-  '#1 HONDA ATV':                        'honda-atv-1',
-  '#2 HONDA ATV':                        'honda-atv-2',
-  '#3 HONDA ATV':                        'honda-atv-3',
-  '#4 HONDA ATV':                        'honda-atv-4',
-  '2018 HIJET':                          'hijet-2018',
-  '2020 HIJET':                          'hijet-2020',
-  'HIJET 2018':                          'hijet-2018',
-  'HIJET 2020':                          'hijet-2020',
-  'GYRO TRAC':                           'gyro-trac',
-  'GYROTRAC':                            'gyro-trac',
-  'GYRO-TRAC':                           'gyro-trac',
-  'TORO':                                'toro',
-  'TORO ZERO TURN':                      'toro',
-  'VENTRAC':                             'ventrac',
-  'MINI EX':                             'mini-ex',
-  'MINI-EX':                             'mini-ex',
-  'BOBCAT MINI EX':                      'mini-ex',
-  'GEHL':                                'gehl',
-  'GEHL RT165':                          'gehl',
-  'L328':                                'l328',
-  'NEW HOLLAND L328':                    'l328',
+  'JOHN DEERE TRACTOR': 'c362',
+  'NEW HOLLAND TRACTOR': 'ps100',
+  '5065 TRACTOR': '5065',
+  'JD 5065 TRACTOR': '5065',
+  'POWERSTAR 100': 'ps100',
+  POWERSTAR: 'ps100',
+  C362: 'c362',
+  '#1 HONDA ATV': 'honda-atv-1',
+  '#2 HONDA ATV': 'honda-atv-2',
+  '#3 HONDA ATV': 'honda-atv-3',
+  '#4 HONDA ATV': 'honda-atv-4',
+  '2018 HIJET': 'hijet-2018',
+  '2020 HIJET': 'hijet-2020',
+  'HIJET 2018': 'hijet-2018',
+  'HIJET 2020': 'hijet-2020',
+  'GYRO TRAC': 'gyro-trac',
+  GYROTRAC: 'gyro-trac',
+  'GYRO-TRAC': 'gyro-trac',
+  TORO: 'toro',
+  'TORO ZERO TURN': 'toro',
+  VENTRAC: 'ventrac',
+  'MINI EX': 'mini-ex',
+  'MINI-EX': 'mini-ex',
+  'BOBCAT MINI EX': 'mini-ex',
+  GEHL: 'gehl',
+  'GEHL RT165': 'gehl',
+  L328: 'l328',
+  'NEW HOLLAND L328': 'l328',
 };
 
 function extractDate(field) {
@@ -110,11 +110,13 @@ function extractCategory(field) {
 
 async function main() {
   const {createClient} = require('@supabase/supabase-js');
-  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {persistSession: false},
+  });
 
   // 1. Load all items.json files in the dump and build itemId → {date, app_slug, equipment_slug?}.
   const itemMeta = new Map(); // item_id → {date, app_slug, equipment_slug}
-  const dumpFiles = fs.readdirSync(DUMP_DIR).filter(f => f.endsWith('.items.json'));
+  const dumpFiles = fs.readdirSync(DUMP_DIR).filter((f) => f.endsWith('.items.json'));
   for (const fn of dumpFiles) {
     const content = JSON.parse(fs.readFileSync(path.join(DUMP_DIR, fn), 'utf8'));
     const items = content.items || content;
@@ -123,11 +125,11 @@ async function main() {
     const m = /^\d+\.([\w-]+)\.items\.json$/.exec(fn);
     const appSlug = m ? m[1] : 'unknown';
     for (const it of items) {
-      const dateField = (it.fields || []).find(f => f.external_id === 'date');
+      const dateField = (it.fields || []).find((f) => f.external_id === 'date');
       const date = extractDate(dateField);
       let equipmentSlug = APP_SLUG_TO_EQ_SLUG[appSlug] || null;
       if (!equipmentSlug && appSlug === 'fuel-log') {
-        const eqField = (it.fields || []).find(f => f.external_id === 'equipment-being-fueled');
+        const eqField = (it.fields || []).find((f) => f.external_id === 'equipment-being-fueled');
         const cat = extractCategory(eqField);
         if (cat) equipmentSlug = FUEL_LOG_EQUIP_CATS[cat.toUpperCase()] || null;
       }
@@ -138,12 +140,22 @@ async function main() {
 
   // 2. Build slug → equipment.id lookup.
   const {data: eqRows, error: eqErr} = await sb.from('equipment').select('id,slug,name');
-  if (eqErr) { console.error(eqErr); process.exit(1); }
-  const eqBySlug = new Map(eqRows.map(e => [e.slug, e]));
+  if (eqErr) {
+    console.error(eqErr);
+    process.exit(1);
+  }
+  const eqBySlug = new Map(eqRows.map((e) => [e.slug, e]));
 
   // 3. Load all fuelings keyed by (equipment_id, date) for matching.
-  const {data: fRows, error: fErr} = await sb.from('equipment_fuelings').select('id,equipment_id,date,podio_item_id,podio_source_app,photos').order('date',{ascending:false}).limit(10000);
-  if (fErr) { console.error(fErr); process.exit(1); }
+  const {data: fRows, error: fErr} = await sb
+    .from('equipment_fuelings')
+    .select('id,equipment_id,date,podio_item_id,podio_source_app,photos')
+    .order('date', {ascending: false})
+    .limit(10000);
+  if (fErr) {
+    console.error(fErr);
+    process.exit(1);
+  }
   const fuelByKey = new Map(); // 'eq_id|date' → row (most recent first wins)
   for (const r of fRows) {
     const k = r.equipment_id + '|' + r.date;
@@ -153,14 +165,18 @@ async function main() {
 
   // 4. Load + group photo manifest by item_id.
   const manifest = JSON.parse(fs.readFileSync(path.join(DUMP_DIR, '_photos_index.json'), 'utf8'));
-  const entries = Array.isArray(manifest.entries || manifest) ? (manifest.entries || manifest) : Object.values(manifest.entries || manifest);
+  const entries = Array.isArray(manifest.entries || manifest)
+    ? manifest.entries || manifest
+    : Object.values(manifest.entries || manifest);
   const groupedByItem = new Map(); // item_id → [entries]
   for (const e of entries) {
     if (!e.item_id) continue;
     if (!groupedByItem.has(e.item_id)) groupedByItem.set(e.item_id, []);
     groupedByItem.get(e.item_id).push(e);
   }
-  console.log('Photo manifest: ' + entries.length + ' file entries across ' + groupedByItem.size + ' unique Podio items.');
+  console.log(
+    'Photo manifest: ' + entries.length + ' file entries across ' + groupedByItem.size + ' unique Podio items.',
+  );
 
   // 5. Walk each group; resolve target fueling by (equipment, date).
   let resolvedItems = 0;
@@ -174,22 +190,54 @@ async function main() {
 
   for (const [itemId, items] of groupedByItem) {
     const meta = itemMeta.get(itemId);
-    if (!meta) { unresolvedItems++; continue; }
-    if (!meta.date) { skippedNoDate++; continue; }
-    if (!meta.equipment_slug) { skippedNoEquip++; continue; }
+    if (!meta) {
+      unresolvedItems++;
+      continue;
+    }
+    if (!meta.date) {
+      skippedNoDate++;
+      continue;
+    }
+    if (!meta.equipment_slug) {
+      skippedNoEquip++;
+      continue;
+    }
     const eq = eqBySlug.get(meta.equipment_slug);
-    if (!eq) { skippedNoEquip++; continue; }
+    if (!eq) {
+      skippedNoEquip++;
+      continue;
+    }
     const fueling = fuelByKey.get(eq.id + '|' + meta.date);
-    if (!fueling) { skippedNoFueling++; continue; }
+    if (!fueling) {
+      skippedNoFueling++;
+      continue;
+    }
     resolvedItems++;
 
     // Skip if photos for these file_ids are already in fueling.photos.
-    const existingFileIds = new Set((fueling.photos || []).map(p => p.podio_file_id).filter(Boolean));
-    const newFiles = items.filter(it => !existingFileIds.has(it.file_id));
-    if (newFiles.length === 0) { alreadyLinkedItems++; continue; }
+    const existingFileIds = new Set((fueling.photos || []).map((p) => p.podio_file_id).filter(Boolean));
+    const newFiles = items.filter((it) => !existingFileIds.has(it.file_id));
+    if (newFiles.length === 0) {
+      alreadyLinkedItems++;
+      continue;
+    }
 
     if (!COMMIT) {
-      console.log('  [DRY] ' + eq.slug + ' @ ' + meta.date + ' ← ' + newFiles.length + ' new file' + (newFiles.length===1?'':'s') + ' (item ' + itemId + ', app ' + meta.app_slug + ')');
+      console.log(
+        '  [DRY] ' +
+          eq.slug +
+          ' @ ' +
+          meta.date +
+          ' ← ' +
+          newFiles.length +
+          ' new file' +
+          (newFiles.length === 1 ? '' : 's') +
+          ' (item ' +
+          itemId +
+          ', app ' +
+          meta.app_slug +
+          ')',
+      );
       photosUploaded += newFiles.length;
       rowsPatched++;
       continue;
@@ -214,7 +262,13 @@ async function main() {
         continue;
       }
       const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(bucketPath);
-      uploaded.push({name: e.name, path: bucketPath, url: pub.publicUrl, uploadedAt: new Date().toISOString(), podio_file_id: e.file_id});
+      uploaded.push({
+        name: e.name,
+        path: bucketPath,
+        url: pub.publicUrl,
+        uploadedAt: new Date().toISOString(),
+        podio_file_id: e.file_id,
+      });
       photosUploaded++;
     }
     if (uploaded.length === 0) continue;
@@ -226,7 +280,7 @@ async function main() {
       continue;
     }
     rowsPatched++;
-    fueling.photos = merged;  // keep local cache in sync if same fueling appears again
+    fueling.photos = merged; // keep local cache in sync if same fueling appears again
     console.log('  ✓ ' + eq.slug + ' @ ' + meta.date + ' (+' + uploaded.length + ', total ' + merged.length + ')');
   }
 
@@ -243,4 +297,7 @@ async function main() {
   if (!COMMIT) console.log('\nDry-run only. Re-run with --commit to apply.');
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

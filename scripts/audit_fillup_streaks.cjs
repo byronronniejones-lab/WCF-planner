@@ -32,24 +32,33 @@ function readingOf(h) {
 
 async function main() {
   const {createClient} = require('@supabase/supabase-js');
-  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {persistSession: false},
+  });
 
-  const {data: eqs, error: e1} = await sb.from('equipment').select('id,slug,name,tracking_unit,every_fillup_items').eq('status','active').order('slug');
-  if (e1) { console.error(e1); process.exit(1); }
+  const {data: eqs, error: e1} = await sb
+    .from('equipment')
+    .select('id,slug,name,tracking_unit,every_fillup_items')
+    .eq('status', 'active')
+    .order('slug');
+  if (e1) {
+    console.error(e1);
+    process.exit(1);
+  }
 
   const summary = {
     total_pieces: 0,
     total_items: 0,
-    items_clean:        0,  // streak 0
-    items_short:        0,  // streak 1-3
-    items_medium:       0,  // streak 4-9
-    items_long:         0,  // streak 10+
-    items_never_ticked: 0,  // never appeared in any prior every_fillup_check (likely brand-new item)
-    items_no_history:   0,  // equipment has zero fuelings
+    items_clean: 0, // streak 0
+    items_short: 0, // streak 1-3
+    items_medium: 0, // streak 4-9
+    items_long: 0, // streak 10+
+    items_never_ticked: 0, // never appeared in any prior every_fillup_check (likely brand-new item)
+    items_no_history: 0, // equipment has zero fuelings
   };
 
   console.log('=== EVERY-FILLUP STREAK AUDIT ===');
-  console.log('Date:', new Date().toISOString().slice(0,10));
+  console.log('Date:', new Date().toISOString().slice(0, 10));
   console.log('Per-piece breakdown follows.\n');
 
   for (const eq of eqs) {
@@ -57,14 +66,16 @@ async function main() {
     if (items.length === 0) continue;
     summary.total_pieces++;
 
-    const {data: fuelings} = await sb.from('equipment_fuelings')
+    const {data: fuelings} = await sb
+      .from('equipment_fuelings')
       .select('date,team_member,hours_reading,km_reading,every_fillup_check')
       .eq('equipment_id', eq.id)
       .order('date', {ascending: false})
       .limit(500);
 
     const sorted = (fuelings || []).slice().sort((a, b) => {
-      const ra = readingOf(a), rb = readingOf(b);
+      const ra = readingOf(a),
+        rb = readingOf(b);
       if (ra != null && rb != null && ra !== rb) return rb - ra;
       return String(b.date || '').localeCompare(String(a.date || ''));
     });
@@ -96,7 +107,7 @@ async function main() {
       let oldest = null;
       for (const h of sorted) {
         const ticks = Array.isArray(h.every_fillup_check) ? h.every_fillup_check : [];
-        const wasTicked = ticks.some(t => t && t.id === item.id);
+        const wasTicked = ticks.some((t) => t && t.id === item.id);
         if (wasTicked) break;
         streak++;
         const r = readingOf(h);
@@ -105,11 +116,11 @@ async function main() {
       const neverTicked = !everTicked.has(item.id);
       rows.push({label: item.label || item.id, id: item.id, streak, oldest, neverTicked, fuelingCount});
       summary.total_items++;
-      if (streak === 0)               summary.items_clean++;
-      else if (neverTicked)           summary.items_never_ticked++;
-      else if (streak <= 3)           summary.items_short++;
-      else if (streak <= 9)           summary.items_medium++;
-      else                            summary.items_long++;
+      if (streak === 0) summary.items_clean++;
+      else if (neverTicked) summary.items_never_ticked++;
+      else if (streak <= 3) summary.items_short++;
+      else if (streak <= 9) summary.items_medium++;
+      else summary.items_long++;
     }
 
     // Print sorted: never-ticked first (worst noise), then long streaks, etc.
@@ -122,10 +133,10 @@ async function main() {
         ? `NEVER TICKED (would show streak ${r.streak} on day 1 — likely a NEW item)`
         : r.streak === 0
           ? 'clean'
-          : `streak ${r.streak}`
-            + (r.oldest && r.oldest.reading != null ? ` · oldest ${r.oldest.reading.toLocaleString()}${unitShort}` : '')
-            + (r.oldest && r.oldest.name ? ` by ${r.oldest.name}` : '')
-            + (r.oldest && r.oldest.date ? ` on ${r.oldest.date}` : '');
+          : `streak ${r.streak}` +
+            (r.oldest && r.oldest.reading != null ? ` · oldest ${r.oldest.reading.toLocaleString()}${unitShort}` : '') +
+            (r.oldest && r.oldest.name ? ` by ${r.oldest.name}` : '') +
+            (r.oldest && r.oldest.date ? ` on ${r.oldest.date}` : '');
       const pad = r.label.padEnd(50, ' ').slice(0, 50);
       console.log('  ' + pad + ' ' + tag);
     }
@@ -154,4 +165,7 @@ async function main() {
   console.log('If counts are mostly CLEAN/SHORT: ship without a cutoff, no problem.');
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

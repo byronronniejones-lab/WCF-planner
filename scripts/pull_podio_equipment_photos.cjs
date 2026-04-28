@@ -28,15 +28,15 @@
 const fs = require('fs');
 const path = require('path');
 
-const DUMP_DIR    = path.join(__dirname, 'podio_equipment_dump');
-const PHOTOS_DIR  = path.join(DUMP_DIR, 'photos');
-const INDEX_PATH  = path.join(DUMP_DIR, '_photos_index.json');
+const DUMP_DIR = path.join(__dirname, 'podio_equipment_dump');
+const PHOTOS_DIR = path.join(DUMP_DIR, 'photos');
+const INDEX_PATH = path.join(DUMP_DIR, '_photos_index.json');
 const CURSOR_PATH = path.join(DUMP_DIR, '_photos_pull_cursor.json');
 const UPLOAD = process.argv.includes('--upload');
 
-const HOURLY_BUDGET = 4000;               // keep 20% headroom under Podio's 5000/hr
-const WINDOW_MS     = 3600 * 1000;
-const HEADER_MIN_REMAINING = 100;         // pause if Podio reports we're this close
+const HOURLY_BUDGET = 4000; // keep 20% headroom under Podio's 5000/hr
+const WINDOW_MS = 3600 * 1000;
+const HEADER_MIN_REMAINING = 100; // pause if Podio reports we're this close
 
 // ───── env ───────────────────────────────────────────────────────────────────
 function loadEnv() {
@@ -49,10 +49,10 @@ function loadEnv() {
 }
 loadEnv();
 
-const CLIENT_ID     = process.env.PODIO_CLIENT_ID;
+const CLIENT_ID = process.env.PODIO_CLIENT_ID;
 const CLIENT_SECRET = process.env.PODIO_CLIENT_SECRET;
-const USERNAME      = process.env.PODIO_USERNAME;
-const PASSWORD      = process.env.PODIO_PASSWORD;
+const USERNAME = process.env.PODIO_USERNAME;
+const PASSWORD = process.env.PODIO_PASSWORD;
 if (!CLIENT_ID || !CLIENT_SECRET || !USERNAME || !PASSWORD) {
   console.error('Missing PODIO_* env vars in scripts/.env.');
   process.exit(1);
@@ -61,16 +61,16 @@ if (!CLIENT_ID || !CLIENT_SECRET || !USERNAME || !PASSWORD) {
 let sb = null;
 if (UPLOAD) {
   const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!SUPABASE_URL || !SERVICE_KEY) {
     console.error('--upload requires SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in scripts/.env');
     process.exit(1);
   }
   const {createClient} = require('@supabase/supabase-js');
-  sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth:{persistSession:false}});
+  sb = createClient(SUPABASE_URL, SERVICE_KEY, {auth: {persistSession: false}});
 }
 
-if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR, {recursive:true});
+if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR, {recursive: true});
 
 // ───── cursor (resume state) ─────────────────────────────────────────────────
 // Shape:
@@ -111,10 +111,12 @@ class RateLimitError extends Error {
   }
 }
 
-const reqTimes = [];  // timestamps of every Podio-bound HTTP call (incl. token + file/raw)
+const reqTimes = []; // timestamps of every Podio-bound HTTP call (incl. token + file/raw)
 let lastRemainingSeen = null;
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 async function throttleBeforeCall() {
   const now = Date.now();
@@ -125,7 +127,9 @@ async function throttleBeforeCall() {
   // in the window to age out.
   if (reqTimes.length >= HOURLY_BUDGET) {
     const waitMs = reqTimes[0] + WINDOW_MS - now + 500;
-    console.log(`  ⏸  proactive throttle: sleeping ${Math.round(waitMs/1000)}s (window full at ${reqTimes.length}/${HOURLY_BUDGET})`);
+    console.log(
+      `  ⏸  proactive throttle: sleeping ${Math.round(waitMs / 1000)}s (window full at ${reqTimes.length}/${HOURLY_BUDGET})`,
+    );
     await sleep(Math.max(waitMs, 1000));
   }
   // Reactive: if Podio's own X-Rate-Limit-Remaining header says we're near
@@ -137,7 +141,9 @@ async function throttleBeforeCall() {
     throw new RateLimitError(3600, `Podio reports ${lastRemainingSeen} requests remaining in the hourly window`);
   }
 }
-function recordCall() { reqTimes.push(Date.now()); }
+function recordCall() {
+  reqTimes.push(Date.now());
+}
 
 function readRateHeaders(res) {
   // Podio docs describe X-Rate-Limit-Remaining / X-Rate-Limit-Limit. Not
@@ -161,11 +167,11 @@ let ACCESS_TOKEN = null;
 async function auth() {
   await throttleBeforeCall();
   const body = new URLSearchParams({
-    grant_type:    'password',
-    client_id:     CLIENT_ID,
+    grant_type: 'password',
+    client_id: CLIENT_ID,
     client_secret: CLIENT_SECRET,
-    username:      USERNAME,
-    password:      PASSWORD,
+    username: USERNAME,
+    password: PASSWORD,
   });
   const res = await fetch('https://podio.com/oauth/token', {
     method: 'POST',
@@ -177,7 +183,11 @@ async function auth() {
   const text = await res.text();
   if (res.status === 420) throw new RateLimitError(parse420Wait(text), 'auth');
   let data;
-  try { data = JSON.parse(text); } catch { data = {}; }
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = {};
+  }
   if (!res.ok || !data.access_token) {
     console.error('Auth failed:', text.slice(0, 500));
     process.exit(1);
@@ -198,7 +208,7 @@ async function api(pathname) {
   }
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`GET ${pathname} → ${res.status}: ${body.slice(0,200)}`);
+    throw new Error(`GET ${pathname} → ${res.status}: ${body.slice(0, 200)}`);
   }
   return res.json();
 }
@@ -245,9 +255,11 @@ async function main() {
     entries: [],
   };
   if (prior) {
-    console.log(`↻ Resuming from cursor — ${prior.completed_apps.length} apps complete, ` +
-      `current app ${prior.current_app || '(none)'} at item index ${prior.last_completed_item_index}, ` +
-      `${prior.entries.length} entries already cataloged.`);
+    console.log(
+      `↻ Resuming from cursor — ${prior.completed_apps.length} apps complete, ` +
+        `current app ${prior.current_app || '(none)'} at item index ${prior.last_completed_item_index}, ` +
+        `${prior.entries.length} entries already cataloged.`,
+    );
   }
 
   await auth();
@@ -299,14 +311,14 @@ async function main() {
       }
       const files = itemDetail.files || [];
       for (const f of files) {
-        const safeName = (f.name || ('file-' + f.file_id)).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const safeName = (f.name || 'file-' + f.file_id).replace(/[^a-zA-Z0-9._-]/g, '_');
         const destDir = path.join(PHOTOS_DIR, String(f.file_id));
-        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, {recursive:true});
+        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, {recursive: true});
         const destPath = path.join(destDir, safeName);
         if (!fs.existsSync(destPath)) {
           try {
             const size = await downloadBinary(f.file_id, destPath);
-            console.log(`  ↓ ${f.file_id} ${safeName} (${Math.round(size/1024)}KB)`);
+            console.log(`  ↓ ${f.file_id} ${safeName} (${Math.round(size / 1024)}KB)`);
           } catch (e) {
             if (e instanceof RateLimitError) throw e;
             console.error(`  ✗ file ${f.file_id}: ${e.message}`);
@@ -339,14 +351,14 @@ async function main() {
         for (const c of comments) {
           const cFiles = c.files || [];
           for (const f of cFiles) {
-            const safeName = (f.name || ('file-' + f.file_id)).replace(/[^a-zA-Z0-9._-]/g, '_');
+            const safeName = (f.name || 'file-' + f.file_id).replace(/[^a-zA-Z0-9._-]/g, '_');
             const destDir = path.join(PHOTOS_DIR, String(f.file_id));
-            if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, {recursive:true});
+            if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, {recursive: true});
             const destPath = path.join(destDir, safeName);
             if (!fs.existsSync(destPath)) {
               try {
                 const size = await downloadBinary(f.file_id, destPath);
-                console.log(`  ↓ (cmt ${c.comment_id}) ${f.file_id} ${safeName} (${Math.round(size/1024)}KB)`);
+                console.log(`  ↓ (cmt ${c.comment_id}) ${f.file_id} ${safeName} (${Math.round(size / 1024)}KB)`);
               } catch (e) {
                 if (e instanceof RateLimitError) throw e;
                 console.error(`  ✗ file ${f.file_id}: ${e.message}`);
@@ -378,7 +390,9 @@ async function main() {
 
       // Low-noise progress every 50 items.
       if ((i + 1) % 50 === 0) {
-        console.log(`    · ${i + 1}/${items.length} items, ${cursor.entries.length} entries, ${reqTimes.length} reqs in last hour`);
+        console.log(
+          `    · ${i + 1}/${items.length} items, ${cursor.entries.length} entries, ${reqTimes.length} reqs in last hour`,
+        );
       }
     }
 
@@ -410,14 +424,17 @@ async function doUpload(index) {
 
   // Load the slug-to-equipment-id map (equipment already imported).
   const {data: eqRows, error: eqErr} = await sb.from('equipment').select('id,slug,podio_item_id');
-  if (eqErr) { console.error('Could not load equipment:', eqErr); process.exit(1); }
-  const eqByPodioId = new Map(eqRows.map(e => [e.podio_item_id, e]));
+  if (eqErr) {
+    console.error('Could not load equipment:', eqErr);
+    process.exit(1);
+  }
+  const eqByPodioId = new Map(eqRows.map((e) => [e.podio_item_id, e]));
 
   // Also build a fueling lookup: fuelings by (source_app, podio_item_id).
   // We pull a narrow select since we only need to patch photos.
   const {data: fRows} = await sb.from('equipment_fuelings').select('id,podio_item_id,podio_source_app');
   const fuelByPodioId = new Map();
-  for (const r of (fRows || [])) {
+  for (const r of fRows || []) {
     if (r.podio_item_id != null) fuelByPodioId.set(r.podio_item_id, r);
   }
 
@@ -451,7 +468,14 @@ async function doUpload(index) {
       const localPath = path.join(__dirname, e.local_path);
       if (!fs.existsSync(localPath)) continue;
       const content = fs.readFileSync(localPath);
-      const bucketPath = (targetEq ? 'maintenance' : 'fueling') + '/' + (targetEq?.slug || 'unknown') + '/' + e.file_id + '-' + path.basename(e.local_path);
+      const bucketPath =
+        (targetEq ? 'maintenance' : 'fueling') +
+        '/' +
+        (targetEq?.slug || 'unknown') +
+        '/' +
+        e.file_id +
+        '-' +
+        path.basename(e.local_path);
       const {error: upErr} = await sb.storage.from('equipment-maintenance-docs').upload(bucketPath, content, {
         upsert: false,
         contentType: e.mime_type || 'application/octet-stream',
@@ -461,7 +485,13 @@ async function doUpload(index) {
         continue;
       }
       const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(bucketPath);
-      uploaded.push({name: e.name, path: bucketPath, url: pub.publicUrl, uploadedAt: new Date().toISOString(), podio_file_id: e.file_id});
+      uploaded.push({
+        name: e.name,
+        path: bucketPath,
+        url: pub.publicUrl,
+        uploadedAt: new Date().toISOString(),
+        podio_file_id: e.file_id,
+      });
       photosUploaded++;
     }
     if (uploaded.length === 0) continue;
@@ -481,7 +511,7 @@ async function doUpload(index) {
         photos: uploaded,
         team_member: first.comment_author || null,
       };
-      const {error: insErr} = await sb.from('equipment_maintenance_events').upsert(rec, {onConflict:'id'});
+      const {error: insErr} = await sb.from('equipment_maintenance_events').upsert(rec, {onConflict: 'id'});
       if (insErr) console.error('  ✗ event insert', insErr.message);
       else eventsCreated++;
     } else if (targetFueling) {
@@ -492,11 +522,13 @@ async function doUpload(index) {
     }
   }
 
-  console.log(`\n✓ Uploads done: ${photosUploaded} photos, ${eventsCreated} maintenance events, ${fuelingsPatched} fuelings patched.`);
+  console.log(
+    `\n✓ Uploads done: ${photosUploaded} photos, ${eventsCreated} maintenance events, ${fuelingsPatched} fuelings patched.`,
+  );
 }
 
 // ───── top-level ───────────────────────────────────────────────────────────
-main().catch(e => {
+main().catch((e) => {
   if (e instanceof RateLimitError) {
     const resetAt = new Date(Date.now() + e.waitSec * 1000);
     console.error(`\n⏸  Podio rate-limited: wait ~${e.waitSec}s (until ${resetAt.toLocaleTimeString()}).`);

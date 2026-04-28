@@ -20,50 +20,78 @@ loadEnv();
 
 async function main() {
   const {createClient} = require('@supabase/supabase-js');
-  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {persistSession: false},
+  });
 
-  const {data: eqs} = await sb.from('equipment').select('id,slug,name,current_hours,current_km,tracking_unit,service_intervals,every_fillup_items,every_fillup_help,fuel_gallons_help,operator_notes').order('slug');
+  const {data: eqs} = await sb
+    .from('equipment')
+    .select(
+      'id,slug,name,current_hours,current_km,tracking_unit,service_intervals,every_fillup_items,every_fillup_help,fuel_gallons_help,operator_notes',
+    )
+    .order('slug');
   for (const eq of eqs) {
     const ivs = eq.service_intervals || [];
     const reading = eq.tracking_unit === 'km' ? eq.current_km : eq.current_hours;
-    console.log('\n=== ' + eq.slug + '  (' + eq.name + ')  ' + (reading||'?') + ' ' + eq.tracking_unit);
-    console.log('   intervals: ' + ivs.map(i => `${i.hours_or_km}${i.kind[0]}(${(i.tasks||[]).length}t${i.help_text?',help':''})`).join(', '));
-    console.log('   fillup: ' + (eq.every_fillup_items||[]).length + ' items' + (eq.every_fillup_help ? ' (has help)' : ''));
+    console.log('\n=== ' + eq.slug + '  (' + eq.name + ')  ' + (reading || '?') + ' ' + eq.tracking_unit);
+    console.log(
+      '   intervals: ' +
+        ivs
+          .map((i) => `${i.hours_or_km}${i.kind[0]}(${(i.tasks || []).length}t${i.help_text ? ',help' : ''})`)
+          .join(', '),
+    );
+    console.log(
+      '   fillup: ' + (eq.every_fillup_items || []).length + ' items' + (eq.every_fillup_help ? ' (has help)' : ''),
+    );
     if (eq.fuel_gallons_help) console.log('   gallons-help: ' + eq.fuel_gallons_help.slice(0, 80));
-    if (eq.operator_notes) console.log('   operator-notes: ' + eq.operator_notes.slice(0, 80).replace(/\n/g,' '));
+    if (eq.operator_notes) console.log('   operator-notes: ' + eq.operator_notes.slice(0, 80).replace(/\n/g, ' '));
 
     // Pull the last few fueling rows with completions to check for stale total_tasks.
-    const {data: fuelings} = await sb.from('equipment_fuelings')
+    const {data: fuelings} = await sb
+      .from('equipment_fuelings')
       .select('date,hours_reading,km_reading,service_intervals_completed')
       .eq('equipment_id', eq.id)
       .not('service_intervals_completed', 'is', null)
-      .order('date', {ascending:false})
+      .order('date', {ascending: false})
       .limit(200);
     const staleByIvl = new Map();
     let staleCount = 0;
-    for (const r of (fuelings||[])) {
-      for (const c of (r.service_intervals_completed||[])) {
-        const iv = ivs.find(x => x.hours_or_km === c.interval && x.kind === c.kind);
-        const currTotal = iv ? (iv.tasks||[]).length : null;
+    for (const r of fuelings || []) {
+      for (const c of r.service_intervals_completed || []) {
+        const iv = ivs.find((x) => x.hours_or_km === c.interval && x.kind === c.kind);
+        const currTotal = iv ? (iv.tasks || []).length : null;
         if (currTotal != null && c.total_tasks != null && currTotal !== c.total_tasks) {
           staleCount++;
-          const k = c.kind+':'+c.interval;
-          if (!staleByIvl.has(k)) staleByIvl.set(k, {storedTotal: c.total_tasks, currTotal, count:0});
+          const k = c.kind + ':' + c.interval;
+          if (!staleByIvl.has(k)) staleByIvl.set(k, {storedTotal: c.total_tasks, currTotal, count: 0});
           staleByIvl.get(k).count++;
         }
         if (iv == null && c.interval) {
           // Completion references an interval no longer in service_intervals.
-          const k2 = 'DROPPED:'+c.kind+':'+c.interval;
-          if (!staleByIvl.has(k2)) staleByIvl.set(k2, {storedTotal:c.total_tasks, currTotal:null, count:0});
+          const k2 = 'DROPPED:' + c.kind + ':' + c.interval;
+          if (!staleByIvl.has(k2)) staleByIvl.set(k2, {storedTotal: c.total_tasks, currTotal: null, count: 0});
           staleByIvl.get(k2).count++;
         }
       }
     }
     if (staleCount === 0 && staleByIvl.size === 0) continue;
     for (const [k, v] of staleByIvl.entries()) {
-      console.log('   STALE  ' + k + ' — stored total_tasks=' + v.storedTotal + ' vs current=' + (v.currTotal ?? '(interval DROPPED)') + '  across ' + v.count + ' rows');
+      console.log(
+        '   STALE  ' +
+          k +
+          ' — stored total_tasks=' +
+          v.storedTotal +
+          ' vs current=' +
+          (v.currTotal ?? '(interval DROPPED)') +
+          '  across ' +
+          v.count +
+          ' rows',
+      );
     }
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
