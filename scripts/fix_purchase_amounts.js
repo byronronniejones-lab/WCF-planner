@@ -39,7 +39,7 @@ function parseAmount(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? v : null;
   // Strip $, commas, spaces, and any non-numeric characters except . and -
-  const cleaned = String(v).replace(/[$,\s]/g, '').replace(/[^0-9.\-]/g, '');
+  const cleaned = String(v).replace(/[$,\s]/g, '').replace(/[^0-9.-]/g, '');
   if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) && n > 0 ? n : null;

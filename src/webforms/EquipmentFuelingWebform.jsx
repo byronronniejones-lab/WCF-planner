@@ -155,7 +155,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   }
   async function removePhoto(idx) {
     const p = photos[idx];
-    if (p && p.path) { try { await sb.storage.from('equipment-maintenance-docs').remove([p.path]); } catch(e){} }
+    if (p && p.path) { try { await sb.storage.from('equipment-maintenance-docs').remove([p.path]); } catch(_e) { /* best-effort storage cleanup */ } }
     setPhotos(arr => arr.filter((_, i) => i !== idx));
   }
   // If the team ticks a big interval, the divisor rule implicitly covers

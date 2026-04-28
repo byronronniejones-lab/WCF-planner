@@ -555,11 +555,11 @@ const WeighInsWebform = ({sb}) => {
     // Cattle / sheep: clean up the linked comment before dropping the weigh-in.
     if(species === 'cattle') {
       try { await sb.from('cattle_comments').delete().eq('source','weigh_in').eq('reference_id', entry.id); }
-      catch(e){}
+      catch(e) { console.warn('cattle_comments weigh-in-delete cascade failed:', e); }
     }
     if(species === 'sheep') {
       try { await sb.from('sheep_comments').delete().eq('source','weigh_in').eq('reference_id', entry.id); }
-      catch(e){}
+      catch(e) { console.warn('sheep_comments weigh-in-delete cascade failed:', e); }
     }
     const {error} = await sb.from('weigh_ins').delete().eq('id', entry.id);
     if(error) { setBusy(false); setErr('Delete failed: '+error.message); return; }

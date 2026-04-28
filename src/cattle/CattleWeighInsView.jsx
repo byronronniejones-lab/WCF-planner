@@ -109,7 +109,7 @@ const CattleWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, set
       .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'weigh_in'}]);
     await sb.from('cattle').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownCowId);
     await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
-    try { await sb.from('cattle_comments').update({cattle_id: knownCowId, cattle_tag: newTag}).eq('reference_id', entry.id); } catch(e){}
+    try { await sb.from('cattle_comments').update({cattle_id: knownCowId, cattle_tag: newTag}).eq('reference_id', entry.id); } catch(e) { console.warn('cattle_comments tag-swap update failed:', e); }
     invalidateCattleWeighInsCache();
     await loadAll();
   }

@@ -59,7 +59,7 @@ const normStr = v => { if (v == null) return null; const s = String(v).trim(); r
 const normNum = v => {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  const cleaned = String(v).replace(/[$,\s]/g, '').replace(/[^0-9.\-]/g, '');
+  const cleaned = String(v).replace(/[$,\s]/g, '').replace(/[^0-9.-]/g, '');
   if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;

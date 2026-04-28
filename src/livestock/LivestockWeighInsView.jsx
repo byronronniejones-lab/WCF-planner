@@ -233,7 +233,7 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
       const sd = new Date((session.date||'') + 'T12:00:00');
       sd.setMonth(sd.getMonth() - 6);
       bd = sd.toISOString().slice(0,10);
-    } catch(e){}
+    } catch(_e) { /* defensive parse — leave bd as '' */ }
     setTransferForm({tag:'', group:'1', sex:'Gilt', birthDate: bd});
   }
   async function transferToBreeding() {

@@ -101,7 +101,7 @@ function findValueNearLabel(text, labelRegex, valuePattern) {
   for (let i = 0; i < lines.length; i++) {
     if (!labelRegex.test(lines[i])) continue;
     // Same line, after the colon.
-    const sameLine = lines[i].match(/[:\-]\s*(.+)$/);
+    const sameLine = lines[i].match(/[-:]\s*(.+)$/);
     if (sameLine) {
       const m = sameLine[1].match(valuePattern);
       if (m) return m[1];
@@ -169,7 +169,7 @@ function grabLines(text) {
   const lines = [];
   // Anchor on " Net " between net_units and unit_price — that's the basis literal.
   // Use a tolerant regex that allows extra whitespace and commas.
-  const re = /([A-Za-z][A-Za-z0-9 \-#'.&\/]+?)\s+(\d{2,5})\s+(\d{4,8})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+Net\s+([\d,]+\.\d{4,6})\s+([\d,]+\.\d{2})/g;
+  const re = /([A-Za-z][-A-Za-z0-9 #'.&/]+?)\s+(\d{2,5})\s+(\d{4,8})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+Net\s+([\d,]+\.\d{4,6})\s+([\d,]+\.\d{2})/g;
   let m;
   while ((m = re.exec(text)) !== null) {
     const [, desc, site, bol, gross, net, unitPrice, total] = m;

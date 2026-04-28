@@ -32,9 +32,11 @@ import { seedFuelReconcile } from './scenarios/fuel_reconcile_seed.js';
 // ============================================================================
 
 export const test = base.extend({
+  // eslint-disable-next-line no-empty-pattern -- canonical Playwright fixture pattern
   supabaseAdmin: async ({}, use) => {
     await use(getTestAdminClient());
   },
+  // eslint-disable-next-line no-empty-pattern -- canonical Playwright fixture pattern
   resetDb: async ({}, use) => {
     await use(async () => {
       await resetTestDatabase();

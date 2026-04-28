@@ -138,7 +138,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
       if(upErr) { alert('Upload failed: '+upErr.message); setUploadingTest(false); return; }
       // Remove the old PDF if this is an edit and there was a previous file
       if(editingTestId && testForm.existingPdfPath) {
-        try { await sb.storage.from('cattle-feed-pdfs').remove([testForm.existingPdfPath]); } catch(e){}
+        try { await sb.storage.from('cattle-feed-pdfs').remove([testForm.existingPdfPath]); } catch(_e) { /* best-effort storage cleanup */ }
       }
       pdfPath = path;
       pdfFileName = file.name;
@@ -195,7 +195,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
     if(!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this test result? PDF will also be removed. This cannot be undone.', async () => {
       if(pdfPath) {
-        try { await sb.storage.from('cattle-feed-pdfs').remove([pdfPath]); } catch(e){}
+        try { await sb.storage.from('cattle-feed-pdfs').remove([pdfPath]); } catch(_e) { /* best-effort storage cleanup */ }
       }
       await sb.from('cattle_feed_tests').delete().eq('id', testId);
       await loadTests(editingId);
@@ -209,7 +209,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
       const {data: tests} = await sb.from('cattle_feed_tests').select('pdf_path').eq('feed_input_id', id);
       const pdfPaths = (tests || []).map(t => t.pdf_path).filter(Boolean);
       if(pdfPaths.length > 0) {
-        try { await sb.storage.from('cattle-feed-pdfs').remove(pdfPaths); } catch(e){}
+        try { await sb.storage.from('cattle-feed-pdfs').remove(pdfPaths); } catch(_e) { /* best-effort storage cleanup */ }
       }
       const {error} = await sb.from('cattle_feed_inputs').delete().eq('id', id);
       if(error) { alert('Could not delete: '+error.message); return; }

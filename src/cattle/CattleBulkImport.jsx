@@ -190,11 +190,11 @@ const CattleBulkImport = ({sb, breedOpts, originOpts, existingCattle, onClose, o
     });
     for(const b of newBreeds) {
       const id = 'breed-' + b.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-      try { await sb.from('cattle_breeds').insert({id, label: b, active: true}); } catch(e){}
+      try { await sb.from('cattle_breeds').insert({id, label: b, active: true}); } catch(_e) { /* concurrent insert race or already-exists OK */ }
     }
     for(const o of newOrigins) {
       const id = 'origin-' + o.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-      try { await sb.from('cattle_origins').insert({id, label: o, active: true}); } catch(e){}
+      try { await sb.from('cattle_origins').insert({id, label: o, active: true}); } catch(_e) { /* concurrent insert race or already-exists OK */ }
     }
 
     const log = [];

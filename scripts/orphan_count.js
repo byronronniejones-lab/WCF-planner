@@ -18,7 +18,7 @@ function parseCsv(text) {
     } else {
       if (c === '"') inQ = true;
       else if (c === ',') { row.push(field); field = ''; }
-      else if (c === '\r') {}
+      else if (c === '\r') { /* skip CR */ }
       else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
       else field += c;
     }

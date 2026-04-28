@@ -277,7 +277,7 @@ const SheepFlocksView = ({sb, fmt, Header, authState, setView, showUsers, setSho
         team_member: authState && authState.name ? authState.name : null,
         source: 'lambing', reference_id: id,
       });
-    } catch(e){}
+    } catch(e) { console.warn('sheep_comments lambing insert failed:', e); }
     await loadAll();
     return true;
   }
@@ -287,7 +287,7 @@ const SheepFlocksView = ({sb, fmt, Header, authState, setView, showUsers, setSho
       : window.confirm('Delete this lambing record?');
     if(!ok) return;
     await sb.from('sheep_lambing_records').delete().eq('id', recId);
-    try { await sb.from('sheep_comments').delete().eq('reference_id', recId); } catch(e){}
+    try { await sb.from('sheep_comments').delete().eq('reference_id', recId); } catch(e) { console.warn('sheep_comments lambing-delete cascade failed:', e); }
     await loadAll();
   }
 

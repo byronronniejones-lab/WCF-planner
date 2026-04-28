@@ -114,7 +114,7 @@ const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setS
       .concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'weigh_in'}]);
     await sb.from('sheep').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownSheepId);
     await sb.from('weigh_ins').update({new_tag_flag:false}).eq('id', entry.id);
-    try { await sb.from('sheep_comments').update({sheep_id: knownSheepId, sheep_tag: newTag}).eq('reference_id', entry.id); } catch(e){}
+    try { await sb.from('sheep_comments').update({sheep_id: knownSheepId, sheep_tag: newTag}).eq('reference_id', entry.id); } catch(e) { console.warn('sheep_comments tag-swap update failed:', e); }
     invalidateSheepWeighInsCache();
     await loadAll();
   }
@@ -185,7 +185,7 @@ const SheepWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, setS
         }
       }
       await sb.from('weigh_ins').delete().eq('id', e.id);
-      try { await sb.from('sheep_comments').delete().eq('reference_id', e.id); } catch(err){}
+      try { await sb.from('sheep_comments').delete().eq('reference_id', e.id); } catch(err) { console.warn('sheep_comments weigh-in-delete cascade failed:', err); }
       invalidateSheepWeighInsCache();
       await loadAll();
     }

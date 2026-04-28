@@ -23,5 +23,5 @@ console.log(`Rows with Alfalfa Pellets > 0: ${alfalfaRows}`);
 const sample = rows.find(r => r['Hay Type #1'] && String(r['Hay Type #1']).trim() !== '');
 console.log('\nSample row with hay data:');
 for (const [k,v] of Object.entries(sample)) {
-  if (v != null && String(v).trim() !== '' && !k.match(/^[\-_\.]/)) console.log(`  ${k}: ${String(v).slice(0,60)}`);
+  if (v != null && String(v).trim() !== '' && !k.match(/^[-_.]/)) console.log(`  ${k}: ${String(v).slice(0,60)}`);
 }

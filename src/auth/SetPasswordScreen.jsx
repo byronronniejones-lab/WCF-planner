@@ -77,7 +77,7 @@ function SetPasswordScreen({onDone, prefilledEmail}) {
     setLoading(false);
     if(upErr) { setError(upErr.message || 'Could not set password. The recovery link may have expired.'); return; }
     // Clear any auth tokens left in the URL so a refresh doesn't re-trigger recovery.
-    try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch(e) {}
+    try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch(_e) { /* cosmetic URL cleanup; auth state already set above */ }
     setDone(true);
   }
 

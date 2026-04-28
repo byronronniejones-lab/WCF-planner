@@ -48,7 +48,7 @@ const normNum = v => {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   // Strip currency symbols, commas, and whitespace — Podio exports amounts
   // like "$ 1,523.50" which Number() can't parse directly.
-  const cleaned = String(v).replace(/[$,\s]/g, '').replace(/[^0-9.\-]/g, '');
+  const cleaned = String(v).replace(/[$,\s]/g, '').replace(/[^0-9.-]/g, '');
   if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
@@ -82,7 +82,7 @@ function parseCsv(text) {
     } else {
       if (c === '"') inQ = true;
       else if (c === ',') { row.push(field); field = ''; }
-      else if (c === '\r') {}
+      else if (c === '\r') { /* skip CR */ }
       else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
       else field += c;
     }

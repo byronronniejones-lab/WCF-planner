@@ -24,7 +24,7 @@ export function parseImportDate(v) {
   }
   var s = String(v).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return {value: s};
-  var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  var m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
   if (m) {
     var y = parseInt(m[3], 10);
     if (y < 100) y += 2000;
@@ -45,7 +45,7 @@ export function parseImportDate(v) {
 export function parseImportNumber(v) {
   if (v == null || v === '') return {value: null};
   if (typeof v === 'number') return {value: v};
-  var s = String(v).replace(/[\$,\s]/g, '').trim();
+  var s = String(v).replace(/[$,\s]/g, '').trim();
   if (s === '') return {value: null};
   var n = Number(s);
   if (!isFinite(n)) return {error: 'cannot parse number: ' + v};

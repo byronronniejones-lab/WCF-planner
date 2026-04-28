@@ -503,7 +503,7 @@ export default function BatchForm({
                     <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#1d4ed8',fontWeight:600,textDecoration:'none',flexShrink:0}}>View</a>
                     <button onClick={()=>
                       confirmDelete('Remove this document? It cannot be recovered.',async()=>{
-                        try { await sb.storage.from('batch-documents').remove([doc.path]); } catch(e){}
+                        try { await sb.storage.from('batch-documents').remove([doc.path]); } catch(_e) { /* best-effort storage cleanup */ }
                         const newDocs=(form.documents||[]).filter((_,j)=>j!==i);
                         setForm(f=>({...f,documents:newDocs}));
                         const nb=batches.map(b=>b.id===editId?{...b,documents:newDocs}:b);

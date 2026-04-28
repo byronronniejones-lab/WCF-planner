@@ -53,7 +53,7 @@ export default function LayersHomeView({ Header, loadUsers }) {
         totalFeed += f; totalMort += parseInt(d.mortality_count)||0;
         reportDates.add(d.date);
         let phase = d.feed_type || 'LAYER';
-        if(anchor){ try { const days = Math.floor((new Date(d.date+'T12:00:00')-new Date(anchor+'T12:00:00'))/86400000); if(days<21)phase='STARTER'; else if(days<140)phase='GROWER'; else phase='LAYER'; } catch(e){} }
+        if(anchor){ try { const days = Math.floor((new Date(d.date+'T12:00:00')-new Date(anchor+'T12:00:00'))/86400000); if(days<21)phase='STARTER'; else if(days<140)phase='GROWER'; else phase='LAYER'; } catch(_e) { /* defensive parse — fall through to default phase */ } }
         if(phase==='STARTER') starterFeed+=f; else if(phase==='GROWER') growerFeed+=f; else layerFeed+=f;
       });
       const hNames = new Set(myHousings.map(h=>String(h.housing_name||'').toLowerCase().trim()));
@@ -97,7 +97,7 @@ export default function LayersHomeView({ Header, loadUsers }) {
         totalFeed+=f; totalMort+=parseInt(d.mortality_count)||0;
         reportDates.add(d.date);
         let phase = d.feed_type || 'LAYER';
-        if(anchor){ try { const days=Math.floor((new Date(d.date+'T12:00:00')-new Date(anchor+'T12:00:00'))/86400000); if(days<21)phase='STARTER'; else if(days<140)phase='GROWER'; else phase='LAYER'; } catch(e){} }
+        if(anchor){ try { const days=Math.floor((new Date(d.date+'T12:00:00')-new Date(anchor+'T12:00:00'))/86400000); if(days<21)phase='STARTER'; else if(days<140)phase='GROWER'; else phase='LAYER'; } catch(_e) { /* defensive parse — fall through to default phase */ } }
         if(phase==='STARTER') starterFeed+=f; else if(phase==='GROWER') growerFeed+=f; else layerFeed+=f;
       });
       let totalEggs = 0;

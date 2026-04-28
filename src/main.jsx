@@ -821,7 +821,7 @@ function App(){
               const newBrooderIn=toISO(addDays(new Date(b.hatchDate+'T12:00:00'),1));
               nb={...nb,brooderIn:newBrooderIn};
               changed=true;
-            } catch(e){}
+            } catch(_e) { /* defensive parse on legacy hatchDate */ }
           }
           // Hard-code Freedom Ranger breed/hatchery for legacy B-24-02..B-25-01 batches
           const nameUpper=String(nb.name||'').toUpperCase();
