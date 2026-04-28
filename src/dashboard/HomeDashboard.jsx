@@ -565,7 +565,10 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                           : {bg:'#fef3c7', bd:'#fcd34d', tx:'#92400e', icon:'🛡'};
                   const isClearable = a.kind === 'warranty';
                   return (
-                    <div key={a.key} onClick={()=>navigate((a.kind==='fillup_streak'||a.kind==='missed_fueling')?'/fueling/'+a.slug:'/equipment/'+a.slug)}
+                    <div key={a.key}
+                      data-attention-kind={a.kind}
+                      data-equipment-slug={a.slug}
+                      onClick={()=>navigate((a.kind==='fillup_streak'||a.kind==='missed_fueling')?'/fueling/'+a.slug:'/equipment/'+a.slug)}
                       style={{background:palette.bg,border:'1px solid '+palette.bd,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
                       <span style={{fontSize:18}}>{palette.icon}</span>
                       <div style={{flex:1}}>

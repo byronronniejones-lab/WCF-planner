@@ -15,6 +15,7 @@ import { seedBroilerTimeline } from './scenarios/broiler_timeline_seed.js';
 import { seedPigFCRScenario } from './scenarios/pig_fcr_seed.js';
 import { seedFuelBillScenario } from './scenarios/fuel_bill_seed.js';
 import { seedFuelReconcile } from './scenarios/fuel_reconcile_seed.js';
+import { seedHomeDashboardEquipment } from './scenarios/home_dashboard_equipment_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -139,6 +140,16 @@ export const test = base.extend({
     await use(async (opts = {}) => {
       await resetTestDatabase();
       return seedFuelReconcile(supabaseAdmin, opts);
+    });
+  },
+  // homeDashboardEquipmentScenario — A1 follow-up (HomeDashboard equipment
+  // attention regression coverage). Factory accepts { kind: 'overdue' |
+  // 'upcoming' | 'missed_fueling' | 'fillup_streak' | 'warranty' } and
+  // seeds exactly one piece of equipment positioned to trigger that kind.
+  homeDashboardEquipmentScenario: async ({ supabaseAdmin }, use) => {
+    await use(async (opts = {}) => {
+      await resetTestDatabase();
+      return seedHomeDashboardEquipment(supabaseAdmin, opts);
     });
   },
 });
