@@ -145,6 +145,15 @@ export default function FuelReconcileView() {
     if (Math.abs(pct) <= VARIANCE_WARN_PCT * 2) return '#9a3412';
     return '#b91c1c';
   }
+  // Sibling helper: same threshold constant + Math.abs semantics as varColor
+  // so the two cannot drift. Returned as a stable string for Playwright
+  // selectors (data-variance-band attribute on the variance cells).
+  function varBand(pct) {
+    if (pct == null) return 'none';
+    if (Math.abs(pct) <= VARIANCE_WARN_PCT) return 'green';
+    if (Math.abs(pct) <= VARIANCE_WARN_PCT * 2) return 'orange';
+    return 'red';
+  }
 
   return (
     <div>
@@ -191,16 +200,16 @@ export default function FuelReconcileView() {
                 return (
                   <tr key={k}>
                     <td style={{...td, fontWeight:600}}>{monthLabel(k)} <span style={{color:'#9ca3af', fontWeight:400, fontSize:10}}>· {m.billCount} bill{m.billCount===1?'':'s'} / {usageLabel}</span></td>
-                    <td style={{...td, textAlign:'right', color:m.purchased.diesel?'#1e40af':'#9ca3af', fontWeight:m.purchased.diesel?600:400}}>{m.purchased.diesel ? Math.round(m.purchased.diesel).toLocaleString() : '—'}</td>
-                    <td style={{...td, textAlign:'right', color:m.purchased.gasoline?'#a16207':'#9ca3af', fontWeight:m.purchased.gasoline?600:400}}>{m.purchased.gasoline ? Math.round(m.purchased.gasoline).toLocaleString() : '—'}</td>
-                    <td style={{...td, textAlign:'right', color:m.purchased.def?'#92400e':'#9ca3af', fontWeight:m.purchased.def?600:400}}>{m.purchased.def ? Math.round(m.purchased.def).toLocaleString() : '—'}</td>
+                    <td data-month={k} data-fuel-type="diesel" data-cell="purchased" style={{...td, textAlign:'right', color:m.purchased.diesel?'#1e40af':'#9ca3af', fontWeight:m.purchased.diesel?600:400}}>{m.purchased.diesel ? Math.round(m.purchased.diesel).toLocaleString() : '—'}</td>
+                    <td data-month={k} data-fuel-type="gasoline" data-cell="purchased" style={{...td, textAlign:'right', color:m.purchased.gasoline?'#a16207':'#9ca3af', fontWeight:m.purchased.gasoline?600:400}}>{m.purchased.gasoline ? Math.round(m.purchased.gasoline).toLocaleString() : '—'}</td>
+                    <td data-month={k} data-fuel-type="def" data-cell="purchased" style={{...td, textAlign:'right', color:m.purchased.def?'#92400e':'#9ca3af', fontWeight:m.purchased.def?600:400}}>{m.purchased.def ? Math.round(m.purchased.def).toLocaleString() : '—'}</td>
                     <td style={{...td, textAlign:'right', color:'#065f46', fontWeight:600}}>{money(m.purchased.cost)}</td>
-                    <td style={{...td, textAlign:'right', color:m.consumed.diesel?'#1e40af':'#9ca3af', fontWeight:m.consumed.diesel?600:400}}>{m.consumed.diesel ? Math.round(m.consumed.diesel).toLocaleString() : '—'}</td>
-                    <td style={{...td, textAlign:'right', color:m.consumed.gasoline?'#a16207':'#9ca3af', fontWeight:m.consumed.gasoline?600:400}}>{m.consumed.gasoline ? Math.round(m.consumed.gasoline).toLocaleString() : '—'}</td>
-                    <td style={{...td, textAlign:'right', color:m.consumed.def?'#92400e':'#9ca3af', fontWeight:m.consumed.def?600:400}}>{m.consumed.def ? Math.round(m.consumed.def).toLocaleString() : '—'}</td>
-                    <td style={{...td, textAlign:'right', color:varColor(vDiesel), fontWeight:700}}>{vDiesel == null ? '—' : (vDiesel >= 0 ? '+' : '') + vDiesel.toFixed(1) + '%'}</td>
-                    <td style={{...td, textAlign:'right', color:varColor(vGas), fontWeight:700}}>{vGas == null ? '—' : (vGas >= 0 ? '+' : '') + vGas.toFixed(1) + '%'}</td>
-                    <td style={{...td, textAlign:'right', color:varColor(vDef), fontWeight:700}}>{vDef == null ? '—' : (vDef >= 0 ? '+' : '') + vDef.toFixed(1) + '%'}</td>
+                    <td data-month={k} data-fuel-type="diesel" data-cell="consumed" style={{...td, textAlign:'right', color:m.consumed.diesel?'#1e40af':'#9ca3af', fontWeight:m.consumed.diesel?600:400}}>{m.consumed.diesel ? Math.round(m.consumed.diesel).toLocaleString() : '—'}</td>
+                    <td data-month={k} data-fuel-type="gasoline" data-cell="consumed" style={{...td, textAlign:'right', color:m.consumed.gasoline?'#a16207':'#9ca3af', fontWeight:m.consumed.gasoline?600:400}}>{m.consumed.gasoline ? Math.round(m.consumed.gasoline).toLocaleString() : '—'}</td>
+                    <td data-month={k} data-fuel-type="def" data-cell="consumed" style={{...td, textAlign:'right', color:m.consumed.def?'#92400e':'#9ca3af', fontWeight:m.consumed.def?600:400}}>{m.consumed.def ? Math.round(m.consumed.def).toLocaleString() : '—'}</td>
+                    <td data-month={k} data-fuel-type="diesel" data-cell="variance" data-variance-band={varBand(vDiesel)} style={{...td, textAlign:'right', color:varColor(vDiesel), fontWeight:700}}>{vDiesel == null ? '—' : (vDiesel >= 0 ? '+' : '') + vDiesel.toFixed(1) + '%'}</td>
+                    <td data-month={k} data-fuel-type="gasoline" data-cell="variance" data-variance-band={varBand(vGas)} style={{...td, textAlign:'right', color:varColor(vGas), fontWeight:700}}>{vGas == null ? '—' : (vGas >= 0 ? '+' : '') + vGas.toFixed(1) + '%'}</td>
+                    <td data-month={k} data-fuel-type="def" data-cell="variance" data-variance-band={varBand(vDef)} style={{...td, textAlign:'right', color:varColor(vDef), fontWeight:700}}>{vDef == null ? '—' : (vDef >= 0 ? '+' : '') + vDef.toFixed(1) + '%'}</td>
                   </tr>
                 );
               })}

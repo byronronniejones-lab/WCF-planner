@@ -14,6 +14,7 @@ import {
 import { seedBroilerTimeline } from './scenarios/broiler_timeline_seed.js';
 import { seedPigFCRScenario } from './scenarios/pig_fcr_seed.js';
 import { seedFuelBillScenario } from './scenarios/fuel_bill_seed.js';
+import { seedFuelReconcile } from './scenarios/fuel_reconcile_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -128,6 +129,15 @@ export const test = base.extend({
     await resetTestDatabase();
     const ids = await seedFuelBillScenario(supabaseAdmin);
     await use(ids);
+  },
+  // fuelReconcileScenario — A8b banding + cell-exclusion setup. Factory
+  // accepts { band, fuelType?, includeCellRow? } so the four tests reuse
+  // one seed shape; each picks its own band / cell-row mode.
+  fuelReconcileScenario: async ({ supabaseAdmin }, use) => {
+    await use(async (opts = {}) => {
+      await resetTestDatabase();
+      return seedFuelReconcile(supabaseAdmin, opts);
+    });
   },
 });
 
