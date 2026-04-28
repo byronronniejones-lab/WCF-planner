@@ -1,5 +1,7 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
+/* global XLSX */
 import React from 'react';
+import {VALID_BREED_STATUS, parseImportDate, parseImportNumber, normTagStr} from '../lib/bulkImport.js';
 
 const SHEEP_IMPORT_COLUMNS = [
   'tag','sex','flock','breed','origin',
