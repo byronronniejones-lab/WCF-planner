@@ -74,6 +74,31 @@ export function getTestAdminClient() {
   return cachedAdminClient;
 }
 
+// Storage cleanup. Codex A8a originally suggested
+//   DELETE FROM storage.objects WHERE bucket_id = 'fuel-bills'
+// via exec_sql, but Supabase blocks direct DELETE on storage tables —
+// the API returns "Direct deletion from storage tables is not allowed.
+// Use the Storage API instead." So we recurse through the bucket and
+// .remove() the file paths via the Storage API. Best-effort (warns on
+// failure rather than aborting reset) since storage cruft is harmless
+// across runs and shouldn't block other tests on transient issues.
+async function cleanupFuelBillsStorage(client) {
+  try {
+    const top = await client.storage.from('fuel-bills').list();
+    if (top.error || !top.data?.length) return;
+    // Production layout is `fb-{id}/{filename}.pdf`. Recurse one level.
+    for (const dir of top.data) {
+      const inner = await client.storage.from('fuel-bills').list(dir.name);
+      if (inner.data?.length) {
+        const paths = inner.data.map((f) => `${dir.name}/${f.name}`);
+        await client.storage.from('fuel-bills').remove(paths);
+      }
+    }
+  } catch (e) {
+    console.warn(`cleanupFuelBillsStorage: ${e.message || e} (tolerating)`);
+  }
+}
+
 export async function resetTestDatabase() {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   const client = getTestAdminClient();
@@ -84,6 +109,7 @@ export async function resetTestDatabase() {
   if (error) {
     throw new Error(`resetTestDatabase: TRUNCATE failed: ${error.message}`);
   }
+  await cleanupFuelBillsStorage(client);
 }
 
 export const _TEST_OWNED_TABLES = TEST_OWNED_TABLES;

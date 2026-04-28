@@ -1,6 +1,7 @@
 import { test as setup, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { getTestAdminClient } from './reset.js';
 
 // ============================================================================
 // One-time auth setup — runs as the 'setup' project before any spec.
@@ -66,4 +67,24 @@ setup('authenticate as admin', async ({ page }) => {
   ).toHaveCount(0, { timeout: 15_000 });
 
   await page.context().storageState({ path: authFile });
+});
+
+// ---------------------------------------------------------------------------
+// Storage harness hardening (Codex A8a review): ensure the `fuel-bills`
+// bucket exists on the test project. Migration 026 also creates this via
+// `INSERT ... ON CONFLICT DO NOTHING` and attaches the storage.objects
+// policies, so a fresh bootstrap should already be ready. This call is
+// defense-in-depth — if a developer's test project hasn't run the bootstrap
+// yet, the spec fails on bucket-missing rather than on a confusing upload
+// RLS error mid-test. RLS-policy gaps are NOT papered over here; if mig 026
+// didn't run, uploads will still fail and surface the bootstrap problem.
+// ---------------------------------------------------------------------------
+setup('ensure storage buckets', async () => {
+  const admin = getTestAdminClient();
+  // createBucket is idempotent in practice: returns an "already exists"
+  // error we can safely ignore; any other error surfaces as a test failure.
+  const { error } = await admin.storage.createBucket('fuel-bills', { public: false });
+  if (error && !/already exists|duplicate/i.test(error.message || '')) {
+    throw new Error(`global.setup [createBucket fuel-bills]: ${error.message}`);
+  }
 });

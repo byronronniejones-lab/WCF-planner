@@ -13,6 +13,7 @@ import {
 } from './scenarios/sheep_processor_seed.js';
 import { seedBroilerTimeline } from './scenarios/broiler_timeline_seed.js';
 import { seedPigFCRScenario } from './scenarios/pig_fcr_seed.js';
+import { seedFuelBillScenario } from './scenarios/fuel_bill_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -118,6 +119,15 @@ export const test = base.extend({
       await resetTestDatabase();
       return seedPigFCRScenario(supabaseAdmin, opts);
     });
+  },
+  // fuelBillScenario — A8a PDF parser end-to-end setup. Reset clears
+  // fuel_bills + fuel_bill_lines + storage objects in the fuel-bills
+  // bucket; seed ensures the admin profile exists. The PDF file itself
+  // is checked in at tests/fixtures/ODBIN-0195942_2.PDF.
+  fuelBillScenario: async ({ supabaseAdmin }, use) => {
+    await resetTestDatabase();
+    const ids = await seedFuelBillScenario(supabaseAdmin);
+    await use(ids);
   },
 });
 
