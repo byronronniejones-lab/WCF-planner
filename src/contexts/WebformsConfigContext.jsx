@@ -9,19 +9,22 @@
 //   wfTeamMembers   : string[] — team member names
 //   webformsConfig  : the full webforms admin config blob
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 const WebformsConfigContext = createContext(null);
 
-export function WebformsConfigProvider({ children, configInit }) {
-  const [wfGroups,       setWfGroups]       = useState([]);
-  const [wfTeamMembers,  setWfTeamMembers]  = useState([]);
+export function WebformsConfigProvider({children, configInit}) {
+  const [wfGroups, setWfGroups] = useState([]);
+  const [wfTeamMembers, setWfTeamMembers] = useState([]);
   const [webformsConfig, setWebformsConfig] = useState(configInit);
 
   const value = {
-    wfGroups,       setWfGroups,
-    wfTeamMembers,  setWfTeamMembers,
-    webformsConfig, setWebformsConfig,
+    wfGroups,
+    setWfGroups,
+    wfTeamMembers,
+    setWfTeamMembers,
+    webformsConfig,
+    setWebformsConfig,
   };
   return <WebformsConfigContext.Provider value={value}>{children}</WebformsConfigContext.Provider>;
 }

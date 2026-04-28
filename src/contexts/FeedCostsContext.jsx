@@ -10,21 +10,28 @@
 //   broilerNotes  : free-text broiler dashboard notes
 //   missedCleared : Set — cleared missed-report keys
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 const FeedCostsContext = createContext(null);
 
-export function FeedCostsProvider({ children }) {
-  const [feedCosts,     setFeedCosts]     = useState({
-    starter: 0, grower: 0, layer: 0, pig: 0, grit: 0,
+export function FeedCostsProvider({children}) {
+  const [feedCosts, setFeedCosts] = useState({
+    starter: 0,
+    grower: 0,
+    layer: 0,
+    pig: 0,
+    grit: 0,
   });
-  const [broilerNotes,  setBroilerNotes]  = useState('');
+  const [broilerNotes, setBroilerNotes] = useState('');
   const [missedCleared, setMissedCleared] = useState(new Set());
 
   const value = {
-    feedCosts,     setFeedCosts,
-    broilerNotes,  setBroilerNotes,
-    missedCleared, setMissedCleared,
+    feedCosts,
+    setFeedCosts,
+    broilerNotes,
+    setBroilerNotes,
+    missedCleared,
+    setMissedCleared,
   };
   return <FeedCostsContext.Provider value={value}>{children}</FeedCostsContext.Provider>;
 }

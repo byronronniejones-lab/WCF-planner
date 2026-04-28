@@ -7,12 +7,28 @@
 // ============================================================================
 import React from 'react';
 
-const WcfToggle = ({ opts, val, onChange }) => (
-  <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid #d1d5db'}}>
-    {opts.map((o,i)=>(
+const WcfToggle = ({opts, val, onChange}) => (
+  <div style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #d1d5db'}}>
+    {opts.map((o, i) => (
       <React.Fragment key={o}>
-        {i>0 && <div style={{width:1,background:'#d1d5db',flexShrink:0}}/>}
-        <button type="button" onClick={()=>onChange(val===o?'':o)} style={{flex:1,padding:'9px 0',border:'none',fontFamily:'inherit',fontSize:12,fontWeight:500,cursor:'pointer',background:val===o?'#085041':'white',color:val===o?'white':'#6b7280'}}>{o}</button>
+        {i > 0 && <div style={{width: 1, background: '#d1d5db', flexShrink: 0}} />}
+        <button
+          type="button"
+          onClick={() => onChange(val === o ? '' : o)}
+          style={{
+            flex: 1,
+            padding: '9px 0',
+            border: 'none',
+            fontFamily: 'inherit',
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: 'pointer',
+            background: val === o ? '#085041' : 'white',
+            color: val === o ? 'white' : '#6b7280',
+          }}
+        >
+          {o}
+        </button>
       </React.Fragment>
     ))}
   </div>

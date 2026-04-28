@@ -16,16 +16,16 @@ import React from 'react';
 // storage tank — fuel going INTO it is delivery, not use), and are excluded.
 // All other destinations count as consumption.
 const DESTINATIONS = [
-  {value:'gas_can',    label:'Gas can(s)'},
-  {value:'farm_truck', label:'Farm truck'},
-  {value:'other',      label:'Other equipment / use'},
-  {value:'cell',       label:'⚠ Cell refill (inventory only — not consumption)'},
+  {value: 'gas_can', label: 'Gas can(s)'},
+  {value: 'farm_truck', label: 'Farm truck'},
+  {value: 'other', label: 'Other equipment / use'},
+  {value: 'cell', label: '⚠ Cell refill (inventory only — not consumption)'},
 ];
 
 const FUEL_TYPES = [
-  {value:'diesel',   label:'Diesel'},
-  {value:'gasoline', label:'Gasoline'},
-  {value:'def',      label:'DEF'},
+  {value: 'diesel', label: 'Diesel'},
+  {value: 'gasoline', label: 'Gasoline'},
+  {value: 'def', label: 'DEF'},
 ];
 
 export default function FuelSupplyWebform({sb, onBack}) {
@@ -45,25 +45,40 @@ export default function FuelSupplyWebform({sb, onBack}) {
     let cancelled = false;
     (async () => {
       // Per-form override (admin > Equipment > Fuel Supply) wins.
-      const {data: pf} = await sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle();
+      const {data: pf} = await sb
+        .from('webform_config')
+        .select('data')
+        .eq('key', 'per_form_team_members')
+        .maybeSingle();
       const pfList = pf && pf.data && Array.isArray(pf.data['fuel-supply']) ? pf.data['fuel-supply'] : null;
       if (pfList && pfList.length) {
         if (!cancelled) setTeamMembers(pfList);
         return;
       }
       // Fall back to the master list.
-      const {data} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
+      const {data} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
       if (!cancelled && data && Array.isArray(data.data)) setTeamMembers(data.data);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sb]);
 
   async function submit() {
     setErr('');
-    if (!team) { setErr('Pick a team member.'); return; }
-    if (!date) { setErr('Date required.'); return; }
+    if (!team) {
+      setErr('Pick a team member.');
+      return;
+    }
+    if (!date) {
+      setErr('Date required.');
+      return;
+    }
     const gal = parseFloat(gallons);
-    if (!Number.isFinite(gal) || gal <= 0) { setErr('Gallons must be a positive number.'); return; }
+    if (!Number.isFinite(gal) || gal <= 0) {
+      setErr('Gallons must be a positive number.');
+      return;
+    }
     localStorage.setItem('wcf_team', team);
     setSubmitting(true);
 
@@ -81,90 +96,197 @@ export default function FuelSupplyWebform({sb, onBack}) {
 
     const {error} = await sb.from('fuel_supplies').insert(rec);
     setSubmitting(false);
-    if (error) { setErr('Save failed: ' + error.message); return; }
+    if (error) {
+      setErr('Save failed: ' + error.message);
+      return;
+    }
     setDone(true);
     // Reset for a fresh entry
-    setGallons(''); setNotes('');
+    setGallons('');
+    setNotes('');
   }
 
-  const cardS = {background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 18px', marginBottom:14};
-  const lblS  = {display:'block', fontSize:11, fontWeight:600, color:'#4b5563', textTransform:'uppercase', letterSpacing:.4, marginBottom:4};
-  const inpS  = {fontSize:14, padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6, fontFamily:'inherit', width:'100%', boxSizing:'border-box'};
+  const cardS = {
+    background: 'white',
+    border: '1px solid #e5e7eb',
+    borderRadius: 12,
+    padding: '14px 18px',
+    marginBottom: 14,
+  };
+  const lblS = {
+    display: 'block',
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#4b5563',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  };
+  const inpS = {
+    fontSize: 14,
+    padding: '8px 10px',
+    border: '1px solid #d1d5db',
+    borderRadius: 6,
+    fontFamily: 'inherit',
+    width: '100%',
+    boxSizing: 'border-box',
+  };
 
   return (
-    <div style={{minHeight:'100vh', background:'#f1f3f2'}}>
-      <div style={{background:'#085041', color:'white', padding:'14px 20px', display:'flex', alignItems:'center', gap:12}}>
-        <div style={{fontSize:18, fontWeight:700}}>⛽ Fuel Supply Log</div>
-        <div style={{fontSize:11, opacity:.85}}>WCF Planner</div>
-        {onBack && <button onClick={onBack} style={{marginLeft:'auto', background:'transparent', color:'white', border:'1px solid rgba(255,255,255,.4)', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontSize:12, fontFamily:'inherit'}}>← Back</button>}
+    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+      <div
+        style={{
+          background: '#085041',
+          color: 'white',
+          padding: '14px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <div style={{fontSize: 18, fontWeight: 700}}>⛽ Fuel Supply Log</div>
+        <div style={{fontSize: 11, opacity: 0.85}}>WCF Planner</div>
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              marginLeft: 'auto',
+              background: 'transparent',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,.4)',
+              borderRadius: 6,
+              padding: '4px 10px',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontFamily: 'inherit',
+            }}
+          >
+            ← Back
+          </button>
+        )}
       </div>
 
-      <div style={{maxWidth:560, margin:'0 auto', padding:'16px'}}>
-        <div style={{...cardS, background:'#fffbeb', borderColor:'#fde68a'}}>
-          <div style={{fontSize:12, fontWeight:700, color:'#92400e', marginBottom:6}}>⚠ When to use this form</div>
-          <div style={{fontSize:12, color:'#78716c', lineHeight:1.5}}>
-            Use this form when there is <strong>no fueling checklist</strong> for what is being filled with fuel — e.g. gas can fills, farm truck top-offs, generators, chainsaws.
-            <br/><br/>
-            <strong>Cell refills</strong> (fuel pumped INTO the portable cell from a supplier delivery) are inventory storage, not consumption. Use the cell-refill destination only if there is no bill on file covering the same delivery.
+      <div style={{maxWidth: 560, margin: '0 auto', padding: '16px'}}>
+        <div style={{...cardS, background: '#fffbeb', borderColor: '#fde68a'}}>
+          <div style={{fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 6}}>⚠ When to use this form</div>
+          <div style={{fontSize: 12, color: '#78716c', lineHeight: 1.5}}>
+            Use this form when there is <strong>no fueling checklist</strong> for what is being filled with fuel — e.g.
+            gas can fills, farm truck top-offs, generators, chainsaws.
+            <br />
+            <br />
+            <strong>Cell refills</strong> (fuel pumped INTO the portable cell from a supplier delivery) are inventory
+            storage, not consumption. Use the cell-refill destination only if there is no bill on file covering the same
+            delivery.
           </div>
         </div>
 
         {done && (
-          <div style={{...cardS, background:'#ecfdf5', borderColor:'#a7f3d0'}}>
-            <div style={{fontSize:13, fontWeight:700, color:'#065f46', marginBottom:4}}>✓ Supply logged</div>
-            <div style={{fontSize:12, color:'#047857'}}>Form reset for another entry. You can keep logging deliveries.</div>
+          <div style={{...cardS, background: '#ecfdf5', borderColor: '#a7f3d0'}}>
+            <div style={{fontSize: 13, fontWeight: 700, color: '#065f46', marginBottom: 4}}>✓ Supply logged</div>
+            <div style={{fontSize: 12, color: '#047857'}}>
+              Form reset for another entry. You can keep logging deliveries.
+            </div>
           </div>
         )}
 
         <div style={cardS}>
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom: 12}}>
             <label style={lblS}>Date *</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inpS}/>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inpS} />
           </div>
 
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom: 12}}>
             <label style={lblS}>Team member *</label>
-            <select value={team} onChange={e=>setTeam(e.target.value)} style={inpS}>
-              <option value=''>Select…</option>
-              {teamMembers.map(n => <option key={n} value={n}>{n}</option>)}
+            <select value={team} onChange={(e) => setTeam(e.target.value)} style={inpS}>
+              <option value="">Select…</option>
+              {teamMembers.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
             </select>
           </div>
 
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom: 12}}>
             <label style={lblS}>Destination *</label>
-            <select value={destination} onChange={e=>setDestination(e.target.value)} style={inpS}>
-              {DESTINATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+            <select value={destination} onChange={(e) => setDestination(e.target.value)} style={inpS}>
+              {DESTINATIONS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
             </select>
           </div>
 
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom: 12}}>
             <label style={lblS}>Fuel type *</label>
-            <select value={fuelType} onChange={e=>setFuelType(e.target.value)} style={inpS}>
-              {FUEL_TYPES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+            <select value={fuelType} onChange={(e) => setFuelType(e.target.value)} style={inpS}>
+              {FUEL_TYPES.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
             </select>
           </div>
 
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom: 12}}>
             <label style={lblS}>Gallons *</label>
-            <input type="number" min="0" step="0.1" value={gallons} onChange={e=>setGallons(e.target.value)} placeholder="e.g. 300" style={inpS}/>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={gallons}
+              onChange={(e) => setGallons(e.target.value)}
+              placeholder="e.g. 300"
+              style={inpS}
+            />
           </div>
 
-          <div style={{marginBottom:12}}>
-            <label style={lblS}>Notes <span style={{color:'#9ca3af', textTransform:'none', fontWeight:400}}>(optional)</span></label>
-            <textarea rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything worth noting" style={{...inpS, resize:'vertical'}}/>
+          <div style={{marginBottom: 12}}>
+            <label style={lblS}>
+              Notes <span style={{color: '#9ca3af', textTransform: 'none', fontWeight: 400}}>(optional)</span>
+            </label>
+            <textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Anything worth noting"
+              style={{...inpS, resize: 'vertical'}}
+            />
           </div>
 
-          {err && <div style={{background:'#fef2f2', border:'1px solid #fecaca', color:'#b91c1c', padding:'8px 12px', borderRadius:6, fontSize:12, marginBottom:12}}>{err}</div>}
+          {err && (
+            <div
+              style={{
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#b91c1c',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                marginBottom: 12,
+              }}
+            >
+              {err}
+            </div>
+          )}
 
           <button
             onClick={submit}
             disabled={submitting}
             style={{
-              width:'100%', padding:'14px 16px', borderRadius:8, border:'none',
-              background: submitting ? '#9ca3af' : '#085041', color:'white',
-              fontSize:15, fontWeight:700, cursor: submitting ? 'not-allowed' : 'pointer',
-              fontFamily:'inherit',
-            }}>
+              width: '100%',
+              padding: '14px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: submitting ? '#9ca3af' : '#085041',
+              color: 'white',
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: submitting ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
             {submitting ? 'Saving…' : 'Log supply'}
           </button>
         </div>

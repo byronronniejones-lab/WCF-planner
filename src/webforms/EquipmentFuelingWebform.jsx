@@ -7,7 +7,7 @@
 // equipment has takes_def=true. Service intervals surface only when they
 // are actually due given the reading the team just entered + history.
 import React from 'react';
-import { computeDueIntervals } from '../lib/equipment.js';
+import {computeDueIntervals} from '../lib/equipment.js';
 import ManualsCard from '../equipment/ManualsCard.jsx';
 
 export default function EquipmentFuelingWebform({sb, equipment, equipmentList, onBack}) {
@@ -34,29 +34,39 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   const [history, setHistory] = React.useState([]); // prior fuelings on this piece (for due-interval math)
 
   const eq = selectedEq;
-  const fuelLabel = eq?.fuel_type === 'gasoline' ? 'Gasoline' : (eq?.fuel_type === 'diesel' ? 'Diesel' : 'Fuel');
+  const fuelLabel = eq?.fuel_type === 'gasoline' ? 'Gasoline' : eq?.fuel_type === 'diesel' ? 'Diesel' : 'Fuel';
   const readingLabel = eq?.tracking_unit === 'km' ? 'KM' : 'Hours';
 
   React.useEffect(() => {
-    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => {
-      if (data && Array.isArray(data.data)) setTeamMembers(data.data);
-    });
+    sb.from('webform_config')
+      .select('data')
+      .eq('key', 'team_members')
+      .maybeSingle()
+      .then(({data}) => {
+        if (data && Array.isArray(data.data)) setTeamMembers(data.data);
+      });
   }, []);
 
   // Filter the team-member dropdown to the operators assigned to THIS piece
   // (equipment.team_members). If none are assigned yet, fall back to the
   // full master list so the form still works.
   const assignedTM = Array.isArray(eq?.team_members) ? eq.team_members : [];
-  const visibleTeamMembers = assignedTM.length > 0
-    ? teamMembers.filter(n => assignedTM.includes(n))
-    : teamMembers;
+  const visibleTeamMembers = assignedTM.length > 0 ? teamMembers.filter((n) => assignedTM.includes(n)) : teamMembers;
 
   // Load this piece's fueling history to compute due intervals.
   React.useEffect(() => {
-    if (!eq) { setHistory([]); return; }
-    sb.from('equipment_fuelings').select('date,team_member,hours_reading,km_reading,service_intervals_completed,every_fillup_check').eq('equipment_id', eq.id).order('date', {ascending:false}).limit(500).then(({data}) => {
-      if (data) setHistory(data);
-    });
+    if (!eq) {
+      setHistory([]);
+      return;
+    }
+    sb.from('equipment_fuelings')
+      .select('date,team_member,hours_reading,km_reading,service_intervals_completed,every_fillup_check')
+      .eq('equipment_id', eq.id)
+      .order('date', {ascending: false})
+      .limit(500)
+      .then(({data}) => {
+        if (data) setHistory(data);
+      });
   }, [eq]);
 
   // Build the completions list with reading_at_completion + team_member baked
@@ -65,9 +75,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   const completions = React.useMemo(() => {
     const out = [];
     for (const h of history) {
-      const snap = h.hours_reading != null ? Number(h.hours_reading) : (h.km_reading != null ? Number(h.km_reading) : null);
+      const snap =
+        h.hours_reading != null ? Number(h.hours_reading) : h.km_reading != null ? Number(h.km_reading) : null;
       if (snap == null) continue;
-      for (const c of (h.service_intervals_completed || [])) {
+      for (const c of h.service_intervals_completed || []) {
         out.push({...c, reading_at_completion: snap, team_member: h.team_member || null});
       }
     }
@@ -96,8 +107,8 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     // Build prior-fuelings list. Order by reading desc; if reading missing,
     // fall back to date. Newest first.
     const sorted = (history || []).slice().sort((a, b) => {
-      const ra = a.hours_reading != null ? Number(a.hours_reading) : (a.km_reading != null ? Number(a.km_reading) : null);
-      const rb = b.hours_reading != null ? Number(b.hours_reading) : (b.km_reading != null ? Number(b.km_reading) : null);
+      const ra = a.hours_reading != null ? Number(a.hours_reading) : a.km_reading != null ? Number(a.km_reading) : null;
+      const rb = b.hours_reading != null ? Number(b.hours_reading) : b.km_reading != null ? Number(b.km_reading) : null;
       if (ra != null && rb != null && ra !== rb) return rb - ra;
       return String(b.date || '').localeCompare(String(a.date || ''));
     });
@@ -106,10 +117,11 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
       let oldest = null;
       for (const h of sorted) {
         const ticks = Array.isArray(h.every_fillup_check) ? h.every_fillup_check : [];
-        const wasTicked = ticks.some(t => t && t.id === item.id);
+        const wasTicked = ticks.some((t) => t && t.id === item.id);
         if (wasTicked) break;
         count++;
-        const r = h.hours_reading != null ? Number(h.hours_reading) : (h.km_reading != null ? Number(h.km_reading) : null);
+        const r =
+          h.hours_reading != null ? Number(h.hours_reading) : h.km_reading != null ? Number(h.km_reading) : null;
         oldest = {reading: r, name: h.team_member || null, date: h.date || null};
       }
       if (count > 0) out.set(item.id, {count, oldest});
@@ -119,26 +131,30 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
 
   function toggleFillup(id) {
     const next = new Set(fillupTicks);
-    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     setFillupTicks(next);
   }
   function toggleInterval(kind, value) {
     const k = kind + ':' + value;
     const next = new Set(intervalTicks);
-    if (next.has(k)) next.delete(k); else next.add(k);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
     setIntervalTicks(next);
   }
   function toggleTask(intervalKey, taskId) {
-    setTaskTicks(prev => {
+    setTaskTicks((prev) => {
       const current = new Set(prev[intervalKey] || []);
-      if (current.has(taskId)) current.delete(taskId); else current.add(taskId);
+      if (current.has(taskId)) current.delete(taskId);
+      else current.add(taskId);
       return {...prev, [intervalKey]: current};
     });
   }
   function toggleAttachmentTask(attachmentKey, taskId) {
-    setAttachmentTicks(prev => {
+    setAttachmentTicks((prev) => {
       const current = new Set(prev[attachmentKey] || []);
-      if (current.has(taskId)) current.delete(taskId); else current.add(taskId);
+      if (current.has(taskId)) current.delete(taskId);
+      else current.add(taskId);
       return {...prev, [attachmentKey]: current};
     });
   }
@@ -147,16 +163,31 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     setUploadingPhoto(true);
     const safe = (file.name || 'photo').replace(/[^a-zA-Z0-9._-]/g, '_');
     const pathInBucket = 'fueling/' + eq.slug + '/' + Date.now() + '-' + safe;
-    const {error: upErr} = await sb.storage.from('equipment-maintenance-docs').upload(pathInBucket, file, {upsert: false});
-    if (upErr) { setErr('Photo upload failed: '+upErr.message); setUploadingPhoto(false); return; }
+    const {error: upErr} = await sb.storage
+      .from('equipment-maintenance-docs')
+      .upload(pathInBucket, file, {upsert: false});
+    if (upErr) {
+      setErr('Photo upload failed: ' + upErr.message);
+      setUploadingPhoto(false);
+      return;
+    }
     const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(pathInBucket);
-    setPhotos(p => [...p, {name:file.name, path:pathInBucket, url:pub.publicUrl, uploadedAt:new Date().toISOString()}]);
+    setPhotos((p) => [
+      ...p,
+      {name: file.name, path: pathInBucket, url: pub.publicUrl, uploadedAt: new Date().toISOString()},
+    ]);
     setUploadingPhoto(false);
   }
   async function removePhoto(idx) {
     const p = photos[idx];
-    if (p && p.path) { try { await sb.storage.from('equipment-maintenance-docs').remove([p.path]); } catch(_e) { /* best-effort storage cleanup */ } }
-    setPhotos(arr => arr.filter((_, i) => i !== idx));
+    if (p && p.path) {
+      try {
+        await sb.storage.from('equipment-maintenance-docs').remove([p.path]);
+      } catch (_e) {
+        /* best-effort storage cleanup */
+      }
+    }
+    setPhotos((arr) => arr.filter((_, i) => i !== idx));
   }
   // If the team ticks a big interval, the divisor rule implicitly covers
   // any smaller due interval that divides it. Surface this visually.
@@ -173,10 +204,22 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
 
   async function submit() {
     setErr('');
-    if (!eq) { setErr('Pick equipment.'); return; }
-    if (!teamMember) { setErr('Pick a team member.'); return; }
-    if (!date) { setErr('Date required.'); return; }
-    if (!gallons || parseFloat(gallons) <= 0) { setErr(fuelLabel + ' gallons required.'); return; }
+    if (!eq) {
+      setErr('Pick equipment.');
+      return;
+    }
+    if (!teamMember) {
+      setErr('Pick a team member.');
+      return;
+    }
+    if (!date) {
+      setErr('Date required.');
+      return;
+    }
+    if (!gallons || parseFloat(gallons) <= 0) {
+      setErr(fuelLabel + ' gallons required.');
+      return;
+    }
 
     // Check Oil enforcement: every non-ATV, non-Toro piece must have its
     // oil-check ticked before the submit goes through. "Oil" match is broad
@@ -184,7 +227,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     const exemptFromOil = eq.category === 'atvs' || eq.slug === 'toro';
     if (!exemptFromOil) {
       const items = Array.isArray(eq.every_fillup_items) ? eq.every_fillup_items : [];
-      const oilItem = items.find(it => /oil/i.test(it.label || ''));
+      const oilItem = items.find((it) => /oil/i.test(it.label || ''));
       if (oilItem && !fillupTicks.has(oilItem.id)) {
         setErr('"' + oilItem.label + '" must be ticked before submitting.');
         return;
@@ -204,7 +247,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
       const parentTicked = intervalTicks.has(key);
       const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
       const items = Array.from(ticks);
-      const fullyDone = tasks.length === 0 ? parentTicked : (tasks.length > 0 && items.length >= tasks.length);
+      const fullyDone = tasks.length === 0 ? parentTicked : tasks.length > 0 && items.length >= tasks.length;
       if (!parentTicked && items.length === 0) continue; // nothing ticked for this interval
       completed.push({
         interval: iv.hours_or_km,
@@ -222,7 +265,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     for (const key of fullyDoneExplicit) {
       const [kind, vStr] = key.split(':');
       const v = parseInt(vStr, 10);
-      for (const iv of (eq.service_intervals || [])) {
+      for (const iv of eq.service_intervals || []) {
         if (iv.kind !== kind) continue;
         if (iv.hours_or_km === v) continue;
         if (v % iv.hours_or_km !== 0) continue;
@@ -235,7 +278,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
           label: iv.label,
           completed_at: date,
           auto_from: v,
-          items_completed: subTasks.map(t => t.id),
+          items_completed: subTasks.map((t) => t.id),
           total_tasks: subTasks.length,
         });
       }
@@ -243,7 +286,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
 
     // Attachment completions — stored in service_intervals_completed with an
     // attachment_name key so the dashboard can distinguish from main intervals.
-    for (const a of (eq.attachment_checklists || [])) {
+    for (const a of eq.attachment_checklists || []) {
       const key = a.name + ':' + a.kind + ':' + a.hours_or_km;
       const ticks = attachmentTicks[key] instanceof Set ? attachmentTicks[key] : new Set();
       if (ticks.size === 0) continue;
@@ -258,8 +301,8 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
       });
     }
 
-    const fillup = Array.from(fillupTicks).map(id => {
-      const item = (eq.every_fillup_items || []).find(x => x.id === id);
+    const fillup = Array.from(fillupTicks).map((id) => {
+      const item = (eq.every_fillup_items || []).find((x) => x.id === id);
       return {id, label: item?.label || id, ok: true};
     });
 
@@ -274,7 +317,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
       def_gallons: Number.isFinite(defNum) && defNum > 0 ? defNum : null,
       fuel_cost_per_gal: null,
       hours_reading: eq.tracking_unit === 'hours' ? readingNum : null,
-      km_reading:    eq.tracking_unit === 'km'    ? readingNum : null,
+      km_reading: eq.tracking_unit === 'km' ? readingNum : null,
       every_fillup_check: fillup,
       service_intervals_completed: completed,
       photos,
@@ -284,110 +327,242 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     };
     setSubmitting(true);
     const {error} = await sb.from('equipment_fuelings').insert(rec);
-    if (error) { setErr('Save failed: '+error.message); setSubmitting(false); return; }
+    if (error) {
+      setErr('Save failed: ' + error.message);
+      setSubmitting(false);
+      return;
+    }
     // Bump current reading on the equipment row.
     if (hasReading) {
       const upd = {};
       if (eq.tracking_unit === 'hours') upd.current_hours = readingNum;
       else if (eq.tracking_unit === 'km') upd.current_km = readingNum;
       if (Object.keys(upd).length > 0) {
-        await sb.from('equipment').update(upd).eq('id', eq.id).then(() => {});
+        await sb
+          .from('equipment')
+          .update(upd)
+          .eq('id', eq.id)
+          .then(() => {});
       }
     }
     setSubmitting(false);
     setDone(true);
   }
 
-  const wfBg = {minHeight:'100vh', background:'linear-gradient(135deg,#fafaf9 0%,#e7e5e4 100%)', padding:'1rem', fontFamily:'inherit'};
-  const cardS = {background:'white', borderRadius:12, padding:'18px 20px', marginBottom:12, boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
-  const inpS = {fontFamily:'inherit', fontSize:14, padding:'10px 12px', border:'1px solid #d1d5db', borderRadius:8, width:'100%', outline:'none', background:'white', color:'#111827', boxSizing:'border-box'};
-  const lblS = {display:'block', fontSize:12, color:'#6b7280', marginBottom:5, fontWeight:600, textTransform:'uppercase', letterSpacing:.4};
+  const wfBg = {
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg,#fafaf9 0%,#e7e5e4 100%)',
+    padding: '1rem',
+    fontFamily: 'inherit',
+  };
+  const cardS = {
+    background: 'white',
+    borderRadius: 12,
+    padding: '18px 20px',
+    marginBottom: 12,
+    boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+  };
+  const inpS = {
+    fontFamily: 'inherit',
+    fontSize: 14,
+    padding: '10px 12px',
+    border: '1px solid #d1d5db',
+    borderRadius: 8,
+    width: '100%',
+    outline: 'none',
+    background: 'white',
+    color: '#111827',
+    boxSizing: 'border-box',
+  };
+  const lblS = {
+    display: 'block',
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 5,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  };
   const logoEl = (
-    <div style={{textAlign:'center', marginBottom:20}}>
-      <div style={{fontSize:18, fontWeight:800, color:'#57534e', letterSpacing:-.3}}>⛽ WCF Planner</div>
-      <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>Fueling Log</div>
+    <div style={{textAlign: 'center', marginBottom: 20}}>
+      <div style={{fontSize: 18, fontWeight: 800, color: '#57534e', letterSpacing: -0.3}}>⛽ WCF Planner</div>
+      <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Fueling Log</div>
     </div>
   );
 
-  if (done) return (
-    <div style={wfBg}>
-      <div style={{maxWidth:480, margin:'0 auto', paddingTop:'2rem', textAlign:'center'}}>
-        {logoEl}
-        <div style={{fontSize:56, marginBottom:12}}>{'✅'}</div>
-        <div style={{fontSize:20, fontWeight:700, color:'#57534e', marginBottom:8}}>Fueling saved</div>
-        <div style={{fontSize:14, color:'#4b5563', marginBottom:28}}>{eq ? eq.name : ''} · {gallons} gal {fuelLabel}{defGallons ? ' + ' + defGallons + ' gal DEF' : ''}</div>
-        <button onClick={()=>{
-          if (isQuick) { setSelectedEq(null); setDone(false); setGallons(''); setDefGallons(''); setReading(''); setComments(''); setFillupTicks(new Set()); setIntervalTicks(new Set()); }
-          else { setDone(false); setGallons(''); setDefGallons(''); setReading(''); setComments(''); setFillupTicks(new Set()); setIntervalTicks(new Set()); }
-        }} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:'#57534e', color:'white', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', marginBottom:10}}>Log Another</button>
-        <button onClick={onBack} style={{width:'100%', padding:14, borderRadius:10, border:'1px solid #d1d5db', background:'white', color:'#374151', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>Back to Hub</button>
+  if (done)
+    return (
+      <div style={wfBg}>
+        <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '2rem', textAlign: 'center'}}>
+          {logoEl}
+          <div style={{fontSize: 56, marginBottom: 12}}>{'✅'}</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: '#57534e', marginBottom: 8}}>Fueling saved</div>
+          <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28}}>
+            {eq ? eq.name : ''} · {gallons} gal {fuelLabel}
+            {defGallons ? ' + ' + defGallons + ' gal DEF' : ''}
+          </div>
+          <button
+            onClick={() => {
+              if (isQuick) {
+                setSelectedEq(null);
+                setDone(false);
+                setGallons('');
+                setDefGallons('');
+                setReading('');
+                setComments('');
+                setFillupTicks(new Set());
+                setIntervalTicks(new Set());
+              } else {
+                setDone(false);
+                setGallons('');
+                setDefGallons('');
+                setReading('');
+                setComments('');
+                setFillupTicks(new Set());
+                setIntervalTicks(new Set());
+              }
+            }}
+            style={{
+              width: '100%',
+              padding: 14,
+              borderRadius: 10,
+              border: 'none',
+              background: '#57534e',
+              color: 'white',
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 10,
+            }}
+          >
+            Log Another
+          </button>
+          <button
+            onClick={onBack}
+            style={{
+              width: '100%',
+              padding: 14,
+              borderRadius: 10,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#374151',
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Back to Hub
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
 
   return (
     <div style={wfBg}>
-      <div style={{maxWidth:520, margin:'0 auto', paddingTop:'1rem'}}>
+      <div style={{maxWidth: 520, margin: '0 auto', paddingTop: '1rem'}}>
         {logoEl}
-        <button onClick={onBack} style={{background:'none', border:'none', color:'#57534e', fontSize:13, cursor:'pointer', marginBottom:12, padding:0, fontFamily:'inherit'}}>{'‹ Back'}</button>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#57534e',
+            fontSize: 13,
+            cursor: 'pointer',
+            marginBottom: 12,
+            padding: 0,
+            fontFamily: 'inherit',
+          }}
+        >
+          {'‹ Back'}
+        </button>
 
         {/* Header tile: what piece am I fueling? */}
         <div style={cardS}>
           {isQuick && (
-            <div style={{marginBottom:12}}>
+            <div style={{marginBottom: 12}}>
               <label style={lblS}>Equipment *</label>
-              <select value={eq?.id || ''} onChange={e=>{
-                const found = (equipmentList||[]).find(x => x.id === e.target.value);
-                setSelectedEq(found || null);
-              }} style={inpS}>
-                <option value=''>Select equipment...</option>
-                {(equipmentList||[]).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+              <select
+                value={eq?.id || ''}
+                onChange={(e) => {
+                  const found = (equipmentList || []).find((x) => x.id === e.target.value);
+                  setSelectedEq(found || null);
+                }}
+                style={inpS}
+              >
+                <option value="">Select equipment...</option>
+                {(equipmentList || []).map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
               </select>
             </div>
           )}
-          {eq && !isQuick && (() => {
-            const lastFueling = (history || []).find(h => (h.hours_reading != null || h.km_reading != null));
-            const lastReadingNum = lastFueling ? (eq.tracking_unit === 'km' ? lastFueling.km_reading : lastFueling.hours_reading) : null;
-            const lastUnit = eq.tracking_unit === 'km' ? 'km' : 'h';
-            const fmtDate = s => { if (!s) return ''; const [y,m,d] = String(s).slice(0,10).split('-'); return `${m}/${d}/${y.slice(2)}`; };
-            return (
-              <div>
-                <div style={{fontSize:18, fontWeight:700, color:'#57534e'}}>{eq.name}</div>
-                <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>{eq.fuel_type ? eq.fuel_type.charAt(0).toUpperCase()+eq.fuel_type.slice(1) : ''}{eq.takes_def ? ' + DEF' : ''} · tracks {readingLabel}</div>
-                {lastReadingNum != null && (
-                  <div style={{fontSize:12, color:'#1e40af', marginTop:6, fontWeight:600}}>
-                    Last reading: {Number(lastReadingNum).toLocaleString()} {lastUnit}
-                    {lastFueling.team_member ? ` · ${lastFueling.team_member}` : ''}
-                    {lastFueling.date ? ` · ${fmtDate(lastFueling.date)}` : ''}
+          {eq &&
+            !isQuick &&
+            (() => {
+              const lastFueling = (history || []).find((h) => h.hours_reading != null || h.km_reading != null);
+              const lastReadingNum = lastFueling
+                ? eq.tracking_unit === 'km'
+                  ? lastFueling.km_reading
+                  : lastFueling.hours_reading
+                : null;
+              const lastUnit = eq.tracking_unit === 'km' ? 'km' : 'h';
+              const fmtDate = (s) => {
+                if (!s) return '';
+                const [y, m, d] = String(s).slice(0, 10).split('-');
+                return `${m}/${d}/${y.slice(2)}`;
+              };
+              return (
+                <div>
+                  <div style={{fontSize: 18, fontWeight: 700, color: '#57534e'}}>{eq.name}</div>
+                  <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>
+                    {eq.fuel_type ? eq.fuel_type.charAt(0).toUpperCase() + eq.fuel_type.slice(1) : ''}
+                    {eq.takes_def ? ' + DEF' : ''} · tracks {readingLabel}
                   </div>
-                )}
-              </div>
-            );
-          })()}
+                  {lastReadingNum != null && (
+                    <div style={{fontSize: 12, color: '#1e40af', marginTop: 6, fontWeight: 600}}>
+                      Last reading: {Number(lastReadingNum).toLocaleString()} {lastUnit}
+                      {lastFueling.team_member ? ` · ${lastFueling.team_member}` : ''}
+                      {lastFueling.date ? ` · ${fmtDate(lastFueling.date)}` : ''}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
         </div>
 
         {/* Top-of-form operator notes (between-fillup maintenance guidance). */}
         {eq && eq.operator_notes && (
-          <div style={{...cardS, background:'#fffbeb', borderColor:'#fde68a'}}>
-            <div style={{fontSize:12, fontWeight:700, color:'#92400e', marginBottom:6}}>⚠ Operator note</div>
-            <div style={{fontSize:12, color:'#78716c', whiteSpace:'pre-wrap', fontStyle:'italic'}}>{eq.operator_notes}</div>
+          <div style={{...cardS, background: '#fffbeb', borderColor: '#fde68a'}}>
+            <div style={{fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 6}}>⚠ Operator note</div>
+            <div style={{fontSize: 12, color: '#78716c', whiteSpace: 'pre-wrap', fontStyle: 'italic'}}>
+              {eq.operator_notes}
+            </div>
           </div>
         )}
 
         {/* Expandable Manuals & Videos card — reference materials for operators. */}
-        <ManualsCard equipment={eq}/>
+        <ManualsCard equipment={eq} />
 
         {/* Date + Team Member on their own rows */}
         <div style={cardS}>
-          <div style={{marginBottom:12}}>
+          <div style={{marginBottom: 12}}>
             <label style={lblS}>Date *</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inpS}/>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inpS} />
           </div>
           <div>
             <label style={lblS}>Team Member *</label>
-            <select value={teamMember} onChange={e=>setTeamMember(e.target.value)} style={inpS}>
-              <option value=''>Select...</option>
-              {visibleTeamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+            <select value={teamMember} onChange={(e) => setTeamMember(e.target.value)} style={inpS}>
+              <option value="">Select...</option>
+              {visibleTeamMembers.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -395,17 +570,47 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         {/* Fuel + DEF (per-piece, not a dropdown). */}
         {eq && eq.fuel_type && (
           <div style={cardS}>
-            <div style={{marginBottom:12}}>
+            <div style={{marginBottom: 12}}>
               <label style={lblS}>{fuelLabel} gallons *</label>
-              <input type="number" min="0" step="0.1" value={gallons} onChange={e=>setGallons(e.target.value)} placeholder="0" style={inpS}/>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={gallons}
+                onChange={(e) => setGallons(e.target.value)}
+                placeholder="0"
+                style={inpS}
+              />
               {eq.fuel_gallons_help && (
-                <div style={{fontSize:11, color:'#78716c', marginTop:6, fontStyle:'italic', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'6px 8px', whiteSpace:'pre-wrap'}}>{eq.fuel_gallons_help}</div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: '#78716c',
+                    marginTop: 6,
+                    fontStyle: 'italic',
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: 5,
+                    padding: '6px 8px',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {eq.fuel_gallons_help}
+                </div>
               )}
             </div>
             {eq.takes_def && (
               <div>
                 <label style={lblS}>DEF gallons</label>
-                <input type="number" min="0" step="0.1" value={defGallons} onChange={e=>setDefGallons(e.target.value)} placeholder="0" style={inpS}/>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={defGallons}
+                  onChange={(e) => setDefGallons(e.target.value)}
+                  placeholder="0"
+                  style={inpS}
+                />
               </div>
             )}
           </div>
@@ -415,8 +620,18 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         {eq && (
           <div style={cardS}>
             <label style={lblS}>{readingLabel} *</label>
-            <input type="number" min="0" step="0.1" value={reading} onChange={e=>setReading(e.target.value)} placeholder={'Current '+readingLabel.toLowerCase()} style={inpS}/>
-            <div style={{fontSize:11, color:'#9ca3af', marginTop:6}}>Every-fillup and service-interval checklists appear below once you enter this.</div>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={reading}
+              onChange={(e) => setReading(e.target.value)}
+              placeholder={'Current ' + readingLabel.toLowerCase()}
+              style={inpS}
+            />
+            <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>
+              Every-fillup and service-interval checklists appear below once you enter this.
+            </div>
           </div>
         )}
 
@@ -424,122 +639,100 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             the checklist section doesn't open before we know what to show. */}
         {eq && hasReading && (eq.every_fillup_items || []).length > 0 && (
           <div style={cardS}>
-            <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:eq.every_fillup_help?4:10}}>Every-fillup checks</div>
+            <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', marginBottom: eq.every_fillup_help ? 4 : 10}}>
+              Every-fillup checks
+            </div>
             {eq.every_fillup_help && (
-              <div style={{fontSize:12, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, padding:'8px 10px', marginBottom:10, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{eq.every_fillup_help}</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: '#78716c',
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  borderRadius: 6,
+                  padding: '8px 10px',
+                  marginBottom: 10,
+                  fontStyle: 'italic',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {eq.every_fillup_help}
+              </div>
             )}
-            <div style={{display:'flex', flexDirection:'column', gap:6}}>
-              {eq.every_fillup_items.map(item => {
+            <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+              {eq.every_fillup_items.map((item) => {
                 // Mark oil-check items as required for non-ATV / non-Toro pieces.
                 const isOil = /oil/i.test(item.label || '');
                 const exemptFromOil = eq.category === 'atvs' || eq.slug === 'toro';
                 const required = isOil && !exemptFromOil;
                 const unticked = !fillupTicks.has(item.id);
                 const needsAttention = required && unticked;
-                const bd = needsAttention ? '#fca5a5' : (fillupTicks.has(item.id)?'#a7f3d0':'#e5e7eb');
-                const bg = needsAttention ? '#fef2f2' : (fillupTicks.has(item.id)?'#ecfdf5':'#f9fafb');
+                const bd = needsAttention ? '#fca5a5' : fillupTicks.has(item.id) ? '#a7f3d0' : '#e5e7eb';
+                const bg = needsAttention ? '#fef2f2' : fillupTicks.has(item.id) ? '#ecfdf5' : '#f9fafb';
                 const streak = fillupStreaks.get(item.id);
                 const unitShort = eq.tracking_unit === 'km' ? 'km' : 'h';
                 return (
-                <div key={item.id}>
-                  <label style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:6, background:bg, cursor:'pointer', border:'1px solid '+bd, fontSize:13}}>
-                    <input type="checkbox" checked={fillupTicks.has(item.id)} onChange={()=>toggleFillup(item.id)} style={{margin:0, flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
-                    <span style={{color:fillupTicks.has(item.id)?'#065f46':(needsAttention?'#b91c1c':'#374151'), fontWeight:fillupTicks.has(item.id)?600:(needsAttention?600:500)}}>{item.label}{required && <span style={{color:'#b91c1c', marginLeft:4}}>*</span>}</span>
-                  </label>
-                  {streak && streak.count > 0 && !fillupTicks.has(item.id) && (
-                    <div style={{margin:'4px 0 2px 30px', fontSize:11, color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'5px 8px'}}>
-                      ⚠ <strong>Not done at last {streak.count} fillup{streak.count===1?'':'s'}</strong>
-                      {streak.oldest && streak.oldest.reading != null && <> · oldest {streak.oldest.reading.toLocaleString()}{unitShort}</>}
-                      {streak.oldest && streak.oldest.name && <> by {streak.oldest.name}</>}
-                    </div>
-                  )}
-                </div>
-              );})}
-            </div>
-          </div>
-        )}
-
-        {/* Service intervals — ONLY those that are due given the reading. */}
-        {eq && hasReading && dueIntervals.length > 0 && (() => {
-          // Most recent full completion across all due intervals — shown in
-          // the blurb so the operator sees where the machine last stood.
-          const mostRecentFull = dueIntervals
-            .filter(iv => iv.last_done_at)
-            .sort((a, b) => (b.last_done_at || 0) - (a.last_done_at || 0))[0];
-          return (
-          <div style={cardS}>
-            <div style={{fontSize:13, fontWeight:700, color:'#991b1b', marginBottom:4}}>⚠ Service due</div>
-            <div style={{fontSize:11, color:'#6b7280', marginBottom:12}}>
-              Based on {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any service you performed during this fill.
-              {mostRecentFull && (
-                <> Last {mostRecentFull.hours_or_km}{mostRecentFull.kind === 'km' ? '-km' : '-hour'} checklist done at {mostRecentFull.last_done_at.toLocaleString()}{mostRecentFull.kind === 'km' ? 'km' : 'h'}.</>
-              )}
-            </div>
-            <div style={{display:'flex', flexDirection:'column', gap:8}}>
-              {dueIntervals.map(iv => {
-                const k = iv.kind+':'+iv.hours_or_km;
-                const explicit = intervalTicks.has(k);
-                const implicit = isImplicitlyCompleted(iv.kind, iv.hours_or_km);
-                const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
-                const ticks = taskTicks[k] instanceof Set ? taskTicks[k] : new Set();
-                const tickedCount = ticks.size;
-                const allTicked = tasks.length > 0 && tickedCount >= tasks.length;
-                const anyTicked = tickedCount > 0;
-                const done = (tasks.length === 0 ? explicit : allTicked) || implicit;
-                const unitShort = iv.kind === 'km' ? 'km' : 'h';
-                return (
-                  <div key={k} style={{borderRadius:8, background:done?'#eff6ff':'#fef2f2', border:'1px solid '+(done?'#bfdbfe':'#fca5a5'), padding:'12px 14px'}}>
-                    {/* Header line (always shown) */}
-                    <div style={{display:'flex', alignItems:'flex-start', gap:10, marginBottom:tasks.length>0?8:0}}>
-                      {tasks.length === 0 && (
-                        <input type="checkbox" checked={explicit} disabled={implicit} onChange={()=>toggleInterval(iv.kind, iv.hours_or_km)} style={{margin:'3px 0 0', flexShrink:0, width:18, height:18, padding:0, border:'1px solid #d1d5db'}}/>
-                      )}
-                      <div style={{flex:1}}>
-                        <div style={{fontWeight:700, color:done?'#1e40af':'#991b1b', fontSize:14}}>{iv.label}</div>
-                        <div style={{fontSize:11, color:'#6b7280', marginTop:3}}>
-                          {iv.missed_count > 1 ? `Missed ${iv.missed_count} times since ${iv.first_missed_at.toLocaleString()}${unitShort}` : `Passed ${iv.first_missed_at.toLocaleString()}${unitShort}`}
-                          {iv.last_done_at ? ` · last full done at ${iv.last_done_at.toLocaleString()}${unitShort}` : ' · never fully completed'}
-                        </div>
-                        {iv.last_partial && (() => {
-                          // Only rendered when no full completion exists after this
-                          // partial (filtered in computeDueIntervals). Resolve the
-                          // ticked-item IDs against current task labels to show
-                          // exactly what was missed and by whom.
-                          const doneIds = new Set(iv.last_partial.items_completed || []);
-                          const missing = (Array.isArray(iv.tasks) ? iv.tasks : []).filter(t => !doneIds.has(t.id));
-                          const who = iv.last_partial.team_member || 'someone';
-                          return (
-                            <div style={{fontSize:11, color:'#92400e', marginTop:4, background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'5px 8px'}}>
-                              <strong>Partial at {iv.last_partial.at_reading.toLocaleString()}{unitShort}</strong> by {who} — {iv.last_partial.items_done}/{iv.last_partial.total} done.
-                              {missing.length > 0 && (
-                                <> Missing: <span style={{fontStyle:'italic'}}>{missing.map(m => m.label).join(', ')}</span></>
-                              )}
-                            </div>
-                          );
-                        })()}
-                        {tasks.length > 0 && (
-                          <div style={{fontSize:11, color:tickedCount>0?'#1e40af':'#991b1b', marginTop:4, fontWeight:600}}>
-                            {tickedCount} of {tasks.length} tasks ticked{allTicked ? ' · full completion' : anyTicked ? ' · partial (will remain due)' : ''}
-                          </div>
+                  <div key={item.id}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 6,
+                        background: bg,
+                        cursor: 'pointer',
+                        border: '1px solid ' + bd,
+                        fontSize: 13,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={fillupTicks.has(item.id)}
+                        onChange={() => toggleFillup(item.id)}
+                        style={{
+                          margin: 0,
+                          flexShrink: 0,
+                          width: 18,
+                          height: 18,
+                          padding: 0,
+                          border: '1px solid #d1d5db',
+                        }}
+                      />
+                      <span
+                        style={{
+                          color: fillupTicks.has(item.id) ? '#065f46' : needsAttention ? '#b91c1c' : '#374151',
+                          fontWeight: fillupTicks.has(item.id) ? 600 : needsAttention ? 600 : 500,
+                        }}
+                      >
+                        {item.label}
+                        {required && <span style={{color: '#b91c1c', marginLeft: 4}}>*</span>}
+                      </span>
+                    </label>
+                    {streak && streak.count > 0 && !fillupTicks.has(item.id) && (
+                      <div
+                        style={{
+                          margin: '4px 0 2px 30px',
+                          fontSize: 11,
+                          color: '#92400e',
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          borderRadius: 5,
+                          padding: '5px 8px',
+                        }}
+                      >
+                        ⚠{' '}
+                        <strong>
+                          Not done at last {streak.count} fillup{streak.count === 1 ? '' : 's'}
+                        </strong>
+                        {streak.oldest && streak.oldest.reading != null && (
+                          <>
+                            {' '}
+                            · oldest {streak.oldest.reading.toLocaleString()}
+                            {unitShort}
+                          </>
                         )}
-                      </div>
-                    </div>
-                    {/* Field-level help text from Podio (torque specs, gap specs, etc.) */}
-                    {iv.help_text && (
-                      <div style={{fontSize:11, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'6px 8px', marginBottom:tasks.length>0?8:0, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{iv.help_text}</div>
-                    )}
-                    {/* Sub-task list (when this interval has tasks) */}
-                    {tasks.length > 0 && (
-                      <div style={{display:'flex', flexDirection:'column', gap:4, marginLeft:0, borderTop:'1px solid '+(done?'#bfdbfe':'#fca5a5'), paddingTop:8}}>
-                        {tasks.map(t => {
-                          const ticked = ticks.has(t.id);
-                          return (
-                            <label key={t.id} style={{display:'flex', alignItems:'flex-start', gap:8, padding:'6px 8px', borderRadius:5, background:ticked?'#dcfce7':'white', cursor:implicit?'not-allowed':'pointer', fontSize:12, opacity:implicit?0.6:1}}>
-                              <input type="checkbox" checked={ticked} disabled={implicit} onChange={()=>toggleTask(k, t.id)} style={{margin:'2px 0 0', flexShrink:0, width:16, height:16, padding:0, border:'1px solid #d1d5db'}}/>
-                              <span style={{color:ticked?'#065f46':'#374151', fontWeight:ticked?600:500}}>{t.label}</span>
-                            </label>
-                          );
-                        })}
+                        {streak.oldest && streak.oldest.name && <> by {streak.oldest.name}</>}
                       </div>
                     )}
                   </div>
@@ -547,44 +740,323 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               })}
             </div>
           </div>
-          );
-        })()}
+        )}
+
+        {/* Service intervals — ONLY those that are due given the reading. */}
+        {eq &&
+          hasReading &&
+          dueIntervals.length > 0 &&
+          (() => {
+            // Most recent full completion across all due intervals — shown in
+            // the blurb so the operator sees where the machine last stood.
+            const mostRecentFull = dueIntervals
+              .filter((iv) => iv.last_done_at)
+              .sort((a, b) => (b.last_done_at || 0) - (a.last_done_at || 0))[0];
+            return (
+              <div style={cardS}>
+                <div style={{fontSize: 13, fontWeight: 700, color: '#991b1b', marginBottom: 4}}>⚠ Service due</div>
+                <div style={{fontSize: 11, color: '#6b7280', marginBottom: 12}}>
+                  Based on {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any
+                  service you performed during this fill.
+                  {mostRecentFull && (
+                    <>
+                      {' '}
+                      Last {mostRecentFull.hours_or_km}
+                      {mostRecentFull.kind === 'km' ? '-km' : '-hour'} checklist done at{' '}
+                      {mostRecentFull.last_done_at.toLocaleString()}
+                      {mostRecentFull.kind === 'km' ? 'km' : 'h'}.
+                    </>
+                  )}
+                </div>
+                <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+                  {dueIntervals.map((iv) => {
+                    const k = iv.kind + ':' + iv.hours_or_km;
+                    const explicit = intervalTicks.has(k);
+                    const implicit = isImplicitlyCompleted(iv.kind, iv.hours_or_km);
+                    const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+                    const ticks = taskTicks[k] instanceof Set ? taskTicks[k] : new Set();
+                    const tickedCount = ticks.size;
+                    const allTicked = tasks.length > 0 && tickedCount >= tasks.length;
+                    const anyTicked = tickedCount > 0;
+                    const done = (tasks.length === 0 ? explicit : allTicked) || implicit;
+                    const unitShort = iv.kind === 'km' ? 'km' : 'h';
+                    return (
+                      <div
+                        key={k}
+                        style={{
+                          borderRadius: 8,
+                          background: done ? '#eff6ff' : '#fef2f2',
+                          border: '1px solid ' + (done ? '#bfdbfe' : '#fca5a5'),
+                          padding: '12px 14px',
+                        }}
+                      >
+                        {/* Header line (always shown) */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 10,
+                            marginBottom: tasks.length > 0 ? 8 : 0,
+                          }}
+                        >
+                          {tasks.length === 0 && (
+                            <input
+                              type="checkbox"
+                              checked={explicit}
+                              disabled={implicit}
+                              onChange={() => toggleInterval(iv.kind, iv.hours_or_km)}
+                              style={{
+                                margin: '3px 0 0',
+                                flexShrink: 0,
+                                width: 18,
+                                height: 18,
+                                padding: 0,
+                                border: '1px solid #d1d5db',
+                              }}
+                            />
+                          )}
+                          <div style={{flex: 1}}>
+                            <div style={{fontWeight: 700, color: done ? '#1e40af' : '#991b1b', fontSize: 14}}>
+                              {iv.label}
+                            </div>
+                            <div style={{fontSize: 11, color: '#6b7280', marginTop: 3}}>
+                              {iv.missed_count > 1
+                                ? `Missed ${iv.missed_count} times since ${iv.first_missed_at.toLocaleString()}${unitShort}`
+                                : `Passed ${iv.first_missed_at.toLocaleString()}${unitShort}`}
+                              {iv.last_done_at
+                                ? ` · last full done at ${iv.last_done_at.toLocaleString()}${unitShort}`
+                                : ' · never fully completed'}
+                            </div>
+                            {iv.last_partial &&
+                              (() => {
+                                // Only rendered when no full completion exists after this
+                                // partial (filtered in computeDueIntervals). Resolve the
+                                // ticked-item IDs against current task labels to show
+                                // exactly what was missed and by whom.
+                                const doneIds = new Set(iv.last_partial.items_completed || []);
+                                const missing = (Array.isArray(iv.tasks) ? iv.tasks : []).filter(
+                                  (t) => !doneIds.has(t.id),
+                                );
+                                const who = iv.last_partial.team_member || 'someone';
+                                return (
+                                  <div
+                                    style={{
+                                      fontSize: 11,
+                                      color: '#92400e',
+                                      marginTop: 4,
+                                      background: '#fffbeb',
+                                      border: '1px solid #fde68a',
+                                      borderRadius: 5,
+                                      padding: '5px 8px',
+                                    }}
+                                  >
+                                    <strong>
+                                      Partial at {iv.last_partial.at_reading.toLocaleString()}
+                                      {unitShort}
+                                    </strong>{' '}
+                                    by {who} — {iv.last_partial.items_done}/{iv.last_partial.total} done.
+                                    {missing.length > 0 && (
+                                      <>
+                                        {' '}
+                                        Missing:{' '}
+                                        <span style={{fontStyle: 'italic'}}>
+                                          {missing.map((m) => m.label).join(', ')}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            {tasks.length > 0 && (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: tickedCount > 0 ? '#1e40af' : '#991b1b',
+                                  marginTop: 4,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {tickedCount} of {tasks.length} tasks ticked
+                                {allTicked ? ' · full completion' : anyTicked ? ' · partial (will remain due)' : ''}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {/* Field-level help text from Podio (torque specs, gap specs, etc.) */}
+                        {iv.help_text && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: '#78716c',
+                              background: '#fffbeb',
+                              border: '1px solid #fde68a',
+                              borderRadius: 5,
+                              padding: '6px 8px',
+                              marginBottom: tasks.length > 0 ? 8 : 0,
+                              fontStyle: 'italic',
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {iv.help_text}
+                          </div>
+                        )}
+                        {/* Sub-task list (when this interval has tasks) */}
+                        {tasks.length > 0 && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 4,
+                              marginLeft: 0,
+                              borderTop: '1px solid ' + (done ? '#bfdbfe' : '#fca5a5'),
+                              paddingTop: 8,
+                            }}
+                          >
+                            {tasks.map((t) => {
+                              const ticked = ticks.has(t.id);
+                              return (
+                                <label
+                                  key={t.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: 8,
+                                    padding: '6px 8px',
+                                    borderRadius: 5,
+                                    background: ticked ? '#dcfce7' : 'white',
+                                    cursor: implicit ? 'not-allowed' : 'pointer',
+                                    fontSize: 12,
+                                    opacity: implicit ? 0.6 : 1,
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={ticked}
+                                    disabled={implicit}
+                                    onChange={() => toggleTask(k, t.id)}
+                                    style={{
+                                      margin: '2px 0 0',
+                                      flexShrink: 0,
+                                      width: 16,
+                                      height: 16,
+                                      padding: 0,
+                                      border: '1px solid #d1d5db',
+                                    }}
+                                  />
+                                  <span style={{color: ticked ? '#065f46' : '#374151', fontWeight: ticked ? 600 : 500}}>
+                                    {t.label}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
         {/* Attachment-specific checklists (Ventrac — Tough Cut / AERO-Vator /
             Landscape Rake). Only shown when this piece has attachments and a
             reading is entered. Tick only the attachment you used. */}
         {eq && hasReading && Array.isArray(eq.attachment_checklists) && eq.attachment_checklists.length > 0 && (
           <div style={cardS}>
-            <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:4}}>Attachment-specific checklists</div>
-            <div style={{fontSize:11, color:'#6b7280', marginBottom:12}}>Only tick tasks for the attachment you actually used this session.</div>
-            <div style={{display:'flex', flexDirection:'column', gap:10}}>
-              {eq.attachment_checklists.map(a => {
+            <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', marginBottom: 4}}>
+              Attachment-specific checklists
+            </div>
+            <div style={{fontSize: 11, color: '#6b7280', marginBottom: 12}}>
+              Only tick tasks for the attachment you actually used this session.
+            </div>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+              {eq.attachment_checklists.map((a) => {
                 const key = a.name + ':' + a.kind + ':' + a.hours_or_km;
                 const ticks = attachmentTicks[key] instanceof Set ? attachmentTicks[key] : new Set();
                 const tasks = Array.isArray(a.tasks) ? a.tasks : [];
                 const allTicked = tasks.length > 0 && ticks.size >= tasks.length;
                 const anyTicked = ticks.size > 0;
                 return (
-                  <div key={key} style={{borderRadius:8, background:allTicked?'#eff6ff':(anyTicked?'#fffbeb':'#fafafa'), border:'1px solid '+(allTicked?'#bfdbfe':(anyTicked?'#fde68a':'#e5e7eb')), padding:'12px 14px'}}>
-                    <div style={{fontWeight:700, color:'#57534e', fontSize:13, marginBottom:6}}>{a.name} <span style={{fontSize:11, color:'#6b7280', fontWeight:500}}>· {a.hours_or_km === 0 ? 'Every Use' : (a.hours_or_km+(a.kind==='km'?'km':'h'))}</span></div>
+                  <div
+                    key={key}
+                    style={{
+                      borderRadius: 8,
+                      background: allTicked ? '#eff6ff' : anyTicked ? '#fffbeb' : '#fafafa',
+                      border: '1px solid ' + (allTicked ? '#bfdbfe' : anyTicked ? '#fde68a' : '#e5e7eb'),
+                      padding: '12px 14px',
+                    }}
+                  >
+                    <div style={{fontWeight: 700, color: '#57534e', fontSize: 13, marginBottom: 6}}>
+                      {a.name}{' '}
+                      <span style={{fontSize: 11, color: '#6b7280', fontWeight: 500}}>
+                        · {a.hours_or_km === 0 ? 'Every Use' : a.hours_or_km + (a.kind === 'km' ? 'km' : 'h')}
+                      </span>
+                    </div>
                     {a.help_text && (
-                      <div style={{fontSize:11, color:'#78716c', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:5, padding:'6px 8px', marginBottom:8, fontStyle:'italic', whiteSpace:'pre-wrap'}}>{a.help_text}</div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: '#78716c',
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          borderRadius: 5,
+                          padding: '6px 8px',
+                          marginBottom: 8,
+                          fontStyle: 'italic',
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {a.help_text}
+                      </div>
                     )}
                     {tasks.length > 0 ? (
-                      <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                        {tasks.map(t => {
+                      <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                        {tasks.map((t) => {
                           const ticked = ticks.has(t.id);
                           return (
-                            <label key={t.id} style={{display:'flex', alignItems:'flex-start', gap:8, padding:'6px 8px', borderRadius:5, background:ticked?'#dcfce7':'white', cursor:'pointer', fontSize:12}}>
-                              <input type="checkbox" checked={ticked} onChange={()=>toggleAttachmentTask(key, t.id)} style={{margin:'2px 0 0', flexShrink:0, width:16, height:16, padding:0, border:'1px solid #d1d5db'}}/>
-                              <span style={{color:ticked?'#065f46':'#374151', fontWeight:ticked?600:500}}>{t.label}</span>
+                            <label
+                              key={t.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: 8,
+                                padding: '6px 8px',
+                                borderRadius: 5,
+                                background: ticked ? '#dcfce7' : 'white',
+                                cursor: 'pointer',
+                                fontSize: 12,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={ticked}
+                                onChange={() => toggleAttachmentTask(key, t.id)}
+                                style={{
+                                  margin: '2px 0 0',
+                                  flexShrink: 0,
+                                  width: 16,
+                                  height: 16,
+                                  padding: 0,
+                                  border: '1px solid #d1d5db',
+                                }}
+                              />
+                              <span style={{color: ticked ? '#065f46' : '#374151', fontWeight: ticked ? 600 : 500}}>
+                                {t.label}
+                              </span>
                             </label>
                           );
                         })}
                       </div>
-                    ) : <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic'}}>No tasks configured.</div>}
+                    ) : (
+                      <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>No tasks configured.</div>
+                    )}
                     {anyTicked && (
-                      <div style={{fontSize:11, color:allTicked?'#1e40af':'#92400e', marginTop:6, fontWeight:600}}>{ticks.size} of {tasks.length} tasks ticked{allTicked?' · full completion':''}</div>
+                      <div
+                        style={{fontSize: 11, color: allTicked ? '#1e40af' : '#92400e', marginTop: 6, fontWeight: 600}}
+                      >
+                        {ticks.size} of {tasks.length} tasks ticked{allTicked ? ' · full completion' : ''}
+                      </div>
                     )}
                   </div>
                 );
@@ -597,41 +1069,111 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             ask for "TAKE PICTURES SHOWING EACH SIDE"). */}
         {eq && hasReading && (
           <div style={cardS}>
-            <div style={{fontSize:13, fontWeight:700, color:'#57534e', marginBottom:4}}>Photos</div>
-            <div style={{fontSize:11, color:'#6b7280', marginBottom:10}}>Attach photos of the machine, damage, or anything else the next team member should see.</div>
+            <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', marginBottom: 4}}>Photos</div>
+            <div style={{fontSize: 11, color: '#6b7280', marginBottom: 10}}>
+              Attach photos of the machine, damage, or anything else the next team member should see.
+            </div>
             {photos.length > 0 && (
-              <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:10}}>
+              <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10}}>
                 {photos.map((p, i) => (
-                  <div key={i} style={{position:'relative'}}>
-                    <img src={p.url} alt={p.name} style={{width:80, height:80, objectFit:'cover', borderRadius:6, border:'1px solid #e5e7eb'}}/>
-                    <button type="button" onClick={()=>removePhoto(i)} style={{position:'absolute', top:-6, right:-6, width:22, height:22, borderRadius:'50%', border:'none', background:'#b91c1c', color:'white', cursor:'pointer', fontSize:12, lineHeight:1}}>{'×'}</button>
+                  <div key={i} style={{position: 'relative'}}>
+                    <img
+                      src={p.url}
+                      alt={p.name}
+                      style={{width: 80, height: 80, objectFit: 'cover', borderRadius: 6, border: '1px solid #e5e7eb'}}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(i)}
+                      style={{
+                        position: 'absolute',
+                        top: -6,
+                        right: -6,
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: '#b91c1c',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {'×'}
+                    </button>
                   </div>
                 ))}
               </div>
             )}
-            <input type="file" accept="image/*" multiple onChange={async e => {
-              const files = Array.from(e.target.files || []);
-              for (const f of files) await uploadPhoto(f);
-              e.target.value = '';
-            }} disabled={uploadingPhoto} style={{fontSize:13}}/>
-            {uploadingPhoto && <div style={{fontSize:11, color:'#9ca3af', marginTop:6}}>Uploading{'…'}</div>}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={async (e) => {
+                const files = Array.from(e.target.files || []);
+                for (const f of files) await uploadPhoto(f);
+                e.target.value = '';
+              }}
+              disabled={uploadingPhoto}
+              style={{fontSize: 13}}
+            />
+            {uploadingPhoto && <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>Uploading{'…'}</div>}
           </div>
         )}
 
         {eq && hasReading && dueIntervals.length === 0 && (eq.service_intervals || []).length > 0 && (
-          <div style={{...cardS, border:'1px solid #a7f3d0', background:'#ecfdf5'}}>
-            <div style={{fontSize:13, fontWeight:600, color:'#065f46'}}>✓ No service due at {readingNum.toLocaleString()} {readingLabel.toLowerCase()}.</div>
+          <div style={{...cardS, border: '1px solid #a7f3d0', background: '#ecfdf5'}}>
+            <div style={{fontSize: 13, fontWeight: 600, color: '#065f46'}}>
+              ✓ No service due at {readingNum.toLocaleString()} {readingLabel.toLowerCase()}.
+            </div>
           </div>
         )}
 
         <div style={cardS}>
           <label style={lblS}>Comments / issues</label>
-          <textarea value={comments} onChange={e=>setComments(e.target.value)} rows={3} placeholder="Anything the next team member should know." style={{...inpS, resize:'vertical'}}/>
+          <textarea
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            rows={3}
+            placeholder="Anything the next team member should know."
+            style={{...inpS, resize: 'vertical'}}
+          />
         </div>
 
-        {err && <div style={{color:'#b91c1c', fontSize:13, marginBottom:10, padding:'8px 12px', background:'#fef2f2', borderRadius:8}}>{err}</div>}
+        {err && (
+          <div
+            style={{
+              color: '#b91c1c',
+              fontSize: 13,
+              marginBottom: 10,
+              padding: '8px 12px',
+              background: '#fef2f2',
+              borderRadius: 8,
+            }}
+          >
+            {err}
+          </div>
+        )}
 
-        <button onClick={submit} disabled={submitting || !eq} style={{width:'100%', padding:14, borderRadius:10, border:'none', background:(submitting||!eq)?'#9ca3af':'#57534e', color:'white', fontSize:15, fontWeight:700, cursor:(submitting||!eq)?'not-allowed':'pointer', fontFamily:'inherit'}}>{submitting ? 'Saving…' : 'Save Fueling'}</button>
+        <button
+          onClick={submit}
+          disabled={submitting || !eq}
+          style={{
+            width: '100%',
+            padding: 14,
+            borderRadius: 10,
+            border: 'none',
+            background: submitting || !eq ? '#9ca3af' : '#57534e',
+            color: 'white',
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: submitting || !eq ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {submitting ? 'Saving…' : 'Save Fueling'}
+        </button>
       </div>
     </div>
   );

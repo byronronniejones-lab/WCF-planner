@@ -7,19 +7,23 @@ const NutritionTargetsPanel = ({sb}) => {
   const [loading, setLoading] = React.useState(true);
   const [savingHerd, setSavingHerd] = React.useState(null);
   const saveTimers = React.useRef({});
-  const HERDS = ['mommas','backgrounders','finishers','bulls'];
-  const HERD_LABELS = {mommas:'Mommas', backgrounders:'Backgrounders', finishers:'Finishers', bulls:'Bulls'};
+  const HERDS = ['mommas', 'backgrounders', 'finishers', 'bulls'];
+  const HERD_LABELS = {mommas: 'Mommas', backgrounders: 'Backgrounders', finishers: 'Finishers', bulls: 'Bulls'};
 
   async function loadTargets() {
     const {data, error} = await sb.from('cattle_nutrition_targets').select('*');
-    if(!error && data) {
+    if (!error && data) {
       const m = {};
-      data.forEach(r => { m[r.herd] = r; });
+      data.forEach((r) => {
+        m[r.herd] = r;
+      });
       setRows(m);
     }
     setLoading(false);
   }
-  React.useEffect(() => { loadTargets(); }, []);
+  React.useEffect(() => {
+    loadTargets();
+  }, []);
 
   function upd(herd, field, value) {
     const row = {...(rows[herd] || {herd}), [field]: value};
@@ -31,62 +35,184 @@ const NutritionTargetsPanel = ({sb}) => {
     setSavingHerd(row.herd);
     const rec = {
       herd: row.herd,
-      target_dm_pct_body:      row.target_dm_pct_body      !== '' && row.target_dm_pct_body      != null ? parseFloat(row.target_dm_pct_body)      : 0,
-      target_cp_pct_dm:        row.target_cp_pct_dm        !== '' && row.target_cp_pct_dm        != null ? parseFloat(row.target_cp_pct_dm)        : 0,
-      target_nfc_pct_dm:       row.target_nfc_pct_dm       !== '' && row.target_nfc_pct_dm       != null ? parseFloat(row.target_nfc_pct_dm)       : 0,
-      fallback_cow_weight_lbs: row.fallback_cow_weight_lbs !== '' && row.fallback_cow_weight_lbs != null ? parseFloat(row.fallback_cow_weight_lbs) : 0,
+      target_dm_pct_body:
+        row.target_dm_pct_body !== '' && row.target_dm_pct_body != null ? parseFloat(row.target_dm_pct_body) : 0,
+      target_cp_pct_dm:
+        row.target_cp_pct_dm !== '' && row.target_cp_pct_dm != null ? parseFloat(row.target_cp_pct_dm) : 0,
+      target_nfc_pct_dm:
+        row.target_nfc_pct_dm !== '' && row.target_nfc_pct_dm != null ? parseFloat(row.target_nfc_pct_dm) : 0,
+      fallback_cow_weight_lbs:
+        row.fallback_cow_weight_lbs !== '' && row.fallback_cow_weight_lbs != null
+          ? parseFloat(row.fallback_cow_weight_lbs)
+          : 0,
       notes: row.notes || null,
     };
-    await sb.from('cattle_nutrition_targets').upsert(rec, {onConflict:'herd'});
+    await sb.from('cattle_nutrition_targets').upsert(rec, {onConflict: 'herd'});
     setSavingHerd(null);
   }
 
-  const inpS = {fontSize:13, padding:'5px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', width:80, textAlign:'right', boxSizing:'border-box'};
-  const wideInp = {...inpS, width:100, textAlign:'left'};
-  const wideInpNotes = {...inpS, width:'100%', textAlign:'left'};
+  const inpS = {
+    fontSize: 13,
+    padding: '5px 8px',
+    border: '1px solid #d1d5db',
+    borderRadius: 5,
+    fontFamily: 'inherit',
+    width: 80,
+    textAlign: 'right',
+    boxSizing: 'border-box',
+  };
+  const wideInp = {...inpS, width: 100, textAlign: 'left'};
+  const wideInpNotes = {...inpS, width: '100%', textAlign: 'left'};
 
   return (
-    <div style={{marginTop:16}}>
-      <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:10, padding:'20px'}}>
-        <div style={{marginBottom:4}}>
-          <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:2}}>Nutrition Targets</div>
-          <div style={{fontSize:12, color:'#6b7280'}}>Per-herd daily intake targets used by the dashboard rolling-window comparison and the recommendation engine.</div>
+    <div style={{marginTop: 16}}>
+      <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: '20px'}}>
+        <div style={{marginBottom: 4}}>
+          <div style={{fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 2}}>Nutrition Targets</div>
+          <div style={{fontSize: 12, color: '#6b7280'}}>
+            Per-herd daily intake targets used by the dashboard rolling-window comparison and the recommendation engine.
+          </div>
         </div>
-        <div style={{height:1, background:'#e5e7eb', margin:'14px 0'}}/>
+        <div style={{height: 1, background: '#e5e7eb', margin: '14px 0'}} />
 
-        {loading && <div style={{textAlign:'center', padding:'1rem', color:'#9ca3af', fontSize:13}}>Loading targets{'\u2026'}</div>}
+        {loading && (
+          <div style={{textAlign: 'center', padding: '1rem', color: '#9ca3af', fontSize: 13}}>
+            Loading targets{'\u2026'}
+          </div>
+        )}
         {!loading && (
-          <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:700}}>
+          <div style={{overflowX: 'auto'}}>
+            <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 700}}>
               <thead>
-                <tr style={{background:'#f9fafb', borderBottom:'1px solid #e5e7eb'}}>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Herd</th>
-                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Target DM % body</th>
-                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Target CP % DM</th>
-                  <th style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Target NFC % DM</th>
-                  <th style={{padding:'8px 10px', textAlign:'left', fontWeight:700, color:'#4b5563', fontSize:11, textTransform:'uppercase', letterSpacing:.5}}>Notes</th>
-                  <th style={{padding:'8px 10px', width:60}}></th>
+                <tr style={{background: '#f9fafb', borderBottom: '1px solid #e5e7eb'}}>
+                  <th
+                    style={{
+                      padding: '8px 10px',
+                      textAlign: 'left',
+                      fontWeight: 700,
+                      color: '#4b5563',
+                      fontSize: 11,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Herd
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 10px',
+                      textAlign: 'right',
+                      fontWeight: 700,
+                      color: '#4b5563',
+                      fontSize: 11,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Target DM % body
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 10px',
+                      textAlign: 'right',
+                      fontWeight: 700,
+                      color: '#4b5563',
+                      fontSize: 11,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Target CP % DM
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 10px',
+                      textAlign: 'right',
+                      fontWeight: 700,
+                      color: '#4b5563',
+                      fontSize: 11,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Target NFC % DM
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 10px',
+                      textAlign: 'left',
+                      fontWeight: 700,
+                      color: '#4b5563',
+                      fontSize: 11,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Notes
+                  </th>
+                  <th style={{padding: '8px 10px', width: 60}}></th>
                 </tr>
               </thead>
               <tbody>
                 {HERDS.map((h, i) => {
-                  const r = rows[h] || {herd:h};
+                  const r = rows[h] || {herd: h};
                   return (
-                    <tr key={h} style={{borderBottom:'1px solid #f3f4f6', background:i%2===0?'white':'#fafafa'}}>
-                      <td style={{padding:'8px 10px', fontWeight:700, color:'#111827'}}>{HERD_LABELS[h]}</td>
-                      <td style={{padding:'8px 10px', textAlign:'right'}}>
-                        <input type="number" min="0" max="10" step="0.1" value={r.target_dm_pct_body != null ? r.target_dm_pct_body : ''} onChange={e => upd(h, 'target_dm_pct_body', e.target.value)} style={inpS}/>
+                    <tr
+                      key={h}
+                      style={{borderBottom: '1px solid #f3f4f6', background: i % 2 === 0 ? 'white' : '#fafafa'}}
+                    >
+                      <td style={{padding: '8px 10px', fontWeight: 700, color: '#111827'}}>{HERD_LABELS[h]}</td>
+                      <td style={{padding: '8px 10px', textAlign: 'right'}}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          step="0.1"
+                          value={r.target_dm_pct_body != null ? r.target_dm_pct_body : ''}
+                          onChange={(e) => upd(h, 'target_dm_pct_body', e.target.value)}
+                          style={inpS}
+                        />
                       </td>
-                      <td style={{padding:'8px 10px', textAlign:'right'}}>
-                        <input type="number" min="0" max="50" step="0.1" value={r.target_cp_pct_dm != null ? r.target_cp_pct_dm : ''} onChange={e => upd(h, 'target_cp_pct_dm', e.target.value)} style={inpS}/>
+                      <td style={{padding: '8px 10px', textAlign: 'right'}}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          step="0.1"
+                          value={r.target_cp_pct_dm != null ? r.target_cp_pct_dm : ''}
+                          onChange={(e) => upd(h, 'target_cp_pct_dm', e.target.value)}
+                          style={inpS}
+                        />
                       </td>
-                      <td style={{padding:'8px 10px', textAlign:'right'}}>
-                        <input type="number" min="0" max="80" step="0.1" value={r.target_nfc_pct_dm != null ? r.target_nfc_pct_dm : ''} onChange={e => upd(h, 'target_nfc_pct_dm', e.target.value)} style={inpS}/>
+                      <td style={{padding: '8px 10px', textAlign: 'right'}}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="80"
+                          step="0.1"
+                          value={r.target_nfc_pct_dm != null ? r.target_nfc_pct_dm : ''}
+                          onChange={(e) => upd(h, 'target_nfc_pct_dm', e.target.value)}
+                          style={inpS}
+                        />
                       </td>
-                      <td style={{padding:'8px 10px'}}>
-                        <input type="text" value={r.notes || ''} onChange={e => upd(h, 'notes', e.target.value)} placeholder="Optional" style={wideInpNotes}/>
+                      <td style={{padding: '8px 10px'}}>
+                        <input
+                          type="text"
+                          value={r.notes || ''}
+                          onChange={(e) => upd(h, 'notes', e.target.value)}
+                          placeholder="Optional"
+                          style={wideInpNotes}
+                        />
                       </td>
-                      <td style={{padding:'8px 10px', textAlign:'center', fontSize:10, color:savingHerd===h?'#065f46':'#9ca3af', fontWeight:600}}>
+                      <td
+                        style={{
+                          padding: '8px 10px',
+                          textAlign: 'center',
+                          fontSize: 10,
+                          color: savingHerd === h ? '#065f46' : '#9ca3af',
+                          fontWeight: 600,
+                        }}
+                      >
                         {savingHerd === h ? 'Saving\u2026' : '\u2713'}
                       </td>
                     </tr>

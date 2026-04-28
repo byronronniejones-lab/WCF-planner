@@ -18,9 +18,13 @@ export function recomputeBatchTotals(rows) {
 function findCowByAnyTag(cattleList, tag) {
   if (!tag) return null;
   const t = String(tag).trim();
-  const byCurrent = cattleList.find(c => c.tag === t);
+  const byCurrent = cattleList.find((c) => c.tag === t);
   if (byCurrent) return byCurrent;
-  return cattleList.find(c => Array.isArray(c.old_tags) && c.old_tags.some(ot => ot && ot.tag === t && ot.source !== 'import')) || null;
+  return (
+    cattleList.find(
+      (c) => Array.isArray(c.old_tags) && c.old_tags.some((ot) => ot && ot.tag === t && ot.source !== 'import'),
+    ) || null
+  );
 }
 
 // Create a new planned processing batch with the supplied name + date.
@@ -58,13 +62,22 @@ export async function attachEntriesToBatch(sb, {batch, entries, cattleList, team
   const attached = [];
   const skipped = [];
   const existingRows = Array.isArray(batch.cows_detail) ? batch.cows_detail.slice() : [];
-  const existingCowIds = new Set(existingRows.map(r => r.cattle_id));
+  const existingCowIds = new Set(existingRows.map((r) => r.cattle_id));
 
   for (const e of entries) {
-    if (!e.tag) { skipped.push({entry: e, reason: 'tagless'}); continue; }
+    if (!e.tag) {
+      skipped.push({entry: e, reason: 'tagless'});
+      continue;
+    }
     const cow = findCowByAnyTag(cattleList, e.tag);
-    if (!cow) { skipped.push({entry: e, reason: 'no_cow_for_tag'}); continue; }
-    if (existingCowIds.has(cow.id)) { skipped.push({entry: e, reason: 'already_in_batch'}); continue; }
+    if (!cow) {
+      skipped.push({entry: e, reason: 'no_cow_for_tag'});
+      continue;
+    }
+    if (existingCowIds.has(cow.id)) {
+      skipped.push({entry: e, reason: 'already_in_batch'});
+      continue;
+    }
     existingRows.push({
       cattle_id: cow.id,
       tag: cow.tag || e.tag || null,
@@ -76,7 +89,8 @@ export async function attachEntriesToBatch(sb, {batch, entries, cattleList, team
   }
 
   const totals = recomputeBatchTotals(existingRows);
-  const batchUpdate = await sb.from('cattle_processing_batches')
+  const batchUpdate = await sb
+    .from('cattle_processing_batches')
     .update({cows_detail: existingRows, ...totals})
     .eq('id', batch.id);
   if (batchUpdate.error) throw new Error('Could not update batch: ' + batchUpdate.error.message);
@@ -91,7 +105,9 @@ export async function attachEntriesToBatch(sb, {batch, entries, cattleList, team
     if (cow.herd && cow.herd !== 'processed') wiUpdate.prior_herd_or_flock = cow.herd;
     try {
       await sb.from('weigh_ins').update(wiUpdate).eq('id', entry.id);
-    } catch (err) { /* columns only exist post-migrations 015 / 027 */ }
+    } catch (err) {
+      /* columns only exist post-migrations 015 / 027 */
+    }
 
     await sb.from('cattle').update({processing_batch_id: batch.id, herd: 'processed'}).eq('id', cow.id);
     if (cow.herd !== 'processed') {
@@ -105,7 +121,9 @@ export async function attachEntriesToBatch(sb, {batch, entries, cattleList, team
           reference_id: batch.id,
           team_member: teamMember || null,
         });
-      } catch (err) { /* cattle_transfers RLS may block on legacy roles */ }
+      } catch (err) {
+        /* cattle_transfers RLS may block on legacy roles */
+      }
     }
   }
 
@@ -137,37 +155,42 @@ export async function attachEntriesToBatch(sb, {batch, entries, cattleList, team
 //   'not_in_batch'    — cow.processing_batch_id !== batchId
 //   'no_prior_herd'   — neither weigh_ins.prior_herd_or_flock nor an audit row found
 export async function detachCowFromBatch(sb, cowId, batchId, opts = {}) {
-  if (!cowId || !batchId) return {ok:false, reason:'bad_args'};
+  if (!cowId || !batchId) return {ok: false, reason: 'bad_args'};
   const teamMember = opts.teamMember || null;
 
   const cowR = await sb.from('cattle').select('*').eq('id', cowId).maybeSingle();
-  if (cowR.error || !cowR.data) return {ok:false, reason:'no_cow', cowId};
+  if (cowR.error || !cowR.data) return {ok: false, reason: 'no_cow', cowId};
   const cow = cowR.data;
   if (cow.processing_batch_id !== batchId) {
-    return {ok:false, reason:'not_in_batch', cow, batchId};
+    return {ok: false, reason: 'not_in_batch', cow, batchId};
   }
 
   const batchR = await sb.from('cattle_processing_batches').select('*').eq('id', batchId).maybeSingle();
-  if (batchR.error || !batchR.data) return {ok:false, reason:'no_batch', cow, batchId};
+  if (batchR.error || !batchR.data) return {ok: false, reason: 'no_batch', cow, batchId};
   const batch = batchR.data;
 
   // Step 1a: read prior_herd_or_flock from any weigh_in that attached this
   // cow to this batch. There may be more than one (multi-session); prefer
   // the most recent (entered_at desc).
-  const wisR = await sb.from('weigh_ins')
+  const wisR = await sb
+    .from('weigh_ins')
     .select('id, prior_herd_or_flock, entered_at, send_to_processor, target_processing_batch_id, tag')
     .eq('target_processing_batch_id', batchId)
     .eq('tag', cow.tag || '')
     .order('entered_at', {ascending: false});
-  const wis = (wisR.data || []);
+  const wis = wisR.data || [];
   let priorHerd = null;
   for (const w of wis) {
-    if (w.prior_herd_or_flock) { priorHerd = w.prior_herd_or_flock; break; }
+    if (w.prior_herd_or_flock) {
+      priorHerd = w.prior_herd_or_flock;
+      break;
+    }
   }
 
   // Step 1b: fall back to most recent matching audit row.
   if (!priorHerd) {
-    const trfR = await sb.from('cattle_transfers')
+    const trfR = await sb
+      .from('cattle_transfers')
       .select('from_herd, transferred_at')
       .eq('cattle_id', cow.id)
       .eq('reason', 'processing_batch')
@@ -181,23 +204,21 @@ export async function detachCowFromBatch(sb, cowId, batchId, opts = {}) {
 
   // Step 1c: nothing found — block with reason rather than guess.
   if (!priorHerd) {
-    return {ok:false, reason:'no_prior_herd', cow, batchId};
+    return {ok: false, reason: 'no_prior_herd', cow, batchId};
   }
 
   // Step 2: remove this cow from batch.cows_detail, recompute totals.
-  const newDetail = (Array.isArray(batch.cows_detail) ? batch.cows_detail : [])
-    .filter(r => r.cattle_id !== cow.id);
+  const newDetail = (Array.isArray(batch.cows_detail) ? batch.cows_detail : []).filter((r) => r.cattle_id !== cow.id);
   const totals = recomputeBatchTotals(newDetail);
-  const batchUpd = await sb.from('cattle_processing_batches')
+  const batchUpd = await sb
+    .from('cattle_processing_batches')
     .update({cows_detail: newDetail, ...totals})
     .eq('id', batchId);
-  if (batchUpd.error) return {ok:false, reason:'batch_update_failed', error: batchUpd.error.message, cow, batchId};
+  if (batchUpd.error) return {ok: false, reason: 'batch_update_failed', error: batchUpd.error.message, cow, batchId};
 
   // Step 3: revert cow.
-  const cowUpd = await sb.from('cattle')
-    .update({herd: priorHerd, processing_batch_id: null})
-    .eq('id', cow.id);
-  if (cowUpd.error) return {ok:false, reason:'cow_update_failed', error: cowUpd.error.message, cow, batchId};
+  const cowUpd = await sb.from('cattle').update({herd: priorHerd, processing_batch_id: null}).eq('id', cow.id);
+  if (cowUpd.error) return {ok: false, reason: 'cow_update_failed', error: cowUpd.error.message, cow, batchId};
 
   // Step 4: audit row.
   try {
@@ -210,7 +231,9 @@ export async function detachCowFromBatch(sb, cowId, batchId, opts = {}) {
       reference_id: batchId,
       team_member: teamMember,
     });
-  } catch (err) { /* audit log nice-to-have */ }
+  } catch (err) {
+    /* audit log nice-to-have */
+  }
 
   // Step 5: clear the matching weigh_ins. We unset BOTH target_processing_
   // batch_id (the link to this batch) AND send_to_processor (the flag that
@@ -221,13 +244,18 @@ export async function detachCowFromBatch(sb, cowId, batchId, opts = {}) {
   const cleared = [];
   for (const w of wis) {
     try {
-      await sb.from('weigh_ins').update({
-        target_processing_batch_id: null,
-        send_to_processor: false,
-      }).eq('id', w.id);
+      await sb
+        .from('weigh_ins')
+        .update({
+          target_processing_batch_id: null,
+          send_to_processor: false,
+        })
+        .eq('id', w.id);
       cleared.push(w.id);
-    } catch (err) { /* tolerated */ }
+    } catch (err) {
+      /* tolerated */
+    }
   }
 
-  return {ok:true, reason:'detached', cow, priorHerd, batchId, weighInIdsCleared: cleared};
+  return {ok: true, reason: 'detached', cow, priorHerd, batchId, weighInIdsCleared: cleared};
 }

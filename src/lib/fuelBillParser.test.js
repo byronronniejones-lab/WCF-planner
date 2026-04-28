@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { parseFuelBillText } from './fuelBillParser.js';
+import {describe, it, expect} from 'vitest';
+import {parseFuelBillText} from './fuelBillParser.js';
 
 // Tests for the fuel-bill parser. Use synthetic text fixtures matching the
 // post-pdfjs extracted format (lines reconstructed by Y-grouping + X-sort).
@@ -92,8 +92,8 @@ describe('parseFuelBillText — Home Oil (tax-included) happy paths', () => {
     const sumLineTotals = out.lines.reduce((s, l) => s + l.line_total, 0);
     expect(sumLineTotals).toBe(2100);
     expect(out.header.subtotal).toBe(1965);
-    const diesel = out.lines.find(l => l.fuel_type === 'diesel');
-    const gas    = out.lines.find(l => l.fuel_type === 'gasoline');
+    const diesel = out.lines.find((l) => l.fuel_type === 'diesel');
+    const gas = out.lines.find((l) => l.fuel_type === 'gasoline');
     expect(diesel.line_subtotal).toBe(1500);
     expect(diesel.line_total).toBe(1500);
     expect(diesel.allocated_tax).toBe(0);
@@ -108,14 +108,14 @@ describe('parseFuelBillText — Home Oil (tax-included) happy paths', () => {
     // Run separate single-line invoices for each canonical type to exercise
     // the classifier through the public API. DEF takes priority over diesel.
     const cases = [
-      { desc: 'DEF Bulk',          expected: 'def' },
-      { desc: 'Dyed Diesel',       expected: 'diesel' },
-      { desc: 'Diesel #2 ULSD',    expected: 'diesel' },
-      { desc: 'Nonethanol 87',     expected: 'gasoline' },
-      { desc: 'Unleaded Regular',  expected: 'gasoline' },
-      { desc: 'Premium Gasoline',  expected: 'gasoline' },
+      {desc: 'DEF Bulk', expected: 'def'},
+      {desc: 'Dyed Diesel', expected: 'diesel'},
+      {desc: 'Diesel #2 ULSD', expected: 'diesel'},
+      {desc: 'Nonethanol 87', expected: 'gasoline'},
+      {desc: 'Unleaded Regular', expected: 'gasoline'},
+      {desc: 'Premium Gasoline', expected: 'gasoline'},
     ];
-    for (const { desc, expected } of cases) {
+    for (const {desc, expected} of cases) {
       const text = [
         'Home Oil Company, Inc.',
         'Invoice No: HO-CLASSIFY',
@@ -138,14 +138,14 @@ describe('parseFuelBillText — Home Oil pdfjs extraction quirks', () => {
   // the correct value from the neighbor line.
   it('finds invoice # / dates when value lands on the line BEFORE the label', () => {
     const text = [
-      'IN-0195942',                                     // value (invoice #)
-      'Home Oil Company, Inc. Invoice No:',             // label, with address-column noise prefix
-      '5744 E US Highway 84',                           // street # — must NOT be captured as invoice #
-      'Wed 04/01/2026',                                 // value (invoice date)
-      'Invoice Date:',                                  // label
+      'IN-0195942', // value (invoice #)
+      'Home Oil Company, Inc. Invoice No:', // label, with address-column noise prefix
+      '5744 E US Highway 84', // street # — must NOT be captured as invoice #
+      'Wed 04/01/2026', // value (invoice date)
+      'Invoice Date:', // label
       'Cowarts, AL 36321',
-      'Mon 03/30/2026',                                 // value (delivery date)
-      'Delivery Date:',                                 // label
+      'Mon 03/30/2026', // value (delivery date)
+      'Delivery Date:', // label
       '',
       'Diesel #2 ULSD 100 417159 100.00 100.00 Net 3.000000 300.00',
       'Tax and Other Charges Included in Price',
@@ -195,10 +195,7 @@ describe('parseFuelBillText — failure / warning cases', () => {
   });
 
   it('missing dates and total emit specific warnings but lines still parse', () => {
-    const text = [
-      'Home Oil Company, Inc.',
-      'Diesel #2 ULSD 100 123456 500.00 500.00 Net 3.000000 1500.00',
-    ].join('\n');
+    const text = ['Home Oil Company, Inc.', 'Diesel #2 ULSD 100 123456 500.00 500.00 Net 3.000000 1500.00'].join('\n');
     const out = parseFuelBillText(text);
     expect(out.lines).toHaveLength(1);
     expect(out.lines[0].fuel_type).toBe('diesel');

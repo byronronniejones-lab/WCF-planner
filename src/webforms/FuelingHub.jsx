@@ -4,8 +4,8 @@
 //
 // Own sub-routing under /fueling/* just like WebformHub owns /webforms/*.
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { EQUIPMENT_CATEGORIES, CATEGORY_BY_KEY } from '../lib/equipment.js';
+import {useLocation, useNavigate} from 'react-router-dom';
+import {EQUIPMENT_CATEGORIES, CATEGORY_BY_KEY} from '../lib/equipment.js';
 import EquipmentFuelingWebform from './EquipmentFuelingWebform.jsx';
 import FuelSupplyWebform from './FuelSupplyWebform.jsx';
 
@@ -17,11 +17,21 @@ export default function FuelingHub({sb}) {
   const navigate = useNavigate();
 
   React.useEffect(() => {
-    sb.from('equipment').select('id,name,slug,category,tracking_unit,fuel_type,every_fillup_items,every_fillup_help,fuel_gallons_help,operator_notes,service_intervals,attachment_checklists,current_hours,current_km,takes_def,team_members,manuals').eq('status','active').order('name').then(({data, error}) => {
-      if (error && /does not exist|relation/i.test(error.message||'')) { setMissingSchema(true); setLoading(false); return; }
-      if (data) setEquipment(data);
-      setLoading(false);
-    });
+    sb.from('equipment')
+      .select(
+        'id,name,slug,category,tracking_unit,fuel_type,every_fillup_items,every_fillup_help,fuel_gallons_help,operator_notes,service_intervals,attachment_checklists,current_hours,current_km,takes_def,team_members,manuals',
+      )
+      .eq('status', 'active')
+      .order('name')
+      .then(({data, error}) => {
+        if (error && /does not exist|relation/i.test(error.message || '')) {
+          setMissingSchema(true);
+          setLoading(false);
+          return;
+        }
+        if (data) setEquipment(data);
+        setLoading(false);
+      });
   }, []);
 
   // Sub-routing from pathname.
@@ -34,96 +44,194 @@ export default function FuelingHub({sb}) {
     subRoute = 'form';
   }
 
-  const wfBg = {minHeight:'100vh', background:'linear-gradient(135deg,#fafaf9 0%,#e7e5e4 100%)', padding:'1rem', fontFamily:'inherit'};
+  const wfBg = {
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg,#fafaf9 0%,#e7e5e4 100%)',
+    padding: '1rem',
+    fontFamily: 'inherit',
+  };
   const logoEl = (
-    <div style={{textAlign:'center', marginBottom:20}}>
-      <div style={{fontSize:18, fontWeight:800, color:'#57534e', letterSpacing:-.3}}>⛽ WCF Planner</div>
-      <div style={{fontSize:12, color:'#6b7280', marginTop:2}}>Fueling Log</div>
+    <div style={{textAlign: 'center', marginBottom: 20}}>
+      <div style={{fontSize: 18, fontWeight: 800, color: '#57534e', letterSpacing: -0.3}}>⛽ WCF Planner</div>
+      <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Fueling Log</div>
     </div>
   );
 
   if (missingSchema) {
     return (
       <div style={wfBg}>
-        <div style={{maxWidth:480, margin:'0 auto', paddingTop:'1rem'}}>
+        <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '1rem'}}>
           {logoEl}
-          <div style={{background:'#fff7ed', border:'1px solid #fdba74', borderRadius:10, padding:'1rem', color:'#9a3412', fontSize:13}}>
+          <div
+            style={{
+              background: '#fff7ed',
+              border: '1px solid #fdba74',
+              borderRadius: 10,
+              padding: '1rem',
+              color: '#9a3412',
+              fontSize: 13,
+            }}
+          >
             Equipment tables not yet set up. Ask the admin to run migration 016.
           </div>
         </div>
       </div>
     );
   }
-  if (loading) return <div style={wfBg}><div style={{maxWidth:480, margin:'0 auto', paddingTop:'1rem'}}>{logoEl}<div style={{textAlign:'center', color:'#9ca3af'}}>Loading{'…'}</div></div></div>;
+  if (loading)
+    return (
+      <div style={wfBg}>
+        <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '1rem'}}>
+          {logoEl}
+          <div style={{textAlign: 'center', color: '#9ca3af'}}>Loading{'…'}</div>
+        </div>
+      </div>
+    );
 
   if (subRoute === 'form') {
-    const eq = equipment.find(e => e.slug === slug);
+    const eq = equipment.find((e) => e.slug === slug);
     if (!eq) {
       return (
         <div style={wfBg}>
-          <div style={{maxWidth:480, margin:'0 auto', paddingTop:'1rem'}}>
+          <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '1rem'}}>
             {logoEl}
-            <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'1rem', textAlign:'center', color:'#6b7280'}}>
+            <div
+              style={{
+                background: 'white',
+                border: '1px solid #e5e7eb',
+                borderRadius: 12,
+                padding: '1rem',
+                textAlign: 'center',
+                color: '#6b7280',
+              }}
+            >
               No equipment with slug <code>{slug}</code>.
-              <div><button onClick={()=>navigate('/fueling')} style={{marginTop:10, color:'#1d4ed8', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit'}}>← Back to hub</button></div>
+              <div>
+                <button
+                  onClick={() => navigate('/fueling')}
+                  style={{
+                    marginTop: 10,
+                    color: '#1d4ed8',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  ← Back to hub
+                </button>
+              </div>
             </div>
           </div>
         </div>
       );
     }
-    return <EquipmentFuelingWebform sb={sb} equipment={eq} onBack={()=>navigate('/fueling')}/>;
+    return <EquipmentFuelingWebform sb={sb} equipment={eq} onBack={() => navigate('/fueling')} />;
   }
 
   if (subRoute === 'supply') {
-    return <FuelSupplyWebform sb={sb} onBack={()=>navigate('/fueling')}/>;
+    return <FuelSupplyWebform sb={sb} onBack={() => navigate('/fueling')} />;
   }
 
   // HUB — category clusters
-  const grouped = EQUIPMENT_CATEGORIES.map(cat => ({
+  const grouped = EQUIPMENT_CATEGORIES.map((cat) => ({
     ...cat,
-    rows: equipment.filter(e => e.category === cat.key),
-  })).filter(g => g.rows.length > 0);
+    rows: equipment.filter((e) => e.category === cat.key),
+  })).filter((g) => g.rows.length > 0);
 
   return (
     <div style={wfBg}>
-      <div style={{maxWidth:720, margin:'0 auto', paddingTop:'1rem'}}>
+      <div style={{maxWidth: 720, margin: '0 auto', paddingTop: '1rem'}}>
         {logoEl}
-        <div style={{fontSize:13, color:'#6b7280', textAlign:'center', marginBottom:20}}>Tap your equipment to log a fueling</div>
+        <div style={{fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 20}}>
+          Tap your equipment to log a fueling
+        </div>
 
-        {grouped.map(g => (
-          <div key={g.key} style={{marginBottom:18}}>
-            <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8, paddingLeft:4}}>
-              <span style={{fontSize:20}}>{g.icon}</span>
-              <span style={{fontSize:13, fontWeight:700, color:g.color, textTransform:'uppercase', letterSpacing:.4}}>{g.label}</span>
+        {grouped.map((g) => (
+          <div key={g.key} style={{marginBottom: 18}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingLeft: 4}}>
+              <span style={{fontSize: 20}}>{g.icon}</span>
+              <span
+                style={{fontSize: 13, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: 0.4}}
+              >
+                {g.label}
+              </span>
             </div>
-            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:8}}>
-              {g.rows.map(eq => (
-                <button key={eq.id} onClick={()=>navigate('/fueling/'+eq.slug)}
-                  style={{background:g.bg, border:'1px solid '+g.bd, borderRadius:10, padding:'14px 14px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}}>
-                  <div style={{fontSize:14, fontWeight:700, color:g.color, marginBottom:2}}>{eq.name}</div>
-                  <div style={{fontSize:11, color:g.color, opacity:.8}}>{eq.tracking_unit === 'km' ? ((eq.current_km||'?')+' km') : ((eq.current_hours||'?')+' hrs')}{eq.fuel_type ? ' · '+eq.fuel_type : ''}</div>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8}}>
+              {g.rows.map((eq) => (
+                <button
+                  key={eq.id}
+                  onClick={() => navigate('/fueling/' + eq.slug)}
+                  style={{
+                    background: g.bg,
+                    border: '1px solid ' + g.bd,
+                    borderRadius: 10,
+                    padding: '14px 14px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <div style={{fontSize: 14, fontWeight: 700, color: g.color, marginBottom: 2}}>{eq.name}</div>
+                  <div style={{fontSize: 11, color: g.color, opacity: 0.8}}>
+                    {eq.tracking_unit === 'km' ? (eq.current_km || '?') + ' km' : (eq.current_hours || '?') + ' hrs'}
+                    {eq.fuel_type ? ' · ' + eq.fuel_type : ''}
+                  </div>
                 </button>
               ))}
             </div>
           </div>
         ))}
 
-        <div style={{marginTop:20, marginBottom:12}}>
-          <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8, paddingLeft:4}}>
-            <span style={{fontSize:20}}>⛽</span>
-            <span style={{fontSize:13, fontWeight:700, color:'#92400e', textTransform:'uppercase', letterSpacing:.4}}>Other</span>
+        <div style={{marginTop: 20, marginBottom: 12}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingLeft: 4}}>
+            <span style={{fontSize: 20}}>⛽</span>
+            <span
+              style={{fontSize: 13, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.4}}
+            >
+              Other
+            </span>
           </div>
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8}}>
-            <button onClick={()=>navigate('/fueling/supply')}
-              style={{background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'14px 14px', textAlign:'left', cursor:'pointer', fontFamily:'inherit'}}>
-              <div style={{fontSize:14, fontWeight:700, color:'#92400e'}}>⛽ Fuel Supply Log</div>
-              <div style={{fontSize:11, color:'#92400e', opacity:.8}}>Mobile fuel cell, gas cans, off-checklist trucks</div>
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8}}>
+            <button
+              onClick={() => navigate('/fueling/supply')}
+              style={{
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: 10,
+                padding: '14px 14px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              <div style={{fontSize: 14, fontWeight: 700, color: '#92400e'}}>⛽ Fuel Supply Log</div>
+              <div style={{fontSize: 11, color: '#92400e', opacity: 0.8}}>
+                Mobile fuel cell, gas cans, off-checklist trucks
+              </div>
             </button>
           </div>
         </div>
 
-        <div style={{textAlign:'center', marginTop:16}}>
-          <button onClick={()=>{ window.location.hash = '#webforms'; window.location.reload(); }} style={{background:'none', border:'none', color:'#57534e', fontSize:13, cursor:'pointer', fontFamily:'inherit', textDecoration:'underline'}}>{'← Back to Daily Reports'}</button>
+        <div style={{textAlign: 'center', marginTop: 16}}>
+          <button
+            onClick={() => {
+              window.location.hash = '#webforms';
+              window.location.reload();
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#57534e',
+              fontSize: 13,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textDecoration: 'underline',
+            }}
+          >
+            {'← Back to Daily Reports'}
+          </button>
         </div>
       </div>
     </div>

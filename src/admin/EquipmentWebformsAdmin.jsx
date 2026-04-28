@@ -12,13 +12,41 @@
 // saves auto-persist on blur and reload the row from Supabase.
 
 import React from 'react';
-import { sb } from '../lib/supabase.js';
-import { EQUIPMENT_CATEGORIES } from '../lib/equipment.js';
+import {sb} from '../lib/supabase.js';
+import {EQUIPMENT_CATEGORIES} from '../lib/equipment.js';
 
-const inpS = {fontSize:12, padding:'6px 8px', border:'1px solid #d1d5db', borderRadius:5, fontFamily:'inherit', boxSizing:'border-box', width:'100%'};
-const sectionTitle = {fontSize:11, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:.5, marginBottom:8};
-const subTitle = {fontSize:10, color:'#6b7280', fontWeight:600, textTransform:'uppercase', letterSpacing:.4, marginBottom:4};
-const card = {background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 20px', marginBottom:14};
+const inpS = {
+  fontSize: 12,
+  padding: '6px 8px',
+  border: '1px solid #d1d5db',
+  borderRadius: 5,
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+  width: '100%',
+};
+const sectionTitle = {
+  fontSize: 11,
+  fontWeight: 700,
+  color: '#4b5563',
+  textTransform: 'uppercase',
+  letterSpacing: 0.5,
+  marginBottom: 8,
+};
+const subTitle = {
+  fontSize: 10,
+  color: '#6b7280',
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  marginBottom: 4,
+};
+const card = {
+  background: 'white',
+  border: '1px solid #e5e7eb',
+  borderRadius: 12,
+  padding: '14px 20px',
+  marginBottom: 14,
+};
 
 export default function EquipmentWebformsAdmin() {
   const [equipment, setEquipment] = React.useState([]);
@@ -30,49 +58,104 @@ export default function EquipmentWebformsAdmin() {
     setLoading(true);
     const {data, error} = await sb.from('equipment').select('*').order('category').order('name');
     if (error && /does not exist|relation/i.test(error.message || '')) {
-      setMissingSchema(true); setLoading(false); return;
+      setMissingSchema(true);
+      setLoading(false);
+      return;
     }
     setEquipment(data || []);
     setLoading(false);
   }, []);
-  React.useEffect(() => { loadAll(); }, [loadAll]);
+  React.useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
-  const selected = equipment.find(e => e.id === selectedId) || null;
+  const selected = equipment.find((e) => e.id === selectedId) || null;
 
   // Close modal on Esc key.
   React.useEffect(() => {
     if (!selected) return;
-    const h = e => { if (e.key === 'Escape') setSelectedId(null); };
+    const h = (e) => {
+      if (e.key === 'Escape') setSelectedId(null);
+    };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [selected]);
 
   if (missingSchema) {
-    return <div style={{padding:20, fontSize:13, color:'#b91c1c'}}>Equipment schema not applied. Run migrations 016–021 in Supabase.</div>;
+    return (
+      <div style={{padding: 20, fontSize: 13, color: '#b91c1c'}}>
+        Equipment schema not applied. Run migrations 016–021 in Supabase.
+      </div>
+    );
   }
-  if (loading) return <div style={{padding:20, fontSize:13, color:'#6b7280'}}>Loading equipment…</div>;
+  if (loading) return <div style={{padding: 20, fontSize: 13, color: '#6b7280'}}>Loading equipment…</div>;
 
-  const soldList = equipment.filter(e => e.status === 'sold').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const soldList = equipment
+    .filter((e) => e.status === 'sold')
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   return (
     <div>
-      <FuelSupplyAdminSection/>
+      <FuelSupplyAdminSection />
       <div style={card}>
-        <div style={sectionTitle}>Equipment <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click a piece to edit</span></div>
-        {EQUIPMENT_CATEGORIES.map(cat => {
-          const inCat = equipment.filter(e => e.category === cat.key && e.status !== 'sold').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        <div style={sectionTitle}>
+          Equipment{' '}
+          <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>Click a piece to edit</span>
+        </div>
+        {EQUIPMENT_CATEGORIES.map((cat) => {
+          const inCat = equipment
+            .filter((e) => e.category === cat.key && e.status !== 'sold')
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
           if (inCat.length === 0) return null;
           return (
-            <div key={cat.key} style={{marginBottom:12}}>
-              <div style={{fontSize:11, fontWeight:700, color:cat.color, textTransform:'uppercase', letterSpacing:.5, marginBottom:5}}>{cat.icon} {cat.label}</div>
-              <div style={{display:'flex', flexDirection:'column', gap:3}}>
-                {inCat.map(e => {
+            <div key={cat.key} style={{marginBottom: 12}}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: cat.color,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  marginBottom: 5,
+                }}
+              >
+                {cat.icon} {cat.label}
+              </div>
+              <div style={{display: 'flex', flexDirection: 'column', gap: 3}}>
+                {inCat.map((e) => {
                   const on = selectedId === e.id;
                   return (
-                    <div key={e.id} onClick={()=>setSelectedId(e.id)}
-                      style={{padding:'7px 12px', border:'1px solid '+(on?cat.color:'#e5e7eb'), background:on?cat.bg:'white', borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', gap:10, fontSize:13}}>
-                      <span style={{fontWeight:on?700:500, color:'#111827', flex:1}}>{e.name}</span>
-                      {e.status !== 'active' && <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#fef3c7', color:'#92400e', textTransform:'uppercase', fontWeight:600}}>{e.status}</span>}
+                    <div
+                      key={e.id}
+                      onClick={() => setSelectedId(e.id)}
+                      style={{
+                        padding: '7px 12px',
+                        border: '1px solid ' + (on ? cat.color : '#e5e7eb'),
+                        background: on ? cat.bg : 'white',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        fontSize: 13,
+                      }}
+                    >
+                      <span style={{fontWeight: on ? 700 : 500, color: '#111827', flex: 1}}>{e.name}</span>
+                      {e.status !== 'active' && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            borderRadius: 3,
+                            background: '#fef3c7',
+                            color: '#92400e',
+                            textTransform: 'uppercase',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {e.status}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -81,54 +164,158 @@ export default function EquipmentWebformsAdmin() {
           );
         })}
         {soldList.length > 0 && (
-          <div style={{marginTop:18, paddingTop:12, borderTop:'1px solid #e5e7eb'}}>
-            <div style={{fontSize:11, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5, marginBottom:5}}>Sold</div>
-            <div style={{display:'flex', flexDirection:'column', gap:3}}>
-              {soldList.map(e => {
+          <div style={{marginTop: 18, paddingTop: 12, borderTop: '1px solid #e5e7eb'}}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#6b7280',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+                marginBottom: 5,
+              }}
+            >
+              Sold
+            </div>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 3}}>
+              {soldList.map((e) => {
                 const on = selectedId === e.id;
                 return (
-                  <div key={e.id} onClick={()=>setSelectedId(e.id)}
-                    style={{padding:'7px 12px', border:'1px solid '+(on?'#6b7280':'#e5e7eb'), background:on?'#f3f4f6':'white', borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', gap:10, fontSize:13, color:'#6b7280'}}>
-                    <span style={{fontWeight:on?700:500, flex:1}}>{e.name}</span>
-                    <span style={{fontSize:10, padding:'1px 6px', borderRadius:3, background:'#e5e7eb', color:'#6b7280', textTransform:'uppercase', fontWeight:600}}>sold</span>
+                  <div
+                    key={e.id}
+                    onClick={() => setSelectedId(e.id)}
+                    style={{
+                      padding: '7px 12px',
+                      border: '1px solid ' + (on ? '#6b7280' : '#e5e7eb'),
+                      background: on ? '#f3f4f6' : 'white',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      fontSize: 13,
+                      color: '#6b7280',
+                    }}
+                  >
+                    <span style={{fontWeight: on ? 700 : 500, flex: 1}}>{e.name}</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: '1px 6px',
+                        borderRadius: 3,
+                        background: '#e5e7eb',
+                        color: '#6b7280',
+                        textTransform: 'uppercase',
+                        fontWeight: 600,
+                      }}
+                    >
+                      sold
+                    </span>
                   </div>
                 );
               })}
             </div>
           </div>
         )}
-        <div style={{fontSize:11, color:'#9ca3af', marginTop:10}}>
+        <div style={{fontSize: 11, color: '#9ca3af', marginTop: 10}}>
           Changes auto-save on blur. Live on /fueling/&lt;slug&gt; immediately after save.
         </div>
       </div>
 
       {selected && (
         <div
-          onClick={e => { if (e.target === e.currentTarget) setSelectedId(null); }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedId(null);
+          }}
           style={{
-            position:'fixed', inset:0, background:'rgba(17,24,39,.6)',
-            display:'flex', alignItems:'flex-start', justifyContent:'center',
-            padding:'24px 16px', overflowY:'auto', zIndex:1000,
-          }}>
-          <div style={{background:'#f1f3f2', borderRadius:14, width:'100%', maxWidth:880, boxShadow:'0 20px 40px rgba(0,0,0,.3)', overflow:'hidden'}}>
-            <div style={{position:'sticky', top:0, zIndex:2, background:'white', borderBottom:'1px solid #e5e7eb', padding:'14px 20px', display:'flex', alignItems:'center', gap:12}}>
-              <div style={{flex:1, minWidth:0}}>
-                <div style={{fontSize:10, fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:.5}}>Editing</div>
-                <div style={{fontSize:16, fontWeight:700, color:'#111827', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{selected.name}</div>
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(17,24,39,.6)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            padding: '24px 16px',
+            overflowY: 'auto',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: '#f1f3f2',
+              borderRadius: 14,
+              width: '100%',
+              maxWidth: 880,
+              boxShadow: '0 20px 40px rgba(0,0,0,.3)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 2,
+                background: 'white',
+                borderBottom: '1px solid #e5e7eb',
+                padding: '14px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div style={{flex: 1, minWidth: 0}}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#6b7280',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Editing
+                </div>
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 700,
+                    color: '#111827',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {selected.name}
+                </div>
               </div>
-              <button onClick={()=>setSelectedId(null)} style={{fontSize:14, padding:'6px 14px', borderRadius:6, border:'1px solid #d1d5db', background:'white', color:'#374151', cursor:'pointer', fontFamily:'inherit', fontWeight:600}} title="Close (Esc)">✕ Close</button>
+              <button
+                onClick={() => setSelectedId(null)}
+                style={{
+                  fontSize: 14,
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  border: '1px solid #d1d5db',
+                  background: 'white',
+                  color: '#374151',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontWeight: 600,
+                }}
+                title="Close (Esc)"
+              >
+                ✕ Close
+              </button>
             </div>
-            <div style={{padding:'14px 20px'}}>
-              <IdentityEditor equipment={selected} onReload={loadAll}/>
-              <TeamMembersEditor equipment={selected} onReload={loadAll}/>
-              <SpecsEditor equipment={selected} onReload={loadAll}/>
-              <ManualsEditor equipment={selected} onReload={loadAll}/>
-              <DocumentsEditor equipment={selected} onReload={loadAll}/>
-              <WebformHelpTextEditor equipment={selected} onReload={loadAll}/>
-              <EveryFillupEditor equipment={selected} onReload={loadAll}/>
-              <ServiceIntervalEditor equipment={selected} onReload={loadAll}/>
+            <div style={{padding: '14px 20px'}}>
+              <IdentityEditor equipment={selected} onReload={loadAll} />
+              <TeamMembersEditor equipment={selected} onReload={loadAll} />
+              <SpecsEditor equipment={selected} onReload={loadAll} />
+              <ManualsEditor equipment={selected} onReload={loadAll} />
+              <DocumentsEditor equipment={selected} onReload={loadAll} />
+              <WebformHelpTextEditor equipment={selected} onReload={loadAll} />
+              <EveryFillupEditor equipment={selected} onReload={loadAll} />
+              <ServiceIntervalEditor equipment={selected} onReload={loadAll} />
               {Array.isArray(selected.attachment_checklists) && selected.attachment_checklists.length > 0 && (
-                <AttachmentChecklistsEditor equipment={selected} onReload={loadAll}/>
+                <AttachmentChecklistsEditor equipment={selected} onReload={loadAll} />
               )}
             </div>
           </div>
@@ -143,21 +330,55 @@ function IdentityEditor({equipment, onReload}) {
   const [busy, setBusy] = React.useState(false);
   async function save(col, val) {
     setBusy(true);
-    const {error} = await sb.from('equipment').update({[col]: (typeof val === 'string' && !val.trim()) ? null : val}).eq('id', equipment.id);
+    const {error} = await sb
+      .from('equipment')
+      .update({[col]: typeof val === 'string' && !val.trim() ? null : val})
+      .eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
   return (
     <div style={card}>
-      <div style={sectionTitle}>Identity <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Equipment name · serial · status</span></div>
-      <div style={{display:'grid', gridTemplateColumns:'120px 1fr', gap:10, alignItems:'center', rowGap:10}}>
+      <div style={sectionTitle}>
+        Identity{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Equipment name · serial · status
+        </span>
+      </div>
+      <div style={{display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'center', rowGap: 10}}>
         <div style={subTitle}>Name</div>
-        <input type="text" defaultValue={equipment.name || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (equipment.name||'')) save('name', v); }} style={inpS}/>
+        <input
+          type="text"
+          defaultValue={equipment.name || ''}
+          disabled={busy}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v && v !== (equipment.name || '')) save('name', v);
+          }}
+          style={inpS}
+        />
         <div style={subTitle}>Serial</div>
-        <input type="text" defaultValue={equipment.serial_number || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v !== (equipment.serial_number||'')) save('serial_number', v); }} style={inpS}/>
+        <input
+          type="text"
+          defaultValue={equipment.serial_number || ''}
+          disabled={busy}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v !== (equipment.serial_number || '')) save('serial_number', v);
+          }}
+          style={inpS}
+        />
         <div style={subTitle}>Status</div>
-        <select value={equipment.status} disabled={busy} onChange={e => save('status', e.target.value)} style={{...inpS, maxWidth:180}}>
+        <select
+          value={equipment.status}
+          disabled={busy}
+          onChange={(e) => save('status', e.target.value)}
+          style={{...inpS, maxWidth: 180}}
+        >
           <option value="active">active</option>
           <option value="sold">sold</option>
         </select>
@@ -176,47 +397,71 @@ function TeamMembersEditor({equipment, onReload}) {
   const [newName, setNewName] = React.useState('');
 
   async function loadMaster() {
-    const {data} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
+    const {data} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
     if (data && Array.isArray(data.data)) setAllTM(data.data);
   }
-  React.useEffect(() => { loadMaster(); }, []);
+  React.useEffect(() => {
+    loadMaster();
+  }, []);
 
   const assigned = Array.isArray(equipment.team_members) ? equipment.team_members : [];
 
   async function toggle(name) {
     setBusy(true);
-    const next = assigned.includes(name) ? assigned.filter(n => n !== name) : [...assigned, name];
+    const next = assigned.includes(name) ? assigned.filter((n) => n !== name) : [...assigned, name];
     const {error} = await sb.from('equipment').update({team_members: next}).eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
 
   async function addMaster() {
     const n = (newName || '').trim();
     if (!n) return;
-    if (allTM.includes(n)) { alert('"' + n + '" is already in the list.'); return; }
+    if (allTM.includes(n)) {
+      alert('"' + n + '" is already in the list.');
+      return;
+    }
     setBusy(true);
     const next = [...allTM, n].sort((a, b) => a.localeCompare(b));
-    const {error} = await sb.from('webform_config').upsert({key:'team_members', data: next}, {onConflict:'key'});
+    const {error} = await sb.from('webform_config').upsert({key: 'team_members', data: next}, {onConflict: 'key'});
     setBusy(false);
-    if (error) { alert('Add failed: '+error.message); return; }
+    if (error) {
+      alert('Add failed: ' + error.message);
+      return;
+    }
     setAllTM(next);
     setNewName('');
   }
 
   async function removeMaster(name) {
-    if (!confirm('Remove "' + name + '" from the team-member list?\n\nThey will also be removed from every piece of equipment they were assigned to. Past fueling records by this person are NOT affected.')) return;
+    if (
+      !confirm(
+        'Remove "' +
+          name +
+          '" from the team-member list?\n\nThey will also be removed from every piece of equipment they were assigned to. Past fueling records by this person are NOT affected.',
+      )
+    )
+      return;
     setBusy(true);
     // 1. Remove from master list.
-    const next = allTM.filter(n => n !== name);
-    const {error: mErr} = await sb.from('webform_config').upsert({key:'team_members', data: next}, {onConflict:'key'});
-    if (mErr) { setBusy(false); alert('Remove failed: '+mErr.message); return; }
+    const next = allTM.filter((n) => n !== name);
+    const {error: mErr} = await sb
+      .from('webform_config')
+      .upsert({key: 'team_members', data: next}, {onConflict: 'key'});
+    if (mErr) {
+      setBusy(false);
+      alert('Remove failed: ' + mErr.message);
+      return;
+    }
     // 2. Cascade: strip from every equipment.team_members array that included them.
     const {data: eqs} = await sb.from('equipment').select('id,team_members');
-    const hits = (eqs || []).filter(e => Array.isArray(e.team_members) && e.team_members.includes(name));
+    const hits = (eqs || []).filter((e) => Array.isArray(e.team_members) && e.team_members.includes(name));
     for (const e of hits) {
-      const filtered = e.team_members.filter(n => n !== name);
+      const filtered = e.team_members.filter((n) => n !== name);
       await sb.from('equipment').update({team_members: filtered}).eq('id', e.id);
     }
     setBusy(false);
@@ -226,29 +471,117 @@ function TeamMembersEditor({equipment, onReload}) {
 
   return (
     <div style={card}>
-      <div style={sectionTitle}>Team Members <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Assign operators to this piece · master list shared across all webforms</span></div>
-      {allTM.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>Loading team members…</div>}
+      <div style={sectionTitle}>
+        Team Members{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Assign operators to this piece · master list shared across all webforms
+        </span>
+      </div>
+      {allTM.length === 0 && (
+        <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>Loading team members…</div>
+      )}
       {allTM.length > 0 && (
-        <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:10}}>
-          {allTM.map(name => {
+        <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10}}>
+          {allTM.map((name) => {
             const on = assigned.includes(name);
             return (
-              <span key={name} style={{display:'inline-flex', alignItems:'center', fontSize:12, borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontWeight:on?600:400, overflow:'hidden'}}>
-                <button onClick={()=>toggle(name)} disabled={busy} style={{fontSize:12, padding:'5px 11px 5px 11px', border:'none', background:'transparent', color:'inherit', fontWeight:'inherit', cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>
-                  {on ? '✓ ' : ''}{name}
+              <span
+                key={name}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  fontSize: 12,
+                  borderRadius: 5,
+                  border: '1px solid ' + (on ? '#047857' : '#d1d5db'),
+                  background: on ? '#d1fae5' : 'white',
+                  color: on ? '#047857' : '#6b7280',
+                  fontWeight: on ? 600 : 400,
+                  overflow: 'hidden',
+                }}
+              >
+                <button
+                  onClick={() => toggle(name)}
+                  disabled={busy}
+                  style={{
+                    fontSize: 12,
+                    padding: '5px 11px 5px 11px',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'inherit',
+                    fontWeight: 'inherit',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {on ? '✓ ' : ''}
+                  {name}
                 </button>
-                <button onClick={()=>removeMaster(name)} disabled={busy} title={'Remove "'+name+'" from master list'} style={{padding:'5px 8px 5px 2px', border:'none', borderLeft:'1px solid '+(on?'#a7f3d0':'#e5e7eb'), background:'transparent', color:'#9ca3af', cursor:busy?'not-allowed':'pointer', fontSize:13, lineHeight:1, fontFamily:'inherit'}}>×</button>
+                <button
+                  onClick={() => removeMaster(name)}
+                  disabled={busy}
+                  title={'Remove "' + name + '" from master list'}
+                  style={{
+                    padding: '5px 8px 5px 2px',
+                    border: 'none',
+                    borderLeft: '1px solid ' + (on ? '#a7f3d0' : '#e5e7eb'),
+                    background: 'transparent',
+                    color: '#9ca3af',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    lineHeight: 1,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  ×
+                </button>
               </span>
             );
           })}
         </div>
       )}
       {assigned.length === 0 && allTM.length > 0 && (
-        <div style={{fontSize:11, color:'#9ca3af', marginBottom:8, fontStyle:'italic'}}>None assigned to this piece yet.</div>
+        <div style={{fontSize: 11, color: '#9ca3af', marginBottom: 8, fontStyle: 'italic'}}>
+          None assigned to this piece yet.
+        </div>
       )}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:6, padding:10, background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db'}}>
-        <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="New team member name (e.g. COTY)" onKeyDown={e=>{if(e.key==='Enter') addMaster();}} style={inpS}/>
-        <button onClick={addMaster} disabled={busy || !newName.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newName.trim())?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newName.trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 80px',
+          gap: 6,
+          padding: 10,
+          background: '#fafafa',
+          borderRadius: 6,
+          border: '1px dashed #d1d5db',
+        }}
+      >
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="New team member name (e.g. COTY)"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addMaster();
+          }}
+          style={inpS}
+        />
+        <button
+          onClick={addMaster}
+          disabled={busy || !newName.trim()}
+          style={{
+            padding: '6px 12px',
+            borderRadius: 6,
+            border: 'none',
+            background: busy || !newName.trim() ? '#9ca3af' : '#57534e',
+            color: 'white',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: busy || !newName.trim() ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          + Add
+        </button>
       </div>
     </div>
   );
@@ -261,57 +594,100 @@ function SpecsEditor({equipment, onReload}) {
   const [busy, setBusy] = React.useState(false);
   async function save(col, val) {
     setBusy(true);
-    const payload = (typeof val === 'string' && !val.trim()) ? null : val;
-    const {error} = await sb.from('equipment').update({[col]: payload}).eq('id', equipment.id);
+    const payload = typeof val === 'string' && !val.trim() ? null : val;
+    const {error} = await sb
+      .from('equipment')
+      .update({[col]: payload})
+      .eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: ' + error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
   const FIELDS = [
-    ['engine_oil',           'Engine Oil'],
-    ['oil_filter',           'Oil Filter'],
-    ['hydraulic_oil',        'Hydraulic Oil'],
-    ['hydraulic_filter',     'Hydraulic Filter'],
-    ['coolant',              'Coolant'],
-    ['brake_fluid',          'Brake Fluid'],
-    ['fuel_filter',          'Fuel Filter'],
-    ['def_filter',           'DEF Filter'],
-    ['gearbox_drive_oil',    'Gearbox / Drive Oil'],
-    ['air_filters',          'Air Filters'],
+    ['engine_oil', 'Engine Oil'],
+    ['oil_filter', 'Oil Filter'],
+    ['hydraulic_oil', 'Hydraulic Oil'],
+    ['hydraulic_filter', 'Hydraulic Filter'],
+    ['coolant', 'Coolant'],
+    ['brake_fluid', 'Brake Fluid'],
+    ['fuel_filter', 'Fuel Filter'],
+    ['def_filter', 'DEF Filter'],
+    ['gearbox_drive_oil', 'Gearbox / Drive Oil'],
+    ['air_filters', 'Air Filters'],
     ['warranty_description', 'Warranty note'],
   ];
-  const taS = {...inpS, resize:'vertical'};
+  const taS = {...inpS, resize: 'vertical'};
   return (
     <div style={card}>
-      <div style={sectionTitle}>Specs &amp; Fluids <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Part numbers, oils, capacities — auto-saves on blur</span></div>
-      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'8px 14px'}}>
+      <div style={sectionTitle}>
+        Specs &amp; Fluids{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Part numbers, oils, capacities — auto-saves on blur
+        </span>
+      </div>
+      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px 14px'}}>
         {FIELDS.map(([k, label]) => (
           <div key={k}>
             <div style={subTitle}>{label}</div>
-            <textarea rows={1} defaultValue={equipment[k] || ''} disabled={busy}
-              onBlur={e => { const v = e.target.value; if (v.trim() !== (equipment[k]||'')) save(k, v); }}
-              style={taS}/>
+            <textarea
+              rows={1}
+              defaultValue={equipment[k] || ''}
+              disabled={busy}
+              onBlur={(e) => {
+                const v = e.target.value;
+                if (v.trim() !== (equipment[k] || '')) save(k, v);
+              }}
+              style={taS}
+            />
           </div>
         ))}
         <div>
           <div style={subTitle}>Fuel tank (gal)</div>
-          <input type="number" min="0" step="0.1" defaultValue={equipment.fuel_tank_gal != null ? equipment.fuel_tank_gal : ''} disabled={busy}
-            onBlur={e => { const v = e.target.value === '' ? null : Number(e.target.value); if (v !== equipment.fuel_tank_gal) save('fuel_tank_gal', v); }}
-            style={inpS}/>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            defaultValue={equipment.fuel_tank_gal != null ? equipment.fuel_tank_gal : ''}
+            disabled={busy}
+            onBlur={(e) => {
+              const v = e.target.value === '' ? null : Number(e.target.value);
+              if (v !== equipment.fuel_tank_gal) save('fuel_tank_gal', v);
+            }}
+            style={inpS}
+          />
         </div>
         {equipment.takes_def && (
           <div>
             <div style={subTitle}>DEF tank (gal)</div>
-            <input type="number" min="0" step="0.1" defaultValue={equipment.def_tank_gal != null ? equipment.def_tank_gal : ''} disabled={busy}
-              onBlur={e => { const v = e.target.value === '' ? null : Number(e.target.value); if (v !== equipment.def_tank_gal) save('def_tank_gal', v); }}
-              style={inpS}/>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              defaultValue={equipment.def_tank_gal != null ? equipment.def_tank_gal : ''}
+              disabled={busy}
+              onBlur={(e) => {
+                const v = e.target.value === '' ? null : Number(e.target.value);
+                if (v !== equipment.def_tank_gal) save('def_tank_gal', v);
+              }}
+              style={inpS}
+            />
           </div>
         )}
         <div>
           <div style={subTitle}>Warranty ends</div>
-          <input type="date" defaultValue={equipment.warranty_expiration || ''} disabled={busy}
-            onBlur={e => { const v = e.target.value || null; if (v !== equipment.warranty_expiration) save('warranty_expiration', v); }}
-            style={inpS}/>
+          <input
+            type="date"
+            defaultValue={equipment.warranty_expiration || ''}
+            disabled={busy}
+            onBlur={(e) => {
+              const v = e.target.value || null;
+              if (v !== equipment.warranty_expiration) save('warranty_expiration', v);
+            }}
+            style={inpS}
+          />
         </div>
       </div>
     </div>
@@ -329,7 +705,10 @@ function youtubeId(url) {
     /youtube\.com\/embed\/([A-Za-z0-9_-]{6,})/,
     /youtube\.com\/shorts\/([A-Za-z0-9_-]{6,})/,
   ];
-  for (const re of patterns) { const m = re.exec(url); if (m) return m[1]; }
+  for (const re of patterns) {
+    const m = re.exec(url);
+    if (m) return m[1];
+  }
   return null;
 }
 
@@ -344,7 +723,10 @@ function ManualsEditor({equipment, onReload}) {
     setBusy(true);
     const {error} = await sb.from('equipment').update({manuals: next}).eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
 
@@ -353,11 +735,20 @@ function ManualsEditor({equipment, onReload}) {
     setUploading(true);
     const safe = (file.name || 'manual.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
     const bucketPath = 'manuals/' + equipment.slug + '/' + Date.now() + '-' + safe;
-    const {error: upErr} = await sb.storage.from('equipment-maintenance-docs').upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
-    if (upErr) { alert('Upload failed: '+upErr.message); setUploading(false); return; }
+    const {error: upErr} = await sb.storage
+      .from('equipment-maintenance-docs')
+      .upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
+    if (upErr) {
+      alert('Upload failed: ' + upErr.message);
+      setUploading(false);
+      return;
+    }
     const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(bucketPath);
-    const title = file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
-    const next = [...manuals, {type:'pdf', title, url: pub.publicUrl, path: bucketPath, uploadedAt: new Date().toISOString()}];
+    const title = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+    const next = [
+      ...manuals,
+      {type: 'pdf', title, url: pub.publicUrl, path: bucketPath, uploadedAt: new Date().toISOString()},
+    ];
     await persist(next);
     setUploading(false);
   }
@@ -366,57 +757,167 @@ function ManualsEditor({equipment, onReload}) {
     const url = newVideoUrl.trim();
     if (!url) return;
     const vid = youtubeId(url);
-    if (!vid) { alert('Doesn’t look like a YouTube URL. Try https://youtu.be/... or https://youtube.com/watch?v=...'); return; }
+    if (!vid) {
+      alert('Doesn’t look like a YouTube URL. Try https://youtu.be/... or https://youtube.com/watch?v=...');
+      return;
+    }
     const title = newVideoTitle.trim() || url;
-    await persist([...manuals, {type:'video', title, url, youtube_id: vid}]);
-    setNewVideoUrl(''); setNewVideoTitle('');
+    await persist([...manuals, {type: 'video', title, url, youtube_id: vid}]);
+    setNewVideoUrl('');
+    setNewVideoTitle('');
   }
 
   async function editTitle(idx, title) {
-    const next = manuals.slice(); next[idx] = {...next[idx], title};
+    const next = manuals.slice();
+    next[idx] = {...next[idx], title};
     await persist(next);
   }
 
   async function removeOne(idx) {
     const entry = manuals[idx];
     if (!entry) return;
-    if (!confirm('Remove "' + (entry.title||'this manual') + '"?')) return;
+    if (!confirm('Remove "' + (entry.title || 'this manual') + '"?')) return;
     if (entry.type === 'pdf' && entry.path) {
-      try { await sb.storage.from('equipment-maintenance-docs').remove([entry.path]); } catch(e){/*ignore*/}
+      try {
+        await sb.storage.from('equipment-maintenance-docs').remove([entry.path]);
+      } catch (e) {
+        /*ignore*/
+      }
     }
     await persist(manuals.filter((_, i) => i !== idx));
   }
 
   return (
     <div style={card}>
-      <div style={sectionTitle}>Manuals &amp; Videos <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Operator reference — shows on /fueling and /equipment</span></div>
-      {manuals.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No manuals or videos added yet.</div>}
+      <div style={sectionTitle}>
+        Manuals &amp; Videos{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Operator reference — shows on /fueling and /equipment
+        </span>
+      </div>
+      {manuals.length === 0 && (
+        <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
+          No manuals or videos added yet.
+        </div>
+      )}
       {manuals.length > 0 && (
-        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:10}}>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10}}>
           {manuals.map((m, i) => (
-            <div key={i} style={{display:'grid', gridTemplateColumns:'60px 1fr 80px', gap:8, alignItems:'center', padding:'8px 10px', background:'#fafafa', border:'1px solid #e5e7eb', borderRadius:6}}>
-              <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, textAlign:'center', background: m.type==='pdf' ? '#fef3c7' : '#fee2e2', color: m.type==='pdf' ? '#92400e' : '#991b1b'}}>{m.type==='pdf' ? '📄 PDF' : '▶ VIDEO'}</span>
+            <div
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '60px 1fr 80px',
+                gap: 8,
+                alignItems: 'center',
+                padding: '8px 10px',
+                background: '#fafafa',
+                border: '1px solid #e5e7eb',
+                borderRadius: 6,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  textAlign: 'center',
+                  background: m.type === 'pdf' ? '#fef3c7' : '#fee2e2',
+                  color: m.type === 'pdf' ? '#92400e' : '#991b1b',
+                }}
+              >
+                {m.type === 'pdf' ? '📄 PDF' : '▶ VIDEO'}
+              </span>
               <div>
-                <input type="text" defaultValue={m.title || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (m.title||'')) editTitle(i, v); }} style={{...inpS, padding:'3px 7px', fontSize:12}}/>
-                <a href={m.url} target="_blank" rel="noopener noreferrer" style={{fontSize:10, color:'#1d4ed8', textDecoration:'none', wordBreak:'break-all'}}>{m.url}</a>
+                <input
+                  type="text"
+                  defaultValue={m.title || ''}
+                  disabled={busy}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v && v !== (m.title || '')) editTitle(i, v);
+                  }}
+                  style={{...inpS, padding: '3px 7px', fontSize: 12}}
+                />
+                <a
+                  href={m.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{fontSize: 10, color: '#1d4ed8', textDecoration: 'none', wordBreak: 'break-all'}}
+                >
+                  {m.url}
+                </a>
               </div>
-              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'4px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+              <button
+                onClick={() => removeOne(i)}
+                disabled={busy}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 5,
+                  border: '1px solid #fecaca',
+                  background: 'white',
+                  color: '#b91c1c',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Remove
+              </button>
             </div>
           ))}
         </div>
       )}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
-        <div style={{padding:'10px', background:'#fffbeb', borderRadius:6, border:'1px dashed #fde68a'}}>
-          <div style={{...subTitle, color:'#92400e'}}>Upload PDF</div>
-          <input type="file" accept="application/pdf" disabled={uploading||busy} onChange={e => { if (e.target.files && e.target.files[0]) uploadPdf(e.target.files[0]); e.target.value=''; }} style={{fontSize:12}}/>
-          {uploading && <div style={{fontSize:10, color:'#92400e', marginTop:4}}>Uploading…</div>}
+      <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
+        <div style={{padding: '10px', background: '#fffbeb', borderRadius: 6, border: '1px dashed #fde68a'}}>
+          <div style={{...subTitle, color: '#92400e'}}>Upload PDF</div>
+          <input
+            type="file"
+            accept="application/pdf"
+            disabled={uploading || busy}
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) uploadPdf(e.target.files[0]);
+              e.target.value = '';
+            }}
+            style={{fontSize: 12}}
+          />
+          {uploading && <div style={{fontSize: 10, color: '#92400e', marginTop: 4}}>Uploading…</div>}
         </div>
-        <div style={{padding:'10px', background:'#fef2f2', borderRadius:6, border:'1px dashed #fecaca'}}>
-          <div style={{...subTitle, color:'#991b1b'}}>Add YouTube video</div>
-          <input type="text" value={newVideoTitle} onChange={e=>setNewVideoTitle(e.target.value)} placeholder="Title (optional)" style={{...inpS, marginBottom:4, fontSize:12}}/>
-          <div style={{display:'flex', gap:6}}>
-            <input type="text" value={newVideoUrl} onChange={e=>setNewVideoUrl(e.target.value)} placeholder="https://youtu.be/..." style={{...inpS, fontSize:12, flex:1}}/>
-            <button onClick={addVideo} disabled={busy||!newVideoUrl.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVideoUrl.trim())?'#9ca3af':'#991b1b', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit'}}>+ Add</button>
+        <div style={{padding: '10px', background: '#fef2f2', borderRadius: 6, border: '1px dashed #fecaca'}}>
+          <div style={{...subTitle, color: '#991b1b'}}>Add YouTube video</div>
+          <input
+            type="text"
+            value={newVideoTitle}
+            onChange={(e) => setNewVideoTitle(e.target.value)}
+            placeholder="Title (optional)"
+            style={{...inpS, marginBottom: 4, fontSize: 12}}
+          />
+          <div style={{display: 'flex', gap: 6}}>
+            <input
+              type="text"
+              value={newVideoUrl}
+              onChange={(e) => setNewVideoUrl(e.target.value)}
+              placeholder="https://youtu.be/..."
+              style={{...inpS, fontSize: 12, flex: 1}}
+            />
+            <button
+              onClick={addVideo}
+              disabled={busy || !newVideoUrl.trim()}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: 'none',
+                background: busy || !newVideoUrl.trim() ? '#9ca3af' : '#991b1b',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              + Add
+            </button>
           </div>
         </div>
       </div>
@@ -437,7 +938,10 @@ function DocumentsEditor({equipment, onReload}) {
     setBusy(true);
     const {error} = await sb.from('equipment').update({documents: next}).eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
 
@@ -446,51 +950,138 @@ function DocumentsEditor({equipment, onReload}) {
     setUploading(true);
     const safe = (file.name || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
     const bucketPath = 'documents/' + equipment.slug + '/' + Date.now() + '-' + safe;
-    const {error: upErr} = await sb.storage.from('equipment-maintenance-docs').upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
-    if (upErr) { alert('Upload failed: '+upErr.message); setUploading(false); return; }
+    const {error: upErr} = await sb.storage
+      .from('equipment-maintenance-docs')
+      .upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
+    if (upErr) {
+      alert('Upload failed: ' + upErr.message);
+      setUploading(false);
+      return;
+    }
     const {data: pub} = sb.storage.from('equipment-maintenance-docs').getPublicUrl(bucketPath);
-    const title = file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
-    await persist([...docs, {type:'pdf', title, url: pub.publicUrl, path: bucketPath, uploadedAt: new Date().toISOString()}]);
+    const title = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+    await persist([
+      ...docs,
+      {type: 'pdf', title, url: pub.publicUrl, path: bucketPath, uploadedAt: new Date().toISOString()},
+    ]);
     setUploading(false);
   }
 
   async function editTitle(idx, title) {
-    const next = docs.slice(); next[idx] = {...next[idx], title};
+    const next = docs.slice();
+    next[idx] = {...next[idx], title};
     await persist(next);
   }
 
   async function removeOne(idx) {
     const entry = docs[idx];
     if (!entry) return;
-    if (!confirm('Remove "' + (entry.title||'this document') + '"?')) return;
+    if (!confirm('Remove "' + (entry.title || 'this document') + '"?')) return;
     if (entry.type === 'pdf' && entry.path) {
-      try { await sb.storage.from('equipment-maintenance-docs').remove([entry.path]); } catch(e){/*ignore*/}
+      try {
+        await sb.storage.from('equipment-maintenance-docs').remove([entry.path]);
+      } catch (e) {
+        /*ignore*/
+      }
     }
     await persist(docs.filter((_, i) => i !== idx));
   }
 
   return (
     <div style={card}>
-      <div style={sectionTitle}>Admin Documents <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Internal only — invoices, contracts, warranty paperwork. NOT shown on /fueling or /equipment.</span></div>
-      {docs.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No admin documents uploaded yet.</div>}
+      <div style={sectionTitle}>
+        Admin Documents{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Internal only — invoices, contracts, warranty paperwork. NOT shown on /fueling or /equipment.
+        </span>
+      </div>
+      {docs.length === 0 && (
+        <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
+          No admin documents uploaded yet.
+        </div>
+      )}
       {docs.length > 0 && (
-        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:10}}>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10}}>
           {docs.map((d, i) => (
-            <div key={i} style={{display:'grid', gridTemplateColumns:'60px 1fr 80px', gap:8, alignItems:'center', padding:'8px 10px', background:'#fafafa', border:'1px solid #e5e7eb', borderRadius:6}}>
-              <span style={{fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, textAlign:'center', background:'#e0e7ff', color:'#3730a3'}}>📄 PDF</span>
+            <div
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '60px 1fr 80px',
+                gap: 8,
+                alignItems: 'center',
+                padding: '8px 10px',
+                background: '#fafafa',
+                border: '1px solid #e5e7eb',
+                borderRadius: 6,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  textAlign: 'center',
+                  background: '#e0e7ff',
+                  color: '#3730a3',
+                }}
+              >
+                📄 PDF
+              </span>
               <div>
-                <input type="text" defaultValue={d.title || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (d.title||'')) editTitle(i, v); }} style={{...inpS, padding:'3px 7px', fontSize:12}}/>
-                <a href={d.url} target="_blank" rel="noopener noreferrer" style={{fontSize:10, color:'#1d4ed8', textDecoration:'none', wordBreak:'break-all'}}>{d.url}</a>
+                <input
+                  type="text"
+                  defaultValue={d.title || ''}
+                  disabled={busy}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v && v !== (d.title || '')) editTitle(i, v);
+                  }}
+                  style={{...inpS, padding: '3px 7px', fontSize: 12}}
+                />
+                <a
+                  href={d.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{fontSize: 10, color: '#1d4ed8', textDecoration: 'none', wordBreak: 'break-all'}}
+                >
+                  {d.url}
+                </a>
               </div>
-              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'4px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+              <button
+                onClick={() => removeOne(i)}
+                disabled={busy}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 5,
+                  border: '1px solid #fecaca',
+                  background: 'white',
+                  color: '#b91c1c',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Remove
+              </button>
             </div>
           ))}
         </div>
       )}
-      <div style={{padding:'10px', background:'#eef2ff', borderRadius:6, border:'1px dashed #c7d2fe'}}>
-        <div style={{...subTitle, color:'#3730a3'}}>Upload PDF</div>
-        <input type="file" accept="application/pdf" disabled={uploading||busy} onChange={e => { if (e.target.files && e.target.files[0]) uploadPdf(e.target.files[0]); e.target.value=''; }} style={{fontSize:12}}/>
-        {uploading && <div style={{fontSize:10, color:'#3730a3', marginTop:4}}>Uploading…</div>}
+      <div style={{padding: '10px', background: '#eef2ff', borderRadius: 6, border: '1px dashed #c7d2fe'}}>
+        <div style={{...subTitle, color: '#3730a3'}}>Upload PDF</div>
+        <input
+          type="file"
+          accept="application/pdf"
+          disabled={uploading || busy}
+          onChange={(e) => {
+            if (e.target.files && e.target.files[0]) uploadPdf(e.target.files[0]);
+            e.target.value = '';
+          }}
+          style={{fontSize: 12}}
+        />
+        {uploading && <div style={{fontSize: 10, color: '#3730a3', marginTop: 4}}>Uploading…</div>}
       </div>
     </div>
   );
@@ -501,22 +1092,53 @@ function WebformHelpTextEditor({equipment, onReload}) {
   const [busy, setBusy] = React.useState(false);
   async function save(col, val) {
     setBusy(true);
-    const {error} = await sb.from('equipment').update({[col]: (val && val.trim()) || null}).eq('id', equipment.id);
+    const {error} = await sb
+      .from('equipment')
+      .update({[col]: (val && val.trim()) || null})
+      .eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
-  const taS = {...inpS, resize:'vertical'};
+  const taS = {...inpS, resize: 'vertical'};
   return (
     <div style={card}>
-      <div style={sectionTitle}>Webform Help Text <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Shown to the team on /fueling/{equipment.slug}</span></div>
-      <div style={{marginBottom:14}}>
+      <div style={sectionTitle}>
+        Webform Help Text{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Shown to the team on /fueling/{equipment.slug}
+        </span>
+      </div>
+      <div style={{marginBottom: 14}}>
         <div style={subTitle}>Operator notes (yellow banner at top of form — between-fillup maintenance etc.)</div>
-        <textarea defaultValue={equipment.operator_notes || ''} disabled={busy} onBlur={e => { const v = e.target.value; if (v.trim() !== (equipment.operator_notes||'')) save('operator_notes', v); }} placeholder="e.g. Rotor bearings must be greased every 4 hours." rows={3} style={taS}/>
+        <textarea
+          defaultValue={equipment.operator_notes || ''}
+          disabled={busy}
+          onBlur={(e) => {
+            const v = e.target.value;
+            if (v.trim() !== (equipment.operator_notes || '')) save('operator_notes', v);
+          }}
+          placeholder="e.g. Rotor bearings must be greased every 4 hours."
+          rows={3}
+          style={taS}
+        />
       </div>
       <div>
         <div style={subTitle}>Gallons field help (shown below the gallons input)</div>
-        <textarea defaultValue={equipment.fuel_gallons_help || ''} disabled={busy} onBlur={e => { const v = e.target.value; if (v.trim() !== (equipment.fuel_gallons_help||'')) save('fuel_gallons_help', v); }} placeholder="e.g. Use 2.5 oz of Toro fuel conditioner per 5 gallons of gasoline." rows={2} style={taS}/>
+        <textarea
+          defaultValue={equipment.fuel_gallons_help || ''}
+          disabled={busy}
+          onBlur={(e) => {
+            const v = e.target.value;
+            if (v.trim() !== (equipment.fuel_gallons_help || '')) save('fuel_gallons_help', v);
+          }}
+          placeholder="e.g. Use 2.5 oz of Toro fuel conditioner per 5 gallons of gasoline."
+          rows={2}
+          style={taS}
+        />
       </div>
     </div>
   );
@@ -532,17 +1154,27 @@ function EveryFillupEditor({equipment, onReload}) {
     setBusy(true);
     const {error} = await sb.from('equipment').update({every_fillup_items: next}).eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
   async function addOne() {
     const label = (newLabel || '').trim();
     if (!label) return;
-    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item-' + Date.now();
+    const id =
+      label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 40) || 'item-' + Date.now();
     await persist(items.concat([{id, label}]));
     setNewLabel('');
   }
-  async function removeOne(idx) { await persist(items.filter((_, i) => i !== idx)); }
+  async function removeOne(idx) {
+    await persist(items.filter((_, i) => i !== idx));
+  }
   async function editLabel(idx, label) {
     const next = items.slice();
     next[idx] = {...next[idx], label};
@@ -550,33 +1182,116 @@ function EveryFillupEditor({equipment, onReload}) {
   }
   async function editFillupHelp(help) {
     setBusy(true);
-    const {error} = await sb.from('equipment').update({every_fillup_help: help || null}).eq('id', equipment.id);
+    const {error} = await sb
+      .from('equipment')
+      .update({every_fillup_help: help || null})
+      .eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
 
   return (
     <div style={card}>
-      <div style={sectionTitle}>Every-fillup Items <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Ticked by the team on every /fueling submission</span></div>
-      <div style={{marginBottom:14}}>
-        <div style={subTitle}>Help text (shown above the checks on the webform)</div>
-        <textarea defaultValue={equipment.every_fillup_help || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v !== (equipment.every_fillup_help||'')) editFillupHelp(v); }} placeholder="e.g. Tire Pressure: 20 psi recommended." rows={2} style={{...inpS, resize:'vertical'}}/>
+      <div style={sectionTitle}>
+        Every-fillup Items{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Ticked by the team on every /fueling submission
+        </span>
       </div>
-      {items.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No items configured yet.</div>}
+      <div style={{marginBottom: 14}}>
+        <div style={subTitle}>Help text (shown above the checks on the webform)</div>
+        <textarea
+          defaultValue={equipment.every_fillup_help || ''}
+          disabled={busy}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v !== (equipment.every_fillup_help || '')) editFillupHelp(v);
+          }}
+          placeholder="e.g. Tire Pressure: 20 psi recommended."
+          rows={2}
+          style={{...inpS, resize: 'vertical'}}
+        />
+      </div>
+      {items.length === 0 && (
+        <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
+          No items configured yet.
+        </div>
+      )}
       {items.length > 0 && (
-        <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:8, marginBottom:8, alignItems:'center'}}>
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 80px', gap: 8, marginBottom: 8, alignItems: 'center'}}>
           {items.map((it, i) => (
             <React.Fragment key={i}>
-              <input type="text" defaultValue={it.label || ''} disabled={busy} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (it.label||'')) editLabel(i, v); }} style={inpS}/>
-              <button onClick={()=>removeOne(i)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+              <input
+                type="text"
+                defaultValue={it.label || ''}
+                disabled={busy}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== (it.label || '')) editLabel(i, v);
+                }}
+                style={inpS}
+              />
+              <button
+                onClick={() => removeOne(i)}
+                disabled={busy}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: 5,
+                  border: '1px solid #fecaca',
+                  background: 'white',
+                  color: '#b91c1c',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Remove
+              </button>
             </React.Fragment>
           ))}
         </div>
       )}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:8, marginTop:10, padding:'10px', background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db', alignItems:'center'}}>
-        <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="e.g. CHECK OIL LEVEL" style={inpS}/>
-        <button onClick={addOne} disabled={busy || !newLabel.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newLabel.trim())?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newLabel.trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 80px',
+          gap: 8,
+          marginTop: 10,
+          padding: '10px',
+          background: '#fafafa',
+          borderRadius: 6,
+          border: '1px dashed #d1d5db',
+          alignItems: 'center',
+        }}
+      >
+        <input
+          type="text"
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          placeholder="e.g. CHECK OIL LEVEL"
+          style={inpS}
+        />
+        <button
+          onClick={addOne}
+          disabled={busy || !newLabel.trim()}
+          style={{
+            padding: '6px 12px',
+            borderRadius: 6,
+            border: 'none',
+            background: busy || !newLabel.trim() ? '#9ca3af' : '#57534e',
+            color: 'white',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: busy || !newLabel.trim() ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          + Add
+        </button>
       </div>
     </div>
   );
@@ -596,16 +1311,25 @@ function ServiceIntervalEditor({equipment, onReload}) {
     setBusy(true);
     const {error} = await sb.from('equipment').update({service_intervals: next}).eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
   async function addOne() {
     const v = parseInt(newVal, 10);
-    if (!Number.isFinite(v) || v <= 0) { alert('Enter a positive integer.'); return; }
+    if (!Number.isFinite(v) || v <= 0) {
+      alert('Enter a positive integer.');
+      return;
+    }
     const label = (newLabel || '').trim() || `Every ${v} ${newKind === 'km' ? 'km' : 'hours'} checklist`;
-    const next = intervals.concat([{hours_or_km: v, kind: newKind, label, tasks: []}]).sort((a, b) => a.hours_or_km - b.hours_or_km);
+    const next = intervals
+      .concat([{hours_or_km: v, kind: newKind, label, tasks: []}])
+      .sort((a, b) => a.hours_or_km - b.hours_or_km);
     await persist(next);
-    setNewVal(''); setNewLabel('');
+    setNewVal('');
+    setNewLabel('');
   }
   async function removeOne(idx) {
     if (!confirm('Remove this interval + all its tasks?')) return;
@@ -619,12 +1343,17 @@ function ServiceIntervalEditor({equipment, onReload}) {
   async function addTask(idx) {
     const raw = (newTaskLabels[idx] || '').trim();
     if (!raw) return;
-    const id = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'task-' + Date.now();
+    const id =
+      raw
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 50) || 'task-' + Date.now();
     const tasks = Array.isArray(intervals[idx].tasks) ? intervals[idx].tasks : [];
     const next = intervals.slice();
     next[idx] = {...intervals[idx], tasks: tasks.concat([{id, label: raw}])};
     await persist(next);
-    setNewTaskLabels(m => ({...m, [idx]: ''}));
+    setNewTaskLabels((m) => ({...m, [idx]: ''}));
   }
   async function removeTask(ii, ti) {
     const tasks = Array.isArray(intervals[ii].tasks) ? intervals[ii].tasks : [];
@@ -648,37 +1377,167 @@ function ServiceIntervalEditor({equipment, onReload}) {
 
   return (
     <div style={card}>
-      <div style={sectionTitle}>Service Intervals <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Click an interval to edit its tasks + help text</span></div>
-      {intervals.length === 0 && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic', marginBottom:8}}>No intervals configured.</div>}
+      <div style={sectionTitle}>
+        Service Intervals{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Click an interval to edit its tasks + help text
+        </span>
+      </div>
+      {intervals.length === 0 && (
+        <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
+          No intervals configured.
+        </div>
+      )}
       {intervals.length > 0 && (
-        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:8}}>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8}}>
           {intervals.map((iv, i) => {
             const isExpanded = expandedIdx === i;
             const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
             return (
-              <div key={i} style={{border:'1px solid #e5e7eb', borderRadius:6, background:isExpanded?'#f9fafb':'white'}}>
-                <div onClick={()=>setExpandedIdx(isExpanded?null:i)} style={{padding:'8px 12px', display:'grid', gridTemplateColumns:'20px 90px 70px 1fr 70px', gap:10, alignItems:'center', cursor:'pointer'}}>
-                  <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'▼':'▶'}</span>
-                  <span style={{fontSize:12, fontWeight:700, color:'#111827'}}>{iv.hours_or_km.toLocaleString()} {iv.kind}</span>
-                  <span style={{fontSize:11, color:'#6b7280'}}>{tasks.length} tasks</span>
-                  <input type="text" defaultValue={iv.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.label||'')) editLabel(i, v); }} onClick={e => e.stopPropagation()} style={inpS}/>
-                  <button onClick={(e)=>{e.stopPropagation(); removeOne(i);}} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+              <div
+                key={i}
+                style={{border: '1px solid #e5e7eb', borderRadius: 6, background: isExpanded ? '#f9fafb' : 'white'}}
+              >
+                <div
+                  onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                  style={{
+                    padding: '8px 12px',
+                    display: 'grid',
+                    gridTemplateColumns: '20px 90px 70px 1fr 70px',
+                    gap: 10,
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{fontSize: 11, color: '#9ca3af'}}>{isExpanded ? '▼' : '▶'}</span>
+                  <span style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                    {iv.hours_or_km.toLocaleString()} {iv.kind}
+                  </span>
+                  <span style={{fontSize: 11, color: '#6b7280'}}>{tasks.length} tasks</span>
+                  <input
+                    type="text"
+                    defaultValue={iv.label || ''}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v !== (iv.label || '')) editLabel(i, v);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={inpS}
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeOne(i);
+                    }}
+                    disabled={busy}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 5,
+                      border: '1px solid #fecaca',
+                      background: 'white',
+                      color: '#b91c1c',
+                      fontSize: 11,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Remove
+                  </button>
                 </div>
                 {isExpanded && (
-                  <div style={{borderTop:'1px solid #e5e7eb', padding:'10px 12px'}}>
+                  <div style={{borderTop: '1px solid #e5e7eb', padding: '10px 12px'}}>
                     <div style={subTitle}>Help text (torque specs, tire pressure, etc. — shown on the webform)</div>
-                    <textarea defaultValue={iv.help_text || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (iv.help_text||'')) editHelpText(i, v); }} placeholder="e.g. Lugnut torque: 47lbs" rows={2} style={{...inpS, resize:'vertical', marginBottom:12}}/>
+                    <textarea
+                      defaultValue={iv.help_text || ''}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v !== (iv.help_text || '')) editHelpText(i, v);
+                      }}
+                      placeholder="e.g. Lugnut torque: 47lbs"
+                      rows={2}
+                      style={{...inpS, resize: 'vertical', marginBottom: 12}}
+                    />
                     <div style={subTitle}>Tasks at this interval</div>
-                    {tasks.length === 0 && <div style={{fontSize:11, color:'#9ca3af', fontStyle:'italic', marginBottom:6}}>No sub-tasks yet. Add below.</div>}
+                    {tasks.length === 0 && (
+                      <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic', marginBottom: 6}}>
+                        No sub-tasks yet. Add below.
+                      </div>
+                    )}
                     {tasks.map((t, ti) => (
-                      <div key={ti} style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginBottom:4, alignItems:'center'}}>
-                        <input type="text" defaultValue={t.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (t.label||'')) editTaskLabel(i, ti, v); }} style={inpS}/>
-                        <button onClick={()=>removeTask(i, ti)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+                      <div
+                        key={ti}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 70px',
+                          gap: 8,
+                          marginBottom: 4,
+                          alignItems: 'center',
+                        }}
+                      >
+                        <input
+                          type="text"
+                          defaultValue={t.label || ''}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim();
+                            if (v && v !== (t.label || '')) editTaskLabel(i, ti, v);
+                          }}
+                          style={inpS}
+                        />
+                        <button
+                          onClick={() => removeTask(i, ti)}
+                          disabled={busy}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: 5,
+                            border: '1px solid #fecaca',
+                            background: 'white',
+                            color: '#b91c1c',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          Remove
+                        </button>
                       </div>
                     ))}
-                    <div style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginTop:8, padding:'8px', background:'white', borderRadius:5, border:'1px dashed #d1d5db', alignItems:'center'}}>
-                      <input type="text" value={newTaskLabels[i] || ''} onChange={e=>setNewTaskLabels(m=>({...m, [i]:e.target.value}))} placeholder="e.g. CHECK OIL LEVEL" style={inpS}/>
-                      <button onClick={()=>addTask(i)} disabled={busy || !(newTaskLabels[i]||'').trim()} style={{padding:'5px 10px', borderRadius:5, border:'none', background:(busy||!(newTaskLabels[i]||'').trim())?'#9ca3af':'#57534e', color:'white', fontSize:11, fontWeight:600, cursor:(busy||!(newTaskLabels[i]||'').trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 70px',
+                        gap: 8,
+                        marginTop: 8,
+                        padding: '8px',
+                        background: 'white',
+                        borderRadius: 5,
+                        border: '1px dashed #d1d5db',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={newTaskLabels[i] || ''}
+                        onChange={(e) => setNewTaskLabels((m) => ({...m, [i]: e.target.value}))}
+                        placeholder="e.g. CHECK OIL LEVEL"
+                        style={inpS}
+                      />
+                      <button
+                        onClick={() => addTask(i)}
+                        disabled={busy || !(newTaskLabels[i] || '').trim()}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 5,
+                          border: 'none',
+                          background: busy || !(newTaskLabels[i] || '').trim() ? '#9ca3af' : '#57534e',
+                          color: 'white',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: busy || !(newTaskLabels[i] || '').trim() ? 'not-allowed' : 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        + Add
+                      </button>
                     </div>
                   </div>
                 )}
@@ -687,14 +1546,55 @@ function ServiceIntervalEditor({equipment, onReload}) {
           })}
         </div>
       )}
-      <div style={{display:'grid', gridTemplateColumns:'80px 80px 1fr 110px', gap:8, marginTop:10, padding:'10px', background:'#fafafa', borderRadius:6, border:'1px dashed #d1d5db', alignItems:'center'}}>
-        <input type="number" min="1" value={newVal} onChange={e=>setNewVal(e.target.value)} placeholder="e.g. 50" style={inpS}/>
-        <select value={newKind} onChange={e=>setNewKind(e.target.value)} style={inpS}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '80px 80px 1fr 110px',
+          gap: 8,
+          marginTop: 10,
+          padding: '10px',
+          background: '#fafafa',
+          borderRadius: 6,
+          border: '1px dashed #d1d5db',
+          alignItems: 'center',
+        }}
+      >
+        <input
+          type="number"
+          min="1"
+          value={newVal}
+          onChange={(e) => setNewVal(e.target.value)}
+          placeholder="e.g. 50"
+          style={inpS}
+        />
+        <select value={newKind} onChange={(e) => setNewKind(e.target.value)} style={inpS}>
           <option value="hours">hours</option>
           <option value="km">km</option>
         </select>
-        <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label (default 'Every N hours checklist')" style={inpS}/>
-        <button onClick={addOne} disabled={busy || !newVal} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newVal)?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newVal)?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add interval</button>
+        <input
+          type="text"
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          placeholder="Label (default 'Every N hours checklist')"
+          style={inpS}
+        />
+        <button
+          onClick={addOne}
+          disabled={busy || !newVal}
+          style={{
+            padding: '6px 12px',
+            borderRadius: 6,
+            border: 'none',
+            background: busy || !newVal ? '#9ca3af' : '#57534e',
+            color: 'white',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: busy || !newVal ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          + Add interval
+        </button>
       </div>
     </div>
   );
@@ -711,7 +1611,10 @@ function AttachmentChecklistsEditor({equipment, onReload}) {
     setBusy(true);
     const {error} = await sb.from('equipment').update({attachment_checklists: next}).eq('id', equipment.id);
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
     onReload();
   }
   async function editHelpText(idx, help_text) {
@@ -722,12 +1625,17 @@ function AttachmentChecklistsEditor({equipment, onReload}) {
   async function addTask(idx) {
     const raw = (newTaskLabels[idx] || '').trim();
     if (!raw) return;
-    const id = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'task-' + Date.now();
+    const id =
+      raw
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 50) || 'task-' + Date.now();
     const tasks = Array.isArray(items[idx].tasks) ? items[idx].tasks : [];
     const next = items.slice();
     next[idx] = {...items[idx], tasks: tasks.concat([{id, label: raw}])};
     await persist(next);
-    setNewTaskLabels(m => ({...m, [idx]: ''}));
+    setNewTaskLabels((m) => ({...m, [idx]: ''}));
   }
   async function removeTask(ii, ti) {
     const tasks = Array.isArray(items[ii].tasks) ? items[ii].tasks : [];
@@ -746,33 +1654,127 @@ function AttachmentChecklistsEditor({equipment, onReload}) {
 
   return (
     <div style={card}>
-      <div style={sectionTitle}>Attachment Checklists <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Shown as optional sections on the webform</span></div>
-      <div style={{display:'flex', flexDirection:'column', gap:6}}>
+      <div style={sectionTitle}>
+        Attachment Checklists{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Shown as optional sections on the webform
+        </span>
+      </div>
+      <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
         {items.map((a, i) => {
           const isExpanded = expandedIdx === i;
           const tasks = Array.isArray(a.tasks) ? a.tasks : [];
           return (
-            <div key={i} style={{border:'1px solid #e5e7eb', borderRadius:6, background:isExpanded?'#f9fafb':'white'}}>
-              <div onClick={()=>setExpandedIdx(isExpanded?null:i)} style={{padding:'8px 12px', display:'grid', gridTemplateColumns:'20px 1fr 80px 60px', gap:10, alignItems:'center', cursor:'pointer'}}>
-                <span style={{fontSize:11, color:'#9ca3af'}}>{isExpanded?'▼':'▶'}</span>
-                <span style={{fontSize:12, fontWeight:700, color:'#111827'}}>{a.name}</span>
-                <span style={{fontSize:12, color:'#6b7280'}}>{a.hours_or_km} {a.kind}</span>
-                <span style={{fontSize:11, color:'#6b7280'}}>{tasks.length} tasks</span>
+            <div
+              key={i}
+              style={{border: '1px solid #e5e7eb', borderRadius: 6, background: isExpanded ? '#f9fafb' : 'white'}}
+            >
+              <div
+                onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                style={{
+                  padding: '8px 12px',
+                  display: 'grid',
+                  gridTemplateColumns: '20px 1fr 80px 60px',
+                  gap: 10,
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{fontSize: 11, color: '#9ca3af'}}>{isExpanded ? '▼' : '▶'}</span>
+                <span style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>{a.name}</span>
+                <span style={{fontSize: 12, color: '#6b7280'}}>
+                  {a.hours_or_km} {a.kind}
+                </span>
+                <span style={{fontSize: 11, color: '#6b7280'}}>{tasks.length} tasks</span>
               </div>
               {isExpanded && (
-                <div style={{borderTop:'1px solid #e5e7eb', padding:'10px 12px'}}>
+                <div style={{borderTop: '1px solid #e5e7eb', padding: '10px 12px'}}>
                   <div style={subTitle}>Help text</div>
-                  <textarea defaultValue={a.help_text || ''} onBlur={e => { const v = e.target.value.trim(); if (v !== (a.help_text||'')) editHelpText(i, v); }} rows={2} style={{...inpS, resize:'vertical', marginBottom:12}}/>
+                  <textarea
+                    defaultValue={a.help_text || ''}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v !== (a.help_text || '')) editHelpText(i, v);
+                    }}
+                    rows={2}
+                    style={{...inpS, resize: 'vertical', marginBottom: 12}}
+                  />
                   <div style={subTitle}>Tasks</div>
                   {tasks.map((t, ti) => (
-                    <div key={ti} style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginBottom:4, alignItems:'center'}}>
-                      <input type="text" defaultValue={t.label || ''} onBlur={e => { const v = e.target.value.trim(); if (v && v !== (t.label||'')) editTaskLabel(i, ti, v); }} style={inpS}/>
-                      <button onClick={()=>removeTask(i, ti)} disabled={busy} style={{padding:'3px 8px', borderRadius:5, border:'1px solid #fecaca', background:'white', color:'#b91c1c', fontSize:11, cursor:'pointer', fontFamily:'inherit'}}>Remove</button>
+                    <div
+                      key={ti}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 70px',
+                        gap: 8,
+                        marginBottom: 4,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        defaultValue={t.label || ''}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v && v !== (t.label || '')) editTaskLabel(i, ti, v);
+                        }}
+                        style={inpS}
+                      />
+                      <button
+                        onClick={() => removeTask(i, ti)}
+                        disabled={busy}
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: 5,
+                          border: '1px solid #fecaca',
+                          background: 'white',
+                          color: '#b91c1c',
+                          fontSize: 11,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        Remove
+                      </button>
                     </div>
                   ))}
-                  <div style={{display:'grid', gridTemplateColumns:'1fr 70px', gap:8, marginTop:8, padding:'8px', background:'white', borderRadius:5, border:'1px dashed #d1d5db', alignItems:'center'}}>
-                    <input type="text" value={newTaskLabels[i] || ''} onChange={e=>setNewTaskLabels(m=>({...m, [i]:e.target.value}))} placeholder="e.g. CHECK BLADE BOLTS" style={inpS}/>
-                    <button onClick={()=>addTask(i)} disabled={busy || !(newTaskLabels[i]||'').trim()} style={{padding:'5px 10px', borderRadius:5, border:'none', background:(busy||!(newTaskLabels[i]||'').trim())?'#9ca3af':'#57534e', color:'white', fontSize:11, fontWeight:600, cursor:(busy||!(newTaskLabels[i]||'').trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 70px',
+                      gap: 8,
+                      marginTop: 8,
+                      padding: '8px',
+                      background: 'white',
+                      borderRadius: 5,
+                      border: '1px dashed #d1d5db',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={newTaskLabels[i] || ''}
+                      onChange={(e) => setNewTaskLabels((m) => ({...m, [i]: e.target.value}))}
+                      placeholder="e.g. CHECK BLADE BOLTS"
+                      style={inpS}
+                    />
+                    <button
+                      onClick={() => addTask(i)}
+                      disabled={busy || !(newTaskLabels[i] || '').trim()}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 5,
+                        border: 'none',
+                        background: busy || !(newTaskLabels[i] || '').trim() ? '#9ca3af' : '#57534e',
+                        color: 'white',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: busy || !(newTaskLabels[i] || '').trim() ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      + Add
+                    </button>
                   </div>
                 </div>
               )}
@@ -799,35 +1801,43 @@ function FuelSupplyAdminSection() {
 
   async function load() {
     const [{data: master}, {data: pf}] = await Promise.all([
-      sb.from('webform_config').select('data').eq('key','team_members').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key', 'per_form_team_members').maybeSingle(),
     ]);
     if (master && Array.isArray(master.data)) setAllTM(master.data);
-    const pfMap = (pf && pf.data && typeof pf.data === 'object') ? pf.data : {};
+    const pfMap = pf && pf.data && typeof pf.data === 'object' ? pf.data : {};
     setAllMap(pfMap);
     setAssigned(Array.isArray(pfMap['fuel-supply']) ? pfMap['fuel-supply'] : []);
     setLoaded(true);
   }
-  React.useEffect(() => { load(); }, []);
+  React.useEffect(() => {
+    load();
+  }, []);
 
   // Read-fresh-then-write avoids clobbering OTHER per-form keys when the local
   // allMap state is stale. The data jsonb is upserted whole, so we must merge
   // against the latest stored value rather than the cached React state.
   async function readPerFormFresh() {
-    const {data} = await sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle();
-    return (data && data.data && typeof data.data === 'object') ? data.data : {};
+    const {data} = await sb.from('webform_config').select('data').eq('key', 'per_form_team_members').maybeSingle();
+    return data && data.data && typeof data.data === 'object' ? data.data : {};
   }
 
   async function toggle(name) {
     setBusy(true);
     const fresh = await readPerFormFresh();
     const currentList = Array.isArray(fresh['fuel-supply']) ? fresh['fuel-supply'] : [];
-    const next = currentList.includes(name) ? currentList.filter(n => n !== name) : [...currentList, name];
+    const next = currentList.includes(name) ? currentList.filter((n) => n !== name) : [...currentList, name];
     const nextMap = {...fresh, 'fuel-supply': next};
-    const {error} = await sb.from('webform_config').upsert({key:'per_form_team_members', data: nextMap}, {onConflict:'key'});
+    const {error} = await sb
+      .from('webform_config')
+      .upsert({key: 'per_form_team_members', data: nextMap}, {onConflict: 'key'});
     setBusy(false);
-    if (error) { alert('Save failed: '+error.message); return; }
-    setAssigned(next); setAllMap(nextMap);
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
+    setAssigned(next);
+    setAllMap(nextMap);
   }
 
   async function addMaster() {
@@ -835,26 +1845,47 @@ function FuelSupplyAdminSection() {
     if (!n) return;
     setBusy(true);
     // Read fresh — local allTM might be stale.
-    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
-    const masterFresh = (masterRow && Array.isArray(masterRow.data)) ? masterRow.data : [];
-    if (masterFresh.includes(n)) { setBusy(false); alert('"' + n + '" is already in the list.'); setAllTM(masterFresh); return; }
+    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
+    const masterFresh = masterRow && Array.isArray(masterRow.data) ? masterRow.data : [];
+    if (masterFresh.includes(n)) {
+      setBusy(false);
+      alert('"' + n + '" is already in the list.');
+      setAllTM(masterFresh);
+      return;
+    }
     const next = [...masterFresh, n].sort((a, b) => a.localeCompare(b));
-    const {error} = await sb.from('webform_config').upsert({key:'team_members', data: next}, {onConflict:'key'});
+    const {error} = await sb.from('webform_config').upsert({key: 'team_members', data: next}, {onConflict: 'key'});
     setBusy(false);
-    if (error) { alert('Add failed: '+error.message); return; }
+    if (error) {
+      alert('Add failed: ' + error.message);
+      return;
+    }
     setAllTM(next);
     setNewName('');
   }
 
   async function removeMaster(name) {
-    if (!confirm('Remove "' + name + '" from the master team-member list?\n\nThey will also be removed from every per-form selection (fuel supply, dailys, weigh-ins, equipment) where they appear. Past records by this person are NOT affected.')) return;
+    if (
+      !confirm(
+        'Remove "' +
+          name +
+          '" from the master team-member list?\n\nThey will also be removed from every per-form selection (fuel supply, dailys, weigh-ins, equipment) where they appear. Past records by this person are NOT affected.',
+      )
+    )
+      return;
     setBusy(true);
     // 1. Remove from master list (read fresh first to avoid clobbering).
-    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
-    const masterFresh = (masterRow && Array.isArray(masterRow.data)) ? masterRow.data : allTM;
-    const nextMaster = masterFresh.filter(n => n !== name);
-    const {error: mErr} = await sb.from('webform_config').upsert({key:'team_members', data: nextMaster}, {onConflict:'key'});
-    if (mErr) { setBusy(false); alert('Remove failed: '+mErr.message); return; }
+    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
+    const masterFresh = masterRow && Array.isArray(masterRow.data) ? masterRow.data : allTM;
+    const nextMaster = masterFresh.filter((n) => n !== name);
+    const {error: mErr} = await sb
+      .from('webform_config')
+      .upsert({key: 'team_members', data: nextMaster}, {onConflict: 'key'});
+    if (mErr) {
+      setBusy(false);
+      alert('Remove failed: ' + mErr.message);
+      return;
+    }
     // 2. Cascade: strip from every per_form_team_members list. Read fresh
     //    so toggles that landed since component mount aren't lost.
     const fresh = await readPerFormFresh();
@@ -862,7 +1893,7 @@ function FuelSupplyAdminSection() {
     let perFormChanged = false;
     for (const [key, list] of Object.entries(fresh)) {
       if (Array.isArray(list)) {
-        const filtered = list.filter(n => n !== name);
+        const filtered = list.filter((n) => n !== name);
         nextPerForm[key] = filtered;
         if (filtered.length !== list.length) perFormChanged = true;
       } else {
@@ -870,48 +1901,139 @@ function FuelSupplyAdminSection() {
       }
     }
     if (perFormChanged) {
-      const {error: pfErr} = await sb.from('webform_config').upsert({key:'per_form_team_members', data: nextPerForm}, {onConflict:'key'});
-      if (pfErr) { setBusy(false); alert('Per-form cleanup failed: '+pfErr.message); return; }
+      const {error: pfErr} = await sb
+        .from('webform_config')
+        .upsert({key: 'per_form_team_members', data: nextPerForm}, {onConflict: 'key'});
+      if (pfErr) {
+        setBusy(false);
+        alert('Per-form cleanup failed: ' + pfErr.message);
+        return;
+      }
     }
     // 3. Cascade: strip from every equipment.team_members array.
     const {data: eqs} = await sb.from('equipment').select('id,team_members');
-    const hits = (eqs || []).filter(e => Array.isArray(e.team_members) && e.team_members.includes(name));
+    const hits = (eqs || []).filter((e) => Array.isArray(e.team_members) && e.team_members.includes(name));
     for (const e of hits) {
-      const filtered = e.team_members.filter(n => n !== name);
+      const filtered = e.team_members.filter((n) => n !== name);
       await sb.from('equipment').update({team_members: filtered}).eq('id', e.id);
     }
     setBusy(false);
     setAllTM(nextMaster);
-    setAssigned(prev => prev.filter(n => n !== name));
+    setAssigned((prev) => prev.filter((n) => n !== name));
     setAllMap(nextPerForm);
   }
 
   return (
-    <div style={{...card, background:'#fffbeb', borderColor:'#fde68a'}}>
-      <div style={sectionTitle}>⛽ Fuel Supply Webform <span style={{color:'#9ca3af', fontWeight:400, fontSize:10, marginLeft:8}}>Public form at /fueling/supply · click a name to assign · ✕ removes from master list</span></div>
-      {!loaded && <div style={{fontSize:12, color:'#9ca3af', fontStyle:'italic'}}>Loading…</div>}
+    <div style={{...card, background: '#fffbeb', borderColor: '#fde68a'}}>
+      <div style={sectionTitle}>
+        ⛽ Fuel Supply Webform{' '}
+        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
+          Public form at /fueling/supply · click a name to assign · ✕ removes from master list
+        </span>
+      </div>
+      {!loaded && <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>Loading…</div>}
       {loaded && (
         <>
           {allTM.length > 0 && (
-            <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:10}}>
-              {allTM.map(name => {
+            <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10}}>
+              {allTM.map((name) => {
                 const on = assigned.includes(name);
                 return (
-                  <span key={name} style={{display:'inline-flex', alignItems:'center', fontSize:12, borderRadius:5, border:'1px solid '+(on?'#047857':'#d1d5db'), background:on?'#d1fae5':'white', color:on?'#047857':'#6b7280', fontWeight:on?600:400, overflow:'hidden'}}>
-                    <button onClick={()=>toggle(name)} disabled={busy} style={{fontSize:12, padding:'5px 11px', border:'none', background:'transparent', color:'inherit', fontWeight:'inherit', cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>
-                      {on ? '✓ ' : ''}{name}
+                  <span
+                    key={name}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      fontSize: 12,
+                      borderRadius: 5,
+                      border: '1px solid ' + (on ? '#047857' : '#d1d5db'),
+                      background: on ? '#d1fae5' : 'white',
+                      color: on ? '#047857' : '#6b7280',
+                      fontWeight: on ? 600 : 400,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <button
+                      onClick={() => toggle(name)}
+                      disabled={busy}
+                      style={{
+                        fontSize: 12,
+                        padding: '5px 11px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'inherit',
+                        fontWeight: 'inherit',
+                        cursor: busy ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {on ? '✓ ' : ''}
+                      {name}
                     </button>
-                    <button onClick={()=>removeMaster(name)} disabled={busy} title={'Remove "'+name+'" from master list (cascades to all forms + equipment)'} style={{padding:'5px 8px 5px 2px', border:'none', borderLeft:'1px solid '+(on?'#a7f3d0':'#e5e7eb'), background:'transparent', color:'#9ca3af', cursor:busy?'not-allowed':'pointer', fontSize:13, lineHeight:1, fontFamily:'inherit'}}>×</button>
+                    <button
+                      onClick={() => removeMaster(name)}
+                      disabled={busy}
+                      title={'Remove "' + name + '" from master list (cascades to all forms + equipment)'}
+                      style={{
+                        padding: '5px 8px 5px 2px',
+                        border: 'none',
+                        borderLeft: '1px solid ' + (on ? '#a7f3d0' : '#e5e7eb'),
+                        background: 'transparent',
+                        color: '#9ca3af',
+                        cursor: busy ? 'not-allowed' : 'pointer',
+                        fontSize: 13,
+                        lineHeight: 1,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      ×
+                    </button>
                   </span>
                 );
               })}
             </div>
           )}
-          <div style={{display:'grid', gridTemplateColumns:'1fr 80px', gap:6, padding:10, background:'rgba(255,255,255,.6)', borderRadius:6, border:'1px dashed #d1d5db', marginBottom:8}}>
-            <input type="text" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="New team member name (e.g. COTY)" onKeyDown={e=>{if(e.key==='Enter') addMaster();}} style={inpS}/>
-            <button onClick={addMaster} disabled={busy || !newName.trim()} style={{padding:'6px 12px', borderRadius:6, border:'none', background:(busy||!newName.trim())?'#9ca3af':'#57534e', color:'white', fontSize:12, fontWeight:600, cursor:(busy||!newName.trim())?'not-allowed':'pointer', fontFamily:'inherit'}}>+ Add</button>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 80px',
+              gap: 6,
+              padding: 10,
+              background: 'rgba(255,255,255,.6)',
+              borderRadius: 6,
+              border: '1px dashed #d1d5db',
+              marginBottom: 8,
+            }}
+          >
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="New team member name (e.g. COTY)"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addMaster();
+              }}
+              style={inpS}
+            />
+            <button
+              onClick={addMaster}
+              disabled={busy || !newName.trim()}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: 'none',
+                background: busy || !newName.trim() ? '#9ca3af' : '#57534e',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: busy || !newName.trim() ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              + Add
+            </button>
           </div>
-          <div style={{fontSize:11, color:'#92400e', fontStyle:'italic'}}>
+          <div style={{fontSize: 11, color: '#92400e', fontStyle: 'italic'}}>
             {assigned.length === 0
               ? 'No names ✓-assigned → /fueling/supply falls back to the full master list.'
               : assigned.length + ' assigned · only these show on the public form.'}

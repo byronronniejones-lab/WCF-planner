@@ -5,14 +5,14 @@
 //
 //   sheepForHome : [{id, flock}] directory for missed-report flock-presence check
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 const SheepHomeContext = createContext(null);
 
-export function SheepHomeProvider({ children }) {
+export function SheepHomeProvider({children}) {
   const [sheepForHome, setSheepForHome] = useState([]);
 
-  const value = { sheepForHome, setSheepForHome };
+  const value = {sheepForHome, setSheepForHome};
   return <SheepHomeContext.Provider value={value}>{children}</SheepHomeContext.Provider>;
 }
 

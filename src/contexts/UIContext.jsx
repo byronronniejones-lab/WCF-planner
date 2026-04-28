@@ -11,8 +11,8 @@
 //   showAllComparison : boolean — broiler comparison-table "show all" toggle
 //   showMenu          : boolean — mobile side-menu open
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
-import { PATH_TO_VIEW } from '../lib/routes.js';
+import React, {createContext, useContext, useState} from 'react';
+import {PATH_TO_VIEW} from '../lib/routes.js';
 
 const UIContext = createContext(null);
 
@@ -26,23 +26,27 @@ function initialView() {
   // but if the shim threw for some reason we still honor the bookmark).
   const h = window.location.hash;
   if (h === '#webforms' || h === '#/webforms') return 'webformhub';
-  if (h === '#addfeed'  || h === '#/addfeed')  return 'addfeed';
+  if (h === '#addfeed' || h === '#/addfeed') return 'addfeed';
   if (h === '#weighins' || h === '#/weighins') return 'weighins';
-  if (h === '#pigdailys'|| h === '#/pigdailys')return 'webform';
+  if (h === '#pigdailys' || h === '#/pigdailys') return 'webform';
   return 'home';
 }
 
-export function UIProvider({ children }) {
-  const [view,              setView]              = useState(initialView);
-  const [pendingEdit,       setPendingEdit]       = useState(null);
+export function UIProvider({children}) {
+  const [view, setView] = useState(initialView);
+  const [pendingEdit, setPendingEdit] = useState(null);
   const [showAllComparison, setShowAllComparison] = useState(false);
-  const [showMenu,          setShowMenu]          = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
 
   const value = {
-    view,              setView,
-    pendingEdit,       setPendingEdit,
-    showAllComparison, setShowAllComparison,
-    showMenu,          setShowMenu,
+    view,
+    setView,
+    pendingEdit,
+    setPendingEdit,
+    showAllComparison,
+    setShowAllComparison,
+    showMenu,
+    setShowMenu,
   };
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
 }

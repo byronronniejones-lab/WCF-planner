@@ -15,43 +15,43 @@
 // ============================================================================
 
 import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
-import { VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT } from './lib/routes.js';
+import {createRoot} from 'react-dom/client';
+import {BrowserRouter, useLocation, useNavigate} from 'react-router-dom';
+import {VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT} from './lib/routes.js';
 
 // Phase 2.0.0: foundation lib helpers extracted from this file. Importing
 // here makes them available throughout the verbatim-ported app body without
 // any rename or rewiring (the names `sb`, `wcfSendEmail`, `wcfSelectAll`
 // are still globals in the module scope).
-import { sb } from './lib/supabase.js';
-import { wcfSendEmail } from './lib/email.js';
-import { wcfSelectAll } from './lib/pagination.js';
+import {sb} from './lib/supabase.js';
+import {wcfSendEmail} from './lib/email.js';
+import {wcfSelectAll} from './lib/pagination.js';
 
 // Phase 2.0.1: AuthContext owns the auth-related useState hooks. App() reads
 // them via useAuth(); effects + helpers + derived values stay in App.
-import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
+import {AuthProvider, useAuth} from './contexts/AuthContext.jsx';
 
 // Phase 2.0.2: BatchesContext owns the broiler batch + edit-form hooks.
 // EMPTY_FORM is passed in as the form initializer (module-scope here).
-import { BatchesProvider, useBatches } from './contexts/BatchesContext.jsx';
+import {BatchesProvider, useBatches} from './contexts/BatchesContext.jsx';
 
 // Phase 2.0.3: PigContext owns all pig-scoped useState hooks. INITIAL_FARROWING,
 // INITIAL_BREEDERS, and the breedTlStart lazy init are threaded in as props.
-import { PigProvider, usePig } from './contexts/PigContext.jsx';
+import {PigProvider, usePig} from './contexts/PigContext.jsx';
 
 // Phase 2.0.4: LayerContext owns layer-scoped useState hooks.
-import { LayerProvider, useLayer } from './contexts/LayerContext.jsx';
+import {LayerProvider, useLayer} from './contexts/LayerContext.jsx';
 
 // Phase 2.0.5: DailysRecentContext owns the recent-window dailys arrays
 // across broiler/pig/layer/egg/cattle/sheep.
-import { DailysRecentProvider, useDailysRecent } from './contexts/DailysRecentContext.jsx';
+import {DailysRecentProvider, useDailysRecent} from './contexts/DailysRecentContext.jsx';
 
 // Phase 2.0.6: five small contexts bundled in one commit.
-import { CattleHomeProvider, useCattleHome } from './contexts/CattleHomeContext.jsx';
-import { SheepHomeProvider, useSheepHome } from './contexts/SheepHomeContext.jsx';
-import { WebformsConfigProvider, useWebformsConfig } from './contexts/WebformsConfigContext.jsx';
-import { FeedCostsProvider, useFeedCosts } from './contexts/FeedCostsContext.jsx';
-import { UIProvider, useUI } from './contexts/UIContext.jsx';
+import {CattleHomeProvider, useCattleHome} from './contexts/CattleHomeContext.jsx';
+import {SheepHomeProvider, useSheepHome} from './contexts/SheepHomeContext.jsx';
+import {WebformsConfigProvider, useWebformsConfig} from './contexts/WebformsConfigContext.jsx';
+import {FeedCostsProvider, useFeedCosts} from './contexts/FeedCostsContext.jsx';
+import {UIProvider, useUI} from './contexts/UIContext.jsx';
 
 // Phase 2.1.1: leaf form-input components extracted to src/shared/.
 import WcfYN from './shared/WcfYN.jsx';
@@ -63,7 +63,7 @@ import DeleteModal from './shared/DeleteModal.jsx';
 // Phase 2.1.3 prep: layer-housing helpers extracted ahead of modal extractions
 // so the admin modal + webform hub can import them without a circular dep on
 // main.jsx. Verbatim — signatures unchanged.
-import { setHousingAnchorFromReport, computeProjectedCount, computeLayerFeedCost } from './lib/layerHousing.js';
+import {setHousingAnchorFromReport, computeProjectedCount, computeLayerFeedCost} from './lib/layerHousing.js';
 
 // Phase 2.1.4: Admin + livestock + cattle modals extracted verbatim.
 import AdminAddReportModal from './shared/AdminAddReportModal.jsx';
@@ -105,17 +105,63 @@ import LivestockWeighInsView from './livestock/LivestockWeighInsView.jsx';
 import CattleWeighInsView from './cattle/CattleWeighInsView.jsx';
 
 // Phase 2.3 prep: helpers needed by Round 3 views extracted to src/lib/.
-import { loadCattleWeighInsCached, invalidateCattleWeighInsCache } from './lib/cattleCache.js';
-import { calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel } from './lib/cattleBreeding.js';
-import { addDays, toISO, fmt, fmtS, todayISO } from './lib/dateUtils.js';
-import { S } from './lib/styles.js';
-import { DEFAULT_WEBFORMS_CONFIG } from './lib/defaults.js';
+import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from './lib/cattleCache.js';
+import {calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel} from './lib/cattleBreeding.js';
+import {addDays, toISO, fmt, fmtS, todayISO} from './lib/dateUtils.js';
+import {S} from './lib/styles.js';
+import {DEFAULT_WEBFORMS_CONFIG} from './lib/defaults.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
-import { BROODER_DAYS, CC_SCHOONER, WR_SCHOONER, WEEKS_SHOWN, LEGACY_BREEDS, RESOURCES, BREED_STYLE, STATUS_STYLE, BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps, STATUSES, ALL_HATCHERIES, LEGACY_HATCHERIES, getFeedSchedule, calcBatchFeed, calcBatchFeedForMonth, calcLayerFeedForMonth, calcTimeline, calcPoultryStatus, calcBroilerStatsFromDailys, getBatchColor, breedLabel, isNearHoliday, calcTargetHatch, suggestHatchDates } from './lib/broiler.js';
-import { BOAR_EXPOSURE_DAYS, GESTATION_DAYS, WEANING_DAYS, GROW_OUT_DAYS, PIG_GROUPS, BREEDING_STATUSES, PIG_GROUP_COLORS, PIG_GROUP_TEXT, PHASE_LABELS, calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus, reconcileFeederGroupsFromBreeders } from './lib/pig.js';
-import { detectConflicts } from './lib/conflicts.js';
-if (typeof window !== 'undefined') { window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache; }
+import {
+  BROODER_DAYS,
+  CC_SCHOONER,
+  WR_SCHOONER,
+  WEEKS_SHOWN,
+  LEGACY_BREEDS,
+  RESOURCES,
+  BREED_STYLE,
+  STATUS_STYLE,
+  BROODERS,
+  SCHOONERS,
+  BROODER_CLEANOUT,
+  SCHOONER_CLEANOUT,
+  overlaps,
+  STATUSES,
+  ALL_HATCHERIES,
+  LEGACY_HATCHERIES,
+  getFeedSchedule,
+  calcBatchFeed,
+  calcBatchFeedForMonth,
+  calcLayerFeedForMonth,
+  calcTimeline,
+  calcPoultryStatus,
+  calcBroilerStatsFromDailys,
+  getBatchColor,
+  breedLabel,
+  isNearHoliday,
+  calcTargetHatch,
+  suggestHatchDates,
+} from './lib/broiler.js';
+import {
+  BOAR_EXPOSURE_DAYS,
+  GESTATION_DAYS,
+  WEANING_DAYS,
+  GROW_OUT_DAYS,
+  PIG_GROUPS,
+  BREEDING_STATUSES,
+  PIG_GROUP_COLORS,
+  PIG_GROUP_TEXT,
+  PHASE_LABELS,
+  calcBreedingTimeline,
+  buildCycleSeqMap,
+  cycleLabel,
+  calcCycleStatus,
+  reconcileFeederGroupsFromBreeders,
+} from './lib/pig.js';
+import {detectConflicts} from './lib/conflicts.js';
+if (typeof window !== 'undefined') {
+  window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache;
+}
 
 // Phase 2 Round 3: bigger stateful views + UsersModal.
 import UsersModal from './auth/UsersModal.jsx';
@@ -174,11 +220,13 @@ import BatchForm from './broiler/BatchForm.jsx';
 // these are dead weight. Idempotent purge on every mount; safe to leave
 // in forever even after every existing user has reloaded once.
 try {
-  for(let i = localStorage.length - 1; i >= 0; i--) {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
     const k = localStorage.key(i);
-    if(k && k.startsWith('wcf-babel-')) localStorage.removeItem(k);
+    if (k && k.startsWith('wcf-babel-')) localStorage.removeItem(k);
   }
-} catch(e) { /* localStorage disabled — fine */ }
+} catch (e) {
+  /* localStorage disabled — fine */
+}
 
 // ── PHASE 3.3 — LEGACY HASH-BOOKMARK COMPAT SHIM ──
 // Pre-Phase-3 users may have saved /#weighins, /#addfeed, /#webforms
@@ -195,7 +243,9 @@ try {
   if (h && HASH_COMPAT[h]) {
     window.history.replaceState(null, '', HASH_COMPAT[h]);
   }
-} catch(e) { /* no history API / locked-down browser — skip */ }
+} catch (e) {
+  /* no history API / locked-down browser — skip */
+}
 
 // ── LAZY LOAD SHEETJS ──
 // SheetJS (xlsx) is ~600KB minified and only used when opening processor
@@ -203,10 +253,10 @@ try {
 // ESM import. Same window._wcfLoadXLSX API as the pre-Vite CDN-script-tag
 // loader so the existing call sites (`await window._wcfLoadXLSX()` followed
 // by `XLSX.X`) don't need to change.
-window._wcfLoadXLSX = function() {
-  if(window.XLSX) return Promise.resolve(window.XLSX);
-  if(window._wcfXLSXPromise) return window._wcfXLSXPromise;
-  window._wcfXLSXPromise = import('xlsx').then(m => {
+window._wcfLoadXLSX = function () {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (window._wcfXLSXPromise) return window._wcfXLSXPromise;
+  window._wcfXLSXPromise = import('xlsx').then((m) => {
     window.XLSX = m.default || m;
     return window.XLSX;
   });
@@ -222,22 +272,15 @@ window._wcfLoadXLSX = function() {
 
 // Phase 2.3 prep: cattle cache helpers moved to src/lib/cattleCache.js.
 
-const { useState, useEffect, useCallback } = React;
-
+const {useState, useEffect, useCallback} = React;
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────
 // BROODER_CLEANOUT + SCHOONER_CLEANOUT moved to lib/broiler.js (imported above).
-const STORAGE_KEY       = "ppp-data-v1";
-
-
-
+const STORAGE_KEY = 'ppp-data-v1';
 
 // Hatchery lists + STATUSES + BROODERS + SCHOONERS moved to lib/broiler.js
 // (imported above). CC_HATCHERIES / WR_HATCHERIES were legacy-only refs that
 // no live code consumed — dropped.
-
-
-
 
 // ── CATTLE CONSTANTS ──
 // Moved to src/lib/cattle.js (Phase 2 finale polish). main.jsx no longer
@@ -248,27 +291,597 @@ const STORAGE_KEY       = "ppp-data-v1";
 // All dates ISO strings. Returns null if start not provided.
 // Phase 2.3 prep: cattle breeding helpers moved to src/lib/cattleBreeding.js.
 
-
-const INITIAL_BREEDERS = [{"id": "podio-1", "tag": "1", "sex": "Boar", "group": "", "status": "Boar Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-01-15", "lastWeight": "393", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-2", "tag": "2", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "444", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-3", "tag": "3", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "285", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-4", "tag": "4", "sex": "Sow", "group": "", "status": "Deceased", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "570", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": true}, {"id": "podio-5", "tag": "5", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "644", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-6", "tag": "6", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "370", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-7", "tag": "7", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "315", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-8", "tag": "8", "sex": "Sow", "group": "2", "status": "Deceased", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "416", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": true}, {"id": "podio-9", "tag": "9", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2023-05-17", "lastWeight": "374", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-10", "tag": "10", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2022-02-01", "lastWeight": "610", "purchaseDate": "2022-04-01", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-11", "tag": "11", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "387", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-13", "tag": "13", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2023-05-17", "lastWeight": "373", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-17", "tag": "17", "sex": "Sow", "group": "1", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "370", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-18", "tag": "18", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "462", "purchaseDate": "2024-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-19", "tag": "19", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-03-06", "lastWeight": "414", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-21", "tag": "21", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "388", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-22", "tag": "22", "sex": "Sow", "group": "2", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "395", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-25", "tag": "25", "sex": "Boar", "group": "", "status": "Boar Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2023-05-17", "lastWeight": "396", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-27", "tag": "27", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "377", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-28", "tag": "28", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "360", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": false}, {"id": "podio-32", "tag": "32", "sex": "Gilt", "group": "3", "status": "Sow Group", "breed": "Duroc/Berkshire Cross", "origin": "Born on Farm", "birthDate": "2024-09-18", "lastWeight": "", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-33", "tag": "33", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Born on Farm", "birthDate": "2024-09-18", "lastWeight": "", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-34", "tag": "34", "sex": "Sow", "group": "3", "status": "Sow Group", "breed": "Berkshire", "origin": "Born on Farm", "birthDate": "2024-09-18", "lastWeight": "", "purchaseDate": "", "purchaseAmount": "", "notes": "", "archived": false}, {"id": "podio-98", "tag": "98", "sex": "Sow", "group": "1", "status": "Deceased", "breed": "Berkshire", "origin": "Corey Davis", "birthDate": "2023-02-15", "lastWeight": "361", "purchaseDate": "2023-04-15", "purchaseAmount": "750", "notes": "", "archived": true}];
+const INITIAL_BREEDERS = [
+  {
+    id: 'podio-1',
+    tag: '1',
+    sex: 'Boar',
+    group: '',
+    status: 'Boar Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-01-15',
+    lastWeight: '393',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-2',
+    tag: '2',
+    sex: 'Sow',
+    group: '2',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2022-02-01',
+    lastWeight: '444',
+    purchaseDate: '2022-04-01',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-3',
+    tag: '3',
+    sex: 'Sow',
+    group: '1',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '285',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-4',
+    tag: '4',
+    sex: 'Sow',
+    group: '',
+    status: 'Deceased',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2022-02-01',
+    lastWeight: '570',
+    purchaseDate: '2022-04-01',
+    purchaseAmount: '750',
+    notes: '',
+    archived: true,
+  },
+  {
+    id: 'podio-5',
+    tag: '5',
+    sex: 'Sow',
+    group: '2',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2022-02-01',
+    lastWeight: '644',
+    purchaseDate: '2022-04-01',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-6',
+    tag: '6',
+    sex: 'Sow',
+    group: '1',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '370',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-7',
+    tag: '7',
+    sex: 'Sow',
+    group: '1',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '315',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-8',
+    tag: '8',
+    sex: 'Sow',
+    group: '2',
+    status: 'Deceased',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2022-02-01',
+    lastWeight: '416',
+    purchaseDate: '2022-04-01',
+    purchaseAmount: '750',
+    notes: '',
+    archived: true,
+  },
+  {
+    id: 'podio-9',
+    tag: '9',
+    sex: 'Sow',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Duroc/Berkshire Cross',
+    origin: 'Born on Farm',
+    birthDate: '2023-05-17',
+    lastWeight: '374',
+    purchaseDate: '',
+    purchaseAmount: '',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-10',
+    tag: '10',
+    sex: 'Sow',
+    group: '2',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2022-02-01',
+    lastWeight: '610',
+    purchaseDate: '2022-04-01',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-11',
+    tag: '11',
+    sex: 'Sow',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '387',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-13',
+    tag: '13',
+    sex: 'Sow',
+    group: '2',
+    status: 'Sow Group',
+    breed: 'Duroc/Berkshire Cross',
+    origin: 'Born on Farm',
+    birthDate: '2023-05-17',
+    lastWeight: '373',
+    purchaseDate: '',
+    purchaseAmount: '',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-17',
+    tag: '17',
+    sex: 'Sow',
+    group: '1',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '370',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-18',
+    tag: '18',
+    sex: 'Sow',
+    group: '2',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '462',
+    purchaseDate: '2024-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-19',
+    tag: '19',
+    sex: 'Sow',
+    group: '2',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-03-06',
+    lastWeight: '414',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-21',
+    tag: '21',
+    sex: 'Sow',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '388',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-22',
+    tag: '22',
+    sex: 'Sow',
+    group: '2',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '395',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-25',
+    tag: '25',
+    sex: 'Boar',
+    group: '',
+    status: 'Boar Group',
+    breed: 'Duroc/Berkshire Cross',
+    origin: 'Born on Farm',
+    birthDate: '2023-05-17',
+    lastWeight: '396',
+    purchaseDate: '',
+    purchaseAmount: '',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-27',
+    tag: '27',
+    sex: 'Sow',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '377',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-28',
+    tag: '28',
+    sex: 'Sow',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '360',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-32',
+    tag: '32',
+    sex: 'Gilt',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Duroc/Berkshire Cross',
+    origin: 'Born on Farm',
+    birthDate: '2024-09-18',
+    lastWeight: '',
+    purchaseDate: '',
+    purchaseAmount: '',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-33',
+    tag: '33',
+    sex: 'Sow',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Born on Farm',
+    birthDate: '2024-09-18',
+    lastWeight: '',
+    purchaseDate: '',
+    purchaseAmount: '',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-34',
+    tag: '34',
+    sex: 'Sow',
+    group: '3',
+    status: 'Sow Group',
+    breed: 'Berkshire',
+    origin: 'Born on Farm',
+    birthDate: '2024-09-18',
+    lastWeight: '',
+    purchaseDate: '',
+    purchaseAmount: '',
+    notes: '',
+    archived: false,
+  },
+  {
+    id: 'podio-98',
+    tag: '98',
+    sex: 'Sow',
+    group: '1',
+    status: 'Deceased',
+    breed: 'Berkshire',
+    origin: 'Corey Davis',
+    birthDate: '2023-02-15',
+    lastWeight: '361',
+    purchaseDate: '2023-04-15',
+    purchaseAmount: '750',
+    notes: '',
+    archived: true,
+  },
+];
 
 // Historical farrowing records imported from Podio export
 const INITIAL_FARROWING = [
-  {id:"f1",  sow:"5",  group:"2", farrowingDate:"2025-11-13", exposureStart:"2025-07-02", exposureEnd:"2025-08-13", sire:"MACHINE", motheringQuality:"excellent", demeanor:"Meanest mom in a good defensive way", totalBorn:11, deaths:3, location:"outside-pen", wentWell:"She aggressively defends her piglets", didntGoWell:"Crushing day 5", defects:"1 doa, 1 dead within 24 hours, one crushed around day 5. 2 runts, one recovered decently, one is still much smaller than rest of batch at 2.5 months old.\n\nMinor prolapse."},
-  {id:"f2",  sow:"19", group:"2", farrowingDate:"2025-11-11", exposureStart:"2025-07-02", exposureEnd:"2025-08-13", sire:"MACHINE", motheringQuality:"excellent", demeanor:"no complaints. Solid mother.", totalBorn:7,  deaths:1, location:"outside-pen", wentWell:"no deaths after 24 hours", didntGoWell:"", defects:"1 newborn death - no defects"},
-  {id:"f3",  sow:"2",  group:"2", farrowingDate:"2025-11-04", exposureStart:"2025-07-02", exposureEnd:"2025-08-13", sire:"MACHINE", motheringQuality:"average", demeanor:"Very very protective", totalBorn:9,  deaths:4, location:"outside-pen", wentWell:"Very protective", didntGoWell:"Wish she picked hut with hay over bush nest. One piglet was killed during commotion with other moms when moved into different farrowing paddock.", defects:"One DOA, one thought a different mama was hers after 1 day and died, one was crushed after 2 days. Last one is only one you can really blame her for. One was killed about a week later when they were moved into other Paddock by other mom."},
-  {id:"f4",  sow:"13", group:"2", farrowingDate:"2025-10-29", exposureStart:"2025-07-02", exposureEnd:"2025-08-13", sire:"MACHINE", motheringQuality:"excellent", demeanor:"Very protective", totalBorn:7,  deaths:0, location:"outside-pen", wentWell:"All alive, very protective, made her own nest", didntGoWell:"0", defects:"0"},
-  {id:"f5",  sow:"6",  group:"1", farrowingDate:"2025-08-24", exposureStart:"2025-03-24", exposureEnd:"2025-05-05", sire:"MACHINE", motheringQuality:"average", demeanor:"Doesn't want you in the pen with her", totalBorn:10, deaths:2, location:"inside-hut", wentWell:"Hay bedding seemed an improvement on 0 bedding", didntGoWell:"Silver dog panels are easy for them to move and escape. Also easy for piglets to escape with those", defects:"One has an extremely large growth on back leg, but currently still alive\n\nOne was crushed by mama\n\nOne was walking on wrists on both back legs, had no chance, couldn't stand after 2 days"},
-  {id:"f6",  sow:"17", group:"1", farrowingDate:"2025-08-18", exposureStart:"2025-03-24", exposureEnd:"2025-05-05", sire:"AO",      motheringQuality:"excellent", demeanor:"Bit a piglet from #3 unprovoked a day before she gave birth", totalBorn:9,  deaths:1, location:"outside-pen", wentWell:"High survival rate outside pen", didntGoWell:"", defects:"0\n\nAO father"},
-  {id:"f7",  sow:"98", group:"1", farrowingDate:"2025-08-11", exposureStart:"2025-03-24", exposureEnd:"2025-05-05", sire:"MACHINE", motheringQuality:"average", demeanor:"Friendly", totalBorn:11, deaths:7, location:"inside-hut", wentWell:"Put in pen just hours before birth", didntGoWell:"She broke out twice, had to rebuild pen next to her as she was 40 yards away in morning", defects:"4 possible doa, 3 crushed after being alive"},
-  {id:"f8",  sow:"3",  group:"1", farrowingDate:"2025-08-11", exposureStart:"2025-03-24", exposureEnd:"2025-05-05", sire:"AO",      motheringQuality:"",        demeanor:"Friendly, no issues", totalBorn:4,  deaths:1, location:"",           wentWell:"put into pen post birth to grow for a few days", didntGoWell:"one piglet was bitten by another sow #17 unprovoked, he shook it off and is doing fine", defects:"possible 1 DOA, small and never seen alive"},
-  {id:"f9",  sow:"7",  group:"1", farrowingDate:"2025-08-05", exposureStart:"2025-03-24", exposureEnd:"2025-05-05", sire:"MACHINE", motheringQuality:"average", demeanor:"Friendly, no issues", totalBorn:10, deaths:4, location:"outside-hut",  wentWell:"", didntGoWell:"", defects:""},
-  {id:"f10", sow:"9",  group:"3", farrowingDate:"2025-07-17", exposureStart:"2025-03-24", exposureEnd:"2025-05-05", sire:"AO",      motheringQuality:"poor",    demeanor:"", totalBorn:11, deaths:11, location:"outside-pen", wentWell:"", didntGoWell:"Better shade paddocks when pregnant, or potentially no summer farrowing", defects:"Premature. Most died immediately, oldest only lasted 2 days"},
-  {id:"f11", sow:"2",  group:"2", farrowingDate:"2024-09-08", exposureStart:"", exposureEnd:"", sire:"MACHINE", motheringQuality:"average", demeanor:"nightmare to get into farrowing pen", totalBorn:7, deaths:1, location:"", wentWell:"", didntGoWell:"one piglet was crushed by hay under waterer, probably wasn't packed down enough or too much was used", defects:""},
-  {id:"f12", sow:"10", group:"2", farrowingDate:"2024-07-25", exposureStart:"", exposureEnd:"", sire:"AO",      motheringQuality:"",        demeanor:"", totalBorn:11, deaths:1, location:"", wentWell:"", didntGoWell:"", defects:"one crushed"},
-  {id:"f13", sow:"5",  group:"2", farrowingDate:"2024-07-19", exposureStart:"", exposureEnd:"", sire:"",        motheringQuality:"",        demeanor:"aggressive when getting into pen with her", totalBorn:8, deaths:1, location:"outside-pen", wentWell:"built pen around her after birth", didntGoWell:"", defects:"0, crushed piglet 3 days after birth"},
+  {
+    id: 'f1',
+    sow: '5',
+    group: '2',
+    farrowingDate: '2025-11-13',
+    exposureStart: '2025-07-02',
+    exposureEnd: '2025-08-13',
+    sire: 'MACHINE',
+    motheringQuality: 'excellent',
+    demeanor: 'Meanest mom in a good defensive way',
+    totalBorn: 11,
+    deaths: 3,
+    location: 'outside-pen',
+    wentWell: 'She aggressively defends her piglets',
+    didntGoWell: 'Crushing day 5',
+    defects:
+      '1 doa, 1 dead within 24 hours, one crushed around day 5. 2 runts, one recovered decently, one is still much smaller than rest of batch at 2.5 months old.\n\nMinor prolapse.',
+  },
+  {
+    id: 'f2',
+    sow: '19',
+    group: '2',
+    farrowingDate: '2025-11-11',
+    exposureStart: '2025-07-02',
+    exposureEnd: '2025-08-13',
+    sire: 'MACHINE',
+    motheringQuality: 'excellent',
+    demeanor: 'no complaints. Solid mother.',
+    totalBorn: 7,
+    deaths: 1,
+    location: 'outside-pen',
+    wentWell: 'no deaths after 24 hours',
+    didntGoWell: '',
+    defects: '1 newborn death - no defects',
+  },
+  {
+    id: 'f3',
+    sow: '2',
+    group: '2',
+    farrowingDate: '2025-11-04',
+    exposureStart: '2025-07-02',
+    exposureEnd: '2025-08-13',
+    sire: 'MACHINE',
+    motheringQuality: 'average',
+    demeanor: 'Very very protective',
+    totalBorn: 9,
+    deaths: 4,
+    location: 'outside-pen',
+    wentWell: 'Very protective',
+    didntGoWell:
+      'Wish she picked hut with hay over bush nest. One piglet was killed during commotion with other moms when moved into different farrowing paddock.',
+    defects:
+      'One DOA, one thought a different mama was hers after 1 day and died, one was crushed after 2 days. Last one is only one you can really blame her for. One was killed about a week later when they were moved into other Paddock by other mom.',
+  },
+  {
+    id: 'f4',
+    sow: '13',
+    group: '2',
+    farrowingDate: '2025-10-29',
+    exposureStart: '2025-07-02',
+    exposureEnd: '2025-08-13',
+    sire: 'MACHINE',
+    motheringQuality: 'excellent',
+    demeanor: 'Very protective',
+    totalBorn: 7,
+    deaths: 0,
+    location: 'outside-pen',
+    wentWell: 'All alive, very protective, made her own nest',
+    didntGoWell: '0',
+    defects: '0',
+  },
+  {
+    id: 'f5',
+    sow: '6',
+    group: '1',
+    farrowingDate: '2025-08-24',
+    exposureStart: '2025-03-24',
+    exposureEnd: '2025-05-05',
+    sire: 'MACHINE',
+    motheringQuality: 'average',
+    demeanor: "Doesn't want you in the pen with her",
+    totalBorn: 10,
+    deaths: 2,
+    location: 'inside-hut',
+    wentWell: 'Hay bedding seemed an improvement on 0 bedding',
+    didntGoWell: 'Silver dog panels are easy for them to move and escape. Also easy for piglets to escape with those',
+    defects:
+      "One has an extremely large growth on back leg, but currently still alive\n\nOne was crushed by mama\n\nOne was walking on wrists on both back legs, had no chance, couldn't stand after 2 days",
+  },
+  {
+    id: 'f6',
+    sow: '17',
+    group: '1',
+    farrowingDate: '2025-08-18',
+    exposureStart: '2025-03-24',
+    exposureEnd: '2025-05-05',
+    sire: 'AO',
+    motheringQuality: 'excellent',
+    demeanor: 'Bit a piglet from #3 unprovoked a day before she gave birth',
+    totalBorn: 9,
+    deaths: 1,
+    location: 'outside-pen',
+    wentWell: 'High survival rate outside pen',
+    didntGoWell: '',
+    defects: '0\n\nAO father',
+  },
+  {
+    id: 'f7',
+    sow: '98',
+    group: '1',
+    farrowingDate: '2025-08-11',
+    exposureStart: '2025-03-24',
+    exposureEnd: '2025-05-05',
+    sire: 'MACHINE',
+    motheringQuality: 'average',
+    demeanor: 'Friendly',
+    totalBorn: 11,
+    deaths: 7,
+    location: 'inside-hut',
+    wentWell: 'Put in pen just hours before birth',
+    didntGoWell: 'She broke out twice, had to rebuild pen next to her as she was 40 yards away in morning',
+    defects: '4 possible doa, 3 crushed after being alive',
+  },
+  {
+    id: 'f8',
+    sow: '3',
+    group: '1',
+    farrowingDate: '2025-08-11',
+    exposureStart: '2025-03-24',
+    exposureEnd: '2025-05-05',
+    sire: 'AO',
+    motheringQuality: '',
+    demeanor: 'Friendly, no issues',
+    totalBorn: 4,
+    deaths: 1,
+    location: '',
+    wentWell: 'put into pen post birth to grow for a few days',
+    didntGoWell: 'one piglet was bitten by another sow #17 unprovoked, he shook it off and is doing fine',
+    defects: 'possible 1 DOA, small and never seen alive',
+  },
+  {
+    id: 'f9',
+    sow: '7',
+    group: '1',
+    farrowingDate: '2025-08-05',
+    exposureStart: '2025-03-24',
+    exposureEnd: '2025-05-05',
+    sire: 'MACHINE',
+    motheringQuality: 'average',
+    demeanor: 'Friendly, no issues',
+    totalBorn: 10,
+    deaths: 4,
+    location: 'outside-hut',
+    wentWell: '',
+    didntGoWell: '',
+    defects: '',
+  },
+  {
+    id: 'f10',
+    sow: '9',
+    group: '3',
+    farrowingDate: '2025-07-17',
+    exposureStart: '2025-03-24',
+    exposureEnd: '2025-05-05',
+    sire: 'AO',
+    motheringQuality: 'poor',
+    demeanor: '',
+    totalBorn: 11,
+    deaths: 11,
+    location: 'outside-pen',
+    wentWell: '',
+    didntGoWell: 'Better shade paddocks when pregnant, or potentially no summer farrowing',
+    defects: 'Premature. Most died immediately, oldest only lasted 2 days',
+  },
+  {
+    id: 'f11',
+    sow: '2',
+    group: '2',
+    farrowingDate: '2024-09-08',
+    exposureStart: '',
+    exposureEnd: '',
+    sire: 'MACHINE',
+    motheringQuality: 'average',
+    demeanor: 'nightmare to get into farrowing pen',
+    totalBorn: 7,
+    deaths: 1,
+    location: '',
+    wentWell: '',
+    didntGoWell: "one piglet was crushed by hay under waterer, probably wasn't packed down enough or too much was used",
+    defects: '',
+  },
+  {
+    id: 'f12',
+    sow: '10',
+    group: '2',
+    farrowingDate: '2024-07-25',
+    exposureStart: '',
+    exposureEnd: '',
+    sire: 'AO',
+    motheringQuality: '',
+    demeanor: '',
+    totalBorn: 11,
+    deaths: 1,
+    location: '',
+    wentWell: '',
+    didntGoWell: '',
+    defects: 'one crushed',
+  },
+  {
+    id: 'f13',
+    sow: '5',
+    group: '2',
+    farrowingDate: '2024-07-19',
+    exposureStart: '',
+    exposureEnd: '',
+    sire: '',
+    motheringQuality: '',
+    demeanor: 'aggressive when getting into pen with her',
+    totalBorn: 8,
+    deaths: 1,
+    location: 'outside-pen',
+    wentWell: 'built pen around her after birth',
+    didntGoWell: '',
+    defects: '0, crushed piglet 3 days after birth',
+  },
 ];
-
-
 
 // ── Layer housing count helpers (top-level, no React state) ────────────────
 // Model X: current_count is a *verified anchor* set by physical counts (manual
@@ -278,8 +891,6 @@ const INITIAL_FARROWING = [
 // Update housing anchor when a daily report includes a hen count.
 // Sets current_count to the new value AND current_count_date to the report date.
 // Phase 2.1 prep: setHousingAnchorFromReport + computeProjectedCount + computeLayerFeedCost moved to src/lib/layerHousing.js (imported at top of file).
-
-
 
 // ── DATE HELPERS ───────────────────────────────────────────────────────────
 // Phase 2.3 prep: date utils moved to src/lib/dateUtils.js.
@@ -291,27 +902,43 @@ const INITIAL_FARROWING = [
 
 // ── EMPTY FORM ─────────────────────────────────────────────────────────────
 const EMPTY_FORM = {
-  name:"", breed:"CC", hatchery:"Meyer Hatchery",
-  hatchDate:"", birdCount:750, birdCountActual:"",
-  brooder:"1", schooner:"2&3",
-  processingDate:"", status:"planned", notes:"",
+  name: '',
+  breed: 'CC',
+  hatchery: 'Meyer Hatchery',
+  hatchDate: '',
+  birdCount: 750,
+  birdCountActual: '',
+  brooder: '1',
+  schooner: '2&3',
+  processingDate: '',
+  status: 'planned',
+  notes: '',
   // Podio fields
-  brooderIn:"", brooderOut:"",
-  brooderFeedLbs:0, schoonerFeedLbs:0, gritLbs:0,
-  mortalityCumulative:0,
-  week4Lbs:0, week6Lbs:0,
-  perLbStandardCost:0, perLbStarterCost:0, perLbGritCost:0,
-  chickCost:0,
-  totalToProcessor:0, processingCost:0,
-  avgBreastLbs:0, avgThighsLbs:0, avgDressedLbs:0,
-  totalLbsWhole:0, totalLbsCuts:0,
-  documents:[],
+  brooderIn: '',
+  brooderOut: '',
+  brooderFeedLbs: 0,
+  schoonerFeedLbs: 0,
+  gritLbs: 0,
+  mortalityCumulative: 0,
+  week4Lbs: 0,
+  week6Lbs: 0,
+  perLbStandardCost: 0,
+  perLbStarterCost: 0,
+  perLbGritCost: 0,
+  chickCost: 0,
+  totalToProcessor: 0,
+  processingCost: 0,
+  avgBreastLbs: 0,
+  avgThighsLbs: 0,
+  avgDressedLbs: 0,
+  totalLbsWhole: 0,
+  totalLbsCuts: 0,
+  documents: [],
 };
 
 // ══════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ══════════════════════════════════════════════════════════════════════════
-
 
 // Shown when the user lands via a password reset / invite link. Supabase has
 // already exchanged the recovery token for a session, but we hold them here
@@ -319,21 +946,26 @@ const EMPTY_FORM = {
 // clear the recovery flag and they continue into the app already signed in.
 // Phase 2.1.5: SetPasswordScreen moved to src/auth/SetPasswordScreen.jsx.
 
-
 // Phase 2.1.5: LoginScreen moved to src/auth/LoginScreen.jsx.;
-
 
 // Phase 2 Round 5 fix: S styles object moved to src/lib/styles.js.
 
 // ── PERMISSION HELPERS ──────────────────────────────────────
-function canEditDailys(role)     { return ['farm_team','management','admin'].includes(role); }
-function canDeleteDailys(role)   { return ['farm_team','management','admin'].includes(role); }
-function canEditAnything(role)   { return ['management','admin'].includes(role); }
-function canDeleteAnything(role) { return role==='admin'; }
+function canEditDailys(role) {
+  return ['farm_team', 'management', 'admin'].includes(role);
+}
+function canDeleteDailys(role) {
+  return ['farm_team', 'management', 'admin'].includes(role);
+}
+function canEditAnything(role) {
+  return ['management', 'admin'].includes(role);
+}
+function canDeleteAnything(role) {
+  return role === 'admin';
+}
 
 // ── USERS MODAL ── (standalone component — must NOT be nested inside App)
 // Phase 2 Round 3: UsersModal moved to C:\Users\Ronni\WCF-planner\src\auth\UsersModal.jsx.
-
 
 // ── ADD FEED WEBFORM ──────────────────────────────────────────────────────────
 // Public webform for quick feed logging. Inserts a new row into the appropriate
@@ -341,7 +973,6 @@ function canDeleteAnything(role) { return role==='admin'; }
 // Admin-configurable: fields can be toggled on/off, marked required, relabeled.
 // Supports Add Group (multiple batch+feed entries per submit).
 // Phase 2 Round 5: AddFeedWebform moved to C:\Users\Ronni\WCF-planner\src\webforms\AddFeedWebform.jsx.
-
 
 // writeBroilerBatchAvg moved to lib/broiler.js. Its two callers
 // (WeighInsWebform + LivestockWeighInsView) now import it directly.
@@ -355,11 +986,9 @@ function canDeleteAnything(role) { return role==='admin'; }
 // recoverable: re-open the form, pick "Resume" on a draft session.
 // Phase 2 Round 5: WeighInsWebform moved to C:\Users\Ronni\WCF-planner\src\webforms\WeighInsWebform.jsx.
 
-
 // Phase 2 Round 5: WebformHub moved to C:\Users\Ronni\WCF-planner\src\webforms\WebformHub.jsx.
 
 // Phase 2 Round 4: FeedCostsPanel moved to C:\Users\Ronni\WCF-planner\src\admin\FeedCostsPanel.jsx.
-
 
 // ── FEED COST BY MONTH PANEL ────────────────────────────────────────────────
 // Admin \u2192 Cost by Month. Aggregates feed spend across programs by month.
@@ -370,129 +999,190 @@ function canDeleteAnything(role) { return role==='admin'; }
 // so retroactive price changes affect historical totals.
 // Phase 2 Round 4: FeedCostByMonthPanel moved to C:\Users\Ronni\WCF-planner\src\admin\FeedCostByMonthPanel.jsx.
 
-
 // ── LIVESTOCK FEED INPUTS PANEL ─────────────────────────────────────────────
 // Admin → Feed sub-section. Full feed master list with nutrition, costs, herd
 // scoping. Reusable for cattle today, sheep later. Autosave on close.
 // Test PDF upload + version history is built out separately (Phase 1 step 5).
 // Phase 2 Round 4: LivestockFeedInputsPanel moved to C:\Users\Ronni\WCF-planner\src\admin\LivestockFeedInputsPanel.jsx.
 
-
 // ── NUTRITION TARGETS PANEL ─────────────────────────────────────────────────
 // Admin → Feed sub-section. Per-herd DM/CP/NFC target percentages used by the
 // dashboard rolling-window comparison and the recommendation engine.
 // Phase 2 Round 4: NutritionTargetsPanel moved to C:\Users\Ronni\WCF-planner\src\admin\NutritionTargetsPanel.jsx.
 
-
 // Phase 2.1.2: DeleteModal moved to src/shared/DeleteModal.jsx.
 
-
-function App(){
+function App() {
   // ── AUTH & LOADING STATE ──
   // Phase 2.0.1: these hooks live in AuthContext. See src/contexts/AuthContext.jsx
   // for the pwRecovery URL-hash initializer and other state defaults. Effects
   // (auth listener, visibility refresh, access-gate redirect), helpers
   // (loadUser, loadAllData, canAccessProgram), and derived values remain here.
   const {
-    authState,   setAuthState,
-    pwRecovery,  setPwRecovery,
-    dataLoaded,  setDataLoaded,
-    saveStatus,  setSaveStatus,
-    showUsers,   setShowUsers,
-    allUsers,    setAllUsers,
-    inviteEmail, setInviteEmail,
-    inviteRole,  setInviteRole,
-    inviteMsg,   setInviteMsg,
+    authState,
+    setAuthState,
+    pwRecovery,
+    setPwRecovery,
+    dataLoaded,
+    setDataLoaded,
+    saveStatus,
+    setSaveStatus,
+    showUsers,
+    setShowUsers,
+    allUsers,
+    setAllUsers,
+    inviteEmail,
+    setInviteEmail,
+    inviteRole,
+    setInviteRole,
+    inviteMsg,
+    setInviteMsg,
   } = useAuth();
 
   // Phase 2.0.2: broiler batch + edit-form hooks live in BatchesContext.
   const {
-    batches,         setBatches,
-    showForm,        setShowForm,
-    editId,          setEditId,
-    form,            setForm,
-    originalForm,    setOriginalForm,
-    conflicts,       setConflicts,
-    tooltip,         setTooltip,
-    override,        setOverride,
-    showLegacy,      setShowLegacy,
-    parsedProcessor, setParsedProcessor,
-    docUploading,    setDocUploading,
-    deleteConfirm,   setDeleteConfirm,
+    batches,
+    setBatches,
+    showForm,
+    setShowForm,
+    editId,
+    setEditId,
+    form,
+    setForm,
+    originalForm,
+    setOriginalForm,
+    conflicts,
+    setConflicts,
+    tooltip,
+    setTooltip,
+    override,
+    setOverride,
+    showLegacy,
+    setShowLegacy,
+    parsedProcessor,
+    setParsedProcessor,
+    docUploading,
+    setDocUploading,
+    deleteConfirm,
+    setDeleteConfirm,
   } = useBatches();
 
   // Phase 2.0.3: pig-scoped hooks live in PigContext.
   const {
-    pigData, setPigData,
-    breedingCycles, setBreedingCycles,
-    farrowingRecs, setFarrowingRecs,
-    boarNames, setBoarNames,
-    breedTlStart, setBreedTlStart,
-    showBreedForm, setShowBreedForm,
-    editBreedId, setEditBreedId,
-    breedForm, setBreedForm,
-    showFarrowForm, setShowFarrowForm,
-    editFarrowId, setEditFarrowId,
-    farrowForm, setFarrowForm,
-    farrowFilter, setFarrowFilter,
-    feederGroups, setFeederGroups,
-    showFeederForm, setShowFeederForm,
-    editFeederId, setEditFeederId,
-    feederForm, setFeederForm,
-    originalFeederForm, setOriginalFeederForm,
-    activeTripBatchId, setActiveTripBatchId,
-    tripForm, setTripForm,
-    editTripId, setEditTripId,
-    sowSearch, setSowSearch,
-    expandedSow, setExpandedSow,
-    archivedSows, setArchivedSows,
-    breeders, setBreeders,
-    breedOptions, setBreedOptions,
-    originOptions, setOriginOptions,
-    showBreederForm, setShowBreederForm,
-    editBreederId, setEditBreederId,
-    breederForm, setBreederForm,
+    pigData,
+    setPigData,
+    breedingCycles,
+    setBreedingCycles,
+    farrowingRecs,
+    setFarrowingRecs,
+    boarNames,
+    setBoarNames,
+    breedTlStart,
+    setBreedTlStart,
+    showBreedForm,
+    setShowBreedForm,
+    editBreedId,
+    setEditBreedId,
+    breedForm,
+    setBreedForm,
+    showFarrowForm,
+    setShowFarrowForm,
+    editFarrowId,
+    setEditFarrowId,
+    farrowForm,
+    setFarrowForm,
+    farrowFilter,
+    setFarrowFilter,
+    feederGroups,
+    setFeederGroups,
+    showFeederForm,
+    setShowFeederForm,
+    editFeederId,
+    setEditFeederId,
+    feederForm,
+    setFeederForm,
+    originalFeederForm,
+    setOriginalFeederForm,
+    activeTripBatchId,
+    setActiveTripBatchId,
+    tripForm,
+    setTripForm,
+    editTripId,
+    setEditTripId,
+    sowSearch,
+    setSowSearch,
+    expandedSow,
+    setExpandedSow,
+    archivedSows,
+    setArchivedSows,
+    breeders,
+    setBreeders,
+    breedOptions,
+    setBreedOptions,
+    originOptions,
+    setOriginOptions,
+    showBreederForm,
+    setShowBreederForm,
+    editBreederId,
+    setEditBreederId,
+    breederForm,
+    setBreederForm,
   } = usePig();
 
   // Phase 2.0.4: layer-scoped hooks live in LayerContext.
   const {
-    layerGroups,      setLayerGroups,
-    layerBatches,     setLayerBatches,
-    layerHousings,    setLayerHousings,
-    allLayerDailys,   setAllLayerDailys,
-    allEggDailys,     setAllEggDailys,
-    layerDashPeriod,  setLayerDashPeriod,
-    retHomeDashPeriod,setRetHomeDashPeriod,
+    layerGroups,
+    setLayerGroups,
+    layerBatches,
+    setLayerBatches,
+    layerHousings,
+    setLayerHousings,
+    allLayerDailys,
+    setAllLayerDailys,
+    allEggDailys,
+    setAllEggDailys,
+    layerDashPeriod,
+    setLayerDashPeriod,
+    retHomeDashPeriod,
+    setRetHomeDashPeriod,
   } = useLayer();
 
   // Phase 2.0.5: recent-window dailys arrays live in DailysRecentContext.
   const {
-    broilerDailys,     setBroilerDailys,
-    pigDailys,         setPigDailys,
-    layerDailysRecent, setLayerDailysRecent,
-    eggDailysRecent,   setEggDailysRecent,
-    cattleDailysRecent,setCattleDailysRecent,
-    sheepDailysRecent, setSheepDailysRecent,
+    broilerDailys,
+    setBroilerDailys,
+    pigDailys,
+    setPigDailys,
+    layerDailysRecent,
+    setLayerDailysRecent,
+    eggDailysRecent,
+    setEggDailysRecent,
+    cattleDailysRecent,
+    setCattleDailysRecent,
+    sheepDailysRecent,
+    setSheepDailysRecent,
   } = useDailysRecent();
 
   // Phase 2.0.6 — small bundled contexts.
-  const { cattleForHome, setCattleForHome, cattleOnFarmCount, setCattleOnFarmCount } = useCattleHome();
-  const { sheepForHome,  setSheepForHome } = useSheepHome();
-  const { wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, webformsConfig, setWebformsConfig } = useWebformsConfig();
-  const { feedCosts, setFeedCosts, broilerNotes, setBroilerNotes, missedCleared, setMissedCleared } = useFeedCosts();
-  const { view, setView, pendingEdit, setPendingEdit, showAllComparison, setShowAllComparison, showMenu, setShowMenu } = useUI();
+  const {cattleForHome, setCattleForHome, cattleOnFarmCount, setCattleOnFarmCount} = useCattleHome();
+  const {sheepForHome, setSheepForHome} = useSheepHome();
+  const {wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, webformsConfig, setWebformsConfig} =
+    useWebformsConfig();
+  const {feedCosts, setFeedCosts, broilerNotes, setBroilerNotes, missedCleared, setMissedCleared} = useFeedCosts();
+  const {view, setView, pendingEdit, setPendingEdit, showAllComparison, setShowAllComparison, showMenu, setShowMenu} =
+    useUI();
 
   // Permission helpers — role-based access
   // farm_team: edit+delete own dailys only
   // management: edit anything, delete dailys only
   // admin: full access
   const role = authState?.role;
-  const isAdmin      = role==='admin';
-  const isMgmt       = role==='management' || role==='admin';
-  const isFarmTeam   = role==='farm_team';
-  const canEditAll   = isMgmt;          // management + admin can edit anything
+  const isAdmin = role === 'admin';
+  const isMgmt = role === 'management' || role === 'admin';
+  const isFarmTeam = role === 'farm_team';
+  const canEditAll = isMgmt; // management + admin can edit anything
   const canDeleteDailys = isMgmt || isFarmTeam; // all roles can delete dailys
-  const canDeleteAll = isAdmin;          // only admin can delete batches, groups, etc.
+  const canDeleteAll = isAdmin; // only admin can delete batches, groups, etc.
 
   // Phase 3.2: URL ↔ view adapter. The existing `view` state machine stays
   // the primary API — setView('X') still works from every component. These
@@ -512,10 +1202,13 @@ function App(){
     const isWebformSubpath = location.pathname.startsWith('/webforms/');
     const isEquipmentSubpath = location.pathname.startsWith('/equipment/') || location.pathname === '/equipment';
     const isFuelingSubpath = location.pathname.startsWith('/fueling/') || location.pathname === '/fueling';
-    const viewFromUrl = isWebformSubpath ? 'webformhub'
-                      : isEquipmentSubpath ? 'equipmentHome'
-                      : isFuelingSubpath ? 'fuelingHub'
-                      : PATH_TO_VIEW[location.pathname];
+    const viewFromUrl = isWebformSubpath
+      ? 'webformhub'
+      : isEquipmentSubpath
+        ? 'equipmentHome'
+        : isFuelingSubpath
+          ? 'fuelingHub'
+          : PATH_TO_VIEW[location.pathname];
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -531,7 +1224,7 @@ function App(){
       // hash intact lets the recovery listener fire normally.
       syncingFromUrl.current = true;
       setView('home');
-      navigate({ pathname: '/', hash: location.hash }, { replace: true });
+      navigate({pathname: '/', hash: location.hash}, {replace: true});
     }
   }, [location.pathname]);
   useEffect(() => {
@@ -557,849 +1250,1636 @@ function App(){
   const tripAutoSaveTimer = React.useRef(null);
   const breedAutoSaveTimer = React.useRef(null);
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
-  const [showArchived,   setShowArchived]  = useState(false);
-  const [showArchBatches,setShowArchBatches]= useState(false);
-  const [feedOrders,   setFeedOrders]    = useState({pig:{},starter:{},grower:{},layerfeed:{}});
+  const [showArchived, setShowArchived] = useState(false);
+  const [showArchBatches, setShowArchBatches] = useState(false);
+  const [feedOrders, setFeedOrders] = useState({pig: {}, starter: {}, grower: {}, layerfeed: {}});
   const [pigFeedInventory, setPigFeedInventory] = useState(null); // {count, date} or null
   const [pigFeedExpandedMonths, setPigFeedExpandedMonths] = useState(new Set());
   const [poultryFeedInventory, setPoultryFeedInventory] = useState(null); // {starter:{count,date}, grower:{count,date}, layer:{count,date}}
   const [poultryFeedExpandedMonths, setPoultryFeedExpandedMonths] = useState(new Set());
-  const [adminTab,      setAdminTab]      = useState('webforms'); // 'webforms' | 'feedcosts'
+  const [adminTab, setAdminTab] = useState('webforms'); // 'webforms' | 'feedcosts'
   // wfForm/wfSubmitting/wfDone/wfErr/wfGroupName moved into
   // src/webforms/PigDailysWebform.jsx as internal state — App no longer
   // needs them; they were only ever read by the extracted webform.
-  const [wfView,         setWfView]        = useState("list"); // list | edit-webform | edit-field
-  const [editWfId,       setEditWfId]      = useState(null);
-  const [editFieldId,    setEditFieldId]   = useState(null);
-  const [wfFieldForm,    setWfFieldForm]   = useState({label:"",type:"text",required:false,options:[]});
-  const [newTeamMember,  setNewTeamMember] = useState("");
+  const [wfView, setWfView] = useState('list'); // list | edit-webform | edit-field
+  const [editWfId, setEditWfId] = useState(null);
+  const [editFieldId, setEditFieldId] = useState(null);
+  const [wfFieldForm, setWfFieldForm] = useState({label: '', type: 'text', required: false, options: []});
+  const [newTeamMember, setNewTeamMember] = useState('');
   // Webforms admin state — must live at App top-level (React hooks rules)
-  const [addingTo,       setAddingTo]      = useState(null);
-  const [editFldLbl,     setEditFldLbl]    = useState(null);
-  const [editFldVal,     setEditFldVal]    = useState('');
-  const [editSecIdx,     setEditSecIdx]    = useState(null);
-  const [editSecVal,     setEditSecVal]    = useState('');
-  const [newOpt,         setNewOpt]        = useState('');
-  const [showSubForm,    setShowSubForm]   = useState(null); // batchId or null
-  const [subForm,        setSubForm]       = useState({name:"",giltCount:0,boarCount:0,originalPigCount:0,notes:""});
-  const [editSubId,      setEditSubId]     = useState(null);
+  const [addingTo, setAddingTo] = useState(null);
+  const [editFldLbl, setEditFldLbl] = useState(null);
+  const [editFldVal, setEditFldVal] = useState('');
+  const [editSecIdx, setEditSecIdx] = useState(null);
+  const [editSecVal, setEditSecVal] = useState('');
+  const [newOpt, setNewOpt] = useState('');
+  const [showSubForm, setShowSubForm] = useState(null); // batchId or null
+  const [subForm, setSubForm] = useState({name: '', giltCount: 0, boarCount: 0, originalPigCount: 0, notes: ''});
+  const [editSubId, setEditSubId] = useState(null);
   const [collapsedBatches, setCollapsedBatches] = useState(new Set());
-  const [collapsedMonths,  setCollapsedMonths]  = useState(()=>{
+  const [collapsedMonths, setCollapsedMonths] = useState(() => {
     // Auto-collapse past months on init
     const s = new Set();
     const now = new Date();
-    const thisYM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const thisYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     // We'll populate this in the feed view
     return s;
   });
-  const [pigNotes,         setPigNotes]         = useState('');
-  const [layerNotes,       setLayerNotes]       = useState('');
-  const [dailysFilter,     setDailysFilter]     = useState({batchId:"all",dateFrom:"",dateTo:""});
-  const [showDailyForm,    setShowDailyForm]    = useState(false);
-  const [editDailyId,      setEditDailyId]      = useState(null);
-  const EMPTY_DAILY = {date:"",teamMember:"",batchId:"",batchLabel:"",pigCount:"",feedLbs:"",groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:"",issues:""};
-  const [dailyForm,        setDailyForm]        = useState(()=>{const d=new Date();return{...{date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,teamMember:"",batchId:"",batchLabel:"",pigCount:"",feedLbs:"",groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,troughsMoved:true,fenceWalked:true,fenceVoltage:"",issues:""}};});
-
-
+  const [pigNotes, setPigNotes] = useState('');
+  const [layerNotes, setLayerNotes] = useState('');
+  const [dailysFilter, setDailysFilter] = useState({batchId: 'all', dateFrom: '', dateTo: ''});
+  const [showDailyForm, setShowDailyForm] = useState(false);
+  const [editDailyId, setEditDailyId] = useState(null);
+  const EMPTY_DAILY = {
+    date: '',
+    teamMember: '',
+    batchId: '',
+    batchLabel: '',
+    pigCount: '',
+    feedLbs: '',
+    groupMoved: true,
+    nippleDrinkerMoved: true,
+    nippleDrinkerWorking: true,
+    troughsMoved: true,
+    fenceWalked: true,
+    fenceVoltage: '',
+    issues: '',
+  };
+  const [dailyForm, setDailyForm] = useState(() => {
+    const d = new Date();
+    return {
+      ...{
+        date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+        teamMember: '',
+        batchId: '',
+        batchLabel: '',
+        pigCount: '',
+        feedLbs: '',
+        groupMoved: true,
+        nippleDrinkerMoved: true,
+        nippleDrinkerWorking: true,
+        troughsMoved: true,
+        fenceWalked: true,
+        fenceVoltage: '',
+        issues: '',
+      },
+    };
+  });
 
   // ── AUTH LISTENER & DATA LOADING ──
   // Load webform config (anon, no auth needed) — team members + active groups
-  useEffect(()=>{
-    if(view!=="webform"&&view!=="webformhub") return;
+  useEffect(() => {
+    if (view !== 'webform' && view !== 'webformhub') return;
     Promise.all([
-      sb.from('webform_config').select('data').eq('key','team_members').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key','active_groups').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key','full_config').maybeSingle(),
-    ]).then(([tmRes, agRes, fcRes])=>{
+      sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
+      sb.from('webform_config').select('data').eq('key', 'full_config').maybeSingle(),
+    ]).then(([tmRes, agRes, fcRes]) => {
       // Team members
-      if(!tmRes.error && Array.isArray(tmRes.data?.data)){
+      if (!tmRes.error && Array.isArray(tmRes.data?.data)) {
         const tm = tmRes.data.data;
-        if(tm.length>0) setWfTeamMembers(tm);
+        if (tm.length > 0) setWfTeamMembers(tm);
       }
       // Active groups
-      if(!agRes.error && Array.isArray(agRes.data?.data)){
-        const groups = agRes.data.data.map(name=>({value:name, label:name}));
+      if (!agRes.error && Array.isArray(agRes.data?.data)) {
+        const groups = agRes.data.data.map((name) => ({value: name, label: name}));
         setWfGroups(groups);
       }
       // Full config for webformhub (broiler/layer/egg groups + team members)
-      if(!fcRes?.error && fcRes?.data?.data){
+      if (!fcRes?.error && fcRes?.data?.data) {
         const fc = fcRes.data.data;
-        if(fc.teamMembers?.length>0 && wfTeamMembers.length===0) setWfTeamMembers(fc.teamMembers);
+        if (fc.teamMembers?.length > 0 && wfTeamMembers.length === 0) setWfTeamMembers(fc.teamMembers);
         // broilerGroups and layerGroups come through layerGroups/batches props from App
         // but if not logged in, we can still get them from full_config
       }
     });
-  },[view]);
+  }, [view]);
 
   // Load cattle count for Home page Animals on Farm tile
-  useEffect(()=>{
-    if(!authState) return;
-    sb.from('cattle').select('*',{count:'exact', head:true}).in('herd',['mommas','backgrounders','finishers','bulls']).then(({count})=>{
-      if(count!=null) setCattleOnFarmCount(count);
-    }).catch(()=>{});
-  },[authState]);
+  useEffect(() => {
+    if (!authState) return;
+    sb.from('cattle')
+      .select('*', {count: 'exact', head: true})
+      .in('herd', ['mommas', 'backgrounders', 'finishers', 'bulls'])
+      .then(({count}) => {
+        if (count != null) setCattleOnFarmCount(count);
+      })
+      .catch(() => {});
+  }, [authState]);
 
   // Load broiler dailys after auth is confirmed — same pattern as BroilerDailysView
-  useEffect(()=>{
-    if(!authState) return;
+  useEffect(() => {
+    if (!authState) return;
     // Load all broiler dailys (paginated) for batch calculations
-    (async()=>{
-      let all=[],from=0;
-      while(true){
-        const{data}=await sb.from('poultry_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).range(from,from+999);
-        if(!data||data.length===0) break;
-        all=[...all,...data];
-        if(data.length<1000) break;
-        from+=1000;
+    (async () => {
+      let all = [],
+        from = 0;
+      while (true) {
+        const {data} = await sb
+          .from('poultry_dailys')
+          .select('*')
+          .order('date', {ascending: false})
+          .order('submitted_at', {ascending: false})
+          .range(from, from + 999);
+        if (!data || data.length === 0) break;
+        all = [...all, ...data];
+        if (data.length < 1000) break;
+        from += 1000;
       }
-      if(all.length>0) setBroilerDailys(all);
+      if (all.length > 0) setBroilerDailys(all);
     })();
     // Load layer + egg dailys (45 days) for home page & dashboard calculations
     const cutoff = toISO(addDays(new Date(), -45));
-    sb.from('layer_dailys').select('*').gte('date',cutoff).order('date',{ascending:false}).then(({data})=>{ if(data) setLayerDailysRecent(data); });
-    sb.from('egg_dailys').select('*').gte('date',cutoff).order('date',{ascending:false}).then(({data})=>{ if(data) setEggDailysRecent(data); });
+    sb.from('layer_dailys')
+      .select('*')
+      .gte('date', cutoff)
+      .order('date', {ascending: false})
+      .then(({data}) => {
+        if (data) setLayerDailysRecent(data);
+      });
+    sb.from('egg_dailys')
+      .select('*')
+      .gte('date', cutoff)
+      .order('date', {ascending: false})
+      .then(({data}) => {
+        if (data) setEggDailysRecent(data);
+      });
     // Cattle + sheep dailys (last 14 days) — drives missed-report check + Last 5 Days tiles on home
     const cutoff14 = toISO(addDays(new Date(), -14));
-    sb.from('cattle_dailys').select('*').gte('date',cutoff14).order('date',{ascending:false}).then(({data})=>{ if(data) setCattleDailysRecent(data); });
-    sb.from('sheep_dailys').select('*').gte('date',cutoff14).order('date',{ascending:false}).then(({data})=>{ if(data) setSheepDailysRecent(data); });
+    sb.from('cattle_dailys')
+      .select('*')
+      .gte('date', cutoff14)
+      .order('date', {ascending: false})
+      .then(({data}) => {
+        if (data) setCattleDailysRecent(data);
+      });
+    sb.from('sheep_dailys')
+      .select('*')
+      .gte('date', cutoff14)
+      .order('date', {ascending: false})
+      .then(({data}) => {
+        if (data) setSheepDailysRecent(data);
+      });
     // Lightweight cattle + sheep directory (id + flock/herd only) for the missed-report active-flock check
-    sb.from('cattle').select('id,herd').then(({data})=>{ if(data) setCattleForHome(data); });
-    sb.from('sheep').select('id,flock').then(({data})=>{ if(data) setSheepForHome(data); });
+    sb.from('cattle')
+      .select('id,herd')
+      .then(({data}) => {
+        if (data) setCattleForHome(data);
+      });
+    sb.from('sheep')
+      .select('id,flock')
+      .then(({data}) => {
+        if (data) setSheepForHome(data);
+      });
     // Full paginated fetch for layer dashboard period comparisons
-    (async()=>{
-      const fetchAll=async(table)=>{const PAGE=1000;let all=[],off=0;while(true){const{data}=await sb.from(table).select('*').order('date',{ascending:false}).range(off,off+PAGE-1);if(!data||data.length===0)break;all=all.concat(data);if(data.length<PAGE)break;off+=PAGE;}return all;};
-      const [ld,ed]=await Promise.all([fetchAll('layer_dailys'),fetchAll('egg_dailys')]);
-      setAllLayerDailys(ld); setAllEggDailys(ed);
+    (async () => {
+      const fetchAll = async (table) => {
+        const PAGE = 1000;
+        let all = [],
+          off = 0;
+        while (true) {
+          const {data} = await sb
+            .from(table)
+            .select('*')
+            .order('date', {ascending: false})
+            .range(off, off + PAGE - 1);
+          if (!data || data.length === 0) break;
+          all = all.concat(data);
+          if (data.length < PAGE) break;
+          off += PAGE;
+        }
+        return all;
+      };
+      const [ld, ed] = await Promise.all([fetchAll('layer_dailys'), fetchAll('egg_dailys')]);
+      setAllLayerDailys(ld);
+      setAllEggDailys(ed);
     })();
-  },[authState]);
+  }, [authState]);
 
   // refreshDailys('broiler' | 'layer' | 'egg' | 'pig' | 'all') — re-fetches the cached
   // App-level dailys arrays so dashboards reflect inline edits without sign-out/in.
   // Passed as a prop to all four DailysView components so their save() can call it.
-  async function refreshDailys(kind){
-    const want = (k)=> kind==='all'||kind===k;
-    if(want('broiler')){
-      let all=[],from=0;
-      while(true){
-        const{data}=await sb.from('poultry_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).range(from,from+999);
-        if(!data||data.length===0) break;
-        all=[...all,...data];
-        if(data.length<1000) break;
-        from+=1000;
+  async function refreshDailys(kind) {
+    const want = (k) => kind === 'all' || kind === k;
+    if (want('broiler')) {
+      let all = [],
+        from = 0;
+      while (true) {
+        const {data} = await sb
+          .from('poultry_dailys')
+          .select('*')
+          .order('date', {ascending: false})
+          .order('submitted_at', {ascending: false})
+          .range(from, from + 999);
+        if (!data || data.length === 0) break;
+        all = [...all, ...data];
+        if (data.length < 1000) break;
+        from += 1000;
       }
       setBroilerDailys(all);
     }
     const cutoff = toISO(addDays(new Date(), -45));
-    if(want('layer')){
-      const {data} = await sb.from('layer_dailys').select('*').gte('date',cutoff).order('date',{ascending:false});
-      if(data) setLayerDailysRecent(data);
-      const fetchAll=async()=>{const PAGE=1000;let all=[],off=0;while(true){const{data}=await sb.from('layer_dailys').select('*').order('date',{ascending:false}).range(off,off+PAGE-1);if(!data||data.length===0)break;all=all.concat(data);if(data.length<PAGE)break;off+=PAGE;}return all;};
+    if (want('layer')) {
+      const {data} = await sb.from('layer_dailys').select('*').gte('date', cutoff).order('date', {ascending: false});
+      if (data) setLayerDailysRecent(data);
+      const fetchAll = async () => {
+        const PAGE = 1000;
+        let all = [],
+          off = 0;
+        while (true) {
+          const {data} = await sb
+            .from('layer_dailys')
+            .select('*')
+            .order('date', {ascending: false})
+            .range(off, off + PAGE - 1);
+          if (!data || data.length === 0) break;
+          all = all.concat(data);
+          if (data.length < PAGE) break;
+          off += PAGE;
+        }
+        return all;
+      };
       setAllLayerDailys(await fetchAll());
     }
-    if(want('egg')){
-      const {data} = await sb.from('egg_dailys').select('*').gte('date',cutoff).order('date',{ascending:false});
-      if(data) setEggDailysRecent(data);
-      const fetchAll=async()=>{const PAGE=1000;let all=[],off=0;while(true){const{data}=await sb.from('egg_dailys').select('*').order('date',{ascending:false}).range(off,off+PAGE-1);if(!data||data.length===0)break;all=all.concat(data);if(data.length<PAGE)break;off+=PAGE;}return all;};
+    if (want('egg')) {
+      const {data} = await sb.from('egg_dailys').select('*').gte('date', cutoff).order('date', {ascending: false});
+      if (data) setEggDailysRecent(data);
+      const fetchAll = async () => {
+        const PAGE = 1000;
+        let all = [],
+          off = 0;
+        while (true) {
+          const {data} = await sb
+            .from('egg_dailys')
+            .select('*')
+            .order('date', {ascending: false})
+            .range(off, off + PAGE - 1);
+          if (!data || data.length === 0) break;
+          all = all.concat(data);
+          if (data.length < PAGE) break;
+          off += PAGE;
+        }
+        return all;
+      };
       setAllEggDailys(await fetchAll());
     }
-    if(want('pig')){
-      const {data} = await sb.from('pig_dailys').select('*').order('date',{ascending:false});
-      if(data) setPigDailys(data);
+    if (want('pig')) {
+      const {data} = await sb.from('pig_dailys').select('*').order('date', {ascending: false});
+      if (data) setPigDailys(data);
     }
   }
 
   // Guard: unknown views fall back to home (must be unconditional)
-  const VALID_VIEWS = ['home','broilerHome','pigsHome','layersHome','timeline','list','feed','pigfeed','pigs','breeding','pigbatches','farrowing','sows','webforms','webformhub','webform','broilerdailys','pigdailys','layers','layerbatches','layerdailys','eggdailys','addfeed','weighins','cattleHome','cattleherds','cattledailys','cattleweighins','cattlebreeding','cattlebatches','broilerweighins','pigweighins','sheepHome','sheepflocks','sheepbatches','sheepdailys','sheepweighins','equipmentHome','fuelingHub','fuelSupply'];
-  useEffect(()=>{ if(view && !VALID_VIEWS.includes(view)) setView('home'); }, [view]);
+  const VALID_VIEWS = [
+    'home',
+    'broilerHome',
+    'pigsHome',
+    'layersHome',
+    'timeline',
+    'list',
+    'feed',
+    'pigfeed',
+    'pigs',
+    'breeding',
+    'pigbatches',
+    'farrowing',
+    'sows',
+    'webforms',
+    'webformhub',
+    'webform',
+    'broilerdailys',
+    'pigdailys',
+    'layers',
+    'layerbatches',
+    'layerdailys',
+    'eggdailys',
+    'addfeed',
+    'weighins',
+    'cattleHome',
+    'cattleherds',
+    'cattledailys',
+    'cattleweighins',
+    'cattlebreeding',
+    'cattlebatches',
+    'broilerweighins',
+    'pigweighins',
+    'sheepHome',
+    'sheepflocks',
+    'sheepbatches',
+    'sheepdailys',
+    'sheepweighins',
+    'equipmentHome',
+    'fuelingHub',
+    'fuelSupply',
+  ];
+  useEffect(() => {
+    if (view && !VALID_VIEWS.includes(view)) setView('home');
+  }, [view]);
 
   // Per-program access. profiles.program_access is null/empty = full access,
   // or a list like ['cattle','broiler']. Admins always bypass the check.
   // Maps every program-specific view to its program key. Views not in the
   // map (home, webforms, weighins, etc.) are always accessible.
   const VIEW_TO_PROGRAM = {
-    broilerHome:'broiler', timeline:'broiler', list:'broiler', feed:'broiler', broilerdailys:'broiler', broilerweighins:'broiler',
-    layersHome:'layer',   layerbatches:'layer', layerdailys:'layer', eggdailys:'layer', layers:'layer',
-    pigsHome:'pig',       breeding:'pig', farrowing:'pig', sows:'pig', pigbatches:'pig', pigs:'pig', pigfeed:'pig', pigdailys:'pig', pigweighins:'pig',
-    cattleHome:'cattle',  cattleherds:'cattle', cattledailys:'cattle', cattleweighins:'cattle', cattlebreeding:'cattle', cattlebatches:'cattle',
-    sheepHome:'sheep',    sheepflocks:'sheep', sheepbatches:'sheep', sheepdailys:'sheep', sheepweighins:'sheep',
-    equipmentHome:'equipment',
+    broilerHome: 'broiler',
+    timeline: 'broiler',
+    list: 'broiler',
+    feed: 'broiler',
+    broilerdailys: 'broiler',
+    broilerweighins: 'broiler',
+    layersHome: 'layer',
+    layerbatches: 'layer',
+    layerdailys: 'layer',
+    eggdailys: 'layer',
+    layers: 'layer',
+    pigsHome: 'pig',
+    breeding: 'pig',
+    farrowing: 'pig',
+    sows: 'pig',
+    pigbatches: 'pig',
+    pigs: 'pig',
+    pigfeed: 'pig',
+    pigdailys: 'pig',
+    pigweighins: 'pig',
+    cattleHome: 'cattle',
+    cattleherds: 'cattle',
+    cattledailys: 'cattle',
+    cattleweighins: 'cattle',
+    cattlebreeding: 'cattle',
+    cattlebatches: 'cattle',
+    sheepHome: 'sheep',
+    sheepflocks: 'sheep',
+    sheepbatches: 'sheep',
+    sheepdailys: 'sheep',
+    sheepweighins: 'sheep',
+    equipmentHome: 'equipment',
   };
   function canAccessProgram(prog) {
-    if(!prog) return true;
-    if(!authState || authState === false || !authState.profile) return true;
-    if(authState.role === 'admin') return true;
+    if (!prog) return true;
+    if (!authState || authState === false || !authState.profile) return true;
+    if (authState.role === 'admin') return true;
     const list = authState.profile.program_access;
-    if(!Array.isArray(list) || list.length === 0) return true;
+    if (!Array.isArray(list) || list.length === 0) return true;
     return list.includes(prog);
   }
   // Redirect to home if user lands on a program view they don't have access to.
-  useEffect(()=>{
+  useEffect(() => {
     const prog = VIEW_TO_PROGRAM[view];
-    if(prog && !canAccessProgram(prog)) setView('home');
+    if (prog && !canAccessProgram(prog)) setView('home');
   }, [view, authState]);
 
-  useEffect(()=>{
+  useEffect(() => {
     // Safety timeout — if auth hasn't resolved in 6s, show login
-    const authTimeout = setTimeout(()=>{
-      setAuthState(prev => prev === null ? false : prev);
+    const authTimeout = setTimeout(() => {
+      setAuthState((prev) => (prev === null ? false : prev));
     }, 6000);
 
     // Use getUser() instead of getSession() to avoid storage lock issues
-    sb.auth.getUser().then(async ({data:{user}, error})=>{
-      clearTimeout(authTimeout);
-      if(user && !error){ await loadUser(user); }
-      else { setAuthState(false); }
-    }).catch(()=>{ clearTimeout(authTimeout); setAuthState(false); });
+    sb.auth
+      .getUser()
+      .then(async ({data: {user}, error}) => {
+        clearTimeout(authTimeout);
+        if (user && !error) {
+          await loadUser(user);
+        } else {
+          setAuthState(false);
+        }
+      })
+      .catch(() => {
+        clearTimeout(authTimeout);
+        setAuthState(false);
+      });
 
-    const {data:{subscription}} = sb.auth.onAuthStateChange(async (event, session)=>{
-      if(event==='SIGNED_OUT'){
-        setAuthState(false); setDataLoaded(false); setPwRecovery(false);
+    const {
+      data: {subscription},
+    } = sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setAuthState(false);
+        setDataLoaded(false);
+        setPwRecovery(false);
       }
       // Password-reset / invite link landed — hold the user on SetPasswordScreen
       // until they pick a password, then continue them into the app.
-      if(event==='PASSWORD_RECOVERY'){
+      if (event === 'PASSWORD_RECOVERY') {
         setPwRecovery(true);
       }
       // Handle SIGNED_IN only when on login screen (authState===false), not on page-load token refresh
-      if(event==='SIGNED_IN' && session?.user){
-        setAuthState(prev=>{
-          if(prev===false) loadUser(session.user);
+      if (event === 'SIGNED_IN' && session?.user) {
+        setAuthState((prev) => {
+          if (prev === false) loadUser(session.user);
           return prev;
         });
       }
     });
-    return ()=>{ subscription.unsubscribe(); clearTimeout(authTimeout); };
-  },[]);
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(authTimeout);
+    };
+  }, []);
 
   // Refresh Supabase session when tab becomes visible (prevents stale session after backgrounding)
-  useEffect(()=>{
-    function handleVisibility(){
-      if(document.visibilityState==='visible'&&authState&&authState.user){
-        sb.auth.getUser().then(function(res){
-          if(res.error){
-            console.warn('Session expired, signing out');
-            sb.auth.signOut();
-          }
-        }).catch(function(){});
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible' && authState && authState.user) {
+        sb.auth
+          .getUser()
+          .then(function (res) {
+            if (res.error) {
+              console.warn('Session expired, signing out');
+              sb.auth.signOut();
+            }
+          })
+          .catch(function () {});
       }
     }
-    document.addEventListener('visibilitychange',handleVisibility);
-    return function(){document.removeEventListener('visibilitychange',handleVisibility);};
-  },[authState]);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return function () {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [authState]);
 
-  async function loadUser(user){
+  async function loadUser(user) {
     try {
       // Race the profile fetch against a 5s timeout
-      const profilePromise = sb.from('profiles').select('*').eq('id',user.id).single();
-      const timeoutPromise = new Promise((_,reject) => setTimeout(()=>reject(new Error('timeout')), 5000));
-      const {data:profile} = await Promise.race([profilePromise, timeoutPromise]).catch(()=>({data:null}));
-      setAuthState({user, role:profile?.role||'farm_team', profile, name:profile?.full_name||user.email});
+      const profilePromise = sb.from('profiles').select('*').eq('id', user.id).single();
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+      const {data: profile} = await Promise.race([profilePromise, timeoutPromise]).catch(() => ({data: null}));
+      setAuthState({user, role: profile?.role || 'farm_team', profile, name: profile?.full_name || user.email});
       await loadAllData();
-    } catch(e) {
+    } catch (e) {
       console.error('loadUser error:', e);
-      setAuthState({user, role:'admin', name:user.email});
+      setAuthState({user, role: 'admin', name: user.email});
       setDataLoaded(true);
     }
   }
 
-  async function loadAllData(){
+  async function loadAllData() {
     try {
-    const {data,error} = await sb.from('app_store').select('*');
-    if(!error && data){
-      const store={};
-      data.forEach(row=>store[row.key]=row.data);
-      if(store['ppp-v4']) {
-        // Migrate: archived → processed, brooderIn=hatchDate → hatchDate+1, FR breed for B-24-02..B-25-01
-        let changed=false;
-        const frBatchNames=['B-24-02','B-24-03','B-24-04','B-25-01'];
-        const migrated = store['ppp-v4'].map(b=>{
-          let nb=b;
-          if(b.status==='archived'){nb={...nb,status:'processed'};changed=true;}
-          // Fix brooderIn if it equals hatchDate (was same-day, should be +1)
-          if(b.status!=='processed'&&b.hatchDate&&b.brooderIn===b.hatchDate){
-            try {
-              const newBrooderIn=toISO(addDays(new Date(b.hatchDate+'T12:00:00'),1));
-              nb={...nb,brooderIn:newBrooderIn};
-              changed=true;
-            } catch(_e) { /* defensive parse on legacy hatchDate */ }
+      const {data, error} = await sb.from('app_store').select('*');
+      if (!error && data) {
+        const store = {};
+        data.forEach((row) => (store[row.key] = row.data));
+        if (store['ppp-v4']) {
+          // Migrate: archived → processed, brooderIn=hatchDate → hatchDate+1, FR breed for B-24-02..B-25-01
+          let changed = false;
+          const frBatchNames = ['B-24-02', 'B-24-03', 'B-24-04', 'B-25-01'];
+          const migrated = store['ppp-v4'].map((b) => {
+            let nb = b;
+            if (b.status === 'archived') {
+              nb = {...nb, status: 'processed'};
+              changed = true;
+            }
+            // Fix brooderIn if it equals hatchDate (was same-day, should be +1)
+            if (b.status !== 'processed' && b.hatchDate && b.brooderIn === b.hatchDate) {
+              try {
+                const newBrooderIn = toISO(addDays(new Date(b.hatchDate + 'T12:00:00'), 1));
+                nb = {...nb, brooderIn: newBrooderIn};
+                changed = true;
+              } catch (_e) {
+                /* defensive parse on legacy hatchDate */
+              }
+            }
+            // Hard-code Freedom Ranger breed/hatchery for legacy B-24-02..B-25-01 batches
+            const nameUpper = String(nb.name || '').toUpperCase();
+            if (frBatchNames.includes(nameUpper)) {
+              if (nb.breed !== 'FR') {
+                nb = {...nb, breed: 'FR'};
+                changed = true;
+              }
+              if (nb.hatchery !== 'Freedom Ranger Hatchery') {
+                nb = {...nb, hatchery: 'Freedom Ranger Hatchery'};
+                changed = true;
+              }
+            }
+            // Hard-code legacy hatchery names for two early-2025 batches
+            // (Ronnie ran these from non-standard hatcheries before the
+            // dropdown was canonicalized).
+            if (nameUpper === 'B-25-02' && nb.hatchery !== 'VALLEY FARMS') {
+              nb = {...nb, hatchery: 'VALLEY FARMS'};
+              changed = true;
+            }
+            if (nameUpper === 'B-25-03' && nb.hatchery !== 'CREDO FARMS') {
+              nb = {...nb, hatchery: 'CREDO FARMS'};
+              changed = true;
+            }
+            return nb;
+          });
+          setBatches(migrated);
+          if (changed) {
+            sb.from('app_store')
+              .upsert({key: 'ppp-v4', data: migrated}, {onConflict: 'key'})
+              .then(() => {});
           }
-          // Hard-code Freedom Ranger breed/hatchery for legacy B-24-02..B-25-01 batches
-          const nameUpper=String(nb.name||'').toUpperCase();
-          if(frBatchNames.includes(nameUpper)){
-            if(nb.breed!=='FR'){nb={...nb,breed:'FR'};changed=true;}
-            if(nb.hatchery!=='Freedom Ranger Hatchery'){nb={...nb,hatchery:'Freedom Ranger Hatchery'};changed=true;}
+        }
+        if (store['ppp-pigs-v1']) setPigData(store['ppp-pigs-v1']);
+        if (store['ppp-breeding-v1']) setBreedingCycles(store['ppp-breeding-v1']);
+        if (store['ppp-farrowing-v1']) setFarrowingRecs(store['ppp-farrowing-v1'] || INITIAL_FARROWING);
+        if (store['ppp-boars-v1']) setBoarNames(store['ppp-boars-v1']);
+        if (store['ppp-feeders-v1']) {
+          // Reconcile sub-batch counts against parent. Repairs data left in
+          // an inconsistent state by the old (now-removed) Transfer-to-
+          // Breeding mutation path. Persists once if anything changed.
+          const fr = reconcileFeederGroupsFromBreeders(store['ppp-feeders-v1']);
+          setFeederGroups(fr.groups);
+          if (fr.changed)
+            sb.from('app_store')
+              .upsert({key: 'ppp-feeders-v1', data: fr.groups}, {onConflict: 'key'})
+              .then(() => {});
+        }
+        if (store['ppp-feed-costs-v1'])
+          setFeedCosts({starter: 0, grower: 0, layer: 0, pig: 0, grit: 0, ...store['ppp-feed-costs-v1']});
+        if (store['ppp-archived-sows-v1']) setArchivedSows(store['ppp-archived-sows-v1'] || []);
+        if (store['ppp-breeders-v1'])
+          setBreeders(store['ppp-breeders-v1'].length > 0 ? store['ppp-breeders-v1'] : INITIAL_BREEDERS);
+        else setBreeders(INITIAL_BREEDERS);
+        if (store['ppp-breed-options-v1']) setBreedOptions(store['ppp-breed-options-v1']);
+        if (store['ppp-origin-options-v1']) setOriginOptions(store['ppp-origin-options-v1']);
+        if (store['ppp-pigs-v1']) setPigData(store['ppp-pigs-v1']);
+        if (store['ppp-webforms-v1']) {
+          // Inject Add Feed webform entry if not already present
+          var wfCfg = store['ppp-webforms-v1'];
+          if (
+            !(wfCfg.webforms || []).find(function (w) {
+              return w.id === 'add-feed-webform';
+            })
+          ) {
+            wfCfg = {
+              ...wfCfg,
+              webforms: [
+                ...(wfCfg.webforms || []),
+                {
+                  id: 'add-feed-webform',
+                  teamMembers: [],
+                  name: 'Add Feed Webform',
+                  description: 'Quick feed logging for pig, broiler, and layer programs',
+                  table: 'multiple',
+                  allowAddGroup: false,
+                  sections: [
+                    {
+                      id: 's-info',
+                      title: 'Report Info',
+                      system: true,
+                      fields: [
+                        {id: 'date', label: 'Date', type: 'date', required: true, system: true, enabled: true},
+                        {
+                          id: 'team_member',
+                          label: 'Team Member',
+                          type: 'team_picker',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-feed',
+                      title: 'Feed',
+                      system: false,
+                      fields: [
+                        {
+                          id: 'batch_label',
+                          label: 'Batch / Group',
+                          type: 'group_picker',
+                          required: true,
+                          system: true,
+                          enabled: true,
+                        },
+                        {
+                          id: 'feed_type',
+                          label: 'Feed Type',
+                          type: 'button_toggle',
+                          options: ['STARTER', 'GROWER', 'LAYER'],
+                          required: true,
+                          system: false,
+                          enabled: true,
+                        },
+                        {
+                          id: 'feed_lbs',
+                          label: 'Feed (lbs)',
+                          type: 'number',
+                          required: true,
+                          system: false,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            };
           }
-          // Hard-code legacy hatchery names for two early-2025 batches
-          // (Ronnie ran these from non-standard hatcheries before the
-          // dropdown was canonicalized).
-          if(nameUpper==='B-25-02' && nb.hatchery!=='VALLEY FARMS'){nb={...nb,hatchery:'VALLEY FARMS'};changed=true;}
-          if(nameUpper==='B-25-03' && nb.hatchery!=='CREDO FARMS'){nb={...nb,hatchery:'CREDO FARMS'};changed=true;}
-          return nb;
+          // Inject Cattle Daily webform entry if not already present (config may pre-date the cattle module)
+          if (
+            !(wfCfg.webforms || []).find(function (w) {
+              return w.id === 'cattle-dailys';
+            })
+          ) {
+            wfCfg = {
+              ...wfCfg,
+              webforms: [
+                ...(wfCfg.webforms || []),
+                {
+                  id: 'cattle-dailys',
+                  teamMembers: [],
+                  name: 'Cattle Daily Report',
+                  description: 'Daily care report for cattle herds',
+                  table: 'cattle_dailys',
+                  allowAddGroup: false,
+                  sections: [
+                    {
+                      id: 's-info',
+                      title: 'Report Info',
+                      system: true,
+                      fields: [
+                        {id: 'date', label: 'Date', type: 'date', required: true, system: true, enabled: true},
+                        {
+                          id: 'team_member',
+                          label: 'Team Member',
+                          type: 'team_picker',
+                          required: true,
+                          system: true,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-herd',
+                      title: 'Cattle Herd',
+                      system: true,
+                      fields: [
+                        {
+                          id: 'herd',
+                          label: 'Herd (mommas/backgrounders/finishers/bulls)',
+                          type: 'herd_picker',
+                          required: true,
+                          system: true,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-feeds',
+                      title: 'Feeds & Minerals',
+                      system: true,
+                      fields: [
+                        {
+                          id: 'feeds',
+                          label: 'Feeds (multi-line, with creep toggle)',
+                          type: 'feed_lines',
+                          required: false,
+                          system: true,
+                          enabled: true,
+                        },
+                        {
+                          id: 'minerals',
+                          label: 'Minerals (multi-line)',
+                          type: 'mineral_lines',
+                          required: false,
+                          system: true,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-checks',
+                      title: 'Daily Checks',
+                      system: false,
+                      fields: [
+                        {
+                          id: 'fence_voltage',
+                          label: 'Fence voltage (kV)',
+                          type: 'number',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                        {
+                          id: 'water_checked',
+                          label: 'Water source checked?',
+                          type: 'yes_no',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-comments',
+                      title: 'Comments',
+                      system: false,
+                      fields: [
+                        {
+                          id: 'issues',
+                          label: 'Comments / Issues',
+                          type: 'textarea',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            };
+          }
+          // Inject Sheep Daily webform entry if not already present (config may pre-date the sheep module)
+          if (
+            !(wfCfg.webforms || []).find(function (w) {
+              return w.id === 'sheep-dailys';
+            })
+          ) {
+            wfCfg = {
+              ...wfCfg,
+              webforms: [
+                ...(wfCfg.webforms || []),
+                {
+                  id: 'sheep-dailys',
+                  teamMembers: [],
+                  name: 'Sheep Daily Report',
+                  description: 'Daily care report for sheep flocks',
+                  table: 'sheep_dailys',
+                  allowAddGroup: false,
+                  sections: [
+                    {
+                      id: 's-info',
+                      title: 'Report Info',
+                      system: true,
+                      fields: [
+                        {id: 'date', label: 'Date', type: 'date', required: true, system: true, enabled: true},
+                        {
+                          id: 'team_member',
+                          label: 'Team Member',
+                          type: 'team_picker',
+                          required: true,
+                          system: true,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-flock',
+                      title: 'Sheep Flock',
+                      system: true,
+                      fields: [
+                        {
+                          id: 'flock',
+                          label: 'Flock (rams/ewes/feeders)',
+                          type: 'flock_picker',
+                          required: true,
+                          system: true,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-feeds',
+                      title: 'Feeds & Minerals',
+                      system: true,
+                      fields: [
+                        {
+                          id: 'feeds',
+                          label: 'Feeds (multi-line)',
+                          type: 'feed_lines',
+                          required: false,
+                          system: true,
+                          enabled: true,
+                        },
+                        {
+                          id: 'minerals',
+                          label: 'Minerals (multi-line, with % eaten)',
+                          type: 'mineral_lines',
+                          required: false,
+                          system: true,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-checks',
+                      title: 'Daily Checks',
+                      system: false,
+                      fields: [
+                        {
+                          id: 'fence_voltage_kv',
+                          label: 'Fence Voltage (kV)',
+                          type: 'number',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                        {
+                          id: 'waterers_working',
+                          label: 'Waterers working?',
+                          type: 'yes_no',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-mortality',
+                      title: 'Mortality',
+                      system: false,
+                      fields: [
+                        {
+                          id: 'mortality_count',
+                          label: 'Mortality count',
+                          type: 'number',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                    {
+                      id: 's-comments',
+                      title: 'Comments',
+                      system: false,
+                      fields: [
+                        {
+                          id: 'comments',
+                          label: 'Comments / Issues',
+                          type: 'textarea',
+                          required: false,
+                          system: false,
+                          enabled: true,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            };
+          }
+          // Inject Weigh-Ins webform entry if not already present (config pre-dates
+          // per-species team-member lists). Shape-only entry: no sections — the
+          // admin editor surfaces a custom per-species editor instead.
+          if (
+            !(wfCfg.webforms || []).find(function (w) {
+              return w.id === 'weighins-webform';
+            })
+          ) {
+            wfCfg = {
+              ...wfCfg,
+              webforms: [
+                ...(wfCfg.webforms || []),
+                {
+                  id: 'weighins-webform',
+                  name: 'Weigh-Ins',
+                  description: 'Per-species weigh-in sessions (Cattle / Sheep / Pig / Broiler)',
+                  table: 'weigh_ins',
+                  allowAddGroup: false,
+                  teamMembers: [],
+                  teamMembersBySpecies: {cattle: [], sheep: [], pig: [], broiler: []},
+                  sections: [],
+                },
+              ],
+            };
+          } else {
+            // Back-fill teamMembersBySpecies on configs that already have the entry
+            // but were saved before the field existed.
+            wfCfg = {
+              ...wfCfg,
+              webforms: (wfCfg.webforms || []).map(function (w) {
+                if (w.id !== 'weighins-webform') return w;
+                var bs = w.teamMembersBySpecies || {};
+                return {
+                  ...w,
+                  teamMembersBySpecies: {
+                    cattle: bs.cattle || [],
+                    sheep: bs.sheep || [],
+                    pig: bs.pig || [],
+                    broiler: bs.broiler || [],
+                  },
+                };
+              }),
+            };
+          }
+          // Cattle-only: strip s-mortality section from any previously-saved config
+          // (mortality is handled via the cow record now, not the webform).
+          wfCfg = {
+            ...wfCfg,
+            webforms: (wfCfg.webforms || []).map(function (w) {
+              if (w.id !== 'cattle-dailys') return w;
+              return {
+                ...w,
+                sections: (w.sections || []).filter(function (s) {
+                  return s.id !== 's-mortality';
+                }),
+              };
+            }),
+          };
+          setWebformsConfig(wfCfg);
+          // Per-form team members for logged-in users
+          const allMembers = [...new Set((wfCfg.webforms || []).flatMap((w) => w.teamMembers || []))].sort();
+          if (allMembers.length > 0) setWfTeamMembers(allMembers);
+        }
+        if (store['ppp-layer-groups-v1']) setLayerGroups(store['ppp-layer-groups-v1']);
+        if (store['ppp-missed-cleared-v1']) setMissedCleared(new Set(store['ppp-missed-cleared-v1'] || []));
+        if (store['ppp-feed-orders-v1']) setFeedOrders(store['ppp-feed-orders-v1']);
+        if (store['ppp-pig-feed-inventory-v1']) setPigFeedInventory(store['ppp-pig-feed-inventory-v1']);
+        if (store['ppp-poultry-feed-inventory-v1']) setPoultryFeedInventory(store['ppp-poultry-feed-inventory-v1']);
+        if (store['ppp-broiler-notes-v1']) setBroilerNotes(store['ppp-broiler-notes-v1'] || '');
+        if (store['ppp-pig-notes-v1']) setPigNotes(store['ppp-pig-notes-v1'] || '');
+        if (store['ppp-layer-notes-v1']) setLayerNotes(store['ppp-layer-notes-v1'] || '');
+        // Load layer batches and housings from dedicated tables, THEN sync webform config
+        var lbPromise = sb.from('layer_batches').select('*').order('name');
+        var lhPromise = sb.from('layer_housings').select('*').order('start_date');
+        Promise.all([lbPromise, lhPromise]).then(function (results) {
+          var lbData = results[0].data || [];
+          var lhData2 = results[1].data || [];
+          setLayerBatches(lbData);
+          setLayerHousings(lhData2);
+          // Now sync webform config with actual layer data available
+          syncWebformConfig(
+            store['ppp-webforms-v1'] || null,
+            store['ppp-feeders-v1'] || null,
+            store['ppp-v4'] || [],
+            store['ppp-layer-groups-v1'] || [],
+            lhData2,
+          );
         });
-        setBatches(migrated);
-        if(changed){ sb.from('app_store').upsert({key:'ppp-v4',data:migrated},{onConflict:'key'}).then(()=>{}); }
+        // Sync broiler groups to webform_config for anon webform access
+        const activeBroilerGroups = (store['ppp-v4'] || [])
+          .filter((b) => b.status !== 'archived' && b.status !== 'processed')
+          .map((b) => b.name);
+        sb.from('webform_config')
+          .upsert({key: 'broiler_groups', data: activeBroilerGroups}, {onConflict: 'key'})
+          .then(() => {});
+      } else if (!error) {
+        // No data yet - init farrowing with historical records
+        setFarrowingRecs(INITIAL_FARROWING);
       }
-      if(store['ppp-pigs-v1']) setPigData(store['ppp-pigs-v1']);
-      if(store['ppp-breeding-v1']) setBreedingCycles(store['ppp-breeding-v1']);
-      if(store['ppp-farrowing-v1']) setFarrowingRecs(store['ppp-farrowing-v1']||INITIAL_FARROWING);
-      if(store['ppp-boars-v1']) setBoarNames(store['ppp-boars-v1']);
-      if(store['ppp-feeders-v1']) {
-        // Reconcile sub-batch counts against parent. Repairs data left in
-        // an inconsistent state by the old (now-removed) Transfer-to-
-        // Breeding mutation path. Persists once if anything changed.
-        const fr = reconcileFeederGroupsFromBreeders(store['ppp-feeders-v1']);
-        setFeederGroups(fr.groups);
-        if(fr.changed) sb.from('app_store').upsert({key:'ppp-feeders-v1', data: fr.groups},{onConflict:'key'}).then(()=>{});
-      }
-      if(store['ppp-feed-costs-v1']) setFeedCosts({starter:0,grower:0,layer:0,pig:0,grit:0,...store['ppp-feed-costs-v1']});
-      if(store['ppp-archived-sows-v1']) setArchivedSows(store['ppp-archived-sows-v1']||[]);
-      if(store['ppp-breeders-v1']) setBreeders(store['ppp-breeders-v1'].length>0?store['ppp-breeders-v1']:INITIAL_BREEDERS); else setBreeders(INITIAL_BREEDERS);
-      if(store['ppp-breed-options-v1']) setBreedOptions(store['ppp-breed-options-v1']);
-      if(store['ppp-origin-options-v1']) setOriginOptions(store['ppp-origin-options-v1']);
-      if(store['ppp-pigs-v1']) setPigData(store['ppp-pigs-v1']);
-      if(store['ppp-webforms-v1']){
-        // Inject Add Feed webform entry if not already present
-        var wfCfg=store['ppp-webforms-v1'];
-        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='add-feed-webform';})){
-          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'add-feed-webform',teamMembers:[],name:'Add Feed Webform',description:'Quick feed logging for pig, broiler, and layer programs',table:'multiple',allowAddGroup:false,sections:[
-            {id:'s-info',title:'Report Info',system:true,fields:[
-              {id:'date',label:'Date',type:'date',required:true,system:true,enabled:true},
-              {id:'team_member',label:'Team Member',type:'team_picker',required:false,system:false,enabled:true}
-            ]},
-            {id:'s-feed',title:'Feed',system:false,fields:[
-              {id:'batch_label',label:'Batch / Group',type:'group_picker',required:true,system:true,enabled:true},
-              {id:'feed_type',label:'Feed Type',type:'button_toggle',options:['STARTER','GROWER','LAYER'],required:true,system:false,enabled:true},
-              {id:'feed_lbs',label:'Feed (lbs)',type:'number',required:true,system:false,enabled:true}
-            ]}
-          ]}]};
+      // Load pig_dailys (paginated) and poultry_dailys in parallel. Both previously
+      // ran serially, blocking the app on every cold start — see PROJECT.md §14.5 #3.
+      const pigDailysPromise = (async () => {
+        let allDailys = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const {data: page, error: pageErr} = await sb
+            .from('pig_dailys')
+            .select('*')
+            .order('date', {ascending: false})
+            .range(from, from + pageSize - 1);
+          if (pageErr || !page || page.length === 0) break;
+          allDailys = [...allDailys, ...page];
+          if (page.length < pageSize) break;
+          from += pageSize;
         }
-        // Inject Cattle Daily webform entry if not already present (config may pre-date the cattle module)
-        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='cattle-dailys';})){
-          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'cattle-dailys',teamMembers:[],name:'Cattle Daily Report',description:'Daily care report for cattle herds',table:'cattle_dailys',allowAddGroup:false,sections:[
-            {id:'s-info',title:'Report Info',system:true,fields:[
-              {id:'date',label:'Date',type:'date',required:true,system:true,enabled:true},
-              {id:'team_member',label:'Team Member',type:'team_picker',required:true,system:true,enabled:true}
-            ]},
-            {id:'s-herd',title:'Cattle Herd',system:true,fields:[
-              {id:'herd',label:'Herd (mommas/backgrounders/finishers/bulls)',type:'herd_picker',required:true,system:true,enabled:true}
-            ]},
-            {id:'s-feeds',title:'Feeds & Minerals',system:true,fields:[
-              {id:'feeds',label:'Feeds (multi-line, with creep toggle)',type:'feed_lines',required:false,system:true,enabled:true},
-              {id:'minerals',label:'Minerals (multi-line)',type:'mineral_lines',required:false,system:true,enabled:true}
-            ]},
-            {id:'s-checks',title:'Daily Checks',system:false,fields:[
-              {id:'fence_voltage',label:'Fence voltage (kV)',type:'number',required:false,system:false,enabled:true},
-              {id:'water_checked',label:'Water source checked?',type:'yes_no',required:false,system:false,enabled:true}
-            ]},
-            {id:'s-comments',title:'Comments',system:false,fields:[
-              {id:'issues',label:'Comments / Issues',type:'textarea',required:false,system:false,enabled:true}
-            ]}
-          ]}]};
-        }
-        // Inject Sheep Daily webform entry if not already present (config may pre-date the sheep module)
-        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='sheep-dailys';})){
-          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'sheep-dailys',teamMembers:[],name:'Sheep Daily Report',description:'Daily care report for sheep flocks',table:'sheep_dailys',allowAddGroup:false,sections:[
-            {id:'s-info',title:'Report Info',system:true,fields:[
-              {id:'date',label:'Date',type:'date',required:true,system:true,enabled:true},
-              {id:'team_member',label:'Team Member',type:'team_picker',required:true,system:true,enabled:true}
-            ]},
-            {id:'s-flock',title:'Sheep Flock',system:true,fields:[
-              {id:'flock',label:'Flock (rams/ewes/feeders)',type:'flock_picker',required:true,system:true,enabled:true}
-            ]},
-            {id:'s-feeds',title:'Feeds & Minerals',system:true,fields:[
-              {id:'feeds',label:'Feeds (multi-line)',type:'feed_lines',required:false,system:true,enabled:true},
-              {id:'minerals',label:'Minerals (multi-line, with % eaten)',type:'mineral_lines',required:false,system:true,enabled:true}
-            ]},
-            {id:'s-checks',title:'Daily Checks',system:false,fields:[
-              {id:'fence_voltage_kv',label:'Fence Voltage (kV)',type:'number',required:false,system:false,enabled:true},
-              {id:'waterers_working',label:'Waterers working?',type:'yes_no',required:false,system:false,enabled:true}
-            ]},
-            {id:'s-mortality',title:'Mortality',system:false,fields:[
-              {id:'mortality_count',label:'Mortality count',type:'number',required:false,system:false,enabled:true}
-            ]},
-            {id:'s-comments',title:'Comments',system:false,fields:[
-              {id:'comments',label:'Comments / Issues',type:'textarea',required:false,system:false,enabled:true}
-            ]}
-          ]}]};
-        }
-        // Inject Weigh-Ins webform entry if not already present (config pre-dates
-        // per-species team-member lists). Shape-only entry: no sections — the
-        // admin editor surfaces a custom per-species editor instead.
-        if(!(wfCfg.webforms||[]).find(function(w){return w.id==='weighins-webform';})){
-          wfCfg={...wfCfg,webforms:[...(wfCfg.webforms||[]),{id:'weighins-webform',name:'Weigh-Ins',description:'Per-species weigh-in sessions (Cattle / Sheep / Pig / Broiler)',table:'weigh_ins',allowAddGroup:false,teamMembers:[],teamMembersBySpecies:{cattle:[],sheep:[],pig:[],broiler:[]},sections:[]}]};
-        } else {
-          // Back-fill teamMembersBySpecies on configs that already have the entry
-          // but were saved before the field existed.
-          wfCfg = {...wfCfg, webforms: (wfCfg.webforms||[]).map(function(w){
-            if(w.id !== 'weighins-webform') return w;
-            var bs = w.teamMembersBySpecies || {};
-            return {...w, teamMembersBySpecies: {cattle:bs.cattle||[], sheep:bs.sheep||[], pig:bs.pig||[], broiler:bs.broiler||[]}};
-          })};
-        }
-        // Cattle-only: strip s-mortality section from any previously-saved config
-        // (mortality is handled via the cow record now, not the webform).
-        wfCfg = {...wfCfg, webforms: (wfCfg.webforms||[]).map(function(w){
-          if(w.id !== 'cattle-dailys') return w;
-          return {...w, sections: (w.sections||[]).filter(function(s){ return s.id !== 's-mortality'; })};
-        })};
-        setWebformsConfig(wfCfg);
-        // Per-form team members for logged-in users
-        const allMembers=[...new Set((wfCfg.webforms||[]).flatMap(w=>w.teamMembers||[]))].sort();
-        if(allMembers.length>0) setWfTeamMembers(allMembers);
-      }
-      if(store['ppp-layer-groups-v1']) setLayerGroups(store['ppp-layer-groups-v1']);
-      if(store['ppp-missed-cleared-v1']) setMissedCleared(new Set(store['ppp-missed-cleared-v1']||[]));
-      if(store['ppp-feed-orders-v1']) setFeedOrders(store['ppp-feed-orders-v1']);
-      if(store['ppp-pig-feed-inventory-v1']) setPigFeedInventory(store['ppp-pig-feed-inventory-v1']);
-      if(store['ppp-poultry-feed-inventory-v1']) setPoultryFeedInventory(store['ppp-poultry-feed-inventory-v1']);
-      if(store['ppp-broiler-notes-v1']) setBroilerNotes(store['ppp-broiler-notes-v1']||'');
-      if(store['ppp-pig-notes-v1'])     setPigNotes(store['ppp-pig-notes-v1']||'');
-      if(store['ppp-layer-notes-v1'])   setLayerNotes(store['ppp-layer-notes-v1']||'');
-      // Load layer batches and housings from dedicated tables, THEN sync webform config
-      var lbPromise=sb.from('layer_batches').select('*').order('name');
-      var lhPromise=sb.from('layer_housings').select('*').order('start_date');
-      Promise.all([lbPromise,lhPromise]).then(function(results){
-        var lbData=results[0].data||[];
-        var lhData2=results[1].data||[];
-        setLayerBatches(lbData);
-        setLayerHousings(lhData2);
-        // Now sync webform config with actual layer data available
-        syncWebformConfig(store['ppp-webforms-v1']||null, store['ppp-feeders-v1']||null, store['ppp-v4']||[], store['ppp-layer-groups-v1']||[], lhData2);
+        return allDailys;
+      })().catch((e) => {
+        console.warn('pig_dailys load error:', e.message);
+        return [];
       });
-      // Sync broiler groups to webform_config for anon webform access
-      const activeBroilerGroups = (store['ppp-v4']||[])
-        .filter(b=>b.status!=='archived'&&b.status!=='processed')
-        .map(b=>b.name);
-      sb.from('webform_config').upsert({key:'broiler_groups',data:activeBroilerGroups},{onConflict:'key'}).then(()=>{});
-    } else if(!error){
-      // No data yet - init farrowing with historical records
-      setFarrowingRecs(INITIAL_FARROWING);
-    }
-    // Load pig_dailys (paginated) and poultry_dailys in parallel. Both previously
-    // ran serially, blocking the app on every cold start — see PROJECT.md §14.5 #3.
-    const pigDailysPromise = (async () => {
-      let allDailys = [];
-      let from = 0;
-      const pageSize = 1000;
-      while(true){
-        const {data:page, error:pageErr} = await sb.from('pig_dailys').select('*').order('date',{ascending:false}).range(from, from+pageSize-1);
-        if(pageErr || !page || page.length===0) break;
-        allDailys = [...allDailys, ...page];
-        if(page.length < pageSize) break;
-        from += pageSize;
-      }
-      return allDailys;
-    })().catch(e => { console.warn('pig_dailys load error:', e.message); return []; });
-    const poultryDailysPromise = sb.from('poultry_dailys').select('*').order('date',{ascending:false}).order('submitted_at',{ascending:false}).limit(2000)
-      .then(({data, error}) => { if(error) { console.warn('poultry_dailys load error:', error.message); return []; } return data || []; })
-      .catch(e => { console.warn('poultry_dailys load error:', e.message); return []; });
-    const [pigDailysRows, poultryDailysRows] = await Promise.all([pigDailysPromise, poultryDailysPromise]);
-    if(pigDailysRows) setPigDailys(pigDailysRows);
-    setBroilerDailys(poultryDailysRows);
-    const labels = [...new Set(poultryDailysRows.map(d=>d.batch_label).filter(Boolean))].sort();
-    console.log(`[WCF] broilerDailys: ${poultryDailysRows.length} records, labels:`, labels);
-    setDataLoaded(true);
-
-    } catch(e) {
+      const poultryDailysPromise = sb
+        .from('poultry_dailys')
+        .select('*')
+        .order('date', {ascending: false})
+        .order('submitted_at', {ascending: false})
+        .limit(2000)
+        .then(({data, error}) => {
+          if (error) {
+            console.warn('poultry_dailys load error:', error.message);
+            return [];
+          }
+          return data || [];
+        })
+        .catch((e) => {
+          console.warn('poultry_dailys load error:', e.message);
+          return [];
+        });
+      const [pigDailysRows, poultryDailysRows] = await Promise.all([pigDailysPromise, poultryDailysPromise]);
+      if (pigDailysRows) setPigDailys(pigDailysRows);
+      setBroilerDailys(poultryDailysRows);
+      const labels = [...new Set(poultryDailysRows.map((d) => d.batch_label).filter(Boolean))].sort();
+      console.log(`[WCF] broilerDailys: ${poultryDailysRows.length} records, labels:`, labels);
+      setDataLoaded(true);
+    } catch (e) {
       console.error('loadAllData error:', e);
       setDataLoaded(true);
     }
   }
 
-  async function loadUsers(){
+  async function loadUsers() {
     const {data, error} = await sb.from('profiles').select('*').order('created_at');
-    if(data) setAllUsers(data);
-    else if(error) console.error('loadUsers error:', error);
+    if (data) setAllUsers(data);
+    else if (error) console.error('loadUsers error:', error);
   }
 
-  async function saveFeedCosts(costs){
+  async function saveFeedCosts(costs) {
     setFeedCosts(costs);
     await sbSave('ppp-feed-costs-v1', costs);
     // Update only ACTIVE broiler batches with new costs.
     // - Planned: stay blank until status flips to active (handled in upd() / status change path)
     // - Processed: never touched (preserves historical rates at time of processing)
-    const activeBroiler = batches.filter(b=>b.status==='active');
-    if(activeBroiler.length>0){
-      const updated = batches.map(b=>{
-        if(b.status!=='active') return b;
-        return {...b,
-          perLbStarterCost:costs.starter,
-          perLbStandardCost:costs.grower,
-          perLbGritCost:costs.grit||0,
-        };
+    const activeBroiler = batches.filter((b) => b.status === 'active');
+    if (activeBroiler.length > 0) {
+      const updated = batches.map((b) => {
+        if (b.status !== 'active') return b;
+        return {...b, perLbStarterCost: costs.starter, perLbStandardCost: costs.grower, perLbGritCost: costs.grit || 0};
       });
       setBatches(updated);
       sbSave('ppp-v4', updated);
     }
     // Update active pig batches
-    const activeF = feederGroups.filter(g=>g.status==='active');
-    if(activeF.length>0){
-      const updatedF = feederGroups.map(g=>g.status!=='active'?g:{...g,perLbFeedCost:costs.pig});
+    const activeF = feederGroups.filter((g) => g.status === 'active');
+    if (activeF.length > 0) {
+      const updatedF = feederGroups.map((g) => (g.status !== 'active' ? g : {...g, perLbFeedCost: costs.pig}));
       setFeederGroups(updatedF);
       sbSave('ppp-feeders-v1', updatedF);
     }
     // Update active layer groups (legacy old system)
-    const activeLG = layerGroups.filter(g=>g.status==='active');
-    if(activeLG.length>0){
-      const updatedLG = layerGroups.map(g=>g.status!=='active'?g:{...g,perLbFeedCost:costs.layer});
+    const activeLG = layerGroups.filter((g) => g.status === 'active');
+    if (activeLG.length > 0) {
+      const updatedLG = layerGroups.map((g) => (g.status !== 'active' ? g : {...g, perLbFeedCost: costs.layer}));
       persistLayerGroups(updatedLG);
     }
     // Update active layer batches (new system) — push 3 frozen rates
     // Skip the Retirement Home pseudo-batch
-    const activeLBs = (layerBatches||[]).filter(b=>b.status==='active');
-    if(activeLBs.length>0){
-      const updatedLB = await Promise.all(activeLBs.map(async (b)=>{
-        const upd = {
-          per_lb_starter_cost: costs.starter,
-          per_lb_grower_cost:  costs.grower,
-          per_lb_layer_cost:   costs.layer,
-        };
-        await sb.from('layer_batches').update(upd).eq('id', b.id);
-        return {...b, ...upd};
-      }));
+    const activeLBs = (layerBatches || []).filter((b) => b.status === 'active');
+    if (activeLBs.length > 0) {
+      const updatedLB = await Promise.all(
+        activeLBs.map(async (b) => {
+          const upd = {
+            per_lb_starter_cost: costs.starter,
+            per_lb_grower_cost: costs.grower,
+            per_lb_layer_cost: costs.layer,
+          };
+          await sb.from('layer_batches').update(upd).eq('id', b.id);
+          return {...b, ...upd};
+        }),
+      );
       // Merge updates back into local state
-      setLayerBatches(prev => prev.map(b => {
-        const u = updatedLB.find(x => x.id === b.id);
-        return u ? u : b;
-      }));
+      setLayerBatches((prev) =>
+        prev.map((b) => {
+          const u = updatedLB.find((x) => x.id === b.id);
+          return u ? u : b;
+        }),
+      );
     }
   }
 
-  async function sbSave(key, value){
+  async function sbSave(key, value) {
     setSaveStatus('saving');
     let lastError = null;
-    for(let attempt = 1; attempt <= 3; attempt++){
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const savePromise = sb.from('app_store').upsert(
-          {key, data:value, updated_at:new Date().toISOString()},
-          {onConflict:'key'}
-        );
-        const timeoutPromise = new Promise((_,reject) => setTimeout(()=>reject(new Error('timeout')), 8000));
+        const savePromise = sb
+          .from('app_store')
+          .upsert({key, data: value, updated_at: new Date().toISOString()}, {onConflict: 'key'});
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
         const {error} = await Promise.race([savePromise, timeoutPromise]);
-        if(error) throw error;
+        if (error) throw error;
         setSaveStatus('saved');
-        setTimeout(()=>setSaveStatus(''), 2500);
+        setTimeout(() => setSaveStatus(''), 2500);
         return; // success
-      } catch(e) {
+      } catch (e) {
         lastError = e;
         console.warn(`sbSave attempt ${attempt} failed for key ${key}:`, e.message);
-        if(attempt < 3) await new Promise(r=>setTimeout(r, 1000 * attempt)); // wait before retry
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt)); // wait before retry
       }
     }
     // All 3 attempts failed
     console.error('sbSave failed after 3 attempts:', lastError);
     setSaveStatus('error');
-    setTimeout(()=>setSaveStatus(''), 4000);
+    setTimeout(() => setSaveStatus(''), 4000);
   }
 
-  async function signOut(){
+  async function signOut() {
     await sb.auth.signOut();
   }
 
-  function persist(nb){ sbSave('ppp-v4', nb); }
-  function persistBreeding(nb){ sbSave('ppp-breeding-v1', nb); }
-  function persistFarrowing(nb){ sbSave('ppp-farrowing-v1', nb); }
-  function persistBoars(nb){ sbSave('ppp-boars-v1', nb); }
-  function persistFeeders(nb){ setFeederGroups(nb); sbSave('ppp-feeders-v1', nb); syncWebformConfig(null, nb, batches, layerGroups, layerHousings); }
-  function persistLayerGroups(nb){
+  function persist(nb) {
+    sbSave('ppp-v4', nb);
+  }
+  function persistBreeding(nb) {
+    sbSave('ppp-breeding-v1', nb);
+  }
+  function persistFarrowing(nb) {
+    sbSave('ppp-farrowing-v1', nb);
+  }
+  function persistBoars(nb) {
+    sbSave('ppp-boars-v1', nb);
+  }
+  function persistFeeders(nb) {
+    setFeederGroups(nb);
+    sbSave('ppp-feeders-v1', nb);
+    syncWebformConfig(null, nb, batches, layerGroups, layerHousings);
+  }
+  function persistLayerGroups(nb) {
     setLayerGroups(nb);
     sbSave('ppp-layer-groups-v1', nb);
     // Sync active layer group names to webform_config for anon access
-    const activeNames = nb.filter(g=>g.status==='active').map(g=>g.name);
-    sb.from('webform_config').upsert({key:'layer_groups',value:{groups:activeNames}},{onConflict:'key'}).then(()=>{});
+    const activeNames = nb.filter((g) => g.status === 'active').map((g) => g.name);
+    sb.from('webform_config')
+      .upsert({key: 'layer_groups', value: {groups: activeNames}}, {onConflict: 'key'})
+      .then(() => {});
     syncWebformConfig(null, null, batches, nb, layerHousings);
   }
-  function persistLayerHousings(nb){
+  function persistLayerHousings(nb) {
     // When housings change, re-sync webform so batch name vs housing name logic updates
     setLayerHousings(nb);
     syncWebformConfig(null, null, batches, layerGroups, nb);
   }
-  function persistWebforms(nb){
+  function persistWebforms(nb) {
     setWebformsConfig(nb);
     sbSave('ppp-webforms-v1', nb);
     syncWebformConfig(nb, null, batches, layerGroups, layerHousings);
     // Sync allowAddGroup to webform_settings key for anon access
     const allowAddGroup = {};
-    (nb.webforms||[]).forEach(wf=>{ allowAddGroup[wf.id] = !!wf.allowAddGroup; });
-    sb.from('webform_config').upsert({key:'webform_settings',data:{allowAddGroup}},{onConflict:'key'}).then(()=>{});
+    (nb.webforms || []).forEach((wf) => {
+      allowAddGroup[wf.id] = !!wf.allowAddGroup;
+    });
+    sb.from('webform_config')
+      .upsert({key: 'webform_settings', data: {allowAddGroup}}, {onConflict: 'key'})
+      .then(() => {});
   }
-  function persistFeedersAndSync(nb){
+  function persistFeedersAndSync(nb) {
     setFeederGroups(nb);
     sbSave('ppp-feeders-v1', nb);
     // Sync active groups to webform_config for anon access
     syncWebformConfig(null, null, batches, nb, layerHousings);
   }
-  async function syncWebformConfig(wfConfig, feeders, batchData, lgData, lhData){
+  async function syncWebformConfig(wfConfig, feeders, batchData, lgData, lhData) {
     try {
       // Normalize: strip s-mortality from the cattle webform before sync.
       // Mortality is handled via the cow record, not the daily webform.
-      function normalizeWebforms(webforms){
-        return (webforms||[]).map(function(w){
-          if(w.id !== 'cattle-dailys') return w;
-          return {...w, sections: (w.sections||[]).filter(function(s){ return s.id !== 's-mortality'; })};
+      function normalizeWebforms(webforms) {
+        return (webforms || []).map(function (w) {
+          if (w.id !== 'cattle-dailys') return w;
+          return {
+            ...w,
+            sections: (w.sections || []).filter(function (s) {
+              return s.id !== 's-mortality';
+            }),
+          };
         });
       }
       const rawCfg = wfConfig || webformsConfig;
       const cfg = {...rawCfg, webforms: normalizeWebforms(rawCfg.webforms)};
       const fgs = feeders || feederGroups;
       const pigGroups = [
-        'SOWS', 'BOARS',
-        ...fgs.flatMap(g=>
-          (g.subBatches&&g.subBatches.length>0)
-            ? g.subBatches.filter(s=>s.status==='active').map(s=>s.name)
-            : g.status==='active' ? [g.batchName] : []
-        )
+        'SOWS',
+        'BOARS',
+        ...fgs.flatMap((g) =>
+          g.subBatches && g.subBatches.length > 0
+            ? g.subBatches.filter((s) => s.status === 'active').map((s) => s.name)
+            : g.status === 'active'
+              ? [g.batchName]
+              : [],
+        ),
       ];
       // Per-form team members - push each form's list separately.
       // For weighins-webform, roll up its teamMembersBySpecies into the flat
       // teamMembers union so the global team_members key still reflects
       // everyone who can submit.
-      const weighinsWf = (cfg.webforms||[]).find(w=>w.id==='weighins-webform');
-      const weighinsBySpecies = (weighinsWf && weighinsWf.teamMembersBySpecies) || {cattle:[],sheep:[],pig:[],broiler:[]};
-      const weighinsUnion = [...new Set([
-        ...(weighinsBySpecies.cattle||[]),
-        ...(weighinsBySpecies.sheep||[]),
-        ...(weighinsBySpecies.pig||[]),
-        ...(weighinsBySpecies.broiler||[]),
-      ])].sort();
+      const weighinsWf = (cfg.webforms || []).find((w) => w.id === 'weighins-webform');
+      const weighinsBySpecies = (weighinsWf && weighinsWf.teamMembersBySpecies) || {
+        cattle: [],
+        sheep: [],
+        pig: [],
+        broiler: [],
+      };
+      const weighinsUnion = [
+        ...new Set([
+          ...(weighinsBySpecies.cattle || []),
+          ...(weighinsBySpecies.sheep || []),
+          ...(weighinsBySpecies.pig || []),
+          ...(weighinsBySpecies.broiler || []),
+        ]),
+      ].sort();
       // Master team_members must NOT be reset to the union — admin can add
       // names directly in /admin > Equipment > Fuel Supply Webform that
       // aren't yet attached to any webform's teamMembers. Preserve those by
       // merging the derived union INTO the existing stored master.
-      const derivedUnion = [...new Set([
-        ...(cfg.webforms||[]).flatMap(wf=>wf.teamMembers||[]),
-        ...weighinsUnion,
-      ])];
-      const {data: existingMasterRow} = await sb.from('webform_config').select('data').eq('key','team_members').maybeSingle();
-      const existingMaster = (existingMasterRow && Array.isArray(existingMasterRow.data)) ? existingMasterRow.data : [];
+      const derivedUnion = [
+        ...new Set([...(cfg.webforms || []).flatMap((wf) => wf.teamMembers || []), ...weighinsUnion]),
+      ];
+      const {data: existingMasterRow} = await sb
+        .from('webform_config')
+        .select('data')
+        .eq('key', 'team_members')
+        .maybeSingle();
+      const existingMaster = existingMasterRow && Array.isArray(existingMasterRow.data) ? existingMasterRow.data : [];
       const allTeamMembers = [...new Set([...existingMaster, ...derivedUnion])].sort();
       // per_form_team_members has keys for each webform AND for non-webform
       // forms like 'fuel-supply'. Preserve any keys not derived from webforms
       // so the fuel-supply selection set survives across syncs.
-      const {data: existingPfRow} = await sb.from('webform_config').select('data').eq('key','per_form_team_members').maybeSingle();
-      const existingPf = (existingPfRow && existingPfRow.data && typeof existingPfRow.data === 'object') ? existingPfRow.data : {};
-      const knownWfIds = new Set((cfg.webforms||[]).map(wf=>wf.id));
+      const {data: existingPfRow} = await sb
+        .from('webform_config')
+        .select('data')
+        .eq('key', 'per_form_team_members')
+        .maybeSingle();
+      const existingPf =
+        existingPfRow && existingPfRow.data && typeof existingPfRow.data === 'object' ? existingPfRow.data : {};
+      const knownWfIds = new Set((cfg.webforms || []).map((wf) => wf.id));
       const perFormTeamMembers = {};
       // Carry over any keys not owned by a webform (fuel-supply etc.).
       for (const [k, v] of Object.entries(existingPf)) {
         if (!knownWfIds.has(k)) perFormTeamMembers[k] = v;
       }
       // Then overwrite/add the per-webform entries.
-      (cfg.webforms||[]).forEach(wf=>{ perFormTeamMembers[wf.id]=wf.teamMembers||[]; });
+      (cfg.webforms || []).forEach((wf) => {
+        perFormTeamMembers[wf.id] = wf.teamMembers || [];
+      });
       // Use explicit batchData param to avoid stale closure — batches state may not be set yet
       const batchList = batchData || batches || [];
-      const broilerGroupList = batchList.filter(b=>b.status==='active').map(b=>b.name);
+      const broilerGroupList = batchList.filter((b) => b.status === 'active').map((b) => b.name);
       // Use explicit lgData param to avoid stale closure
       const lgList = lgData || layerGroups || [];
       // Layer batch names only appear on webform when the batch has NO active housings yet
       // (i.e. still in brooder/schooner phase). Once housings are active, the housing
       // names (already in lgList as layer groups) are the correct webform options.
-      const activeLbNames = (layerBatches||[])
-        .filter(b=>{
-          if(b.status!=='active'||b.name==='Retirement Home') return false;
+      const activeLbNames = (layerBatches || [])
+        .filter((b) => {
+          if (b.status !== 'active' || b.name === 'Retirement Home') return false;
           const housings = lhData || layerHousings || [];
-          const hasActiveHousing=housings.some(h=>h.batch_id===b.id&&h.status==='active');
+          const hasActiveHousing = housings.some((h) => h.batch_id === b.id && h.status === 'active');
           return !hasActiveHousing;
         })
-        .map(b=>({id:b.id,name:b.name,status:'active'}));
-      const lgListWithBatches = [...lgList, ...activeLbNames.filter(lb=>!lgList.find(g=>g.name===lb.name))];
+        .map((b) => ({id: b.id, name: b.name, status: 'active'}));
+      const lgListWithBatches = [...lgList, ...activeLbNames.filter((lb) => !lgList.find((g) => g.name === lb.name))];
       // allowAddGroup per form
       const allowAddGroup = {};
-      (cfg.webforms||[]).forEach(wf=>{ allowAddGroup[wf.id] = !!wf.allowAddGroup; });
+      (cfg.webforms || []).forEach((wf) => {
+        allowAddGroup[wf.id] = !!wf.allowAddGroup;
+      });
       await Promise.all([
-        sb.from('webform_config').upsert({key:'team_members', data:allTeamMembers},{onConflict:'key'}),
-        sb.from('webform_config').upsert({key:'per_form_team_members', data:perFormTeamMembers},{onConflict:'key'}),
-        sb.from('webform_config').upsert({key:'weighins_team_members', data:weighinsBySpecies},{onConflict:'key'}),
-        sb.from('webform_config').upsert({key:'active_groups', data:pigGroups},{onConflict:'key'}),
-        sb.from('webform_config').upsert({key:'broiler_groups', data:broilerGroupList},{onConflict:'key'}),
-        sb.from('webform_config').upsert({key:'webform_settings', data:{allowAddGroup}},{onConflict:'key'}),
+        sb.from('webform_config').upsert({key: 'team_members', data: allTeamMembers}, {onConflict: 'key'}),
+        sb.from('webform_config').upsert({key: 'per_form_team_members', data: perFormTeamMembers}, {onConflict: 'key'}),
+        sb.from('webform_config').upsert({key: 'weighins_team_members', data: weighinsBySpecies}, {onConflict: 'key'}),
+        sb.from('webform_config').upsert({key: 'active_groups', data: pigGroups}, {onConflict: 'key'}),
+        sb.from('webform_config').upsert({key: 'broiler_groups', data: broilerGroupList}, {onConflict: 'key'}),
+        sb.from('webform_config').upsert({key: 'webform_settings', data: {allowAddGroup}}, {onConflict: 'key'}),
         // Push housing→batch mapping for webform info display
-        sb.from('webform_config').upsert({key:'housing_batch_map', data:Object.fromEntries(
-          (lhData||layerHousings||[]).filter(h=>h.status==='active').map(h=>{
-            const b=(layerBatches||[]).find(lb=>lb.id===h.batch_id);
-            return [h.housing_name, b?b.name:null];
-          }).filter(([,v])=>v)
-        )},{onConflict:'key'}),
+        sb.from('webform_config').upsert(
+          {
+            key: 'housing_batch_map',
+            data: Object.fromEntries(
+              (lhData || layerHousings || [])
+                .filter((h) => h.status === 'active')
+                .map((h) => {
+                  const b = (layerBatches || []).find((lb) => lb.id === h.batch_id);
+                  return [h.housing_name, b ? b.name : null];
+                })
+                .filter(([, v]) => v),
+            ),
+          },
+          {onConflict: 'key'},
+        ),
         // Push full form config for anon access — include layer batch names as selectable groups
-        sb.from('webform_config').upsert({key:'full_config', data:{webforms:cfg.webforms,teamMembers:cfg.teamMembers,broilerGroups:broilerGroupList,layerGroups:lgListWithBatches}},{onConflict:'key'}),
+        sb.from('webform_config').upsert(
+          {
+            key: 'full_config',
+            data: {
+              webforms: cfg.webforms,
+              teamMembers: cfg.teamMembers,
+              broilerGroups: broilerGroupList,
+              layerGroups: lgListWithBatches,
+            },
+          },
+          {onConflict: 'key'},
+        ),
       ]);
-    } catch(e){ console.warn('syncWebformConfig error:', e.message); }
+    } catch (e) {
+      console.warn('syncWebformConfig error:', e.message);
+    }
   }
 
-  async function persistDaily(record){ 
-    try { await sb.from('pig_dailys').upsert(record,{onConflict:'id'}); setSaveStatus('saved'); setTimeout(()=>setSaveStatus(''),2500); }
-    catch(e){ console.error('persistDaily error:',e); setSaveStatus('error'); setTimeout(()=>setSaveStatus(''),4000); }
+  async function persistDaily(record) {
+    try {
+      await sb.from('pig_dailys').upsert(record, {onConflict: 'id'});
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(''), 2500);
+    } catch (e) {
+      console.error('persistDaily error:', e);
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus(''), 4000);
+    }
   }
-  async function deleteDaily(id){
-    try { await sb.from('pig_dailys').delete().eq('id',id); setPigDailys(prev=>prev.filter(d=>d.id!==id)); }
-    catch(e){ alert('Could not delete record: '+e.message); }
+  async function deleteDaily(id) {
+    try {
+      await sb.from('pig_dailys').delete().eq('id', id);
+      setPigDailys((prev) => prev.filter((d) => d.id !== id));
+    } catch (e) {
+      alert('Could not delete record: ' + e.message);
+    }
   }
-  function persistArchived(nb){ sbSave('ppp-archived-sows-v1', nb); }
-  function persistBreeders(nb){ sbSave('ppp-breeders-v1', nb); }
-  function persistBreedOptions(nb){ sbSave('ppp-breed-options-v1', nb); }
-  function persistOriginOptions(nb){ sbSave('ppp-origin-options-v1', nb); }
-  function persistPigData(nb){ sbSave('ppp-pigs-v1', nb); }
+  function persistArchived(nb) {
+    sbSave('ppp-archived-sows-v1', nb);
+  }
+  function persistBreeders(nb) {
+    sbSave('ppp-breeders-v1', nb);
+  }
+  function persistBreedOptions(nb) {
+    sbSave('ppp-breed-options-v1', nb);
+  }
+  function persistOriginOptions(nb) {
+    sbSave('ppp-origin-options-v1', nb);
+  }
+  function persistPigData(nb) {
+    sbSave('ppp-pigs-v1', nb);
+  }
 
-  function backupData(){
-    const data={
-      version:2, exported:new Date().toISOString(),
-      batches, pigData, breedingCycles, farrowingRecs, boarNames, feederGroups,
+  function backupData() {
+    const data = {
+      version: 2,
+      exported: new Date().toISOString(),
+      batches,
+      pigData,
+      breedingCycles,
+      farrowingRecs,
+      boarNames,
+      feederGroups,
     };
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;
-    a.download=`farm-planner-backup-${toISO(new Date())}.json`;
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `farm-planner-backup-${toISO(new Date())}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function restoreData(e){
-    const file=e.target.files[0];
-    if(!file) return;
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      try{
-        const data=JSON.parse(ev.target.result);
-        if(!data.batches) throw new Error("Invalid backup file");
-        if(!window.confirm(`Restore backup dated ${data.exported?.split("T")[0]}? This will replace current data for ALL users.`)) return;
-        setBatches(data.batches); sbSave('ppp-v4', data.batches);
-        if(data.pigData){ setPigData(data.pigData); sbSave('ppp-pigs-v1', data.pigData); }
-        if(data.breedingCycles){ setBreedingCycles(data.breedingCycles); sbSave('ppp-breeding-v1', data.breedingCycles); }
-        if(data.farrowingRecs){ setFarrowingRecs(data.farrowingRecs); sbSave('ppp-farrowing-v1', data.farrowingRecs); }
-        if(data.boarNames){ setBoarNames(data.boarNames); sbSave('ppp-boars-v1', data.boarNames); }
-        if(data.feederGroups){ setFeederGroups(data.feederGroups); sbSave('ppp-feeders-v1', data.feederGroups); }
-        setTimeout(()=>alert("Restore complete! Data saved to cloud."), 2000);
-      }catch(err){ alert("Could not read backup file. Make sure it's a valid Farm Planner backup."); }
+  function restoreData(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.batches) throw new Error('Invalid backup file');
+        if (
+          !window.confirm(
+            `Restore backup dated ${data.exported?.split('T')[0]}? This will replace current data for ALL users.`,
+          )
+        )
+          return;
+        setBatches(data.batches);
+        sbSave('ppp-v4', data.batches);
+        if (data.pigData) {
+          setPigData(data.pigData);
+          sbSave('ppp-pigs-v1', data.pigData);
+        }
+        if (data.breedingCycles) {
+          setBreedingCycles(data.breedingCycles);
+          sbSave('ppp-breeding-v1', data.breedingCycles);
+        }
+        if (data.farrowingRecs) {
+          setFarrowingRecs(data.farrowingRecs);
+          sbSave('ppp-farrowing-v1', data.farrowingRecs);
+        }
+        if (data.boarNames) {
+          setBoarNames(data.boarNames);
+          sbSave('ppp-boars-v1', data.boarNames);
+        }
+        if (data.feederGroups) {
+          setFeederGroups(data.feederGroups);
+          sbSave('ppp-feeders-v1', data.feederGroups);
+        }
+        setTimeout(() => alert('Restore complete! Data saved to cloud.'), 2000);
+      } catch (err) {
+        alert("Could not read backup file. Make sure it's a valid Farm Planner backup.");
+      }
     };
     reader.readAsText(file);
-    e.target.value="";
+    e.target.value = '';
   }
 
   // Form field update
-  function upd(k,v){
-    const f={...form,[k]:v};
-    if(k==="breed"){
+  function upd(k, v) {
+    const f = {...form, [k]: v};
+    if (k === 'breed') {
       // Hatchery is decoupled from breed — any hatchery can supply any breed now.
       // (Previously locked WR to Freedom Ranger Hatchery; that's no longer enforced.)
     }
-    if(k==="schooner") f.birdCount=v==="1"?650:750;
+    if (k === 'schooner') f.birdCount = v === '1' ? 650 : 750;
     // When hatchDate changes, default brooderIn to hatchDate + 1 if blank OR if brooderIn matches hatchDate
     // (i.e., was previously auto-filled as same day). User can still manually override.
-    if(k==="hatchDate" && v){
+    if (k === 'hatchDate' && v) {
       try {
-        if(!f.brooderIn || f.brooderIn==="" || f.brooderIn===form.hatchDate || f.brooderIn===v){
-          f.brooderIn = toISO(addDays(new Date(v+'T12:00:00'), 1));
+        if (!f.brooderIn || f.brooderIn === '' || f.brooderIn === form.hatchDate || f.brooderIn === v) {
+          f.brooderIn = toISO(addDays(new Date(v + 'T12:00:00'), 1));
         }
-      } catch(e) { /* ignore parse errors */ }
+      } catch (e) {
+        /* ignore parse errors */
+      }
     }
     setForm(f);
     try {
       setConflicts(detectConflicts(f, batches, layerBatches, editId));
-    } catch(e) {
+    } catch (e) {
       console.warn('detectConflicts failed on field change:', e);
       setConflicts([]);
     }
     setOverride(false);
     // Debounced auto-save: 1.5s after last keystroke
-    if(editId){
+    if (editId) {
       clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(()=>{
-        const tl=calcTimeline(f.hatchDate, f.breed, f.processingDate);
+      autoSaveTimer.current = setTimeout(() => {
+        const tl = calcTimeline(f.hatchDate, f.breed, f.processingDate);
         // Parse numeric form fields back to numbers before persisting (form state holds raw strings during typing)
-        const numFields = ['birdCount','birdCountActual','brooderFeedLbs','schoonerFeedLbs','gritLbs','mortalityCumulative','week4Lbs','week6Lbs','perLbStandardCost','perLbStarterCost','perLbGritCost','totalToProcessor','processingCost','avgBreastLbs','avgThighsLbs','avgDressedLbs','totalLbsWhole','totalLbsCuts'];
+        const numFields = [
+          'birdCount',
+          'birdCountActual',
+          'brooderFeedLbs',
+          'schoonerFeedLbs',
+          'gritLbs',
+          'mortalityCumulative',
+          'week4Lbs',
+          'week6Lbs',
+          'perLbStandardCost',
+          'perLbStarterCost',
+          'perLbGritCost',
+          'totalToProcessor',
+          'processingCost',
+          'avgBreastLbs',
+          'avgThighsLbs',
+          'avgDressedLbs',
+          'totalLbsWhole',
+          'totalLbsCuts',
+        ];
         const fNum = {...f};
-        for(const k of numFields){
+        for (const k of numFields) {
           const v = fNum[k];
-          fNum[k] = (v===''||v==null) ? 0 : (parseFloat(v)||0);
+          fNum[k] = v === '' || v == null ? 0 : parseFloat(v) || 0;
         }
-        const computedStatus = calcPoultryStatus({...fNum,...tl});
+        const computedStatus = calcPoultryStatus({...fNum, ...tl});
         // When a batch is active and has no rates yet (e.g. just transitioned from planned),
         // stamp the current global admin feed cost rates onto it.
-        if(computedStatus==='active' && (!fNum.perLbStarterCost || !fNum.perLbStandardCost)){
-          fNum.perLbStarterCost  = feedCosts.starter || 0;
-          fNum.perLbStandardCost = feedCosts.grower  || 0;
-          fNum.perLbGritCost     = feedCosts.grit    || 0;
+        if (computedStatus === 'active' && (!fNum.perLbStarterCost || !fNum.perLbStandardCost)) {
+          fNum.perLbStarterCost = feedCosts.starter || 0;
+          fNum.perLbStandardCost = feedCosts.grower || 0;
+          fNum.perLbGritCost = feedCosts.grit || 0;
         }
-        const batch={id:editId, ...fNum, ...tl, status:computedStatus};
-        const nb=batches.map(b=>b.id===editId?batch:b);
-        nb.sort((a,b)=>(a.hatchDate||'').localeCompare(b.hatchDate||''));
-        setBatches(nb); persist(nb);
+        const batch = {id: editId, ...fNum, ...tl, status: computedStatus};
+        const nb = batches.map((b) => (b.id === editId ? batch : b));
+        nb.sort((a, b) => (a.hatchDate || '').localeCompare(b.hatchDate || ''));
+        setBatches(nb);
+        persist(nb);
         setOriginalForm(f);
       }, 1500);
     }
   }
 
-  function openAdd(){
-    setForm(EMPTY_FORM); setEditId(null); setConflicts([]); setOverride(false); setShowLegacy(false); setOriginalForm(EMPTY_FORM); setShowForm(true);
+  function openAdd() {
+    setForm(EMPTY_FORM);
+    setEditId(null);
+    setConflicts([]);
+    setOverride(false);
+    setShowLegacy(false);
+    setOriginalForm(EMPTY_FORM);
+    setShowForm(true);
   }
-  function openEdit(b){
-    const isB24=(/^b-24-/i).test(b.name);
-    let brooderFeedLbs=b.brooderFeedLbs||0;
-    let schoonerFeedLbs=b.schoonerFeedLbs||0;
-    let gritLbs=b.gritLbs||0;
-    let mortalityCumulative=b.mortalityCumulative||0;
-    if(!isB24 && broilerDailys.length>0){
-      const bd=broilerDailys.filter(d=>(d.batch_label||'').toLowerCase().trim().replace(/^\(processed\)\s*/,'').trim()===b.name.toLowerCase().trim());
-      if(bd.length>0){
-        brooderFeedLbs=Math.round(bd.filter(d=>d.feed_type==='STARTER').reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0));
-        schoonerFeedLbs=Math.round(bd.filter(d=>d.feed_type==='GROWER').reduce((s,d)=>s+(parseFloat(d.feed_lbs)||0),0));
-        gritLbs=Math.round(bd.reduce((s,d)=>s+(parseFloat(d.grit_lbs)||0),0));
-        mortalityCumulative=bd.reduce((s,d)=>s+(parseInt(d.mortality_count)||0),0);
+  function openEdit(b) {
+    const isB24 = /^b-24-/i.test(b.name);
+    let brooderFeedLbs = b.brooderFeedLbs || 0;
+    let schoonerFeedLbs = b.schoonerFeedLbs || 0;
+    let gritLbs = b.gritLbs || 0;
+    let mortalityCumulative = b.mortalityCumulative || 0;
+    if (!isB24 && broilerDailys.length > 0) {
+      const bd = broilerDailys.filter(
+        (d) =>
+          (d.batch_label || '')
+            .toLowerCase()
+            .trim()
+            .replace(/^\(processed\)\s*/, '')
+            .trim() === b.name.toLowerCase().trim(),
+      );
+      if (bd.length > 0) {
+        brooderFeedLbs = Math.round(
+          bd.filter((d) => d.feed_type === 'STARTER').reduce((s, d) => s + (parseFloat(d.feed_lbs) || 0), 0),
+        );
+        schoonerFeedLbs = Math.round(
+          bd.filter((d) => d.feed_type === 'GROWER').reduce((s, d) => s + (parseFloat(d.feed_lbs) || 0), 0),
+        );
+        gritLbs = Math.round(bd.reduce((s, d) => s + (parseFloat(d.grit_lbs) || 0), 0));
+        mortalityCumulative = bd.reduce((s, d) => s + (parseInt(d.mortality_count) || 0), 0);
       }
     }
     // Default Date In Brooder to hatchDate + 1 if blank (per "default fill, user can override" rule)
-    let brooderIn = b.brooderIn || "";
-    if(!brooderIn && b.hatchDate){
-      brooderIn = toISO(addDays(new Date(b.hatchDate+'T12:00:00'), 1));
+    let brooderIn = b.brooderIn || '';
+    if (!brooderIn && b.hatchDate) {
+      brooderIn = toISO(addDays(new Date(b.hatchDate + 'T12:00:00'), 1));
     }
     setForm({
-      name:b.name, breed:b.breed||"", hatchery:b.hatchery||"", hatchDate:b.hatchDate||"",
-      birdCount:b.birdCount||750, birdCountActual:b.birdCountActual||"",
-      brooder:b.brooder||"1", schooner:b.schooner||"2&3",
-      processingDate:b.processingDate||"", status:b.status||"planned", notes:b.notes||"",
-      brooderIn, brooderOut:b.brooderOut||"",
-      brooderFeedLbs, schoonerFeedLbs, gritLbs, mortalityCumulative,
-      week4Lbs:b.week4Lbs||0, week6Lbs:b.week6Lbs||0,
-      perLbStandardCost:b.perLbStandardCost||0, perLbStarterCost:b.perLbStarterCost||0, perLbGritCost:b.perLbGritCost||0,
-      chickCost:b.chickCost||0,
-      totalToProcessor:b.totalToProcessor||0, processingCost:b.processingCost||0,
-      avgBreastLbs:b.avgBreastLbs||0, avgThighsLbs:b.avgThighsLbs||0, avgDressedLbs:b.avgDressedLbs||0,
-      totalLbsWhole:b.totalLbsWhole||0, totalLbsCuts:b.totalLbsCuts||0,
-      documents:b.documents||[],
+      name: b.name,
+      breed: b.breed || '',
+      hatchery: b.hatchery || '',
+      hatchDate: b.hatchDate || '',
+      birdCount: b.birdCount || 750,
+      birdCountActual: b.birdCountActual || '',
+      brooder: b.brooder || '1',
+      schooner: b.schooner || '2&3',
+      processingDate: b.processingDate || '',
+      status: b.status || 'planned',
+      notes: b.notes || '',
+      brooderIn,
+      brooderOut: b.brooderOut || '',
+      brooderFeedLbs,
+      schoonerFeedLbs,
+      gritLbs,
+      mortalityCumulative,
+      week4Lbs: b.week4Lbs || 0,
+      week6Lbs: b.week6Lbs || 0,
+      perLbStandardCost: b.perLbStandardCost || 0,
+      perLbStarterCost: b.perLbStarterCost || 0,
+      perLbGritCost: b.perLbGritCost || 0,
+      chickCost: b.chickCost || 0,
+      totalToProcessor: b.totalToProcessor || 0,
+      processingCost: b.processingCost || 0,
+      avgBreastLbs: b.avgBreastLbs || 0,
+      avgThighsLbs: b.avgThighsLbs || 0,
+      avgDressedLbs: b.avgDressedLbs || 0,
+      totalLbsWhole: b.totalLbsWhole || 0,
+      totalLbsCuts: b.totalLbsCuts || 0,
+      documents: b.documents || [],
     });
-    const snap={name:b.name,breed:b.breed||"",hatchery:b.hatchery||"",hatchDate:b.hatchDate||"",birdCount:b.birdCount||750,birdCountActual:b.birdCountActual||"",brooder:b.brooder||"1",schooner:b.schooner||"2&3",processingDate:b.processingDate||"",status:b.status||"planned",notes:b.notes||"",brooderIn,brooderOut:b.brooderOut||"",brooderFeedLbs:b.brooderFeedLbs||0,schoonerFeedLbs:b.schoonerFeedLbs||0,gritLbs:b.gritLbs||0,mortalityCumulative:b.mortalityCumulative||0,week4Lbs:b.week4Lbs||0,week6Lbs:b.week6Lbs||0,perLbStandardCost:b.perLbStandardCost||0,perLbStarterCost:b.perLbStarterCost||0,perLbGritCost:b.perLbGritCost||0,chickCost:b.chickCost||0,totalToProcessor:b.totalToProcessor||0,processingCost:b.processingCost||0,avgBreastLbs:b.avgBreastLbs||0,avgThighsLbs:b.avgThighsLbs||0,avgDressedLbs:b.avgDressedLbs||0,totalLbsWhole:b.totalLbsWhole||0,totalLbsCuts:b.totalLbsCuts||0};
+    const snap = {
+      name: b.name,
+      breed: b.breed || '',
+      hatchery: b.hatchery || '',
+      hatchDate: b.hatchDate || '',
+      birdCount: b.birdCount || 750,
+      birdCountActual: b.birdCountActual || '',
+      brooder: b.brooder || '1',
+      schooner: b.schooner || '2&3',
+      processingDate: b.processingDate || '',
+      status: b.status || 'planned',
+      notes: b.notes || '',
+      brooderIn,
+      brooderOut: b.brooderOut || '',
+      brooderFeedLbs: b.brooderFeedLbs || 0,
+      schoonerFeedLbs: b.schoonerFeedLbs || 0,
+      gritLbs: b.gritLbs || 0,
+      mortalityCumulative: b.mortalityCumulative || 0,
+      week4Lbs: b.week4Lbs || 0,
+      week6Lbs: b.week6Lbs || 0,
+      perLbStandardCost: b.perLbStandardCost || 0,
+      perLbStarterCost: b.perLbStarterCost || 0,
+      perLbGritCost: b.perLbGritCost || 0,
+      chickCost: b.chickCost || 0,
+      totalToProcessor: b.totalToProcessor || 0,
+      processingCost: b.processingCost || 0,
+      avgBreastLbs: b.avgBreastLbs || 0,
+      avgThighsLbs: b.avgThighsLbs || 0,
+      avgDressedLbs: b.avgDressedLbs || 0,
+      totalLbsWhole: b.totalLbsWhole || 0,
+      totalLbsCuts: b.totalLbsCuts || 0,
+    };
     setOriginalForm(snap);
     // Auto-enable Show Legacy if editing a batch that already has a legacy breed or hatchery selected,
     // so the user can actually see the saved value in the dropdown.
-    const hasLegacyBreed = LEGACY_BREEDS.some(lb=>lb.code===b.breed);
+    const hasLegacyBreed = LEGACY_BREEDS.some((lb) => lb.code === b.breed);
     const hasLegacyHatchery = LEGACY_HATCHERIES.includes(b.hatchery);
     setShowLegacy(hasLegacyBreed || hasLegacyHatchery);
     // Compute existing conflicts on open so already-conflicting batches show their warnings immediately.
     // Wrapped in try/catch so a malformed batch record can never block the form from opening.
     setEditId(b.id);
     try {
-      setConflicts(detectConflicts({name:b.name,breed:b.breed||'',hatchDate:b.hatchDate||'',brooder:b.brooder||'1',schooner:b.schooner||'2&3',processingDate:b.processingDate||''}, batches, layerBatches, b.id));
-    } catch(e) {
+      setConflicts(
+        detectConflicts(
+          {
+            name: b.name,
+            breed: b.breed || '',
+            hatchDate: b.hatchDate || '',
+            brooder: b.brooder || '1',
+            schooner: b.schooner || '2&3',
+            processingDate: b.processingDate || '',
+          },
+          batches,
+          layerBatches,
+          b.id,
+        ),
+      );
+    } catch (e) {
       console.warn('detectConflicts failed on openEdit:', e);
       setConflicts([]);
     }
-    setOverride(false); setShowForm(true);
+    setOverride(false);
+    setShowForm(true);
   }
 
   async function parseProcessorXlsx(file) {
     try {
       // Lazy-load SheetJS on first use (saves ~900KB on every page load for users who don't import xlsx)
-      if(typeof XLSX === 'undefined'){
-        try { await window._wcfLoadXLSX(); }
-        catch(e){ alert('Could not load Excel parser. Check your internet connection and try again.'); return; }
+      if (typeof XLSX === 'undefined') {
+        try {
+          await window._wcfLoadXLSX();
+        } catch (e) {
+          alert('Could not load Excel parser. Check your internet connection and try again.');
+          return;
+        }
       }
       const buf = await file.arrayBuffer();
-      const wb2 = XLSX.read(buf, {type:'array', cellDates:false});
+      const wb2 = XLSX.read(buf, {type: 'array', cellDates: false});
       let parsed = null;
       // Wings are a sellable cut — only neck/feet/back are scrap-style
       // categories that should be left out of the cuts total.
-      const excluded = ['neck','feet','back','grand total'];
+      const excluded = ['neck', 'feet', 'back', 'grand total'];
 
       // Map an aggregated {label: {total, count, label}} dict into the parsed
       // shape (avgDressed/avgBreast/avgThigh/totalLbsWhole/totalLbsCuts).
@@ -1407,31 +2887,36 @@ function App(){
       function aggToParsed(agg, fileName) {
         const out = {fileName};
         let cuts = 0;
-        for(const key of Object.keys(agg)) {
+        for (const key of Object.keys(agg)) {
           const a = agg[key];
           const avgWt = a.count > 0 ? a.total / a.count : 0;
-          if(key.includes('whole chicken')) {
-            if(avgWt > 0) out.avgDressed = Math.round(avgWt*100)/100;
-            if(a.total > 0) out.totalLbsWhole = Math.round(a.total*10)/10;
+          if (key.includes('whole chicken')) {
+            if (avgWt > 0) out.avgDressed = Math.round(avgWt * 100) / 100;
+            if (a.total > 0) out.totalLbsWhole = Math.round(a.total * 10) / 10;
           }
-          if(key.includes('breast') && avgWt > 0) out.avgBreast = Math.round(avgWt*100)/100;
-          if(key.includes('thigh') && avgWt > 0) out.avgThigh = Math.round(avgWt*100)/100;
-          if(key !== 'grand total' && !excluded.some(e => key.includes(e)) && !key.includes('whole chicken') && a.total > 0) {
+          if (key.includes('breast') && avgWt > 0) out.avgBreast = Math.round(avgWt * 100) / 100;
+          if (key.includes('thigh') && avgWt > 0) out.avgThigh = Math.round(avgWt * 100) / 100;
+          if (
+            key !== 'grand total' &&
+            !excluded.some((e) => key.includes(e)) &&
+            !key.includes('whole chicken') &&
+            a.total > 0
+          ) {
             cuts += a.total;
           }
         }
-        if(cuts > 0) out.totalLbsCuts = Math.round(cuts*10)/10;
+        if (cuts > 0) out.totalLbsCuts = Math.round(cuts * 10) / 10;
         return out;
       }
 
-      for(const sheetName of wb2.SheetNames) {
+      for (const sheetName of wb2.SheetNames) {
         const ws = wb2.Sheets[sheetName];
-        if(!ws || !ws['!ref']) continue;
+        if (!ws || !ws['!ref']) continue;
 
         // Build a cell value map: address -> value
         const cv = {};
-        Object.keys(ws).forEach(addr => {
-          if(addr[0]==='!') return;
+        Object.keys(ws).forEach((addr) => {
+          if (addr[0] === '!') return;
           cv[addr] = ws[addr].v;
         });
         const range = XLSX.utils.decode_range(ws['!ref']);
@@ -1439,68 +2924,88 @@ function App(){
         // ── PATH 1: Raw per-package format (Sonny's standard layout).
         // Header within first 5 rows containing "Description" + "Weight"
         // columns; one data row per package.
-        let descCol=-1, weightCol=-1, hRowRaw=-1;
-        for(let r=range.s.r; r<=Math.min(range.s.r+5, range.e.r); r++){
-          for(let c=range.s.c; c<=range.e.c; c++){
-            const v = String(cv[XLSX.utils.encode_cell({r,c})]||'').trim().toLowerCase();
-            if(v === 'description') { descCol = c; hRowRaw = r; }
-            if(hRowRaw === r && v === 'weight') weightCol = c;
+        let descCol = -1,
+          weightCol = -1,
+          hRowRaw = -1;
+        for (let r = range.s.r; r <= Math.min(range.s.r + 5, range.e.r); r++) {
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const v = String(cv[XLSX.utils.encode_cell({r, c})] || '')
+              .trim()
+              .toLowerCase();
+            if (v === 'description') {
+              descCol = c;
+              hRowRaw = r;
+            }
+            if (hRowRaw === r && v === 'weight') weightCol = c;
           }
-          if(descCol >= 0 && weightCol >= 0) break;
+          if (descCol >= 0 && weightCol >= 0) break;
         }
-        if(descCol >= 0 && weightCol >= 0) {
+        if (descCol >= 0 && weightCol >= 0) {
           const agg = {};
-          for(let r = hRowRaw+1; r <= range.e.r; r++){
-            const desc = String(cv[XLSX.utils.encode_cell({r,c:descCol})]||'').trim();
-            const wt = parseFloat(cv[XLSX.utils.encode_cell({r,c:weightCol})]);
-            if(!desc || !isFinite(wt) || wt <= 0) continue;
+          for (let r = hRowRaw + 1; r <= range.e.r; r++) {
+            const desc = String(cv[XLSX.utils.encode_cell({r, c: descCol})] || '').trim();
+            const wt = parseFloat(cv[XLSX.utils.encode_cell({r, c: weightCol})]);
+            if (!desc || !isFinite(wt) || wt <= 0) continue;
             const key = desc.toLowerCase();
-            if(!agg[key]) agg[key] = {total:0, count:0, label:desc};
+            if (!agg[key]) agg[key] = {total: 0, count: 0, label: desc};
             agg[key].total += wt;
             agg[key].count += 1;
           }
-          if(Object.keys(agg).length > 0) {
+          if (Object.keys(agg).length > 0) {
             parsed = aggToParsed(agg, file.name);
-            if(Object.keys(parsed).length > 1) break;
+            if (Object.keys(parsed).length > 1) break;
           }
         }
 
         // ── PATH 2: Pivot summary fallback ("Row Labels"/"Total Weight"/etc).
-        let labelCol=-1, totalWtCol=-1, countCol=-1, avgWtCol=-1, hRow=-1;
-        for(let r=range.s.r; r<=Math.min(range.s.r+5, range.e.r); r++){
-          for(let c=range.s.c; c<=range.e.c; c++){
-            const v=String(cv[XLSX.utils.encode_cell({r,c})]||'').trim().toLowerCase();
-            if(v==='row labels'){ labelCol=c; hRow=r; }
-            if(hRow===r && v==='total weight') totalWtCol=c;
-            if(hRow===r && v==='count of packages') countCol=c;
-            if(hRow===r && v==='average weight') avgWtCol=c;
+        let labelCol = -1,
+          totalWtCol = -1,
+          countCol = -1,
+          avgWtCol = -1,
+          hRow = -1;
+        for (let r = range.s.r; r <= Math.min(range.s.r + 5, range.e.r); r++) {
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const v = String(cv[XLSX.utils.encode_cell({r, c})] || '')
+              .trim()
+              .toLowerCase();
+            if (v === 'row labels') {
+              labelCol = c;
+              hRow = r;
+            }
+            if (hRow === r && v === 'total weight') totalWtCol = c;
+            if (hRow === r && v === 'count of packages') countCol = c;
+            if (hRow === r && v === 'average weight') avgWtCol = c;
           }
-          if(labelCol>=0 && avgWtCol>=0) break;
+          if (labelCol >= 0 && avgWtCol >= 0) break;
         }
-        if(labelCol<0 || avgWtCol<0) continue;
+        if (labelCol < 0 || avgWtCol < 0) continue;
         const agg2 = {};
-        for(let r=hRow+1; r<=range.e.r; r++){
-          const labelVal=cv[XLSX.utils.encode_cell({r,c:labelCol})];
-          if(!labelVal) continue;
-          const label=String(labelVal).trim();
-          if(!label) continue;
-          const totalWt=parseFloat(cv[XLSX.utils.encode_cell({r,c:labelCol+1})]);
-          const count=parseInt(cv[XLSX.utils.encode_cell({r,c:labelCol+2})]);
-          if(!isFinite(totalWt) || totalWt <= 0) continue;
-          agg2[label.toLowerCase()] = {total: totalWt, count: isFinite(count)&&count>0 ? count : 1, label};
+        for (let r = hRow + 1; r <= range.e.r; r++) {
+          const labelVal = cv[XLSX.utils.encode_cell({r, c: labelCol})];
+          if (!labelVal) continue;
+          const label = String(labelVal).trim();
+          if (!label) continue;
+          const totalWt = parseFloat(cv[XLSX.utils.encode_cell({r, c: labelCol + 1})]);
+          const count = parseInt(cv[XLSX.utils.encode_cell({r, c: labelCol + 2})]);
+          if (!isFinite(totalWt) || totalWt <= 0) continue;
+          agg2[label.toLowerCase()] = {total: totalWt, count: isFinite(count) && count > 0 ? count : 1, label};
         }
-        if(Object.keys(agg2).length > 0) {
+        if (Object.keys(agg2).length > 0) {
           parsed = aggToParsed(agg2, file.name);
-          if(Object.keys(parsed).length > 1) break;
+          if (Object.keys(parsed).length > 1) break;
         }
       }
 
-      if(parsed && Object.keys(parsed).length > 1) {
+      if (parsed && Object.keys(parsed).length > 1) {
         setParsedProcessor(parsed);
       } else {
-        alert('Couldn\'t find processor data in '+file.name+'.\n\nThe parser looks for either:\n  • A raw per-package sheet with "Description" and "Weight" columns (Sonny\'s standard format), or\n  • A pivot summary with "Row Labels" / "Total Weight" / "Average Weight" columns.\n\nThe file was uploaded as an attachment.');
+        alert(
+          "Couldn't find processor data in " +
+            file.name +
+            '.\n\nThe parser looks for either:\n  • A raw per-package sheet with "Description" and "Weight" columns (Sonny\'s standard format), or\n  • A pivot summary with "Row Labels" / "Total Weight" / "Average Weight" columns.\n\nThe file was uploaded as an attachment.',
+        );
       }
-    } catch(e){
+    } catch (e) {
       console.warn('Processor parse error:', e);
       alert('Excel parse error: ' + (e.message || 'Unknown error'));
     }
@@ -1510,60 +3015,123 @@ function App(){
     setDeleteConfirm({message, onConfirm});
   }
   // Expose globally so child components can use without prop drilling
-  React.useEffect(()=>{ window._wcfConfirmDelete = confirmDelete; }, []);
+  React.useEffect(() => {
+    window._wcfConfirmDelete = confirmDelete;
+  }, []);
 
-  function closeForm(){
+  function closeForm() {
     clearTimeout(autoSaveTimer.current);
-    if(editId && originalForm){
-      const keys = ['name','breed','hatchery','hatchDate','birdCount','birdCountActual','brooder','schooner','processingDate','status','notes','brooderIn','brooderOut','brooderFeedLbs','schoonerFeedLbs','gritLbs','mortalityCumulative','week4Lbs','week6Lbs','perLbStandardCost','perLbStarterCost','perLbGritCost','totalToProcessor','processingCost','avgBreastLbs','avgThighsLbs','avgDressedLbs','totalLbsWhole','totalLbsCuts'];
-      const changed = keys.some(k=>String(form[k]||'')!==String(originalForm[k]||''));
-      if(changed) submit(false);
+    if (editId && originalForm) {
+      const keys = [
+        'name',
+        'breed',
+        'hatchery',
+        'hatchDate',
+        'birdCount',
+        'birdCountActual',
+        'brooder',
+        'schooner',
+        'processingDate',
+        'status',
+        'notes',
+        'brooderIn',
+        'brooderOut',
+        'brooderFeedLbs',
+        'schoonerFeedLbs',
+        'gritLbs',
+        'mortalityCumulative',
+        'week4Lbs',
+        'week6Lbs',
+        'perLbStandardCost',
+        'perLbStarterCost',
+        'perLbGritCost',
+        'totalToProcessor',
+        'processingCost',
+        'avgBreastLbs',
+        'avgThighsLbs',
+        'avgDressedLbs',
+        'totalLbsWhole',
+        'totalLbsCuts',
+      ];
+      const changed = keys.some((k) => String(form[k] || '') !== String(originalForm[k] || ''));
+      if (changed) submit(false);
       else setShowForm(false);
     } else {
       setShowForm(false);
     }
   }
 
-  function submit(force){
-    if(!form.name.trim()){ alert("Please enter a batch name."); return; }
+  function submit(force) {
+    if (!form.name.trim()) {
+      alert('Please enter a batch name.');
+      return;
+    }
     // Block on hard conflicts unless force=true. Soft (layer) conflicts always pass.
-    const hardConflicts=(conflicts||[]).filter(c=>!c.soft);
-    if(hardConflicts.length>0&&!force){
+    const hardConflicts = (conflicts || []).filter((c) => !c.soft);
+    if (hardConflicts.length > 0 && !force) {
       alert('There are scheduling conflicts. Use the Override & Save Anyway button if you really want to save.');
       return;
     }
-    const tl=calcTimeline(form.hatchDate, form.breed, form.processingDate);
+    const tl = calcTimeline(form.hatchDate, form.breed, form.processingDate);
     // Parse numeric form fields back to numbers (form state holds raw strings during typing)
-    const numFields = ['birdCount','birdCountActual','brooderFeedLbs','schoonerFeedLbs','gritLbs','mortalityCumulative','week4Lbs','week6Lbs','perLbStandardCost','perLbStarterCost','perLbGritCost','totalToProcessor','processingCost','avgBreastLbs','avgThighsLbs','avgDressedLbs','totalLbsWhole','totalLbsCuts'];
+    const numFields = [
+      'birdCount',
+      'birdCountActual',
+      'brooderFeedLbs',
+      'schoonerFeedLbs',
+      'gritLbs',
+      'mortalityCumulative',
+      'week4Lbs',
+      'week6Lbs',
+      'perLbStandardCost',
+      'perLbStarterCost',
+      'perLbGritCost',
+      'totalToProcessor',
+      'processingCost',
+      'avgBreastLbs',
+      'avgThighsLbs',
+      'avgDressedLbs',
+      'totalLbsWhole',
+      'totalLbsCuts',
+    ];
     const formNum = {...form};
-    for(const k of numFields){
+    for (const k of numFields) {
       const v = formNum[k];
-      formNum[k] = (v===''||v==null) ? 0 : (parseFloat(v)||0);
+      formNum[k] = v === '' || v == null ? 0 : parseFloat(v) || 0;
     }
-    const computedStatus = calcPoultryStatus({...formNum,...tl});
+    const computedStatus = calcPoultryStatus({...formNum, ...tl});
     // When a batch is active and has no rates yet (e.g. just transitioned from planned),
     // stamp the current global admin feed cost rates onto it.
-    if(computedStatus==='active' && (!formNum.perLbStarterCost || !formNum.perLbStandardCost)){
-      formNum.perLbStarterCost  = feedCosts.starter || 0;
-      formNum.perLbStandardCost = feedCosts.grower  || 0;
-      formNum.perLbGritCost     = feedCosts.grit    || 0;
+    if (computedStatus === 'active' && (!formNum.perLbStarterCost || !formNum.perLbStandardCost)) {
+      formNum.perLbStarterCost = feedCosts.starter || 0;
+      formNum.perLbStandardCost = feedCosts.grower || 0;
+      formNum.perLbGritCost = feedCosts.grit || 0;
     }
     // conflictOverride auto-clears when there's no longer a hard conflict.
     // The flag was sticky before — it stayed true after dates were edited
     // to resolve the conflict, leaving stale ⚠ warnings on processed batches.
     const stillConflicting = hardConflicts.length > 0;
-    const batch={id:editId||String(Date.now()), ...formNum, ...tl, status:computedStatus, conflictOverride: stillConflicting ? (force || form.conflictOverride || false) : false};
-    const nb=editId
-      ? batches.map(b=>b.id===editId?batch:b)
-      : [...batches, batch];
-    nb.sort((a,b)=>(a.hatchDate||'').localeCompare(b.hatchDate||''));
-    setBatches(nb); persist(nb); setOriginalForm(null); setShowForm(false); setOverride(false);
+    const batch = {
+      id: editId || String(Date.now()),
+      ...formNum,
+      ...tl,
+      status: computedStatus,
+      conflictOverride: stillConflicting ? force || form.conflictOverride || false : false,
+    };
+    const nb = editId ? batches.map((b) => (b.id === editId ? batch : b)) : [...batches, batch];
+    nb.sort((a, b) => (a.hatchDate || '').localeCompare(b.hatchDate || ''));
+    setBatches(nb);
+    persist(nb);
+    setOriginalForm(null);
+    setShowForm(false);
+    setOverride(false);
   }
 
-  function del(id){
-    confirmDelete("Delete this batch? This cannot be undone.",()=>{
-      const nb=batches.filter(b=>b.id!==id);
-      setBatches(nb); persist(nb);
+  function del(id) {
+    confirmDelete('Delete this batch? This cannot be undone.', () => {
+      const nb = batches.filter((b) => b.id !== id);
+      setBatches(nb);
+      persist(nb);
     });
   }
 
@@ -1579,152 +3147,543 @@ function App(){
   // closure threads App-only props (form-open booleans, App helpers, the
   // built-up DeleteConfirmModal) into the imported HeaderBase so that every
   // extracted view can keep calling <Header/> as a zero-arg prop.
-  const Header = () => React.createElement(HeaderBase, {
-    showDailyForm, signOut, backupData, restoreData, loadUsers, DeleteConfirmModal,
-  });
+  const Header = () =>
+    React.createElement(HeaderBase, {
+      showDailyForm,
+      signOut,
+      backupData,
+      restoreData,
+      loadUsers,
+      DeleteConfirmModal,
+    });
 
   // ── DELETE CONFIRM MODAL ── (proper component so useState is never conditional)
-  const DeleteConfirmModal = deleteConfirm ? React.createElement(DeleteModal, {msg:deleteConfirm.message, onConfirm:deleteConfirm.onConfirm, onCancel:()=>setDeleteConfirm(null)}) : null;
+  const DeleteConfirmModal = deleteConfirm
+    ? React.createElement(DeleteModal, {
+        msg: deleteConfirm.message,
+        onConfirm: deleteConfirm.onConfirm,
+        onCancel: () => setDeleteConfirm(null),
+      })
+    : null;
 
   // ── WEBFORM BYPASS — no auth required ──
-  if(view==="webform") return React.createElement(PigDailysWebform);
-  if(view==="addfeed") return React.createElement(AddFeedWebform, {sb});
-  if(view==="weighins") return React.createElement(WeighInsWebform, {sb});
-  if(view==="webformhub") return React.createElement(WebformHub, {sb, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, layerGroups, batches, layerBatches, layerHousings, webformsConfig});
-  if(view==="fuelingHub") return React.createElement(FuelingHub, {sb});
-  if(view==="fuelSupply") return React.createElement(FuelSupplyWebform, {sb});
+  if (view === 'webform') return React.createElement(PigDailysWebform);
+  if (view === 'addfeed') return React.createElement(AddFeedWebform, {sb});
+  if (view === 'weighins') return React.createElement(WeighInsWebform, {sb});
+  if (view === 'webformhub')
+    return React.createElement(WebformHub, {
+      sb,
+      wfGroups,
+      setWfGroups,
+      wfTeamMembers,
+      setWfTeamMembers,
+      layerGroups,
+      batches,
+      layerBatches,
+      layerHousings,
+      webformsConfig,
+    });
+  if (view === 'fuelingHub') return React.createElement(FuelingHub, {sb});
+  if (view === 'fuelSupply') return React.createElement(FuelSupplyWebform, {sb});
 
   // ── AUTH GATES ──
   // SetPasswordScreen comes first: a recovery / invite link gives the user a
   // valid session, so authState would otherwise jump straight to home.
-  if(pwRecovery) return <SetPasswordScreen prefilledEmail={authState && authState.user ? authState.user.email : null} onDone={()=>setPwRecovery(false)}/>;
-  if(authState===null) return (
-    <div style={{minHeight:"100vh",background:"#085041",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{color:"white",fontSize:16,opacity:.8}}>Loading...</div>
-    </div>
-  );
-  if(authState===false) return <LoginScreen/>;
-  if(!dataLoaded) return (
-    <div style={{minHeight:"100vh",background:"#085041",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{color:"white",fontSize:16,opacity:.8}}>Loading your farm data...</div>
-    </div>
-  );
-
-
-
+  if (pwRecovery)
+    return (
+      <SetPasswordScreen
+        prefilledEmail={authState && authState.user ? authState.user.email : null}
+        onDone={() => setPwRecovery(false)}
+      />
+    );
+  if (authState === null)
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#085041',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div style={{color: 'white', fontSize: 16, opacity: 0.8}}>Loading...</div>
+      </div>
+    );
+  if (authState === false) return <LoginScreen />;
+  if (!dataLoaded)
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#085041',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div style={{color: 'white', fontSize: 16, opacity: 0.8}}>Loading your farm data...</div>
+      </div>
+    );
 
   // \u2500\u2500 HOME DASHBOARD \u2500\u2500
-  if(view==="home") return React.createElement(HomeDashboard, {Header, loadUsers, canAccessProgram, VIEW_TO_PROGRAM});
+  if (view === 'home')
+    return React.createElement(HomeDashboard, {Header, loadUsers, canAccessProgram, VIEW_TO_PROGRAM});
 
   // ── FORM ──
   // Phase 2 Round 6 tail: body moved to src/broiler/BatchForm.jsx. Every
   // form-state piece lives in BatchesContext; every operational helper
   // stays in App() and is threaded as a prop.
-  if(showForm) return React.createElement(BatchForm, {
-    Header, loadUsers,
-    upd, closeForm, submit, del, openEdit,
-    parseProcessorXlsx, confirmDelete, persist,
-  });
+  if (showForm)
+    return React.createElement(BatchForm, {
+      Header,
+      loadUsers,
+      upd,
+      closeForm,
+      submit,
+      del,
+      openEdit,
+      parseProcessorXlsx,
+      confirmDelete,
+      persist,
+    });
 
   // ── BROILER HOME DASHBOARD ──
-  if(view==="broilerHome") return React.createElement(BroilerHomeView, {Header, loadUsers});
+  if (view === 'broilerHome') return React.createElement(BroilerHomeView, {Header, loadUsers});
 
   // ── TIMELINE VIEW ──
-  if(view==="timeline") return React.createElement(BroilerTimelineView, {Header, loadUsers, openEdit});
+  if (view === 'timeline') return React.createElement(BroilerTimelineView, {Header, loadUsers, openEdit});
 
-
-  if(view==="broilerdailys") return React.createElement(BroilerDailysView, {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
-  if(view==="pigdailys")     return React.createElement(PigDailysView,     {sb, fmt, Header, authState, pigDailys, setPigDailys, feederGroups, pendingEdit, setPendingEdit, refreshDailys});
-  if(view==="cattledailys")  return React.createElement(CattleDailysView,  {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
-  if(view==="cattleHome")    return React.createElement(CattleHomeView,    {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="cattleherds")   return React.createElement(CattleHerdsView,   {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit});
-  if(view==="cattlebreeding")return React.createElement(CattleBreedingView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="cattlebatches") return React.createElement(CattleBatchesView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="cattleweighins")return React.createElement(CattleWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="broilerweighins")return React.createElement(LivestockWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species:'broiler'});
-  if(view==="pigweighins")return React.createElement(LivestockWeighInsView,{sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, species:'pig'});
-  if(view==="sheepHome")     return React.createElement(SheepHomeView,     {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="sheepflocks")   return React.createElement(SheepFlocksView,   {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers, pendingEdit, setPendingEdit});
-  if(view==="sheepbatches")  return React.createElement(SheepBatchesView,  {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="sheepdailys")   return React.createElement(SheepDailysView,   {sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys});
-  if(view==="sheepweighins") return React.createElement(SheepWeighInsView, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
-  if(view==="equipmentHome") return React.createElement(EquipmentHome, {sb, fmt, Header, authState, setView, showUsers, setShowUsers, allUsers, setAllUsers, loadUsers});
+  if (view === 'broilerdailys')
+    return React.createElement(BroilerDailysView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      pendingEdit,
+      setPendingEdit,
+      refreshDailys,
+    });
+  if (view === 'pigdailys')
+    return React.createElement(PigDailysView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      pigDailys,
+      setPigDailys,
+      feederGroups,
+      pendingEdit,
+      setPendingEdit,
+      refreshDailys,
+    });
+  if (view === 'cattledailys')
+    return React.createElement(CattleDailysView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      pendingEdit,
+      setPendingEdit,
+      refreshDailys,
+    });
+  if (view === 'cattleHome')
+    return React.createElement(CattleHomeView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'cattleherds')
+    return React.createElement(CattleHerdsView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+      pendingEdit,
+      setPendingEdit,
+    });
+  if (view === 'cattlebreeding')
+    return React.createElement(CattleBreedingView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'cattlebatches')
+    return React.createElement(CattleBatchesView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'cattleweighins')
+    return React.createElement(CattleWeighInsView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'broilerweighins')
+    return React.createElement(LivestockWeighInsView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+      species: 'broiler',
+    });
+  if (view === 'pigweighins')
+    return React.createElement(LivestockWeighInsView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+      species: 'pig',
+    });
+  if (view === 'sheepHome')
+    return React.createElement(SheepHomeView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'sheepflocks')
+    return React.createElement(SheepFlocksView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+      pendingEdit,
+      setPendingEdit,
+    });
+  if (view === 'sheepbatches')
+    return React.createElement(SheepBatchesView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'sheepdailys')
+    return React.createElement(SheepDailysView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      pendingEdit,
+      setPendingEdit,
+      refreshDailys,
+    });
+  if (view === 'sheepweighins')
+    return React.createElement(SheepWeighInsView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'equipmentHome')
+    return React.createElement(EquipmentHome, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
 
   // ── LIST VIEW ──
-  if(view==="list") return React.createElement(BroilerListView, {Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything});
+  if (view === 'list')
+    return React.createElement(BroilerListView, {
+      Header,
+      loadUsers,
+      openAdd,
+      openEdit,
+      persist,
+      del,
+      confirmDelete,
+      canDeleteAnything,
+    });
 
   // ── POULTRY FEED VIEW ──
-  if(view==="feed") return React.createElement(BroilerFeedView, {Header, feedOrders, setFeedOrders, poultryFeedInventory, setPoultryFeedInventory, poultryFeedExpandedMonths, setPoultryFeedExpandedMonths, collapsedBatches, setCollapsedBatches, sbSave});
+  if (view === 'feed')
+    return React.createElement(BroilerFeedView, {
+      Header,
+      feedOrders,
+      setFeedOrders,
+      poultryFeedInventory,
+      setPoultryFeedInventory,
+      poultryFeedExpandedMonths,
+      setPoultryFeedExpandedMonths,
+      collapsedBatches,
+      setCollapsedBatches,
+      sbSave,
+    });
 
   // ── PIG FEED VIEW ──
-  if(view==="pigs") return React.createElement(PigFeedView, {Header, loadUsers, feedOrders, setFeedOrders, pigFeedInventory, setPigFeedInventory, pigFeedExpandedMonths, setPigFeedExpandedMonths, sbSave});
+  if (view === 'pigs')
+    return React.createElement(PigFeedView, {
+      Header,
+      loadUsers,
+      feedOrders,
+      setFeedOrders,
+      pigFeedInventory,
+      setPigFeedInventory,
+      pigFeedExpandedMonths,
+      setPigFeedExpandedMonths,
+      sbSave,
+    });
   // ── BREEDING GANTT VIEW ──
 
   // ── PIGS HOME DASHBOARD ──
-  if(view==="pigsHome") return React.createElement(PigsHomeView, {Header, loadUsers});
+  if (view === 'pigsHome') return React.createElement(PigsHomeView, {Header, loadUsers});
 
-  if(view==="breeding") return React.createElement(BreedingView, {Header, loadUsers, persistBreeding, breedAutoSaveTimer, confirmDelete});
+  if (view === 'breeding')
+    return React.createElement(BreedingView, {Header, loadUsers, persistBreeding, breedAutoSaveTimer, confirmDelete});
 
   // ── PIG BATCHES VIEW ──
-  if(view==="pigbatches") return React.createElement(PigBatchesView, {Header, loadUsers, persistFeeders, confirmDelete, pigAutoSaveTimer, subAutoSaveTimer, tripAutoSaveTimer, showSubForm, setShowSubForm, subForm, setSubForm, editSubId, setEditSubId, collapsedBatches, setCollapsedBatches, collapsedMonths, setCollapsedMonths, showArchBatches, setShowArchBatches});
-
+  if (view === 'pigbatches')
+    return React.createElement(PigBatchesView, {
+      Header,
+      loadUsers,
+      persistFeeders,
+      confirmDelete,
+      pigAutoSaveTimer,
+      subAutoSaveTimer,
+      tripAutoSaveTimer,
+      showSubForm,
+      setShowSubForm,
+      subForm,
+      setSubForm,
+      editSubId,
+      setEditSubId,
+      collapsedBatches,
+      setCollapsedBatches,
+      collapsedMonths,
+      setCollapsedMonths,
+      showArchBatches,
+      setShowArchBatches,
+    });
 
   // ── WEBFORMS ADMIN VIEW ──
-  if(view==="webforms") return React.createElement(WebformsAdminView, {Header, loadUsers, persistWebforms, saveFeedCosts, confirmDelete, adminTab, setAdminTab, wfView, setWfView, editWfId, setEditWfId, editFieldId, setEditFieldId, wfFieldForm, setWfFieldForm, newTeamMember, setNewTeamMember, addingTo, setAddingTo, editFldLbl, setEditFldLbl, editFldVal, setEditFldVal, editSecIdx, setEditSecIdx, editSecVal, setEditSecVal, newOpt, setNewOpt});
+  if (view === 'webforms')
+    return React.createElement(WebformsAdminView, {
+      Header,
+      loadUsers,
+      persistWebforms,
+      saveFeedCosts,
+      confirmDelete,
+      adminTab,
+      setAdminTab,
+      wfView,
+      setWfView,
+      editWfId,
+      setEditWfId,
+      editFieldId,
+      setEditFieldId,
+      wfFieldForm,
+      setWfFieldForm,
+      newTeamMember,
+      setNewTeamMember,
+      addingTo,
+      setAddingTo,
+      editFldLbl,
+      setEditFldLbl,
+      editFldVal,
+      setEditFldVal,
+      editSecIdx,
+      setEditSecIdx,
+      editSecVal,
+      setEditSecVal,
+      newOpt,
+      setNewOpt,
+    });
 
   // ── PIG DAILY WEBFORM (public, no auth) ──
   // renderWebform moved to src/webforms/PigDailysWebform.jsx;
   // routed above in the webform bypass block as <PigDailysWebform/>.
 
-
-
   // Resolve sire for a farrowing record from breeding cycle data.
   // Checks which cycle the farrowing belongs to (by date window),
   // then checks if the sow tag is in boar1Tags or boar2Tags to determine the sire.
   // Falls back to the manually entered r.sire for unlinked historical records.
-  function resolveSire(rec){
-    if(!rec||!rec.sow) return null;
-    var sowTag=rec.sow.trim();
-    for(var ci=0;ci<breedingCycles.length;ci++){
-      var c=breedingCycles[ci];
-      var tl=calcBreedingTimeline(c.exposureStart);
-      if(!tl) continue;
-      if(!rec.farrowingDate) continue;
-      var rd=new Date(rec.farrowingDate+'T12:00:00');
-      if(rd<new Date(tl.farrowingStart+'T12:00:00')||rd>addDays(new Date(tl.farrowingEnd+'T12:00:00'),14)) continue;
-      var b1Tags=(c.boar1Tags||'').split(/[\n,]+/).map(function(t){return t.trim();}).filter(Boolean);
-      var b2Tags=(c.boar2Tags||'').split(/[\n,]+/).map(function(t){return t.trim();}).filter(Boolean);
-      if(b1Tags.includes(sowTag)) return c.boar1Name||boarNames.boar1;
-      if(b2Tags.includes(sowTag)) return c.boar2Name||boarNames.boar2;
+  function resolveSire(rec) {
+    if (!rec || !rec.sow) return null;
+    var sowTag = rec.sow.trim();
+    for (var ci = 0; ci < breedingCycles.length; ci++) {
+      var c = breedingCycles[ci];
+      var tl = calcBreedingTimeline(c.exposureStart);
+      if (!tl) continue;
+      if (!rec.farrowingDate) continue;
+      var rd = new Date(rec.farrowingDate + 'T12:00:00');
+      if (rd < new Date(tl.farrowingStart + 'T12:00:00') || rd > addDays(new Date(tl.farrowingEnd + 'T12:00:00'), 14))
+        continue;
+      var b1Tags = (c.boar1Tags || '')
+        .split(/[\n,]+/)
+        .map(function (t) {
+          return t.trim();
+        })
+        .filter(Boolean);
+      var b2Tags = (c.boar2Tags || '')
+        .split(/[\n,]+/)
+        .map(function (t) {
+          return t.trim();
+        })
+        .filter(Boolean);
+      if (b1Tags.includes(sowTag)) return c.boar1Name || boarNames.boar1;
+      if (b2Tags.includes(sowTag)) return c.boar2Name || boarNames.boar2;
     }
     // No cycle match — return null (Unknown), not the hardcoded r.sire
     return null;
   }
 
   // ── FARROWING RECORDS VIEW ──
-  if(view==="farrowing") return React.createElement(FarrowingView, {Header, loadUsers, persistFarrowing, confirmDelete, resolveSire});
+  if (view === 'farrowing')
+    return React.createElement(FarrowingView, {Header, loadUsers, persistFarrowing, confirmDelete, resolveSire});
 
   // ── BREEDING PIGS TAB ──
-  if(view==="sows") return React.createElement(SowsView, {Header, loadUsers, persistBreeders, persistBreedOptions, persistOriginOptions, confirmDelete, resolveSire, leaderboardExpanded, setLeaderboardExpanded, showArchived, setShowArchived});
-
-
-
+  if (view === 'sows')
+    return React.createElement(SowsView, {
+      Header,
+      loadUsers,
+      persistBreeders,
+      persistBreedOptions,
+      persistOriginOptions,
+      confirmDelete,
+      resolveSire,
+      leaderboardExpanded,
+      setLeaderboardExpanded,
+      showArchived,
+      setShowArchived,
+    });
 
   // ── LAYERS HOME DASHBOARD (Phase 4) ──
-  if(view==="layersHome") return React.createElement(LayersHomeView, {Header, loadUsers});
+  if (view === 'layersHome') return React.createElement(LayersHomeView, {Header, loadUsers});
 
-  if(view==="layers") return React.createElement(LayersView, {sb, layerGroups, persistLayerGroups, fmt, Header, layerBatches, layerHousings});
-  if(view==="layerbatches") return React.createElement(LayerBatchesView, {sb, layerGroups, layerBatches, setLayerBatches, layerHousings, setLayerHousings:persistLayerHousings, batches, fmt, Header, authState, feedCosts, setView, pendingEdit, setPendingEdit, confirmDelete});
-  if(view==="layerdailys") return React.createElement(LayerDailysView, {sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys});
-  if(view==="eggdailys") return React.createElement(EggDailysView, {sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys});
+  if (view === 'layers')
+    return React.createElement(LayersView, {
+      sb,
+      layerGroups,
+      persistLayerGroups,
+      fmt,
+      Header,
+      layerBatches,
+      layerHousings,
+    });
+  if (view === 'layerbatches')
+    return React.createElement(LayerBatchesView, {
+      sb,
+      layerGroups,
+      layerBatches,
+      setLayerBatches,
+      layerHousings,
+      setLayerHousings: persistLayerHousings,
+      batches,
+      fmt,
+      Header,
+      authState,
+      feedCosts,
+      setView,
+      pendingEdit,
+      setPendingEdit,
+      confirmDelete,
+    });
+  if (view === 'layerdailys')
+    return React.createElement(LayerDailysView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      layerGroups,
+      pendingEdit,
+      setPendingEdit,
+      refreshDailys,
+    });
+  if (view === 'eggdailys')
+    return React.createElement(EggDailysView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      layerGroups,
+      pendingEdit,
+      setPendingEdit,
+      refreshDailys,
+    });
 
   // ── Cattle views ──
   // cattledailys is fully built; others are placeholder stubs until Phase 1 steps 10-13 land.
   // Unknown view - return null safely
   return null;
-};
-
-
+}
 
 // Phase 2.1.1: WcfYN + WcfToggle moved to src/shared/ — imported at top of file.
 
@@ -1754,11 +3713,9 @@ function App(){
 // Parallels PigDailysView / LayerDailysView pattern.
 // Phase 2 Round 2: CattleDailysView moved to C:\Users\Ronni\WCF-planner\src\cattle\CattleDailysView.jsx.
 
-
 // ── CATTLE HOME DASHBOARD ───────────────────────────────────────────────────
 // Stats tiles + per-herd live weight / cow units / mortality.
 // Phase 2 Round 3: CattleHomeView moved to C:\Users\Ronni\WCF-planner\src\cattle\CattleHomeView.jsx.
-
 
 // ── CATTLE BULK IMPORT ─────────────────────────────────────────────────────
 // Self-serve cattle uploader. User downloads a fixed-shape xlsx template,
@@ -1768,13 +3725,11 @@ function App(){
 // (receiving_weight). Auto-creates new breeds/origins as needed.
 // Phase 2 Round 2: CattleBulkImport moved to C:\Users\Ronni\WCF-planner\src\cattle\CattleBulkImport.jsx.
 
-
 // ── SHEEP BULK IMPORT ──────────────────────────────────────────────────────
 // Same shape as CattleBulkImport but adapted to sheep schema (no pct_wagyu,
 // flock instead of herd, lambing instead of calving, sex enum is
 // ewe/ram/wether). Auto-creates new breeds/origins on commit.
 // Phase 2 Round 2: SheepBulkImport moved to C:\Users\Ronni\WCF-planner\src\sheep\SheepBulkImport.jsx.
-
 
 // ── SHEEP DETAIL PANEL ─────────────────────────────────────────────────────
 // Inline expansion under a sheep row. Slimmer than CowDetail — Phase 1 keeps
@@ -1782,13 +3737,11 @@ function App(){
 // history, comments timeline. Charts + nav stack are Phase 2.
 // Phase 2 Round 2: SheepDetail moved to C:\Users\Ronni\WCF-planner\src\sheep\SheepDetail.jsx.
 
-
 // ── SHEEP FLOCKS VIEW ──────────────────────────────────────────────────────
 // Mirror of CattleHerdsView with sheep terminology (flock/ewe/ram/wether,
 // lambing instead of calving). Phase 1 covers: directory + flat/tile modes,
 // add/edit/delete, transfer, inline detail, bulk import.
 // Phase 2 Round 3: SheepFlocksView moved to C:\Users\Ronni\WCF-planner\src\sheep\SheepFlocksView.jsx.
-
 
 // ── SHEEP HOME DASHBOARD ───────────────────────────────────────────────────
 // Top stats + per-flock count tiles + rolling-window card with sheep-specific
@@ -1797,19 +3750,16 @@ function App(){
 // Phase 1 has no nutrition targets, so target % cells are skipped.
 // Phase 2 Round 3: SheepHomeView moved to C:\Users\Ronni\WCF-planner\src\sheep\SheepHomeView.jsx.
 
-
 // ── SHEEP DAILYS VIEW (admin entry) ────────────────────────────────────────
 // Add/edit daily reports for sheep. Sheep-specific fields: bales of hay,
 // alfalfa lbs, minerals given + % eaten, fence voltage kV, waterers working.
 // Phase 2 Round 2: SheepDailysView moved to C:\Users\Ronni\WCF-planner\src\sheep\SheepDailysView.jsx.
-
 
 // ── SHEEP WEIGH-INS VIEW (admin) ───────────────────────────────────────────
 // Session-based weigh-ins on the shared weigh_in_sessions / weigh_ins tables
 // with species='sheep'. Phase 1: list sessions, expand to entries, create
 // session, add/edit/delete entries. Retag flow deferred to Phase 2.
 // Phase 2 Round 2: SheepWeighInsView moved to C:\Users\Ronni\WCF-planner\src\sheep\SheepWeighInsView.jsx.
-
 
 // ── CATTLE HERDS VIEW (merged with Directory) ──────────────────────────────
 // Single tab combining per-herd tiles + global search/filter across all cattle.
@@ -1823,16 +3773,13 @@ function App(){
 // Helper component — cow detail body shown when expanded inside the herd tile
 // Phase 2 Round 2: CowDetail moved to C:\Users\Ronni\WCF-planner\src\cattle\CowDetail.jsx.
 
-
 // ── CATTLE BREEDING VIEW ────────────────────────────────────────────────────
 // Lists breeding cycles with computed dates, status, outstanding cows.
 // Phase 2 Round 3: CattleBreedingView moved to C:\Users\Ronni\WCF-planner\src\cattle\CattleBreedingView.jsx.
 
-
 // ── CATTLE PROCESSING BATCHES VIEW ─────────────────────────────────────────
 // Lists processing batches (C-26-01 etc.) with cow lists and yield data.
 // Phase 2 Round 3: CattleBatchesView moved to C:\Users\Ronni\WCF-planner\src\cattle\CattleBatchesView.jsx.
-
 
 // ── CATTLE WEIGH-INS VIEW ───────────────────────────────────────────────────
 // Authenticated review of past weigh-in sessions. Drill into a session to see
@@ -1849,8 +3796,6 @@ function App(){
 
 // Modal: start a new cattle weigh-in session inline (no webform nav).
 // Phase 2.1.4: CattleNewWeighInModal moved to src/cattle/CattleNewWeighInModal.jsx.
-
-
 
 // === END VERBATIM PORT ===
 
@@ -1884,7 +3829,7 @@ root.render(
                   <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
                     <FeedCostsProvider>
                       <UIProvider>
-                        <App/>
+                        <App />
                       </UIProvider>
                     </FeedCostsProvider>
                   </WebformsConfigProvider>
@@ -1895,7 +3840,7 @@ root.render(
         </PigProvider>
       </BatchesProvider>
     </AuthProvider>
-  </BrowserRouter>
+  </BrowserRouter>,
 );
 
 // Fade out the static boot loader after React's first paint. Two RAFs to
@@ -1904,9 +3849,11 @@ root.render(
 requestAnimationFrame(() => {
   requestAnimationFrame(() => {
     const loader = document.getElementById('wcf-boot-loader');
-    if(loader){
+    if (loader) {
       loader.classList.add('fade-out');
-      setTimeout(() => { if(loader.parentNode) loader.parentNode.removeChild(loader); }, 350);
+      setTimeout(() => {
+        if (loader.parentNode) loader.parentNode.removeChild(loader);
+      }, 350);
     }
   });
 });

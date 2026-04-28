@@ -3,22 +3,20 @@
 // imported from anywhere including scripts.
 
 export const EQUIPMENT_CATEGORIES = [
-  {key:'tractors',   label:'Tractors',   icon:'🚜', color:'#065f46', bg:'#ecfdf5', bd:'#a7f3d0'},
-  {key:'atvs',       label:'ATVs',       icon:'🛵', color:'#1e40af', bg:'#eff6ff', bd:'#bfdbfe'},
-  {key:'hijets',     label:'Hijets',     icon:'🛻', color:'#92400e', bg:'#fffbeb', bd:'#fde68a'},
-  {key:'mowers',     label:'Mowers',     icon:'🪚', color:'#a16207', bg:'#fef9c3', bd:'#fde047'},
-  {key:'skidsteers', label:'Skidsteers', icon:'🚧', color:'#7f1d1d', bg:'#fef2f2', bd:'#fca5a5'},
-  {key:'forestry',   label:'Forestry',   icon:'🌲', color:'#065f46', bg:'#f0fdfa', bd:'#5eead4'},
+  {key: 'tractors', label: 'Tractors', icon: '🚜', color: '#065f46', bg: '#ecfdf5', bd: '#a7f3d0'},
+  {key: 'atvs', label: 'ATVs', icon: '🛵', color: '#1e40af', bg: '#eff6ff', bd: '#bfdbfe'},
+  {key: 'hijets', label: 'Hijets', icon: '🛻', color: '#92400e', bg: '#fffbeb', bd: '#fde68a'},
+  {key: 'mowers', label: 'Mowers', icon: '🪚', color: '#a16207', bg: '#fef9c3', bd: '#fde047'},
+  {key: 'skidsteers', label: 'Skidsteers', icon: '🚧', color: '#7f1d1d', bg: '#fef2f2', bd: '#fca5a5'},
+  {key: 'forestry', label: 'Forestry', icon: '🌲', color: '#065f46', bg: '#f0fdfa', bd: '#5eead4'},
 ];
 
-export const CATEGORY_BY_KEY = Object.fromEntries(
-  EQUIPMENT_CATEGORIES.map(c => [c.key, c])
-);
+export const CATEGORY_BY_KEY = Object.fromEntries(EQUIPMENT_CATEGORIES.map((c) => [c.key, c]));
 
 // Equipment program color (for nav cards, tabs, etc.). Slate/steel.
 export const EQUIPMENT_COLOR = '#57534e';
-export const EQUIPMENT_BG    = '#fafaf9';
-export const EQUIPMENT_BD    = '#d6d3d1';
+export const EQUIPMENT_BG = '#fafaf9';
+export const EQUIPMENT_BD = '#d6d3d1';
 
 // Threshold in days without a fueling entry before HomeDashboard flags the
 // piece of equipment. Ronnie's call 2026-04-23: 14 days.
@@ -45,15 +43,13 @@ export function computeIntervalStatus(intervals, completions, currentReading) {
   // sessions toward the same milestone counts as one virtual full completion.
   // Completions with a missing reading_at_completion fall back to the current
   // reading (matches prior behavior for legacy data without a snapshot).
-  const normalized = (completions || []).map(c => ({
+  const normalized = (completions || []).map((c) => ({
     ...c,
-    reading_at_completion: Number.isFinite(c?.reading_at_completion)
-      ? c.reading_at_completion
-      : currentReading,
+    reading_at_completion: Number.isFinite(c?.reading_at_completion) ? c.reading_at_completion : currentReading,
   }));
   const {milestoneSatisfied, milestoneSatisfiedRaw} = aggregateCompletionsByMilestone(intervals, normalized);
 
-  return intervals.map(iv => {
+  return intervals.map((iv) => {
     const key = iv.kind + ':' + iv.hours_or_km;
     const lastM = milestoneSatisfied.get(key) || 0; // already a multiple of iv.hours_or_km
     const lastR = milestoneSatisfiedRaw.get(key) || null;
@@ -61,9 +57,7 @@ export function computeIntervalStatus(intervals, completions, currentReading) {
     const overdue = currentReading != null && currentReading > nextDue;
     // Round to 1 decimal to dodge float-subtraction garbage
     // (e.g. 550 - 509.3 producing 40.69999999999999).
-    const untilDue = currentReading != null
-      ? Math.round((nextDue - currentReading) * 10) / 10
-      : null;
+    const untilDue = currentReading != null ? Math.round((nextDue - currentReading) * 10) / 10 : null;
     return {
       ...iv,
       last_at_reading: lastR,
@@ -81,9 +75,13 @@ export function soonestDue(intervals, completions, currentReading, windowHours =
   const statuses = computeIntervalStatus(intervals, completions, currentReading);
   if (currentReading == null) return null;
   // Priority: overdue first, then within windowHours of next_due.
-  const overdue = statuses.filter(s => s.overdue).sort((a, b) => (currentReading - a.next_due) - (currentReading - b.next_due));
+  const overdue = statuses
+    .filter((s) => s.overdue)
+    .sort((a, b) => currentReading - a.next_due - (currentReading - b.next_due));
   if (overdue.length > 0) return overdue[0];
-  const upcoming = statuses.filter(s => s.until_due != null && s.until_due <= windowHours).sort((a, b) => a.until_due - b.until_due);
+  const upcoming = statuses
+    .filter((s) => s.until_due != null && s.until_due <= windowHours)
+    .sort((a, b) => a.until_due - b.until_due);
   return upcoming[0] || null;
 }
 
@@ -101,7 +99,7 @@ function snapToNearestMilestone(reading, interval) {
   const back = Math.floor(reading / interval) * interval;
   // Already on a milestone — return it.
   if (fwd === back) return fwd;
-  return (fwd - reading) < (reading - back) ? fwd : back;
+  return fwd - reading < reading - back ? fwd : back;
 }
 
 // Given the equipment's intervals + fueling history + the reading the team
@@ -126,8 +124,10 @@ export function computeDueIntervals(intervals, completions, currentReading) {
   // This handles the real-world flow where maintenance spans sessions: e.g.
   // a 500hr partial at 440h (14/16) + a 500hr partial at 444h (the missing
   // 2 of 16, done after parts arrived) = full coverage of the 500h milestone.
-  const {milestoneSatisfied, milestoneSatisfiedRaw, partialState} =
-    aggregateCompletionsByMilestone(intervals, completions);
+  const {milestoneSatisfied, milestoneSatisfiedRaw, partialState} = aggregateCompletionsByMilestone(
+    intervals,
+    completions,
+  );
 
   const due = [];
   for (const iv of intervals) {
@@ -135,22 +135,23 @@ export function computeDueIntervals(intervals, completions, currentReading) {
     // The snapped milestone drives next-due math; the raw reading is for display.
     const lastSnapped = milestoneSatisfied.get(key) || 0;
     const lastRaw = milestoneSatisfiedRaw.get(key) || 0;
-    const firstMilestoneAfterLast = lastSnapped > 0
-      ? lastSnapped + iv.hours_or_km
-      : iv.hours_or_km; // no completion ever — first due at the first milestone
+    const firstMilestoneAfterLast = lastSnapped > 0 ? lastSnapped + iv.hours_or_km : iv.hours_or_km; // no completion ever — first due at the first milestone
     if (firstMilestoneAfterLast > currentReading) continue;
     const largestMilestoneAtOrBeforeCurrent = Math.floor(currentReading / iv.hours_or_km) * iv.hours_or_km;
-    const missedCount = ((largestMilestoneAtOrBeforeCurrent - firstMilestoneAfterLast) / iv.hours_or_km) + 1;
+    const missedCount = (largestMilestoneAtOrBeforeCurrent - firstMilestoneAfterLast) / iv.hours_or_km + 1;
     // Partial display: the cumulative state of the highest UNSATISFIED milestone.
     const ps = partialState.get(key);
-    const lastPartial = (ps && ps.milestone > lastSnapped) ? {
-      items_done:      ps.items_done,
-      items_completed: ps.items_completed,
-      total:           ps.total,
-      at_reading:      ps.latestSnap,
-      team_member:     ps.latestTeam,
-      milestone:       ps.milestone,
-    } : null;
+    const lastPartial =
+      ps && ps.milestone > lastSnapped
+        ? {
+            items_done: ps.items_done,
+            items_completed: ps.items_completed,
+            total: ps.total,
+            at_reading: ps.latestSnap,
+            team_member: ps.latestTeam,
+            milestone: ps.milestone,
+          }
+        : null;
     due.push({
       ...iv,
       last_done_at: lastRaw > 0 ? lastRaw : null,
@@ -196,15 +197,19 @@ function aggregateCompletionsByMilestone(intervals, completions) {
 
   // Group by (kind, interval, snapped milestone).
   const groups = new Map();
-  for (const c of (completions || [])) {
+  for (const c of completions || []) {
     if (!c || !c.interval || !c.kind) continue;
     const snap = Number.isFinite(c.reading_at_completion) ? c.reading_at_completion : null;
     if (snap == null) continue;
     const milestone = snapToNearestMilestone(snap, c.interval);
     const key = c.kind + ':' + c.interval + ':' + milestone;
-    if (!groups.has(key)) groups.set(key, {
-      kind: c.kind, interval: c.interval, milestone, entries: [],
-    });
+    if (!groups.has(key))
+      groups.set(key, {
+        kind: c.kind,
+        interval: c.interval,
+        milestone,
+        entries: [],
+      });
     groups.get(key).entries.push(c);
   }
 
@@ -215,13 +220,12 @@ function aggregateCompletionsByMilestone(intervals, completions) {
   for (const g of groups.values()) {
     const ivKey = g.kind + ':' + g.interval;
     // currentTotals may be 0 for an interval that has no sub-tasks (parent-tick only).
-    const total = currentTotals.has(ivKey)
-      ? currentTotals.get(ivKey)
-      : (g.entries[0] && g.entries[0].total_tasks) || 0;
+    const total = currentTotals.has(ivKey) ? currentTotals.get(ivKey) : (g.entries[0] && g.entries[0].total_tasks) || 0;
 
     const allItems = new Set();
     let hasFullEntry = false;
-    let latestSnap = 0, latestTeam = null;
+    let latestSnap = 0,
+      latestTeam = null;
     for (const e of g.entries) {
       const items = Array.isArray(e.items_completed) ? e.items_completed : [];
       for (const id of items) allItems.add(id);
@@ -247,7 +251,8 @@ function aggregateCompletionsByMilestone(intervals, completions) {
       if (!ex || g.milestone > ex.milestone) {
         partialState.set(ivKey, {
           milestone: g.milestone,
-          latestSnap, latestTeam,
+          latestSnap,
+          latestTeam,
           items_completed: Array.from(allItems),
           items_done: allItems.size,
           total,
@@ -285,7 +290,10 @@ function aggregateCompletionsByMilestone(intervals, completions) {
 // do checklist</p>"; we want clean plain text in the UI.
 export function stripPodioHtml(s) {
   if (s == null) return null;
-  const clean = String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const clean = String(s)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!clean || clean.toLowerCase() === 'none' || clean === 'N/A' || clean.toLowerCase() === 'n/a') return null;
   return clean;
 }

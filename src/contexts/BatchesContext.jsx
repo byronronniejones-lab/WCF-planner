@@ -21,37 +21,49 @@
 // EMPTY_FORM is module-scope in main.jsx — passed in as `formInit` so this
 // file doesn't need to import it.
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 const BatchesContext = createContext(null);
 
-export function BatchesProvider({ children, formInit }) {
-  const [batches,         setBatches]         = useState([]);
-  const [showForm,        setShowForm]        = useState(false);
-  const [editId,          setEditId]          = useState(null);
-  const [form,            setForm]            = useState(formInit);
-  const [originalForm,    setOriginalForm]    = useState(null);
-  const [conflicts,       setConflicts]       = useState([]);
-  const [tooltip,         setTooltip]         = useState(null);
-  const [override,        setOverride]        = useState(false);
-  const [showLegacy,      setShowLegacy]      = useState(false);
+export function BatchesProvider({children, formInit}) {
+  const [batches, setBatches] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(formInit);
+  const [originalForm, setOriginalForm] = useState(null);
+  const [conflicts, setConflicts] = useState([]);
+  const [tooltip, setTooltip] = useState(null);
+  const [override, setOverride] = useState(false);
+  const [showLegacy, setShowLegacy] = useState(false);
   const [parsedProcessor, setParsedProcessor] = useState(null);
-  const [docUploading,    setDocUploading]    = useState(false);
-  const [deleteConfirm,   setDeleteConfirm]   = useState(null);
+  const [docUploading, setDocUploading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const value = {
-    batches,         setBatches,
-    showForm,        setShowForm,
-    editId,          setEditId,
-    form,            setForm,
-    originalForm,    setOriginalForm,
-    conflicts,       setConflicts,
-    tooltip,         setTooltip,
-    override,        setOverride,
-    showLegacy,      setShowLegacy,
-    parsedProcessor, setParsedProcessor,
-    docUploading,    setDocUploading,
-    deleteConfirm,   setDeleteConfirm,
+    batches,
+    setBatches,
+    showForm,
+    setShowForm,
+    editId,
+    setEditId,
+    form,
+    setForm,
+    originalForm,
+    setOriginalForm,
+    conflicts,
+    setConflicts,
+    tooltip,
+    setTooltip,
+    override,
+    setOverride,
+    showLegacy,
+    setShowLegacy,
+    parsedProcessor,
+    setParsedProcessor,
+    docUploading,
+    setDocUploading,
+    deleteConfirm,
+    setDeleteConfirm,
   };
   return <BatchesContext.Provider value={value}>{children}</BatchesContext.Provider>;
 }

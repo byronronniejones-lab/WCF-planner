@@ -29,12 +29,7 @@ export function parseImportDate(v) {
     var y = parseInt(m[3], 10);
     if (y < 100) y += 2000;
     return {
-      value:
-        y +
-        '-' +
-        String(parseInt(m[1], 10)).padStart(2, '0') +
-        '-' +
-        String(parseInt(m[2], 10)).padStart(2, '0'),
+      value: y + '-' + String(parseInt(m[1], 10)).padStart(2, '0') + '-' + String(parseInt(m[2], 10)).padStart(2, '0'),
     };
   }
   return {error: 'cannot parse date: ' + s};
@@ -45,7 +40,9 @@ export function parseImportDate(v) {
 export function parseImportNumber(v) {
   if (v == null || v === '') return {value: null};
   if (typeof v === 'number') return {value: v};
-  var s = String(v).replace(/[$,\s]/g, '').trim();
+  var s = String(v)
+    .replace(/[$,\s]/g, '')
+    .trim();
   if (s === '') return {value: null};
   var n = Number(s);
   if (!isFinite(n)) return {error: 'cannot parse number: ' + v};

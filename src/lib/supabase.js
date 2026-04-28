@@ -20,11 +20,9 @@
 // when env vars are unset.
 // ============================================================================
 
-import { createClient } from '@supabase/supabase-js';
+import {createClient} from '@supabase/supabase-js';
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL ||
-  'https://pzfujbjtayhkdlxiblwe.supabase.co';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://pzfujbjtayhkdlxiblwe.supabase.co';
 const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6ZnVqYmp0YXloa2RseGlibHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMzYxOTMsImV4cCI6MjA5MDgxMjE5M30.I_Pvb_Hwt9VpavB-Q-wFOmodRhSOqD1r6B9_gQfy5U8';
@@ -36,8 +34,8 @@ export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
-    lock: (name, acquireTimeout, fn) => fn()
-  }
+    lock: (name, acquireTimeout, fn) => fn(),
+  },
 });
 
 // Expose for browser console testing (e.g. sending test emails). Keeping

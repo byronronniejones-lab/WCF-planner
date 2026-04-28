@@ -15,25 +15,31 @@
 //   cattleDailysRecent : recent cattle_dailys rows
 //   sheepDailysRecent  : recent sheep_dailys rows
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 const DailysRecentContext = createContext(null);
 
-export function DailysRecentProvider({ children }) {
-  const [broilerDailys,     setBroilerDailys]     = useState([]);
-  const [pigDailys,         setPigDailys]         = useState([]);
+export function DailysRecentProvider({children}) {
+  const [broilerDailys, setBroilerDailys] = useState([]);
+  const [pigDailys, setPigDailys] = useState([]);
   const [layerDailysRecent, setLayerDailysRecent] = useState([]);
-  const [eggDailysRecent,   setEggDailysRecent]   = useState([]);
-  const [cattleDailysRecent,setCattleDailysRecent]= useState([]);
+  const [eggDailysRecent, setEggDailysRecent] = useState([]);
+  const [cattleDailysRecent, setCattleDailysRecent] = useState([]);
   const [sheepDailysRecent, setSheepDailysRecent] = useState([]);
 
   const value = {
-    broilerDailys,     setBroilerDailys,
-    pigDailys,         setPigDailys,
-    layerDailysRecent, setLayerDailysRecent,
-    eggDailysRecent,   setEggDailysRecent,
-    cattleDailysRecent,setCattleDailysRecent,
-    sheepDailysRecent, setSheepDailysRecent,
+    broilerDailys,
+    setBroilerDailys,
+    pigDailys,
+    setPigDailys,
+    layerDailysRecent,
+    setLayerDailysRecent,
+    eggDailysRecent,
+    setEggDailysRecent,
+    cattleDailysRecent,
+    setCattleDailysRecent,
+    sheepDailysRecent,
+    setSheepDailysRecent,
   };
   return <DailysRecentContext.Provider value={value}>{children}</DailysRecentContext.Provider>;
 }

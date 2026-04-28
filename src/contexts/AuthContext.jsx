@@ -14,39 +14,50 @@
 //   saveStatus  : '' | 'saving' | 'saved' | 'error'
 //   showUsers, allUsers, inviteEmail, inviteRole, inviteMsg — UsersModal state
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 const AuthContext = createContext(null);
 
-export function AuthProvider({ children }) {
-  const [authState,   setAuthState]   = useState(null);
-  const [pwRecovery,  setPwRecovery]  = useState(() => {
+export function AuthProvider({children}) {
+  const [authState, setAuthState] = useState(null);
+  const [pwRecovery, setPwRecovery] = useState(() => {
     if (typeof window === 'undefined') return false;
     const h = window.location.hash || '';
     const q = window.location.search || '';
-    return /[#&?]type=recovery\b/.test(h)
-        || /[?&]type=recovery\b/.test(q)
-        || /[#&?]type=invite\b/.test(h)
-        || /[?&]type=invite\b/.test(q);
+    return (
+      /[#&?]type=recovery\b/.test(h) ||
+      /[?&]type=recovery\b/.test(q) ||
+      /[#&?]type=invite\b/.test(h) ||
+      /[?&]type=invite\b/.test(q)
+    );
   });
-  const [dataLoaded,  setDataLoaded]  = useState(false);
-  const [saveStatus,  setSaveStatus]  = useState('');
-  const [showUsers,   setShowUsers]   = useState(false);
-  const [allUsers,    setAllUsers]    = useState([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
+  const [showUsers, setShowUsers] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole,  setInviteRole]  = useState('farm_team');
-  const [inviteMsg,   setInviteMsg]   = useState('');
+  const [inviteRole, setInviteRole] = useState('farm_team');
+  const [inviteMsg, setInviteMsg] = useState('');
 
   const value = {
-    authState,   setAuthState,
-    pwRecovery,  setPwRecovery,
-    dataLoaded,  setDataLoaded,
-    saveStatus,  setSaveStatus,
-    showUsers,   setShowUsers,
-    allUsers,    setAllUsers,
-    inviteEmail, setInviteEmail,
-    inviteRole,  setInviteRole,
-    inviteMsg,   setInviteMsg,
+    authState,
+    setAuthState,
+    pwRecovery,
+    setPwRecovery,
+    dataLoaded,
+    setDataLoaded,
+    saveStatus,
+    setSaveStatus,
+    showUsers,
+    setShowUsers,
+    allUsers,
+    setAllUsers,
+    inviteEmail,
+    setInviteEmail,
+    inviteRole,
+    setInviteRole,
+    inviteMsg,
+    setInviteMsg,
   };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

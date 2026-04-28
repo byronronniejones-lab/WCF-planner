@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT } from './routes.js';
+import {describe, it, expect} from 'vitest';
+import {VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT} from './routes.js';
 
 // Tests for the URL ↔ view mapping that drives the Phase 3 router adapter.
 // Two invariants matter most: (1) round-trip integrity so the URL sync effects
@@ -38,8 +38,8 @@ describe('HASH_COMPAT', () => {
 
   it('does not include the supabase recovery hash (SetPasswordScreen parses it directly)', () => {
     const keys = Object.keys(HASH_COMPAT);
-    expect(keys.some(k => k.includes('access_token'))).toBe(false);
-    expect(keys.some(k => k.includes('recovery'))).toBe(false);
+    expect(keys.some((k) => k.includes('access_token'))).toBe(false);
+    expect(keys.some((k) => k.includes('recovery'))).toBe(false);
   });
 });
 

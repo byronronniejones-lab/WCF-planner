@@ -8,7 +8,12 @@
 import React from 'react';
 const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
   const {useState, useEffect} = React;
-  const todayStr = (() => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  const todayStr = (() => {
+    const d = new Date();
+    return (
+      d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+    );
+  })();
   const [teamMembers, setTeamMembers] = useState([]);
   const [team, setTeam] = useState('');
   const [date, setDate] = useState(todayStr);
@@ -19,85 +24,213 @@ const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    sb.from('webform_config').select('data').eq('key','team_members').maybeSingle().then(({data}) => {
-      if(data && Array.isArray(data.data)) setTeamMembers(data.data);
-    });
-    if(species === 'broiler') {
-      sb.from('webform_config').select('data').eq('key','broiler_groups').maybeSingle().then(({data}) => {
-        if(data && Array.isArray(data.data)) setBatchOpts(data.data);
+    sb.from('webform_config')
+      .select('data')
+      .eq('key', 'team_members')
+      .maybeSingle()
+      .then(({data}) => {
+        if (data && Array.isArray(data.data)) setTeamMembers(data.data);
       });
-    } else if(species === 'pig') {
-      sb.from('webform_config').select('data').eq('key','active_groups').maybeSingle().then(({data}) => {
-        if(data && Array.isArray(data.data)) {
-          setBatchOpts(data.data.filter(n => n && n.toUpperCase() !== 'SOWS' && n.toUpperCase() !== 'BOARS'));
-        }
-      });
+    if (species === 'broiler') {
+      sb.from('webform_config')
+        .select('data')
+        .eq('key', 'broiler_groups')
+        .maybeSingle()
+        .then(({data}) => {
+          if (data && Array.isArray(data.data)) setBatchOpts(data.data);
+        });
+    } else if (species === 'pig') {
+      sb.from('webform_config')
+        .select('data')
+        .eq('key', 'active_groups')
+        .maybeSingle()
+        .then(({data}) => {
+          if (data && Array.isArray(data.data)) {
+            setBatchOpts(data.data.filter((n) => n && n.toUpperCase() !== 'SOWS' && n.toUpperCase() !== 'BOARS'));
+          }
+        });
     }
   }, []);
 
   async function create() {
-    if(!team) { setErr('Pick a team member.'); return; }
-    if(!batchId) { setErr('Pick a batch.'); return; }
-    setErr(''); setBusy(true);
-    const id = String(Date.now()) + Math.random().toString(36).slice(2,6);
+    if (!team) {
+      setErr('Pick a team member.');
+      return;
+    }
+    if (!batchId) {
+      setErr('Pick a batch.');
+      return;
+    }
+    setErr('');
+    setBusy(true);
+    const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
     const rec = {
-      id, date, team_member: team, species, status: 'draft',
+      id,
+      date,
+      team_member: team,
+      species,
+      status: 'draft',
       batch_id: batchId,
     };
-    if(species === 'broiler') rec.broiler_week = week;
+    if (species === 'broiler') rec.broiler_week = week;
     const {error} = await sb.from('weigh_in_sessions').insert(rec);
     setBusy(false);
-    if(error) { setErr('Could not create: '+error.message); return; }
-    if(team) localStorage.setItem('wcf_team', team);
+    if (error) {
+      setErr('Could not create: ' + error.message);
+      return;
+    }
+    if (team) localStorage.setItem('wcf_team', team);
     onCreated && onCreated(rec);
     onClose && onClose();
   }
 
-  const lblS = {display:'block', fontSize:12, color:'#374151', marginBottom:4, fontWeight:600};
-  const inpS = {fontFamily:'inherit', fontSize:13, padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:6, width:'100%', boxSizing:'border-box', background:'white', color:'#111827', outline:'none'};
+  const lblS = {display: 'block', fontSize: 12, color: '#374151', marginBottom: 4, fontWeight: 600};
+  const inpS = {
+    fontFamily: 'inherit',
+    fontSize: 13,
+    padding: '8px 10px',
+    border: '1px solid #d1d5db',
+    borderRadius: 6,
+    width: '100%',
+    boxSizing: 'border-box',
+    background: 'white',
+    color: '#111827',
+    outline: 'none',
+  };
 
   return (
-    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
-      <div style={{background:'white', borderRadius:12, maxWidth:420, width:'100%', padding:'18px 20px', boxShadow:'0 12px 40px rgba(0,0,0,.25)'}}>
-        <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:14}}>New {species==='broiler'?'Broiler':'Pig'} Weigh-In</div>
-        <div style={{marginBottom:10}}>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,.45)',
+        zIndex: 300,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          background: 'white',
+          borderRadius: 12,
+          maxWidth: 420,
+          width: '100%',
+          padding: '18px 20px',
+          boxShadow: '0 12px 40px rgba(0,0,0,.25)',
+        }}
+      >
+        <div style={{fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 14}}>
+          New {species === 'broiler' ? 'Broiler' : 'Pig'} Weigh-In
+        </div>
+        <div style={{marginBottom: 10}}>
           <label style={lblS}>Team member *</label>
-          <select value={team} onChange={e=>setTeam(e.target.value)} style={inpS}>
-            <option value=''>Select team member...</option>
-            {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+          <select value={team} onChange={(e) => setTeam(e.target.value)} style={inpS}>
+            <option value="">Select team member...</option>
+            {teamMembers.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
           </select>
         </div>
-        <div style={{marginBottom:10}}>
+        <div style={{marginBottom: 10}}>
           <label style={lblS}>Date</label>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inpS}/>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inpS} />
         </div>
-        <div style={{marginBottom:10}}>
-          <label style={lblS}>{species==='broiler'?'Broiler batch *':'Pig batch *'}</label>
-          <select value={batchId} onChange={e=>setBatchId(e.target.value)} style={inpS}>
-            <option value=''>Select batch...</option>
-            {batchOpts.map(b => <option key={b} value={b}>{b}</option>)}
+        <div style={{marginBottom: 10}}>
+          <label style={lblS}>{species === 'broiler' ? 'Broiler batch *' : 'Pig batch *'}</label>
+          <select value={batchId} onChange={(e) => setBatchId(e.target.value)} style={inpS}>
+            <option value="">Select batch...</option>
+            {batchOpts.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
           </select>
         </div>
         {species === 'broiler' && (
-          <div style={{marginBottom:14}}>
+          <div style={{marginBottom: 14}}>
             <label style={lblS}>Week *</label>
-            <div style={{display:'flex', borderRadius:6, overflow:'hidden', border:'1px solid #d1d5db'}}>
-              {[4,6].map(w => (
-                <button key={w} type="button" onClick={()=>setWeek(w)} style={{flex:1, padding:'8px 0', border:'none', fontFamily:'inherit', fontSize:13, fontWeight:600, cursor:'pointer', background:week===w?'#1e40af':'white', color:week===w?'white':'#6b7280'}}>{'Week '+w}</button>
+            <div style={{display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid #d1d5db'}}>
+              {[4, 6].map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setWeek(w)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 0',
+                    border: 'none',
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: week === w ? '#1e40af' : 'white',
+                    color: week === w ? 'white' : '#6b7280',
+                  }}
+                >
+                  {'Week ' + w}
+                </button>
               ))}
             </div>
           </div>
         )}
-        {err && <div style={{color:'#b91c1c', fontSize:12, marginBottom:10, padding:'6px 10px', background:'#fef2f2', borderRadius:6}}>{err}</div>}
-        <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
-          <button onClick={onClose} disabled={busy} style={{padding:'8px 14px', borderRadius:7, border:'1px solid #d1d5db', background:'white', color:'#374151', fontWeight:600, fontSize:12, cursor:busy?'not-allowed':'pointer', fontFamily:'inherit'}}>Cancel</button>
-          <button onClick={create} disabled={busy || !team || !batchId} style={{padding:'8px 16px', borderRadius:7, border:'none', background:(busy||!team||!batchId)?'#9ca3af':'#1e40af', color:'white', fontWeight:700, fontSize:12, cursor:(busy||!team||!batchId)?'not-allowed':'pointer', fontFamily:'inherit'}}>{busy?'Creating\u2026':'Create Weigh-In'}</button>
+        {err && (
+          <div
+            style={{
+              color: '#b91c1c',
+              fontSize: 12,
+              marginBottom: 10,
+              padding: '6px 10px',
+              background: '#fef2f2',
+              borderRadius: 6,
+            }}
+          >
+            {err}
+          </div>
+        )}
+        <div style={{display: 'flex', gap: 8, justifyContent: 'flex-end'}}>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#374151',
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: busy ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={create}
+            disabled={busy || !team || !batchId}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 7,
+              border: 'none',
+              background: busy || !team || !batchId ? '#9ca3af' : '#1e40af',
+              color: 'white',
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: busy || !team || !batchId ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {busy ? 'Creating\u2026' : 'Create Weigh-In'}
+          </button>
         </div>
       </div>
     </div>
   );
 };
-
 
 // Admin weigh-ins view for broilers + pigs. Mirrors CattleWeighInsView but
 // drops cattle-specific bits (herd, new-tag reconciliation) and adds:

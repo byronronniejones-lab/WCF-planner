@@ -7,20 +7,27 @@
 // internal component state — they were never consumed anywhere else.
 // ============================================================================
 import React from 'react';
-import { sb } from '../lib/supabase.js';
-import { useWebformsConfig } from '../contexts/WebformsConfigContext.jsx';
+import {sb} from '../lib/supabase.js';
+import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 
 export default function PigDailysWebform() {
-  const { wfGroups, wfTeamMembers, webformsConfig } = useWebformsConfig();
+  const {wfGroups, wfTeamMembers, webformsConfig} = useWebformsConfig();
 
   const [wfForm, setWfForm] = React.useState(() => {
     const d = new Date();
     return {
-      date: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
+      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
       teamMember: '',
-      batchId: '', pigCount: '', feedLbs: '',
-      groupMoved: true, nippleDrinkerMoved: true, nippleDrinkerWorking: true,
-      troughsMoved: true, fenceWalked: true, fenceVoltage: '', issues: ''
+      batchId: '',
+      pigCount: '',
+      feedLbs: '',
+      groupMoved: true,
+      nippleDrinkerMoved: true,
+      nippleDrinkerWorking: true,
+      troughsMoved: true,
+      fenceWalked: true,
+      fenceVoltage: '',
+      issues: '',
     };
   });
   const [wfSubmitting, setWfSubmitting] = React.useState(false);
@@ -30,73 +37,130 @@ export default function PigDailysWebform() {
 
   const wfGroupOptions = wfGroups;
 
-  function wfToggle(field, val){
-    setWfForm(f=>({...f,[field]:val}));
+  function wfToggle(field, val) {
+    setWfForm((f) => ({...f, [field]: val}));
   }
 
-  async function wfSubmit(){
+  async function wfSubmit() {
     // Validate required fields based on webformsConfig
-    const wfCfg = webformsConfig?.webforms?.find(w=>w.id==='pig-dailys');
-    const wfRequiredFields = wfCfg ? wfCfg.fields.filter(f=>f.required&&f.enabled!==false) : [];
-    if(!wfForm.date){setWfErr('Please enter a date.');return;}
-    if(!wfForm.teamMember.trim()){setWfErr('Please enter your name.');return;}
-    if(!wfForm.batchId){setWfErr('Please select a pig group.');return;}
-    // Check custom required fields
-    for(const f of wfRequiredFields){
-      if(f.system) continue; // already checked above
-      if(f.id==='pig_count'&&wfForm.pigCount===''){setWfErr(`${f.label} is required.`);return;}
-      if(f.id==='feed_lbs'&&wfForm.feedLbs===''){setWfErr(`${f.label} is required.`);return;}
-      if(f.id==='fence_voltage'&&wfForm.fenceVoltage===''){setWfErr(`${f.label} is required.`);return;}
-      if(f.id==='issues'&&!wfForm.issues.trim()){setWfErr(`${f.label} is required.`);return;}
+    const wfCfg = webformsConfig?.webforms?.find((w) => w.id === 'pig-dailys');
+    const wfRequiredFields = wfCfg ? wfCfg.fields.filter((f) => f.required && f.enabled !== false) : [];
+    if (!wfForm.date) {
+      setWfErr('Please enter a date.');
+      return;
     }
-    setWfErr(''); setWfSubmitting(true);
+    if (!wfForm.teamMember.trim()) {
+      setWfErr('Please enter your name.');
+      return;
+    }
+    if (!wfForm.batchId) {
+      setWfErr('Please select a pig group.');
+      return;
+    }
+    // Check custom required fields
+    for (const f of wfRequiredFields) {
+      if (f.system) continue; // already checked above
+      if (f.id === 'pig_count' && wfForm.pigCount === '') {
+        setWfErr(`${f.label} is required.`);
+        return;
+      }
+      if (f.id === 'feed_lbs' && wfForm.feedLbs === '') {
+        setWfErr(`${f.label} is required.`);
+        return;
+      }
+      if (f.id === 'fence_voltage' && wfForm.fenceVoltage === '') {
+        setWfErr(`${f.label} is required.`);
+        return;
+      }
+      if (f.id === 'issues' && !wfForm.issues.trim()) {
+        setWfErr(`${f.label} is required.`);
+        return;
+      }
+    }
+    setWfErr('');
+    setWfSubmitting(true);
     localStorage.setItem('wcf_team', wfForm.teamMember.trim());
     const record = {
-      id: String(Date.now())+Math.random().toString(36).slice(2,6),
+      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
       submitted_at: new Date().toISOString(),
       date: wfForm.date,
       team_member: wfForm.teamMember.trim(),
-      batch_id: wfForm.batchId.toLowerCase().replace(/[^a-z0-9]+/g,'-'),
+      batch_id: wfForm.batchId.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
       batch_label: wfForm.batchId,
-      pig_count: wfForm.pigCount!==''?parseInt(wfForm.pigCount):null,
-      feed_lbs: wfForm.feedLbs!==''?parseFloat(wfForm.feedLbs):null,
+      pig_count: wfForm.pigCount !== '' ? parseInt(wfForm.pigCount) : null,
+      feed_lbs: wfForm.feedLbs !== '' ? parseFloat(wfForm.feedLbs) : null,
       group_moved: wfForm.groupMoved,
       nipple_drinker_moved: wfForm.nippleDrinkerMoved,
       nipple_drinker_working: wfForm.nippleDrinkerWorking,
       troughs_moved: wfForm.troughsMoved,
       fence_walked: wfForm.fenceWalked,
-      fence_voltage: wfForm.fenceVoltage!==''?parseFloat(wfForm.fenceVoltage):null,
-      issues: wfForm.issues.trim()||null
+      fence_voltage: wfForm.fenceVoltage !== '' ? parseFloat(wfForm.fenceVoltage) : null,
+      issues: wfForm.issues.trim() || null,
     };
     const {error} = await sb.from('pig_dailys').insert(record);
     setWfSubmitting(false);
-    if(error){setWfErr('Could not save: '+error.message);return;}
+    if (error) {
+      setWfErr('Could not save: ' + error.message);
+      return;
+    }
     setWfGroupName(wfForm.batchId);
     setWfDone(true);
   }
 
-  function wfReset(){
-    const d=new Date();
+  function wfReset() {
+    const d = new Date();
     setWfForm({
-      date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
-      teamMember:'',
-      batchId:'',pigCount:'',feedLbs:'',
-      groupMoved:true,nippleDrinkerMoved:true,nippleDrinkerWorking:true,
-      troughsMoved:true,fenceWalked:true,fenceVoltage:'',issues:''
+      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      teamMember: '',
+      batchId: '',
+      pigCount: '',
+      feedLbs: '',
+      groupMoved: true,
+      nippleDrinkerMoved: true,
+      nippleDrinkerWorking: true,
+      troughsMoved: true,
+      fenceWalked: true,
+      fenceVoltage: '',
+      issues: '',
     });
-    setWfDone(false); setWfErr('');
+    setWfDone(false);
+    setWfErr('');
   }
 
-  function wfTgl(label,field){
+  function wfTgl(label, field) {
     return (
-      <div style={{marginBottom:12}}>
-        <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>{label}</label>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderRadius:6,overflow:'hidden',border:'1px solid #d1d5db'}}>
-          {[{v:true,l:'Yes'},{v:false,l:'No'}].map(({v,l})=>(
-            <button key={String(v)} type="button" onClick={()=>wfToggle(field,v)}
-              style={{padding:'9px 0',border:'none',fontFamily:'inherit',fontSize:13,fontWeight:500,cursor:'pointer',
-                background:wfForm[field]===v?(v?'#085041':'#374151'):'#f9fafb',
-                color:wfForm[field]===v?'white':'#6b7280'}}>
+      <div style={{marginBottom: 12}}>
+        <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+          {label}
+        </label>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            borderRadius: 6,
+            overflow: 'hidden',
+            border: '1px solid #d1d5db',
+          }}
+        >
+          {[
+            {v: true, l: 'Yes'},
+            {v: false, l: 'No'},
+          ].map(({v, l}) => (
+            <button
+              key={String(v)}
+              type="button"
+              onClick={() => wfToggle(field, v)}
+              style={{
+                padding: '9px 0',
+                border: 'none',
+                fontFamily: 'inherit',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+                background: wfForm[field] === v ? (v ? '#085041' : '#374151') : '#f9fafb',
+                color: wfForm[field] === v ? 'white' : '#6b7280',
+              }}
+            >
               {l}
             </button>
           ))}
@@ -105,133 +169,415 @@ export default function PigDailysWebform() {
     );
   }
 
-  const wfCfgFields = (()=>{
-    const wf = webformsConfig?.webforms?.find(w=>w.id==='pig-dailys');
-    if(!wf) return [];
-    return (wf.sections||[]).flatMap(s=>s.fields||[]);
+  const wfCfgFields = (() => {
+    const wf = webformsConfig?.webforms?.find((w) => w.id === 'pig-dailys');
+    if (!wf) return [];
+    return (wf.sections || []).flatMap((s) => s.fields || []);
   })();
-  const isReq = id => { const f=wfCfgFields.find(f=>f.id===id); return f?f.required:['date','team_member','group'].includes(id); };
-  const wfLbl = (text,id) => <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>{text}{isReq(id)&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>;
+  const isReq = (id) => {
+    const f = wfCfgFields.find((f) => f.id === id);
+    return f ? f.required : ['date', 'team_member', 'group'].includes(id);
+  };
+  const wfLbl = (text, id) => (
+    <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+      {text}
+      {isReq(id) && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+    </label>
+  );
 
   const wfCard = (title, children) => (
-    <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:10,padding:20,marginBottom:16,boxShadow:'0 1px 3px rgba(0,0,0,.06)'}}>
-      <div style={{fontSize:13,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:.4,marginBottom:14,paddingBottom:10,borderBottom:'1px solid #e5e7eb'}}>{title}</div>
+    <div
+      style={{
+        background: 'white',
+        border: '1px solid #e5e7eb',
+        borderRadius: 10,
+        padding: 20,
+        marginBottom: 16,
+        boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: '#4b5563',
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+          marginBottom: 14,
+          paddingBottom: 10,
+          borderBottom: '1px solid #e5e7eb',
+        }}
+      >
+        {title}
+      </div>
       {children}
     </div>
   );
 
-  if(wfDone) return (
-    <div style={{background:'#f6f8f7',minHeight:'100vh'}}>
-      <div style={{background:'linear-gradient(135deg,#042f23,#085041 60%,#0d6652)',color:'white',padding:'14px 1.5rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <div style={{fontSize:17,fontWeight:700,letterSpacing:'-.4px'}}>WCF Planner</div>
-          <span style={{fontSize:11,fontWeight:500,color:'rgba(255,255,255,.6)',borderLeft:'1px solid rgba(255,255,255,.25)',paddingLeft:10,letterSpacing:.5}}>PIGS</span>
+  if (wfDone)
+    return (
+      <div style={{background: '#f6f8f7', minHeight: '100vh'}}>
+        <div
+          style={{
+            background: 'linear-gradient(135deg,#042f23,#085041 60%,#0d6652)',
+            color: 'white',
+            padding: '14px 1.5rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+            <div style={{fontSize: 17, fontWeight: 700, letterSpacing: '-.4px'}}>WCF Planner</div>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'rgba(255,255,255,.6)',
+                borderLeft: '1px solid rgba(255,255,255,.25)',
+                paddingLeft: 10,
+                letterSpacing: 0.5,
+              }}
+            >
+              PIGS
+            </span>
+          </div>
+          <div style={{fontSize: 12, color: 'rgba(255,255,255,.6)'}}>Daily Report</div>
         </div>
-        <div style={{fontSize:12,color:'rgba(255,255,255,.6)'}}>Daily Report</div>
+        <div style={{maxWidth: 540, margin: '0 auto', padding: '3rem 1rem', textAlign: 'center'}}>
+          <div style={{fontSize: 56, marginBottom: 16}}>✅</div>
+          <div style={{fontSize: 20, fontWeight: 700, marginBottom: 8}}>Report submitted!</div>
+          <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28}}>
+            Daily report saved for <strong>{wfGroupName}</strong>.
+          </div>
+          <button
+            onClick={wfReset}
+            style={{
+              padding: '10px 28px',
+              border: '2px solid #085041',
+              borderRadius: 10,
+              background: 'white',
+              color: '#085041',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Submit another
+          </button>
+        </div>
       </div>
-      <div style={{maxWidth:540,margin:'0 auto',padding:'3rem 1rem',textAlign:'center'}}>
-        <div style={{fontSize:56,marginBottom:16}}>✅</div>
-        <div style={{fontSize:20,fontWeight:700,marginBottom:8}}>Report submitted!</div>
-        <div style={{fontSize:14,color:'#4b5563',marginBottom:28}}>Daily report saved for <strong>{wfGroupName}</strong>.</div>
-        <button onClick={wfReset} style={{padding:'10px 28px',border:'2px solid #085041',borderRadius:10,background:'white',color:'#085041',fontSize:14,fontWeight:600,cursor:'pointer'}}>Submit another</button>
-      </div>
-    </div>
-  );
+    );
 
   return (
-    <div style={{background:'#f6f8f7',minHeight:'100vh'}}>
+    <div style={{background: '#f6f8f7', minHeight: '100vh'}}>
       {/* Header */}
-      <div style={{background:'linear-gradient(135deg,#042f23,#085041 60%,#0d6652)',color:'white',padding:'14px 1.5rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <div style={{fontSize:17,fontWeight:700,letterSpacing:'-.4px'}}>WCF Planner</div>
-          <span style={{fontSize:11,fontWeight:500,color:'rgba(255,255,255,.6)',borderLeft:'1px solid rgba(255,255,255,.25)',paddingLeft:10,letterSpacing:.5}}>PIGS</span>
+      <div
+        style={{
+          background: 'linear-gradient(135deg,#042f23,#085041 60%,#0d6652)',
+          color: 'white',
+          padding: '14px 1.5rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+          <div style={{fontSize: 17, fontWeight: 700, letterSpacing: '-.4px'}}>WCF Planner</div>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 500,
+              color: 'rgba(255,255,255,.6)',
+              borderLeft: '1px solid rgba(255,255,255,.25)',
+              paddingLeft: 10,
+              letterSpacing: 0.5,
+            }}
+          >
+            PIGS
+          </span>
         </div>
-        <div style={{fontSize:12,color:'rgba(255,255,255,.6)'}}>Daily Report</div>
+        <div style={{fontSize: 12, color: 'rgba(255,255,255,.6)'}}>Daily Report</div>
       </div>
 
-      <div style={{maxWidth:540,margin:'0 auto',padding:'1.5rem 1rem 3rem'}}>
-        <div style={{fontSize:22,fontWeight:700,color:'#111827',marginBottom:20,letterSpacing:'-.3px'}}>Pig Dailys</div>
-        {wfErr&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:6,color:'#b91c1c',padding:'10px 14px',fontSize:13,marginBottom:14}}>{wfErr}</div>}
+      <div style={{maxWidth: 540, margin: '0 auto', padding: '1.5rem 1rem 3rem'}}>
+        <div style={{fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 20, letterSpacing: '-.3px'}}>
+          Pig Dailys
+        </div>
+        {wfErr && (
+          <div
+            style={{
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: 6,
+              color: '#b91c1c',
+              padding: '10px 14px',
+              fontSize: 13,
+              marginBottom: 14,
+            }}
+          >
+            {wfErr}
+          </div>
+        )}
 
-
-        {wfCard('Report Info', (
-          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+        {wfCard(
+          'Report Info',
+          <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
             <div>
-              <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Date{isReq('date')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <input type="date" value={wfForm.date} onChange={e=>setWfForm({...wfForm,date:e.target.value})}
-                  style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,flex:1,outline:'none',background:'white',color:'#111827'}}/>
-                <span onClick={()=>{const d=new Date();setWfForm({...wfForm,date:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`});}}
-                  style={{display:'inline-block',fontSize:11,padding:'6px 10px',background:'#ecfdf5',color:'#085041',border:'1px solid #a7f3d0',borderRadius:6,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>Today</span>
+              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+                Date{isReq('date') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+              </label>
+              <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                <input
+                  type="date"
+                  value={wfForm.date}
+                  onChange={(e) => setWfForm({...wfForm, date: e.target.value})}
+                  style={{
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    padding: '9px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: 6,
+                    flex: 1,
+                    outline: 'none',
+                    background: 'white',
+                    color: '#111827',
+                  }}
+                />
+                <span
+                  onClick={() => {
+                    const d = new Date();
+                    setWfForm({
+                      ...wfForm,
+                      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+                    });
+                  }}
+                  style={{
+                    display: 'inline-block',
+                    fontSize: 11,
+                    padding: '6px 10px',
+                    background: '#ecfdf5',
+                    color: '#085041',
+                    border: '1px solid #a7f3d0',
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Today
+                </span>
               </div>
             </div>
             <div>
-              <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Team member{isReq('team_member')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-              {wfTeamMembers.length>0
-                ? <select value={wfForm.teamMember} onChange={e=>setWfForm({...wfForm,teamMember:e.target.value})}
-                    style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',color:wfForm.teamMember?'#111827':'#9ca3af'}}>
-                    <option value="">— Select name —</option>
-                    {wfTeamMembers.map(m=><option key={m} value={m}>{m}</option>)}
-                  </select>
-                : <input value={wfForm.teamMember} onChange={e=>setWfForm({...wfForm,teamMember:e.target.value})} placeholder="Your name"
-                    style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',color:'#111827'}}/>
-              }
+              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+                Team member{isReq('team_member') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+              </label>
+              {wfTeamMembers.length > 0 ? (
+                <select
+                  value={wfForm.teamMember}
+                  onChange={(e) => setWfForm({...wfForm, teamMember: e.target.value})}
+                  style={{
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    padding: '9px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: 6,
+                    width: '100%',
+                    outline: 'none',
+                    background: 'white',
+                    color: wfForm.teamMember ? '#111827' : '#9ca3af',
+                  }}
+                >
+                  <option value="">— Select name —</option>
+                  {wfTeamMembers.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={wfForm.teamMember}
+                  onChange={(e) => setWfForm({...wfForm, teamMember: e.target.value})}
+                  placeholder="Your name"
+                  style={{
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    padding: '9px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: 6,
+                    width: '100%',
+                    outline: 'none',
+                    background: 'white',
+                    color: '#111827',
+                  }}
+                />
+              )}
             </div>
             <div>
-              <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Pig group{isReq('group')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-              <select value={wfForm.batchId} onChange={e=>setWfForm({...wfForm,batchId:e.target.value})}
-                style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',color:'#111827'}}>
+              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+                Pig group{isReq('group') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+              </label>
+              <select
+                value={wfForm.batchId}
+                onChange={(e) => setWfForm({...wfForm, batchId: e.target.value})}
+                style={{
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  padding: '9px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  width: '100%',
+                  outline: 'none',
+                  background: 'white',
+                  color: '#111827',
+                }}
+              >
                 <option value="">— Select group —</option>
-                {wfGroupOptions.map(g=><option key={g.value} value={g.value}>{g.label}</option>)}
+                {wfGroupOptions.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {g.label}
+                  </option>
+                ))}
               </select>
             </div>
-          </div>
-        ))}
+          </div>,
+        )}
 
-        {wfCard('Count & Feed', (
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        {wfCard(
+          'Count & Feed',
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12}}>
             <div>
-              <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}># Pigs in group{isReq('pig_count')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-              <input type="number" min="0" value={wfForm.pigCount||''} onChange={e=>setWfForm({...wfForm,pigCount:e.target.value})} placeholder="0"
-                style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white'}}/>
-              <div style={{fontSize:11,color:'#9ca3af',marginTop:3}}>Current headcount</div>
+              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+                # Pigs in group{isReq('pig_count') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={wfForm.pigCount || ''}
+                onChange={(e) => setWfForm({...wfForm, pigCount: e.target.value})}
+                placeholder="0"
+                style={{
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  padding: '9px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  width: '100%',
+                  outline: 'none',
+                  background: 'white',
+                }}
+              />
+              <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>Current headcount</div>
             </div>
             <div>
-              <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Feed given (lbs){isReq('feed_lbs')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-              <input type="number" min="0" step="0.1" value={wfForm.feedLbs||''} onChange={e=>setWfForm({...wfForm,feedLbs:e.target.value})} placeholder="0"
-                style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white'}}/>
-              <div style={{fontSize:11,color:'#9ca3af',marginTop:3}}>Total lbs fed today</div>
+              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+                Feed given (lbs){isReq('feed_lbs') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={wfForm.feedLbs || ''}
+                onChange={(e) => setWfForm({...wfForm, feedLbs: e.target.value})}
+                placeholder="0"
+                style={{
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  padding: '9px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  width: '100%',
+                  outline: 'none',
+                  background: 'white',
+                }}
+              />
+              <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>Total lbs fed today</div>
             </div>
-          </div>
-        ))}
+          </div>,
+        )}
 
-        {wfCard('Daily Checks', (
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-            {wfTgl("Was group moved?","groupMoved")}
-            {wfTgl("Nipple drinker moved?","nippleDrinkerMoved")}
-            {wfTgl("Nipple drinker working?","nippleDrinkerWorking")}
-            {wfTgl("Feed troughs moved?","troughsMoved")}
-            {wfTgl("Fence line walked?","fenceWalked")}
+        {wfCard(
+          'Daily Checks',
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12}}>
+            {wfTgl('Was group moved?', 'groupMoved')}
+            {wfTgl('Nipple drinker moved?', 'nippleDrinkerMoved')}
+            {wfTgl('Nipple drinker working?', 'nippleDrinkerWorking')}
+            {wfTgl('Feed troughs moved?', 'troughsMoved')}
+            {wfTgl('Fence line walked?', 'fenceWalked')}
             <div>
-              <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Fence voltage (kV){isReq('fence_voltage')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-              <input type="number" min="0" max="20" step="0.1" value={wfForm.fenceVoltage||''} onChange={e=>setWfForm({...wfForm,fenceVoltage:e.target.value})} placeholder="e.g. 4.2"
-                style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white'}}/>
+              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+                Fence voltage (kV){isReq('fence_voltage') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="20"
+                step="0.1"
+                value={wfForm.fenceVoltage || ''}
+                onChange={(e) => setWfForm({...wfForm, fenceVoltage: e.target.value})}
+                placeholder="e.g. 4.2"
+                style={{
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  padding: '9px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  width: '100%',
+                  outline: 'none',
+                  background: 'white',
+                }}
+              />
             </div>
-          </div>
-        ))}
+          </div>,
+        )}
 
-        {wfCard('Issues & Comments', (
+        {wfCard(
+          'Issues & Comments',
           <div>
-            <label style={{display:'block',fontSize:12,color:'#4b5563',marginBottom:4,fontWeight:500}}>Notes, issues, observations{isReq('issues')&&<span style={{color:'#b91c1c',marginLeft:2}}>*</span>}</label>
-            <textarea rows={4} value={wfForm.issues} onChange={e=>setWfForm({...wfForm,issues:e.target.value})}
+            <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+              Notes, issues, observations{isReq('issues') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
+            </label>
+            <textarea
+              rows={4}
+              value={wfForm.issues}
+              onChange={(e) => setWfForm({...wfForm, issues: e.target.value})}
               placeholder="Any problems, unusual behavior, health concerns, maintenance needed…"
-              style={{fontFamily:'inherit',fontSize:13,padding:'9px 12px',border:'1px solid #d1d5db',borderRadius:6,width:'100%',outline:'none',background:'white',resize:'vertical'}}/>
-          </div>
-        ))}
+              style={{
+                fontFamily: 'inherit',
+                fontSize: 13,
+                padding: '9px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                width: '100%',
+                outline: 'none',
+                background: 'white',
+                resize: 'vertical',
+              }}
+            />
+          </div>,
+        )}
 
-        <button onClick={wfSubmit} disabled={wfSubmitting}
-          style={{width:'100%',padding:13,border:'none',borderRadius:10,background:'linear-gradient(135deg,#085041,#0d6652)',color:'white',fontSize:15,fontWeight:600,cursor:wfSubmitting?'not-allowed':'pointer',opacity:wfSubmitting?.6:1,boxShadow:'0 2px 8px rgba(8,80,65,.25)',fontFamily:'inherit'}}>
-          {wfSubmitting?'Submitting…':'Submit Daily Report'}
+        <button
+          onClick={wfSubmit}
+          disabled={wfSubmitting}
+          style={{
+            width: '100%',
+            padding: 13,
+            border: 'none',
+            borderRadius: 10,
+            background: 'linear-gradient(135deg,#085041,#0d6652)',
+            color: 'white',
+            fontSize: 15,
+            fontWeight: 600,
+            cursor: wfSubmitting ? 'not-allowed' : 'pointer',
+            opacity: wfSubmitting ? 0.6 : 1,
+            boxShadow: '0 2px 8px rgba(8,80,65,.25)',
+            fontFamily: 'inherit',
+          }}
+        >
+          {wfSubmitting ? 'Submitting…' : 'Submit Daily Report'}
         </button>
       </div>
     </div>

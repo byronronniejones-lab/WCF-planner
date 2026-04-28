@@ -70,14 +70,18 @@ async function extractText(file) {
     // Group by approximate Y. transform[5] is Y (origin baseline).
     const rows = new Map();
     for (const item of content.items) {
-      const y = Math.round((item.transform[5] || 0) * 2) / 2;  // half-pt buckets
+      const y = Math.round((item.transform[5] || 0) * 2) / 2; // half-pt buckets
       const x = item.transform[4] || 0;
       if (!rows.has(y)) rows.set(y, []);
       rows.get(y).push({x, str: item.str});
     }
     const ys = Array.from(rows.keys()).sort((a, b) => b - a); // top-down
     for (const y of ys) {
-      const row = rows.get(y).sort((a, b) => a.x - b.x).map(r => r.str).join(' ');
+      const row = rows
+        .get(y)
+        .sort((a, b) => a.x - b.x)
+        .map((r) => r.str)
+        .join(' ');
       pageLines.push(row);
     }
   }
@@ -141,7 +145,10 @@ function grabSupplier(text) {
   // Or look for a known list. For v1: if "Home Oil" appears anywhere, that's the supplier.
   if (/home\s+oil/i.test(text)) return 'Home Oil Company, Inc.';
   // Generic fallback: first non-empty line.
-  const first = text.split('\n').map(s => s.trim()).find(s => s.length > 4 && s.length < 80 && /^[A-Z]/.test(s));
+  const first = text
+    .split('\n')
+    .map((s) => s.trim())
+    .find((s) => s.length > 4 && s.length < 80 && /^[A-Z]/.test(s));
   return first || null;
 }
 function grabInvoiceTotal(text) {
@@ -169,7 +176,8 @@ function grabLines(text) {
   const lines = [];
   // Anchor on " Net " between net_units and unit_price — that's the basis literal.
   // Use a tolerant regex that allows extra whitespace and commas.
-  const re = /([A-Za-z][-A-Za-z0-9 #'.&/]+?)\s+(\d{2,5})\s+(\d{4,8})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+Net\s+([\d,]+\.\d{4,6})\s+([\d,]+\.\d{2})/g;
+  const re =
+    /([A-Za-z][-A-Za-z0-9 #'.&/]+?)\s+(\d{2,5})\s+(\d{4,8})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+Net\s+([\d,]+\.\d{4,6})\s+([\d,]+\.\d{2})/g;
   let m;
   while ((m = re.exec(text)) !== null) {
     const [, desc, site, bol, gross, net, unitPrice, total] = m;
@@ -239,25 +247,23 @@ function grabTaxTotal(text, lineSubtotal, invoiceTotal) {
 // Stamps allocated_tax + line_total + effective_per_gal onto each line.
 function allocateTax(lines, taxTotal, opts = {}) {
   if (opts.taxIncludedInPrice) {
-    return lines.map(l => ({
+    return lines.map((l) => ({
       ...l,
       allocated_tax: 0,
       line_total: l.line_subtotal,
-      effective_per_gal: l.net_units > 0
-        ? Math.round((l.unit_price || 0) * 1000000) / 1000000
-        : null,
+      effective_per_gal: l.net_units > 0 ? Math.round((l.unit_price || 0) * 1000000) / 1000000 : null,
     }));
   }
   const totalGallons = lines.reduce((s, l) => s + (l.net_units || 0), 0);
   if (totalGallons <= 0 || !Number.isFinite(taxTotal) || taxTotal <= 0) {
-    return lines.map(l => ({
+    return lines.map((l) => ({
       ...l,
       allocated_tax: 0,
       line_total: l.line_subtotal,
       effective_per_gal: l.net_units > 0 ? l.line_subtotal / l.net_units : null,
     }));
   }
-  return lines.map(l => {
+  return lines.map((l) => {
     const share = (l.net_units || 0) / totalGallons;
     const allocated_tax = Math.round(taxTotal * share * 100) / 100;
     const line_total = Math.round(((l.line_subtotal || 0) + allocated_tax) * 100) / 100;
@@ -273,18 +279,18 @@ function allocateTax(lines, taxTotal, opts = {}) {
 export function parseFuelBillText(rawText) {
   const warnings = [];
 
-  const supplier        = grabSupplier(rawText);
-  const invoice_number  = grabInvoiceNumber(rawText);
-  const invoice_date    = grabInvoiceDate(rawText);
-  const delivery_date   = grabDeliveryDate(rawText);
-  const bol_number      = grabBOL(rawText);
-  const total           = grabInvoiceTotal(rawText);
-  const rawLines        = grabLines(rawText);
+  const supplier = grabSupplier(rawText);
+  const invoice_number = grabInvoiceNumber(rawText);
+  const invoice_date = grabInvoiceDate(rawText);
+  const delivery_date = grabDeliveryDate(rawText);
+  const bol_number = grabBOL(rawText);
+  const total = grabInvoiceTotal(rawText);
+  const rawLines = grabLines(rawText);
 
   if (rawLines.length === 0) warnings.push('No fuel line items found — did the PDF format change?');
-  if (!total)               warnings.push('Could not find invoice total.');
-  if (!invoice_date)        warnings.push('Could not find invoice date.');
-  if (!delivery_date)       warnings.push('Could not find delivery date.');
+  if (!total) warnings.push('Could not find invoice total.');
+  if (!invoice_date) warnings.push('Could not find invoice date.');
+  if (!delivery_date) warnings.push('Could not find delivery date.');
   for (const l of rawLines) {
     if (!l.fuel_type) warnings.push('Could not classify fuel type for "' + l.description + '" — pick manually.');
   }
@@ -300,9 +306,10 @@ export function parseFuelBillText(rawText) {
   // For tax-included bills the line subtotals are post-tax — back out the
   // bill tax_total to derive a true pre-tax header subtotal. For tax-exclusive
   // bills line subtotals are already pre-tax, so the sum is the subtotal.
-  const subtotal = (taxIncludedInPrice && Number.isFinite(total) && Number.isFinite(tax_total))
-    ? Math.round((total - tax_total) * 100) / 100
-    : linesSubtotal;
+  const subtotal =
+    taxIncludedInPrice && Number.isFinite(total) && Number.isFinite(tax_total)
+      ? Math.round((total - tax_total) * 100) / 100
+      : linesSubtotal;
   const lines = allocateTax(rawLines, tax_total, {taxIncludedInPrice});
 
   return {

@@ -18,9 +18,10 @@
 
 export async function wcfSelectAll(buildRangeQuery, pageSize) {
   const page = pageSize || 1000;
-  let all = [], from = 0;
+  let all = [],
+    from = 0;
   while (true) {
-    const { data, error } = await buildRangeQuery(from, from + page - 1);
+    const {data, error} = await buildRangeQuery(from, from + page - 1);
     if (error || !data || data.length === 0) break;
     all = all.concat(data);
     if (data.length < page) break;

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { addDays, toISO, fmt, fmtS, todayISO } from './dateUtils.js';
+import {describe, it, expect} from 'vitest';
+import {addDays, toISO, fmt, fmtS, todayISO} from './dateUtils.js';
 
 describe('addDays', () => {
   it('adds days to an ISO date string and returns a Date object', () => {

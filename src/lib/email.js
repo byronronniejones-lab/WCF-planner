@@ -7,9 +7,8 @@
 // interrupt a webform submission.
 // ============================================================================
 
-import { sb } from './supabase.js';
+import {sb} from './supabase.js';
 
 export function wcfSendEmail(type, data) {
-  sb.functions.invoke('rapid-processor', { body: { type, data } })
-    .catch(e => console.warn('wcfSendEmail failed:', e));
+  sb.functions.invoke('rapid-processor', {body: {type, data}}).catch((e) => console.warn('wcfSendEmail failed:', e));
 }

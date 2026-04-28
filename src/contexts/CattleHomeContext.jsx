@@ -6,17 +6,19 @@
 //   cattleForHome      : [{id, herd}] directory for missed-report herd-presence check
 //   cattleOnFarmCount  : number — count of cattle currently on farm
 // ============================================================================
-import React, { createContext, useContext, useState } from 'react';
+import React, {createContext, useContext, useState} from 'react';
 
 const CattleHomeContext = createContext(null);
 
-export function CattleHomeProvider({ children }) {
-  const [cattleForHome,     setCattleForHome]     = useState([]);
+export function CattleHomeProvider({children}) {
+  const [cattleForHome, setCattleForHome] = useState([]);
   const [cattleOnFarmCount, setCattleOnFarmCount] = useState(0);
 
   const value = {
-    cattleForHome,     setCattleForHome,
-    cattleOnFarmCount, setCattleOnFarmCount,
+    cattleForHome,
+    setCattleForHome,
+    cattleOnFarmCount,
+    setCattleOnFarmCount,
   };
   return <CattleHomeContext.Provider value={value}>{children}</CattleHomeContext.Provider>;
 }
