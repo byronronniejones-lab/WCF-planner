@@ -15,7 +15,7 @@ import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, toISO, addDays, todayISO} from '../lib/dateUtils.js';
 import {calcPoultryStatus, calcBroilerStatsFromDailys, calcTimeline} from '../lib/broiler.js';
 import {calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus} from '../lib/pig.js';
-import {computeIntervalStatus, daysSince, WARRANTY_WINDOW_DAYS} from '../lib/equipment.js';
+import {computeIntervalStatus, daysSince, latestSaneReading, WARRANTY_WINDOW_DAYS} from '../lib/equipment.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
@@ -354,7 +354,11 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   equipment.forEach((eq) => {
     const unit = eq.tracking_unit === 'km' ? 'km' : 'hours';
     const unitLabel = unit === 'km' ? 'km' : 'h';
-    const currentReading = unit === 'km' ? Number(eq.current_km) : Number(eq.current_hours);
+    // Effective reading prefers the latest webform fueling submission when it's
+    // ahead of equipment.current_*. Anon UPDATEs to the parent equipment row
+    // silently fail in prod under RLS (recon 2026-04-28), so trusting
+    // equipment.current_* alone makes overdue calls run against stale data.
+    const currentReading = latestSaneReading(eq, equipmentFuelings[eq.id] || []);
     const intervals = Array.isArray(eq.service_intervals) ? eq.service_intervals : [];
     const completions = equipmentCompletions[eq.id] || [];
 

@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {computeIntervalStatus, computeDueIntervals, soonestDue} from './equipment.js';
+import {computeIntervalStatus, computeDueIntervals, soonestDue, latestSaneReading} from './equipment.js';
 
 // Tests for the load-bearing equipment math invariants documented in
 // PROJECT.md §7. Tested through the public API only — snapToNearestMilestone
@@ -146,5 +146,80 @@ describe('soonestDue', () => {
     const intervals = [{kind: 'service', hours_or_km: 500, tasks: []}];
     // currentReading=10, next_due=500, until_due=490 — outside the 50-window.
     expect(soonestDue(intervals, [], 10)).toBeNull();
+  });
+});
+
+describe('latestSaneReading — equipment current-reading drift compensation', () => {
+  // Recon 2026-04-28 found anon UPDATE on equipment.current_hours/km silently
+  // fails under prod RLS, so equipment.current_* drifts behind the latest
+  // webform fueling submission. HomeDashboard's overdue calc reads from this
+  // helper instead of equipment.current_* directly.
+
+  it('uses the latest fueling reading when it exceeds equipment.current_*', () => {
+    // Mirrors the prod ps100 case: equipment.current_hours=951, latest fueling
+    // reading=965. Without the helper, overdue math runs against 951 and
+    // misses the 14-hour drift.
+    const eq = {tracking_unit: 'hours', current_hours: 951, current_km: null};
+    const fuelings = [{date: '2026-04-27', hours_reading: 965}];
+    expect(latestSaneReading(eq, fuelings)).toBe(965);
+  });
+
+  it('falls back to equipment.current_* when admin reading is ahead of fuelings', () => {
+    // Admin manually corrected the meter forward; the older fueling reading
+    // shouldn't override.
+    const eq = {tracking_unit: 'hours', current_hours: 1200, current_km: null};
+    const fuelings = [{date: '2026-04-27', hours_reading: 1000}];
+    expect(latestSaneReading(eq, fuelings)).toBe(1200);
+  });
+
+  it('returns equipment.current_* when no fuelings are present', () => {
+    const eq = {tracking_unit: 'hours', current_hours: 500, current_km: null};
+    expect(latestSaneReading(eq, [])).toBe(500);
+    expect(latestSaneReading(eq, null)).toBe(500);
+    expect(latestSaneReading(eq, undefined)).toBe(500);
+  });
+
+  it('picks the latest fueling by DATE, not by reading magnitude', () => {
+    // Mirrors the honda-atv-1 legacy outlier: a 2025-01-11 import row reads
+    // 5437h (typo or odometer reset), but the recent operator submissions are
+    // ~1086h. Picking by max-date (not max-reading) avoids propagating the
+    // outlier — the recent legitimate submission wins.
+    const eq = {tracking_unit: 'hours', current_hours: 1088, current_km: null};
+    const fuelings = [
+      {date: '2025-01-11', hours_reading: 5437}, // legacy outlier
+      {date: '2026-04-22', hours_reading: 1086}, // latest legit
+    ];
+    // Latest by date is the 1086 reading, which is < current_hours (1088),
+    // so the helper falls back to current_hours. The 5437 outlier never
+    // wins because it's not the latest by date.
+    expect(latestSaneReading(eq, fuelings)).toBe(1088);
+  });
+
+  it('handles km tracking unit', () => {
+    // Mirrors the prod hijet-2020 case: current_km=9915, latest=10097.
+    const eq = {tracking_unit: 'km', current_hours: null, current_km: 9915};
+    const fuelings = [{date: '2026-04-21', km_reading: 10097}];
+    expect(latestSaneReading(eq, fuelings)).toBe(10097);
+  });
+
+  it('ignores hours_reading when tracking_unit is km (and vice versa)', () => {
+    // Equipment with stale-but-misclassified reading on the wrong column.
+    const eq = {tracking_unit: 'km', current_hours: null, current_km: 100};
+    const fuelings = [{date: '2026-04-21', hours_reading: 99999, km_reading: null}];
+    // The fueling has no km_reading, so helper falls back to current_km.
+    expect(latestSaneReading(eq, fuelings)).toBe(100);
+  });
+
+  it('returns the latest fueling when equipment.current_* is blank/undefined', () => {
+    // Edge case: a freshly-imported piece without an admin-set current_hours.
+    // Number(undefined) = NaN, which Number.isFinite rejects. If we required
+    // BOTH readings to be finite we'd return NaN here even though the latest
+    // fueling has a valid reading. Treat blank current_* as "no admin floor".
+    const eqUndef = {tracking_unit: 'hours'}; // current_hours absent entirely
+    const fuelings = [{date: '2026-04-27', hours_reading: 825}];
+    expect(latestSaneReading(eqUndef, fuelings)).toBe(825);
+
+    const eqNull = {tracking_unit: 'hours', current_hours: null, current_km: null};
+    expect(latestSaneReading(eqNull, fuelings)).toBe(825);
   });
 });

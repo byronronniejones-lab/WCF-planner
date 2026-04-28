@@ -311,3 +311,39 @@ export function fmtReading(value, unit) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
   return Math.round(value).toLocaleString() + ' ' + (unit === 'km' ? 'km' : 'h');
 }
+
+// Derive an effective current reading for an equipment row. Anon-context
+// updates to equipment.current_hours/km from the public fueling webform are
+// silently failing in prod under RLS (recon 2026-04-28), so trusting
+// equipment.current_* alone causes HomeDashboard's overdue-interval math to
+// run against stale parent rows. Mirrors the codebase's existing precedent of
+// preferring the most-recent-by-DATE fueling submission as operator truth.
+//
+// Rule:
+//   1. Pick the latest fueling by date for this piece.
+//   2. If that fueling's reading (in the equipment's tracking unit) is
+//      strictly greater than equipment.current_*, use it.
+//   3. Otherwise fall back to equipment.current_* (admin-controlled value
+//      stays authoritative when it's ahead of any anon submission, e.g.
+//      after a manual reading correction).
+//   4. No fuelings → equipment.current_*.
+//
+// Fuelings array shape: each entry has {date, hours_reading?, km_reading?}.
+// Order is irrelevant — helper picks the max-date row internally.
+export function latestSaneReading(eq, fuelings) {
+  const unit = eq?.tracking_unit === 'km' ? 'km' : 'hours';
+  const readingCol = unit === 'km' ? 'km_reading' : 'hours_reading';
+  const currentCol = unit === 'km' ? 'current_km' : 'current_hours';
+  const currentReading = Number(eq?.[currentCol]);
+  if (!Array.isArray(fuelings) || fuelings.length === 0) return currentReading;
+  const latest = fuelings.reduce((m, f) => (!m || (f?.date || '') > (m?.date || '') ? f : m), null);
+  const latestReading = Number(latest?.[readingCol]);
+  // When equipment.current_* is blank (null/undefined), Number() returns NaN.
+  // Without the !isFinite-current check we'd return NaN even though we have a
+  // valid latest fueling reading. Treat blank current_* as "no admin floor"
+  // and let the latest fueling reading stand.
+  if (Number.isFinite(latestReading) && (!Number.isFinite(currentReading) || latestReading > currentReading)) {
+    return latestReading;
+  }
+  return currentReading;
+}
