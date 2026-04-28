@@ -189,7 +189,7 @@ const CattleBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setS
         {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'\u2026'}</div>}
         {!loading && batches.length === 0 && (
           <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
-            No processing batches yet. Click <strong>+ New Batch</strong> to plan one. Once created, you can attach cattle from the Herds tab.
+            No processing batches yet. Click <strong>+ New Batch</strong> to plan one. Cattle enter this batch only via the Send-to-Processor flag on a finisher weigh-in entry.
           </div>
         )}
 
