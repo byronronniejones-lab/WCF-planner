@@ -1,10 +1,11 @@
 // SheepSendToProcessorModal — mirror of CattleSendToProcessorModal.
-// Pops up when a sheep feeders session is being completed and at least
-// one entry has send_to_processor=true. User picks an existing planned
-// processing batch OR creates a new one; on confirm, the flagged
-// entries' sheep are attached to the batch (live_weight from this
-// session's entries), moved to the 'processed' flock, and a sheep_transfers
-// row logged per sheep.
+// Pops up when a sheep weigh-in session is being completed and at least
+// one entry has send_to_processor=true. Gate is intentionally looser than
+// cattle's finishers-only — any draft session, any flock per §7. User
+// picks an existing planned processing batch OR creates a new one; on
+// confirm, the flagged entries' sheep are attached to the batch
+// (live_weight from this session's entries), moved to the 'processed'
+// flock, and a sheep_transfers row logged per sheep.
 //
 // Batch status stays 'planned' — the actual processing event happens
 // later at the processor and is marked complete from the Batches tab.
@@ -77,7 +78,7 @@ export default function SheepSendToProcessorModal({sb, session, flaggedEntries, 
   return (
     <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
       <div style={{background:'white', borderRadius:12, maxWidth:480, width:'100%', padding:'18px 20px', boxShadow:'0 12px 40px rgba(0,0,0,.25)'}}>
-        <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:6}}>{'🚩 Send '+flaggedEntries.length+' feeder'+(flaggedEntries.length===1?'':'s')+' to processor'}</div>
+        <div style={{fontSize:15, fontWeight:700, color:'#111827', marginBottom:6}}>{'🚩 Send '+flaggedEntries.length+' sheep to processor'}</div>
         <div style={{fontSize:11, color:'#6b7280', marginBottom:14}}>{'Total live weight: '+Math.round(totalWeight).toLocaleString()+' lb. These sheep will move to the Processed flock and attach to the batch. The batch stays ‘planned’ until you mark it complete from the Batches tab.'}</div>
 
         {loading && <div style={{padding:'20px 0', textAlign:'center', color:'#9ca3af', fontSize:12}}>Loading planned batches{'…'}</div>}

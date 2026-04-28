@@ -6,6 +6,11 @@ import {
   seedCattleMultiCowPreAttached,
   seedCattlePreAttachedForFallback,
 } from './scenarios/cattle_processor_seed.js';
+import {
+  seedSheepSendToProcessor,
+  seedSheepBatchPreAttached,
+  seedSheepPreAttachedForFallback,
+} from './scenarios/sheep_processor_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -66,6 +71,32 @@ export const test = base.extend({
     await use(async (mode) => {
       await resetTestDatabase();
       return seedCattlePreAttachedForFallback(supabaseAdmin, { mode });
+    });
+  },
+  // sheepSendToProcessorScenario — happy-path A6 setup. Factory accepts an
+  // optional `flock` so Test 9 (looser-gate regression) can reuse the same
+  // shape with flock='rams' instead of the default 'feeders'.
+  sheepSendToProcessorScenario: async ({ supabaseAdmin }, use) => {
+    await use(async ({ flock = 'feeders' } = {}) => {
+      await resetTestDatabase();
+      return seedSheepSendToProcessor(supabaseAdmin, { flock });
+    });
+  },
+  // sheepBatchPreAttachedScenario — 3 sheep pre-attached with valid
+  // prior_herd_or_flock + audit rows. Used by the multi-row detach loop
+  // tests (session-delete + batch-delete).
+  sheepBatchPreAttachedScenario: async ({ supabaseAdmin }, use) => {
+    await resetTestDatabase();
+    const ids = await seedSheepBatchPreAttached(supabaseAdmin);
+    await use(ids);
+  },
+  // sheepPreAttachedScenario — fallback-hierarchy state. Factory pattern
+  // mirrors cattlePreAttachedScenario; modes: with_audit_row |
+  // null_from_flock | no_audit_row.
+  sheepPreAttachedScenario: async ({ supabaseAdmin }, use) => {
+    await use(async (mode) => {
+      await resetTestDatabase();
+      return seedSheepPreAttachedForFallback(supabaseAdmin, { mode });
     });
   },
 });

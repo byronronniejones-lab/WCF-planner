@@ -1,7 +1,9 @@
 // SheepBatchesView — mirror of CattleBatchesView for sheep.
 //
 // Sheep enter a processing batch ONLY through the Send-to-Processor flag
-// on a feeders weigh-in entry. This view lets admin:
+// on a sheep weigh-in entry. Gate is intentionally looser than cattle's
+// finishers-only — any draft session, any flock (rams / ewes / feeders /
+// null-herd Podio imports) per §7. This view lets admin:
 //   * Create empty batch shells (+ New Batch).
 //   * Edit batch metadata (name, planned/actual dates, status, notes, cost).
 //   * Edit per-sheep live/hanging weights inline.
@@ -102,8 +104,8 @@ const SheepBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setSh
     setShowForm(true);
   }
   // Save a batch shell. Sheep membership is driven entirely by the
-  // Send-to-Processor flag on a feeders weigh-in entry — no manual cow
-  // attach in this view.
+  // Send-to-Processor flag on a sheep weigh-in entry (any flock per
+  // §7) — no manual sheep attach in this view.
   async function saveBatch() {
     if(!form.name.trim()) { alert('Batch name required.'); return; }
     const rec = {
@@ -188,7 +190,7 @@ const SheepBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setSh
         {loading && <div style={{textAlign:'center', padding:'2rem', color:'#9ca3af'}}>Loading{'…'}</div>}
         {!loading && batches.length === 0 && (
           <div style={{background:'white', border:'1px solid #e5e7eb', borderRadius:12, padding:'2rem', textAlign:'center', color:'#6b7280', fontSize:13}}>
-            No processing batches yet. Click <strong>+ New Batch</strong> to plan one. Once created, sheep enter the batch via the Send-to-Processor flag on a feeders weigh-in entry.
+            No processing batches yet. Click <strong>+ New Batch</strong> to plan one. Sheep enter this batch only via the Send-to-Processor flag on a sheep weigh-in entry.
           </div>
         )}
 
@@ -261,7 +263,7 @@ const SheepBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setSh
                 )}
                 {b.status !== 'complete' && (
                   <div style={{fontSize:11, color:'#6b7280', fontStyle:'italic'}}>
-                    Sheep enter this batch only via the Send-to-Processor flag on a feeders weigh-in entry.
+                    Sheep enter this batch only via the Send-to-Processor flag on a sheep weigh-in entry.
                   </div>
                 )}
                 {b.notes && <div style={{marginTop:6, fontSize:11, color:'#6b7280', fontStyle:'italic'}}>{b.notes}</div>}
@@ -295,7 +297,7 @@ const SheepBatchesView = ({sb, fmt, Header, authState, setView, showUsers, setSh
               </div>
               {!editId && (
                 <div style={{marginTop:12, padding:'10px 12px', background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:6, fontSize:11, color:'#6b7280'}}>
-                  Sheep enter this batch only via the Send-to-Processor flag on a feeders weigh-in entry. Create the empty batch shell here; sheep attach themselves once they're flagged at the chute.
+                  Sheep enter this batch only via the Send-to-Processor flag on a sheep weigh-in entry. Create the empty batch shell here; sheep attach themselves once they're flagged at the chute.
                 </div>
               )}
             </div>

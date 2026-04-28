@@ -155,7 +155,7 @@ const SheepHomeView = ({sb, fmt, Header, authState, setView, showUsers, setShowU
                 <span style={{fontSize:11, color:'#6b7280'}}>{batchCounts.total} {batchCounts.total===1?'batch':'batches'}</span>
               </div>
               <div style={{fontSize:12, color:'#374151'}}>{batchCounts.planned > 0 ? <span><strong>{batchCounts.planned}</strong> planned</span> : <span style={{color:'#9ca3af'}}>No planned batches</span>}</div>
-              <div style={{fontSize:11, color:'#9ca3af', marginTop:4}}>Sheep enter via the Send-to-Processor flag on a feeders weigh-in.</div>
+              <div style={{fontSize:11, color:'#9ca3af', marginTop:4}}>Sheep enter via the Send-to-Processor flag on a sheep weigh-in.</div>
             </div>
             {FLOCKS.map(f => {
               const flockSheep = sheep.filter(s => s.flock === f);

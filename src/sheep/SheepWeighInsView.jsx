@@ -9,7 +9,7 @@
 //   * Add-entry Swap Tag flow (priorTag → updates sheep.tag + stamps old_tags)
 //   * Add-entry Missing Tag flow (new_tag_flag set when tag isn't in directory)
 //   * Reconcile-new-tag dropdown (assign an unrecognized tag to a known sheep)
-//   * Send-to-Processor toggle (gated to feeders flock + draft session)
+//   * Send-to-Processor toggle (gated to draft session, any flock per §7)
 //   * SheepSendToProcessorModal triggered on completeSession when flagged
 //   * Session delete: detach attached sheep first, prompt continue if any block
 //   * ADG vs prior completed session, identical math to cattle
