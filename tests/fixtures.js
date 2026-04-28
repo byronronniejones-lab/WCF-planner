@@ -11,6 +11,7 @@ import {
   seedSheepBatchPreAttached,
   seedSheepPreAttachedForFallback,
 } from './scenarios/sheep_processor_seed.js';
+import { seedBroilerTimeline } from './scenarios/broiler_timeline_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -97,6 +98,15 @@ export const test = base.extend({
     await use(async (mode) => {
       await resetTestDatabase();
       return seedSheepPreAttachedForFallback(supabaseAdmin, { mode });
+    });
+  },
+  // broilerTimelineScenario — A7 range / auto-scroll / today-line setup.
+  // Factory accepts { withActiveLayer, withRetirement } so Tests 1 and 2
+  // share the seed but pick different layer compositions.
+  broilerTimelineScenario: async ({ supabaseAdmin }, use) => {
+    await use(async (opts = {}) => {
+      await resetTestDatabase();
+      return seedBroilerTimeline(supabaseAdmin, opts);
     });
   },
 });

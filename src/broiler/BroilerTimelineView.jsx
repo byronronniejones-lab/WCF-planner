@@ -151,7 +151,7 @@ export default function BroilerTimelineView({ Header, loadUsers, openEdit }) {
                 {wkHdrs.map((w,i)=>{
                   const isNew=w.getDate()<=7;
                   return (
-                    <div key={i} style={{position:"absolute",top:0,left:`${(i/wkHdrs.length)*100}%`,height:"100%",
+                    <div key={i} data-week-header="1" data-iso={toISO(w)} style={{position:"absolute",top:0,left:`${(i/wkHdrs.length)*100}%`,height:"100%",
                       borderLeft:`1px solid ${isNew?"#aaa":"#eee"}`,paddingLeft:3,
                       display:"flex",alignItems:"center"}}>
                       <span style={{fontSize:9,whiteSpace:"nowrap",color:isNew?"#444":"#bbb",fontWeight:isNew?600:400}}>
@@ -188,7 +188,7 @@ export default function BroilerTimelineView({ Header, loadUsers, openEdit }) {
                     ))}
                     {/* today line */}
                     {todayPct>=0&&todayPct<=100&&(
-                      <div style={{position:"absolute",top:0,left:`${todayPct}%`,height:"100%",
+                      <div data-today-line="1" style={{position:"absolute",top:0,left:`${todayPct}%`,height:"100%",
                         borderLeft:"2px solid rgba(8,80,65,.4)",pointerEvents:"none",zIndex:2}}/>
                     )}
                     {/* batch bars (broiler) */}
