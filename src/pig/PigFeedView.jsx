@@ -114,8 +114,8 @@ export default function PigFeedView({
       sbSave('ppp-feed-orders-v1',next);
     }
 
-    function savePigFeedCount(count,date){
-      const inv={count:parseFloat(count)||0,date:date||todayISO()};
+    function savePigFeedCount(count,date,includesCurrentMonthDelivery){
+      const inv={count:parseFloat(count)||0,date:date||todayISO(),includesCurrentMonthDelivery:!!includesCurrentMonthDelivery};
       setPigFeedInventory(inv);
       sbSave('ppp-pig-feed-inventory-v1',inv);
     }
@@ -180,14 +180,25 @@ export default function PigFeedView({
       },0);
       var consumedSinceCount=pigDailys.filter(function(d){return d.date&&d.date>inv.date;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0);
       feedOnHand=Math.round(inv.count+ordersSinceCount-consumedSinceCount);
-      // Calculate what system estimated at time of count vs what was actually counted
-      var systemEstAtCount=Math.round(ordersArrived-pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)>=firstPigOrderYM&&d.date<=inv.date;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0));
+      // Calculate what system estimated at time of count vs what was actually counted.
+      // Orders that had arrived by inv.date = months strictly before invYM (those arrived
+      // end-of-prior-month), plus invYM's own order only if the count says delivery is included.
+      // Mirrors the ledger's lgCountAdj logic so past-dated counts compare apples-to-apples.
+      var adjOrdersAtCount=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
+        if(e[0]<firstPigOrderYM) return s;
+        if(e[0]<invYM) return s+(parseFloat(e[1])||0);
+        if(e[0]===invYM&&inv.includesCurrentMonthDelivery) return s+(parseFloat(e[1])||0);
+        return s;
+      },0);
+      var systemEstAtCount=Math.round(adjOrdersAtCount-pigDailys.filter(function(d){return d.date&&d.date.substring(0,7)>=firstPigOrderYM&&d.date<=inv.date;}).reduce(function(s,d){return s+(parseFloat(d.feed_lbs)||0);},0));
       physCountAdjustment=Math.round(inv.count-systemEstAtCount);
       // Recalculate end of month est anchored from physical count
       // Include current month's order — it arrives end of month (after any mid-month count)
+      // ...UNLESS the count already absorbed this month's delivery (skip count's own month)
       var ordSinceCountThruMonth=Object.entries(feedOrders.pig||{}).reduce(function(s,e){
-        if(e[0]>=invYM&&e[0]<=thisYM) return s+(parseFloat(e[1])||0);
-        return s;
+        if(e[0]<invYM||e[0]>thisYM) return s;
+        if(e[0]===invYM&&inv.includesCurrentMonthDelivery) return s;
+        return s+(parseFloat(e[1])||0);
       },0);
       endOfMonthEst=Math.round(inv.count+ordSinceCountThruMonth-consumedSinceCount-projRemainingThisMonth);
       // Recalculate suggested order — must cover next TWO months (order arrives end of next month, need to last through month after)
@@ -265,7 +276,7 @@ export default function PigFeedView({
             <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
               <div style={{fontSize:11,color:'#6b7280',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>End of Month Est.</div>
               <div style={{fontSize:28,fontWeight:700,color:endOfMonthEst!=null?(endOfMonthEst>0?'#065f46':'#b91c1c'):'#9ca3af',lineHeight:1}}>{endOfMonthEst!=null?endOfMonthEst.toLocaleString()+' lbs':'\u2014'}</div>
-              <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{'Incl. '+((feedOrders.pig||{})[thisYM]||0).toLocaleString()+' arriving'}</div>
+              <div style={{fontSize:11,color:'#6b7280',marginTop:6}}>{(inv&&inv.includesCurrentMonthDelivery&&inv.date&&inv.date.substring(0,7)===thisYM)?'Delivery included in count':('Incl. '+((feedOrders.pig||{})[thisYM]||0).toLocaleString()+' arriving')}</div>
             </div>
             {/* Suggested Order */}
             <div style={{background:suggestedOrder>0?'#fffbeb':'white',border:suggestedOrder>0?'2px solid #fde68a':'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px'}}>
@@ -296,11 +307,18 @@ export default function PigFeedView({
                 <input id="pig-feed-count-date" type="date" defaultValue={inv?inv.date:todayDate}
                   style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
               </div>
+              <label style={{display:'inline-flex',alignItems:'center',gap:8,padding:'7px 12px',border:'1px solid #d1d5db',borderRadius:6,background:'#f9fafb',fontSize:12,color:'#000',cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',lineHeight:1.2}}>
+                <input id="pig-feed-count-includes-delivery" type="checkbox"
+                  defaultChecked={!!(inv&&inv.includesCurrentMonthDelivery)}
+                  style={{cursor:'pointer',margin:0,accentColor:'#000'}}/>
+                Includes this month's feed delivery
+              </label>
               <button onClick={()=>{
                 const el=document.getElementById('pig-feed-count-input');
                 const dl=document.getElementById('pig-feed-count-date');
+                const cb=document.getElementById('pig-feed-count-includes-delivery');
                 if(!el||!el.value){alert('Enter the lbs on hand.');return;}
-                savePigFeedCount(el.value,dl?dl.value:todayDate);
+                savePigFeedCount(el.value,dl?dl.value:todayDate,cb?cb.checked:false);
               }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>
                 Save Count
               </button>
@@ -328,7 +346,11 @@ export default function PigFeedView({
               if(inv&&!countApplied){
                 var invYM3=inv.date.substring(0,7);
                 if(invYM3===md3.ym){
-                  lgCountAdj=Math.round(inv.count-runBal);
+                  // When count includes this month's delivery, the system-side comparison must
+                  // include that order too (else a perfect count shows a phantom adjustment).
+                  var thisMonthOrderForAdj=parseFloat(md3.ordered)||0;
+                  var systemEstThisMonth=runBal+(inv.includesCurrentMonthDelivery?thisMonthOrderForAdj:0);
+                  lgCountAdj=Math.round(inv.count-systemEstThisMonth);
                   lgStart=inv.count;
                   lgCountMonth=true;
                   countApplied=true;
@@ -336,9 +358,10 @@ export default function PigFeedView({
                   var pRem=0;
                   if(md3.isCurrent){var dl4=md3.daysInMonth-now.getDate();if(dl4>0)pRem=Math.round(curProj.total*dl4);}
                   var lgCons=Math.round(cAfter+pRem);
-                  var lgOrd=parseFloat(md3.ordered)||0;
+                  // When delivery is already absorbed into the count value, don't add this month's order again.
+                  var lgOrd=inv.includesCurrentMonthDelivery?0:(parseFloat(md3.ordered)||0);
                   var lgEnd=Math.round(lgStart-lgCons+lgOrd);
-                  pigLedger[md3.ym]={start:lgStart,consumed:lgCons,actualCons:Math.round(cAfter),projCons:Math.round(pRem),ordered:lgOrd,end:lgEnd,countMonth:true,countAdj:lgCountAdj};
+                  pigLedger[md3.ym]={start:lgStart,consumed:lgCons,actualCons:Math.round(cAfter),projCons:Math.round(pRem),ordered:lgOrd,rawOrdered:parseFloat(md3.ordered)||0,end:lgEnd,countMonth:true,countAdj:lgCountAdj,deliveryInCount:!!inv.includesCurrentMonthDelivery};
                   runBal=lgEnd;continue;
                 } else if(invYM3<md3.ym){lgStart=inv.count;countApplied=true;}
               }
@@ -386,7 +409,7 @@ export default function PigFeedView({
                   React.createElement('div',null,
                     React.createElement('div',{style:{fontSize:10,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,marginBottom:2}},'Ordered'),
                     React.createElement('input',{type:'number',min:'0',step:'100',value:md2.ordered!=null&&md2.ordered!==''?md2.ordered:'',onChange:function(e){savePigOrder(md2.ym,e.target.value);},onClick:function(e){e.stopPropagation();},placeholder:'0',style:{width:'100%',fontSize:14,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit',fontWeight:600,boxSizing:'border-box'}}),
-                    React.createElement('div',{style:{fontSize:10,color:'#9ca3af',marginTop:1}},'arrives end of mo.')
+                    React.createElement('div',{style:{fontSize:10,color:lg.deliveryInCount?'#065f46':'#9ca3af',marginTop:1,fontStyle:lg.deliveryInCount?'italic':'normal'}},lg.deliveryInCount?'(in count)':'arrives end of mo.')
                   ),
                   // END OF MONTH
                   React.createElement('div',null,

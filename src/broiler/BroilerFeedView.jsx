@@ -6,7 +6,7 @@
 // poultryFeedInventory / poultryFeedExpandedMonths and sbSave still live
 // in App (Round 0 left them out of contexts) and come in as props.
 // ============================================================================
-import React from 'react';
+import React, { useState } from 'react';
 import { sb } from '../lib/supabase.js';
 import { fmt, fmtS, todayISO, addDays } from '../lib/dateUtils.js';
 import { S } from '../lib/styles.js';
@@ -32,6 +32,7 @@ export default function BroilerFeedView({
   const { batches } = useBatches();
   const { layerBatches, layerHousings, allLayerDailys } = useLayer();
   const { broilerDailys } = useDailysRecent();
+  const [countType, setCountType] = useState('starter');
     const today = new Date();
     const todayDate = todayISO();
     const months = [];
@@ -104,9 +105,9 @@ export default function BroilerFeedView({
       var next={...feedOrders,[type]:typeOrders};
       setFeedOrders(next);sbSave('ppp-feed-orders-v1',next);
     }
-    function savePoultryFeedCount(type,count,date){
+    function savePoultryFeedCount(type,count,date,includesCurrentMonthDelivery){
       var inv={...(poultryFeedInventory||{})};
-      inv[type]={count:parseFloat(count)||0,date:date||todayDate};
+      inv[type]={count:parseFloat(count)||0,date:date||todayDate,includesCurrentMonthDelivery:!!includesCurrentMonthDelivery};
       setPoultryFeedInventory(inv);sbSave('ppp-poultry-feed-inventory-v1',inv);
     }
 
@@ -139,11 +140,16 @@ export default function BroilerFeedView({
         if(pInv2&&!countApplied2){
           var iYM=pInv2.date.substring(0,7);
           if(iYM===md4.ym){
-            cAdj=Math.round(pInv2.count-runBal2);st=pInv2.count;isCM=true;countApplied2=true;
+            // Type's current-month order. When count says delivery is included, the system-side
+            // estimate must include that order too (else a perfect count shows a phantom Adj).
+            var thisMonthOrderForAdj=parseFloat((feedOrders[orderKey]||{})[md4.ym])||0;
+            var systemEstThisMonth=runBal2+(pInv2.includesCurrentMonthDelivery?thisMonthOrderForAdj:0);
+            cAdj=Math.round(pInv2.count-systemEstThisMonth);st=pInv2.count;isCM=true;countApplied2=true;
             var cA=0;pAllDailys.forEach(function(d){if(d.date&&d.date>pInv2.date&&d.date.startsWith(md4.ym)&&d.feed_type===ftKey)cA+=(parseFloat(d.feed_lbs)||0);});
             var pR=0;if(md4.isCurrent&&pDaysLeft>0)pR=Math.round(md4[projKey]*(pDaysLeft/md4.daysInMonth));
-            var cons=Math.round(cA+pR);var ord=parseFloat((feedOrders[orderKey]||{})[md4.ym])||0;var en=Math.round(st-cons+ord);
-            pLedger[type][md4.ym]={start:st,consumed:cons,actualCons:Math.round(cA),projCons:Math.round(pR),ordered:ord,end:en,countMonth:true,countAdj:cAdj,proj:md4[projKey],actual:md4[actualKey]};
+            // When delivery is already absorbed into the count value, don't add this month's order again.
+            var cons=Math.round(cA+pR);var ord=pInv2.includesCurrentMonthDelivery?0:thisMonthOrderForAdj;var en=Math.round(st-cons+ord);
+            pLedger[type][md4.ym]={start:st,consumed:cons,actualCons:Math.round(cA),projCons:Math.round(pR),ordered:ord,rawOrdered:thisMonthOrderForAdj,end:en,countMonth:true,countAdj:cAdj,proj:md4[projKey],actual:md4[actualKey],deliveryInCount:!!pInv2.includesCurrentMonthDelivery};
             runBal2=en;continue;
           } else if(iYM<md4.ym){st=pInv2.count;countApplied2=true;}
         }
@@ -253,7 +259,7 @@ export default function BroilerFeedView({
               <div style={{fontSize:12,fontWeight:600,color:'#4b5563',alignSelf:'center'}}>{pInv&&(pInv.starter||pInv.grower||pInv.layer)?'Update Physical Count':'Enter Physical Count'}</div>
               <div>
                 <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Feed type</label>
-                <select id="poultry-feed-count-type" defaultValue="starter" style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}>
+                <select id="poultry-feed-count-type" value={countType} onChange={e=>setCountType(e.target.value)} style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}>
                   <option value="starter">Starter</option>
                   <option value="grower">Grower</option>
                   <option value="layer">Layer Feed</option>
@@ -267,12 +273,19 @@ export default function BroilerFeedView({
                 <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:3}}>Date</label>
                 <input id="poultry-feed-count-date" type="date" defaultValue={todayDate} style={{fontSize:13,padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontFamily:'inherit'}}/>
               </div>
+              <label style={{display:'inline-flex',alignItems:'center',gap:8,padding:'7px 12px',border:'1px solid #d1d5db',borderRadius:6,background:'#f9fafb',fontSize:12,color:'#000',cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',lineHeight:1.2}}>
+                <input id="poultry-feed-count-includes-delivery" type="checkbox"
+                  key={countType}
+                  defaultChecked={!!(pInv&&pInv[countType]&&pInv[countType].includesCurrentMonthDelivery)}
+                  style={{cursor:'pointer',margin:0,accentColor:'#000'}}/>
+                Includes this month's feed delivery
+              </label>
               <button onClick={function(){
                 var el=document.getElementById('poultry-feed-count-input');
                 var dl=document.getElementById('poultry-feed-count-date');
-                var tp=document.getElementById('poultry-feed-count-type');
+                var cb=document.getElementById('poultry-feed-count-includes-delivery');
                 if(!el||!el.value){alert('Enter the lbs on hand.');return;}
-                savePoultryFeedCount(tp.value,el.value,dl?dl.value:todayDate);
+                savePoultryFeedCount(countType,el.value,dl?dl.value:todayDate,cb?cb.checked:false);
                 el.value='';
               }} style={{padding:'7px 16px',borderRadius:7,border:'none',background:'#085041',color:'white',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>
                 Save Count
@@ -322,7 +335,8 @@ export default function BroilerFeedView({
                             ):'\u2014'
                           ),
                           React.createElement('td',{style:{padding:'7px 8px',textAlign:'right'},onClick:function(e){e.stopPropagation();}},
-                            React.createElement('input',{type:'number',min:'0',step:'100',value:ordVal,onChange:function(e){savePoultryOrder(t.ordKey,md.ym,e.target.value);},placeholder:'0',style:{width:80,fontSize:12,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit'}})
+                            React.createElement('input',{type:'number',min:'0',step:'100',value:ordVal,onChange:function(e){savePoultryOrder(t.ordKey,md.ym,e.target.value);},placeholder:'0',style:{width:80,fontSize:12,padding:'4px 8px',border:'1px solid #d1d5db',borderRadius:6,textAlign:'right',fontFamily:'inherit'}}),
+                            (lg&&lg.deliveryInCount)?React.createElement('div',{style:{fontSize:9,color:'#065f46',fontStyle:'italic',marginTop:1}},'(in count)'):null
                           ),
                           React.createElement('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:700,color:lg?(lg.end>0?'#065f46':'#b91c1c'):'#9ca3af'}},lg?lg.end.toLocaleString():'\u2014')
                         );

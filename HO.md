@@ -38,21 +38,25 @@ disagree, CC flags it and you decide.
 
 ---
 
-## Where we are (one paragraph, snapshot 2026-04-28 late PM)
+## Where we are (one paragraph, snapshot 2026-04-28 eve)
 
-Playwright Phase 1 is **closed** (9 specs + smoke + 1 follow-up coverage
-spec, all shipped). Initiative B Phase 1 + surgical Phase 2 cleanups
-landed lint at **0 errors / 636 warnings**. **A10 CI workflow is live**
-(`8906598`); first run validated lint / vitest / build / install /
-cache / artifacts — e2e fails fast until Ronnie configures the 5
-GitHub Actions secrets (safe failure, assertTestDatabase guard).
-Equipment dashboard rollup + Playwright regression coverage shipped.
-Test counts: **68 vitest + 43 e2e + 0 lint errors**. Next decision:
-operational items (cattle modal cleanup, `/fueling/supply` smoke test,
-multi-month bill validation, new Podio app), deferred Initiative B
-Phase 2.4–2.6 (Prettier autofix, no-unused-vars, exhaustive-deps), or
-**Initiative C** (PWA shell). See `PROJECT.md` §Part 4 last row + §8
-for current state, shipped specs, deferred items, and gotchas.
+**Feed physical count delivery-included flag shipped.** Persists
+`inv.includesCurrentMonthDelivery: bool` on pig + per-poultry-type
+count records; when true, count's-own-month order is suppressed from
+EOM math + added to the system-side adjustment compare (zero phantom
+Adj on a perfect count). Two views touched (`PigFeedView.jsx`,
+`BroilerFeedView.jsx`); 4 rounds of Codex review (badge math
+reconciliation at 3 sites, EOM helper copy, controlled dropdown,
+past-dated-count generalization). Pre-commit gate clean: **68 vitest
++ 43 e2e + 0 lint errors / 636 warnings + clean build**. Playwright
+Phase 1 still closed; A10 CI workflow live but e2e step still blocked
+on the 5 GitHub Actions secrets being configured (Ronnie task, ~5 min).
+Next decision (no default queued): A10 secrets, operational items
+(cattle modal cleanup, `/fueling/supply` smoke test, multi-month bill
+validation, new Podio app), deferred Initiative B Phase 2.4–2.6
+(Prettier autofix, no-unused-vars, exhaustive-deps), or **Initiative
+C** (PWA shell). See `PROJECT.md` §Part 4 last row + §8 for current
+state, shipped specs, deferred items, and gotchas.
 
 ---
 
@@ -67,20 +71,21 @@ Read PROJECT.md top to bottom. Pay extra attention to:
   - §7 don't-touch list (load-bearing rules). Walk this at PLAN time,
     not just edit time. Name each don't-touch item the plan would touch
     in the plan itself.
-  - §8 roadmap, especially the A8b queued entry (Codex-approved scope +
-    production patch shape + open questions). The §8 Known gotchas
-    section has 4 new entries from 2026-04-28 PM worth a careful read
-    (pig batch tile selector trap, Supabase storage.objects DELETE
-    block, DOM hooks added across views, label-vs-th selector trap).
-  - The most recent rows in §Part 4 Session Index. The 2026-04-28
-    (late PM) row covers the most recent working session: Playwright
-    Phase 1 wrap (A8b), Initiative B Phase 1 + surgical Phase 2
-    cleanups (lint baseline now 0 errors), A10 CI workflow, equipment
-    dashboard rollup, A1 regression spec. Durable gotchas added
-    include the new DOM hooks on `HomeDashboard.jsx` and
+  - §8 roadmap. The "Next build" slot is empty — pick from §8 Near-
+    term, Deferred Initiative B Phase 2.4-2.6, or Initiative C unless
+    Ronnie names something. The §8 Known gotchas section has durable
+    entries worth a careful read (pig batch tile selector trap,
+    Supabase storage.objects DELETE block, DOM hooks across views,
+    label-vs-th selector trap, Vite dev-server port-5173 race).
+  - The most recent rows in §Part 4 Session Index. The 2026-04-28 (eve)
+    row covers the most recent working session: feed physical count
+    delivery-included flag (`inv.includesCurrentMonthDelivery: bool`
+    on pig + per-poultry-type count records). The 2026-04-28 (late PM)
+    row covers Playwright Phase 1 wrap + Initiative B Phase 1 + A10 CI
+    + equipment dashboard rollup. Durable gotchas worth re-reading
+    include the DOM hooks on `HomeDashboard.jsx` and
     `FuelReconcileView.jsx`, and the Vite dev-server cleanup race on
-    consecutive `npm run test:e2e` runs (test-cadence-only — CI is
-    unaffected).
+    consecutive `npm run test:e2e` runs.
 
 Your auto-memory carries Ronnie's working-style rules: commit/push
 approval gates, multi-choice questions via AskUserQuestion, no-assume,
@@ -97,7 +102,7 @@ warranted; you're not obligated to take its advice over your own
 judgment, but flag the disagreement explicitly so I can adjudicate.
 
 State at session start:
-  - All 2026-04-28 (late PM) work pushed to prod. Working tree should
+  - All 2026-04-28 (eve) work pushed to prod. Working tree should
     be clean.
   - 43 e2e + 68 vitest + 0 lint errors at last run. 636 warnings (all
     `no-unused-vars` + `react-hooks/exhaustive-deps`, deferred to
@@ -107,27 +112,19 @@ State at session start:
     secrets configuration"). Lint / vitest / build pass independently.
   - Playwright Phase 1 is closed; no queued specs unless Ronnie names
     a new one.
+  - Feed physical count delivery-included flag shipped 2026-04-28 (eve).
+    Pig + per-poultry-type count records now carry
+    `includesCurrentMonthDelivery: bool` (default false; old records
+    read as false). When true, count's-own-month order is suppressed
+    from EOM math AND added to the system-side adjustment compare.
+    No DB migration. Touched only `PigFeedView.jsx` +
+    `BroilerFeedView.jsx`.
   - PROJECT.md and HO.md were last updated by the prior session's
     wrap commit. Verify via `git log --oneline -3` it's on origin/main
     before any further work.
 
-**Default first action: feed physical count delivery-included flag**
-(queued 2026-04-28 late PM by Ronnie + Codex). Plan-packet first
-before any code:
-  • Read `src/pig/PigFeedView.jsx` + `src/broiler/BroilerFeedView.jsx`.
-  • Explain exactly which formulas change for Actual On Hand, End of
-    Month Est., suggested order, and monthly ledger badges.
-  • Scope: add a shared question on physical-count entry — "Does this
-    count include this month's feed delivery?" One delivery per month
-    covers all feed (not per feed type), so the flag is per-count not
-    per-feed-type. Persist `{count, date, includesCurrentMonthDelivery}`
-    on both pig and poultry count entries. If checked, do not add the
-    current month's order again after the count. If unchecked, keep
-    current behavior. Do NOT attempt to infer delivery date.
-  • Keep narrow: no UI redesign, no feed-order model rewrite.
-See PROJECT.md §8 "Next build" for the full scope.
-
-If Ronnie redirects to something else, common alternatives:
+**No queued default.** Ask Ronnie what he wants to work on. Common
+alternatives, none priority-ranked:
 
   (a) Configure A10 CI Actions secrets (~5 min Ronnie task, then
       re-run failed jobs to validate) — closes the only pending
@@ -200,11 +197,12 @@ Read these files to get oriented:
 - PROJECT.md (top to bottom):
     §1 SOP, §3 hand-created prod tables, §7 don't-touch list, §8
     roadmap + Known gotchas, the most-recent rows in §Part 4 Session
-    Index. The 2026-04-28 PM row is the most recent working session
-    and covers A5 + A6 + A7 + A9 + A8a (the bulk of the Playwright
-    initiative). The 2026-04-28 (AM) row covers A2 + A4. The 2026-04-27
-    PM row covers the cattle/sheep Send-to-Processor + pig accounting
-    overhaul that A5/A6/A9 lock.
+    Index. The 2026-04-28 (eve) row covers the feed physical count
+    delivery-included flag (the build queued by you in the prior
+    session). The 2026-04-28 (late PM) row covers Playwright Phase 1
+    wrap + Initiative B Phase 1 + A10 CI + equipment dashboard
+    rollup. The 2026-04-27 PM row covers the cattle/sheep Send-to-
+    Processor + pig accounting overhaul that A5/A6/A9 lock.
 - HO.md (this file). The prompt CC was booted with is also in here.
 
 State: Playwright Phase 1 is closed (9 specs + smoke + 1 follow-up
@@ -213,15 +211,17 @@ landed lint at 0 errors / 636 warnings. A10 CI workflow is live;
 e2e step needs 5 GitHub Actions secrets configured before it
 validates end-to-end (lint + vitest + build + install confirmed
 green on first push). Equipment dashboard rollup + A1 Playwright
-coverage shipped. Test counts: 68 vitest + 43 e2e + 0 lint errors.
+coverage shipped. Feed physical count delivery-included flag shipped
+2026-04-28 (eve) — `inv.includesCurrentMonthDelivery: bool` on pig +
+per-poultry-type count records, default false, no DB migration.
+Test counts: 68 vitest + 43 e2e + 0 lint errors.
 
-**Next build (queued by you and Ronnie 2026-04-28 late PM): feed
-physical count delivery-included flag.** Scope locked in PROJECT.md
-§8 "Next build". CC will read PigFeedView.jsx + BroilerFeedView.jsx
-and relay a plan packet explaining exactly which formulas change for
-Actual On Hand, End of Month Est., suggested order, and monthly
-ledger badges. Expect a brief review cycle, not a re-debate of
-scope. Keep CC narrow — no UI redesign, no feed-order model rewrite.
+**No queued build.** When Ronnie names the next one, expect CC to
+relay a plan packet first (per the cadence we've been running).
+Common candidates: A10 secrets configuration follow-up, cattle modal
+cleanup, `/fueling/supply` smoke, multi-month bill validation,
+deferred Initiative B Phase 2.4-2.6 cleanups, or Initiative C PWA
+shell. None are queued — Ronnie picks.
 
 Active load-bearing entries to be aware of (read full text in
 PROJECT.md §7):
@@ -252,18 +252,21 @@ DOM hooks added 2026-04-28 (don't refactor without checking
     on each EQUIPMENT ATTENTION row (A1 follow-up to the equipment
     dashboard rollup).
 
-Newly relevant for the next build (feed physical count
-delivery-included flag):
-  - Pig + poultry feed-count records currently store `{count, date}`
-    in the program's app_store blob; this build extends the shape
-    with `includesCurrentMonthDelivery: bool`. Read PigFeedView.jsx
-    + BroilerFeedView.jsx for the exact persistence path.
-  - Formulas that need explicit treatment in the plan packet:
-    Actual On Hand, End of Month Est., suggested order, monthly
-    ledger badges. CC's plan must walk each one.
-  - Scope guard: no UI redesign, no feed-order model rewrite. The
-    flag is per-count and one-delivery-per-month covers all feed
-    (not per feed type).
+Newly relevant from the 2026-04-28 (eve) build (feed physical
+count delivery-included flag, now shipped):
+  - Pig + per-poultry-type feed-count records now carry
+    `includesCurrentMonthDelivery: bool` (default false; old records
+    read as false). Persistence keys unchanged: `ppp-pig-feed-
+    inventory-v1` and `ppp-poultry-feed-inventory-v1`. When true,
+    the count's-own-month order is suppressed from the EOM math AND
+    added to the system-side count-adjustment compare. No DB
+    migration. Read PigFeedView.jsx + BroilerFeedView.jsx if a
+    future build touches the feed-tab math.
+  - The §7 don't-touch list was NOT extended for this build. If a
+    future feature reads/writes count records (e.g., a webform that
+    captures counts, a historical replay), the new field is
+    load-bearing for math correctness — flag any plan that
+    re-shapes the count record.
 
 When reviewing CC's pre-commit packet, expect: `git diff --stat`,
 focused diffs for the load-bearing files, fresh `npm test` /
