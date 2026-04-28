@@ -1,5 +1,5 @@
-import { defineConfig, devices } from '@playwright/test';
-import { loadEnv } from 'vite';
+import {defineConfig, devices} from '@playwright/test';
+import {loadEnv} from 'vite';
 
 // Load .env.test + .env.test.local into process.env so Node-side fixtures
 // (tests/setup/reset.js, global.setup.js) see VITE_SUPABASE_URL,
@@ -36,7 +36,7 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [['list'], ['html', {open: 'never'}]],
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',

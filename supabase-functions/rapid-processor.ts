@@ -1,20 +1,20 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {serve} from 'https://deno.land/std@0.168.0/http/server.ts';
+import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const FROM = "WCF Planner <reports@wcfplanner.com>";
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const FROM = 'WCF Planner <reports@wcfplanner.com>';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 async function sendEmail(payload: object): Promise<Response> {
-  return fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+  return fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json'},
     body: JSON.stringify(payload),
   });
 }
@@ -22,12 +22,7 @@ async function sendEmail(payload: object): Promise<Response> {
 // ═══════════════════════════════════════════════════════════════════
 // SHARED BRANDED TEMPLATE — all emails use this wrapper
 // ═══════════════════════════════════════════════════════════════════
-function brandedEmail(opts: {
-  title: string;
-  subtitle?: string;
-  bodyHtml: string;
-  isTest?: boolean;
-}): string {
+function brandedEmail(opts: {title: string; subtitle?: string; bodyHtml: string; isTest?: boolean}): string {
   const testBanner = opts.isTest
     ? '<div style="background:#c46904;color:white;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;">TEST EMAIL - NOT SENT TO REAL RECIPIENTS</div>'
     : '';
@@ -72,7 +67,12 @@ function brandedEmail(opts: {
 // EGG REPORT — uses the shared template
 // ═══════════════════════════════════════════════════════════════════
 function eggEmailHtml(data: any, isTest: boolean) {
-  const date = new Date(data.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const date = new Date(data.date + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
   const bodyHtml = `
     <!-- Stats -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
@@ -98,7 +98,7 @@ function eggEmailHtml(data: any, isTest: boolean) {
       <span style="color:#999;font-size:12px;font-family:Arial,sans-serif;">Submitted by <strong style="color:#566542;">${data.team_member || 'Farm Team'}</strong> · WCF Planner</span>
     </div>
   `;
-  return brandedEmail({ title: '🥚 Egg Report', subtitle: date, bodyHtml, isTest });
+  return brandedEmail({title: '🥚 Egg Report', subtitle: date, bodyHtml, isTest});
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -126,7 +126,7 @@ function starterFeedHtml(batchLabel: string, totalLbs: number, isTest: boolean) 
       <span style="color:#999;font-size:11px;font-family:Arial,sans-serif;">WCF Planner automated alert</span>
     </div>
   `;
-  return brandedEmail({ title: '⚠ Starter Feed Alert', subtitle: batchLabel, bodyHtml, isTest });
+  return brandedEmail({title: '⚠ Starter Feed Alert', subtitle: batchLabel, bodyHtml, isTest});
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -134,9 +134,9 @@ function starterFeedHtml(batchLabel: string, totalLbs: number, isTest: boolean) 
 // ═══════════════════════════════════════════════════════════════════
 function welcomeEmailHtml(name: string, email: string, role: string, resetLink: string, isTest: boolean) {
   const roleLabels: Record<string, string> = {
-    'admin': '👑 Admin — Full access to all features',
-    'management': '🔑 Management — Edit anything, delete daily reports',
-    'farm_team': '🌾 Farm Team — Edit & delete your daily reports',
+    admin: '👑 Admin — Full access to all features',
+    management: '🔑 Management — Edit anything, delete daily reports',
+    farm_team: '🌾 Farm Team — Edit & delete your daily reports',
   };
   const roleDescription = roleLabels[role] || role;
 
@@ -175,7 +175,7 @@ function welcomeEmailHtml(name: string, email: string, role: string, resetLink: 
       <span style="color:#999;font-size:11px;font-family:Arial,sans-serif;">Questions? Reply to this email.</span>
     </div>
   `;
-  return brandedEmail({ title: '🌾 Welcome to WCF Planner', subtitle: 'Your account is ready', bodyHtml, isTest });
+  return brandedEmail({title: '🌾 Welcome to WCF Planner', subtitle: 'Your account is ready', bodyHtml, isTest});
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -213,44 +213,50 @@ function passwordResetHtml(name: string, resetLink: string, isTest: boolean) {
       <span style="color:#999;font-size:11px;font-family:Arial,sans-serif;">WCF Planner · Questions? Reply to this email.</span>
     </div>
   `;
-  return brandedEmail({ title: '🔑 Password Reset', subtitle: 'WCF Planner', bodyHtml, isTest });
+  return brandedEmail({title: '🔑 Password Reset', subtitle: 'WCF Planner', bodyHtml, isTest});
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return new Response('ok', {headers: corsHeaders});
 
   try {
-    const { type, data, test_to } = await req.json();
+    const {type, data, test_to} = await req.json();
 
     // ─── EGG REPORT ───
-    if (type === "egg_report") {
+    if (type === 'egg_report') {
       const res = await sendEmail({
         from: FROM,
-        to: test_to ? [test_to] : ["isabel@sonnysfarm.com"],
-        ...(test_to ? {} : { cc: ["brian@sonnysfarm.com", "jessica@marbellagroup.com"], bcc: ["ronnie@whitecreek.farm"] }),
-        subject: test_to ? `[TEST] Egg Report - ${new Date(data.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : `Egg Report - ${new Date(data.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+        to: test_to ? [test_to] : ['isabel@sonnysfarm.com'],
+        ...(test_to
+          ? {}
+          : {cc: ['brian@sonnysfarm.com', 'jessica@marbellagroup.com'], bcc: ['ronnie@whitecreek.farm']}),
+        subject: test_to
+          ? `[TEST] Egg Report - ${new Date(data.date + 'T12:00:00').toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric'})}`
+          : `Egg Report - ${new Date(data.date + 'T12:00:00').toLocaleDateString('en-GB', {day: 'numeric', month: 'long', year: 'numeric'})}`,
         html: eggEmailHtml(data, !!test_to),
       });
       const result = await res.json();
-      return new Response(JSON.stringify({ ok: true, result }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ok: true, result}), {
+        headers: {...corsHeaders, 'Content-Type': 'application/json'},
       });
     }
 
     // ─── STARTER FEED ALERT ───
-    if (type === "starter_feed_check") {
+    if (type === 'starter_feed_check') {
       if (!data.batch_label || !data.feed_lbs || parseFloat(data.feed_lbs) <= 0) {
-        return new Response(JSON.stringify({ ok: true, skipped: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        return new Response(JSON.stringify({ok: true, skipped: true}), {
+          headers: {...corsHeaders, 'Content-Type': 'application/json'},
         });
       }
       const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const { data: records, error: queryError } = await admin
-        .from("poultry_dailys").select("feed_lbs")
-        .eq("batch_label", data.batch_label).eq("feed_type", "STARTER");
+      const {data: records, error: queryError} = await admin
+        .from('poultry_dailys')
+        .select('feed_lbs')
+        .eq('batch_label', data.batch_label)
+        .eq('feed_type', 'STARTER');
       if (queryError) throw new Error(queryError.message);
       const total = records?.reduce((s, r) => s + (parseFloat(r.feed_lbs) || 0), 0) ?? 0;
       const prevTotal = total - (parseFloat(data.feed_lbs) || 0);
@@ -258,30 +264,32 @@ serve(async (req) => {
         const displayTotal = test_to ? 1432 : Math.round(total);
         const res = await sendEmail({
           from: FROM,
-          to: test_to ? [test_to] : ["Simon.rosa3@gmail.com"],
-          ...(test_to ? {} : { cc: ["mak@whitecreek.farm"] }),
-          subject: test_to ? `[TEST] STARTER FEED LIMIT - NEAR CUTOFF FOR ${data.batch_label}` : `STARTER FEED LIMIT - NEAR CUTOFF FOR ${data.batch_label}`,
+          to: test_to ? [test_to] : ['Simon.rosa3@gmail.com'],
+          ...(test_to ? {} : {cc: ['mak@whitecreek.farm']}),
+          subject: test_to
+            ? `[TEST] STARTER FEED LIMIT - NEAR CUTOFF FOR ${data.batch_label}`
+            : `STARTER FEED LIMIT - NEAR CUTOFF FOR ${data.batch_label}`,
           html: starterFeedHtml(data.batch_label, displayTotal, !!test_to),
         });
         const result = await res.json();
-        return new Response(JSON.stringify({ ok: true, alert_sent: true, total: displayTotal, result }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        return new Response(JSON.stringify({ok: true, alert_sent: true, total: displayTotal, result}), {
+          headers: {...corsHeaders, 'Content-Type': 'application/json'},
         });
       }
-      return new Response(JSON.stringify({ ok: true, alert_sent: false, total: Math.round(total) }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ok: true, alert_sent: false, total: Math.round(total)}), {
+        headers: {...corsHeaders, 'Content-Type': 'application/json'},
       });
     }
 
     // ─── USER WELCOME — sent when admin creates a new user ───
-    if (type === "user_welcome") {
-      if (!data.email) throw new Error("email required");
+    if (type === 'user_welcome') {
+      if (!data.email) throw new Error('email required');
       const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       // Generate a magic recovery link so they can set their password
-      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      const {data: linkData, error: linkError} = await admin.auth.admin.generateLink({
         type: 'recovery',
         email: data.email,
-        options: { redirectTo: 'https://wcfplanner.com' },
+        options: {redirectTo: 'https://wcfplanner.com'},
       });
       if (linkError) throw new Error(linkError.message);
       const resetLink = linkData.properties?.action_link || 'https://wcfplanner.com';
@@ -289,24 +297,24 @@ serve(async (req) => {
       const res = await sendEmail({
         from: FROM,
         to: test_to ? [test_to] : [data.email],
-        ...(test_to ? {} : { bcc: ["ronnie@whitecreek.farm"] }),
+        ...(test_to ? {} : {bcc: ['ronnie@whitecreek.farm']}),
         subject: test_to ? `[TEST] Welcome to WCF Planner` : `Welcome to WCF Planner`,
         html: welcomeEmailHtml(data.name || '', data.email, data.role || 'farm_team', resetLink, !!test_to),
       });
       const result = await res.json();
-      return new Response(JSON.stringify({ ok: true, result }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ok: true, result}), {
+        headers: {...corsHeaders, 'Content-Type': 'application/json'},
       });
     }
 
     // ─── PASSWORD RESET — admin triggered or user forgot ───
-    if (type === "password_reset") {
-      if (!data.email) throw new Error("email required");
+    if (type === 'password_reset') {
+      if (!data.email) throw new Error('email required');
       const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      const {data: linkData, error: linkError} = await admin.auth.admin.generateLink({
         type: 'recovery',
         email: data.email,
-        options: { redirectTo: 'https://wcfplanner.com' },
+        options: {redirectTo: 'https://wcfplanner.com'},
       });
       if (linkError) throw new Error(linkError.message);
       const resetLink = linkData.properties?.action_link || 'https://wcfplanner.com';
@@ -318,17 +326,19 @@ serve(async (req) => {
         html: passwordResetHtml(data.name || '', resetLink, !!test_to),
       });
       const result = await res.json();
-      return new Response(JSON.stringify({ ok: true, result }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ok: true, result}), {
+        headers: {...corsHeaders, 'Content-Type': 'application/json'},
       });
     }
 
-    return new Response(JSON.stringify({ error: "Unknown type" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({error: 'Unknown type'}), {
+      status: 400,
+      headers: {...corsHeaders, 'Content-Type': 'application/json'},
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({error: err.message}), {
+      status: 500,
+      headers: {...corsHeaders, 'Content-Type': 'application/json'},
     });
   }
 });

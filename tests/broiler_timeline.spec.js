@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.js';
+import {test, expect} from './fixtures.js';
 
 // ============================================================================
 // Broiler timeline range + auto-scroll spec — Phase A7
@@ -35,7 +35,7 @@ test('range: broiler-only data sets tlStart=today-90 and tlEnd=processing+30', a
   page,
   broilerTimelineScenario,
 }) => {
-  const { tlStart, tlEnd } = await broilerTimelineScenario({});
+  const {tlStart, tlEnd} = await broilerTimelineScenario({});
 
   await page.goto('/broiler/timeline');
 
@@ -43,7 +43,7 @@ test('range: broiler-only data sets tlStart=today-90 and tlEnd=processing+30', a
   // batches array is empty, but for a stable read we wait on the first
   // labeled week header which only renders post-data-load.
   const headers = page.locator('[data-week-header="1"]');
-  await expect(headers.first()).toBeVisible({ timeout: 15_000 });
+  await expect(headers.first()).toBeVisible({timeout: 15_000});
 
   // First header anchored at tlStart per the contract at
   // BroilerTimelineView.jsx:62 — wkHdrs[0] = tlS = tlStart.
@@ -69,14 +69,11 @@ test('range: broiler-only data sets tlStart=today-90 and tlEnd=processing+30', a
 // --------------------------------------------------------------------------
 // Test 2 — active layer included, Retirement Home excluded (combined)
 // --------------------------------------------------------------------------
-test('range: active layer extends right bound; Retirement Home excluded', async ({
-  page,
-  broilerTimelineScenario,
-}) => {
+test('range: active layer extends right bound; Retirement Home excluded', async ({page, broilerTimelineScenario}) => {
   // Seed has broiler processing today+60, active layer ending today+180,
   // Retirement Home ending today+240. If Retirement were included,
   // tlEnd would be today+270 instead of today+210.
-  const { today, tlEnd, latestEnd } = await broilerTimelineScenario({
+  const {today, tlEnd, latestEnd} = await broilerTimelineScenario({
     withActiveLayer: true,
     withRetirement: true,
   });
@@ -89,7 +86,7 @@ test('range: active layer extends right bound; Retirement Home excluded', async 
 
   await page.goto('/broiler/timeline');
   const headers = page.locator('[data-week-header="1"]');
-  await expect(headers.first()).toBeVisible({ timeout: 15_000 });
+  await expect(headers.first()).toBeVisible({timeout: 15_000});
 
   // Last week header is the start of the week covering today+210, NOT
   // today+240. If Retirement weren't excluded, the last header would be
@@ -117,10 +114,10 @@ test('auto-scroll: today is positioned ~12% from the left edge on first paint', 
   // to actually require scrolling — narrow ranges may have
   // scrollWidth <= clientWidth and the auto-scroll guards short-circuit
   // (BroilerTimelineView.jsx:71).
-  const { today, tlStart } = await broilerTimelineScenario({ withActiveLayer: true });
+  const {today, tlStart} = await broilerTimelineScenario({withActiveLayer: true});
 
   await page.goto('/broiler/timeline');
-  await expect(page.locator('[data-week-header="1"]').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-week-header="1"]').first()).toBeVisible({timeout: 15_000});
 
   // Read the layout values directly from the DOM and compute the
   // expected scrollLeft using the same formula the component uses
@@ -145,10 +142,7 @@ test('auto-scroll: today is positioned ~12% from the left edge on first paint', 
   //   targetX = (todayPct/100) * ganttPx - clientWidth * 0.12
   //   scrollLeft = max(0, targetX)
   const tlS = new Date(tlStart + 'T12:00:00');
-  const tlE_iso = await page
-    .locator('[data-week-header="1"]')
-    .last()
-    .getAttribute('data-iso');
+  const tlE_iso = await page.locator('[data-week-header="1"]').last().getAttribute('data-iso');
   // Reconstruct totalDays from the rendered range. We derive end from
   // the last header + 7d (the week boundary) for an upper-bound match
   // to ceil(totalDays / 7) * 7.
@@ -167,14 +161,11 @@ test('auto-scroll: today is positioned ~12% from the left edge on first paint', 
 // --------------------------------------------------------------------------
 // Test 4 — today indicator visible within the gantt
 // --------------------------------------------------------------------------
-test('today indicator: vertical green line renders within the gantt', async ({
-  page,
-  broilerTimelineScenario,
-}) => {
-  await broilerTimelineScenario({ withActiveLayer: true });
+test('today indicator: vertical green line renders within the gantt', async ({page, broilerTimelineScenario}) => {
+  await broilerTimelineScenario({withActiveLayer: true});
 
   await page.goto('/broiler/timeline');
-  await expect(page.locator('[data-week-header="1"]').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-week-header="1"]').first()).toBeVisible({timeout: 15_000});
 
   // The today line is rendered once per resource row (inside the
   // RESOURCES.map loop, BroilerTimelineView.jsx:190-193). Asserting

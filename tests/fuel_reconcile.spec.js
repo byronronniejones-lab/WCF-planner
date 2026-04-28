@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.js';
+import {test, expect} from './fixtures.js';
 
 // ============================================================================
 // Fuel reconciliation UI spec — Phase A8b
@@ -33,29 +33,23 @@ import { test, expect } from './fixtures.js';
 
 async function gotoReconcile(page) {
   await page.goto('/admin');
-  await page.getByRole('button', { name: 'Fuel Log' }).click();
-  await page.getByRole('button', { name: 'Reconciliation' }).click();
+  await page.getByRole('button', {name: 'Fuel Log'}).click();
+  await page.getByRole('button', {name: 'Reconciliation'}).click();
   // The variance cells render once the load() effect resolves. Wait for
   // any [data-cell="variance"] cell with our seeded month before reading.
-  await expect(
-    page.locator('[data-month="2026-01"][data-fuel-type="diesel"][data-cell="variance"]')
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-month="2026-01"][data-fuel-type="diesel"][data-cell="variance"]')).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
-function purchasedCell(page, { month = '2026-01', fuelType = 'diesel' } = {}) {
-  return page.locator(
-    `[data-month="${month}"][data-fuel-type="${fuelType}"][data-cell="purchased"]`
-  );
+function purchasedCell(page, {month = '2026-01', fuelType = 'diesel'} = {}) {
+  return page.locator(`[data-month="${month}"][data-fuel-type="${fuelType}"][data-cell="purchased"]`);
 }
-function consumedCell(page, { month = '2026-01', fuelType = 'diesel' } = {}) {
-  return page.locator(
-    `[data-month="${month}"][data-fuel-type="${fuelType}"][data-cell="consumed"]`
-  );
+function consumedCell(page, {month = '2026-01', fuelType = 'diesel'} = {}) {
+  return page.locator(`[data-month="${month}"][data-fuel-type="${fuelType}"][data-cell="consumed"]`);
 }
-function varianceCell(page, { month = '2026-01', fuelType = 'diesel' } = {}) {
-  return page.locator(
-    `[data-month="${month}"][data-fuel-type="${fuelType}"][data-cell="variance"]`
-  );
+function varianceCell(page, {month = '2026-01', fuelType = 'diesel'} = {}) {
+  return page.locator(`[data-month="${month}"][data-fuel-type="${fuelType}"][data-cell="variance"]`);
 }
 
 async function assertGallons(cell, gallons) {
@@ -72,7 +66,7 @@ test('green band: +2% variance renders data-variance-band="green" + signed text'
   page,
   fuelReconcileScenario,
 }) => {
-  const seed = await fuelReconcileScenario({ band: 'green' });
+  const seed = await fuelReconcileScenario({band: 'green'});
 
   await gotoReconcile(page);
 
@@ -91,7 +85,7 @@ test('orange band: -8% variance renders data-variance-band="orange" + signed tex
   page,
   fuelReconcileScenario,
 }) => {
-  const seed = await fuelReconcileScenario({ band: 'orange' });
+  const seed = await fuelReconcileScenario({band: 'orange'});
 
   await gotoReconcile(page);
 
@@ -112,7 +106,7 @@ test('red band: +30% variance renders data-variance-band="red" + signed text', a
   page,
   fuelReconcileScenario,
 }) => {
-  const seed = await fuelReconcileScenario({ band: 'red' });
+  const seed = await fuelReconcileScenario({band: 'red'});
 
   await gotoReconcile(page);
 
@@ -127,16 +121,13 @@ test('red band: +30% variance renders data-variance-band="red" + signed text', a
 // --------------------------------------------------------------------------
 // Test 4 — §7 cell-destination exclusion
 // --------------------------------------------------------------------------
-test('cell exclusion: destination="cell" supply row does not push variance', async ({
-  page,
-  fuelReconcileScenario,
-}) => {
+test('cell exclusion: destination="cell" supply row does not push variance', async ({page, fuelReconcileScenario}) => {
   // Same band as Test 1 (purchased 100 / consumed 102 = +2%) PLUS a 50-gal
   // fuel_supplies row with destination='cell'. If the §7 contract were
   // violated, total consumption would read 152 gal and variance would
   // jump to +52% (red). Test asserts the cell row is excluded — band
   // remains green at +2.0%.
-  const seed = await fuelReconcileScenario({ band: 'green', includeCellRow: true });
+  const seed = await fuelReconcileScenario({band: 'green', includeCellRow: true});
   expect(seed.cellGallons).toBe(50); // sanity: seed actually inserted the row
 
   await gotoReconcile(page);

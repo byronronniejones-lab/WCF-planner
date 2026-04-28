@@ -13,7 +13,7 @@
 //     fuel_bill_lines — those rows arrive via the spec's UI upload path.
 // ============================================================================
 
-import { assertTestDatabase } from '../setup/assertTestDatabase.js';
+import {assertTestDatabase} from '../setup/assertTestDatabase.js';
 
 function must(result, label) {
   if (result?.error) {
@@ -37,11 +37,10 @@ export async function seedFuelBillScenario(supabaseAdmin) {
     throw new Error(`fuelBillSeed: test admin user "${adminEmail}" missing.`);
   }
   must(
-    await supabaseAdmin.from('profiles').upsert(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      { onConflict: 'id' }
-    ),
-    'profiles upsert'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
   );
-  return { adminEmail };
+  return {adminEmail};
 }

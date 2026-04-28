@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.js';
+import {test, expect} from './fixtures.js';
 
 // ============================================================================
 // Pig FCR cache spec — Phase A9
@@ -40,9 +40,9 @@ import { test, expect } from './fixtures.js';
 function tripRow(page, formattedDate, pigCount) {
   return page
     .locator('div')
-    .filter({ hasText: new RegExp(formattedDate.replace(/\//g, '\\/')) })
-    .filter({ hasText: `${pigCount} pigs` })
-    .filter({ has: page.getByRole('button', { name: 'Edit', exact: true }) })
+    .filter({hasText: new RegExp(formattedDate.replace(/\//g, '\\/'))})
+    .filter({hasText: `${pigCount} pigs`})
+    .filter({has: page.getByRole('button', {name: 'Edit', exact: true})})
     .last(); // deepest = the trip-row div itself
 }
 
@@ -52,17 +52,13 @@ function tripRow(page, formattedDate, pigCount) {
 function tripEditModal(page) {
   return page
     .locator('div')
-    .filter({ hasText: 'Edit Processing Trip' })
-    .filter({ has: page.getByRole('button', { name: 'Delete', exact: true }) })
+    .filter({hasText: 'Edit Processing Trip'})
+    .filter({has: page.getByRole('button', {name: 'Delete', exact: true})})
     .last();
 }
 
 async function readSeededBatch(supabaseAdmin) {
-  const r = await supabaseAdmin
-    .from('app_store')
-    .select('data')
-    .eq('key', 'ppp-feeders-v1')
-    .single();
+  const r = await supabaseAdmin.from('app_store').select('data').eq('key', 'ppp-feeders-v1').single();
   if (r.error) throw new Error(`readSeededBatch: ${r.error.message}`);
   return (r.data?.data || [])[0];
 }
@@ -75,7 +71,7 @@ test('persistTrip populates fcrCached on close, preserves subAttributions', asyn
   pigFCRScenario,
   supabaseAdmin,
 }) => {
-  const { batchName, tripId, seededSubAttributions, expected } = await pigFCRScenario({
+  const {batchName, tripId, seededSubAttributions, expected} = await pigFCRScenario({
     withCredits: false,
     withCachedValue: false,
   });
@@ -89,18 +85,18 @@ test('persistTrip populates fcrCached on close, preserves subAttributions', asyn
 
   // Trip row visible = batch loaded. Date is fmt('2026-04-01') = '04/01/26'.
   const row = tripRow(page, '04/01/26', 3);
-  await expect(row).toBeVisible({ timeout: 15_000 });
-  await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(row).toBeVisible({timeout: 15_000});
+  await row.getByRole('button', {name: 'Edit', exact: true}).click();
 
   // Edit modal opens. Title is 'Edit Processing Trip' (PigBatchesView.jsx:1056).
   const modalTitle = page.getByText(/Edit Processing Trip/);
-  await expect(modalTitle).toBeVisible({ timeout: 5_000 });
+  await expect(modalTitle).toBeVisible({timeout: 5_000});
 
   // Close via × button (PigBatchesView.jsx:1057). closeTripForm flushes
   // through persistTrip when tripForm.date is set (it is — populated from
   // the existing trip).
-  await page.getByRole('button', { name: '×' }).click();
-  await expect(modalTitle).toHaveCount(0, { timeout: 5_000 });
+  await page.getByRole('button', {name: '×'}).click();
+  await expect(modalTitle).toHaveCount(0, {timeout: 5_000});
 
   // Poll for fcrCached to populate.
   await expect
@@ -109,7 +105,7 @@ test('persistTrip populates fcrCached on close, preserves subAttributions', asyn
         const b = await readSeededBatch(supabaseAdmin);
         return b.fcrCached;
       },
-      { timeout: 10_000, message: 'fcrCached did not populate after Edit Trip close' }
+      {timeout: 10_000, message: 'fcrCached did not populate after Edit Trip close'},
     )
     .toBe(expected.fcrPopulated);
 
@@ -134,7 +130,7 @@ test('persistTrip deletes fcrCached (not null) when adjFeed reaches zero via cre
   pigFCRScenario,
   supabaseAdmin,
 }) => {
-  await pigFCRScenario({ withCredits: true, withCachedValue: true });
+  await pigFCRScenario({withCredits: true, withCachedValue: true});
 
   // Sanity: pre-condition has the stale value present.
   const before = await readSeededBatch(supabaseAdmin);
@@ -144,12 +140,12 @@ test('persistTrip deletes fcrCached (not null) when adjFeed reaches zero via cre
   await page.goto('/pig/batches');
 
   const row = tripRow(page, '04/01/26', 3);
-  await expect(row).toBeVisible({ timeout: 15_000 });
-  await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(row).toBeVisible({timeout: 15_000});
+  await row.getByRole('button', {name: 'Edit', exact: true}).click();
 
-  await expect(page.getByText(/Edit Processing Trip/)).toBeVisible({ timeout: 5_000 });
-  await page.getByRole('button', { name: '×' }).click();
-  await expect(page.getByText(/Edit Processing Trip/)).toHaveCount(0, { timeout: 5_000 });
+  await expect(page.getByText(/Edit Processing Trip/)).toBeVisible({timeout: 5_000});
+  await page.getByRole('button', {name: '×'}).click();
+  await expect(page.getByText(/Edit Processing Trip/)).toHaveCount(0, {timeout: 5_000});
 
   // Poll for the key to disappear. Object.hasOwn covers the key-DELETED
   // contract specifically — `fcrCached === null` would still pass an
@@ -161,7 +157,7 @@ test('persistTrip deletes fcrCached (not null) when adjFeed reaches zero via cre
         const b = await readSeededBatch(supabaseAdmin);
         return Object.hasOwn(b, 'fcrCached');
       },
-      { timeout: 10_000, message: 'fcrCached key was not deleted (still in object)' }
+      {timeout: 10_000, message: 'fcrCached key was not deleted (still in object)'},
     )
     .toBe(false);
 
@@ -182,12 +178,8 @@ test('persistTrip deletes fcrCached (not null) when adjFeed reaches zero via cre
 // --------------------------------------------------------------------------
 // Test 3 — Delete Trip clears the key (real DeleteModal)
 // --------------------------------------------------------------------------
-test('deleteTrip deletes fcrCached when last trip is removed', async ({
-  page,
-  pigFCRScenario,
-  supabaseAdmin,
-}) => {
-  const { tripId } = await pigFCRScenario({
+test('deleteTrip deletes fcrCached when last trip is removed', async ({page, pigFCRScenario, supabaseAdmin}) => {
+  const {tripId} = await pigFCRScenario({
     withCredits: false,
     withCachedValue: true, // pre-seed cached so we can verify the delete
   });
@@ -201,14 +193,14 @@ test('deleteTrip deletes fcrCached when last trip is removed', async ({
   await page.goto('/pig/batches');
 
   const row = tripRow(page, '04/01/26', 3);
-  await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(row).toBeVisible({timeout: 15_000});
 
   // Open Edit Trip modal first — the modal footer's red Delete is the
   // path Codex specified for driving the real DeleteModal. (The trip-row
   // Delete button at PigBatchesView.jsx:1126 hits the same deleteTrip
   // handler, but the modal-footer path is the canonical edit-flow exit.)
-  await row.getByRole('button', { name: 'Edit', exact: true }).click();
-  await expect(page.getByText(/Edit Processing Trip/)).toBeVisible({ timeout: 5_000 });
+  await row.getByRole('button', {name: 'Edit', exact: true}).click();
+  await expect(page.getByText(/Edit Processing Trip/)).toBeVisible({timeout: 5_000});
 
   // Click Delete in the modal footer. Multiple "Delete" buttons exist
   // on the page (modal footer + trip-row Delete in the background +
@@ -216,13 +208,13 @@ test('deleteTrip deletes fcrCached when last trip is removed', async ({
   // Delete-button-descendant — title-only would land on the title div
   // which doesn't contain the footer.
   const modal = tripEditModal(page);
-  await modal.getByRole('button', { name: 'Delete', exact: true }).click();
+  await modal.getByRole('button', {name: 'Delete', exact: true}).click();
 
   // Real DeleteModal — PigBatchesView's deleteTrip calls the confirmDelete
   // prop directly, not window._wcfConfirmDelete, so a window stub wouldn't
   // intercept. Drive the actual modal: type "delete" + Enter (per
   // DeleteModal.jsx:22 keyboard handler).
-  await expect(page.getByText('Are you sure?')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText('Are you sure?')).toBeVisible({timeout: 5_000});
   await page.getByPlaceholder('delete').fill('delete');
   await page.keyboard.press('Enter');
 
@@ -238,9 +230,9 @@ test('deleteTrip deletes fcrCached when last trip is removed', async ({
           hasFcr: Object.hasOwn(b, 'fcrCached'),
         };
       },
-      { timeout: 10_000, message: 'deleteTrip did not remove trip and clear fcrCached' }
+      {timeout: 10_000, message: 'deleteTrip did not remove trip and clear fcrCached'},
     )
-    .toEqual({ tripCount: 0, hasFcr: false });
+    .toEqual({tripCount: 0, hasFcr: false});
 
   // Final state assertions for clarity in failure output.
   const after = await readSeededBatch(supabaseAdmin);

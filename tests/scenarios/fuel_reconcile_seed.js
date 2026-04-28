@@ -29,7 +29,7 @@
 //           push the band to red. Test 4 asserts the band stays green.
 // ============================================================================
 
-import { assertTestDatabase } from '../setup/assertTestDatabase.js';
+import {assertTestDatabase} from '../setup/assertTestDatabase.js';
 
 function must(result, label) {
   if (result?.error) {
@@ -42,9 +42,9 @@ function must(result, label) {
 // Picked deterministic round-number gallons so signed-text assertions are
 // exact ("+2.0%", "-8.0%", "+30.0%"). Cell-exclusion test reuses 'green'.
 const TARGETS = {
-  green:  { purchased: 100, consumed: 102, expectedPct: '+2.0%'  },  //  +2.0%
-  orange: { purchased: 100, consumed: 92,  expectedPct: '-8.0%'  },  //  -8.0%
-  red:    { purchased: 100, consumed: 130, expectedPct: '+30.0%' },  // +30.0%
+  green: {purchased: 100, consumed: 102, expectedPct: '+2.0%'}, //  +2.0%
+  orange: {purchased: 100, consumed: 92, expectedPct: '-8.0%'}, //  -8.0%
+  red: {purchased: 100, consumed: 130, expectedPct: '+30.0%'}, // +30.0%
 };
 
 const MONTH = '2026-01';
@@ -58,7 +58,7 @@ const CELL_GALLONS = 50;
 export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
 
-  const { band, fuelType = 'diesel', includeCellRow = false } = opts;
+  const {band, fuelType = 'diesel', includeCellRow = false} = opts;
   const target = TARGETS[band];
   if (!target) {
     throw new Error(`fuelReconcileSeed: invalid band "${band}" — expected green | orange | red`);
@@ -78,11 +78,10 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
     throw new Error(`fuelReconcileSeed: test admin user "${adminEmail}" missing.`);
   }
   must(
-    await supabaseAdmin.from('profiles').upsert(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      { onConflict: 'id' }
-    ),
-    'profiles upsert'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
   );
 
   // Equipment row — minimum FK target for equipment_fuelings.
@@ -96,7 +95,7 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
       status: 'active',
       fuel_type: fuelType,
     }),
-    'equipment insert'
+    'equipment insert',
   );
 
   // Bill (purchased side). unit_price = $4/gal, all-in for this test
@@ -116,7 +115,7 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
       total: subtotal,
       pdf_path: 'fb-recon/test.pdf', // placeholder — never fetched in this spec
     }),
-    'fuel_bills insert'
+    'fuel_bills insert',
   );
   must(
     await supabaseAdmin.from('fuel_bill_lines').insert({
@@ -132,7 +131,7 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
       line_total: subtotal,
       effective_per_gal: unitPrice,
     }),
-    'fuel_bill_lines insert'
+    'fuel_bill_lines insert',
   );
 
   // Consumed side: split into 2 equipment_fueling rows so the eqCount
@@ -160,7 +159,7 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
         source: 'admin_add',
       },
     ]),
-    'equipment_fuelings insert'
+    'equipment_fuelings insert',
   );
 
   // Optional cell-destination fuel_supplies row (Test 4).
@@ -175,7 +174,7 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
         team_member: 'Test',
         source: 'manual',
       }),
-      'fuel_supplies cell insert'
+      'fuel_supplies cell insert',
     );
   }
 

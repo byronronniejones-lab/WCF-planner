@@ -19,10 +19,7 @@ import globals from 'globals';
 
 const sharedRules = {
   ...js.configs.recommended.rules,
-  'no-unused-vars': [
-    'warn',
-    {argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_'},
-  ],
+  'no-unused-vars': ['warn', {argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_'}],
 };
 
 export default [

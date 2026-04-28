@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-import { assertTestDatabase } from './assertTestDatabase.js';
+import {createClient} from '@supabase/supabase-js';
+import {assertTestDatabase} from './assertTestDatabase.js';
 
 // ============================================================================
 // Truncate test-owned tables. Called from per-spec beforeAll to reset state.
@@ -64,12 +64,12 @@ export function getTestAdminClient() {
   if (!url || !key) {
     throw new Error(
       'getTestAdminClient: VITE_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY ' +
-      'required in .env.test.local for test reset/seed operations.'
+        'required in .env.test.local for test reset/seed operations.',
     );
   }
   assertTestDatabase(url);
   cachedAdminClient = createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
+    auth: {autoRefreshToken: false, persistSession: false},
   });
   return cachedAdminClient;
 }
@@ -103,7 +103,7 @@ export async function resetTestDatabase() {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   const client = getTestAdminClient();
   const tables = TEST_OWNED_TABLES.map((t) => `public."${t}"`).join(', ');
-  const { error } = await client.rpc('exec_sql', {
+  const {error} = await client.rpc('exec_sql', {
     sql: `TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE;`,
   });
   if (error) {

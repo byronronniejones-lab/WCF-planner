@@ -43,7 +43,7 @@
 // LoginScreen via the global storageState.
 // ============================================================================
 
-import { assertTestDatabase } from '../setup/assertTestDatabase.js';
+import {assertTestDatabase} from '../setup/assertTestDatabase.js';
 
 // Throw on any Supabase write/read error so the test fails at arrange time
 // with a precise message instead of later at a confusing UI assertion.
@@ -60,18 +60,16 @@ const SESSION_ID = 'wsess-cattle-test';
 
 // Three finisher cattle for the happy-path multi-cow attach.
 const COW_ROWS = [
-  { id: 'cow-test-2001', tag: '2001', breed: 'Black Angus' },
-  { id: 'cow-test-2002', tag: '2002', breed: 'Black Angus' },
-  { id: 'cow-test-2003', tag: '2003', breed: 'Hereford' },
+  {id: 'cow-test-2001', tag: '2001', breed: 'Black Angus'},
+  {id: 'cow-test-2002', tag: '2002', breed: 'Black Angus'},
+  {id: 'cow-test-2003', tag: '2003', breed: 'Hereford'},
 ];
-const ENTRY_WEIGHTS = { '2001': 1100, '2002': 1150, '2003': 1080 };
+const ENTRY_WEIGHTS = {2001: 1100, 2002: 1150, 2003: 1080};
 
 async function ensureAdminProfile(supabaseAdmin) {
   const adminEmail = process.env.VITE_TEST_ADMIN_EMAIL;
   if (!adminEmail) {
-    throw new Error(
-      'cattleProcessorSeed: VITE_TEST_ADMIN_EMAIL must be set in .env.test.local.'
-    );
+    throw new Error('cattleProcessorSeed: VITE_TEST_ADMIN_EMAIL must be set in .env.test.local.');
   }
   const usersResult = await supabaseAdmin.auth.admin.listUsers();
   if (usersResult.error) {
@@ -81,15 +79,14 @@ async function ensureAdminProfile(supabaseAdmin) {
   if (!adminUser) {
     throw new Error(
       `cattleProcessorSeed: test admin user "${adminEmail}" missing from auth.users. ` +
-      'Re-create via Supabase Auth dashboard.'
+        'Re-create via Supabase Auth dashboard.',
     );
   }
   must(
-    await supabaseAdmin.from('profiles').upsert(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      { onConflict: 'id' }
-    ),
-    'profiles upsert'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
   );
   return adminEmail;
 }
@@ -113,7 +110,7 @@ export async function seedCattleSendToProcessor(supabaseAdmin) {
       total_live_weight: null,
       total_hanging_weight: null,
     }),
-    'cattle_processing_batches insert'
+    'cattle_processing_batches insert',
   );
 
   // 3 finisher cattle.
@@ -125,9 +122,9 @@ export async function seedCattleSendToProcessor(supabaseAdmin) {
         breed: c.breed,
         herd: 'finishers',
         old_tags: [],
-      }))
+      })),
     ),
-    'cattle insert'
+    'cattle insert',
   );
 
   // Draft cattle weigh-in session, herd=finishers (the gate that lets the
@@ -142,7 +139,7 @@ export async function seedCattleSendToProcessor(supabaseAdmin) {
       status: 'draft',
       started_at: '2026-04-28T08:00:00Z',
     }),
-    'weigh_in_sessions insert'
+    'weigh_in_sessions insert',
   );
 
   // 3 flagged weigh-ins. send_to_processor=true; target_processing_batch_id
@@ -167,7 +164,7 @@ export async function seedCattleSendToProcessor(supabaseAdmin) {
     sessionId: SESSION_ID,
     cows: COW_ROWS,
     entryIds: weighIns.map((w) => w.id),
-    expected: { priorHerd: 'finishers' },
+    expected: {priorHerd: 'finishers'},
   };
 }
 
@@ -196,7 +193,7 @@ export async function seedCattleMultiCowPreAttached(supabaseAdmin) {
       total_live_weight: Math.round(totalLive * 10) / 10,
       total_hanging_weight: null,
     }),
-    'cattle_processing_batches insert (multi-cow pre-attached)'
+    'cattle_processing_batches insert (multi-cow pre-attached)',
   );
 
   // 3 cattle, all already moved to herd='processed'.
@@ -209,9 +206,9 @@ export async function seedCattleMultiCowPreAttached(supabaseAdmin) {
         herd: 'processed',
         processing_batch_id: BATCH_ID,
         old_tags: [],
-      }))
+      })),
     ),
-    'cattle insert (multi-cow pre-attached)'
+    'cattle insert (multi-cow pre-attached)',
   );
 
   // Complete cattle weigh-in session — Tests 4/5 don't need to reopen.
@@ -226,7 +223,7 @@ export async function seedCattleMultiCowPreAttached(supabaseAdmin) {
       started_at: '2026-04-28T08:00:00Z',
       completed_at: '2026-04-28T09:00:00Z',
     }),
-    'weigh_in_sessions insert (multi-cow pre-attached)'
+    'weigh_in_sessions insert (multi-cow pre-attached)',
   );
 
   // 3 weigh-ins, all flagged + targeted at the batch + prior_herd_or_flock
@@ -260,9 +257,9 @@ export async function seedCattleMultiCowPreAttached(supabaseAdmin) {
         reason: 'processing_batch',
         reference_id: BATCH_ID,
         team_member: adminEmail,
-      }))
+      })),
     ),
-    'cattle_transfers insert (multi-cow pre-attached)'
+    'cattle_transfers insert (multi-cow pre-attached)',
   );
 
   return {
@@ -271,17 +268,17 @@ export async function seedCattleMultiCowPreAttached(supabaseAdmin) {
     sessionId: SESSION_ID,
     cows: COW_ROWS,
     entryIds: weighIns.map((w) => w.id),
-    expected: { priorHerd: 'finishers' },
+    expected: {priorHerd: 'finishers'},
   };
 }
 
-export async function seedCattlePreAttachedForFallback(supabaseAdmin, { mode } = {}) {
+export async function seedCattlePreAttachedForFallback(supabaseAdmin, {mode} = {}) {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   const adminEmail = await ensureAdminProfile(supabaseAdmin);
 
   if (!['with_audit_row', 'null_from_herd', 'no_audit_row'].includes(mode)) {
     throw new Error(
-      `seedCattlePreAttachedForFallback: mode must be one of with_audit_row | null_from_herd | no_audit_row (got ${mode}).`
+      `seedCattlePreAttachedForFallback: mode must be one of with_audit_row | null_from_herd | no_audit_row (got ${mode}).`,
     );
   }
 
@@ -297,13 +294,11 @@ export async function seedCattlePreAttachedForFallback(supabaseAdmin, { mode } =
       processing_cost: null,
       notes: null,
       status: 'planned',
-      cows_detail: [
-        { cattle_id: cow.id, tag: cow.tag, live_weight: 1100, hanging_weight: null },
-      ],
+      cows_detail: [{cattle_id: cow.id, tag: cow.tag, live_weight: 1100, hanging_weight: null}],
       total_live_weight: 1100,
       total_hanging_weight: null,
     }),
-    'cattle_processing_batches insert (pre-attached)'
+    'cattle_processing_batches insert (pre-attached)',
   );
 
   // Cow already attached: herd=processed, processing_batch_id set.
@@ -316,7 +311,7 @@ export async function seedCattlePreAttachedForFallback(supabaseAdmin, { mode } =
       processing_batch_id: BATCH_ID,
       old_tags: [],
     }),
-    'cattle insert (pre-attached)'
+    'cattle insert (pre-attached)',
   );
 
   // Complete session with the attached entry. Note this is status='complete'
@@ -334,7 +329,7 @@ export async function seedCattlePreAttachedForFallback(supabaseAdmin, { mode } =
       started_at: '2026-04-28T08:00:00Z',
       completed_at: '2026-04-28T09:00:00Z',
     }),
-    'weigh_in_sessions insert (pre-attached)'
+    'weigh_in_sessions insert (pre-attached)',
   );
 
   const entryId = `wi-test-cattle-${cow.tag}`;
@@ -352,7 +347,7 @@ export async function seedCattlePreAttachedForFallback(supabaseAdmin, { mode } =
       prior_herd_or_flock: null,
       entered_at: '2026-04-28T08:00:00Z',
     }),
-    'weigh_ins insert (pre-attached)'
+    'weigh_ins insert (pre-attached)',
   );
 
   // Audit-row variants. The detach helper reads from_herd off the most-recent
@@ -370,7 +365,7 @@ export async function seedCattlePreAttachedForFallback(supabaseAdmin, { mode } =
         reference_id: BATCH_ID,
         team_member: adminEmail,
       }),
-      `cattle_transfers insert (${mode})`
+      `cattle_transfers insert (${mode})`,
     );
   }
 

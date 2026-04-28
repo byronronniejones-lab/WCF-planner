@@ -31,7 +31,7 @@
 // recompute them from offsets.
 // ============================================================================
 
-import { assertTestDatabase } from '../setup/assertTestDatabase.js';
+import {assertTestDatabase} from '../setup/assertTestDatabase.js';
 
 function must(result, label) {
   if (result?.error) {
@@ -76,18 +76,14 @@ async function ensureAdminProfile(supabaseAdmin) {
     throw new Error(`broilerTimelineSeed: test admin user "${adminEmail}" missing.`);
   }
   must(
-    await supabaseAdmin.from('profiles').upsert(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      { onConflict: 'id' }
-    ),
-    'profiles upsert'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
   );
 }
 
-export async function seedBroilerTimeline(
-  supabaseAdmin,
-  { withActiveLayer = false, withRetirement = false } = {}
-) {
+export async function seedBroilerTimeline(supabaseAdmin, {withActiveLayer = false, withRetirement = false} = {}) {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   await ensureAdminProfile(supabaseAdmin);
 
@@ -113,7 +109,7 @@ export async function seedBroilerTimeline(
       key: 'ppp-v4',
       data: [broilerBatch],
     }),
-    'app_store ppp-v4 upsert'
+    'app_store ppp-v4 upsert',
   );
 
   // Layer batches (optional). Both rows are status='active' and the
@@ -146,10 +142,7 @@ export async function seedBroilerTimeline(
     });
   }
   if (layerRows.length > 0) {
-    must(
-      await supabaseAdmin.from('layer_batches').insert(layerRows),
-      'layer_batches insert'
-    );
+    must(await supabaseAdmin.from('layer_batches').insert(layerRows), 'layer_batches insert');
   }
 
   // Compute expected bounds so the spec asserts against pre-derived
@@ -157,9 +150,7 @@ export async function seedBroilerTimeline(
   // is the LARGEST end-date that should contribute (Retirement excluded).
   const broilerLatest = broilerBatch.processingDate;
   const activeLayerLatest = withActiveLayer ? addDaysISO(180) : null;
-  const latestEnd = activeLayerLatest && activeLayerLatest > broilerLatest
-    ? activeLayerLatest
-    : broilerLatest;
+  const latestEnd = activeLayerLatest && activeLayerLatest > broilerLatest ? activeLayerLatest : broilerLatest;
   const tlStart = addDaysISO(today, -90);
   const tlEnd = addDaysISO(latestEnd, 30);
 

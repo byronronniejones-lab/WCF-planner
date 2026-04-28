@@ -32,7 +32,7 @@
 //                        a precise diff).
 // ============================================================================
 
-import { assertTestDatabase } from '../setup/assertTestDatabase.js';
+import {assertTestDatabase} from '../setup/assertTestDatabase.js';
 
 function must(result, label) {
   if (result?.error) {
@@ -50,9 +50,7 @@ const TRIP_ID = 'trip-test-fcr-01';
 // preserves arbitrary jsonb keys through edit-close. The subId references
 // no real sub-batch (this scenario has none), but A9 doesn't render
 // sub-batch UI — the metadata round-trips through Supabase as opaque jsonb.
-const SEEDED_SUB_ATTRIBUTIONS = [
-  { subId: 'sub-fcr-a', subBatchName: 'P-FCR-01A', sex: 'Gilts', count: 3 },
-];
+const SEEDED_SUB_ATTRIBUTIONS = [{subId: 'sub-fcr-a', subBatchName: 'P-FCR-01A', sex: 'Gilts', count: 3}];
 const STALE_FCR_VALUE = 9.99;
 const EXPECTED_FCR = 2.0;
 
@@ -70,18 +68,14 @@ async function ensureAdminProfile(supabaseAdmin) {
     throw new Error(`pigFCRSeed: test admin user "${adminEmail}" missing.`);
   }
   must(
-    await supabaseAdmin.from('profiles').upsert(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      { onConflict: 'id' }
-    ),
-    'profiles upsert'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
   );
 }
 
-export async function seedPigFCRScenario(
-  supabaseAdmin,
-  { withCredits = false, withCachedValue = false } = {}
-) {
+export async function seedPigFCRScenario(supabaseAdmin, {withCredits = false, withCachedValue = false} = {}) {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   await ensureAdminProfile(supabaseAdmin);
 
@@ -105,7 +99,7 @@ export async function seedPigFCRScenario(
     startDate: '2026-01-01',
     status: 'active',
     notes: '',
-    perLbFeedCost: 0.30,
+    perLbFeedCost: 0.3,
     legacyFeedLbs: 600,
     feedAllocatedToTransfers: 0,
     pigMortalities: [],
@@ -122,7 +116,7 @@ export async function seedPigFCRScenario(
       key: 'ppp-feeders-v1',
       data: [feederGroup],
     }),
-    'app_store ppp-feeders-v1 upsert'
+    'app_store ppp-feeders-v1 upsert',
   );
 
   // Breeders carry the transfer-credit signal. computePigBatchFCR reads
@@ -180,7 +174,7 @@ export async function seedPigFCRScenario(
       key: 'ppp-breeders-v1',
       data: breeders,
     }),
-    'app_store ppp-breeders-v1 upsert'
+    'app_store ppp-breeders-v1 upsert',
   );
 
   return {
@@ -194,6 +188,6 @@ export async function seedPigFCRScenario(
       // is the absence of the key; no value to compare.
       fcrCleared: undefined,
     },
-    options: { withCredits, withCachedValue },
+    options: {withCredits, withCachedValue},
   };
 }

@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.js';
+import {test, expect} from './fixtures.js';
 import path from 'path';
 
 // ============================================================================
@@ -37,19 +37,19 @@ const PDF_PATH = path.resolve('tests/fixtures/ODBIN-0195942_2.PDF');
 function fieldInput(page, labelText) {
   return page
     .locator('div')
-    .filter({ has: page.locator(`label:text-is("${labelText}")`) })
+    .filter({has: page.locator(`label:text-is("${labelText}")`)})
     .last()
     .locator('input');
 }
 
 async function uploadFixture(page) {
   await page.goto('/admin');
-  await page.getByRole('button', { name: 'Fuel Log' }).click();
-  await page.getByRole('button', { name: 'Bills' }).click();
-  await page.getByRole('button', { name: '+ Upload bill' }).click();
+  await page.getByRole('button', {name: 'Fuel Log'}).click();
+  await page.getByRole('button', {name: 'Bills'}).click();
+  await page.getByRole('button', {name: '+ Upload bill'}).click();
 
   // Modal title 'Fuel Bill (PDF)' (FuelBillsView.jsx:318).
-  await expect(page.getByText('Fuel Bill (PDF)')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText('Fuel Bill (PDF)')).toBeVisible({timeout: 5_000});
 
   await page.locator('input[type="file"]').setInputFiles(PDF_PATH);
 
@@ -57,7 +57,7 @@ async function uploadFixture(page) {
   // session can take several seconds (worker fetch + WASM init). The UI
   // shows "Parsing…" while running; wait for that to disappear OR for the
   // header label to render (whichever fires first).
-  await expect(page.getByText('Parsing…')).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText('Parsing…')).toHaveCount(0, {timeout: 30_000});
 
   // Sanity: a parse failure renders an error banner instead of the preview.
   // If the worker didn't load, this is where we'd find out.
@@ -68,16 +68,13 @@ async function uploadFixture(page) {
 
   // Wait for the Header section to render (proves the parser returned
   // a non-null result that populated the preview).
-  await expect(page.getByText('Header', { exact: true })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText('Header', {exact: true})).toBeVisible({timeout: 5_000});
 }
 
 // --------------------------------------------------------------------------
 // Test 1 — header parsing
 // --------------------------------------------------------------------------
-test('header parsing: invoice / dates / totals populate from real Home Oil PDF', async ({
-  page,
-  fuelBillScenario,
-}) => {
+test('header parsing: invoice / dates / totals populate from real Home Oil PDF', async ({page, fuelBillScenario}) => {
   await uploadFixture(page);
 
   // Values per PROJECT.md §Part 4 row 2026-04-27 (smoke test of this same
@@ -104,10 +101,7 @@ test('header parsing: invoice / dates / totals populate from real Home Oil PDF',
 // --------------------------------------------------------------------------
 // Test 2 — line items parsing + tax-included format detection
 // --------------------------------------------------------------------------
-test('line items: 2 lines auto-classified, allocated_tax === 0 (tax-included)', async ({
-  page,
-  fuelBillScenario,
-}) => {
+test('line items: 2 lines auto-classified, allocated_tax === 0 (tax-included)', async ({page, fuelBillScenario}) => {
   await uploadFixture(page);
 
   const rows = page.locator('table tbody tr');
@@ -159,29 +153,24 @@ test('save: fuel_bills + fuel_bill_lines + PDF storage all populated correctly',
   // Click Save bill (FuelBillsView.jsx:394). Both lines are auto-
   // classified, so the unclassified-lines validation at line 235-239
   // doesn't fire.
-  await page.getByRole('button', { name: 'Save bill' }).click();
+  await page.getByRole('button', {name: 'Save bill'}).click();
 
   // Modal closes on success — onSaved() fires, parent unmounts modal.
-  await expect(page.getByText('Fuel Bill (PDF)')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByText('Fuel Bill (PDF)')).toHaveCount(0, {timeout: 15_000});
 
   // Poll for the bill row to land. invoice_number is unique per supplier
   // and predictable from the fixture.
   await expect
-    .poll(async () => {
-      const r = await supabaseAdmin
-        .from('fuel_bills')
-        .select('id')
-        .eq('invoice_number', 'IN-0195942')
-        .maybeSingle();
-      return r.data?.id ?? null;
-    }, { timeout: 10_000, message: 'fuel_bills row did not appear after save' })
+    .poll(
+      async () => {
+        const r = await supabaseAdmin.from('fuel_bills').select('id').eq('invoice_number', 'IN-0195942').maybeSingle();
+        return r.data?.id ?? null;
+      },
+      {timeout: 10_000, message: 'fuel_bills row did not appear after save'},
+    )
     .not.toBeNull();
 
-  const bill = await supabaseAdmin
-    .from('fuel_bills')
-    .select('*')
-    .eq('invoice_number', 'IN-0195942')
-    .single();
+  const bill = await supabaseAdmin.from('fuel_bills').select('*').eq('invoice_number', 'IN-0195942').single();
   expect(bill.error).toBeNull();
   expect(bill.data.invoice_date).toBe('2026-04-01');
   expect(bill.data.delivery_date).toBe('2026-03-30');
@@ -194,10 +183,7 @@ test('save: fuel_bills + fuel_bill_lines + PDF storage all populated correctly',
 
   // Line rows. 2 lines, both with allocated_tax === 0 + effective_per_gal
   // matching unit_price (tax-included contract).
-  const lines = await supabaseAdmin
-    .from('fuel_bill_lines')
-    .select('*')
-    .eq('bill_id', bill.data.id);
+  const lines = await supabaseAdmin.from('fuel_bill_lines').select('*').eq('bill_id', bill.data.id);
   expect(lines.error).toBeNull();
   expect(lines.data).toHaveLength(2);
   for (const l of lines.data) {
@@ -207,9 +193,7 @@ test('save: fuel_bills + fuel_bill_lines + PDF storage all populated correctly',
   }
 
   // PDF physically uploaded into the fuel-bills bucket.
-  const pdf = await supabaseAdmin.storage
-    .from('fuel-bills')
-    .download(bill.data.pdf_path);
+  const pdf = await supabaseAdmin.storage.from('fuel-bills').download(bill.data.pdf_path);
   expect(pdf.error).toBeNull();
   expect(pdf.data?.size).toBeGreaterThan(10_000); // ~54 KB fixture
 });

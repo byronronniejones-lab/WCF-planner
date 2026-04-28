@@ -27,7 +27,7 @@
 // proves the new behavior even against the old trigger conditions.
 // ============================================================================
 
-import { assertTestDatabase } from '../setup/assertTestDatabase.js';
+import {assertTestDatabase} from '../setup/assertTestDatabase.js';
 
 function must(result, label) {
   if (result?.error) {
@@ -52,7 +52,7 @@ function daysFromNow(n) {
 
 export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
-  const { kind } = opts;
+  const {kind} = opts;
 
   // Admin profile for /admin and /home access.
   const adminEmail = process.env.VITE_TEST_ADMIN_EMAIL;
@@ -68,11 +68,10 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     throw new Error(`homeDashboardEquipmentSeed: test admin user "${adminEmail}" missing.`);
   }
   must(
-    await supabaseAdmin.from('profiles').upsert(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      { onConflict: 'id' }
-    ),
-    'profiles upsert'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
   );
 
   const slug = 'eq-attention-test';
@@ -92,7 +91,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
         current_hours: 110,
         service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
       }),
-      'equipment insert (overdue)'
+      'equipment insert (overdue)',
     );
     return {
       slug,
@@ -121,7 +120,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
         current_hours: 60,
         service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
       }),
-      'equipment insert (upcoming)'
+      'equipment insert (upcoming)',
     );
     return {slug, kind};
   }
@@ -143,7 +142,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
         status: 'active',
         current_hours: 100,
       }),
-      'equipment insert (missed_fueling)'
+      'equipment insert (missed_fueling)',
     );
     must(
       await supabaseAdmin.from('equipment_fuelings').insert({
@@ -156,7 +155,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
         suppressed: false,
         source: 'admin_add',
       }),
-      'equipment_fuelings insert (missed_fueling)'
+      'equipment_fuelings insert (missed_fueling)',
     );
     return {slug, kind, seededFuelDate: fuelDate};
   }
@@ -177,7 +176,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
         current_hours: 100,
         every_fillup_items: [{id: 'oil', label: 'Oil OK'}],
       }),
-      'equipment insert (fillup_streak)'
+      'equipment insert (fillup_streak)',
     );
     must(
       await supabaseAdmin.from('equipment_fuelings').insert([
@@ -204,7 +203,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
           source: 'admin_add',
         },
       ]),
-      'equipment_fuelings insert (fillup_streak)'
+      'equipment_fuelings insert (fillup_streak)',
     );
     return {
       slug,
@@ -229,7 +228,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
         current_hours: 100,
         warranty_expiration: daysFromNow(30),
       }),
-      'equipment insert (warranty)'
+      'equipment insert (warranty)',
     );
     return {
       slug,
@@ -240,5 +239,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     };
   }
 
-  throw new Error(`homeDashboardEquipmentSeed: invalid kind "${kind}". Expected one of: overdue, upcoming, missed_fueling, fillup_streak, warranty.`);
+  throw new Error(
+    `homeDashboardEquipmentSeed: invalid kind "${kind}". Expected one of: overdue, upcoming, missed_fueling, fillup_streak, warranty.`,
+  );
 }

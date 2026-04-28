@@ -36,7 +36,7 @@
 // The spec asserts these specific numbers and the subAttributions schema.
 // ============================================================================
 
-import { assertTestDatabase } from '../setup/assertTestDatabase.js';
+import {assertTestDatabase} from '../setup/assertTestDatabase.js';
 
 // Throw on any Supabase write/read error so the test fails at arrange time
 // with a precise message instead of later at a confusing UI assertion.
@@ -68,9 +68,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
   // setups instead of silently green only on one developer's machine.
   const adminEmail = process.env.VITE_TEST_ADMIN_EMAIL;
   if (!adminEmail) {
-    throw new Error(
-      'seedP2601: VITE_TEST_ADMIN_EMAIL must be set in .env.test.local.'
-    );
+    throw new Error('seedP2601: VITE_TEST_ADMIN_EMAIL must be set in .env.test.local.');
   }
 
   // --- 1. profiles row for the test admin (idempotent). The bootstrap
@@ -83,16 +81,14 @@ export async function seedP2601Scenario(supabaseAdmin) {
   const adminUser = usersResult.data?.users?.find((u) => u.email === adminEmail);
   if (!adminUser) {
     throw new Error(
-      `seedP2601: test admin user "${adminEmail}" missing from auth.users. ` +
-      'Re-create via Supabase Auth dashboard.'
+      `seedP2601: test admin user "${adminEmail}" missing from auth.users. ` + 'Re-create via Supabase Auth dashboard.',
     );
   }
   must(
-    await supabaseAdmin.from('profiles').upsert(
-      { id: adminUser.id, email: adminUser.email, role: 'admin' },
-      { onConflict: 'id' }
-    ),
-    'profiles upsert'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
   );
 
   // --- 2. ppp-feeders-v1: parent + 2 subs, 1 mortality on sub A, no trips.
@@ -106,7 +102,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
     startDate: '2026-01-01',
     status: 'active',
     notes: '',
-    perLbFeedCost: 0.30,
+    perLbFeedCost: 0.3,
     legacyFeedLbs: 0,
     feedAllocatedToTransfers: 0,
     pigMortalities: [
@@ -150,7 +146,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
       key: 'ppp-feeders-v1',
       data: [feederGroup],
     }),
-    'app_store ppp-feeders-v1 upsert'
+    'app_store ppp-feeders-v1 upsert',
   );
 
   // --- 3. ppp-breeders-v1: 2 transferred-from-batch entries on sub A.
@@ -205,7 +201,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
       key: 'ppp-breeders-v1',
       data: breeders,
     }),
-    'app_store ppp-breeders-v1 upsert'
+    'app_store ppp-breeders-v1 upsert',
   );
 
   // --- 4. pig_dailys: 4 rows on sub A + 4 rows on sub B, 2500 lbs each.
@@ -235,10 +231,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
       });
     }
   }
-  must(
-    await supabaseAdmin.from('pig_dailys').insert(dailyRows),
-    'pig_dailys insert'
-  );
+  must(await supabaseAdmin.from('pig_dailys').insert(dailyRows), 'pig_dailys insert');
 
   // --- 5. Draft weigh_in_session for pigs + 5 weigh_ins on sub A.
   // Entries are NOT flagged sent_to_trip — the spec drives that via UI.
@@ -263,7 +256,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
       status: 'draft',
       started_at: '2026-04-26T08:00:00Z',
     }),
-    'weigh_in_sessions insert'
+    'weigh_in_sessions insert',
   );
   const weighIns = [];
   for (let i = 0; i < 5; i++) {
@@ -277,10 +270,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
       entered_at: '2026-04-26T08:00:00Z',
     });
   }
-  must(
-    await supabaseAdmin.from('weigh_ins').insert(weighIns),
-    'weigh_ins insert'
-  );
+  must(await supabaseAdmin.from('weigh_ins').insert(weighIns), 'weigh_ins insert');
 
   return {
     batchId: BATCH_ID,
