@@ -4,13 +4,6 @@
 // Admin-side modal that mirrors WebformHub forms (broiler / layer / egg /
 // pig / cattle / sheep). Loads the same Supabase webform_config so admin +
 // public forms stay in sync.
-//
-// The modal body references the helper `setHousingAnchorFromReport` and
-// `housingBatchMap` by bare name. `setHousingAnchorFromReport` is resolved
-// via an import below. `housingBatchMap` is a pre-existing unresolved
-// reference in the legacy monolith (the JSX branch reading it short-circuits
-// on `lForm.batchLabel` being empty most of the time); preserving the bare
-// reference — any runtime behavior change would be a separate bug hunt.
 // ============================================================================
 import React from 'react';
 import WcfYN from './WcfYN.jsx';
@@ -22,6 +15,11 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   const [broilerGroupsFromDb, setBroilerGroupsFromDb] = React.useState([]);
   const [pigGroupsFromDb, setPigGroupsFromDb] = React.useState([]);
   const [wfSettings, setWfSettings] = React.useState({});
+  // {housingName: batchName} — same source as AddFeedWebform / WebformHub.
+  // Drives the layer-dailys "Active in batch:" hint when admin picks a layer
+  // group. Defaults to {} so a missing config row leaves the badge hidden
+  // rather than throwing.
+  const [housingBatchMap, setHousingBatchMap] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
   const [err, setErr] = React.useState('');
   const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -33,11 +31,13 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
       sb.from('webform_config').select('data').eq('key','broiler_groups').maybeSingle(),
       sb.from('webform_config').select('data').eq('key','webform_settings').maybeSingle(),
       sb.from('webform_config').select('data').eq('key','active_groups').maybeSingle(),
-    ]).then(([fc,bg,ws,ag]) => {
+      sb.from('webform_config').select('data').eq('key','housing_batch_map').maybeSingle(),
+    ]).then(([fc,bg,ws,ag,hbm]) => {
       if(fc?.data?.data) setLoadedConfig(fc.data.data);
       if(Array.isArray(bg?.data?.data)&&bg.data.data.length>0) setBroilerGroupsFromDb(bg.data.data);
       if(ws?.data?.data) setWfSettings(ws.data.data);
       if(Array.isArray(ag?.data?.data)&&ag.data.data.length>0) setPigGroupsFromDb(ag.data.data);
+      if(hbm?.data?.data) setHousingBatchMap(hbm.data.data);
     });
   }, []);
 

@@ -726,7 +726,6 @@ const LivestockWeighInsView = ({sb, fmt, Header, authState, setView, showUsers, 
                                     const feedTxt = (Number.isFinite(feedLb)&&feedLb>0) ? (' · ~'+Math.round(feedLb)+' lb feed') : '';
                                     return <span style={{fontSize:11, padding:'2px 8px', borderRadius:4, background:'#ede9fe', color:'#5b21b6', fontWeight:600, whiteSpace:'nowrap'}}>{'→ Transferred to Breeding'+feedTxt}</span>;
                                   })()}
-                                  {false && false && <span>{'\u2192 Transferred to Breeding'+(e.feed_allocation_lbs?' \u00b7 ~'+Math.round(e.feed_allocation_lbs)+' lb feed':'')}</span>}
                                   {!editable && (() => {
                                     // Hide the transferred-to-breeding marker from the
                                     // visible note (it's an internal stamp from the

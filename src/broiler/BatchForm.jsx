@@ -517,7 +517,7 @@ export default function BatchForm({
 
           <div style={{padding:"12px 20px",borderTop:"1px solid #e5e7eb",display:"flex",gap:8,alignItems:"center"}}>
             {editId
-              ? <button style={S.btnDanger} onClick={()=>{del(editId);setShowForm(false);}}>Delete</button>
+              ? <button style={S.btnDanger} onClick={()=>{del(editId);closeForm();}}>Delete</button>
               : <button onClick={()=>submit(false)} style={{...S.btnPrimary,background:"#085041",cursor:"pointer"}}>Add batch</button>
             }
             <button style={S.btnGhost} onClick={closeForm}>Close</button>

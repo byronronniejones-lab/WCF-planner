@@ -1,6 +1,10 @@
 // ============================================================================
 // WCF Planner — main.jsx
 // ============================================================================
+/* global XLSX */
+// parseProcessorXlsx (line ~1386) reads the lazy-loaded SheetJS UMD which
+// attaches to window.XLSX via window._wcfLoadXLSX (defined below at the
+// "wcf-babel-* purge" block). Same pattern as cattle/sheep bulk-import.
 // Phase 1.2 of the Vite migration: app source moved verbatim from the
 // <script type="text/jsx-source" id="wcf-app-source"> block in index.html.
 // CDN globals (React, ReactDOM, supabase) become ESM imports here. NO logic
