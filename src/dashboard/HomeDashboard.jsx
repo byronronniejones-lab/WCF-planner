@@ -15,7 +15,7 @@ import { sb } from '../lib/supabase.js';
 import { fmt, fmtS, toISO, addDays, todayISO } from '../lib/dateUtils.js';
 import { calcPoultryStatus, calcBroilerStatsFromDailys, calcTimeline } from '../lib/broiler.js';
 import { calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus } from '../lib/pig.js';
-import { computeIntervalStatus, daysSince, MISSED_FUELING_DAYS, WARRANTY_WINDOW_DAYS } from '../lib/equipment.js';
+import { computeIntervalStatus, daysSince, WARRANTY_WINDOW_DAYS } from '../lib/equipment.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useBatches } from '../contexts/BatchesContext.jsx';
@@ -232,15 +232,15 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
     // Sort newest first
     allMissed.sort((a,b)=>b.date.localeCompare(a.date));
 
-    // ── Equipment attention: overdue services + upcoming-due services +
-    // 14-day missed-fueling alerts + every-fillup item streaks + warranty.
-    // One row per actionable item (each overdue/upcoming interval is its
-    // own row so multiples on the same piece all surface). Only `warranty`
-    // is manually clearable (no underlying signal resolves it on its own);
-    // the other kinds auto-clear when their state resolves: interval ticked
-    // complete on a fueling, fueling logged → days_since drops below
-    // threshold, every-fillup items ticked on next fueling.
-    const UPCOMING_WINDOW = 50; // hours or km — same window soonestDue uses
+    // ── Equipment attention: overdue services + every-fillup item streaks +
+    // warranty. Equipment maintenance is HOUR/KM-based, not calendar-based —
+    // animal daily reports are the calendar/time workflow, equipment is not.
+    // So this section deliberately does NOT surface near-due ("upcoming")
+    // services or stale-fueling-by-time alerts; both were noisy without
+    // signaling action. Only `warranty` is manually clearable (no underlying
+    // signal resolves it on its own); the other kinds auto-clear when their
+    // state resolves: interval ticked complete on a fueling, every-fillup
+    // items ticked on next fueling.
     const equipmentAttention = [];
     equipment.forEach(eq => {
       const unit = eq.tracking_unit === 'km' ? 'km' : 'hours';
@@ -249,10 +249,10 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
       const intervals = Array.isArray(eq.service_intervals) ? eq.service_intervals : [];
       const completions = equipmentCompletions[eq.id] || [];
 
-      // Each overdue OR upcoming interval = its own row. NOT manually
-      // clearable — both kinds auto-clear when an operator completes the
-      // checklist on a fueling (which moves the next-due milestone past
-      // current reading).
+      // Each overdue interval = its own row so multiples on the same piece
+      // all surface. NOT manually clearable — auto-clears when an operator
+      // completes the checklist on a fueling (which moves the next-due
+      // milestone past the current reading).
       if (Number.isFinite(currentReading) && currentReading > 0 && intervals.length > 0) {
         const statuses = computeIntervalStatus(intervals, completions, currentReading);
         const overdue = statuses.filter(s => s.overdue).sort((a, b) => a.hours_or_km - b.hours_or_km);
@@ -266,47 +266,6 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
             label: eq.name,
             detail: `${intervalLbl} · ${Math.round(over).toLocaleString()} ${unitLabel} overdue`,
           });
-        }
-        // Upcoming: not yet overdue, but within UPCOMING_WINDOW of next_due.
-        // Surfaces planning windows so admins can stage parts before the
-        // service crosses into overdue territory.
-        const upcoming = statuses
-          .filter(s => !s.overdue && s.until_due != null && s.until_due > 0 && s.until_due <= UPCOMING_WINDOW)
-          .sort((a, b) => a.until_due - b.until_due);
-        for (const s of upcoming) {
-          const intervalLbl = s.label || (s.hours_or_km + unitLabel + ' service');
-          equipmentAttention.push({
-            key: `equip-upcoming-${eq.id}|${s.kind}|${s.hours_or_km}`,
-            kind: 'upcoming',
-            slug: eq.slug,
-            label: eq.name,
-            detail: `${intervalLbl} due in ${s.until_due.toLocaleString()} ${unitLabel}`,
-          });
-        }
-      }
-
-      // Missed fueling: equipment with no fueling logged in the past
-      // MISSED_FUELING_DAYS days. Most-recent-by-DATE (not by reading) so
-      // legacy data quirks (manual edits, meter resets) don't mask a stale
-      // piece. Auto-clears on next fueling (days_since drops to 0).
-      const fuelingsByDate = equipmentFuelings[eq.id] || [];
-      if (fuelingsByDate.length > 0) {
-        const latestByDate = fuelingsByDate.reduce(
-          (m, f) => (!m || (f.date || '') > (m.date || '')) ? f : m,
-          null
-        );
-        if (latestByDate?.date) {
-          const days = daysSince(latestByDate.date);
-          if (days != null && days > MISSED_FUELING_DAYS) {
-            const teamSuffix = latestByDate.team_member ? ' by ' + latestByDate.team_member : '';
-            equipmentAttention.push({
-              key: `equip-missed-fuel-${eq.id}|${latestByDate.date}`,
-              kind: 'missed_fueling',
-              slug: eq.slug,
-              label: eq.name,
-              detail: `No fueling logged for ${days} days (last on ${latestByDate.date}${teamSuffix})`,
-            });
-          }
         }
       }
 
@@ -365,12 +324,10 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
         }
       }
     });
-    // Order: overdue → upcoming → missed_fueling → fillup_streak → warranty;
-    // alphabetical within each kind. Priority logic: past-due first, then
-    // about-to-be-due (plan ahead), then "this machine isn't being used or
-    // logged" (might mean unlogged usage), then per-fillup hygiene, then
-    // warranty (longest horizon).
-    const KIND_ORDER = {overdue: 0, upcoming: 1, missed_fueling: 2, fillup_streak: 3, warranty: 4};
+    // Order: overdue → fillup_streak → warranty; alphabetical within each
+    // kind. Priority: past-due hour/km service first, then per-fillup
+    // checklist hygiene, then warranty (longest horizon).
+    const KIND_ORDER = {overdue: 0, fillup_streak: 1, warranty: 2};
     equipmentAttention.sort((a, b) => {
       const ko = (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9);
       if (ko !== 0) return ko;
@@ -556,19 +513,15 @@ export default function HomeDashboard({ Header, loadUsers, canAccessProgram, VIE
                 {equipmentAttention.map(a=>{
                   const palette = a.kind === 'overdue'
                     ? {bg:'#fef2f2', bd:'#fecaca', tx:'#b91c1c', icon:'🔧'}
-                    : a.kind === 'upcoming'
-                      ? {bg:'#eff6ff', bd:'#bfdbfe', tx:'#1e40af', icon:'🔜'}
-                      : a.kind === 'missed_fueling'
-                        ? {bg:'#fff7ed', bd:'#fed7aa', tx:'#9a3412', icon:'⛽'}
-                        : a.kind === 'fillup_streak'
-                          ? {bg:'#fffbeb', bd:'#fde68a', tx:'#92400e', icon:'⛽'}
-                          : {bg:'#fef3c7', bd:'#fcd34d', tx:'#92400e', icon:'🛡'};
+                    : a.kind === 'fillup_streak'
+                      ? {bg:'#fffbeb', bd:'#fde68a', tx:'#92400e', icon:'⛽'}
+                      : {bg:'#fef3c7', bd:'#fcd34d', tx:'#92400e', icon:'🛡'};
                   const isClearable = a.kind === 'warranty';
                   return (
                     <div key={a.key}
                       data-attention-kind={a.kind}
                       data-equipment-slug={a.slug}
-                      onClick={()=>navigate((a.kind==='fillup_streak'||a.kind==='missed_fueling')?'/fueling/'+a.slug:'/equipment/'+a.slug)}
+                      onClick={()=>navigate(a.kind==='fillup_streak'?'/fueling/'+a.slug:'/equipment/'+a.slug)}
                       style={{background:palette.bg,border:'1px solid '+palette.bd,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
                       <span style={{fontSize:18}}>{palette.icon}</span>
                       <div style={{flex:1}}>

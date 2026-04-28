@@ -1,19 +1,30 @@
 // ============================================================================
 // HomeDashboard equipment-attention seed — for tests/home_dashboard_equipment.spec.js
 // ============================================================================
-// One factory, parameterized by kind. Each invocation seeds a single piece of
-// equipment positioned to trigger exactly its target alert kind so the spec's
-// row locator unambiguously hits a single row.
+// One factory, parameterized by kind. Three kinds are POSITIVE seeds (overdue
+// / fillup_streak / warranty) — they shape the equipment so the spec asserts
+// a row WITH the matching data-attention-kind appears. Two kinds are NEGATIVE
+// seeds (upcoming / missed_fueling) — they shape near-due-but-not-overdue
+// equipment and stale-fueling equipment so the spec asserts NO row appears
+// for the seeded slug. Per Ronnie 2026-04-28 (eve+), equipment maintenance
+// is hour/km-based, not calendar-based — animal dailys are the calendar
+// workflow. So the dashboard deliberately does not surface near-due forecasts
+// or "no fueling for N days" alerts; the negative seeds lock that contract.
 //
 //   seedHomeDashboardEquipment(supabaseAdmin, { kind })
-//     kind: 'overdue' | 'upcoming' | 'missed_fueling' | 'fillup_streak' | 'warranty'
-//     Returns { slug, kind, expectedSubstrings: [...] } — substrings the spec
-//     should assert via toContainText (per Codex's preference for focused
-//     signal assertions, not exact full-row text).
+//     kind: 'overdue' | 'fillup_streak' | 'warranty'        (positive)
+//         | 'upcoming' | 'missed_fueling'                   (negative)
+//     Positive returns { slug, kind, expectedSubstrings: [...] } — substrings
+//     the spec should assert via toContainText (per Codex's preference for
+//     focused signal assertions, not exact full-row text).
+//     Negative returns { slug, kind } — no expectedSubstrings.
 //
 // All seed values map back to the constants in src/lib/equipment.js
-// (MISSED_FUELING_DAYS=14, WARRANTY_WINDOW_DAYS=60) and the local
-// UPCOMING_WINDOW=50 in HomeDashboard.jsx. No prod logic / threshold change.
+// (WARRANTY_WINDOW_DAYS=60). MISSED_FUELING_DAYS and UPCOMING_WINDOW were
+// removed from production along with the upcoming/missed_fueling kinds; the
+// negative seeds still produce equipment shaped like the legacy thresholds
+// (>14 days since fueling; ≤50 hours until next_due) so the negative lock
+// proves the new behavior even against the old trigger conditions.
 // ============================================================================
 
 import { assertTestDatabase } from '../setup/assertTestDatabase.js';
@@ -94,7 +105,11 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
   }
 
   if (kind === 'upcoming') {
-    // current_hours=60, interval=100h, no completions → next_due=100, until_due=40 (≤ 50).
+    // NEGATIVE seed. current_hours=60, interval=100h, no completions →
+    // next_due=100, until_due=40. Under the legacy upcoming-kind logic this
+    // shape would have surfaced as a row; the spec's negative test asserts
+    // it no longer does. Equipment maintenance is hour/km-based, not
+    // calendar-based, so near-due forecasts deliberately don't render.
     must(
       await supabaseAdmin.from('equipment').insert({
         id,
@@ -108,17 +123,15 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
       }),
       'equipment insert (upcoming)'
     );
-    return {
-      slug,
-      kind,
-      // Detail: '100hr service due in 40 h'
-      expectedSubstrings: ['100hr service', 'due in'],
-    };
+    return {slug, kind};
   }
 
   if (kind === 'missed_fueling') {
-    // No service intervals, no fillup items → only the missed-fueling path
-    // triggers. Latest fueling 20 days ago (> MISSED_FUELING_DAYS=14).
+    // NEGATIVE seed. No service intervals, no fillup items, latest fueling
+    // 20 days ago (which would have tripped the legacy MISSED_FUELING_DAYS
+    // ≥ 14 threshold). Under the new contract, no row renders — equipment
+    // is hour/km-based, not calendar-based, so stale-fueling-by-time
+    // doesn't surface here. Animal dailies are the calendar workflow.
     const fuelDate = daysAgo(20);
     must(
       await supabaseAdmin.from('equipment').insert({
@@ -145,14 +158,7 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
       }),
       'equipment_fuelings insert (missed_fueling)'
     );
-    return {
-      slug,
-      kind,
-      // Detail: 'No fueling logged for 20 days (last on 2026-04-08 by Stale Tester)'
-      // Day count is unstable across midnight; assert stable substrings only.
-      expectedSubstrings: ['No fueling logged for', 'last on ' + fuelDate, 'Stale Tester'],
-      seededFuelDate: fuelDate,
-    };
+    return {slug, kind, seededFuelDate: fuelDate};
   }
 
   if (kind === 'fillup_streak') {

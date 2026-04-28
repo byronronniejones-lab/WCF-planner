@@ -38,25 +38,33 @@ disagree, CC flags it and you decide.
 
 ---
 
-## Where we are (one paragraph, snapshot 2026-04-28 eve)
+## Where we are (one paragraph, snapshot 2026-04-28 eve hotfix)
 
-**Feed physical count delivery-included flag shipped.** Persists
-`inv.includesCurrentMonthDelivery: bool` on pig + per-poultry-type
-count records; when true, count's-own-month order is suppressed from
-EOM math + added to the system-side adjustment compare (zero phantom
-Adj on a perfect count). Two views touched (`PigFeedView.jsx`,
-`BroilerFeedView.jsx`); 4 rounds of Codex review (badge math
-reconciliation at 3 sites, EOM helper copy, controlled dropdown,
-past-dated-count generalization). Pre-commit gate clean: **68 vitest
-+ 43 e2e + 0 lint errors / 636 warnings + clean build**. Playwright
-Phase 1 still closed; A10 CI workflow live but e2e step still blocked
-on the 5 GitHub Actions secrets being configured (Ronnie task, ~5 min).
-Next decision (no default queued): A10 secrets, operational items
-(cattle modal cleanup, `/fueling/supply` smoke test, multi-month bill
-validation, new Podio app), deferred Initiative B Phase 2.4–2.6
-(Prettier autofix, no-unused-vars, exhaustive-deps), or **Initiative
-C** (PWA shell). See `PROJECT.md` §Part 4 last row + §8 for current
-state, shipped specs, deferred items, and gotchas.
+**Two builds shipped this session, plus a hotfix:** (1) feed physical
+count delivery-included flag (`inv.includesCurrentMonthDelivery: bool`
+on pig + per-poultry-type count records); (2) HomeDashboard equipment-
+attention noise removal — `upcoming` and `missed_fueling` kinds
+dropped after Ronnie clarified that **equipment maintenance is hour/km-
+based, not calendar-based** (animal dailies are the calendar workflow).
+HomeDashboard now surfaces only `overdue` / `fillup_streak` / `warranty`.
+Two former positive specs were rewritten as negative regression locks
+(near-due seed + stale-fueling seed both prove no row renders). DOM
+hook list updated: `data-attention-kind="overdue|fillup_streak|warranty"`.
+**Initiative B Phase 2.4 Prettier go-live is staged but NOT yet pushed**
+— 4 commits sit on local `main` (8c60621, e7ad316, 32ed0c7, 32a97d9),
+waiting to be rebased onto the post-hotfix `origin/main` and pushed.
+Pre-commit gate clean throughout: **68 vitest + 43 e2e + 0 lint errors
+/ 636 warnings + clean build**. Playwright Phase 1 still closed; A10
+CI workflow live + (after Prettier rebase pushes) gated on `npm run
+format:check`; e2e step still blocked on the 5 GitHub Actions secrets
+being configured (Ronnie task, ~5 min). Next decision (no default
+queued): A10 secrets, operational items (cattle modal cleanup,
+`/fueling/supply` smoke test, multi-month bill validation, new Podio
+app), deferred Initiative B **Phase 2.5–2.6** (no-unused-vars,
+exhaustive-deps; Phase 2.4 Prettier shipping in this session post-
+hotfix), or **Initiative C** (PWA shell). See `PROJECT.md` §Part 4
+last row + §8 for current state, shipped specs, deferred items, and
+gotchas.
 
 ---
 
@@ -77,15 +85,19 @@ Read PROJECT.md top to bottom. Pay extra attention to:
     entries worth a careful read (pig batch tile selector trap,
     Supabase storage.objects DELETE block, DOM hooks across views,
     label-vs-th selector trap, Vite dev-server port-5173 race).
-  - The most recent rows in §Part 4 Session Index. The 2026-04-28 (eve)
-    row covers the most recent working session: feed physical count
-    delivery-included flag (`inv.includesCurrentMonthDelivery: bool`
-    on pig + per-poultry-type count records). The 2026-04-28 (late PM)
-    row covers Playwright Phase 1 wrap + Initiative B Phase 1 + A10 CI
-    + equipment dashboard rollup. Durable gotchas worth re-reading
-    include the DOM hooks on `HomeDashboard.jsx` and
-    `FuelReconcileView.jsx`, and the Vite dev-server cleanup race on
-    consecutive `npm run test:e2e` runs.
+  - The most recent rows in §Part 4 Session Index. The 2026-04-28
+    (eve hotfix) row covers the HomeDashboard equipment-attention
+    noise removal: `upcoming` + `missed_fueling` kinds dropped, since
+    equipment is hour/km-based and those were calendar-time noise.
+    Live kinds now: overdue / fillup_streak / warranty. The 2026-04-28
+    (eve) row covers the feed delivery-included flag. The 2026-04-28
+    (late PM) row covers Playwright Phase 1 wrap + Initiative B Phase
+    1 + A10 CI + equipment dashboard rollup (which the hotfix partly
+    walked back). Durable gotchas worth re-reading include the DOM
+    hooks on `HomeDashboard.jsx` (now `data-attention-kind`=
+    overdue|fillup_streak|warranty, slimmer than originally documented)
+    and `FuelReconcileView.jsx`, and the Vite dev-server cleanup race
+    on consecutive `npm run test:e2e` runs.
 
 Your auto-memory carries Ronnie's working-style rules: commit/push
 approval gates, multi-choice questions via AskUserQuestion, no-assume,
@@ -102,23 +114,29 @@ warranted; you're not obligated to take its advice over your own
 judgment, but flag the disagreement explicitly so I can adjudicate.
 
 State at session start:
-  - All 2026-04-28 (eve) work pushed to prod. Working tree should
-    be clean.
+  - All 2026-04-28 (eve hotfix) work pushed to prod. Working tree should
+    be clean (or have only the rebased Prettier series ahead — see
+    below). Verify via `git status` and `git log --oneline -10`.
   - 43 e2e + 68 vitest + 0 lint errors at last run. 636 warnings (all
     `no-unused-vars` + `react-hooks/exhaustive-deps`, deferred to
-    Initiative B Phase 2.4-2.6).
-  - A10 CI workflow is live but the e2e step fails until 5 GitHub
-    Actions secrets are configured (see §8 Near-term "A10 CI Actions
-    secrets configuration"). Lint / vitest / build pass independently.
+    Initiative B Phase 2.5-2.6).
+  - A10 CI workflow is live (and after the Prettier series lands,
+    enforces `npm run format:check`); e2e step still fails until 5
+    GitHub Actions secrets are configured (see §8 Near-term "A10 CI
+    Actions secrets configuration"). Format / lint / vitest / build
+    pass independently.
   - Playwright Phase 1 is closed; no queued specs unless Ronnie names
-    a new one.
+    a new one. The 5-spec home_dashboard_equipment.spec.js is now 3
+    positive (overdue / fillup_streak / warranty) + 2 negative locks
+    (near-due / stale-fueling).
   - Feed physical count delivery-included flag shipped 2026-04-28 (eve).
-    Pig + per-poultry-type count records now carry
-    `includesCurrentMonthDelivery: bool` (default false; old records
-    read as false). When true, count's-own-month order is suppressed
-    from EOM math AND added to the system-side adjustment compare.
-    No DB migration. Touched only `PigFeedView.jsx` +
-    `BroilerFeedView.jsx`.
+    Pig + per-poultry-type count records carry
+    `includesCurrentMonthDelivery: bool` (default false). No DB
+    migration.
+  - HomeDashboard equipment-attention scope corrected 2026-04-28 (eve
+    hotfix): only `overdue` / `fillup_streak` / `warranty` render.
+    Equipment is hour/km-based, not calendar-based — `upcoming` and
+    `missed_fueling` were calendar-time-noise and were removed.
   - PROJECT.md and HO.md were last updated by the prior session's
     wrap commit. Verify via `git log --oneline -3` it's on origin/main
     before any further work.
@@ -197,31 +215,38 @@ Read these files to get oriented:
 - PROJECT.md (top to bottom):
     §1 SOP, §3 hand-created prod tables, §7 don't-touch list, §8
     roadmap + Known gotchas, the most-recent rows in §Part 4 Session
-    Index. The 2026-04-28 (eve) row covers the feed physical count
-    delivery-included flag (the build queued by you in the prior
-    session). The 2026-04-28 (late PM) row covers Playwright Phase 1
-    wrap + Initiative B Phase 1 + A10 CI + equipment dashboard
-    rollup. The 2026-04-27 PM row covers the cattle/sheep Send-to-
-    Processor + pig accounting overhaul that A5/A6/A9 lock.
+    Index. The 2026-04-28 (eve hotfix) row covers the HomeDashboard
+    equipment-attention noise removal (upcoming + missed_fueling
+    kinds dropped — equipment is hour/km-based, not calendar-based).
+    The 2026-04-28 (eve) row covers the feed delivery-included flag.
+    The 2026-04-28 (late PM) row covers Playwright Phase 1 wrap +
+    Initiative B Phase 1 + A10 CI + equipment dashboard rollup. The
+    2026-04-27 PM row covers the cattle/sheep Send-to-Processor +
+    pig accounting overhaul that A5/A6/A9 lock.
 - HO.md (this file). The prompt CC was booted with is also in here.
 
 State: Playwright Phase 1 is closed (9 specs + smoke + 1 follow-up
 coverage spec). Initiative B Phase 1 + surgical Phase 2 cleanups
-landed lint at 0 errors / 636 warnings. A10 CI workflow is live;
-e2e step needs 5 GitHub Actions secrets configured before it
-validates end-to-end (lint + vitest + build + install confirmed
-green on first push). Equipment dashboard rollup + A1 Playwright
-coverage shipped. Feed physical count delivery-included flag shipped
-2026-04-28 (eve) — `inv.includesCurrentMonthDelivery: bool` on pig +
-per-poultry-type count records, default false, no DB migration.
-Test counts: 68 vitest + 43 e2e + 0 lint errors.
+landed lint at 0 errors / 636 warnings. **Initiative B Phase 2.4
+Prettier go-live is staged on local main (4 commits) but not yet
+pushed — Ronnie will decide push timing after this hotfix verifies
+in production.** A10 CI workflow live; e2e step needs 5 GitHub
+Actions secrets configured before it validates end-to-end. Feed
+delivery-included flag shipped 2026-04-28 (eve). HomeDashboard
+equipment-attention scope corrected 2026-04-28 (eve hotfix) — only
+overdue / fillup_streak / warranty render now; upcoming +
+missed_fueling removed as calendar-time noise. Test counts: 68
+vitest + 43 e2e + 0 lint errors.
 
 **No queued build.** When Ronnie names the next one, expect CC to
 relay a plan packet first (per the cadence we've been running).
 Common candidates: A10 secrets configuration follow-up, cattle modal
 cleanup, `/fueling/supply` smoke, multi-month bill validation,
-deferred Initiative B Phase 2.4-2.6 cleanups, or Initiative C PWA
-shell. None are queued — Ronnie picks.
+deferred Initiative B **Phase 2.5–2.6** (Phase 2.4 done), or
+Initiative C PWA shell. None are queued — Ronnie picks. Reminder:
+on review packets, expect a clean diff stat, fresh `npm test` /
+`npm run lint` / `npm run build` outputs, and `npm run format:check`
+clean (added to CI 2026-04-28 eve+).
 
 Active load-bearing entries to be aware of (read full text in
 PROJECT.md §7):
