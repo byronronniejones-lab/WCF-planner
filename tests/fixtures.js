@@ -12,6 +12,7 @@ import {
   seedSheepPreAttachedForFallback,
 } from './scenarios/sheep_processor_seed.js';
 import { seedBroilerTimeline } from './scenarios/broiler_timeline_seed.js';
+import { seedPigFCRScenario } from './scenarios/pig_fcr_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -107,6 +108,15 @@ export const test = base.extend({
     await use(async (opts = {}) => {
       await resetTestDatabase();
       return seedBroilerTimeline(supabaseAdmin, opts);
+    });
+  },
+  // pigFCRScenario — A9 fcrCached clear-on-null contract setup. Factory
+  // accepts { withCredits, withCachedValue } so the three modes (populate,
+  // clear-on-null, delete-trip-clear) reuse one seed shape.
+  pigFCRScenario: async ({ supabaseAdmin }, use) => {
+    await use(async (opts = {}) => {
+      await resetTestDatabase();
+      return seedPigFCRScenario(supabaseAdmin, opts);
     });
   },
 });
