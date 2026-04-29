@@ -6,6 +6,7 @@
 // `sb` via props.
 // ============================================================================
 import React from 'react';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
   const {useState, useEffect} = React;
   const todayStr = (() => {
@@ -24,13 +25,7 @@ const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        if (data && Array.isArray(data.data)) setTeamMembers(data.data);
-      });
+    loadRoster(sb).then((roster) => setTeamMembers(activeNames(roster)));
     if (species === 'broiler') {
       sb.from('webform_config')
         .select('data')

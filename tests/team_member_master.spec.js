@@ -1,0 +1,213 @@
+import {test, expect} from './fixtures.js';
+import {createClient} from '@supabase/supabase-js';
+
+// ============================================================================
+// Team Member Master List Cleanup spec — 2026-04-29
+// ============================================================================
+// Locks the post-cleanup contract:
+//   - webform_config.team_roster is the canonical shape [{id,name,active}]
+//   - webform_config.team_members is the active-name mirror
+//   - reads prefer team_roster, fall back to team_members
+//   - inactive members hidden from public dropdowns
+//   - Sheep weigh-in admin selector populates from the master roster
+//   - Fuel Supply public dropdown reads master (not per_form_team_members)
+//   - Per-form / per-species filtering retired
+//
+// 4 tests total. Each runs against a fresh truncated DB; each seeds a
+// minimal roster directly via supabaseAdmin and asserts read-side
+// behavior. Writes go through the admin editor for one of the tests so
+// the read-fresh-then-merge save path is exercised end-to-end.
+// ============================================================================
+
+const ROSTER_SEED = [
+  {id: 'tm-bman', name: 'BMAN', active: true},
+  {id: 'tm-brian', name: 'BRIAN', active: true},
+  {id: 'tm-old', name: 'OLDGUY', active: false},
+];
+
+async function seedRoster(supabaseAdmin) {
+  // Mirror what saveRoster writes: both canonical + legacy mirror.
+  const activeMirror = ROSTER_SEED.filter((e) => e.active).map((e) => e.name);
+  const r1 = await supabaseAdmin
+    .from('webform_config')
+    .upsert({key: 'team_roster', data: ROSTER_SEED}, {onConflict: 'key'});
+  if (r1.error) throw new Error(`seedRoster: roster upsert failed: ${r1.error.message}`);
+  const r2 = await supabaseAdmin
+    .from('webform_config')
+    .upsert({key: 'team_members', data: activeMirror}, {onConflict: 'key'});
+  if (r2.error) throw new Error(`seedRoster: legacy mirror upsert failed: ${r2.error.message}`);
+}
+
+// --------------------------------------------------------------------------
+// Test 1 — Fuel Supply public dropdown reads master roster (not per-form)
+// --------------------------------------------------------------------------
+test('fuel supply: public dropdown shows active master roster only', async ({
+  page,
+  supabaseAdmin,
+  resetDb,
+  browser,
+}) => {
+  await resetDb();
+  await seedRoster(supabaseAdmin);
+
+  // Anon context — public webform path. The fuel_supplies RLS only grants
+  // anon INSERT, so the suite-default admin storageState would hit 42501.
+  const anonContext = await browser.newContext({storageState: undefined});
+  const anonPage = await anonContext.newPage();
+  try {
+    await anonPage.goto('/fueling/supply');
+    await expect(anonPage.getByText('Fuel Supply Log')).toBeVisible({timeout: 15_000});
+    await expect(anonPage.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+    // The team-member dropdown should contain BMAN + BRIAN, NOT OLDGUY.
+    const teamSelect = anonPage.getByRole('combobox').first();
+    const optionTexts = await teamSelect.locator('option').allTextContents();
+    expect(optionTexts).toContain('BMAN');
+    expect(optionTexts).toContain('BRIAN');
+    expect(optionTexts).not.toContain('OLDGUY');
+  } finally {
+    await anonContext.close();
+  }
+  void page;
+});
+
+// --------------------------------------------------------------------------
+// Test 2 — Sheep weigh-in admin selector populates from master roster
+// --------------------------------------------------------------------------
+test('sheep weigh-in admin: New Weigh-In modal dropdown populates', async ({page, supabaseAdmin, resetDb}) => {
+  await resetDb();
+  await seedRoster(supabaseAdmin);
+
+  await page.goto('/sheep/weighins');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  // Open the New Weigh-In modal.
+  await page.getByRole('button', {name: /New Weigh-In/i}).click();
+  await expect(page.getByText('New Sheep Weigh-In')).toBeVisible({timeout: 5_000});
+
+  // The team-member dropdown should populate with active master names.
+  // Poll because loadRoster is async and the modal renders before it
+  // resolves on the first tick.
+  const teamSelect = page.getByRole('combobox').first();
+  await expect
+    .poll(async () => await teamSelect.locator('option').allTextContents(), {timeout: 10_000})
+    .toContain('BMAN');
+  const optionTexts = await teamSelect.locator('option').allTextContents();
+  expect(optionTexts).toContain('BRIAN');
+  expect(optionTexts).not.toContain('OLDGUY');
+});
+
+// --------------------------------------------------------------------------
+// Test 3 — Master add via central editor flows to public dropdowns
+// --------------------------------------------------------------------------
+test('central editor: add propagates to fuel supply public form', async ({page, supabaseAdmin, resetDb, browser}) => {
+  await resetDb();
+  await seedRoster(supabaseAdmin);
+
+  await page.goto('/admin');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Webforms tab is the default admin tab.
+
+  // Add NEWGUY via the central editor.
+  await page.locator('[data-roster-add-input="1"]').fill('NEWGUY');
+  await page.locator('[data-roster-add-button="1"]').click();
+
+  // Wait for the chip to render — saveRoster writes both keys + setWfRoster
+  // updates state; the chip is the operator-visible signal.
+  await expect(page.locator('[data-roster-active="1"]', {hasText: 'NEWGUY'})).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // Verify roster persisted to DB with both keys.
+  const {data: rosterRow} = await supabaseAdmin
+    .from('webform_config')
+    .select('data')
+    .eq('key', 'team_roster')
+    .maybeSingle();
+  const rosterNames = (rosterRow.data || []).filter((e) => e.active).map((e) => e.name);
+  expect(rosterNames).toContain('NEWGUY');
+
+  const {data: legacyRow} = await supabaseAdmin
+    .from('webform_config')
+    .select('data')
+    .eq('key', 'team_members')
+    .maybeSingle();
+  expect(legacyRow.data).toContain('NEWGUY');
+
+  // Public form sees NEWGUY in its dropdown (anon context — fuel_supplies
+  // RLS only grants anon INSERT, so we use a fresh anonymous context).
+  const anonContext = await browser.newContext({storageState: undefined});
+  const anonPage = await anonContext.newPage();
+  try {
+    await anonPage.goto('/fueling/supply');
+    await expect(anonPage.getByText('Fuel Supply Log')).toBeVisible({timeout: 15_000});
+    await expect(anonPage.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+    const teamSelect = anonPage.getByRole('combobox').first();
+    const optionTexts = await teamSelect.locator('option').allTextContents();
+    expect(optionTexts).toContain('NEWGUY');
+  } finally {
+    await anonContext.close();
+  }
+});
+
+// --------------------------------------------------------------------------
+// Test 4 — Deactivated names hidden from public, visible to admin (history)
+// --------------------------------------------------------------------------
+test('deactivated names: hidden from public dropdown, visible in admin Inactive section', async ({
+  page,
+  supabaseAdmin,
+  resetDb,
+  browser,
+}) => {
+  await resetDb();
+  // Seed with OLDGUY active first, then deactivate via the editor.
+  const initialRoster = [
+    {id: 'tm-bman', name: 'BMAN', active: true},
+    {id: 'tm-old', name: 'OLDGUY', active: true},
+  ];
+  await supabaseAdmin.from('webform_config').upsert({key: 'team_roster', data: initialRoster}, {onConflict: 'key'});
+  await supabaseAdmin
+    .from('webform_config')
+    .upsert({key: 'team_members', data: ['BMAN', 'OLDGUY']}, {onConflict: 'key'});
+
+  await page.goto('/admin');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  // Both names render as active chips initially.
+  const oldGuyActive = page.locator('[data-roster-active="1"]', {hasText: 'OLDGUY'});
+  await expect(oldGuyActive).toBeVisible({timeout: 10_000});
+
+  // Click the × (deactivate) on OLDGUY's chip.
+  await oldGuyActive.locator('button[title="Deactivate"]').click();
+
+  // OLDGUY should reappear in the Inactive section.
+  await expect(page.locator('[data-roster-inactive="1"]', {hasText: 'OLDGUY'})).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // Public form's dropdown excludes OLDGUY (anon context).
+  const anonContext = await browser.newContext({storageState: undefined});
+  const anonPage = await anonContext.newPage();
+  try {
+    await anonPage.goto('/fueling/supply');
+    await expect(anonPage.getByText('Fuel Supply Log')).toBeVisible({timeout: 15_000});
+    await expect(anonPage.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+    const teamSelect = anonPage.getByRole('combobox').first();
+    const optionTexts = await teamSelect.locator('option').allTextContents();
+    expect(optionTexts).toContain('BMAN');
+    expect(optionTexts).not.toContain('OLDGUY');
+  } finally {
+    await anonContext.close();
+  }
+
+  // Legacy team_members mirror reflects active-only on disk.
+  const {data: legacyRow} = await supabaseAdmin
+    .from('webform_config')
+    .select('data')
+    .eq('key', 'team_members')
+    .maybeSingle();
+  expect(legacyRow.data).toEqual(['BMAN']);
+
+  // Use createClient import so the lint plugin doesn't drop it on accident.
+  void createClient;
+});

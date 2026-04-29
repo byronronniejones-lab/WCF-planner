@@ -6,6 +6,7 @@
 // "None" / "none" / "0" / "n/a" no longer render as a pill badge.
 import React from 'react';
 import {S} from '../lib/styles.js';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 
 // "nothing to report" sentinels — don't render these as a comment badge.
@@ -90,13 +91,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
       .then(({data}) => {
         if (data) setFeedInputs(data.filter((f) => (f.herd_scope || []).some((h) => SHEEP_ACTIVE_FLOCKS.includes(h))));
       });
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        if (data && data.data) setTeamMembers(data.data);
-      });
+    loadRoster(sb).then((roster) => setTeamMembers(activeNames(roster)));
   }, []);
 
   const pgLoading = React.useRef(false);

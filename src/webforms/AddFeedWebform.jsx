@@ -1,5 +1,6 @@
 // Phase 2 Round 5 extraction (verbatim).
 import React from 'react';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 
 const AddFeedWebform = ({sb}) => {
   const [configLoaded, setConfigLoaded] = React.useState(false);
@@ -11,7 +12,6 @@ const AddFeedWebform = ({sb}) => {
   const [layerGroupNames, setLayerGroupNames] = React.useState([]);
   const [layerBatchIdMap, setLayerBatchIdMap] = React.useState({});
   const [allTeamMembers, setAllTeamMembers] = React.useState([]);
-  const [perFormTM, setPerFormTM] = React.useState({});
 
   const [program, setProgram] = React.useState('');
   const [date, setDate] = React.useState('');
@@ -54,23 +54,20 @@ const AddFeedWebform = ({sb}) => {
       sb.from('webform_config').select('data').eq('key', 'housing_batch_map').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'broiler_groups').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key', 'per_form_team_members').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'full_config').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'webform_settings').maybeSingle(),
+      loadRoster(sb),
     ]).then(function (results) {
       var hbm = results[0],
         bg = results[1],
         ag = results[2],
-        tm = results[3],
-        pftm = results[4],
-        fc = results[5],
-        ws = results[6];
+        fc = results[3],
+        ws = results[4],
+        roster = results[5];
       if (hbm && hbm.data && hbm.data.data) setHousingBatchMap(hbm.data.data);
       if (bg && bg.data && Array.isArray(bg.data.data) && bg.data.data.length > 0) setBroilerGroups(bg.data.data);
       if (ag && ag.data && Array.isArray(ag.data.data) && ag.data.data.length > 0) setPigGroups(ag.data.data);
-      if (tm && tm.data && Array.isArray(tm.data.data) && tm.data.data.length > 0) setAllTeamMembers(tm.data.data);
-      if (pftm && pftm.data && pftm.data.data) setPerFormTM(pftm.data.data);
+      if (Array.isArray(roster) && roster.length > 0) setAllTeamMembers(activeNames(roster));
       if (ws && ws.data && ws.data.data) setWfSettings(ws.data.data);
       if (fc && fc.data && fc.data.data) {
         setWfCfg(fc.data.data);
@@ -81,12 +78,10 @@ const AddFeedWebform = ({sb}) => {
           return g.name || g;
         });
         if (lg.length > 0) setLayerGroupNames(lg);
-        // Build name→id map for batch_id resolution
         var idMap = {};
         lgAll.forEach(function (g) {
           if (g.id && g.name) idMap[g.name] = g.id;
         });
-        // Also map housing names to batch IDs via housing_batch_map + layerGroups
         if (hbm && hbm.data && hbm.data.data) {
           Object.entries(hbm.data.data).forEach(function (e) {
             var batchName = e[1];
@@ -97,13 +92,6 @@ const AddFeedWebform = ({sb}) => {
           });
         }
         setLayerBatchIdMap(idMap);
-        if (
-          (!tm || !tm.data || !tm.data.data || tm.data.data.length === 0) &&
-          fc.data.data.teamMembers &&
-          fc.data.data.teamMembers.length > 0
-        ) {
-          setAllTeamMembers(fc.data.data.teamMembers);
-        }
       }
       setConfigLoaded(true);
     });
@@ -154,9 +142,8 @@ const AddFeedWebform = ({sb}) => {
     return [];
   }
   function getTeamMemberList() {
-    var perForm = perFormTM['add-feed-webform'];
-    if (Array.isArray(perForm) && perForm.length > 0) return perForm;
-    if (afWf && afWf.teamMembers && afWf.teamMembers.length > 0) return afWf.teamMembers;
+    // Per-form filtering retired 2026-04-29 — every active master roster
+    // member appears in this dropdown.
     return allTeamMembers;
   }
 

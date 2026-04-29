@@ -1,9 +1,11 @@
 // SheepNewWeighInModal — mirror of CattleNewWeighInModal for sheep.
 // Lets the user pick team member, date, and flock (rams / ewes / feeders)
 // before opening a new draft weigh-in session. Reads team member options
-// from webform_config.per_form_team_members['sheep-weighins'] with
-// fallback to the global team_members list.
+// from the canonical master roster via loadRoster (legacy team_members
+// fallback handled inside the helper). Per-form filtering retired
+// 2026-04-29 — every active master roster member appears.
 import React from 'react';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 
 const SheepNewWeighInModal = ({sb, onClose, onCreate}) => {
   const {useState, useEffect} = React;
@@ -25,24 +27,13 @@ const SheepNewWeighInModal = ({sb, onClose, onCreate}) => {
     {v: 'feeders', l: 'Feeders'},
   ];
   useEffect(() => {
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'per_form_team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        const perForm = (data && data.data) || {};
-        if (Array.isArray(perForm['sheep-weighins']) && perForm['sheep-weighins'].length > 0) {
-          setTeamMembers(perForm['sheep-weighins']);
-          return;
-        }
-        sb.from('webform_config')
-          .select('data')
-          .eq('key', 'team_members')
-          .maybeSingle()
-          .then(({data: d2}) => {
-            if (d2 && Array.isArray(d2.data)) setTeamMembers(d2.data);
-          });
-      });
+    let cancelled = false;
+    loadRoster(sb).then((roster) => {
+      if (!cancelled) setTeamMembers(activeNames(roster));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
   async function create() {
     if (!team) {

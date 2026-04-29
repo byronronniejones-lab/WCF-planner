@@ -10,6 +10,7 @@ import WcfYN from './WcfYN.jsx';
 import WcfToggle from './WcfToggle.jsx';
 import {wcfSendEmail} from '../lib/email.js';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   const [loadedConfig, setLoadedConfig] = React.useState(null);
   const [broilerGroupsFromDb, setBroilerGroupsFromDb] = React.useState([]);
@@ -20,6 +21,10 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   // group. Defaults to {} so a missing config row leaves the badge hidden
   // rather than throwing.
   const [housingBatchMap, setHousingBatchMap] = React.useState({});
+  // Master active roster (loaded from webform_config.team_roster, falling
+  // back to the legacy team_members string[] inside loadRoster). Per-form
+  // filtering retired 2026-04-29 — all forms read this single list.
+  const [rosterNames, setRosterNames] = React.useState([]);
   const [submitting, setSubmitting] = React.useState(false);
   const [err, setErr] = React.useState('');
   const todayStr = () => {
@@ -35,12 +40,14 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
       sb.from('webform_config').select('data').eq('key', 'webform_settings').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'housing_batch_map').maybeSingle(),
-    ]).then(([fc, bg, ws, ag, hbm]) => {
+      loadRoster(sb),
+    ]).then(([fc, bg, ws, ag, hbm, roster]) => {
       if (fc?.data?.data) setLoadedConfig(fc.data.data);
       if (Array.isArray(bg?.data?.data) && bg.data.data.length > 0) setBroilerGroupsFromDb(bg.data.data);
       if (ws?.data?.data) setWfSettings(ws.data.data);
       if (Array.isArray(ag?.data?.data) && ag.data.data.length > 0) setPigGroupsFromDb(ag.data.data);
       if (hbm?.data?.data) setHousingBatchMap(hbm.data.data);
+      if (Array.isArray(roster) && roster.length > 0) setRosterNames(activeNames(roster));
     });
   }, []);
 
@@ -52,11 +59,14 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   const layerGroupNames = (cfg.layerGroups || []).filter((g) => g.status === 'active').map((g) => g.name || g);
   const pigGroups = pigGroupsFromDb.length > 0 ? pigGroupsFromDb : [];
 
-  function getFormTeamMembers(formId) {
-    const wf = (cfg.webforms || []).find((w) => w.id === formId);
-    const perForm = wf?.teamMembers || [];
-    const global = cfg.teamMembers || [];
-    return perForm.length > 0 ? perForm : global;
+  function getFormTeamMembers() {
+    // Per-form filtering retired 2026-04-29 — every active master roster
+    // member appears for every form. The formId parameter stays in callers'
+    // call sites for clarity but is ignored here. Falls back to the legacy
+    // full_config.teamMembers mirror if the canonical roster hasn't loaded
+    // yet (cold-load race protection).
+    if (rosterNames.length > 0) return rosterNames;
+    return cfg.teamMembers || [];
   }
   function allowAddGroup(formId) {
     if (wfSettings?.allowAddGroup && formId in wfSettings.allowAddGroup)

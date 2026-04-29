@@ -1,6 +1,7 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
 import {S} from '../lib/styles.js';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
@@ -56,13 +57,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
         }
         setLoading(false);
       });
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        if (data?.data) setTeamMembers(data.data);
-      });
+    loadRoster(sb).then((roster) => setTeamMembers(activeNames(roster)));
   }, []);
 
   // Auto-load all pages on mount (guarded to prevent duplicate fetches on re-render)

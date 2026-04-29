@@ -1,10 +1,13 @@
 // ============================================================================
 // CattleNewWeighInModal — Phase 2.1.4
 // ============================================================================
-// Verbatim byte-for-byte extraction from main.jsx. Cattle weigh-in flow
-// "new session" modal. Self-contained — uses `sb` via props.
+// Cattle weigh-in flow "new session" modal. Reads team member options from
+// the canonical master roster via loadRoster (legacy team_members fallback
+// handled inside the helper). Per-form filtering retired 2026-04-29 —
+// every active master roster member appears.
 // ============================================================================
 import React from 'react';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 const CattleNewWeighInModal = ({sb, onClose, onCreate}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
@@ -26,24 +29,13 @@ const CattleNewWeighInModal = ({sb, onClose, onCreate}) => {
     {v: 'bulls', l: 'Bulls'},
   ];
   useEffect(() => {
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'per_form_team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        const perForm = (data && data.data) || {};
-        if (Array.isArray(perForm['cattle-weighins']) && perForm['cattle-weighins'].length > 0) {
-          setTeamMembers(perForm['cattle-weighins']);
-          return;
-        }
-        sb.from('webform_config')
-          .select('data')
-          .eq('key', 'team_members')
-          .maybeSingle()
-          .then(({data: d2}) => {
-            if (d2 && Array.isArray(d2.data)) setTeamMembers(d2.data);
-          });
-      });
+    let cancelled = false;
+    loadRoster(sb).then((roster) => {
+      if (!cancelled) setTeamMembers(activeNames(roster));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
   async function create() {
     if (!team) {

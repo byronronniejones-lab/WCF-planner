@@ -20,6 +20,7 @@
 import React from 'react';
 
 import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
 // destination drives whether this row counts as CONSUMPTION in the admin
@@ -69,26 +70,29 @@ export default function FuelSupplyWebform({sb, onBack}) {
 
   React.useEffect(() => {
     let cancelled = false;
-    (async () => {
-      // Per-form override (admin > Equipment > Fuel Supply) wins.
-      const {data: pf} = await sb
-        .from('webform_config')
-        .select('data')
-        .eq('key', 'per_form_team_members')
-        .maybeSingle();
-      const pfList = pf && pf.data && Array.isArray(pf.data['fuel-supply']) ? pf.data['fuel-supply'] : null;
-      if (pfList && pfList.length) {
-        if (!cancelled) setTeamMembers(pfList);
-        return;
-      }
-      // Fall back to the master list.
-      const {data} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
-      if (!cancelled && data && Array.isArray(data.data)) setTeamMembers(data.data);
-    })();
+    // Single source of truth: the canonical team roster (fall-back to
+    // legacy team_members handled inside loadRoster). Per-form override
+    // was retired 2026-04-29 — every active master roster member appears
+    // in this dropdown.
+    loadRoster(sb).then((roster) => {
+      if (!cancelled) setTeamMembers(activeNames(roster));
+    });
     return () => {
       cancelled = true;
     };
   }, [sb]);
+
+  // If the operator's last-picked name (wcf_team) isn't in the current
+  // master active list, render it as a "(saved earlier)" stale option so
+  // they see what they had before. Defends against a deactivation that
+  // happened between sessions — operator can re-pick from the active list
+  // without seeing the dropdown silently clear their choice.
+  const teamOptions = React.useMemo(() => {
+    if (team && team.trim() && !teamMembers.includes(team)) {
+      return [{value: team, label: `${team} (saved earlier)`}, ...teamMembers.map((n) => ({value: n, label: n}))];
+    }
+    return teamMembers.map((n) => ({value: n, label: n}));
+  }, [teamMembers, team]);
 
   async function handleSubmit() {
     setErr('');
@@ -253,9 +257,9 @@ export default function FuelSupplyWebform({sb, onBack}) {
             <label style={lblS}>Team member *</label>
             <select value={team} onChange={(e) => setTeam(e.target.value)} style={inpS}>
               <option value="">Select…</option>
-              {teamMembers.map((n) => (
-                <option key={n} value={n}>
-                  {n}
+              {teamOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>

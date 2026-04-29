@@ -13,6 +13,7 @@
 
 import React from 'react';
 import {sb} from '../lib/supabase.js';
+import {loadRoster, activeNames as activeNamesFromRoster} from '../lib/teamMembers.js';
 import {EQUIPMENT_CATEGORIES} from '../lib/equipment.js';
 
 const inpS = {
@@ -96,7 +97,8 @@ export default function EquipmentWebformsAdmin() {
 
   return (
     <div>
-      <FuelSupplyAdminSection />
+      {/* FuelSupplyAdminSection retired 2026-04-29 — master roster lives in
+          /webforms admin (TeamRosterEditor); per-form filtering removed. */}
       <div style={card}>
         <div style={sectionTitle}>
           Equipment{' '}
@@ -391,20 +393,29 @@ function IdentityEditor({equipment, onReload}) {
 // Reads + writes the MASTER list (webform_config.team_members) so admins
 // can add/remove team members from the whole system right here, not just
 // toggle per-piece assignments.
+// Per-piece operator assignment editor. Reads the canonical team roster
+// via the helper and lets admin toggle which operators are assigned to
+// THIS piece of equipment. Master add/remove was retired 2026-04-29 —
+// the central editor in /webforms admin (TeamRosterEditor) is the only
+// writer of the master roster. This component never writes
+// webform_config.team_roster or team_members; it only writes the
+// equipment.team_members column.
 function TeamMembersEditor({equipment, onReload}) {
-  const [allTM, setAllTM] = React.useState([]);
+  const [roster, setRoster] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
-  const [newName, setNewName] = React.useState('');
 
-  async function loadMaster() {
-    const {data} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
-    if (data && Array.isArray(data.data)) setAllTM(data.data);
-  }
   React.useEffect(() => {
-    loadMaster();
+    let cancelled = false;
+    loadRoster(sb).then((r) => {
+      if (!cancelled) setRoster(r);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const assigned = Array.isArray(equipment.team_members) ? equipment.team_members : [];
+  const activeMaster = activeNamesFromRoster(roster);
 
   async function toggle(name) {
     setBusy(true);
@@ -418,171 +429,50 @@ function TeamMembersEditor({equipment, onReload}) {
     onReload();
   }
 
-  async function addMaster() {
-    const n = (newName || '').trim();
-    if (!n) return;
-    if (allTM.includes(n)) {
-      alert('"' + n + '" is already in the list.');
-      return;
-    }
-    setBusy(true);
-    const next = [...allTM, n].sort((a, b) => a.localeCompare(b));
-    const {error} = await sb.from('webform_config').upsert({key: 'team_members', data: next}, {onConflict: 'key'});
-    setBusy(false);
-    if (error) {
-      alert('Add failed: ' + error.message);
-      return;
-    }
-    setAllTM(next);
-    setNewName('');
-  }
-
-  async function removeMaster(name) {
-    if (
-      !confirm(
-        'Remove "' +
-          name +
-          '" from the team-member list?\n\nThey will also be removed from every piece of equipment they were assigned to. Past fueling records by this person are NOT affected.',
-      )
-    )
-      return;
-    setBusy(true);
-    // 1. Remove from master list.
-    const next = allTM.filter((n) => n !== name);
-    const {error: mErr} = await sb
-      .from('webform_config')
-      .upsert({key: 'team_members', data: next}, {onConflict: 'key'});
-    if (mErr) {
-      setBusy(false);
-      alert('Remove failed: ' + mErr.message);
-      return;
-    }
-    // 2. Cascade: strip from every equipment.team_members array that included them.
-    const {data: eqs} = await sb.from('equipment').select('id,team_members');
-    const hits = (eqs || []).filter((e) => Array.isArray(e.team_members) && e.team_members.includes(name));
-    for (const e of hits) {
-      const filtered = e.team_members.filter((n) => n !== name);
-      await sb.from('equipment').update({team_members: filtered}).eq('id', e.id);
-    }
-    setBusy(false);
-    setAllTM(next);
-    onReload();
-  }
-
   return (
     <div style={card}>
       <div style={sectionTitle}>
         Team Members{' '}
         <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
-          Assign operators to this piece · master list shared across all webforms
+          Assign operators to this piece · names managed in /webforms admin
         </span>
       </div>
-      {allTM.length === 0 && (
-        <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>Loading team members…</div>
+      {activeMaster.length === 0 && (
+        <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
+          No active team members yet. Add names in the Webforms admin → Team Members section.
+        </div>
       )}
-      {allTM.length > 0 && (
+      {activeMaster.length > 0 && (
         <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10}}>
-          {allTM.map((name) => {
+          {activeMaster.map((name) => {
             const on = assigned.includes(name);
             return (
-              <span
+              <button
                 key={name}
+                onClick={() => toggle(name)}
+                disabled={busy}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
                   fontSize: 12,
+                  padding: '5px 11px',
                   borderRadius: 5,
                   border: '1px solid ' + (on ? '#047857' : '#d1d5db'),
                   background: on ? '#d1fae5' : 'white',
                   color: on ? '#047857' : '#6b7280',
                   fontWeight: on ? 600 : 400,
-                  overflow: 'hidden',
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
                 }}
               >
-                <button
-                  onClick={() => toggle(name)}
-                  disabled={busy}
-                  style={{
-                    fontSize: 12,
-                    padding: '5px 11px 5px 11px',
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'inherit',
-                    fontWeight: 'inherit',
-                    cursor: busy ? 'not-allowed' : 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {on ? '✓ ' : ''}
-                  {name}
-                </button>
-                <button
-                  onClick={() => removeMaster(name)}
-                  disabled={busy}
-                  title={'Remove "' + name + '" from master list'}
-                  style={{
-                    padding: '5px 8px 5px 2px',
-                    border: 'none',
-                    borderLeft: '1px solid ' + (on ? '#a7f3d0' : '#e5e7eb'),
-                    background: 'transparent',
-                    color: '#9ca3af',
-                    cursor: busy ? 'not-allowed' : 'pointer',
-                    fontSize: 13,
-                    lineHeight: 1,
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  ×
-                </button>
-              </span>
+                {on ? '✓ ' : ''}
+                {name}
+              </button>
             );
           })}
         </div>
       )}
-      {assigned.length === 0 && allTM.length > 0 && (
-        <div style={{fontSize: 11, color: '#9ca3af', marginBottom: 8, fontStyle: 'italic'}}>
-          None assigned to this piece yet.
-        </div>
+      {assigned.length === 0 && activeMaster.length > 0 && (
+        <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>None assigned to this piece yet.</div>
       )}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 80px',
-          gap: 6,
-          padding: 10,
-          background: '#fafafa',
-          borderRadius: 6,
-          border: '1px dashed #d1d5db',
-        }}
-      >
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="New team member name (e.g. COTY)"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') addMaster();
-          }}
-          style={inpS}
-        />
-        <button
-          onClick={addMaster}
-          disabled={busy || !newName.trim()}
-          style={{
-            padding: '6px 12px',
-            borderRadius: 6,
-            border: 'none',
-            background: busy || !newName.trim() ? '#9ca3af' : '#57534e',
-            color: 'white',
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: busy || !newName.trim() ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          + Add
-        </button>
-      </div>
     </div>
   );
 }
@@ -1782,264 +1672,6 @@ function AttachmentChecklistsEditor({equipment, onReload}) {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-// ── Fuel Supply Webform admin ──────────────────────────────────────────────
-// Configures the public /fueling/supply form (operators logging fuel without a
-// per-piece checklist). Team-member list is stored at
-// webform_config.per_form_team_members['fuel-supply']; empty means "fall back
-// to the master list" — same pattern as the other per-form lists.
-function FuelSupplyAdminSection() {
-  const [allTM, setAllTM] = React.useState([]);
-  const [assigned, setAssigned] = React.useState([]);
-  const [allMap, setAllMap] = React.useState({});
-  const [busy, setBusy] = React.useState(false);
-  const [loaded, setLoaded] = React.useState(false);
-  const [newName, setNewName] = React.useState('');
-
-  async function load() {
-    const [{data: master}, {data: pf}] = await Promise.all([
-      sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key', 'per_form_team_members').maybeSingle(),
-    ]);
-    if (master && Array.isArray(master.data)) setAllTM(master.data);
-    const pfMap = pf && pf.data && typeof pf.data === 'object' ? pf.data : {};
-    setAllMap(pfMap);
-    setAssigned(Array.isArray(pfMap['fuel-supply']) ? pfMap['fuel-supply'] : []);
-    setLoaded(true);
-  }
-  React.useEffect(() => {
-    load();
-  }, []);
-
-  // Read-fresh-then-write avoids clobbering OTHER per-form keys when the local
-  // allMap state is stale. The data jsonb is upserted whole, so we must merge
-  // against the latest stored value rather than the cached React state.
-  async function readPerFormFresh() {
-    const {data} = await sb.from('webform_config').select('data').eq('key', 'per_form_team_members').maybeSingle();
-    return data && data.data && typeof data.data === 'object' ? data.data : {};
-  }
-
-  async function toggle(name) {
-    setBusy(true);
-    const fresh = await readPerFormFresh();
-    const currentList = Array.isArray(fresh['fuel-supply']) ? fresh['fuel-supply'] : [];
-    const next = currentList.includes(name) ? currentList.filter((n) => n !== name) : [...currentList, name];
-    const nextMap = {...fresh, 'fuel-supply': next};
-    const {error} = await sb
-      .from('webform_config')
-      .upsert({key: 'per_form_team_members', data: nextMap}, {onConflict: 'key'});
-    setBusy(false);
-    if (error) {
-      alert('Save failed: ' + error.message);
-      return;
-    }
-    setAssigned(next);
-    setAllMap(nextMap);
-  }
-
-  async function addMaster() {
-    const n = (newName || '').trim();
-    if (!n) return;
-    setBusy(true);
-    // Read fresh — local allTM might be stale.
-    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
-    const masterFresh = masterRow && Array.isArray(masterRow.data) ? masterRow.data : [];
-    if (masterFresh.includes(n)) {
-      setBusy(false);
-      alert('"' + n + '" is already in the list.');
-      setAllTM(masterFresh);
-      return;
-    }
-    const next = [...masterFresh, n].sort((a, b) => a.localeCompare(b));
-    const {error} = await sb.from('webform_config').upsert({key: 'team_members', data: next}, {onConflict: 'key'});
-    setBusy(false);
-    if (error) {
-      alert('Add failed: ' + error.message);
-      return;
-    }
-    setAllTM(next);
-    setNewName('');
-  }
-
-  async function removeMaster(name) {
-    if (
-      !confirm(
-        'Remove "' +
-          name +
-          '" from the master team-member list?\n\nThey will also be removed from every per-form selection (fuel supply, dailys, weigh-ins, equipment) where they appear. Past records by this person are NOT affected.',
-      )
-    )
-      return;
-    setBusy(true);
-    // 1. Remove from master list (read fresh first to avoid clobbering).
-    const {data: masterRow} = await sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle();
-    const masterFresh = masterRow && Array.isArray(masterRow.data) ? masterRow.data : allTM;
-    const nextMaster = masterFresh.filter((n) => n !== name);
-    const {error: mErr} = await sb
-      .from('webform_config')
-      .upsert({key: 'team_members', data: nextMaster}, {onConflict: 'key'});
-    if (mErr) {
-      setBusy(false);
-      alert('Remove failed: ' + mErr.message);
-      return;
-    }
-    // 2. Cascade: strip from every per_form_team_members list. Read fresh
-    //    so toggles that landed since component mount aren't lost.
-    const fresh = await readPerFormFresh();
-    const nextPerForm = {};
-    let perFormChanged = false;
-    for (const [key, list] of Object.entries(fresh)) {
-      if (Array.isArray(list)) {
-        const filtered = list.filter((n) => n !== name);
-        nextPerForm[key] = filtered;
-        if (filtered.length !== list.length) perFormChanged = true;
-      } else {
-        nextPerForm[key] = list;
-      }
-    }
-    if (perFormChanged) {
-      const {error: pfErr} = await sb
-        .from('webform_config')
-        .upsert({key: 'per_form_team_members', data: nextPerForm}, {onConflict: 'key'});
-      if (pfErr) {
-        setBusy(false);
-        alert('Per-form cleanup failed: ' + pfErr.message);
-        return;
-      }
-    }
-    // 3. Cascade: strip from every equipment.team_members array.
-    const {data: eqs} = await sb.from('equipment').select('id,team_members');
-    const hits = (eqs || []).filter((e) => Array.isArray(e.team_members) && e.team_members.includes(name));
-    for (const e of hits) {
-      const filtered = e.team_members.filter((n) => n !== name);
-      await sb.from('equipment').update({team_members: filtered}).eq('id', e.id);
-    }
-    setBusy(false);
-    setAllTM(nextMaster);
-    setAssigned((prev) => prev.filter((n) => n !== name));
-    setAllMap(nextPerForm);
-  }
-
-  return (
-    <div style={{...card, background: '#fffbeb', borderColor: '#fde68a'}}>
-      <div style={sectionTitle}>
-        ⛽ Fuel Supply Webform{' '}
-        <span style={{color: '#9ca3af', fontWeight: 400, fontSize: 10, marginLeft: 8}}>
-          Public form at /fueling/supply · click a name to assign · ✕ removes from master list
-        </span>
-      </div>
-      {!loaded && <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>Loading…</div>}
-      {loaded && (
-        <>
-          {allTM.length > 0 && (
-            <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10}}>
-              {allTM.map((name) => {
-                const on = assigned.includes(name);
-                return (
-                  <span
-                    key={name}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      fontSize: 12,
-                      borderRadius: 5,
-                      border: '1px solid ' + (on ? '#047857' : '#d1d5db'),
-                      background: on ? '#d1fae5' : 'white',
-                      color: on ? '#047857' : '#6b7280',
-                      fontWeight: on ? 600 : 400,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <button
-                      onClick={() => toggle(name)}
-                      disabled={busy}
-                      style={{
-                        fontSize: 12,
-                        padding: '5px 11px',
-                        border: 'none',
-                        background: 'transparent',
-                        color: 'inherit',
-                        fontWeight: 'inherit',
-                        cursor: busy ? 'not-allowed' : 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {on ? '✓ ' : ''}
-                      {name}
-                    </button>
-                    <button
-                      onClick={() => removeMaster(name)}
-                      disabled={busy}
-                      title={'Remove "' + name + '" from master list (cascades to all forms + equipment)'}
-                      style={{
-                        padding: '5px 8px 5px 2px',
-                        border: 'none',
-                        borderLeft: '1px solid ' + (on ? '#a7f3d0' : '#e5e7eb'),
-                        background: 'transparent',
-                        color: '#9ca3af',
-                        cursor: busy ? 'not-allowed' : 'pointer',
-                        fontSize: 13,
-                        lineHeight: 1,
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 80px',
-              gap: 6,
-              padding: 10,
-              background: 'rgba(255,255,255,.6)',
-              borderRadius: 6,
-              border: '1px dashed #d1d5db',
-              marginBottom: 8,
-            }}
-          >
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="New team member name (e.g. COTY)"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') addMaster();
-              }}
-              style={inpS}
-            />
-            <button
-              onClick={addMaster}
-              disabled={busy || !newName.trim()}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: 'none',
-                background: busy || !newName.trim() ? '#9ca3af' : '#57534e',
-                color: 'white',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: busy || !newName.trim() ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              + Add
-            </button>
-          </div>
-          <div style={{fontSize: 11, color: '#92400e', fontStyle: 'italic'}}>
-            {assigned.length === 0
-              ? 'No names ✓-assigned → /fueling/supply falls back to the full master list.'
-              : assigned.length + ' assigned · only these show on the public form.'}
-          </div>
-        </>
-      )}
     </div>
   );
 }

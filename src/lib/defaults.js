@@ -587,9 +587,10 @@ export const DEFAULT_WEBFORMS_CONFIG = {
       ],
     },
     // Weigh-Ins is a stage-based form (species picker -> herd/batch -> session),
-    // not section/field-driven. The admin editor surfaces a custom per-species
-    // team-member editor. teamMembers (union) is maintained by the editor so
-    // syncWebformConfig's global union still captures these members.
+    // not section/field-driven. After the 2026-04-29 team-member master list
+    // cleanup, per-species filtering is retired — WeighInsWebform reads the
+    // master roster directly. The `teamMembers: []` field stays as a
+    // harmless legacy default; not consumed.
     {
       id: 'weighins-webform',
       name: 'Weigh-Ins',
@@ -597,7 +598,6 @@ export const DEFAULT_WEBFORMS_CONFIG = {
       table: 'weigh_ins',
       allowAddGroup: false,
       teamMembers: [],
-      teamMembersBySpecies: {cattle: [], sheep: [], pig: [], broiler: []},
       sections: [],
     },
   ],

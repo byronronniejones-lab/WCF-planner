@@ -10,6 +10,7 @@ import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, todayISO, addDays} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
+import {addMember, renameMember, setActive, saveRoster, loadRoster} from '../lib/teamMembers.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import FeedCostsPanel from '../admin/FeedCostsPanel.jsx';
 import FeedCostByMonthPanel from '../admin/FeedCostByMonthPanel.jsx';
@@ -22,93 +23,185 @@ import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
 import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
-// Inline add/remove editor for a single weigh-ins species team-member list.
-// Module scope so each instance owns its own input state across parent renders.
-function WeighInsSpeciesList({icon, label, color, bg, members, onAdd, onRemove}) {
-  const [input, setInput] = React.useState('');
-  const list = Array.isArray(members) ? members : [];
-  function tryAdd() {
-    const name = input.trim();
+// ── Team Roster master editor ────────────────────────────────────────────
+// Sole writer of webform_config.team_roster (canonical) +
+// webform_config.team_members (legacy active-name mirror). Read-fresh-then-
+// merge inside saveRoster keeps concurrent admin tabs from clobbering each
+// other. v1: add / rename / deactivate / reactivate. NO hard delete.
+function TeamRosterEditor() {
+  const {wfRoster, setWfRoster} = useWebformsConfig();
+  const [busy, setBusy] = React.useState(false);
+  const [newName, setNewName] = React.useState('');
+  const [editingId, setEditingId] = React.useState(null);
+  const [editValue, setEditValue] = React.useState('');
+  const [err, setErr] = React.useState('');
+
+  // First load — fall back to loadRoster directly if context wasn't populated
+  // by a prior /webform or /webformhub mount. Idempotent.
+  React.useEffect(() => {
+    if (wfRoster && wfRoster.length > 0) return;
+    let cancelled = false;
+    loadRoster(sb).then((r) => {
+      if (!cancelled && Array.isArray(r) && r.length > 0) setWfRoster(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function persist(next) {
+    setBusy(true);
+    setErr('');
+    try {
+      const persisted = await saveRoster(sb, next);
+      setWfRoster(persisted);
+    } catch (e) {
+      setErr(e && e.message ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onAdd() {
+    const name = newName.trim();
     if (!name) return;
-    if (list.includes(name)) {
-      setInput('');
+    try {
+      const next = addMember(wfRoster || [], name);
+      setNewName('');
+      await persist(next);
+    } catch (e) {
+      setErr(e && e.message ? e.message : String(e));
+    }
+  }
+
+  async function onSetActive(id, active) {
+    try {
+      const next = setActive(wfRoster || [], id, active);
+      await persist(next);
+    } catch (e) {
+      setErr(e && e.message ? e.message : String(e));
+    }
+  }
+
+  async function onRename(id) {
+    const name = editValue.trim();
+    if (!name) {
+      setEditingId(null);
       return;
     }
-    onAdd(name);
-    setInput('');
+    try {
+      const next = renameMember(wfRoster || [], id, name);
+      setEditingId(null);
+      setEditValue('');
+      await persist(next);
+    } catch (e) {
+      setErr(e && e.message ? e.message : String(e));
+    }
   }
+
+  const roster = Array.isArray(wfRoster) ? wfRoster : [];
+  const active = roster.filter((e) => e.active);
+  const inactive = roster.filter((e) => !e.active);
+
+  const card = {
+    background: 'white',
+    border: '1px solid #e5e7eb',
+    borderRadius: 10,
+    padding: '14px 16px',
+    marginBottom: 16,
+  };
+  const chip = (bg, fg, border) => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: bg,
+    border: '1px solid ' + border,
+    borderRadius: 6,
+    padding: '4px 10px',
+    fontSize: 12,
+    color: fg,
+    fontWeight: 500,
+  });
+  const ico = {background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0};
+
   return (
-    <div
-      style={{
-        background: 'white',
-        border: '1px solid ' + color + '33',
-        borderRadius: 10,
-        padding: '14px',
-        marginBottom: 10,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 13,
-          fontWeight: 700,
-          color: color,
-          marginBottom: 10,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}
-      >
-        <span style={{fontSize: 16}}>{icon}</span>
-        {label}
-        <span style={{marginLeft: 'auto', fontSize: 11, fontWeight: 400, color: '#9ca3af'}}>
-          {list.length + ' ' + (list.length === 1 ? 'member' : 'members')}
+    <div style={card}>
+      <div style={{fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 6}}>
+        Team Members
+        <span style={{fontSize: 11, fontWeight: 400, color: '#9ca3af', marginLeft: 8}}>
+          one master list · used by every webform, daily report, and weigh-in
         </span>
       </div>
-      <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, minHeight: 24}}>
-        {list.map((m) => (
-          <div
-            key={m}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              background: bg,
-              border: '1px solid ' + color + '55',
-              borderRadius: 6,
-              padding: '4px 10px',
-              fontSize: 12,
-              color: color,
-            }}
-          >
-            {m}
-            <button
-              onClick={() => onRemove(m)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: color,
-                cursor: 'pointer',
-                fontSize: 14,
-                lineHeight: 1,
-                padding: 0,
-                marginLeft: 4,
-                opacity: 0.7,
-              }}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        {list.length === 0 && <span style={{fontSize: 12, color: '#9ca3af'}}>No team members yet</span>}
+      <div style={{fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.5}}>
+        Active members appear in every team-member dropdown. Deactivate someone to remove them from new dropdowns
+        without losing their history. They can be reactivated later.
       </div>
-      <div style={{display: 'flex', gap: 6}}>
+
+      <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10}}>
+        {active.map((m) => (
+          <span key={m.id} data-roster-active="1" data-roster-id={m.id} style={chip('#ecfdf5', '#065f46', '#a7f3d0')}>
+            {editingId === m.id ? (
+              <input
+                autoFocus
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onRename(m.id);
+                  if (e.key === 'Escape') {
+                    setEditingId(null);
+                    setEditValue('');
+                  }
+                }}
+                onBlur={() => onRename(m.id)}
+                disabled={busy}
+                style={{
+                  fontSize: 12,
+                  padding: '0 4px',
+                  border: '1px solid #6ee7b7',
+                  borderRadius: 4,
+                  fontFamily: 'inherit',
+                  width: Math.max(80, (editValue.length + 2) * 8),
+                }}
+              />
+            ) : (
+              <>
+                {m.name}
+                <button
+                  onClick={() => {
+                    setEditingId(m.id);
+                    setEditValue(m.name);
+                  }}
+                  disabled={busy}
+                  title="Rename"
+                  style={{...ico, color: '#065f46'}}
+                >
+                  ✏
+                </button>
+                <button
+                  onClick={() => onSetActive(m.id, false)}
+                  disabled={busy}
+                  title="Deactivate"
+                  style={{...ico, color: '#065f46', opacity: 0.7}}
+                >
+                  ×
+                </button>
+              </>
+            )}
+          </span>
+        ))}
+        {active.length === 0 && <span style={{fontSize: 12, color: '#9ca3af'}}>No active team members yet.</span>}
+      </div>
+
+      <div style={{display: 'flex', gap: 6, marginBottom: inactive.length > 0 ? 16 : 0}}>
         <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') tryAdd();
+            if (e.key === 'Enter') onAdd();
           }}
-          placeholder="Add name…"
+          placeholder="Add team member…"
+          disabled={busy}
+          data-roster-add-input="1"
           style={{
             fontSize: 12,
             padding: '6px 10px',
@@ -119,30 +212,71 @@ function WeighInsSpeciesList({icon, label, color, bg, members, onAdd, onRemove})
           }}
         />
         <button
-          onClick={tryAdd}
+          onClick={onAdd}
+          disabled={busy || !newName.trim()}
+          data-roster-add-button="1"
           style={{
             padding: '6px 14px',
             borderRadius: 6,
             border: 'none',
-            background: color,
+            background: busy || !newName.trim() ? '#9ca3af' : '#085041',
             color: 'white',
             fontSize: 12,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: busy || !newName.trim() ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
           }}
         >
-          Add
+          + Add
         </button>
       </div>
+
+      {inactive.length > 0 && (
+        <div>
+          <div style={{fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6, textTransform: 'uppercase'}}>
+            Inactive ({inactive.length})
+          </div>
+          <div style={{display: 'flex', gap: 6, flexWrap: 'wrap'}}>
+            {inactive.map((m) => (
+              <span
+                key={m.id}
+                data-roster-inactive="1"
+                data-roster-id={m.id}
+                style={chip('#f3f4f6', '#6b7280', '#e5e7eb')}
+              >
+                {m.name}
+                <button
+                  onClick={() => onSetActive(m.id, true)}
+                  disabled={busy}
+                  title="Reactivate"
+                  style={{...ico, color: '#085041'}}
+                >
+                  ↺
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {err && (
+        <div
+          style={{
+            marginTop: 10,
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            color: '#b91c1c',
+            padding: '6px 10px',
+            borderRadius: 6,
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      )}
     </div>
   );
 }
-const WEIGHINS_SPECIES = [
-  {key: 'cattle', icon: '🐄', label: 'Cattle', color: '#991b1b', bg: '#fef2f2'},
-  {key: 'sheep', icon: '🐑', label: 'Sheep', color: '#0f766e', bg: '#f0fdfa'},
-  {key: 'pig', icon: '🐷', label: 'Pig', color: '#1e40af', bg: '#eff6ff'},
-  {key: 'broiler', icon: '🐔', label: 'Broiler', color: '#a16207', bg: '#fef9c3'},
-];
 
 export default function WebformsAdminView({
   Header,
@@ -222,18 +356,11 @@ export default function WebformsAdminView({
     updateWf({...currentWf, sections: s});
   }
 
-  function addTeamMember() {
-    if (!newTeamMember.trim()) return;
-    if (webformsConfig.teamMembers.includes(newTeamMember.trim())) {
-      setNewTeamMember('');
-      return;
-    }
-    persistWebforms({...webformsConfig, teamMembers: [...webformsConfig.teamMembers, newTeamMember.trim()].sort()});
-    setNewTeamMember('');
-  }
-  function removeTeamMember(name) {
-    persistWebforms({...webformsConfig, teamMembers: webformsConfig.teamMembers.filter((m) => m !== name)});
-  }
+  // Master team-member add/remove was retired 2026-04-29 in the team-member
+  // master list cleanup. The TeamRosterEditor (rendered at the top of the
+  // webforms tab) is the sole writer of the canonical roster + legacy
+  // active-name mirror. webformsConfig.teamMembers is no longer read or
+  // written from this view.
   function moveSection(si, dir) {
     const s = [...currentWf.sections];
     if (si + dir < 0 || si + dir >= s.length) return;
@@ -406,94 +533,42 @@ export default function WebformsAdminView({
 
         {adminTab === 'webforms' && (
           <div>
-            {/* ── WEIGH-INS EDITOR (custom: 4 per-species team-member lists, no sections/fields) ── */}
-            {editWfId &&
-              currentWf &&
-              currentWf.id === 'weighins-webform' &&
-              (() => {
-                const bySpecies = currentWf.teamMembersBySpecies || {cattle: [], sheep: [], pig: [], broiler: []};
-                function updateSpecies(sp, nextList) {
-                  const nextBy = {...bySpecies, [sp]: nextList};
-                  const union = [
-                    ...new Set([
-                      ...(nextBy.cattle || []),
-                      ...(nextBy.sheep || []),
-                      ...(nextBy.pig || []),
-                      ...(nextBy.broiler || []),
-                    ]),
-                  ].sort();
-                  updateWf({...currentWf, teamMembersBySpecies: nextBy, teamMembers: union});
-                }
-                return (
-                  <div>
-                    <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16}}>
-                      <button
-                        onClick={() => {
-                          setEditWfId(null);
-                          setWfView('list');
-                          setAddingTo(null);
-                        }}
-                        style={{fontSize: 12, color: '#1d4ed8', background: 'none', border: 'none', cursor: 'pointer'}}
-                      >
-                        ← All webforms
-                      </button>
-                      <span style={{color: '#d1d5db'}}>/</span>
-                      <span style={{fontSize: 14, fontWeight: 700}}>{currentWf.name}</span>
-                    </div>
-                    <div
-                      style={{
-                        background: '#eff6ff',
-                        border: '1px solid #bfdbfe',
-                        borderRadius: 10,
-                        padding: '10px 16px',
-                        marginBottom: 16,
-                        fontSize: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                      }}
-                    >
-                      <span style={{color: '#6b7280'}}>Live URL:</span>
-                      <strong style={{color: '#1e40af'}}>wcfplanner.com/weighins</strong>
-                      <a href="/weighins" target="_blank" style={{color: '#1e40af', fontSize: 11, marginLeft: 'auto'}}>
-                        Open form →
-                      </a>
-                    </div>
-                    <div
-                      style={{
-                        background: '#f9fafb',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: 10,
-                        padding: '12px 14px',
-                        marginBottom: 14,
-                        fontSize: 12,
-                        color: '#4b5563',
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Each species keeps its own team-member list. A list that's empty falls back to the full farm team
-                      in the form's dropdown, so you can migrate one species at a time.
-                    </div>
-                    {WEIGHINS_SPECIES.map((s) => (
-                      <WeighInsSpeciesList
-                        key={s.key}
-                        icon={s.icon}
-                        label={s.label}
-                        color={s.color}
-                        bg={s.bg}
-                        members={bySpecies[s.key] || []}
-                        onAdd={(name) => updateSpecies(s.key, [...(bySpecies[s.key] || []), name].sort())}
-                        onRemove={(name) =>
-                          updateSpecies(
-                            s.key,
-                            (bySpecies[s.key] || []).filter((m) => m !== name),
-                          )
-                        }
-                      />
-                    ))}
-                  </div>
-                );
-              })()}
+            {/* ── MASTER TEAM ROSTER (only at list level, hidden inside the per-form editor) ── */}
+            {!editWfId && <TeamRosterEditor />}
+
+            {/* ── WEIGH-INS EDITOR (per-species lists retired; no editor needed for v1) ── */}
+            {editWfId && currentWf && currentWf.id === 'weighins-webform' && (
+              <div>
+                <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16}}>
+                  <button
+                    onClick={() => {
+                      setEditWfId(null);
+                      setWfView('list');
+                      setAddingTo(null);
+                    }}
+                    style={{fontSize: 12, color: '#1d4ed8', background: 'none', border: 'none', cursor: 'pointer'}}
+                  >
+                    ← All webforms
+                  </button>
+                  <span style={{color: '#d1d5db'}}>/</span>
+                  <span style={{fontSize: 14, fontWeight: 700}}>{currentWf.name}</span>
+                </div>
+                <div
+                  style={{
+                    background: '#f9fafb',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 10,
+                    padding: '14px 16px',
+                    fontSize: 12,
+                    color: '#4b5563',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  The Weigh-Ins webform now uses the master team roster directly. Every active team member appears for
+                  every species. Manage names from the Team Members section on the Webforms list.
+                </div>
+              </div>
+            )}
 
             {/* ── EDITOR ── */}
             {editWfId && currentWf && currentWf.id !== 'weighins-webform' && (
@@ -532,101 +607,10 @@ export default function WebformsAdminView({
                   </a>
                 </div>
 
-                {/* Team Members — per form */}
-                <div
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 10,
-                    padding: '16px',
-                    marginBottom: 16,
-                  }}
-                >
-                  <div style={{fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 12}}>
-                    Team Members{' '}
-                    <span style={{fontSize: 11, fontWeight: 400, color: '#9ca3af'}}>(for this form only)</span>
-                  </div>
-                  <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10}}>
-                    {(currentWf.teamMembers || []).map((m) => (
-                      <div
-                        key={m}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          background: '#f3f4f6',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: 6,
-                          padding: '4px 10px',
-                          fontSize: 12,
-                        }}
-                      >
-                        {m}
-                        <button
-                          onClick={() =>
-                            updateWf({...currentWf, teamMembers: (currentWf.teamMembers || []).filter((x) => x !== m)})
-                          }
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#9ca3af',
-                            cursor: 'pointer',
-                            fontSize: 14,
-                            lineHeight: 1,
-                            padding: 0,
-                            marginLeft: 4,
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                    {(currentWf.teamMembers || []).length === 0 && (
-                      <span style={{fontSize: 12, color: '#9ca3af'}}>No team members yet</span>
-                    )}
-                  </div>
-                  <div style={{display: 'flex', gap: 6}}>
-                    <input
-                      value={newTeamMember}
-                      onChange={(e) => setNewTeamMember(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && newTeamMember.trim()) {
-                          if (!(currentWf.teamMembers || []).includes(newTeamMember.trim()))
-                            updateWf({
-                              ...currentWf,
-                              teamMembers: [...(currentWf.teamMembers || []), newTeamMember.trim()].sort(),
-                            });
-                          setNewTeamMember('');
-                        }
-                      }}
-                      placeholder="Add name…"
-                      style={{fontSize: 12, padding: '6px 10px', flex: 1}}
-                    />
-                    <button
-                      onClick={() => {
-                        if (newTeamMember.trim() && !(currentWf.teamMembers || []).includes(newTeamMember.trim())) {
-                          updateWf({
-                            ...currentWf,
-                            teamMembers: [...(currentWf.teamMembers || []), newTeamMember.trim()].sort(),
-                          });
-                        }
-                        setNewTeamMember('');
-                      }}
-                      style={{
-                        padding: '6px 14px',
-                        borderRadius: 6,
-                        border: 'none',
-                        background: '#085041',
-                        color: 'white',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
+                {/* Per-form Team Members section retired 2026-04-29 — master
+                    roster lives at the top of the Webforms list. Sections
+                    pick up the master roster automatically via the team
+                    picker. */}
 
                 {/* Sections header */}
                 <div style={{marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
@@ -1244,13 +1228,6 @@ export default function WebformsAdminView({
                     : isWeighIns
                       ? 'wcfplanner.com/weighins'
                       : 'wcfplanner.com/#webforms';
-                  const bySpecies = (isWeighIns && wf.teamMembersBySpecies) || null;
-                  const weighinsTotal = bySpecies
-                    ? (bySpecies.cattle || []).length +
-                      (bySpecies.sheep || []).length +
-                      (bySpecies.pig || []).length +
-                      (bySpecies.broiler || []).length
-                    : 0;
                   return (
                     <div
                       key={wf.id}
@@ -1321,18 +1298,7 @@ export default function WebformsAdminView({
                             📋 {(wf.sections || []).length} sections · {totalFields} active fields
                           </span>
                         )}
-                        {isWeighIns && (
-                          <span>
-                            🐄 {((bySpecies && bySpecies.cattle) || []).length} · 🐑{' '}
-                            {((bySpecies && bySpecies.sheep) || []).length} · 🐷{' '}
-                            {((bySpecies && bySpecies.pig) || []).length} · 🐔{' '}
-                            {((bySpecies && bySpecies.broiler) || []).length}
-                          </span>
-                        )}
-                        <span>
-                          👤 {isWeighIns ? weighinsTotal : (wf.teamMembers || []).length} team members
-                          {isWeighIns ? ' total' : ''}
-                        </span>
+                        <span style={{color: '#9ca3af'}}>👤 master team roster (manage from list)</span>
                         {!isWeighIns && (
                           <label
                             style={{

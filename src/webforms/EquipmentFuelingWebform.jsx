@@ -8,6 +8,7 @@
 // are actually due given the reading the team just entered + history.
 import React from 'react';
 import {computeDueIntervals} from '../lib/equipment.js';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import ManualsCard from '../equipment/ManualsCard.jsx';
 
 export default function EquipmentFuelingWebform({sb, equipment, equipmentList, onBack}) {
@@ -38,13 +39,13 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   const readingLabel = eq?.tracking_unit === 'km' ? 'KM' : 'Hours';
 
   React.useEffect(() => {
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        if (data && Array.isArray(data.data)) setTeamMembers(data.data);
-      });
+    let cancelled = false;
+    loadRoster(sb).then((roster) => {
+      if (!cancelled) setTeamMembers(activeNames(roster));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Filter the team-member dropdown to the operators assigned to THIS piece

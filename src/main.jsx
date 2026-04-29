@@ -110,6 +110,7 @@ import {calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel} fr
 import {addDays, toISO, fmt, fmtS, todayISO} from './lib/dateUtils.js';
 import {S} from './lib/styles.js';
 import {DEFAULT_WEBFORMS_CONFIG} from './lib/defaults.js';
+import {loadRoster, activeNames as rosterActiveNames} from './lib/teamMembers.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
 import {
@@ -1166,8 +1167,16 @@ function App() {
   // Phase 2.0.6 — small bundled contexts.
   const {cattleForHome, setCattleForHome, cattleOnFarmCount, setCattleOnFarmCount} = useCattleHome();
   const {sheepForHome, setSheepForHome} = useSheepHome();
-  const {wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers, webformsConfig, setWebformsConfig} =
-    useWebformsConfig();
+  const {
+    wfGroups,
+    setWfGroups,
+    wfRoster,
+    setWfRoster,
+    wfTeamMembers,
+    setWfTeamMembers,
+    webformsConfig,
+    setWebformsConfig,
+  } = useWebformsConfig();
   const {feedCosts, setFeedCosts, broilerNotes, setBroilerNotes, missedCleared, setMissedCleared} = useFeedCosts();
   const {view, setView, pendingEdit, setPendingEdit, showAllComparison, setShowAllComparison, showMenu, setShowMenu} =
     useUI();
@@ -1327,30 +1336,21 @@ function App() {
   });
 
   // ── AUTH LISTENER & DATA LOADING ──
-  // Load webform config (anon, no auth needed) — team members + active groups
+  // Load webform config (anon, no auth needed) — team roster + active groups.
+  // Reads canonical team_roster first; loadRoster falls back to legacy
+  // team_members string[] when the canonical key is missing. setWfRoster
+  // also updates the derived wfTeamMembers active-name list for back-compat
+  // consumers (PigDailysWebform etc.) during the team-member cleanup.
   useEffect(() => {
     if (view !== 'webform' && view !== 'webformhub') return;
     Promise.all([
-      sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle(),
+      loadRoster(sb),
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key', 'full_config').maybeSingle(),
-    ]).then(([tmRes, agRes, fcRes]) => {
-      // Team members
-      if (!tmRes.error && Array.isArray(tmRes.data?.data)) {
-        const tm = tmRes.data.data;
-        if (tm.length > 0) setWfTeamMembers(tm);
-      }
-      // Active groups
+    ]).then(([roster, agRes]) => {
+      if (Array.isArray(roster) && roster.length > 0) setWfRoster(roster);
       if (!agRes.error && Array.isArray(agRes.data?.data)) {
         const groups = agRes.data.data.map((name) => ({value: name, label: name}));
         setWfGroups(groups);
-      }
-      // Full config for webformhub (broiler/layer/egg groups + team members)
-      if (!fcRes?.error && fcRes?.data?.data) {
-        const fc = fcRes.data.data;
-        if (fc.teamMembers?.length > 0 && wfTeamMembers.length === 0) setWfTeamMembers(fc.teamMembers);
-        // broilerGroups and layerGroups come through layerGroups/batches props from App
-        // but if not logged in, we can still get them from full_config
       }
     });
   }, [view]);
@@ -2132,31 +2132,15 @@ function App() {
                   table: 'weigh_ins',
                   allowAddGroup: false,
                   teamMembers: [],
-                  teamMembersBySpecies: {cattle: [], sheep: [], pig: [], broiler: []},
                   sections: [],
                 },
               ],
             };
-          } else {
-            // Back-fill teamMembersBySpecies on configs that already have the entry
-            // but were saved before the field existed.
-            wfCfg = {
-              ...wfCfg,
-              webforms: (wfCfg.webforms || []).map(function (w) {
-                if (w.id !== 'weighins-webform') return w;
-                var bs = w.teamMembersBySpecies || {};
-                return {
-                  ...w,
-                  teamMembersBySpecies: {
-                    cattle: bs.cattle || [],
-                    sheep: bs.sheep || [],
-                    pig: bs.pig || [],
-                    broiler: bs.broiler || [],
-                  },
-                };
-              }),
-            };
           }
+          // Per-species team-member back-fill (`teamMembersBySpecies`) was
+          // retired 2026-04-29 with the team-member master list cleanup.
+          // Existing configs may still carry the field; it's ignored at
+          // runtime — WeighInsWebform reads the master roster directly.
           // Cattle-only: strip s-mortality section from any previously-saved config
           // (mortality is handled via the cow record now, not the webform).
           wfCfg = {
@@ -2172,9 +2156,14 @@ function App() {
             }),
           };
           setWebformsConfig(wfCfg);
-          // Per-form team members for logged-in users
-          const allMembers = [...new Set((wfCfg.webforms || []).flatMap((w) => w.teamMembers || []))].sort();
-          if (allMembers.length > 0) setWfTeamMembers(allMembers);
+          // Roster — canonical team_roster (legacy team_members fallback inside
+          // loadRoster). Sets both wfRoster and the derived wfTeamMembers
+          // active-name list. Roster is the source of truth for logged-in
+          // admin views; the per-webform `teamMembers` field on each form
+          // is no longer the source we read.
+          loadRoster(sb).then((roster) => {
+            if (Array.isArray(roster) && roster.length > 0) setWfRoster(roster);
+          });
         }
         if (store['ppp-layer-groups-v1']) setLayerGroups(store['ppp-layer-groups-v1']);
         if (store['ppp-missed-cleared-v1']) setMissedCleared(new Set(store['ppp-missed-cleared-v1'] || []));
@@ -2432,59 +2421,18 @@ function App() {
               : [],
         ),
       ];
-      // Per-form team members - push each form's list separately.
-      // For weighins-webform, roll up its teamMembersBySpecies into the flat
-      // teamMembers union so the global team_members key still reflects
-      // everyone who can submit.
-      const weighinsWf = (cfg.webforms || []).find((w) => w.id === 'weighins-webform');
-      const weighinsBySpecies = (weighinsWf && weighinsWf.teamMembersBySpecies) || {
-        cattle: [],
-        sheep: [],
-        pig: [],
-        broiler: [],
-      };
-      const weighinsUnion = [
-        ...new Set([
-          ...(weighinsBySpecies.cattle || []),
-          ...(weighinsBySpecies.sheep || []),
-          ...(weighinsBySpecies.pig || []),
-          ...(weighinsBySpecies.broiler || []),
-        ]),
-      ].sort();
-      // Master team_members must NOT be reset to the union — admin can add
-      // names directly in /admin > Equipment > Fuel Supply Webform that
-      // aren't yet attached to any webform's teamMembers. Preserve those by
-      // merging the derived union INTO the existing stored master.
-      const derivedUnion = [
-        ...new Set([...(cfg.webforms || []).flatMap((wf) => wf.teamMembers || []), ...weighinsUnion]),
-      ];
-      const {data: existingMasterRow} = await sb
-        .from('webform_config')
-        .select('data')
-        .eq('key', 'team_members')
-        .maybeSingle();
-      const existingMaster = existingMasterRow && Array.isArray(existingMasterRow.data) ? existingMasterRow.data : [];
-      const allTeamMembers = [...new Set([...existingMaster, ...derivedUnion])].sort();
-      // per_form_team_members has keys for each webform AND for non-webform
-      // forms like 'fuel-supply'. Preserve any keys not derived from webforms
-      // so the fuel-supply selection set survives across syncs.
-      const {data: existingPfRow} = await sb
-        .from('webform_config')
-        .select('data')
-        .eq('key', 'per_form_team_members')
-        .maybeSingle();
-      const existingPf =
-        existingPfRow && existingPfRow.data && typeof existingPfRow.data === 'object' ? existingPfRow.data : {};
-      const knownWfIds = new Set((cfg.webforms || []).map((wf) => wf.id));
-      const perFormTeamMembers = {};
-      // Carry over any keys not owned by a webform (fuel-supply etc.).
-      for (const [k, v] of Object.entries(existingPf)) {
-        if (!knownWfIds.has(k)) perFormTeamMembers[k] = v;
-      }
-      // Then overwrite/add the per-webform entries.
-      (cfg.webforms || []).forEach((wf) => {
-        perFormTeamMembers[wf.id] = wf.teamMembers || [];
-      });
+      // Team-member master roster lives in webform_config.team_roster
+      // (canonical) + webform_config.team_members (legacy active-name
+      // mirror). saveRoster on the central admin editor writes both. This
+      // syncWebformConfig path no longer touches either — it neither
+      // derives a union from per-webform `teamMembers` nor writes the
+      // legacy mirror, so admin saves elsewhere don't churn the roster.
+      //
+      // Retired alongside:
+      //   - per_form_team_members  (per-form filtering eliminated)
+      //   - weighins_team_members  (per-species filtering eliminated;
+      //                             every active member selectable for
+      //                             every species)
       // Use explicit batchData param to avoid stale closure — batches state may not be set yet
       const batchList = batchData || batches || [];
       const broilerGroupList = batchList.filter((b) => b.status === 'active').map((b) => b.name);
@@ -2508,9 +2456,6 @@ function App() {
         allowAddGroup[wf.id] = !!wf.allowAddGroup;
       });
       await Promise.all([
-        sb.from('webform_config').upsert({key: 'team_members', data: allTeamMembers}, {onConflict: 'key'}),
-        sb.from('webform_config').upsert({key: 'per_form_team_members', data: perFormTeamMembers}, {onConflict: 'key'}),
-        sb.from('webform_config').upsert({key: 'weighins_team_members', data: weighinsBySpecies}, {onConflict: 'key'}),
         sb.from('webform_config').upsert({key: 'active_groups', data: pigGroups}, {onConflict: 'key'}),
         sb.from('webform_config').upsert({key: 'broiler_groups', data: broilerGroupList}, {onConflict: 'key'}),
         sb.from('webform_config').upsert({key: 'webform_settings', data: {allowAddGroup}}, {onConflict: 'key'}),

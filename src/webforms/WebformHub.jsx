@@ -3,6 +3,7 @@ import React from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
 import {wcfSendEmail} from '../lib/email.js';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 const WebformHub = ({
   sb,
   wfGroups,
@@ -27,9 +28,9 @@ const WebformHub = ({
       sb.from('webform_config').select('data').eq('key', 'broiler_groups').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'webform_settings').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
-      sb.from('webform_config').select('data').eq('key', 'team_members').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'housing_batch_map').maybeSingle(),
-    ]).then(([fc, bg, ws, ag, tm, hbm]) => {
+      loadRoster(sb),
+    ]).then(([fc, bg, ws, ag, hbm, roster]) => {
       if (fc?.data?.data) setLoadedConfig(fc.data.data);
       if (Array.isArray(bg?.data?.data) && bg.data.data.length > 0) setBroilerGroupsFromDb(bg.data.data);
       if (ws?.data?.data) setWfSettings(ws.data.data);
@@ -38,8 +39,8 @@ const WebformHub = ({
         setPigGroupsFromDb(groups);
         if (setWfGroups) setWfGroups(groups);
       }
-      if (Array.isArray(tm?.data?.data) && tm.data.data.length > 0) {
-        if (setWfTeamMembers) setWfTeamMembers(tm.data.data);
+      if (Array.isArray(roster) && roster.length > 0 && setWfTeamMembers) {
+        setWfTeamMembers(activeNames(roster));
       }
       if (hbm?.data?.data) setHousingBatchMap(hbm.data.data);
     });
@@ -217,15 +218,17 @@ const WebformHub = ({
     );
     return byHousing?.batch_id || null;
   }
-  const loadedTeamMembers = loadedConfig?.teamMembers || [];
-  // Per-form team members from admin config, fallback to global list
+  // Per-form team-member filtering retired 2026-04-29 — every form reads
+  // the master active roster. wfTeamMembers comes from the parent
+  // (set via loadRoster + activeNames in main.jsx); the loadedConfig
+  // teamMembers field is a stale legacy mirror, only used as a defensive
+  // fallback if the prop hasn't populated yet (mobile cold-load race).
   const cfg = loadedConfig || webformsConfig || {};
-  const getFormTeamMembers = (formId) => {
-    const wf = (cfg.webforms || []).find((w) => w.id === formId);
-    const perForm = wf?.teamMembers || [];
-    // CRITICAL: wfTeamMembers prop is empty on mobile — use DB-loaded loadedTeamMembers
-    const fallback = loadedTeamMembers.length > 0 ? loadedTeamMembers : wfTeamMembers || [];
-    return perForm.length > 0 ? perForm : fallback;
+  const loadedTeamMembers = loadedConfig?.teamMembers || [];
+  const getFormTeamMembers = () => {
+    const fromProp = wfTeamMembers || [];
+    if (fromProp.length > 0) return fromProp;
+    return loadedTeamMembers;
   };
   const isEnabled = (formId, fieldId) => {
     const wf = (cfg.webforms || []).find((w) => w.id === formId);

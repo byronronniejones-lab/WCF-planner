@@ -2,6 +2,7 @@
 import React from 'react';
 import {writeBroilerBatchAvg} from '../lib/broiler.js';
 import {fmt} from '../lib/dateUtils.js';
+import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
 import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
@@ -13,10 +14,9 @@ const WeighInsWebform = ({sb}) => {
   const [date, setDate] = React.useState('');
   const [teamMember, setTeamMember] = React.useState('');
   const [allTeamMembers, setAllTeamMembers] = React.useState([]);
-  // Per-species team-member lists from the admin panel. Empty per-species list
-  // means "not configured yet" -> fall back to the global allTeamMembers list
-  // so the form keeps working before an admin populates it.
-  const [teamMembersBySpecies, setTeamMembersBySpecies] = React.useState({cattle: [], sheep: [], pig: [], broiler: []});
+  // Per-species filtering retired 2026-04-29 — every active master roster
+  // member is selectable for every species. The teamMembersBySpecies state
+  // and the weighins_team_members read are gone.
   // Draft + session state
   const [drafts, setDrafts] = React.useState([]);
   const [session, setSession] = React.useState(null); // current session row
@@ -76,38 +76,18 @@ const WeighInsWebform = ({sb}) => {
     );
   }, []);
 
-  // Load team members + species-relevant lookups
+  // Load team members from the canonical master roster.
   React.useEffect(() => {
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        if (data && Array.isArray(data.data)) setAllTeamMembers(data.data);
-      });
-    sb.from('webform_config')
-      .select('data')
-      .eq('key', 'weighins_team_members')
-      .maybeSingle()
-      .then(({data}) => {
-        if (data && data.data && typeof data.data === 'object') {
-          const bs = data.data;
-          setTeamMembersBySpecies({
-            cattle: Array.isArray(bs.cattle) ? bs.cattle : [],
-            sheep: Array.isArray(bs.sheep) ? bs.sheep : [],
-            pig: Array.isArray(bs.pig) ? bs.pig : [],
-            broiler: Array.isArray(bs.broiler) ? bs.broiler : [],
-          });
-        }
-      });
+    let cancelled = false;
+    loadRoster(sb).then((roster) => {
+      if (!cancelled) setAllTeamMembers(activeNames(roster));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
-  // Team members visible in the dropdown for the currently-picked species.
-  // Falls back to the global team-members list if this species has no
-  // per-species list configured yet (migration-friendly default).
-  const speciesTeamMembers = (() => {
-    const list = (teamMembersBySpecies && teamMembersBySpecies[species]) || [];
-    return list.length > 0 ? list : allTeamMembers;
-  })();
+  // Same active list across every species after the 2026-04-29 cleanup.
+  const speciesTeamMembers = allTeamMembers;
 
   // When species picked, prefetch what's needed
   React.useEffect(() => {
