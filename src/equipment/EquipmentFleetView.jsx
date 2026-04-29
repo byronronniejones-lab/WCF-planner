@@ -14,6 +14,7 @@ import {
   fmtReading,
 } from '../lib/equipment.js';
 import EquipmentAddModal from './EquipmentAddModal.jsx';
+import EquipmentCategoryIcon from '../components/EquipmentCategoryIcon.jsx';
 
 export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen, onReload}) {
   const [showAdd, setShowAdd] = React.useState(false);
@@ -186,7 +187,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       {grouped.map((g) => (
         <div key={g.key}>
           <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8}}>
-            <span style={{fontSize: 18}}>{g.icon}</span>
+            <EquipmentCategoryIcon category={g} size={18} />
             <span
               style={{fontSize: 14, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: 0.4}}
             >

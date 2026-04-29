@@ -6,6 +6,7 @@
 import React from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {EQUIPMENT_CATEGORIES, CATEGORY_BY_KEY} from '../lib/equipment.js';
+import EquipmentCategoryIcon from '../components/EquipmentCategoryIcon.jsx';
 import EquipmentFuelingWebform from './EquipmentFuelingWebform.jsx';
 import FuelSupplyWebform from './FuelSupplyWebform.jsx';
 
@@ -151,7 +152,7 @@ export default function FuelingHub({sb}) {
         {grouped.map((g) => (
           <div key={g.key} style={{marginBottom: 18}}>
             <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingLeft: 4}}>
-              <span style={{fontSize: 20}}>{g.icon}</span>
+              <EquipmentCategoryIcon category={g} size={20} />
               <span
                 style={{fontSize: 13, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: 0.4}}
               >

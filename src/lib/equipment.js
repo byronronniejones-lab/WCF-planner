@@ -6,7 +6,7 @@ export const EQUIPMENT_CATEGORIES = [
   {key: 'tractors', label: 'Tractors', icon: '🚜', color: '#065f46', bg: '#ecfdf5', bd: '#a7f3d0'},
   {key: 'atvs', label: 'ATVs', icon: '🛵', color: '#1e40af', bg: '#eff6ff', bd: '#bfdbfe'},
   {key: 'hijets', label: 'Hijets', icon: '🛻', color: '#92400e', bg: '#fffbeb', bd: '#fde68a'},
-  {key: 'mowers', label: 'Mowers', icon: '🪚', color: '#a16207', bg: '#fef9c3', bd: '#fde047'},
+  {key: 'mowers', label: 'Mowers', icon: '🌱', color: '#a16207', bg: '#fef9c3', bd: '#fde047'},
   {key: 'skidsteers', label: 'Skidsteers', icon: '🚧', color: '#7f1d1d', bg: '#fef2f2', bd: '#fca5a5'},
   {key: 'forestry', label: 'Forestry', icon: '🌲', color: '#065f46', bg: '#f0fdfa', bd: '#5eead4'},
 ];

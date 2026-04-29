@@ -4,9 +4,9 @@
 // The top nav bar + program sub-nav. Reads view/menu state from UIContext,
 // auth/save-status from AuthContext, form open-state booleans from
 // BatchesContext + PigContext. A handful of App-only things come as props:
-// showDailyForm (App-scope state, not yet in any context), the four App
-// helpers (signOut, backupData, restoreData, loadUsers) and the built-up
-// DeleteConfirmModal React element (depends on App's deleteConfirm state).
+// showDailyForm (App-scope state, not yet in any context), two App helpers
+// (signOut, loadUsers) and the built-up DeleteConfirmModal React element
+// (depends on App's deleteConfirm state).
 //
 // App() wraps this in a local `Header` factory closure so every extracted
 // view can keep receiving `Header` as a zero-arg prop — no ripple changes
@@ -19,7 +19,7 @@ import {useUI} from '../contexts/UIContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 
-export default function Header({showDailyForm, signOut, backupData, restoreData, loadUsers, DeleteConfirmModal}) {
+export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirmModal}) {
   const {authState, saveStatus, setShowUsers} = useAuth();
   const {view, setView, showMenu, setShowMenu} = useUI();
   const {showForm, setShowForm} = useBatches();
@@ -247,89 +247,44 @@ export default function Header({showDailyForm, signOut, backupData, restoreData,
           )}
         </div>
         <div style={{display: 'flex', gap: 6, alignItems: 'center', position: 'relative'}}>
-          <div style={{position: 'relative'}}>
-            <button
-              onClick={() => setShowMenu((m) => !m)}
-              style={{
-                padding: '5px 10px',
-                borderRadius: 8,
-                border: '1px solid rgba(255,255,255,.3)',
-                cursor: 'pointer',
-                fontSize: 15,
-                background: 'rgba(255,255,255,.1)',
-                color: 'white',
-                lineHeight: 1,
-              }}
-            >
-              ☰
-            </button>
-            {showMenu && (
-              <div
-                onClick={() => setShowMenu(false)}
-                style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 199}}
-              />
-            )}
-            {showMenu && (
-              <div
+          {authState?.role === 'admin' && (
+            <div style={{position: 'relative'}}>
+              <button
+                onClick={() => setShowMenu((m) => !m)}
                 style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: '110%',
-                  background: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 10,
-                  boxShadow: '0 8px 24px rgba(0,0,0,.15)',
-                  zIndex: 200,
-                  minWidth: 160,
-                  overflow: 'hidden',
+                  padding: '5px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,.3)',
+                  cursor: 'pointer',
+                  fontSize: 15,
+                  background: 'rgba(255,255,255,.1)',
+                  color: 'white',
+                  lineHeight: 1,
                 }}
               >
-                <button
-                  onClick={() => {
-                    backupData();
-                    setShowMenu(false);
-                  }}
+                ☰
+              </button>
+              {showMenu && (
+                <div
+                  onClick={() => setShowMenu(false)}
+                  style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 199}}
+                />
+              )}
+              {showMenu && (
+                <div
                   style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '10px 16px',
-                    border: 'none',
-                    background: 'none',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    textAlign: 'left',
-                    color: '#111827',
-                    fontFamily: 'inherit',
+                    position: 'absolute',
+                    right: 0,
+                    top: '110%',
+                    background: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 10,
+                    boxShadow: '0 8px 24px rgba(0,0,0,.15)',
+                    zIndex: 200,
+                    minWidth: 160,
+                    overflow: 'hidden',
                   }}
                 >
-                  ⬇ Backup
-                </button>
-                <label
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '10px 16px',
-                    border: 'none',
-                    background: 'none',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    textAlign: 'left',
-                    color: '#111827',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  ⬆ Restore
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={(e) => {
-                      restoreData(e);
-                      setShowMenu(false);
-                    }}
-                    style={{display: 'none'}}
-                  />
-                </label>
-                {authState?.role === 'admin' && (
                   <button
                     onClick={() => {
                       setShowUsers(true);
@@ -351,11 +306,10 @@ export default function Header({showDailyForm, signOut, backupData, restoreData,
                   >
                     👥 Users
                   </button>
-                )}
-                <div style={{height: 1, background: '#e5e7eb', margin: '4px 0'}} />
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={signOut}
             style={{

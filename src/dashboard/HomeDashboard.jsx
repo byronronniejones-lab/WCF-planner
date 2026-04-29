@@ -16,6 +16,7 @@ import {fmt, fmtS, toISO, addDays, todayISO} from '../lib/dateUtils.js';
 import {calcPoultryStatus, calcBroilerStatsFromDailys, calcTimeline} from '../lib/broiler.js';
 import {calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus} from '../lib/pig.js';
 import {computeIntervalStatus, daysSince, latestSaneReading, WARRANTY_WINDOW_DAYS} from '../lib/equipment.js';
+import EquipmentCategoryIcon from '../components/EquipmentCategoryIcon.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
@@ -648,7 +649,9 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                   minWidth: 0,
                 }}
               >
-                <div style={{fontSize: 36, flexShrink: 0, lineHeight: 1}}>{c.icon}</div>
+                <div style={{flexShrink: 0, lineHeight: 1}}>
+                  <EquipmentCategoryIcon category={c} size={36} />
+                </div>
                 <div style={{minWidth: 0, flex: 1}}>
                   <div style={{fontSize: 18, fontWeight: 700, color: c.color}}>{c.label}</div>
                 </div>

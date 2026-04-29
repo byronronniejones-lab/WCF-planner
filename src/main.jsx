@@ -2529,71 +2529,6 @@ function App() {
     sbSave('ppp-pigs-v1', nb);
   }
 
-  function backupData() {
-    const data = {
-      version: 2,
-      exported: new Date().toISOString(),
-      batches,
-      pigData,
-      breedingCycles,
-      farrowingRecs,
-      boarNames,
-      feederGroups,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `farm-planner-backup-${toISO(new Date())}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function restoreData(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (!data.batches) throw new Error('Invalid backup file');
-        if (
-          !window.confirm(
-            `Restore backup dated ${data.exported?.split('T')[0]}? This will replace current data for ALL users.`,
-          )
-        )
-          return;
-        setBatches(data.batches);
-        sbSave('ppp-v4', data.batches);
-        if (data.pigData) {
-          setPigData(data.pigData);
-          sbSave('ppp-pigs-v1', data.pigData);
-        }
-        if (data.breedingCycles) {
-          setBreedingCycles(data.breedingCycles);
-          sbSave('ppp-breeding-v1', data.breedingCycles);
-        }
-        if (data.farrowingRecs) {
-          setFarrowingRecs(data.farrowingRecs);
-          sbSave('ppp-farrowing-v1', data.farrowingRecs);
-        }
-        if (data.boarNames) {
-          setBoarNames(data.boarNames);
-          sbSave('ppp-boars-v1', data.boarNames);
-        }
-        if (data.feederGroups) {
-          setFeederGroups(data.feederGroups);
-          sbSave('ppp-feeders-v1', data.feederGroups);
-        }
-        setTimeout(() => alert('Restore complete! Data saved to cloud.'), 2000);
-      } catch (err) {
-        alert("Could not read backup file. Make sure it's a valid Farm Planner backup.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  }
-
   // Form field update
   function upd(k, v) {
     const f = {...form, [k]: v};
@@ -3096,8 +3031,6 @@ function App() {
     React.createElement(HeaderBase, {
       showDailyForm,
       signOut,
-      backupData,
-      restoreData,
       loadUsers,
       DeleteConfirmModal,
     });
