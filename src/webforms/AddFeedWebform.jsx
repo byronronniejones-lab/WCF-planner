@@ -1,6 +1,20 @@
-// Phase 2 Round 5 extraction (verbatim).
+// Phase 2 Round 5 extraction.
+//
+// 2026-04-29 (mig 034): submit paths cutover from direct .insert() into the
+// per-program *_dailys table → .rpc('submit_add_feed_batch', ...). The RPC
+// owns idempotency via daily_submissions.client_submission_id (parent-level)
+// and writes child rows atomically with daily_submission_id linkage. Child
+// rows still match the per-program shape AddFeedWebform has always written.
+// See PROJECT.md §7 daily_submissions entry for the full contract.
+//
+// Critically, this build does NOT wire AddFeedWebform into useOfflineSubmit
+// — the submit is still synchronous. The offline-queue layer is the next
+// build (Initiative C Phase 1C proper). The RPC is the parent-submission
+// foundation that makes offline-queue safe; using it synchronously today
+// proves the contract before queueing layers on top.
 import React from 'react';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
+import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 
 const AddFeedWebform = ({sb}) => {
   const [configLoaded, setConfigLoaded] = React.useState(false);
@@ -185,12 +199,6 @@ const AddFeedWebform = ({sb}) => {
       source: 'add_feed_webform',
     };
   }
-  function getTable() {
-    if (program === 'layer') return 'layer_dailys';
-    if (program === 'broiler') return 'poultry_dailys';
-    return 'pig_dailys';
-  }
-
   function handleSubmit() {
     if (!date) {
       setErr('Please enter a date.');
@@ -245,17 +253,27 @@ const AddFeedWebform = ({sb}) => {
         mortality_count: 0,
         source: 'add_feed_webform',
       };
-      sb.from('sheep_dailys')
-        .insert(sRec)
-        .then(function (res) {
-          setSubmitting(false);
-          if (res.error) {
-            setErr('Could not save: ' + res.error.message);
-            return;
-          }
-          if (teamMember) localStorage.setItem('wcf_team', teamMember);
-          setDone(true);
-        });
+      sb.rpc('submit_add_feed_batch', {
+        parent_in: {
+          id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+          client_submission_id: newClientSubmissionId(),
+          submitted_at: new Date().toISOString(),
+          program: 'sheep',
+          source: 'add_feed_webform',
+          team_member: teamMember || null,
+          date: date,
+          payload: {flock: sheepFlock, feeds: sFeedsJ},
+        },
+        children_in: [sRec],
+      }).then(function (res) {
+        setSubmitting(false);
+        if (res.error) {
+          setErr('Could not save: ' + res.error.message);
+          return;
+        }
+        if (teamMember) localStorage.setItem('wcf_team', teamMember);
+        setDone(true);
+      });
       return;
     }
     // Cattle-specific submit path
@@ -308,17 +326,27 @@ const AddFeedWebform = ({sb}) => {
         mortality_count: 0,
         source: 'add_feed_webform',
       };
-      sb.from('cattle_dailys')
-        .insert(cRec)
-        .then(function (res) {
-          setSubmitting(false);
-          if (res.error) {
-            setErr('Could not save: ' + res.error.message);
-            return;
-          }
-          if (teamMember) localStorage.setItem('wcf_team', teamMember);
-          setDone(true);
-        });
+      sb.rpc('submit_add_feed_batch', {
+        parent_in: {
+          id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+          client_submission_id: newClientSubmissionId(),
+          submitted_at: new Date().toISOString(),
+          program: 'cattle',
+          source: 'add_feed_webform',
+          team_member: teamMember || null,
+          date: date,
+          payload: {herd: cattleHerd, feeds: feedsJ},
+        },
+        children_in: [cRec],
+      }).then(function (res) {
+        setSubmitting(false);
+        if (res.error) {
+          setErr('Could not save: ' + res.error.message);
+          return;
+        }
+        if (teamMember) localStorage.setItem('wcf_team', teamMember);
+        setDone(true);
+      });
       return;
     }
     // Poultry/pig submit path
@@ -361,7 +389,8 @@ const AddFeedWebform = ({sb}) => {
     }
     setErr('');
     setSubmitting(true);
-    var table = getTable();
+    // RPC routes program → child table inside the function (broiler →
+    // poultry_dailys; pig → pig_dailys; layer → layer_dailys).
     var recs = [buildRecord(batchLabel, feedType, feedLbs)];
     extraGroups
       .filter(function (g) {
@@ -370,17 +399,27 @@ const AddFeedWebform = ({sb}) => {
       .forEach(function (g) {
         recs.push(buildRecord(g.batchLabel, g.feedType, g.feedLbs));
       });
-    sb.from(table)
-      .insert(recs.length === 1 ? recs[0] : recs)
-      .then(function (res) {
-        setSubmitting(false);
-        if (res.error) {
-          setErr('Could not save: ' + res.error.message);
-          return;
-        }
-        if (teamMember) localStorage.setItem('wcf_team', teamMember);
-        setDone(true);
-      });
+    sb.rpc('submit_add_feed_batch', {
+      parent_in: {
+        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+        client_submission_id: newClientSubmissionId(),
+        submitted_at: new Date().toISOString(),
+        program: program,
+        source: 'add_feed_webform',
+        team_member: teamMember || null,
+        date: date,
+        payload: {batchLabel: batchLabel, feedType: feedType, feedLbs: feedLbs, extraGroups: extraGroups},
+      },
+      children_in: recs,
+    }).then(function (res) {
+      setSubmitting(false);
+      if (res.error) {
+        setErr('Could not save: ' + res.error.message);
+        return;
+      }
+      if (teamMember) localStorage.setItem('wcf_team', teamMember);
+      setDone(true);
+    });
   }
 
   function resetForm() {

@@ -49,6 +49,10 @@ const TEST_OWNED_TABLES = [
   'equipment',
   'app_store',
   'webform_config',
+  // Mig 034 parent of Add Feed multi-row submissions. Children link via
+  // daily_submission_id (no FK). Truncating after the 5 daily child tables
+  // is a no-op for cascade purposes; ordering kept for readability.
+  'daily_submissions',
 ];
 // NOT truncated:
 //   profiles    — would orphan the test admin user; reseed manually if needed
