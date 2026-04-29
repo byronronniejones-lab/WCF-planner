@@ -99,6 +99,30 @@ async function cleanupFuelBillsStorage(client) {
   }
 }
 
+// daily-photos bucket cleanup. Layout is
+// `<form_kind>/<client_submission_id>/<photo_key>.jpg` — two levels deep.
+// Same Supabase-blocks-DELETE-on-storage.objects rule as fuel-bills, so we
+// recurse via the Storage API and .remove() the file paths.
+async function cleanupDailyPhotosStorage(client) {
+  try {
+    const top = await client.storage.from('daily-photos').list();
+    if (top.error || !top.data?.length) return;
+    for (const formKindDir of top.data) {
+      const subs = await client.storage.from('daily-photos').list(formKindDir.name);
+      if (!subs.data?.length) continue;
+      for (const csidDir of subs.data) {
+        const inner = await client.storage.from('daily-photos').list(`${formKindDir.name}/${csidDir.name}`);
+        if (inner.data?.length) {
+          const paths = inner.data.map((f) => `${formKindDir.name}/${csidDir.name}/${f.name}`);
+          await client.storage.from('daily-photos').remove(paths);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`cleanupDailyPhotosStorage: ${e.message || e} (tolerating)`);
+  }
+}
+
 export async function resetTestDatabase() {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   const client = getTestAdminClient();
@@ -110,6 +134,7 @@ export async function resetTestDatabase() {
     throw new Error(`resetTestDatabase: TRUNCATE failed: ${error.message}`);
   }
   await cleanupFuelBillsStorage(client);
+  await cleanupDailyPhotosStorage(client);
 }
 
 export const _TEST_OWNED_TABLES = TEST_OWNED_TABLES;

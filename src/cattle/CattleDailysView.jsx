@@ -3,6 +3,8 @@ import React from 'react';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
+import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
+import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
@@ -124,6 +126,8 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
       mortalityCount: d.mortality_count != null ? String(d.mortality_count) : '',
       mortalityReason: d.mortality_reason || '',
       issues: d.issues || '',
+      // Read-only in v1 — saveEdit does not write photos back.
+      photos: Array.isArray(d.photos) ? d.photos : [],
     });
     setEditId(d.id);
     setEditSource(d.source || null);
@@ -447,6 +451,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                               {'\ud83c\udf3e'}
                             </span>
                           )}
+                          <DailyPhotoChip photos={d.photos} />
                         </span>
                         <span
                           style={{
@@ -912,6 +917,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                   </div>
                 </React.Fragment>
               )}
+              <DailyPhotoThumbnails photos={form?.photos} />
             </div>
             <div style={{padding: '12px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8}}>
               <button onClick={saveEdit} style={{...S.btnPrimary, width: 'auto', padding: '8px 20px'}}>

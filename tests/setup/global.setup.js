@@ -80,4 +80,20 @@ setup('ensure storage buckets', async () => {
   if (error && !/already exists|duplicate/i.test(error.message || '')) {
     throw new Error(`global.setup [createBucket fuel-bills]: ${error.message}`);
   }
+  // daily-photos bucket — created by mig 031. READ-ONLY check, deliberately:
+  // mig 031 creates the bucket AND the storage RLS policies (anon INSERT +
+  // authenticated SELECT). createBucket() here would silently produce a
+  // bucket WITHOUT the policies and let specs run against half-applied
+  // migration state. Failing loudly on a fresh test project keeps the
+  // "mig 031 is a hard gate" rule honest — Ronnie applies it via Supabase
+  // SQL Editor (the DO-block + EXECUTE incompatibility means apply_test_*
+  // scripts can't run it through exec_sql).
+  const {data: dpBucket, error: dpErr} = await admin.storage.getBucket('daily-photos');
+  if (dpErr || !dpBucket) {
+    throw new Error(
+      'global.setup: daily-photos bucket missing; apply migration 031 to the ' +
+        'test project via Supabase SQL Editor before running daily photo specs. ' +
+        (dpErr ? `(getBucket error: ${dpErr.message})` : ''),
+    );
+  }
 });

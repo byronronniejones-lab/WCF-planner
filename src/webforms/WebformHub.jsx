@@ -4,6 +4,9 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
 import {wcfSendEmail} from '../lib/email.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
+import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
+import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
+import DailyPhotoCapture from './DailyPhotoCapture.jsx';
 const WebformHub = ({
   sb,
   wfGroups,
@@ -251,6 +254,45 @@ const WebformHub = ({
   const [extraBroilerGroups, setExtraBroilerGroups] = useState([]);
   const [extraLayerGroups, setExtraLayerGroups] = useState([]);
   const [extraPigGroups, setExtraPigGroups] = useState([]);
+
+  // Daily-report photos (per program). Files held client-side until submit;
+  // uploaded sequentially after required-field validation passes; aborted
+  // entirely on any photo failure (locked decision: no partial-photo row
+  // insert). Egg dailys excluded — mig 030 omitted egg_dailys.photos.
+  const [bPhotos, setBPhotos] = useState([]);
+  const [bPhotoStatuses, setBPhotoStatuses] = useState([]);
+  const [lPhotos, setLPhotos] = useState([]);
+  const [lPhotoStatuses, setLPhotoStatuses] = useState([]);
+  const [pPhotos, setPPhotos] = useState([]);
+  const [pPhotoStatuses, setPPhotoStatuses] = useState([]);
+  const [cPhotos, setCPhotos] = useState([]);
+  const [cPhotoStatuses, setCPhotoStatuses] = useState([]);
+  const [shPhotos, setShPhotos] = useState([]);
+  const [shPhotoStatuses, setShPhotoStatuses] = useState([]);
+
+  // Common photo-upload helper. Validates required fields BEFORE any upload
+  // (caller's job, this just runs the upload chain). Returns metadata array
+  // on success; throws on first failure so the parent submit aborts.
+  async function uploadPhotosOrAbort(formKind, csid, photos, setStatuses) {
+    if (!photos || photos.length === 0) return [];
+    if (photos.length > MAX_PHOTOS_PER_REPORT) {
+      throw new Error(`Up to ${MAX_PHOTOS_PER_REPORT} photos per submission`);
+    }
+    setStatuses(photos.map(() => 'pending'));
+    const meta = [];
+    for (let i = 0; i < photos.length; i++) {
+      setStatuses((prev) => prev.map((s, j) => (j === i ? 'uploading' : s)));
+      try {
+        const m = await uploadDailyPhoto(sb, formKind, csid, `photo-${i + 1}`, photos[i]);
+        meta.push(m);
+        setStatuses((prev) => prev.map((s, j) => (j === i ? 'uploaded' : s)));
+      } catch (e) {
+        setStatuses((prev) => prev.map((s, j) => (j === i ? 'failed' : s)));
+        throw e;
+      }
+    }
+    return meta;
+  }
   const allowAddGroup = (formId) => {
     // Check webform_settings key first (most up-to-date from admin panel)
     if (wfSettings?.allowAddGroup && formId in wfSettings.allowAddGroup) {
@@ -409,10 +451,39 @@ const WebformHub = ({
       }
     }
     setErr('');
+
+    // Photos + Add-Group is a footgun: photos would attach to the primary
+    // row only and operators would reasonably expect them to cover the
+    // whole submission. Block before any upload until the daily_submissions
+    // parent-table/RPC design lands. Mirrors the same constraint we put on
+    // Add Feed (parent-submission deferred).
+    const extraBroilerCount = extraBroilerGroups.filter((g) => g.batchLabel).length;
+    if (bPhotos.length > 0 && extraBroilerCount > 0) {
+      setErr(
+        'Photos can only be attached when submitting one group at a time. ' +
+          'Submit this report without extra groups, or submit each group ' +
+          'separately with its own photos.',
+      );
+      return;
+    }
+
     setSubmitting(true);
     localStorage.setItem('wcf_team', bForm.teamMember);
+
+    // Photo upload (after validation, before insert). Aborts on any failure.
+    const csid = newClientSubmissionId();
+    let photoMeta;
+    try {
+      photoMeta = await uploadPhotosOrAbort('poultry_dailys', csid, bPhotos, setBPhotoStatuses);
+    } catch (e) {
+      setSubmitting(false);
+      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+      return;
+    }
+
     const rec = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+      client_submission_id: csid,
       submitted_at: new Date().toISOString(),
       date: bForm.date,
       team_member: bForm.teamMember,
@@ -425,6 +496,7 @@ const WebformHub = ({
       mortality_count: bForm.mortalityCount !== '' ? parseInt(bForm.mortalityCount) : 0,
       mortality_reason: bForm.mortalityReason || null,
       comments: bForm.comments || null,
+      photos: photoMeta,
     };
     const recs = [
       rec,
@@ -433,6 +505,10 @@ const WebformHub = ({
         .map((g) => ({
           ...rec,
           id: String(Date.now() + Math.random()) + Math.random().toString(36).slice(2, 6),
+          // Each extra group gets its own csid (the unique index rejects
+          // sharing). Photos + extras is blocked at the top of submitBroiler
+          // so this `photos: []` is always the value extras carry on disk.
+          client_submission_id: newClientSubmissionId(),
           batch_label: g.batchLabel,
           feed_type: g.feedType || null,
           feed_lbs: g.feedLbs !== '' ? parseFloat(g.feedLbs) : null,
@@ -442,11 +518,18 @@ const WebformHub = ({
           mortality_count: g.mortalityCount !== '' ? parseInt(g.mortalityCount) : 0,
           mortality_reason: g.mortalityReason || null,
           comments: g.comments || null,
+          photos: [],
         })),
     ];
     const {error} = await sb.from('poultry_dailys').insert(recs.length === 1 ? recs[0] : recs);
     setSubmitting(false);
     if (error) {
+      if (photoMeta.length > 0) {
+        console.error(
+          '[WebformHub] poultry_dailys insert failed AFTER photo upload — orphan storage paths:',
+          photoMeta.map((p) => p.path),
+        );
+      }
       setErr('Could not save: ' + error.message);
       return;
     }
@@ -458,6 +541,8 @@ const WebformHub = ({
       });
     setLastGroup(bForm.batchLabel);
     setExtraBroilerGroups([]);
+    setBPhotos([]);
+    setBPhotoStatuses([]);
     setDone(true);
   }
   async function submitLayer() {
@@ -504,10 +589,34 @@ const WebformHub = ({
       }
     }
     setErr('');
+
+    // See submitBroiler for why we block photos + extra-groups in v1.
+    const extraLayerCount = extraLayerGroups.filter((g) => g.batchLabel).length;
+    if (lPhotos.length > 0 && extraLayerCount > 0) {
+      setErr(
+        'Photos can only be attached when submitting one group at a time. ' +
+          'Submit this report without extra groups, or submit each group ' +
+          'separately with its own photos.',
+      );
+      return;
+    }
+
     setSubmitting(true);
     localStorage.setItem('wcf_team', lForm.teamMember);
+
+    const csid = newClientSubmissionId();
+    let photoMeta;
+    try {
+      photoMeta = await uploadPhotosOrAbort('layer_dailys', csid, lPhotos, setLPhotoStatuses);
+    } catch (e) {
+      setSubmitting(false);
+      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+      return;
+    }
+
     const rec = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+      client_submission_id: csid,
       submitted_at: new Date().toISOString(),
       date: lForm.date,
       team_member: lForm.teamMember,
@@ -522,6 +631,7 @@ const WebformHub = ({
       mortality_count: lForm.mortalityCount !== '' ? parseInt(lForm.mortalityCount) : 0,
       mortality_reason: lForm.mortalityReason || null,
       comments: lForm.comments || null,
+      photos: photoMeta,
     };
     const recs = [
       rec,
@@ -530,6 +640,7 @@ const WebformHub = ({
         .map((g) => ({
           ...rec,
           id: String(Date.now() + Math.random()) + Math.random().toString(36).slice(2, 6),
+          client_submission_id: newClientSubmissionId(),
           batch_label: g.batchLabel,
           batch_id: resolveBatchId(g.batchLabel),
           feed_type: g.feedType || null,
@@ -541,11 +652,18 @@ const WebformHub = ({
           mortality_count: g.mortalityCount !== '' ? parseInt(g.mortalityCount) : 0,
           mortality_reason: g.mortalityReason || null,
           comments: g.comments || null,
+          photos: [],
         })),
     ];
     const {error} = await sb.from('layer_dailys').insert(recs.length === 1 ? recs[0] : recs);
     setSubmitting(false);
     if (error) {
+      if (photoMeta.length > 0) {
+        console.error(
+          '[WebformHub] layer_dailys insert failed AFTER photo upload — orphan storage paths:',
+          photoMeta.map((p) => p.path),
+        );
+      }
       setErr('Could not save: ' + error.message);
       return;
     }
@@ -565,6 +683,8 @@ const WebformHub = ({
     }
     setLastGroup(lForm.batchLabel);
     setExtraLayerGroups([]);
+    setLPhotos([]);
+    setLPhotoStatuses([]);
     setDone(true);
   }
   async function submitPig() {
@@ -592,11 +712,35 @@ const WebformHub = ({
       return;
     }
     setErr('');
+
+    // See submitBroiler for why we block photos + extra-groups in v1.
+    const extraPigCount = extraPigGroups.filter((g) => g.batchLabel).length;
+    if (pPhotos.length > 0 && extraPigCount > 0) {
+      setErr(
+        'Photos can only be attached when submitting one group at a time. ' +
+          'Submit this report without extra groups, or submit each group ' +
+          'separately with its own photos.',
+      );
+      return;
+    }
+
     setSubmitting(true);
     localStorage.setItem('wcf_team', pForm.teamMember);
+
+    const csid = newClientSubmissionId();
+    let photoMeta;
+    try {
+      photoMeta = await uploadPhotosOrAbort('pig_dailys', csid, pPhotos, setPPhotoStatuses);
+    } catch (e) {
+      setSubmitting(false);
+      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+      return;
+    }
+
     // Get pig groups from wfGroups (synced from active_groups in webform_config)
     const rec = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+      client_submission_id: csid,
       submitted_at: new Date().toISOString(),
       date: pForm.date,
       team_member: pForm.teamMember,
@@ -611,6 +755,7 @@ const WebformHub = ({
       fence_walked: pForm.fenceWalked,
       fence_voltage: pForm.fenceVoltage !== '' ? parseFloat(pForm.fenceVoltage) : null,
       issues: pForm.issues || null,
+      photos: photoMeta,
     };
     const recs = [
       rec,
@@ -619,6 +764,7 @@ const WebformHub = ({
         .map((g) => ({
           ...rec,
           id: String(Date.now() + Math.random()) + Math.random().toString(36).slice(2, 6),
+          client_submission_id: newClientSubmissionId(),
           batch_label: g.batchLabel,
           batch_id: g.batchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
           feed_lbs: g.feedLbs !== '' ? parseFloat(g.feedLbs) : null,
@@ -630,16 +776,25 @@ const WebformHub = ({
           troughs_moved: g.troughsMoved !== false,
           fence_walked: g.fenceWalked !== false,
           issues: g.issues || null,
+          photos: [],
         })),
     ];
     const {error} = await sb.from('pig_dailys').insert(recs.length === 1 ? recs[0] : recs);
     setSubmitting(false);
     if (error) {
+      if (photoMeta.length > 0) {
+        console.error(
+          '[WebformHub] pig_dailys insert failed AFTER photo upload — orphan storage paths:',
+          photoMeta.map((p) => p.path),
+        );
+      }
       setErr('Could not save: ' + error.message);
       return;
     }
     setLastGroup(pForm.batchLabel);
     setExtraPigGroups([]);
+    setPPhotos([]);
+    setPPhotoStatuses([]);
     setDone(true);
   }
   async function submitEgg() {
@@ -766,8 +921,19 @@ const WebformHub = ({
         };
       })
       .filter(Boolean);
+    const csid = newClientSubmissionId();
+    let photoMeta;
+    try {
+      photoMeta = await uploadPhotosOrAbort('cattle_dailys', csid, cPhotos, setCPhotoStatuses);
+    } catch (e) {
+      setSubmitting(false);
+      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+      return;
+    }
+
     const rec = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+      client_submission_id: csid,
       submitted_at: new Date().toISOString(),
       date: cForm.date,
       team_member: cForm.teamMember,
@@ -780,14 +946,23 @@ const WebformHub = ({
       mortality_reason: cForm.mortalityReason || null,
       issues: cForm.issues || null,
       source: 'daily_webform',
+      photos: photoMeta,
     };
     const {error} = await sb.from('cattle_dailys').insert(rec);
     setSubmitting(false);
     if (error) {
+      if (photoMeta.length > 0) {
+        console.error(
+          '[WebformHub] cattle_dailys insert failed AFTER photo upload — orphan storage paths:',
+          photoMeta.map((p) => p.path),
+        );
+      }
       setErr('Could not save: ' + error.message);
       return;
     }
     setLastGroup(cForm.herd);
+    setCPhotos([]);
+    setCPhotoStatuses([]);
     setDone(true);
   }
   async function submitSheep() {
@@ -830,8 +1005,19 @@ const WebformHub = ({
         };
       })
       .filter(Boolean);
+    const csid = newClientSubmissionId();
+    let photoMeta;
+    try {
+      photoMeta = await uploadPhotosOrAbort('sheep_dailys', csid, shPhotos, setShPhotoStatuses);
+    } catch (e) {
+      setSubmitting(false);
+      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+      return;
+    }
+
     const rec = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+      client_submission_id: csid,
       submitted_at: new Date().toISOString(),
       date: sForm.date,
       team_member: sForm.teamMember,
@@ -843,14 +1029,23 @@ const WebformHub = ({
       mortality_count: 0,
       comments: sForm.comments || null,
       source: 'daily_webform',
+      photos: photoMeta,
     };
     const {error} = await sb.from('sheep_dailys').insert(rec);
     setSubmitting(false);
     if (error) {
+      if (photoMeta.length > 0) {
+        console.error(
+          '[WebformHub] sheep_dailys insert failed AFTER photo upload — orphan storage paths:',
+          photoMeta.map((p) => p.path),
+        );
+      }
       setErr('Could not save: ' + error.message);
       return;
     }
     setLastGroup({rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'}[sForm.flock] || sForm.flock);
+    setShPhotos([]);
+    setShPhotoStatuses([]);
     setDone(true);
   }
 
@@ -1384,6 +1579,7 @@ const WebformHub = ({
               {err}
             </div>
           )}
+          <DailyPhotoCapture files={bPhotos} statuses={bPhotoStatuses} onChange={setBPhotos} disabled={submitting} />
           <button
             onClick={submitBroiler}
             disabled={submitting}
@@ -1768,6 +1964,7 @@ const WebformHub = ({
               {err}
             </div>
           )}
+          <DailyPhotoCapture files={lPhotos} statuses={lPhotoStatuses} onChange={setLPhotos} disabled={submitting} />
           <button
             onClick={submitLayer}
             disabled={submitting}
@@ -2128,6 +2325,7 @@ const WebformHub = ({
               {err}
             </div>
           )}
+          <DailyPhotoCapture files={pPhotos} statuses={pPhotoStatuses} onChange={setPPhotos} disabled={submitting} />
           <button
             onClick={submitPig}
             disabled={submitting}
@@ -2539,6 +2737,7 @@ const WebformHub = ({
             </div>
           )}
 
+          <DailyPhotoCapture files={cPhotos} statuses={cPhotoStatuses} onChange={setCPhotos} disabled={submitting} />
           <button
             onClick={submitCattle}
             disabled={submitting || !herdSelected}
@@ -3048,6 +3247,7 @@ const WebformHub = ({
               {err}
             </div>
           )}
+          <DailyPhotoCapture files={shPhotos} statuses={shPhotoStatuses} onChange={setShPhotos} disabled={submitting} />
           <button
             onClick={submitSheep}
             disabled={submitting}

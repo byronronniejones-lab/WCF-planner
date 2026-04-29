@@ -9,9 +9,15 @@
 import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
+import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
+import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
+import DailyPhotoCapture from './DailyPhotoCapture.jsx';
 
 export default function PigDailysWebform() {
   const {wfGroups, wfTeamMembers, webformsConfig} = useWebformsConfig();
+
+  const [wfPhotos, setWfPhotos] = React.useState([]);
+  const [wfPhotoStatuses, setWfPhotoStatuses] = React.useState([]);
 
   const [wfForm, setWfForm] = React.useState(() => {
     const d = new Date();
@@ -80,8 +86,38 @@ export default function PigDailysWebform() {
     setWfErr('');
     setWfSubmitting(true);
     localStorage.setItem('wcf_team', wfForm.teamMember.trim());
+
+    // Validate the photo count cap upfront — DailyPhotoCapture also enforces
+    // it, but a defense-in-depth check catches any future caller mismatch.
+    if (wfPhotos.length > MAX_PHOTOS_PER_REPORT) {
+      setWfSubmitting(false);
+      setWfErr(`Up to ${MAX_PHOTOS_PER_REPORT} photos per submission.`);
+      return;
+    }
+
+    // Photo upload (after validation, before insert). Aborts on any failure.
+    const csid = newClientSubmissionId();
+    const photoMeta = [];
+    if (wfPhotos.length > 0) {
+      setWfPhotoStatuses(wfPhotos.map(() => 'pending'));
+      for (let i = 0; i < wfPhotos.length; i++) {
+        setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'uploading' : s)));
+        try {
+          const m = await uploadDailyPhoto(sb, 'pig_dailys', csid, `photo-${i + 1}`, wfPhotos[i]);
+          photoMeta.push(m);
+          setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'uploaded' : s)));
+        } catch (e) {
+          setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'failed' : s)));
+          setWfSubmitting(false);
+          setWfErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+          return;
+        }
+      }
+    }
+
     const record = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+      client_submission_id: csid,
       submitted_at: new Date().toISOString(),
       date: wfForm.date,
       team_member: wfForm.teamMember.trim(),
@@ -96,14 +132,23 @@ export default function PigDailysWebform() {
       fence_walked: wfForm.fenceWalked,
       fence_voltage: wfForm.fenceVoltage !== '' ? parseFloat(wfForm.fenceVoltage) : null,
       issues: wfForm.issues.trim() || null,
+      photos: photoMeta,
     };
     const {error} = await sb.from('pig_dailys').insert(record);
     setWfSubmitting(false);
     if (error) {
+      if (photoMeta.length > 0) {
+        console.error(
+          '[PigDailysWebform] pig_dailys insert failed AFTER photo upload — orphan storage paths:',
+          photoMeta.map((p) => p.path),
+        );
+      }
       setWfErr('Could not save: ' + error.message);
       return;
     }
     setWfGroupName(wfForm.batchId);
+    setWfPhotos([]);
+    setWfPhotoStatuses([]);
     setWfDone(true);
   }
 
@@ -123,6 +168,8 @@ export default function PigDailysWebform() {
       fenceVoltage: '',
       issues: '',
     });
+    setWfPhotos([]);
+    setWfPhotoStatuses([]);
     setWfDone(false);
     setWfErr('');
   }
@@ -558,6 +605,8 @@ export default function PigDailysWebform() {
             />
           </div>,
         )}
+
+        <DailyPhotoCapture files={wfPhotos} statuses={wfPhotoStatuses} onChange={setWfPhotos} disabled={wfSubmitting} />
 
         <button
           onClick={wfSubmit}

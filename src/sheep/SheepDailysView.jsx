@@ -8,6 +8,8 @@ import React from 'react';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
+import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
+import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 
 // "nothing to report" sentinels — don't render these as a comment badge.
 // Public-webform placeholder now tells the team to enter "0"; this covers
@@ -135,6 +137,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
       waterersWorking: d.waterers_working == null ? true : !!d.waterers_working,
       mortalityCount: d.mortality_count != null ? String(d.mortality_count) : '',
       comments: d.comments || '',
+      photos: Array.isArray(d.photos) ? d.photos : [],
     });
     setEditId(d.id);
     setEditSource(d.source || null);
@@ -474,6 +477,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                               {'🌾'}
                             </span>
                           )}
+                          <DailyPhotoChip photos={d.photos} />
                         </span>
                         <span
                           style={{
@@ -897,6 +901,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                   </div>
                 </React.Fragment>
               )}
+              <DailyPhotoThumbnails photos={form?.photos} />
             </div>
             <div style={{padding: '12px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8}}>
               <button onClick={saveEdit} style={{...S.btnPrimary, width: 'auto', padding: '8px 20px'}}>
