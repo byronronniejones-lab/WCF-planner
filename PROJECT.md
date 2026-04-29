@@ -4,7 +4,7 @@
 
 Started as a single-file ~19,445-line `index.html` using Babel-in-browser. Over April 19–21, 2026 it was migrated to a Vite build with 54+ extracted components under `src/`, 14 feature-scoped libs, 10 React Contexts, and per-tab URLs via a React Router adapter. Production serves the Vite bundle from branch `main`. This doc is the living reference; for per-session narrative history see [`archive/SESSION_LOG.md`](archive/SESSION_LOG.md).
 
-**Last consolidated:** 2026-04-21 session 3 (post-polish cutover). **Last session-index update:** 2026-04-29 (Initiative C Phase 1B canary + design correction + locked decisions for queued builds).
+**Last consolidated:** 2026-04-21 session 3 (post-polish cutover). **Last session-index update:** 2026-04-29 (Initiative C through Phase 1C-C WeighIns RPC precursor).
 
 ---
 
