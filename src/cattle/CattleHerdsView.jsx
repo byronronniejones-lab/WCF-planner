@@ -232,8 +232,22 @@ const CattleHerdsView = ({
     if (!tag) return null;
     return calvingRecs.find((r) => r.dam_tag === tag);
   }
+  // Calves derived from cattle_calving_records (Codex revision 2026-04-29):
+  // sum total_born across the cow's calving rows (so twins count as 2),
+  // falling back to 1 per record when total_born is null / missing /
+  // non-positive. Replaces the prior cattle.dam_tag count which under-
+  // counted whenever a calving event didn't mint a tagged cattle row
+  // (sold-young calves, never-tagged stillbirths, etc.). Does NOT subtract
+  // deaths — Ronnie wants total calves born, not living-only; a separate
+  // label can surface that later if needed.
   function calfCount(tag) {
-    return cattle.filter((c) => c.dam_tag === tag).length;
+    if (!tag) return 0;
+    return calvingRecs
+      .filter((r) => r.dam_tag === tag)
+      .reduce((sum, r) => {
+        const tb = parseInt(r.total_born, 10);
+        return sum + (Number.isFinite(tb) && tb > 0 ? tb : 1);
+      }, 0);
   }
 
   // Filter + sort. When the user is actively searching, relax the default
@@ -832,6 +846,8 @@ const CattleHerdsView = ({
                 >
                   <div
                     onClick={() => setExpandedHerds({...expandedHerds, [h]: !herdOpen})}
+                    data-herd-tile={h}
+                    data-herd-open={herdOpen ? '1' : '0'}
                     style={{
                       padding: '12px 18px',
                       background: hc.bg,
@@ -936,9 +952,9 @@ const CattleHerdsView = ({
                                 {lw ? lw.toLocaleString() + ' lb' : '\u2014'}
                               </span>
                               <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-                                {h === 'mommas' && cc > 0 && (
-                                  <span style={{fontSize: 11, color: '#7f1d1d', fontWeight: 600}}>
-                                    {cc + ' ' + (cc === 1 ? 'calf' : 'calves')}
+                                {h === 'mommas' && (
+                                  <span data-calf-count={cc} style={{fontSize: 11, color: '#7f1d1d', fontWeight: 600}}>
+                                    {'Calves: ' + cc}
                                   </span>
                                 )}
                                 {h === 'mommas' && lc && (
