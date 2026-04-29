@@ -7,9 +7,9 @@ Working-style rules live in Claude's auto-memory.
 
 ---
 
-## Three-party working model
+## Three-party operating SOP (Ronnie / Codex / CC)
 
-This project runs with a deliberate split:
+This project runs with a deliberate split.
 
 - **Ronnie (you)** — the only person who can authorize commits, pushes,
   destructive ops, or anything that changes shared state. CC and Codex
@@ -18,61 +18,111 @@ This project runs with a deliberate split:
   needs its own approval. (See `PROJECT.md` §1 for the full SOP.)
 
 - **Claude Code (CC) — the builder.** Reads the codebase, plans, writes
-  code, runs tests, drafts commits. Stops at the approval gate every
-  time. Treats relayed Codex feedback as input from you. Pushes back on
-  Codex when warranted (and flags the disagreement explicitly so you can
-  adjudicate) but doesn't ignore Codex silently.
+  code, runs tests, drafts commits. **Plans first** before building
+  unless Ronnie/Codex have explicitly approved coding for the current
+  task. Treats relayed Codex feedback as input from Ronnie. If Codex
+  finds blockers, CC fixes and reports back; if CC and Codex disagree,
+  CC flags it explicitly so Ronnie can adjudicate.
 
-- **Codex — the reviewer.** Runs in parallel as a review-only second
-  opinion. NEVER commits, pushes, deploys, installs deps, edits files,
-  or takes any destructive action — even if asked. Reviews CC's plans
-  before they execute. Reviews CC's code before commit. Approves when
-  the work is solid. Pushes back on scope creep, missed don't-touch
-  rules, deployment risk, scope ambiguity, load-bearing constraints CC
-  missed. Codex's output is review text only.
+- **Codex — the reviewer.** Talks to Ronnie normally in chat. Acts as
+  the gatekeeper before commit/push and before each new build.
+  Anything Ronnie should paste/send to CC must be in a copyable text
+  block and must start with `Codex Review`. Approves builds when work
+  is solid; pushes back on scope creep, missed don't-touch rules,
+  deployment risk, scope ambiguity, load-bearing constraints CC missed.
+  **Never executes** — no commits, pushes, deploys, dependency installs,
+  file edits, or destructive actions, even if asked.
 
-The relay: when CC has something for review (a plan, a diff, command
-output), you copy it to Codex; when Codex replies, you copy that back to
-CC. CC reads relayed messages as if they came from you. If CC and Codex
-disagree, CC flags it and you decide.
+The relay: Ronnie copies CC's plans/results into Codex; Codex's
+review goes back to CC verbatim. After a build is accepted/live,
+Codex automatically provides the next CC planning/build prompt.
+HO.md is updated only at session wrap (not midstream) unless Ronnie
+says otherwise.
 
 ---
 
-## Where we are (one paragraph, snapshot 2026-04-28 eve wrap)
+## Where we are (snapshot 2026-04-29 wrap)
 
-**Five builds shipped this session, 7 commits, 4 prod deploys, all
-bundle-hash-verified:** (1) feed physical count delivery-included
-flag, (2) HomeDashboard equipment-attention noise removal hotfix
-(upcoming + missed_fueling kinds dropped — equipment is hour/km-
-based, not calendar-based; animal dailies are the calendar workflow),
-(3) Initiative B Phase 2.4 Prettier go-live (4 commits, ~204 files
-reformatted, CI now enforces `npm run format:check`), (4) Phase 0
-HomeDashboard drift fix (new `latestSaneReading` helper compensates
-for prod RLS silently failing anon UPDATE on equipment.current_*
-for 6 of 16 active pieces — the read side of dashboard math now
-prefers latest-by-date fueling reading over the stale parent row),
-(5) **Initiative C Phase 1A — DB schema contracts** (migrations 030
-adds `client_submission_id text` + non-partial unique index on 9
-webform-target tables + `photos jsonb` on 5 daily-report tables;
-migration 031 creates new private `daily-photos` storage bucket +
-2 RLS policies; **migrations not yet applied to prod** — Ronnie
-applies via Supabase SQL Editor before Phase 1B). Initiative C v1
-plan is locked and captured in PROJECT.md §8 — adapter/registry
-pattern, photos first-class on every queued submission, deterministic
-storage paths, sync trigger `online`-event + manual + 60s tick.
-**Equipment Reading Reconciliation Follow-Up** tracked in §8 Near-
-term — long-term fix for the parent-row drift remains open. Test
-counts: **75 vitest + 43 e2e + 0 lint errors / 636 warnings + clean
-build**. Playwright Phase 1 still closed; A10 CI live + format-gated;
-e2e step still blocked on the 5 GitHub Actions secrets. Next decision
-queued: **Initiative C Phase 1B** (adapter foundation + FuelSupply
-canary), gated on Ronnie applying migrations 030 + 031 to prod.
-Other options if Ronnie redirects: A10 secrets, operational items
-(cattle modal cleanup, /fueling/supply smoke test, multi-month bill
-validation, new Podio app), deferred Init B Phase 2.5–2.6, or the
-Equipment Reading Reconciliation Follow-Up. See `PROJECT.md` §Part
-4 last 4 rows + §8 for current state, shipped specs, deferred items,
-and gotchas.
+**Five builds shipped this session, all bundle-hash-verified live:**
+
+1. `a96527a` — Team roster master cleanup. Centralizes
+   `webform_config.team_roster` as the single source of truth;
+   `team_members` legacy mirror preserved for unmigrated readers.
+   Per-form team-member overrides and per-species weigh-ins filtering
+   retired. Master-add/remove on `EquipmentWebformsAdmin` reduced to
+   display-only assignment toggle. (See PROJECT.md §7 for the full
+   contract.)
+2. `0c39546` — Daily report private photo capture + admin display.
+   New private `daily-photos` storage bucket (mig 031 applied to
+   prod/test). `DailyPhotoCapture`, `DailyPhotoChip`,
+   `DailyPhotoThumbnails` shared components. 10-photo cap per
+   submission; sequential uploads abort on first failure. Multi-row
+   submission guarded by pre-upload error.
+3. `fcc77e5` — Cattle calf count + heifer auto-promote. Mommas tile
+   shows `Calves: SUM(total_born)` (twins double-count). Mig 032
+   AFTER-INSERT trigger on `cattle_calving_records` auto-promotes
+   `sex='heifer'` to `'cow'` when a calving record is inserted, plus
+   audit comment. Backfill DO block one-time-promotes existing
+   heifers-with-calvings. Applied + prod-verified.
+4. `42a8c4e` — Cattle calf dam-link fix. Sibling mig 033 trigger
+   (distinct from mig 032) sets `cattle.dam_tag` on a calf row when a
+   calving record names her via `calf_tag` and her existing `dam_tag`
+   is null/blank. Never overwrites non-blank values. Deterministic
+   CTE backfill (`row_number() over (calf_tag, …)`). UI: herd-accordion
+   collapsed cow tile now also renders `dam #<tag>` subtitle, mirroring
+   the search/filter tile. Prod-verified via rollback behavior probe
+   (`dam_tag = CODEX-DAM-033`).
+5. `4be002e` — Equipment mower icon + Backup/Restore/hamburger
+   cleanup. Mowers category icon is now an inline SVG riding-mower
+   silhouette via the new `EquipmentCategoryIcon` helper component
+   (5 visual surfaces). Two admin `<select><option>` dropdowns fall
+   back to the new `'🌱'` emoji string. Obsolete in-app Backup /
+   Restore JSON workflow removed (`backupData()` + `restoreData()`
+   in `src/main.jsx` deleted, ⬇ Backup + ⬆ Restore menu items + the
+   trailing divider in the ☰ dropdown deleted). The ☰ menu shell is
+   now wrapped in `{authState?.role === 'admin' && …}` so non-admin
+   users no longer see an empty menu trigger.
+
+**Migration state (all applied + prod-verified):**
+- mig 030 — `client_submission_id` queue idempotency keys on 9
+  webform-target tables.
+- mig 031 — `daily-photos` private storage bucket + 2 RLS policies.
+- mig 032 — `cattle_promote_heifer_on_calving` function +
+  `cattle_calving_promote_heifer` trigger. Verified true/true.
+- mig 033 — `cattle_link_calf_dam_on_calving` function +
+  `cattle_calving_link_calf_dam` trigger. Verified true/true. Behavior
+  probe returned `dam_tag=CODEX-DAM-033` on prod (rollback-style).
+
+**Test counts:** 191 vitest + Playwright cattle/team-roster/daily-photo
+specs pass + 0 lint errors (659 warnings, all `no-unused-vars` /
+`react-hooks/exhaustive-deps`, deferred to Initiative B Phase 2.5–2.6).
+
+**Active build status:** Equipment mower icon + Backup/Restore /
+hamburger cleanup is **shipped** (commit `4be002e`). Codex will review
+the build-complete report next session before issuing the next
+planning prompt.
+
+**Queued follow-ups for next session (Codex picks order):**
+- Calf dam-tag live UX confirmation. If Ronnie still sees any
+  calf-dam-display issue in production after the mig 033 + UI fix,
+  diagnose + fix.
+- Team-member availability filters for Daily / Fueling dropdowns.
+  Master roster stays the source of truth (per the team_roster §7
+  entry); forms may need a central "available for X form / X
+  species" availability filter to narrow the dropdown without
+  reintroducing scattered Add buttons.
+- Continue roadmap from `PROJECT.md` §8 Near-term: cattle modal
+  cleanup, `/fueling/supply` operator smoke test, multi-month Home
+  Oil bill validation, new Podio app, Equipment Reading Reconciliation
+  Follow-Up, A10 CI Actions secrets, Initiative B Phase 2.5–2.6
+  warning sweep.
+
+**Working-tree noise to keep excluded:**
+- `tests/home_dashboard_equipment.spec.js`
+- `tests/scenarios/home_dashboard_equipment_seed.js`
+
+These two files have pre-existing LF/CRLF churn only — no real content
+diff. Don't stage them unless a future build adds genuine changes.
 
 ---
 
@@ -81,162 +131,140 @@ and gotchas.
 ```
 Read PROJECT.md top to bottom. Pay extra attention to:
   - §1 SOP — especially the deployment SOP, the don't-commit-without-
-    explicit-approval rule, and Ronnie's working style.
+    explicit-approval rule, and Ronnie's working style. NEW: Codex is
+    the gatekeeper for commit/push and for issuing the next build
+    prompt; relayed messages from Ronnie that begin with "Codex Review"
+    carry Codex's verdict.
   - §3 hand-created prod tables — these aren't in any migration; the
     test bootstrap seeds them explicitly.
   - §7 don't-touch list (load-bearing rules). Walk this at PLAN time,
     not just edit time. Name each don't-touch item the plan would touch
-    in the plan itself.
-  - §8 roadmap. **Initiative C Phase 1B is the queued next build** —
-    plan-locked, awaits Ronnie applying migrations 030 + 031 to prod.
-    Full v1 plan capture lives in §8 "Initiative C v1 plan capture
-    (locked 2026-04-28 eve+)" with all locked decisions, phase plan,
-    schema additions, and pre-Phase-1B prerequisites. The §8 Known
-    gotchas section has durable entries worth a careful read (pig
-    batch tile selector trap, Supabase storage.objects DELETE block,
-    DOM hooks across views, label-vs-th selector trap, Vite dev-
-    server port-5173 race). New §7 entries this session: `daily-
-    photos` bucket privacy contract, `client_submission_id` queue
-    idempotency contract, the RLS-disabled note on the 3 hand-created
-    daily-report tables.
-  - The most recent rows in §Part 4 Session Index. The 2026-04-28
-    (eve queue) row covers Initiative C Phase 1A — DB schema
-    contracts (migrations 030 + 031, NOT yet applied to prod). The
-    2026-04-28 (eve drift) row covers the Phase 0 HomeDashboard
-    drift fix (`latestSaneReading` helper compensates for the silent-
-    fail anon UPDATE on `equipment.current_*`). The 2026-04-28 (eve+)
-    row covers Initiative B Phase 2.4 Prettier go-live. The 2026-04-28
-    (eve hotfix) row covers the HomeDashboard equipment-attention
-    noise removal — `upcoming` + `missed_fueling` kinds dropped;
-    live kinds now overdue / fillup_streak / warranty. The 2026-04-28
-    (eve) row covers the feed delivery-included flag.
+    in the plan itself. Active load-bearing entries that came up this
+    arc: `team_roster` writer single-owner contract, `daily-photos`
+    bucket privacy, `client_submission_id` idempotency, RLS-disabled
+    note on the 3 hand-created daily-report tables, and the FuelingHub
+    explicit-equipment-columns rule.
+  - §8 roadmap. Initiative C Phase 1B (FuelSupply offline canary)
+    shipped. Phase 1C / Phase 2 fan-out to other webforms remains
+    queued. Cattle small-win + cattle calf dam-link both shipped.
+    Equipment mower icon + Backup/Restore cleanup shipped.
+  - The most recent rows in §Part 4 Session Index. The 2026-04-29 row
+    covers all five builds shipped today (team roster cleanup, daily
+    photos, cattle calf count + heifer auto-promote, cattle calf
+    dam-link fix, equipment mower icon + Backup/Restore cleanup).
 
 Your auto-memory carries Ronnie's working-style rules: commit/push
 approval gates, multi-choice questions via AskUserQuestion, no-assume,
 no-purple, deploy-verification rigor proportional to change risk,
 HANDOFF-vs-PROJECT.md doc structure, plan-against-don't-touch.
-They apply.
+HO.md is session-end only. They apply.
 
 I'm Ronnie — owner/admin of WCF Planner.
 
-Codex is running in parallel as a review-only second opinion. It
-does NOT execute — no commits, no pushes, no file edits. When I relay
-Codex feedback, treat it as input from me. Push back on Codex when
-warranted; you're not obligated to take its advice over your own
-judgment, but flag the disagreement explicitly so I can adjudicate.
+Codex is running in parallel as the reviewer + gatekeeper. It does
+NOT execute — no commits, no pushes, no file edits. Codex talks to me
+in chat; when I have something for you, I'll relay it as a copyable
+text block beginning with "Codex Review". Treat anything labelled
+"Codex Review" as my message to you. Push back on Codex when warranted
+(flag the disagreement so I can adjudicate); after a build is
+accepted/live, Codex automatically provides the next CC planning/build
+prompt.
 
 State at session start:
-  - All 2026-04-28 (eve wrap) work pushed to prod EXCEPT migrations
-    030 + 031 which are committed (in `9e93e0a`) but not yet applied
-    to the production Supabase project. Apply them via the SQL
-    Editor before starting Phase 1B. Working tree should be clean.
-    Verify via `git status` and `git log --oneline -10`.
-  - 43 e2e + 75 vitest + 0 lint errors at last run. 636 warnings
-    (all `no-unused-vars` + `react-hooks/exhaustive-deps`, deferred
-    to Initiative B Phase 2.5-2.6).
-  - A10 CI workflow is live and enforces `npm run format:check`
-    between Playwright install and lint; e2e step still fails until
-    5 GitHub Actions secrets are configured (§8 Near-term "A10 CI
-    Actions secrets configuration"). Format / lint / vitest / build
-    pass independently.
-  - Playwright Phase 1 closed; no queued specs unless Ronnie names
-    one. home_dashboard_equipment.spec.js is 3 positive (overdue /
-    fillup_streak / warranty) + 2 negative locks (near-due / stale-
-    fueling). Initiative C Phase 1B will add new offline-queue specs
-    (offline_queue_canary, offline_queue_dedup) per the v1 plan.
-  - HomeDashboard drift compensation shipped via the new
-    `latestSaneReading` helper in `src/lib/equipment.js`. The parent
-    `equipment.current_*` rows still drift on 6 active pieces; the
-    Equipment Reading Reconciliation Follow-Up in §8 Near-term
-    tracks the long-term fix.
-  - Initiative C v1 is plan-approved. Phase 1A schema contracts
-    committed; Phase 1B (adapter foundation + FuelSupply canary) is
-    the queued next build. Pre-Phase-1B prereq: apply migrations 030
-    + 031 to prod.
-  - PROJECT.md and HO.md were last updated by the 2026-04-28 (eve
-    wrap) commit. Verify via `git log --oneline -3` it's on
-    origin/main before any further work.
+  - All 2026-04-29 work is pushed to prod. Working tree should be
+    clean. Verify via `git status` and `git log --oneline -10`.
+  - Migrations 030–033 applied + prod-verified. Mig 032 trigger
+    `cattle_calving_promote_heifer` and mig 033 trigger
+    `cattle_calving_link_calf_dam` are live; both functions
+    (`cattle_promote_heifer_on_calving`,
+    `cattle_link_calf_dam_on_calving`) confirmed via existence + (mig
+    033) rollback-style behavior probe in prod.
+  - Test counts: 191 vitest + Playwright (cattle small-win + cattle
+    calf dam-link + team roster + daily-photos specs) + 0 lint errors
+    / 659 warnings.
+  - A10 CI workflow live and enforces `npm run format:check` between
+    Playwright install and lint; e2e step still fails until 5 GitHub
+    Actions secrets are configured (§8 Near-term "A10 CI Actions
+    secrets configuration"). Format / lint / vitest / build pass
+    independently.
+  - HomeDashboard drift compensation continues via the
+    `latestSaneReading` helper. Equipment Reading Reconciliation
+    Follow-Up in §8 Near-term remains open.
+  - Equipment mower icon + Backup/Restore / hamburger cleanup
+    shipped this session. Codex will review the build-complete
+    report and then issue the next prompt.
+  - Known working-tree noise to leave alone:
+    `tests/home_dashboard_equipment.spec.js` and
+    `tests/scenarios/home_dashboard_equipment_seed.js`. Pre-existing
+    LF/CRLF churn only — don't stage unless a real content diff
+    appears.
 
-**Default first action: Initiative C Phase 1B.** Plan-packet first
-before any code:
-  • Read `src/webforms/FuelSupplyWebform.jsx` end-to-end.
-  • Confirm migrations 030 + 031 have been applied to prod
-    (verify by Ronnie OR by querying for `client_submission_id`
-    column on `fuel_supplies` via service-role read).
-  • Plan Phase 1B scope: `idb` install, `src/lib/offlineQueue.js`,
-    `src/lib/offlineForms.js` (form_kind registry with `fuel_supply`
-    entry), `src/lib/photoCompress.js`, `src/lib/clientSubmissionId.js`,
-    PWA `manifest.webmanifest` + install scaffolding (NO Service
-    Worker caching yet). `useOfflineSubmit('fuel_supply', payload)`
-    hook wired into FuelSupplyWebform. New vitest specs for the
-    queue + idempotency helpers. New Playwright spec for the
-    canary offline scenario.
-  • Walk §7 at PLAN time: the new `daily-photos` bucket entry,
-    `client_submission_id` semantics entry, RLS-disabled note on
-    the 3 hand-created tables, plus the Supabase auth config that
-    must NOT change.
-  • Keep narrow: this is the canary. WeighIns / AddFeed / PigDailys
-    fan-out + EquipmentFueling photos stay in Phase 1C / Phase 2.
+**Default first action: stand by for Codex's next prompt.** Common
+candidates Codex may queue:
 
-If Ronnie redirects, common alternatives:
-
-  (a) Apply migrations 030 + 031 to prod (Ronnie task, ~2 min in
-      Supabase SQL Editor) — required before any Phase 1B code.
-  (b) Configure A10 CI Actions secrets (Ronnie task, ~5 min) —
-      closes the only pending verification on shipped infrastructure.
-  (c) Equipment Reading Reconciliation Follow-Up (§8 Near-term).
-      Pick option (a) admin script, (b) Edge Function, or (c)
-      derive-on-read approach. Decision-then-build.
-  (d) Continue an item from PROJECT.md §8 Near-term: cattle modal
+  (a) Calf dam-tag live UX confirmation. If Ronnie still sees any
+      calf-dam-display issue after the mig 033 + UI fix, diagnose
+      and fix. Plan-packet first.
+  (b) Team-member availability filters for Daily / Fueling dropdowns.
+      Master roster (`webform_config.team_roster`) remains the single
+      source of truth; the build adds a central "available for X form
+      / X species" filter so dropdowns can narrow without
+      reintroducing scattered Add buttons. Plan-packet first.
+  (c) Continue an item from PROJECT.md §8 Near-term: cattle modal
       cleanup, `/fueling/supply` operator smoke test, multi-month
-      Home Oil bill validation, new Podio app.
-  (e) Initiative B Phase 2.5–2.6 cleanup — no-unused-vars (596
-      warnings), exhaustive-deps (61 warnings). Mechanical.
-  (f) Bring over a Podio app I'll name (READ §7 first — equipment
+      Home Oil bill validation, new Podio app, Equipment Reading
+      Reconciliation Follow-Up, A10 CI Actions secrets configuration,
+      Initiative B Phase 2.5–2.6 warning sweep, Phase 1C / Phase 2
+      offline-queue fan-out to remaining webforms.
+  (d) Bring over a Podio app I'll name (READ §7 first — equipment
       imports have load-bearing rules).
-  (g) Handle an operational bug or data anomaly I'll describe.
-  (h) HomeDashboard equipment-alerts follow-ups: sort-order spec,
-      auto-clear-on-resolve spec (the "never logged" follow-up is
-      no longer relevant — `missed_fueling` was removed in the eve
-      hotfix). Small + deferrable.
+  (e) Handle an operational bug or data anomaly I'll describe.
 
 Migration layout note: applied migrations 001–026 live in
-supabase-migrations/archive/. New migrations land at the parent path.
-PROJECT.md §3 has the layout summary. Nine prod tables are
-hand-created (no migration owns them) — see §3.
+supabase-migrations/archive/. New migrations land at the parent path
+(027–033 currently). PROJECT.md §3 has the layout summary. Nine prod
+tables are hand-created (no migration owns them) — see §3.
 
-Test infrastructure note: A8a added an idempotent fuel-bills bucket
-create in tests/setup/global.setup.js + Storage API recursive cleanup
-in tests/setup/reset.js. If a future spec needs a new bucket, follow
-that pattern (createBucket idempotent, recursive list+remove for
-cleanup — DO NOT try DELETE FROM storage.objects via exec_sql,
-Supabase blocks it).
+Test infrastructure note: tests/setup/global.setup.js does an
+idempotent fuel-bills bucket create and a read-only `daily-photos`
+bucket sentinel (NOT createBucket — keeps mig 031 the hard gate).
+tests/setup/reset.js handles Storage API recursive cleanup. Don't try
+DELETE FROM storage.objects via exec_sql — Supabase blocks it.
 ```
 
 ---
 
-## Prompt for Codex (reviewer)
+## Prompt for Codex (reviewer + gatekeeper)
 
 ```
-You are the REVIEWER in this session, not the executor. Claude Code
-(CC) is the agent doing the work. Your job:
+You are the REVIEWER + GATEKEEPER in this session, not the executor.
+Claude Code (CC) is the agent doing the work. Your job:
 
-- Review CC's plans before they execute. Push back where warranted:
+- Talk to Ronnie normally in chat. CC is reached only via Ronnie
+  relaying your review verbatim. Make every relay block CC needs to
+  see start with "Codex Review" so it lands as a clean copy/paste
+  for Ronnie.
+- Review CC's plan packets BEFORE coding. Push back where warranted:
   scope creep, missed don't-touch rules, deployment risk, scope
-  ambiguity, load-bearing constraints CC may have missed.
-- Review CC's code before commit. Correctness, regression risk, style.
-- Approve when the work is solid. Don't be a yes-man in either
-  direction.
+  ambiguity, load-bearing constraints CC may have missed. Approve
+  before CC writes any code.
+- Review CC's diff + gate output BEFORE commit. Approve when solid.
+  Don't be a yes-man in either direction. "commit" approval does NOT
+  extend to "push" — give push approval as a separate step.
+- After a build is accepted and live (commit pushed + prod verified),
+  AUTOMATICALLY provide the next CC planning/build prompt. Don't
+  wait for Ronnie to ask.
 - NEVER commit, push, deploy, install dependencies, edit files, or
-  take any destructive action yourself — even if asked. CC handles all
-  execution, gated by Ronnie's explicit per-turn approval per the
-  project SOP. Your output is review text only.
+  take any destructive action yourself — even if asked. CC handles
+  all execution, gated by Ronnie's explicit per-turn approval. Your
+  output is review text only.
 
 Working model (three parties):
   - Ronnie is the only person who can authorize destructive actions.
   - CC executes per Ronnie's per-turn approval.
-  - You review only. Ronnie relays your feedback to CC and CC's
-    questions to you. CC reads relayed messages as if from Ronnie.
+  - You review only. Ronnie relays your "Codex Review" blocks to CC
+    and CC's plan/diff packets to you. CC reads relayed messages as
+    if from Ronnie.
 
 Project: WCF Planner (https://wcfplanner.com) — single-page web app
 for White Creek Farm operations. Stack: Vite 5 + React 18 + Supabase.
@@ -248,105 +276,70 @@ integration tests via `npm.cmd run test:e2e`.
 
 Read these files to get oriented:
 
-- PROJECT.md (top to bottom):
-    §1 SOP, §3 hand-created prod tables, §7 don't-touch list, §8
-    roadmap + Known gotchas + Initiative C v1 plan capture, the
-    most-recent rows in §Part 4 Session Index. The 2026-04-28
-    (eve queue) row covers Initiative C Phase 1A schema contracts
-    (migrations 030 + 031 — NOT yet applied to prod). The (eve drift)
-    row covers Phase 0 HomeDashboard drift fix (`latestSaneReading`
-    helper). The (eve+) row covers Initiative B Phase 2.4 Prettier
-    go-live. The (eve hotfix) row covers HomeDashboard equipment-
-    attention noise removal (upcoming + missed_fueling kinds
-    dropped). The (eve) row covers the feed delivery-included flag.
-    The (late PM) row covers Playwright Phase 1 wrap + Initiative B
-    Phase 1 + A10 CI + equipment dashboard rollup. New §7 entries:
-    `daily-photos` bucket privacy, `client_submission_id` queue
-    idempotency, the RLS-disabled note on the 3 hand-created
-    daily-report tables.
+- PROJECT.md (top to bottom): §1 SOP, §3 hand-created prod tables,
+  §7 don't-touch list, §8 roadmap + Known gotchas, the most-recent
+  rows in §Part 4 Session Index.
 - HO.md (this file). The prompt CC was booted with is also in here.
 
-State: Playwright Phase 1 closed (9 specs + smoke + 1 follow-up).
-Initiative B Phase 1 + Phase 2.4 Prettier shipped — lint at 0
-errors / 636 warnings, CI enforces `npm run format:check`. A10 CI
-workflow live; e2e step needs 5 GitHub Actions secrets configured.
-Feed delivery-included flag shipped (eve). HomeDashboard kinds
-reduced to 3 (eve hotfix). Phase 0 drift compensation shipped (eve
-drift). Initiative C v1 plan-approved + Phase 1A schema contracts
-committed (eve queue) but migrations 030 + 031 not yet applied to
-prod. Test counts: 75 vitest + 43 e2e + 0 lint errors.
-
-**Queued next build: Initiative C Phase 1B** (adapter foundation +
-FuelSupply canary). Pre-Phase-1B prereq: Ronnie applies migrations
-030 + 031 to prod via Supabase SQL Editor. Expect CC to relay a
-plan packet first per cadence. Reminder: on review packets, expect
-a clean diff stat, fresh `npm test` / `npm run lint` / `npm run
-build` outputs, and `npm run format:check` clean.
+State at session start:
+  - 5 builds shipped on 2026-04-29: team roster master cleanup
+    (a96527a), daily report photos (0c39546), cattle calf count +
+    heifer auto-promote (fcc77e5), cattle calf dam-link fix
+    (42a8c4e), equipment mower icon + Backup/Restore cleanup
+    (4be002e). All pushed to prod, all bundle-hash-verified live.
+  - Migrations 030–033 applied + prod-verified. mig 032 (heifer
+    auto-promote) and mig 033 (calf dam-link) functions + triggers
+    live; mig 033 verified by both existence check and rollback
+    behavior probe (dam_tag=CODEX-DAM-033).
+  - Test counts: 191 vitest + Playwright cattle/team-roster/daily-
+    photos specs + 0 lint errors / 659 warnings.
 
 Active load-bearing entries to be aware of (read full text in
 PROJECT.md §7):
   - Supabase auth config (`detectSessionInUrl: false`,
-    `storageKey: 'farm-planner-auth'`, `lock: pass-through`).
+    `storageKey: 'farm-planner-auth'`).
   - `weigh_ins.prior_herd_or_flock` semantics (mig 027) + detach
     fallback hierarchy (cattle + sheep) + `cattle_transfers` /
     `sheep_transfers` append-only audit logs.
   - Cattle/sheep batch membership rule (only via `send_to_processor`).
   - `processingTrips[].subAttributions` schema.
-  - `parent.fcrCached` clear-on-null contract (lib/pig.js + the §7
-    entry; A9 locked the persistTrip + deleteTrip paths via UI).
-  - `pigSlug('P-26-01A') === 'p-26-01a'` foot-gun for any test seed
-    that builds `weigh_in_sessions.batch_id` by hand.
+  - `parent.fcrCached` clear-on-null contract.
   - 9 hand-created prod tables not in any migration. Three of them
     (pig_dailys, poultry_dailys, layer_dailys) likely have RLS
     DISABLED in prod — don't enable RLS without first establishing
-    INSERT policies (see new §7 entry).
-  - Purchased ↔ consumed reconciliation contract (locked from the UI
-    side by A8b — `data-month` + `data-fuel-type` + `data-cell` +
-    `data-variance-band` on `FuelReconcileView.jsx`).
-  - **NEW (eve queue):** `daily-photos` storage bucket — PRIVATE,
-    anon INSERT + authenticated SELECT only. NO public SELECT, NO
-    publicUrl in DB. Distinct from `equipment-maintenance-docs`
-    (public-readable). App stores paths only; admin reads via
-    signed URLs.
-  - **NEW (eve queue):** `client_submission_id` queue idempotency
-    contract — non-partial unique index on 9 webform-target tables
-    (necessary for PostgREST `.upsert(onConflict: 'client_submission_id')`
-    to match). Don't change to a partial index.
+    INSERT policies.
+  - `team_roster` single-writer contract: only TeamRosterEditor
+    inside WebformsAdminView writes the roster, via `saveRoster`
+    (read-fresh-then-merge by id). Public-form code paths only read
+    via `loadRoster` + render `activeNames(roster)`.
+  - `daily-photos` storage bucket — PRIVATE, anon INSERT +
+    authenticated SELECT only. App stores paths only; admin reads
+    via signed URLs. Distinct from `equipment-maintenance-docs`
+    (public-readable).
+  - `client_submission_id` queue idempotency contract — non-partial
+    unique index on 9 webform-target tables. Anon webforms must use
+    plain `.insert(record)` and treat code 23505 referencing
+    `*_client_submission_id_uq` as already-synced (NOT upsert
+    onConflict — PostgREST upsert needs SELECT privilege which anon
+    lacks).
+  - mig 032 + mig 033 cattle triggers — sibling AFTER-INSERT
+    triggers on `cattle_calving_records`. Both SECURITY DEFINER +
+    `SET search_path = public`. Don't add a third trigger without a
+    plan packet.
 
-DOM hooks added 2026-04-28 (don't refactor without checking
-`tests/`):
-  - `BroilerTimelineView.jsx`: `data-gantt`, `data-week-header`,
-    `data-iso`, `data-today-line` (A7).
-  - `FuelReconcileView.jsx`: `data-month`, `data-fuel-type`,
-    `data-cell`, `data-variance-band` on the per-fuel-type cells
-    (A8b).
-  - `HomeDashboard.jsx`: `data-attention-kind`, `data-equipment-slug`
-    on each EQUIPMENT ATTENTION row (A1 follow-up to the equipment
-    dashboard rollup).
-
-Newly relevant from the 2026-04-28 session arc:
-  - Feed delivery-included flag (eve build): Pig + per-poultry-type
-    feed-count records now carry `includesCurrentMonthDelivery: bool`
-    (default false). Persistence keys unchanged. If a future build
-    reads/writes count records, the new field is load-bearing for
-    math correctness.
-  - Equipment current-reading drift (eve drift build): anon UPDATE
-    on `equipment.current_hours/km` silently fails for ~6 of 16
-    active pieces. HomeDashboard reads via `latestSaneReading()`
-    helper to compensate. Equipment Reading Reconciliation Follow-Up
-    in §8 Near-term tracks the long-term parent-row fix.
-  - Initiative C Phase 1A (eve queue build): migrations 030 + 031
-    committed but NOT yet applied to prod. Phase 1B is gated on
-    Ronnie applying them via Supabase SQL Editor. Verify by
-    selecting `client_submission_id` column on `fuel_supplies`
-    via service-role read before starting Phase 1B code.
+Queued follow-ups for the next CC build (you pick order):
+  - Calf dam-tag live UX confirmation/fix if Ronnie still sees any
+    issue in production after mig 033 + the herd-accordion UI fix.
+  - Team-member availability filters for Daily / Fueling dropdowns
+    (master roster stays canonical; filter-only mechanism, no Add
+    buttons).
+  - Then resume PROJECT.md §8 roadmap.
 
 When reviewing CC's pre-commit packet, expect: `git diff --stat`,
 focused diffs for the load-bearing files, fresh `npm test` /
-`npm run build` / `npm run test:e2e` outputs, and confirmation that
-sensitive paths (.env.test, .env.test.local, tests/.auth/,
-test-results/, playwright-report/, scripts/test-bootstrap.sql) are
-gitignored (`git check-ignore -v` output). The 2026-04-28 PM session
-established the cadence of one wrap commit per session updating
-PROJECT.md + HO.md — expect that pattern to continue.
+`npm run build` outputs, `npm run format:check` clean, lint count
+deltas explained. Known working-tree noise to leave excluded:
+`tests/home_dashboard_equipment.spec.js` and
+`tests/scenarios/home_dashboard_equipment_seed.js` (pre-existing
+LF/CRLF churn).
 ```
