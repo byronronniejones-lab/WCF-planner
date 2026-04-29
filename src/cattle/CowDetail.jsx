@@ -88,8 +88,6 @@ const CowDetail = ({
     calving_date: new Date().toISOString().slice(0, 10),
     calf_tag: '',
     sire_tag: '',
-    total_born: '',
-    deaths: '',
     complications_flag: false,
     complications_desc: '',
     notes: '',
@@ -113,8 +111,6 @@ const CowDetail = ({
         calving_date: new Date().toISOString().slice(0, 10),
         calf_tag: '',
         sire_tag: '',
-        total_born: '',
-        deaths: '',
         complications_flag: false,
         complications_desc: '',
         notes: '',
@@ -398,8 +394,8 @@ const CowDetail = ({
             )}
           </div>
         </div>
-        {/* Lineage (editable) */}
-        <div>
+        {/* Lineage */}
+        <div data-lineage-section="1">
           <div style={sectionTitle}>Lineage</div>
           <div
             style={{
@@ -412,19 +408,26 @@ const CowDetail = ({
             }}
           >
             <span style={{color: '#9ca3af'}}>Dam tag #:</span>
-            <input
-              type="text"
-              defaultValue={cow.dam_tag || ''}
-              onBlur={patchOnBlur('dam_tag', 'text')}
-              style={editInp}
-            />
-            {cow.dam_tag && findByTag(cow.dam_tag) && (
-              <>
-                <span style={{color: '#9ca3af'}}>{}</span>
-                <span style={{fontSize: 11, color: '#6b7280'}}>
-                  <TagLink tag={cow.dam_tag} prefix="View " /> {'(' + (findByTag(cow.dam_tag).breed || '?') + ')'}
-                </span>
-              </>
+            {cow.dam_tag ? (
+              <span
+                style={{
+                  fontSize: 12,
+                  color: '#374151',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <strong>{'#' + cow.dam_tag}</strong>
+                {findByTag(cow.dam_tag) && (
+                  <span style={{fontSize: 11, color: '#6b7280'}}>
+                    <TagLink tag={cow.dam_tag} prefix="View " /> {'(' + (findByTag(cow.dam_tag).breed || '?') + ')'}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <input type="text" defaultValue="" onBlur={patchOnBlur('dam_tag', 'text')} style={editInp} />
             )}
             <span style={{color: '#9ca3af'}}>Sire tag #:</span>
             <input
@@ -990,29 +993,6 @@ const CowDetail = ({
                     style={inpC}
                   />
                 </div>
-                <div></div>
-                <div>
-                  <label style={lblC}>Total born</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={calvingForm.total_born}
-                    onChange={(e) => setCalvingForm({...calvingForm, total_born: e.target.value})}
-                    placeholder="0"
-                    style={inpC}
-                  />
-                </div>
-                <div>
-                  <label style={lblC}>Deaths</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={calvingForm.deaths}
-                    onChange={(e) => setCalvingForm({...calvingForm, deaths: e.target.value})}
-                    placeholder="0"
-                    style={inpC}
-                  />
-                </div>
                 <div style={{gridColumn: '1/-1'}}>
                   <label
                     style={{
@@ -1136,7 +1116,6 @@ const CowDetail = ({
                   }}
                 >
                   <strong style={{color: '#111827'}}>{r.calving_date ? fmt(r.calving_date) : 'date unknown'}</strong>
-                  {!r.synthetic && <span>{r.total_born + ' born, ' + r.deaths + ' died'}</span>}
                   {r.calf_tag &&
                     (calfCow && onNavigateToCow ? (
                       <button
@@ -1217,9 +1196,6 @@ const CowDetail = ({
               }}
             >
               <strong style={{color: '#111827'}}>{fmt(r.calving_date)}</strong>
-              <span>
-                {r.total_born} born, {r.deaths} died
-              </span>
               {r.calf_tag && <span style={{color: '#7f1d1d'}}>calf #{r.calf_tag}</span>}
             </div>
           ))}

@@ -212,3 +212,151 @@ test('UI: calf herd tile shows dam tag after trigger links it', async ({page, su
   await expect(calfTile).toBeVisible({timeout: 10_000});
   await expect(calfTile).toContainText(`dam #${DAM.tag}`);
 });
+
+// --------------------------------------------------------------------------
+// Test 6 — UI: CowDetail Lineage shows dam read-only when dam_tag is set
+// --------------------------------------------------------------------------
+// Locks the read-only contract: when the trigger (or any prior write) has
+// populated cattle.dam_tag, CowDetail must NOT render an editable input for
+// dam_tag. The derived #<tag> + View link is the only authoring surface.
+test('UI: CowDetail Lineage shows dam read-only with no editable input when dam_tag is set', async ({
+  page,
+  supabaseAdmin,
+  resetDb,
+}) => {
+  await resetDb();
+  await supabaseAdmin.from('cattle').insert([DAM, CALF_BLANK]);
+  await supabaseAdmin.from('cattle_calving_records').insert({
+    id: 'cr-ui-readonly',
+    dam_tag: DAM.tag,
+    calving_date: '2026-04-29',
+    calf_tag: CALF_BLANK.tag,
+    total_born: 1,
+    deaths: 0,
+  });
+
+  await page.goto('/cattle/herds');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  await page.locator('[data-herd-tile="mommas"]').click();
+
+  const calfTile = page.locator(`#cow-${CALF_BLANK.id}`).first();
+  await expect(calfTile).toBeVisible({timeout: 10_000});
+  // Click the cow row to expand the inline CowDetail.
+  await calfTile.locator('.hoverable-tile').first().click();
+
+  const lineage = calfTile.locator('[data-lineage-section="1"]');
+  await expect(lineage).toBeVisible({timeout: 10_000});
+  await expect(lineage).toContainText(`#${DAM.tag}`);
+  await expect(lineage.getByRole('button', {name: `View #${DAM.tag}`})).toBeVisible();
+  // Sire input remains; dam input must be gone.
+  await expect(lineage.locator('input[type="text"]')).toHaveCount(1);
+});
+
+// --------------------------------------------------------------------------
+// Test 7 — UI: CowDetail Lineage shows editable dam input when dam_tag blank
+// --------------------------------------------------------------------------
+test('UI: CowDetail Lineage shows editable dam input when dam_tag is blank', async ({page, supabaseAdmin, resetDb}) => {
+  await resetDb();
+  // Seed the calf with no dam_tag and no calving record.
+  await supabaseAdmin.from('cattle').insert([DAM, CALF_BLANK]);
+
+  await page.goto('/cattle/herds');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  await page.locator('[data-herd-tile="mommas"]').click();
+
+  const calfTile = page.locator(`#cow-${CALF_BLANK.id}`).first();
+  await expect(calfTile).toBeVisible({timeout: 10_000});
+  await calfTile.locator('.hoverable-tile').first().click();
+
+  const lineage = calfTile.locator('[data-lineage-section="1"]');
+  await expect(lineage).toBeVisible({timeout: 10_000});
+  // Both dam and sire inputs render in the blank state.
+  await expect(lineage.locator('input[type="text"]')).toHaveCount(2);
+  // No View link when dam_tag is blank.
+  await expect(lineage.getByRole('button', {name: /^View #/})).toHaveCount(0);
+});
+
+// --------------------------------------------------------------------------
+// Test 8 — UI: calving list omits born/died summary; form omits the inputs
+// --------------------------------------------------------------------------
+// The born/died feature is retired entirely. New calvings stop publishing the
+// auto-comment that read "X born, Y died, calf #Z" on the dam's timeline.
+// Locks: (a) record list never renders the count phrase even with non-zero
+// data, (b) + Add Calving form has no Total born / Deaths inputs.
+test('UI: calving record list and form omit born/died entirely', async ({page, supabaseAdmin, resetDb}) => {
+  await resetDb();
+  await supabaseAdmin.from('cattle').insert([DAM, CALF_BLANK]);
+  await supabaseAdmin.from('cattle_calving_records').insert({
+    id: 'cr-no-counts-display',
+    dam_tag: DAM.tag,
+    calving_date: '2026-04-29',
+    calf_tag: CALF_BLANK.tag,
+    total_born: 2,
+    deaths: 1,
+  });
+
+  await page.goto('/cattle/herds');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  await page.locator('[data-herd-tile="mommas"]').click();
+
+  // Calving list lives on the dam's CowDetail.
+  const damTile = page.locator(`#cow-${DAM.id}`).first();
+  await expect(damTile).toBeVisible({timeout: 10_000});
+  await damTile.locator('.hoverable-tile').first().click();
+
+  // Calf link still renders; count phrase is gone even with non-zero values.
+  await expect(damTile.getByRole('button', {name: `calf #${CALF_BLANK.tag}`})).toBeVisible({timeout: 10_000});
+  await expect(damTile).not.toContainText('2 born, 1 died');
+  await expect(damTile).not.toContainText('born,');
+
+  // + Add Calving form should not render Total born / Deaths inputs.
+  await damTile.getByRole('button', {name: '+ Add Calving'}).click();
+  await expect(damTile.getByText('Total born', {exact: true})).toHaveCount(0);
+  await expect(damTile.getByText('Deaths', {exact: true})).toHaveCount(0);
+});
+
+// --------------------------------------------------------------------------
+// Test 9 — Form submit writes no auto-comment to the dam's timeline
+// --------------------------------------------------------------------------
+// addCalvingRecord previously published a "X born, Y died, calf #Z" comment
+// to cattle_comments on every calving submission. With the born/died feature
+// retired, the auto-comment is gone entirely. Locks: a UI-driven calving
+// submission inserts the cattle_calving_records row but writes NO row into
+// cattle_comments for that dam.
+test('UI: + Add Calving submit writes no auto-comment to the dam timeline', async ({page, supabaseAdmin, resetDb}) => {
+  await resetDb();
+  await supabaseAdmin.from('cattle').insert([DAM, CALF_BLANK]);
+
+  await page.goto('/cattle/herds');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  await page.locator('[data-herd-tile="mommas"]').click();
+
+  const damTile = page.locator(`#cow-${DAM.id}`).first();
+  await expect(damTile).toBeVisible({timeout: 10_000});
+  await damTile.locator('.hoverable-tile').first().click();
+
+  // Open + submit the form. calving_date defaults to today; no other fields required.
+  await damTile.getByRole('button', {name: '+ Add Calving'}).click();
+  await damTile.getByRole('button', {name: 'Save Calving'}).click();
+
+  // Form closes on successful save.
+  await expect(damTile.getByRole('button', {name: 'Save Calving'})).toHaveCount(0, {timeout: 10_000});
+
+  // The calving record was written, the auto-comment was not.
+  const {data: records} = await supabaseAdmin
+    .from('cattle_calving_records')
+    .select('id, dam_tag')
+    .eq('dam_tag', DAM.tag);
+  expect(records.length).toBe(1);
+
+  const {data: comments, error: commentsErr} = await supabaseAdmin
+    .from('cattle_comments')
+    .select('id, source')
+    .eq('cattle_id', DAM.id);
+  expect(commentsErr).toBeNull();
+  expect(comments).toEqual([]);
+});

@@ -476,26 +476,6 @@ const CattleHerdsView = ({
       alert('Save failed: ' + error.message);
       return false;
     }
-    // Auto-publish a comment on the dam's timeline
-    try {
-      const note =
-        rec.total_born +
-        ' born' +
-        (rec.deaths > 0 ? ', ' + rec.deaths + ' died' : '') +
-        (rec.calf_tag ? ', calf #' + rec.calf_tag : '') +
-        (rec.complications_flag ? ' [complications: ' + rec.complications_desc + ']' : '');
-      await sb.from('cattle_comments').insert({
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        cattle_id: cow.id,
-        cattle_tag: cow.tag,
-        comment: note,
-        team_member: authState && authState.name ? authState.name : null,
-        source: 'calving',
-        reference_id: id,
-      });
-    } catch (e) {
-      /* table may not exist */
-    }
     await loadAll();
     return true;
   }
