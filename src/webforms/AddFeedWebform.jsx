@@ -1,20 +1,28 @@
 // Phase 2 Round 5 extraction.
 //
-// 2026-04-29 (mig 034): submit paths cutover from direct .insert() into the
-// per-program *_dailys table → .rpc('submit_add_feed_batch', ...). The RPC
-// owns idempotency via daily_submissions.client_submission_id (parent-level)
-// and writes child rows atomically with daily_submission_id linkage. Child
-// rows still match the per-program shape AddFeedWebform has always written.
-// See PROJECT.md §7 daily_submissions entry for the full contract.
+// 2026-04-29 (mig 034 + Phase 1C-A): submit paths now flow through the
+// parent-aware offline RPC queue (`useOfflineRpcSubmit('add_feed_batch')`).
+// The RPC `submit_add_feed_batch` (mig 034) owns idempotency via the
+// parent's client_submission_id and writes child rows atomically with
+// daily_submission_id linkage. Children carry NULL csid — parent owns
+// dedup. See PROJECT.md §7 daily_submissions entry + §8 Phase 1C-A note
+// for the full contract.
 //
-// Critically, this build does NOT wire AddFeedWebform into useOfflineSubmit
-// — the submit is still synchronous. The offline-queue layer is the next
-// build (Initiative C Phase 1C proper). The RPC is the parent-submission
-// foundation that makes offline-queue safe; using it synchronously today
-// proves the contract before queueing layers on top.
+// Submit lifecycle:
+//   - synced  : RPC succeeded online; "Feed logged!" UI as before.
+//   - queued  : network/transient failure; submission persisted in
+//               IndexedDB and replays automatically on online event /
+//               60s tick / next mount. "Saved on this device" copy.
+//   - stuck   : 3 retries exhausted; surfaces in StuckSubmissionsModal.
+//
+// FuelSupply (Phase 1B canary) and the future fan-out forms (WeighIns,
+// PigDailys) use the FLAT-INSERT queue path (`useOfflineSubmit`) — Add
+// Feed is on the RPC path because it produces N child rows from one
+// submission and atomicity matters.
 import React from 'react';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
-import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
+import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
+import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
 const AddFeedWebform = ({sb}) => {
   const [configLoaded, setConfigLoaded] = React.useState(false);
@@ -36,7 +44,23 @@ const AddFeedWebform = ({sb}) => {
   const [extraGroups, setExtraGroups] = React.useState([]);
   const [submitting, setSubmitting] = React.useState(false);
   const [err, setErr] = React.useState('');
-  const [done, setDone] = React.useState(false);
+  // 'none' | 'synced' | 'queued' — replaces the prior boolean `done`.
+  // synced = RPC landed online. queued = persisted in IDB; will replay.
+  const [doneState, setDoneState] = React.useState('none');
+  const [stuckOpen, setStuckOpen] = React.useState(false);
+
+  const {submit, stuckRows, retryStuck, discardStuck} = useOfflineRpcSubmit('add_feed_batch');
+
+  // Open the stuck modal automatically the first time we observe stuck rows
+  // (mount or after a failed sync pass). Operator can close it; we don't
+  // re-open on every render. Mirrors FuelSupplyWebform's pattern.
+  const initialStuckShownRef = React.useRef(false);
+  React.useEffect(() => {
+    if (stuckRows.length > 0 && !initialStuckShownRef.current) {
+      initialStuckShownRef.current = true;
+      setStuckOpen(true);
+    }
+  }, [stuckRows.length]);
   // Cattle quick-log state (parallel to the poultry/pig fields above)
   const [cattleFeedInputs, setCattleFeedInputs] = React.useState([]);
   const [cattleHerd, setCattleHerd] = React.useState('');
@@ -199,109 +223,50 @@ const AddFeedWebform = ({sb}) => {
       source: 'add_feed_webform',
     };
   }
-  function handleSubmit() {
-    if (!date) {
-      setErr('Please enter a date.');
-      return;
-    }
-    if (isRequired('team_member') && !teamMember) {
-      setErr(getLabel('team_member', 'Team Member') + ' is required.');
-      return;
-    }
-    // Sheep-specific submit path (feeds jsonb — shared cattle_feed_inputs)
+  // Build a normalized payload from the relevant program branch's form
+  // state. Pure — no side effects; the RPC registry consumes this and
+  // the hook generates stable csid + parentId for retry determinism.
+  function buildSubmitPayload() {
     if (program === 'sheep') {
-      if (!sheepFlock) {
-        setErr('Please select a flock.');
-        return;
-      }
-      var sFilledRows = (sheepRows || []).filter(function (r) {
-        return r.feedId && r.qty !== '' && r.qty != null;
-      });
-      if (sFilledRows.length === 0) {
-        setErr('Please enter at least one feed.');
-        return;
-      }
-      var sFeedsJ = sFilledRows
-        .map(function (r) {
-          var fi = cattleFeedInputs.find(function (x) {
-            return x.id === r.feedId;
-          });
+      const filled = (sheepRows || []).filter((r) => r.feedId && r.qty !== '' && r.qty != null);
+      const sFeedsJ = filled
+        .map((r) => {
+          const fi = cattleFeedInputs.find((x) => x.id === r.feedId);
           if (!fi) return null;
-          var qty = parseFloat(r.qty) || 0;
-          var unitWt = parseFloat(fi.unit_weight_lbs) || 1;
+          const qty = parseFloat(r.qty) || 0;
+          const unitWt = parseFloat(fi.unit_weight_lbs) || 1;
           return {
             feed_input_id: fi.id,
             feed_name: fi.name,
             category: fi.category,
-            qty: qty,
+            qty,
             unit: fi.unit,
             lbs_as_fed: Math.round(qty * unitWt * 100) / 100,
             is_creep: false,
           };
         })
         .filter(Boolean);
-      setErr('');
-      setSubmitting(true);
-      var sRec = {
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        submitted_at: new Date().toISOString(),
-        date: date,
+      return {
+        program: 'sheep',
+        date,
         team_member: teamMember || null,
-        flock: sheepFlock,
-        feeds: sFeedsJ,
-        minerals: [],
-        mortality_count: 0,
-        source: 'add_feed_webform',
+        sheepFlock,
+        sheepFeedsJ: sFeedsJ,
       };
-      sb.rpc('submit_add_feed_batch', {
-        parent_in: {
-          id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-          client_submission_id: newClientSubmissionId(),
-          submitted_at: new Date().toISOString(),
-          program: 'sheep',
-          source: 'add_feed_webform',
-          team_member: teamMember || null,
-          date: date,
-          payload: {flock: sheepFlock, feeds: sFeedsJ},
-        },
-        children_in: [sRec],
-      }).then(function (res) {
-        setSubmitting(false);
-        if (res.error) {
-          setErr('Could not save: ' + res.error.message);
-          return;
-        }
-        if (teamMember) localStorage.setItem('wcf_team', teamMember);
-        setDone(true);
-      });
-      return;
     }
-    // Cattle-specific submit path
     if (program === 'cattle') {
-      if (!cattleHerd) {
-        setErr('Please select a herd.');
-        return;
-      }
-      var filledRows = (cattleRows || []).filter(function (r) {
-        return r.feedId && r.qty !== '' && r.qty != null;
-      });
-      if (filledRows.length === 0) {
-        setErr('Please enter at least one feed.');
-        return;
-      }
-      var feedsJ = filledRows
-        .map(function (r) {
-          var fi = cattleFeedInputs.find(function (x) {
-            return x.id === r.feedId;
-          });
+      const filled = (cattleRows || []).filter((r) => r.feedId && r.qty !== '' && r.qty != null);
+      const feedsJ = filled
+        .map((r) => {
+          const fi = cattleFeedInputs.find((x) => x.id === r.feedId);
           if (!fi) return null;
-          var qty = parseFloat(r.qty) || 0;
-          var unitWt = parseFloat(fi.unit_weight_lbs) || 1;
+          const qty = parseFloat(r.qty) || 0;
+          const unitWt = parseFloat(fi.unit_weight_lbs) || 1;
           return {
             feed_input_id: fi.id,
             feed_name: fi.name,
             category: fi.category,
-            qty: qty,
+            qty,
             unit: fi.unit,
             lbs_as_fed: Math.round(qty * unitWt * 100) / 100,
             is_creep: !!r.isCreep,
@@ -313,113 +278,131 @@ const AddFeedWebform = ({sb}) => {
           };
         })
         .filter(Boolean);
-      setErr('');
-      setSubmitting(true);
-      var cRec = {
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        submitted_at: new Date().toISOString(),
-        date: date,
+      return {
+        program: 'cattle',
+        date,
         team_member: teamMember || null,
-        herd: cattleHerd,
-        feeds: feedsJ,
-        minerals: [],
-        mortality_count: 0,
-        source: 'add_feed_webform',
+        cattleHerd,
+        cattleFeedsJ: feedsJ,
       };
-      sb.rpc('submit_add_feed_batch', {
-        parent_in: {
-          id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-          client_submission_id: newClientSubmissionId(),
-          submitted_at: new Date().toISOString(),
-          program: 'cattle',
-          source: 'add_feed_webform',
-          team_member: teamMember || null,
-          date: date,
-          payload: {herd: cattleHerd, feeds: feedsJ},
-        },
-        children_in: [cRec],
-      }).then(function (res) {
-        setSubmitting(false);
-        if (res.error) {
-          setErr('Could not save: ' + res.error.message);
-          return;
-        }
-        if (teamMember) localStorage.setItem('wcf_team', teamMember);
-        setDone(true);
-      });
+    }
+    // broiler / pig / layer — multi-row form. Layer's batch_id needs to
+    // resolve from layerBatchIdMap before the registry gets the payload
+    // (the registry doesn't know about the map; resolution is a UI concern).
+    const resolveBatchId = (label) => (program === 'layer' ? layerBatchIdMap[label] || null : null);
+    return {
+      program,
+      date,
+      team_member: teamMember || null,
+      batchLabel,
+      feedType,
+      feedLbs,
+      batchId: resolveBatchId(batchLabel),
+      extraGroups: (extraGroups || [])
+        .filter((g) => g.batchLabel)
+        .map((g) => ({
+          batchLabel: g.batchLabel,
+          feedType: g.feedType,
+          feedLbs: g.feedLbs,
+          batchId: resolveBatchId(g.batchLabel),
+        })),
+    };
+  }
+
+  async function handleSubmit() {
+    if (!date) {
+      setErr('Please enter a date.');
       return;
     }
-    // Poultry/pig submit path
-    if (!batchLabel) {
-      setErr('Please select a batch/group.');
+    if (isRequired('team_member') && !teamMember) {
+      setErr(getLabel('team_member', 'Team Member') + ' is required.');
       return;
     }
-    if (isRequired('feed_lbs') && (!feedLbs || parseFloat(feedLbs) <= 0)) {
-      setErr(getLabel('feed_lbs', 'Feed (lbs)') + ' is required.');
-      return;
-    }
-    if (
-      program !== 'pig' &&
-      isEnabled('feed_type') &&
-      isRequired('feed_type') &&
-      parseFloat(feedLbs) > 0 &&
-      !feedType
-    ) {
-      setErr(getLabel('feed_type', 'Feed Type') + ' is required when feed is entered.');
-      return;
-    }
-    // Validate extra groups
-    for (var i = 0; i < extraGroups.length; i++) {
-      var eg = extraGroups[i];
-      if (!eg.batchLabel) continue;
-      if (isRequired('feed_lbs') && (!eg.feedLbs || parseFloat(eg.feedLbs) <= 0)) {
-        setErr(getLabel('feed_lbs', 'Feed (lbs)') + ' is required for ' + eg.batchLabel + '.');
+    // Per-program validation. None of these touch DB; they all return
+    // before the queue submit so a bad form doesn't queue.
+    if (program === 'sheep') {
+      if (!sheepFlock) {
+        setErr('Please select a flock.');
+        return;
+      }
+      const sFilled = (sheepRows || []).filter((r) => r.feedId && r.qty !== '' && r.qty != null);
+      if (sFilled.length === 0) {
+        setErr('Please enter at least one feed.');
+        return;
+      }
+    } else if (program === 'cattle') {
+      if (!cattleHerd) {
+        setErr('Please select a herd.');
+        return;
+      }
+      const cFilled = (cattleRows || []).filter((r) => r.feedId && r.qty !== '' && r.qty != null);
+      if (cFilled.length === 0) {
+        setErr('Please enter at least one feed.');
+        return;
+      }
+    } else {
+      // broiler / pig / layer
+      if (!batchLabel) {
+        setErr('Please select a batch/group.');
+        return;
+      }
+      if (isRequired('feed_lbs') && (!feedLbs || parseFloat(feedLbs) <= 0)) {
+        setErr(getLabel('feed_lbs', 'Feed (lbs)') + ' is required.');
         return;
       }
       if (
         program !== 'pig' &&
         isEnabled('feed_type') &&
         isRequired('feed_type') &&
-        parseFloat(eg.feedLbs) > 0 &&
-        !eg.feedType
+        parseFloat(feedLbs) > 0 &&
+        !feedType
       ) {
-        setErr(getLabel('feed_type', 'Feed Type') + ' is required for ' + eg.batchLabel + ' when feed is entered.');
+        setErr(getLabel('feed_type', 'Feed Type') + ' is required when feed is entered.');
         return;
+      }
+      for (let i = 0; i < extraGroups.length; i++) {
+        const eg = extraGroups[i];
+        if (!eg.batchLabel) continue;
+        if (isRequired('feed_lbs') && (!eg.feedLbs || parseFloat(eg.feedLbs) <= 0)) {
+          setErr(getLabel('feed_lbs', 'Feed (lbs)') + ' is required for ' + eg.batchLabel + '.');
+          return;
+        }
+        if (
+          program !== 'pig' &&
+          isEnabled('feed_type') &&
+          isRequired('feed_type') &&
+          parseFloat(eg.feedLbs) > 0 &&
+          !eg.feedType
+        ) {
+          setErr(getLabel('feed_type', 'Feed Type') + ' is required for ' + eg.batchLabel + ' when feed is entered.');
+          return;
+        }
       }
     }
+
     setErr('');
     setSubmitting(true);
-    // RPC routes program → child table inside the function (broiler →
-    // poultry_dailys; pig → pig_dailys; layer → layer_dailys).
-    var recs = [buildRecord(batchLabel, feedType, feedLbs)];
-    extraGroups
-      .filter(function (g) {
-        return g.batchLabel;
-      })
-      .forEach(function (g) {
-        recs.push(buildRecord(g.batchLabel, g.feedType, g.feedLbs));
-      });
-    sb.rpc('submit_add_feed_batch', {
-      parent_in: {
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        client_submission_id: newClientSubmissionId(),
-        submitted_at: new Date().toISOString(),
-        program: program,
-        source: 'add_feed_webform',
-        team_member: teamMember || null,
-        date: date,
-        payload: {batchLabel: batchLabel, feedType: feedType, feedLbs: feedLbs, extraGroups: extraGroups},
-      },
-      children_in: recs,
-    }).then(function (res) {
-      setSubmitting(false);
-      if (res.error) {
-        setErr('Could not save: ' + res.error.message);
-        return;
+    try {
+      const payload = buildSubmitPayload();
+      const result = await submit(payload);
+      // Persist team-member convenience on BOTH outcomes — queued means the
+      // submission was captured on-device successfully; the operator's pick
+      // should survive reload either way.
+      if (teamMember) {
+        try {
+          localStorage.setItem('wcf_team', teamMember);
+        } catch (_e) {
+          /* localStorage unavailable in some browsers — best effort */
+        }
       }
-      if (teamMember) localStorage.setItem('wcf_team', teamMember);
-      setDone(true);
-    });
+      setDoneState(result.state);
+    } catch (e) {
+      // Schema/validation error — useOfflineRpcSubmit throws on PGRST/22*/23*.
+      // Surface to operator instead of silently queuing.
+      setErr('Could not save: ' + (e && e.message ? e.message : String(e)));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function resetForm() {
@@ -432,7 +415,7 @@ const AddFeedWebform = ({sb}) => {
     setSheepFlock('');
     setSheepRows([{feedId: '', qty: ''}]);
     setErr('');
-    setDone(false);
+    setDoneState('none');
   }
 
   var wfBg = {
@@ -470,13 +453,46 @@ const AddFeedWebform = ({sb}) => {
     </div>
   );
 
-  if (done)
+  if (doneState !== 'none')
     return (
       <div style={wfBg}>
         <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '2rem', textAlign: 'center'}}>
           {logoEl}
-          <div style={{fontSize: 56, marginBottom: 12}}>{'\u2705'}</div>
-          <div style={{fontSize: 20, fontWeight: 700, color: '#111827', marginBottom: 8}}>Feed logged!</div>
+          <div style={{fontSize: 56, marginBottom: 12}}>{doneState === 'queued' ? '\ud83d\udce1' : '\u2705'}</div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              color: doneState === 'queued' ? '#92400e' : '#111827',
+              marginBottom: 8,
+            }}
+          >
+            {doneState === 'queued' ? 'Saved on this device' : 'Feed logged!'}
+          </div>
+          {doneState === 'queued' && (
+            <div
+              data-submit-state="queued"
+              style={{
+                fontSize: 12,
+                color: '#78716c',
+                marginBottom: 12,
+                lineHeight: 1.5,
+                background: '#fef3c7',
+                border: '1px solid #fde68a',
+                borderRadius: 8,
+                padding: '8px 12px',
+                textAlign: 'left',
+              }}
+            >
+              No connection right now. Your entry is queued and will sync as soon as the device is back online. Keep
+              logging \u2014 additional entries will queue too.
+            </div>
+          )}
+          {doneState === 'synced' && (
+            <div data-submit-state="synced" style={{display: 'none'}}>
+              synced
+            </div>
+          )}
           <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28, lineHeight: 1.6}}>
             {program === 'cattle'
               ? cattleHerd +
@@ -708,6 +724,29 @@ const AddFeedWebform = ({sb}) => {
     <div style={wfBg}>
       <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '1rem'}}>
         {logoEl}
+
+        {stuckRows.length > 0 && (
+          <button
+            onClick={() => setStuckOpen(true)}
+            data-stuck-button="1"
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: 10,
+              border: '1px solid #fde68a',
+              background: '#fef3c7',
+              color: '#92400e',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 12,
+              textAlign: 'left',
+            }}
+          >
+            ⚠ {stuckRows.length} unsynced Add Feed submission{stuckRows.length === 1 ? '' : 's'} — tap to review
+          </button>
+        )}
 
         <div
           style={{
@@ -1257,6 +1296,28 @@ const AddFeedWebform = ({sb}) => {
           </button>
         </div>
       </div>
+
+      {stuckOpen && (
+        <StuckSubmissionsModal
+          rows={stuckRows}
+          formLabel="Add Feed submission"
+          describeRow={(row) => {
+            const args = row.record && row.record.args;
+            const parent = args && args.parent_in;
+            const childCount = args && Array.isArray(args.children_in) ? args.children_in.length : 0;
+            const prog = parent ? parent.program : '?';
+            const dateStr = parent ? parent.date : '?';
+            return `${prog} \u00b7 ${dateStr} \u00b7 ${childCount} entr${childCount === 1 ? 'y' : 'ies'} (not yet sent)`;
+          }}
+          onRetry={async (csid) => {
+            await retryStuck(csid);
+          }}
+          onDiscard={async (csid) => {
+            await discardStuck(csid);
+          }}
+          onClose={() => setStuckOpen(false)}
+        />
+      )}
     </div>
   );
 };

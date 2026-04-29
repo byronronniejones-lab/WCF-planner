@@ -17,6 +17,7 @@ import {seedFuelBillScenario} from './scenarios/fuel_bill_seed.js';
 import {seedFuelReconcile} from './scenarios/fuel_reconcile_seed.js';
 import {seedHomeDashboardEquipment} from './scenarios/home_dashboard_equipment_seed.js';
 import {seedFuelSupplyOffline} from './scenarios/fuel_supply_offline_seed.js';
+import {seedAddFeedOffline} from './scenarios/add_feed_offline_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -161,6 +162,15 @@ export const test = base.extend({
   fuelSupplyOfflineScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedFuelSupplyOffline(supabaseAdmin);
+    await use(ids);
+  },
+  // addFeedOfflineScenario — Phase 1C-A parent-aware RPC queue setup.
+  // Resets DB + seeds broiler_groups + allowAddGroup so the public
+  // /addfeed form can drive a 2-batch broiler submission. Each test
+  // wipes the browser-side IndexedDB queue separately.
+  addFeedOfflineScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedAddFeedOffline(supabaseAdmin);
     await use(ids);
   },
 });
