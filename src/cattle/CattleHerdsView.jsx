@@ -952,6 +952,9 @@ const CattleHerdsView = ({
                                 {lw ? lw.toLocaleString() + ' lb' : '\u2014'}
                               </span>
                               <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+                                {c.dam_tag && (
+                                  <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + c.dam_tag}</span>
+                                )}
                                 {h === 'mommas' && (
                                   <span data-calf-count={cc} style={{fontSize: 11, color: '#7f1d1d', fontWeight: 600}}>
                                     {'Calves: ' + cc}
