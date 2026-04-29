@@ -1,10 +1,14 @@
 // ============================================================================
 // src/webforms/PigDailysWebform.jsx
 // ----------------------------------------------------------------------------
-// The legacy pig-dailys public webform (routed at /webform). Verbatim lift
-// of App.renderWebform(). The 5 wf* form-state pieces that previously lived
-// in App (wfForm/wfSubmitting/wfDone/wfErr/wfGroupName) now live here as
-// internal component state — they were never consumed anywhere else.
+// The legacy pig-dailys public webform (routed at /webform).
+//
+// 2026-04-29 (Phase 1C-B): no-photo submissions flow through the offline
+// queue via useOfflineSubmit('pig_dailys'). Photo-attached submissions
+// stay fully online-only (Phase 1D photo queue territory) — if either
+// the upload or final pig_dailys insert fails, the operator sees an
+// explicit "photos need a connection" message and the submission does
+// NOT enter IDB. Locked by tests/pig_dailys_offline.spec.js.
 // ============================================================================
 import React from 'react';
 import {sb} from '../lib/supabase.js';
@@ -12,7 +16,9 @@ import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 import {availableNamesFor} from '../lib/teamAvailability.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
+import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
 import DailyPhotoCapture from './DailyPhotoCapture.jsx';
+import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
 export default function PigDailysWebform() {
   const {wfGroups, wfRoster, wfAvailability, wfTeamMembers, webformsConfig} = useWebformsConfig();
@@ -44,9 +50,27 @@ export default function PigDailysWebform() {
     };
   });
   const [wfSubmitting, setWfSubmitting] = React.useState(false);
-  const [wfDone, setWfDone] = React.useState(false);
+  // 'none' | 'synced' | 'queued' — replaces the prior boolean wfDone.
+  // synced = row landed in pig_dailys. queued = persisted in IDB; will replay.
+  const [wfDoneState, setWfDoneState] = React.useState('none');
   const [wfErr, setWfErr] = React.useState('');
   const [wfGroupName, setWfGroupName] = React.useState('');
+  const [wfStuckOpen, setWfStuckOpen] = React.useState(false);
+
+  // Phase 1C-B no-photo offline queue. The hook is mounted here so the
+  // background sync (online event + 60s tick) is always live, but submit()
+  // is only called from the no-photo branch of wfSubmit.
+  const {submit, stuckRows, retryStuck, discardStuck} = useOfflineSubmit('pig_dailys');
+
+  // Open the stuck modal automatically the first time we observe stuck rows.
+  // Mirrors FuelSupply / AddFeed pattern.
+  const initialStuckShownRef = React.useRef(false);
+  React.useEffect(() => {
+    if (stuckRows.length > 0 && !initialStuckShownRef.current) {
+      initialStuckShownRef.current = true;
+      setWfStuckOpen(true);
+    }
+  }, [stuckRows.length]);
 
   const wfGroupOptions = wfGroups;
 
@@ -54,10 +78,37 @@ export default function PigDailysWebform() {
     setWfForm((f) => ({...f, [field]: val}));
   }
 
+  // Build a normalized payload from form state. Pure — no side effects.
+  // The flat-insert registry consumes this and uses ids minted by the hook
+  // for retry-stable replay.
+  function buildSubmitPayload() {
+    return {
+      date: wfForm.date,
+      team_member: wfForm.teamMember.trim(),
+      batch_id: wfForm.batchId.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      batch_label: wfForm.batchId,
+      pig_count: wfForm.pigCount !== '' ? parseInt(wfForm.pigCount) : null,
+      feed_lbs: wfForm.feedLbs !== '' ? parseFloat(wfForm.feedLbs) : null,
+      group_moved: wfForm.groupMoved,
+      nipple_drinker_moved: wfForm.nippleDrinkerMoved,
+      nipple_drinker_working: wfForm.nippleDrinkerWorking,
+      troughs_moved: wfForm.troughsMoved,
+      fence_walked: wfForm.fenceWalked,
+      fence_voltage: wfForm.fenceVoltage !== '' ? parseFloat(wfForm.fenceVoltage) : null,
+      issues: wfForm.issues.trim() || null,
+    };
+  }
+
   async function wfSubmit() {
-    // Validate required fields based on webformsConfig
+    // Validate required fields based on webformsConfig. The config shape is
+    // `webforms[].sections[].fields[]` — flatten before filtering. The
+    // pre-1C-B code referenced `wfCfg.fields` directly, which was undefined
+    // under the DEFAULT_WEBFORMS_CONFIG shape (sections-only). Latent
+    // ReferenceError that surfaced under the offline-queue test harness
+    // when the form path actually exercises submit; fixed inline.
     const wfCfg = webformsConfig?.webforms?.find((w) => w.id === 'pig-dailys');
-    const wfRequiredFields = wfCfg ? wfCfg.fields.filter((f) => f.required && f.enabled !== false) : [];
+    const wfRequiredFieldsFlat = wfCfg ? (wfCfg.sections || []).flatMap((s) => s.fields || []) : [];
+    const wfRequiredFields = wfRequiredFieldsFlat.filter((f) => f.required && f.enabled !== false);
     if (!wfForm.date) {
       setWfErr('Please enter a date.');
       return;
@@ -92,7 +143,11 @@ export default function PigDailysWebform() {
     }
     setWfErr('');
     setWfSubmitting(true);
-    localStorage.setItem('wcf_team', wfForm.teamMember.trim());
+    try {
+      localStorage.setItem('wcf_team', wfForm.teamMember.trim());
+    } catch (_e) {
+      /* localStorage unavailable in some browsers — best effort */
+    }
 
     // Validate the photo count cap upfront — DailyPhotoCapture also enforces
     // it, but a defense-in-depth check catches any future caller mismatch.
@@ -102,10 +157,14 @@ export default function PigDailysWebform() {
       return;
     }
 
-    // Photo upload (after validation, before insert). Aborts on any failure.
-    const csid = newClientSubmissionId();
-    const photoMeta = [];
+    // ── Photo-attached path (Phase 1D photo queue territory) ──────────
+    // Stays fully online-only. Upload-first, insert-after. Failure on
+    // EITHER step surfaces the explicit "photos need a connection"
+    // message and does NOT enter the offline queue. Locked by Test 4
+    // in tests/pig_dailys_offline.spec.js.
     if (wfPhotos.length > 0) {
+      const csid = newClientSubmissionId();
+      const photoMeta = [];
       setWfPhotoStatuses(wfPhotos.map(() => 'pending'));
       for (let i = 0; i < wfPhotos.length; i++) {
         setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'uploading' : s)));
@@ -116,47 +175,65 @@ export default function PigDailysWebform() {
         } catch (e) {
           setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'failed' : s)));
           setWfSubmitting(false);
-          setWfErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+          setWfErr(
+            `Photo submission could not be saved: ${e?.message || e}. Photo submissions need a connection — remove photos to save offline, or try again.`,
+          );
           return;
         }
       }
-    }
 
-    const record = {
-      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-      client_submission_id: csid,
-      submitted_at: new Date().toISOString(),
-      date: wfForm.date,
-      team_member: wfForm.teamMember.trim(),
-      batch_id: wfForm.batchId.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      batch_label: wfForm.batchId,
-      pig_count: wfForm.pigCount !== '' ? parseInt(wfForm.pigCount) : null,
-      feed_lbs: wfForm.feedLbs !== '' ? parseFloat(wfForm.feedLbs) : null,
-      group_moved: wfForm.groupMoved,
-      nipple_drinker_moved: wfForm.nippleDrinkerMoved,
-      nipple_drinker_working: wfForm.nippleDrinkerWorking,
-      troughs_moved: wfForm.troughsMoved,
-      fence_walked: wfForm.fenceWalked,
-      fence_voltage: wfForm.fenceVoltage !== '' ? parseFloat(wfForm.fenceVoltage) : null,
-      issues: wfForm.issues.trim() || null,
-      photos: photoMeta,
-    };
-    const {error} = await sb.from('pig_dailys').insert(record);
-    setWfSubmitting(false);
-    if (error) {
-      if (photoMeta.length > 0) {
-        console.error(
-          '[PigDailysWebform] pig_dailys insert failed AFTER photo upload — orphan storage paths:',
-          photoMeta.map((p) => p.path),
+      const record = {
+        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+        client_submission_id: csid,
+        submitted_at: new Date().toISOString(),
+        date: wfForm.date,
+        team_member: wfForm.teamMember.trim(),
+        batch_id: wfForm.batchId.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        batch_label: wfForm.batchId,
+        pig_count: wfForm.pigCount !== '' ? parseInt(wfForm.pigCount) : null,
+        feed_lbs: wfForm.feedLbs !== '' ? parseFloat(wfForm.feedLbs) : null,
+        group_moved: wfForm.groupMoved,
+        nipple_drinker_moved: wfForm.nippleDrinkerMoved,
+        nipple_drinker_working: wfForm.nippleDrinkerWorking,
+        troughs_moved: wfForm.troughsMoved,
+        fence_walked: wfForm.fenceWalked,
+        fence_voltage: wfForm.fenceVoltage !== '' ? parseFloat(wfForm.fenceVoltage) : null,
+        issues: wfForm.issues.trim() || null,
+        photos: photoMeta,
+      };
+      const {error} = await sb.from('pig_dailys').insert(record);
+      setWfSubmitting(false);
+      if (error) {
+        if (photoMeta.length > 0) {
+          console.error(
+            '[PigDailysWebform] pig_dailys insert failed AFTER photo upload — orphan storage paths:',
+            photoMeta.map((p) => p.path),
+          );
+        }
+        setWfErr(
+          `Photo submission could not be saved: ${error.message}. Photo submissions need a connection — remove photos to save offline, or try again.`,
         );
+        return;
       }
-      setWfErr('Could not save: ' + error.message);
+      setWfGroupName(wfForm.batchId);
+      setWfPhotos([]);
+      setWfPhotoStatuses([]);
+      setWfDoneState('synced');
       return;
     }
-    setWfGroupName(wfForm.batchId);
-    setWfPhotos([]);
-    setWfPhotoStatuses([]);
-    setWfDone(true);
+
+    // ── No-photo path: route through the offline queue ─────────────────
+    try {
+      const result = await submit(buildSubmitPayload());
+      setWfGroupName(wfForm.batchId);
+      setWfDoneState(result.state); // 'synced' | 'queued'
+    } catch (e) {
+      // useOfflineSubmit throws on schema/validation errors. Surface;
+      // do not queue.
+      setWfErr('Could not save: ' + (e && e.message ? e.message : String(e)));
+    } finally {
+      setWfSubmitting(false);
+    }
   }
 
   function wfReset() {
@@ -177,7 +254,7 @@ export default function PigDailysWebform() {
     });
     setWfPhotos([]);
     setWfPhotoStatuses([]);
-    setWfDone(false);
+    setWfDoneState('none');
     setWfErr('');
   }
 
@@ -268,7 +345,7 @@ export default function PigDailysWebform() {
     </div>
   );
 
-  if (wfDone)
+  if (wfDoneState !== 'none')
     return (
       <div style={{background: '#f6f8f7', minHeight: '100vh'}}>
         <div
@@ -299,11 +376,43 @@ export default function PigDailysWebform() {
           <div style={{fontSize: 12, color: 'rgba(255,255,255,.6)'}}>Daily Report</div>
         </div>
         <div style={{maxWidth: 540, margin: '0 auto', padding: '3rem 1rem', textAlign: 'center'}}>
-          <div style={{fontSize: 56, marginBottom: 16}}>✅</div>
-          <div style={{fontSize: 20, fontWeight: 700, marginBottom: 8}}>Report submitted!</div>
-          <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28}}>
-            Daily report saved for <strong>{wfGroupName}</strong>.
+          <div style={{fontSize: 56, marginBottom: 16}}>{wfDoneState === 'queued' ? '📡' : '✅'}</div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              marginBottom: 8,
+              color: wfDoneState === 'queued' ? '#92400e' : '#111827',
+            }}
+          >
+            {wfDoneState === 'queued' ? 'Saved on this device' : 'Report submitted!'}
           </div>
+          {wfDoneState === 'queued' ? (
+            <div
+              data-submit-state="queued"
+              style={{
+                fontSize: 13,
+                color: '#78716c',
+                marginBottom: 22,
+                lineHeight: 1.5,
+                background: '#fef3c7',
+                border: '1px solid #fde68a',
+                borderRadius: 8,
+                padding: '10px 14px',
+                textAlign: 'left',
+              }}
+            >
+              No connection right now. Daily report queued for <strong>{wfGroupName}</strong> and will sync as soon as
+              the device is back online.
+            </div>
+          ) : (
+            <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28}}>
+              <span data-submit-state="synced" style={{display: 'none'}}>
+                synced
+              </span>
+              Daily report saved for <strong>{wfGroupName}</strong>.
+            </div>
+          )}
           <button
             onClick={wfReset}
             style={{
@@ -358,6 +467,30 @@ export default function PigDailysWebform() {
         <div style={{fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 20, letterSpacing: '-.3px'}}>
           Pig Dailys
         </div>
+
+        {stuckRows.length > 0 && (
+          <button
+            onClick={() => setWfStuckOpen(true)}
+            data-stuck-button="1"
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: 10,
+              border: '1px solid #fde68a',
+              background: '#fef3c7',
+              color: '#92400e',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 12,
+              textAlign: 'left',
+            }}
+          >
+            ⚠ {stuckRows.length} unsynced pig daily report{stuckRows.length === 1 ? '' : 's'} — tap to review
+          </button>
+        )}
+
         {wfErr && (
           <div
             style={{
@@ -636,6 +769,28 @@ export default function PigDailysWebform() {
           {wfSubmitting ? 'Submitting…' : 'Submit Daily Report'}
         </button>
       </div>
+
+      {wfStuckOpen && (
+        <StuckSubmissionsModal
+          rows={stuckRows}
+          formLabel="pig daily report"
+          describeRow={(row) => {
+            // Pull from row.record (authoritative replay object) per Codex
+            // amendment #5. Falls back to payload only if record is missing.
+            const rec = row.record || row.payload || {};
+            const label = rec.batch_label || rec.batch_id || '?';
+            const date = rec.date || '?';
+            return `${label} · ${date} (not yet sent)`;
+          }}
+          onRetry={async (csid) => {
+            await retryStuck(csid);
+          }}
+          onDiscard={async (csid) => {
+            await discardStuck(csid);
+          }}
+          onClose={() => setWfStuckOpen(false)}
+        />
+      )}
     </div>
   );
 }

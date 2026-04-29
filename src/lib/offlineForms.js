@@ -67,6 +67,61 @@ const REGISTRY = Object.freeze({
       };
     },
   }),
+
+  // Phase 1C-B: PigDailys no-photo offline queue.
+  //
+  // Important shape rules:
+  //   - NO `source` field — current PigDailys rows omit it; preserve the
+  //     existing row shape exactly. The §7 contract for the
+  //     `*_dailys.source` column treats null as the default, and existing
+  //     dashboards filter by `source === 'add_feed_webform'` (not by
+  //     'webform'). Adding a value here would change row semantics.
+  //   - NO `feed_type` — pig_dailys has no such column (§7).
+  //   - `photos: []` literal — Phase 1C-B is no-photo only. The form layer
+  //     gates the queue path on `wfPhotos.length === 0`; a photo-attached
+  //     submission stays fully online and does NOT touch this registry.
+  //     Photo offline support is the Phase 1D photo queue's job.
+  //   - Numeric coercion (parseInt/parseFloat) happens at the form layer,
+  //     not here. The registry passes payload values through unchanged so
+  //     replay produces byte-identical rows.
+  pig_dailys: Object.freeze({
+    table: 'pig_dailys',
+    hasPhotos: false,
+    /**
+     * @param {object} payload — form-collected fields. The form coerces
+     *   numerics before calling submit(); this registry just passes
+     *   through. Expected keys:
+     *     {date, team_member, batch_id, batch_label,
+     *      pig_count, feed_lbs,
+     *      group_moved, nipple_drinker_moved, nipple_drinker_working,
+     *      troughs_moved, fence_walked, fence_voltage,
+     *      issues}
+     * @param {object} ids
+     * @param {string} ids.id — client-generated row id (stable across retries)
+     * @param {string} ids.csid — client_submission_id (stable across retries)
+     */
+    buildRecord(payload, {id, csid}) {
+      return {
+        id,
+        client_submission_id: csid,
+        submitted_at: new Date().toISOString(),
+        date: payload.date,
+        team_member: payload.team_member,
+        batch_id: payload.batch_id,
+        batch_label: payload.batch_label,
+        pig_count: payload.pig_count,
+        feed_lbs: payload.feed_lbs,
+        group_moved: payload.group_moved,
+        nipple_drinker_moved: payload.nipple_drinker_moved,
+        nipple_drinker_working: payload.nipple_drinker_working,
+        troughs_moved: payload.troughs_moved,
+        fence_walked: payload.fence_walked,
+        fence_voltage: payload.fence_voltage,
+        issues: payload.issues,
+        photos: [],
+      };
+    },
+  }),
 });
 
 export const FORM_KINDS = Object.freeze(Object.keys(REGISTRY));

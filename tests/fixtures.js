@@ -18,6 +18,7 @@ import {seedFuelReconcile} from './scenarios/fuel_reconcile_seed.js';
 import {seedHomeDashboardEquipment} from './scenarios/home_dashboard_equipment_seed.js';
 import {seedFuelSupplyOffline} from './scenarios/fuel_supply_offline_seed.js';
 import {seedAddFeedOffline} from './scenarios/add_feed_offline_seed.js';
+import {seedPigDailysOffline} from './scenarios/pig_dailys_offline_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -171,6 +172,14 @@ export const test = base.extend({
   addFeedOfflineScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedAddFeedOffline(supabaseAdmin);
+    await use(ids);
+  },
+  // pigDailysOfflineScenario — Phase 1C-B no-photo flat queue setup.
+  // Resets DB + seeds active_groups + roster so /webform's PigDailys
+  // form has a usable Pig group dropdown + Team member dropdown.
+  pigDailysOfflineScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedPigDailysOffline(supabaseAdmin);
     await use(ids);
   },
 });
