@@ -4,6 +4,8 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
 import {wcfSendEmail} from '../lib/email.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
+import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
+import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 import DailyPhotoCapture from './DailyPhotoCapture.jsx';
@@ -20,6 +22,7 @@ const WebformHub = ({
   webformsConfig,
 }) => {
   const {useState, useEffect} = React;
+  const {wfRoster, setWfRoster, wfAvailability, setWfAvailability} = useWebformsConfig();
   const [loadedConfig, setLoadedConfig] = useState(null); // loaded from Supabase full_config
   const [broilerGroupsFromDb, setBroilerGroupsFromDb] = useState([]);
   const [wfSettings, setWfSettings] = useState({});
@@ -33,7 +36,8 @@ const WebformHub = ({
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'housing_batch_map').maybeSingle(),
       loadRoster(sb),
-    ]).then(([fc, bg, ws, ag, hbm, roster]) => {
+      loadAvailability(sb),
+    ]).then(([fc, bg, ws, ag, hbm, roster, availability]) => {
       if (fc?.data?.data) setLoadedConfig(fc.data.data);
       if (Array.isArray(bg?.data?.data) && bg.data.data.length > 0) setBroilerGroupsFromDb(bg.data.data);
       if (ws?.data?.data) setWfSettings(ws.data.data);
@@ -42,9 +46,11 @@ const WebformHub = ({
         setPigGroupsFromDb(groups);
         if (setWfGroups) setWfGroups(groups);
       }
-      if (Array.isArray(roster) && roster.length > 0 && setWfTeamMembers) {
-        setWfTeamMembers(activeNames(roster));
+      if (Array.isArray(roster) && roster.length > 0) {
+        if (setWfRoster) setWfRoster(roster);
+        if (setWfTeamMembers) setWfTeamMembers(activeNames(roster));
       }
+      if (availability && setWfAvailability) setWfAvailability(availability);
       if (hbm?.data?.data) setHousingBatchMap(hbm.data.data);
     });
   }, []);
@@ -221,14 +227,21 @@ const WebformHub = ({
     );
     return byHousing?.batch_id || null;
   }
-  // Per-form team-member filtering retired 2026-04-29 — every form reads
-  // the master active roster. wfTeamMembers comes from the parent
-  // (set via loadRoster + activeNames in main.jsx); the loadedConfig
-  // teamMembers field is a stale legacy mirror, only used as a defensive
-  // fallback if the prop hasn't populated yet (mobile cold-load race).
+  // Per-form team-member availability filters (2026-04-29). The master
+  // roster is the single source of truth (wfRoster, loaded via loadRoster).
+  // `team_availability.forms[formKey].hiddenIds` narrows the dropdown for
+  // each form key — empty / missing entry means everyone visible. The
+  // loadedConfig.teamMembers fallback is a defensive path for the
+  // mobile cold-load race where roster hasn't populated yet.
   const cfg = loadedConfig || webformsConfig || {};
   const loadedTeamMembers = loadedConfig?.teamMembers || [];
-  const getFormTeamMembers = () => {
+  const getFormTeamMembers = (formKey) => {
+    const roster = Array.isArray(wfRoster) ? wfRoster : [];
+    if (roster.length > 0) {
+      return availableNamesFor(formKey, roster, wfAvailability);
+    }
+    // Cold-load fallback: legacy mirror or wfTeamMembers prop. Availability
+    // can't be applied without ids in this branch — names only.
     const fromProp = wfTeamMembers || [];
     if (fromProp.length > 0) return fromProp;
     return loadedTeamMembers;
@@ -249,7 +262,6 @@ const WebformHub = ({
   };
   const reqStar = (formId, fieldId) =>
     isRequired(formId, fieldId) ? React.createElement('span', {style: {color: '#dc2626', marginLeft: 2}}, '*') : null;
-  const teamMembers = wfTeamMembers || [];
   // Extra group sections for Add Group feature (array of {batchLabel})
   const [extraBroilerGroups, setExtraBroilerGroups] = useState([]);
   const [extraLayerGroups, setExtraLayerGroups] = useState([]);
@@ -2806,7 +2818,7 @@ const WebformHub = ({
                   style={inputStyle}
                 >
                   <option value="">Select...</option>
-                  {teamMembers.map((m) => (
+                  {getFormTeamMembers('egg-dailys').map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>

@@ -1,8 +1,8 @@
 // Team-member master roster — canonical helpers.
 //
 // Storage:
-//   - Canonical: webform_config.team_roster — [{id, name, active}]
-//   - Legacy mirror: webform_config.team_members — string[] of active names
+//   - Canonical: webform_config.team_roster — [{id, name}]
+//   - Legacy mirror: webform_config.team_members — string[] of names
 //     (preserved indefinitely so unmigrated readers keep working)
 //
 // Read order: prefer team_roster; fall back to legacy team_members.
@@ -12,6 +12,14 @@
 // derive from the name — names are editable display text and may be reused
 // or corrected without changing the underlying id. Two different people
 // can share a name and stay distinct.
+//
+// Removal is the only state change for an existing entry beyond rename.
+// The previous active/inactive (soft-delete) workflow was retired
+// 2026-04-29 in favor of hard delete via removeMember + the coordinated
+// delete flow in WebformsAdminView (clean availability + cascade equipment
+// before removing from roster). Historical entries persisted as
+// {id, name, active: false} are dropped silently by normalizeRoster so the
+// migration is passive — admins don't see them after this build ships.
 //
 // Public-form code paths NEVER write the roster. Lazy migration from the
 // legacy `string[]` shape only happens via the admin editor's save path.
@@ -45,12 +53,14 @@ function isObjectEntry(e) {
 /**
  * Accepts:
  *   - undefined / null  → []
- *   - string[] (legacy) → mints id per name, active:true
- *   - object[] (new)    → preserves id/name/active, mints missing ids,
- *                         coerces active to boolean (default true)
+ *   - string[] (legacy) → mints id per name
+ *   - object[] (new)    → preserves id/name; mints missing ids; entries
+ *                         with `active === false` are DROPPED (passive
+ *                         migration from the retired soft-delete shape)
  *   - anything else     → []
  *
- * Dedupes by id (case-sensitive). Sorts alpha by name for stable display.
+ * Output shape is `{id, name}` only — no `active` field. Dedupes by id
+ * (case-sensitive). Sorts alpha by name for stable display.
  */
 export function normalizeRoster(raw) {
   if (!Array.isArray(raw)) return [];
@@ -59,20 +69,18 @@ export function normalizeRoster(raw) {
     if (typeof entry === 'string') {
       const name = entry.trim();
       if (!name) continue;
-      // Mint a fresh id for each legacy string. Same name appearing twice in
-      // a legacy array yields two roster entries — caller (admin) can later
-      // merge if the duplication is unwanted.
       const id = newRosterId();
-      seen.set(id, {id, name, active: true});
+      seen.set(id, {id, name});
       continue;
     }
     if (!isObjectEntry(entry)) continue;
+    // Passive migration: drop legacy {active: false} rows silently.
+    if (entry.active === false) continue;
     const id = typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : newRosterId();
     const name = entry.name.trim();
     if (!name) continue;
-    const active = entry.active !== false; // default true; only explicit false flips
     if (!seen.has(id)) {
-      seen.set(id, {id, name, active});
+      seen.set(id, {id, name});
     }
   }
   return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -80,13 +88,13 @@ export function normalizeRoster(raw) {
 
 // ── reads ──────────────────────────────────────────────────────────────────
 
+/**
+ * Returns every visible roster name. Public dropdowns call this directly.
+ * Inactive (legacy {active: false}) entries are already filtered out by
+ * normalizeRoster — kept under the `activeNames` name for backward compat
+ * with the 25 existing call sites.
+ */
 export function activeNames(roster) {
-  return normalizeRoster(roster)
-    .filter((e) => e.active)
-    .map((e) => e.name);
-}
-
-export function allNames(roster) {
   return normalizeRoster(roster).map((e) => e.name);
 }
 
@@ -116,29 +124,13 @@ export function addMember(roster, name) {
     throw new Error('addMember: name required');
   }
   const norm = normalizeRoster(roster);
-  // Case-insensitive collision against ALL entries (active + inactive).
+  // Case-insensitive collision check.
   const lc = trimmed.toLowerCase();
   if (norm.some((e) => e.name.toLowerCase() === lc)) {
     throw new Error(`addMember: "${trimmed}" already in roster`);
   }
-  const next = [...norm, {id: newRosterId(), name: trimmed, active: true}];
+  const next = [...norm, {id: newRosterId(), name: trimmed}];
   return next.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function setActive(roster, id, active) {
-  const norm = normalizeRoster(roster);
-  let found = false;
-  const next = norm.map((e) => {
-    if (e.id === id) {
-      found = true;
-      return {...e, active: !!active};
-    }
-    return e;
-  });
-  if (!found) {
-    throw new Error(`setActive: id ${JSON.stringify(id)} not in roster`);
-  }
-  return next;
 }
 
 export function renameMember(roster, id, newName) {
@@ -158,6 +150,21 @@ export function renameMember(roster, id, newName) {
   }
   const next = norm.map((e) => (e.id === id ? {...e, name: trimmed} : e));
   return next.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Hard-delete by id. Used by the coordinated delete flow in
+ * WebformsAdminView, which runs availability + equipment cleanup BEFORE
+ * calling saveRoster with the result of removeMember. See the §7
+ * team_roster entry for the cascade contract.
+ */
+export function removeMember(roster, id) {
+  const norm = normalizeRoster(roster);
+  const found = norm.some((e) => e.id === id);
+  if (!found) {
+    throw new Error(`removeMember: id ${JSON.stringify(id)} not in roster`);
+  }
+  return norm.filter((e) => e.id !== id);
 }
 
 // ── persistence ────────────────────────────────────────────────────────────
@@ -185,15 +192,17 @@ export async function loadRoster(sb) {
 
 /**
  * Persist the roster. Writes BOTH:
- *   - webform_config.team_roster  (canonical [{id,name,active}])
- *   - webform_config.team_members (legacy mirror — active names only)
+ *   - webform_config.team_roster  (canonical [{id, name}])
+ *   - webform_config.team_members (legacy mirror — every name)
  *
  * Read-fresh-then-merge: re-fetches the canonical row right before upsert
- * and reconciles. Two cases:
+ * and reconciles. Three cases:
  *
  *   1. Canonical row exists. Merge by id — local wins on collisions
  *      (admin's edit is the intent), fresh-only entries are preserved
- *      (concurrent admin add from another tab/session).
+ *      (concurrent admin add from another tab/session) UNLESS they are
+ *      named in `opts.removedIds`, in which case the local-side delete
+ *      stays (the coordinated delete flow passes the removed id here).
  *
  *   2. Canonical row does NOT exist yet. This is the FIRST canonical save
  *      after a legacy-only DB. `loadRoster` already minted random ids for
@@ -212,9 +221,18 @@ export async function loadRoster(sb) {
  *      the now-canonical row and merges by id correctly. The first-save
  *      shortcut only fires while the canonical row is genuinely missing.
  *
+ *   3. `opts.removedIds` carries the ids the caller intentionally
+ *      removed. Without this, the read-fresh-then-merge loop would
+ *      silently re-add a deleted entry from fresh (the entry is "fresh-
+ *      only" relative to local because local removed it). The
+ *      coordinated delete flow in WebformsAdminView passes
+ *      `[member.id]` here so delete intent survives the merge.
+ *
  * Returns the persisted roster.
  */
-export async function saveRoster(sb, nextRoster) {
+export async function saveRoster(sb, nextRoster, opts = {}) {
+  const removedIds =
+    opts.removedIds instanceof Set ? opts.removedIds : new Set(Array.isArray(opts.removedIds) ? opts.removedIds : []);
   const local = normalizeRoster(nextRoster);
   const {data: freshRow} = await sb.from('webform_config').select('data').eq('key', ROSTER_KEY).maybeSingle();
 
@@ -224,7 +242,7 @@ export async function saveRoster(sb, nextRoster) {
     const localById = new Map(local.map((e) => [e.id, e]));
     merged = [...local];
     for (const f of fresh) {
-      if (!localById.has(f.id)) {
+      if (!localById.has(f.id) && !removedIds.has(f.id)) {
         merged.push(f);
       }
     }
@@ -235,14 +253,14 @@ export async function saveRoster(sb, nextRoster) {
     merged = local;
   }
 
-  const activeMirror = merged.filter((e) => e.active).map((e) => e.name);
+  const mirror = merged.map((e) => e.name);
 
   const {error: rErr} = await sb.from('webform_config').upsert({key: ROSTER_KEY, data: merged}, {onConflict: 'key'});
   if (rErr) throw new Error(`saveRoster: roster write failed: ${rErr.message}`);
 
   const {error: mErr} = await sb
     .from('webform_config')
-    .upsert({key: LEGACY_NAMES_KEY, data: activeMirror}, {onConflict: 'key'});
+    .upsert({key: LEGACY_NAMES_KEY, data: mirror}, {onConflict: 'key'});
   if (mErr) throw new Error(`saveRoster: legacy mirror write failed: ${mErr.message}`);
 
   return merged;

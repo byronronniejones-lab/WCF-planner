@@ -2,21 +2,20 @@ import {test, expect} from './fixtures.js';
 import {createClient} from '@supabase/supabase-js';
 
 // ============================================================================
-// Team Member Master List Cleanup spec — 2026-04-29
+// Team Member Master List Cleanup spec — 2026-04-29 (revised)
 // ============================================================================
-// Locks the post-cleanup contract:
-//   - webform_config.team_roster is the canonical shape [{id,name,active}]
-//   - webform_config.team_members is the active-name mirror
-//   - reads prefer team_roster, fall back to team_members
-//   - inactive members hidden from public dropdowns
-//   - Sheep weigh-in admin selector populates from the master roster
-//   - Fuel Supply public dropdown reads master (not per_form_team_members)
-//   - Per-form / per-species filtering retired
+// Locks the post-cleanup + post-availability-filter contract:
+//   - webform_config.team_roster is the canonical shape; new entries are
+//     {id, name} only. Legacy {id, name, active: false} entries are
+//     passively dropped by normalizeRoster on read.
+//   - webform_config.team_members is the all-names mirror (no active filter).
+//   - Sheep weigh-in admin selector populates from the master roster.
+//   - Fuel Supply public dropdown reads master roster narrowed by the new
+//     team_availability filter (see team_availability.spec.js).
 //
-// 4 tests total. Each runs against a fresh truncated DB; each seeds a
-// minimal roster directly via supabaseAdmin and asserts read-side
-// behavior. Writes go through the admin editor for one of the tests so
-// the read-fresh-then-merge save path is exercised end-to-end.
+// Soft-delete (active/inactive) UX retired 2026-04-29 — hard delete via
+// the central editor is the only removal path. Coverage for the delete
+// cascade lives in team_availability.spec.js.
 // ============================================================================
 
 const ROSTER_SEED = [
@@ -124,7 +123,9 @@ test('central editor: add propagates to fuel supply public form', async ({page, 
     .select('data')
     .eq('key', 'team_roster')
     .maybeSingle();
-  const rosterNames = (rosterRow.data || []).filter((e) => e.active).map((e) => e.name);
+  // Canonical write is slim {id, name} — no active field after the
+  // 2026-04-29 cleanup. Legacy active:false entries are passively dropped.
+  const rosterNames = (rosterRow.data || []).map((e) => e.name);
   expect(rosterNames).toContain('NEWGUY');
 
   const {data: legacyRow} = await supabaseAdmin
@@ -150,64 +151,9 @@ test('central editor: add propagates to fuel supply public form', async ({page, 
   }
 });
 
-// --------------------------------------------------------------------------
-// Test 4 — Deactivated names hidden from public, visible to admin (history)
-// --------------------------------------------------------------------------
-test('deactivated names: hidden from public dropdown, visible in admin Inactive section', async ({
-  page,
-  supabaseAdmin,
-  resetDb,
-  browser,
-}) => {
-  await resetDb();
-  // Seed with OLDGUY active first, then deactivate via the editor.
-  const initialRoster = [
-    {id: 'tm-bman', name: 'BMAN', active: true},
-    {id: 'tm-old', name: 'OLDGUY', active: true},
-  ];
-  await supabaseAdmin.from('webform_config').upsert({key: 'team_roster', data: initialRoster}, {onConflict: 'key'});
-  await supabaseAdmin
-    .from('webform_config')
-    .upsert({key: 'team_members', data: ['BMAN', 'OLDGUY']}, {onConflict: 'key'});
+// Test 4 (Deactivate UX) was retired 2026-04-29 alongside the active/inactive
+// soft-delete UX. Hard-delete cascade is locked by team_availability.spec.js
+// Test 5 ("delete: cascades to availability + equipment + mirror; ...").
 
-  await page.goto('/admin');
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-
-  // Both names render as active chips initially.
-  const oldGuyActive = page.locator('[data-roster-active="1"]', {hasText: 'OLDGUY'});
-  await expect(oldGuyActive).toBeVisible({timeout: 10_000});
-
-  // Click the × (deactivate) on OLDGUY's chip.
-  await oldGuyActive.locator('button[title="Deactivate"]').click();
-
-  // OLDGUY should reappear in the Inactive section.
-  await expect(page.locator('[data-roster-inactive="1"]', {hasText: 'OLDGUY'})).toBeVisible({
-    timeout: 10_000,
-  });
-
-  // Public form's dropdown excludes OLDGUY (anon context).
-  const anonContext = await browser.newContext({storageState: undefined});
-  const anonPage = await anonContext.newPage();
-  try {
-    await anonPage.goto('/fueling/supply');
-    await expect(anonPage.getByText('Fuel Supply Log')).toBeVisible({timeout: 15_000});
-    await expect(anonPage.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-    const teamSelect = anonPage.getByRole('combobox').first();
-    const optionTexts = await teamSelect.locator('option').allTextContents();
-    expect(optionTexts).toContain('BMAN');
-    expect(optionTexts).not.toContain('OLDGUY');
-  } finally {
-    await anonContext.close();
-  }
-
-  // Legacy team_members mirror reflects active-only on disk.
-  const {data: legacyRow} = await supabaseAdmin
-    .from('webform_config')
-    .select('data')
-    .eq('key', 'team_members')
-    .maybeSingle();
-  expect(legacyRow.data).toEqual(['BMAN']);
-
-  // Use createClient import so the lint plugin doesn't drop it on accident.
-  void createClient;
-});
+// Reference the createClient import so the lint plugin doesn't drop it.
+void createClient;

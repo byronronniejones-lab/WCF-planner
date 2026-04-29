@@ -2,7 +2,8 @@
 import React from 'react';
 import {writeBroilerBatchAvg} from '../lib/broiler.js';
 import {fmt} from '../lib/dateUtils.js';
-import {loadRoster, activeNames} from '../lib/teamMembers.js';
+import {loadRoster} from '../lib/teamMembers.js';
+import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
 import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
@@ -76,11 +77,12 @@ const WeighInsWebform = ({sb}) => {
     );
   }, []);
 
-  // Load team members from the canonical master roster.
+  // Master roster + per-form availability filter (`weigh-ins` formKey).
+  // Empty / missing availability entry = everyone visible.
   React.useEffect(() => {
     let cancelled = false;
-    loadRoster(sb).then((roster) => {
-      if (!cancelled) setAllTeamMembers(activeNames(roster));
+    Promise.all([loadRoster(sb), loadAvailability(sb)]).then(([roster, availability]) => {
+      if (!cancelled) setAllTeamMembers(availableNamesFor('weigh-ins', roster, availability));
     });
     return () => {
       cancelled = true;

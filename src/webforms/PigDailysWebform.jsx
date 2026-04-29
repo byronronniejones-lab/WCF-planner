@@ -9,12 +9,19 @@
 import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
+import {availableNamesFor} from '../lib/teamAvailability.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 import DailyPhotoCapture from './DailyPhotoCapture.jsx';
 
 export default function PigDailysWebform() {
-  const {wfGroups, wfTeamMembers, webformsConfig} = useWebformsConfig();
+  const {wfGroups, wfRoster, wfAvailability, wfTeamMembers, webformsConfig} = useWebformsConfig();
+  // Master roster filtered by `pig-dailys` availability. Falls back to the
+  // legacy wfTeamMembers if roster hasn't populated yet (cold-load race).
+  const wfPigTeamMembers =
+    Array.isArray(wfRoster) && wfRoster.length > 0
+      ? availableNamesFor('pig-dailys', wfRoster, wfAvailability)
+      : wfTeamMembers || [];
 
   const [wfPhotos, setWfPhotos] = React.useState([]);
   const [wfPhotoStatuses, setWfPhotoStatuses] = React.useState([]);
@@ -420,7 +427,7 @@ export default function PigDailysWebform() {
               <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
                 Team member{isReq('team_member') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
               </label>
-              {wfTeamMembers.length > 0 ? (
+              {wfPigTeamMembers.length > 0 ? (
                 <select
                   value={wfForm.teamMember}
                   onChange={(e) => setWfForm({...wfForm, teamMember: e.target.value})}
@@ -437,7 +444,7 @@ export default function PigDailysWebform() {
                   }}
                 >
                   <option value="">— Select name —</option>
-                  {wfTeamMembers.map((m) => (
+                  {wfPigTeamMembers.map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>

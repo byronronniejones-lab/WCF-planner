@@ -20,7 +20,8 @@
 import React from 'react';
 
 import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
-import {loadRoster, activeNames} from '../lib/teamMembers.js';
+import {loadRoster} from '../lib/teamMembers.js';
+import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
 // destination drives whether this row counts as CONSUMPTION in the admin
@@ -68,36 +69,59 @@ export default function FuelSupplyWebform({sb, onBack}) {
     }
   }, [stuckRows.length]);
 
+  // Tracks whether the available-list load has completed. We cannot use
+  // teamMembers.length > 0 alone because an empty roster is a legitimate
+  // post-load state (and we still need to clear stale localStorage in
+  // that case).
+  const [teamMembersLoaded, setTeamMembersLoaded] = React.useState(false);
+
   React.useEffect(() => {
     let cancelled = false;
-    // Single source of truth: the canonical team roster (fall-back to
-    // legacy team_members handled inside loadRoster). Per-form override
-    // was retired 2026-04-29 — every active master roster member appears
-    // in this dropdown.
-    loadRoster(sb).then((roster) => {
-      if (!cancelled) setTeamMembers(activeNames(roster));
+    // Master roster + per-form availability filter (`fuel-supply` formKey).
+    // Empty / missing availability entry = everyone visible. Inactive
+    // entries are filtered out by normalizeRoster inside loadRoster.
+    Promise.all([loadRoster(sb), loadAvailability(sb)]).then(([roster, availability]) => {
+      if (!cancelled) {
+        setTeamMembers(availableNamesFor('fuel-supply', roster, availability));
+        setTeamMembersLoaded(true);
+      }
     });
     return () => {
       cancelled = true;
     };
   }, [sb]);
 
-  // If the operator's last-picked name (wcf_team) isn't in the current
-  // master active list, render it as a "(saved earlier)" stale option so
-  // they see what they had before. Defends against a deactivation that
-  // happened between sessions — operator can re-pick from the active list
-  // without seeing the dropdown silently clear their choice.
-  const teamOptions = React.useMemo(() => {
-    if (team && team.trim() && !teamMembers.includes(team)) {
-      return [{value: team, label: `${team} (saved earlier)`}, ...teamMembers.map((n) => ({value: n, label: n}))];
+  // Stale-name guard: once the available list lands, if `team` (initialized
+  // from localStorage.wcf_team for operator convenience) isn't in that list,
+  // clear the selection AND remove the stale localStorage entry. This
+  // enforces the acceptance contract that deleted/hidden master-roster
+  // names cannot appear as a selectable option in any new-entry dropdown.
+  // No "(saved earlier)" rendering — once a name is gone, it's gone.
+  React.useEffect(() => {
+    if (!teamMembersLoaded) return;
+    if (team && !teamMembers.includes(team)) {
+      setTeam('');
+      try {
+        localStorage.removeItem('wcf_team');
+      } catch (_e) {
+        /* localStorage may be unavailable in some browsers */
+      }
     }
-    return teamMembers.map((n) => ({value: n, label: n}));
-  }, [teamMembers, team]);
+  }, [teamMembersLoaded, teamMembers, team]);
 
   async function handleSubmit() {
     setErr('');
     if (!team) {
       setErr('Pick a team member.');
+      return;
+    }
+    // Defense-in-depth: if the available list has loaded and the current
+    // selection is no longer in it (e.g. roster delete during the open
+    // form), refuse to submit. Belt-and-suspenders alongside the load-
+    // time clear above.
+    if (teamMembersLoaded && !teamMembers.includes(team)) {
+      setTeam('');
+      setErr('That team member is no longer available. Pick someone else.');
       return;
     }
     if (!date) {
@@ -257,9 +281,9 @@ export default function FuelSupplyWebform({sb, onBack}) {
             <label style={lblS}>Team member *</label>
             <select value={team} onChange={(e) => setTeam(e.target.value)} style={inpS}>
               <option value="">Select…</option>
-              {teamOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
+              {teamMembers.map((n) => (
+                <option key={n} value={n}>
+                  {n}
                 </option>
               ))}
             </select>

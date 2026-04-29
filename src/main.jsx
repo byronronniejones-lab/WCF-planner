@@ -111,6 +111,7 @@ import {addDays, toISO, fmt, fmtS, todayISO} from './lib/dateUtils.js';
 import {S} from './lib/styles.js';
 import {DEFAULT_WEBFORMS_CONFIG} from './lib/defaults.js';
 import {loadRoster, activeNames as rosterActiveNames} from './lib/teamMembers.js';
+import {loadAvailability} from './lib/teamAvailability.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
 import {
@@ -1172,6 +1173,8 @@ function App() {
     setWfGroups,
     wfRoster,
     setWfRoster,
+    wfAvailability,
+    setWfAvailability,
     wfTeamMembers,
     setWfTeamMembers,
     webformsConfig,
@@ -1345,9 +1348,11 @@ function App() {
     if (view !== 'webform' && view !== 'webformhub') return;
     Promise.all([
       loadRoster(sb),
+      loadAvailability(sb),
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
-    ]).then(([roster, agRes]) => {
+    ]).then(([roster, availability, agRes]) => {
       if (Array.isArray(roster) && roster.length > 0) setWfRoster(roster);
+      if (availability) setWfAvailability(availability);
       if (!agRes.error && Array.isArray(agRes.data?.data)) {
         const groups = agRes.data.data.map((name) => ({value: name, label: name}));
         setWfGroups(groups);
@@ -2163,6 +2168,9 @@ function App() {
           // is no longer the source we read.
           loadRoster(sb).then((roster) => {
             if (Array.isArray(roster) && roster.length > 0) setWfRoster(roster);
+          });
+          loadAvailability(sb).then((availability) => {
+            if (availability) setWfAvailability(availability);
           });
         }
         if (store['ppp-layer-groups-v1']) setLayerGroups(store['ppp-layer-groups-v1']);

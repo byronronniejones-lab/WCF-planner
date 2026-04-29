@@ -38,10 +38,15 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   const fuelLabel = eq?.fuel_type === 'gasoline' ? 'Gasoline' : eq?.fuel_type === 'diesel' ? 'Diesel' : 'Fuel';
   const readingLabel = eq?.tracking_unit === 'km' ? 'KM' : 'Hours';
 
+  const [teamMembersLoaded, setTeamMembersLoaded] = React.useState(false);
+
   React.useEffect(() => {
     let cancelled = false;
     loadRoster(sb).then((roster) => {
-      if (!cancelled) setTeamMembers(activeNames(roster));
+      if (!cancelled) {
+        setTeamMembers(activeNames(roster));
+        setTeamMembersLoaded(true);
+      }
     });
     return () => {
       cancelled = true;
@@ -53,6 +58,23 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   // full master list so the form still works.
   const assignedTM = Array.isArray(eq?.team_members) ? eq.team_members : [];
   const visibleTeamMembers = assignedTM.length > 0 ? teamMembers.filter((n) => assignedTM.includes(n)) : teamMembers;
+
+  // Stale-name guard: once the available list lands, if `teamMember`
+  // (initialized from localStorage.wcf_team) isn't in visibleTeamMembers,
+  // clear it AND remove the stale localStorage entry. Enforces the
+  // contract that deleted/hidden master-roster names cannot appear as a
+  // selectable option in any new-entry dropdown anywhere.
+  React.useEffect(() => {
+    if (!teamMembersLoaded || !eq) return;
+    if (teamMember && !visibleTeamMembers.includes(teamMember)) {
+      setTeamMember('');
+      try {
+        localStorage.removeItem('wcf_team');
+      } catch (_e) {
+        /* localStorage may be unavailable in some browsers */
+      }
+    }
+  }, [teamMembersLoaded, visibleTeamMembers, teamMember, eq]);
 
   // Load this piece's fueling history to compute due intervals.
   React.useEffect(() => {
@@ -211,6 +233,13 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     }
     if (!teamMember) {
       setErr('Pick a team member.');
+      return;
+    }
+    // Defense-in-depth: refuse stale selections. The load-time effect
+    // clears them, but mid-form roster delete is also handled here.
+    if (teamMembersLoaded && !visibleTeamMembers.includes(teamMember)) {
+      setTeamMember('');
+      setErr('That team member is no longer available. Pick someone else.');
       return;
     }
     if (!date) {

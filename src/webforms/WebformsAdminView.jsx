@@ -10,7 +10,14 @@ import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, todayISO, addDays} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
-import {addMember, renameMember, setActive, saveRoster, loadRoster} from '../lib/teamMembers.js';
+import {addMember, renameMember, removeMember, saveRoster, loadRoster} from '../lib/teamMembers.js';
+import {
+  TEAM_AVAILABILITY_FORM_KEYS,
+  cleanAvailabilityForDeletedId,
+  loadAvailability,
+  saveAvailability,
+  setHidden,
+} from '../lib/teamAvailability.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import FeedCostsPanel from '../admin/FeedCostsPanel.jsx';
 import FeedCostByMonthPanel from '../admin/FeedCostByMonthPanel.jsx';
@@ -25,11 +32,19 @@ import {useUI} from '../contexts/UIContext.jsx';
 
 // ── Team Roster master editor ────────────────────────────────────────────
 // Sole writer of webform_config.team_roster (canonical) +
-// webform_config.team_members (legacy active-name mirror). Read-fresh-then-
-// merge inside saveRoster keeps concurrent admin tabs from clobbering each
-// other. v1: add / rename / deactivate / reactivate. NO hard delete.
+// webform_config.team_members (legacy mirror). Read-fresh-then-merge
+// inside saveRoster keeps concurrent admin tabs from clobbering each
+// other. v1 actions: add / rename / hard-delete. The previous
+// active/inactive (soft-delete) workflow was retired 2026-04-29 — delete
+// is the only removal path. The "temporarily inactive worker" workflow
+// is intentionally gone; admins re-add a returning worker as a new entry.
+//
+// Coordinated delete order: clean availability hiddenIds → cascade
+// equipment.team_members → saveRoster (last). If any cleanup step fails,
+// the roster entry stays put so the admin still has a UI handle to retry.
+// See PROJECT.md §7 team_roster entry for the contract.
 function TeamRosterEditor() {
-  const {wfRoster, setWfRoster} = useWebformsConfig();
+  const {wfRoster, setWfRoster, wfAvailability, setWfAvailability} = useWebformsConfig();
   const [busy, setBusy] = React.useState(false);
   const [newName, setNewName] = React.useState('');
   const [editingId, setEditingId] = React.useState(null);
@@ -74,15 +89,6 @@ function TeamRosterEditor() {
     }
   }
 
-  async function onSetActive(id, active) {
-    try {
-      const next = setActive(wfRoster || [], id, active);
-      await persist(next);
-    } catch (e) {
-      setErr(e && e.message ? e.message : String(e));
-    }
-  }
-
   async function onRename(id) {
     const name = editValue.trim();
     if (!name) {
@@ -99,9 +105,77 @@ function TeamRosterEditor() {
     }
   }
 
+  // Coordinated delete: dependencies first, roster last.
+  function onDelete(member) {
+    if (!window._wcfConfirmDelete) return;
+    const confirmMsg =
+      `Permanently delete "${member.name}" from the team roster? They will disappear ` +
+      `from every dropdown going forward. Historical reports keep their stored name.`;
+    window._wcfConfirmDelete(confirmMsg, async () => {
+      setBusy(true);
+      setErr('');
+      try {
+        // Step 1: read fresh availability + equipment rows that name them.
+        // equipment.team_members is jsonb; filter client-side rather than via
+        // PostgREST .contains() (which mangles jsonb-array filters under
+        // some supabase-js + PostgREST combinations). Equipment row count is
+        // ≤20 in prod — trivial overhead.
+        const freshAvailability = await loadAvailability(sb);
+        const {data: allEquipment, error: eqReadErr} = await sb.from('equipment').select('id, team_members');
+        if (eqReadErr) {
+          throw new Error(`Read failed: ${eqReadErr.message}. Roster member NOT removed.`);
+        }
+        const equipmentRows = (allEquipment || []).filter(
+          (r) => Array.isArray(r.team_members) && r.team_members.includes(member.name),
+        );
+
+        // Step 2: compute cleanup state.
+        const cleanedAvailability = cleanAvailabilityForDeletedId(freshAvailability, member.id);
+
+        // Step 3: persist availability cleanup BEFORE roster save.
+        let persistedAvailability;
+        try {
+          persistedAvailability = await saveAvailability(sb, cleanedAvailability);
+        } catch (e) {
+          throw new Error(`Availability cleanup failed: ${e?.message || e}. Roster member NOT removed. Try again.`);
+        }
+        if (setWfAvailability) setWfAvailability(persistedAvailability);
+
+        // Step 4: cascade equipment.team_members.
+        for (const row of equipmentRows || []) {
+          const next = (row.team_members || []).filter((m) => m !== member.name);
+          const {error: eqErr} = await sb.from('equipment').update({team_members: next}).eq('id', row.id);
+          if (eqErr) {
+            throw new Error(
+              `Equipment cleanup failed on row ${row.id}: ${eqErr.message}. ` + `Roster member NOT removed. Try again.`,
+            );
+          }
+        }
+
+        // Step 5: only after cleanup succeeds, save roster. Pass removedIds
+        // so saveRoster's read-fresh-then-merge doesn't silently re-add
+        // member.id from fresh (the entry is "fresh-only" relative to
+        // post-removeMember local — without this the delete intent loses
+        // to concurrent-add preservation logic).
+        const nextRoster = removeMember(wfRoster || [], member.id);
+        try {
+          const persistedRoster = await saveRoster(sb, nextRoster, {removedIds: [member.id]});
+          setWfRoster(persistedRoster);
+        } catch (e) {
+          throw new Error(
+            `Roster save failed: ${e?.message || e}. Dependencies were cleaned but the roster ` +
+              `entry remains. Try again to retry the delete.`,
+          );
+        }
+      } catch (e) {
+        setErr(e?.message ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+
   const roster = Array.isArray(wfRoster) ? wfRoster : [];
-  const active = roster.filter((e) => e.active);
-  const inactive = roster.filter((e) => !e.active);
 
   const card = {
     background: 'white',
@@ -133,12 +207,12 @@ function TeamRosterEditor() {
         </span>
       </div>
       <div style={{fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.5}}>
-        Active members appear in every team-member dropdown. Deactivate someone to remove them from new dropdowns
-        without losing their history. They can be reactivated later.
+        Every name in this list appears in every team-member dropdown unless hidden by an availability filter (below).
+        Use × to permanently remove someone — historical reports keep their stored name.
       </div>
 
       <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10}}>
-        {active.map((m) => (
+        {roster.map((m) => (
           <span key={m.id} data-roster-active="1" data-roster-id={m.id} style={chip('#ecfdf5', '#065f46', '#a7f3d0')}>
             {editingId === m.id ? (
               <input
@@ -178,10 +252,11 @@ function TeamRosterEditor() {
                   ✏
                 </button>
                 <button
-                  onClick={() => onSetActive(m.id, false)}
+                  onClick={() => onDelete(m)}
                   disabled={busy}
-                  title="Deactivate"
-                  style={{...ico, color: '#065f46', opacity: 0.7}}
+                  title="Delete permanently"
+                  data-roster-delete="1"
+                  style={{...ico, color: '#b91c1c'}}
                 >
                   ×
                 </button>
@@ -189,10 +264,10 @@ function TeamRosterEditor() {
             )}
           </span>
         ))}
-        {active.length === 0 && <span style={{fontSize: 12, color: '#9ca3af'}}>No active team members yet.</span>}
+        {roster.length === 0 && <span style={{fontSize: 12, color: '#9ca3af'}}>No team members yet.</span>}
       </div>
 
-      <div style={{display: 'flex', gap: 6, marginBottom: inactive.length > 0 ? 16 : 0}}>
+      <div style={{display: 'flex', gap: 6}}>
         <input
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
@@ -231,33 +306,186 @@ function TeamRosterEditor() {
         </button>
       </div>
 
-      {inactive.length > 0 && (
-        <div>
-          <div style={{fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6, textTransform: 'uppercase'}}>
-            Inactive ({inactive.length})
-          </div>
-          <div style={{display: 'flex', gap: 6, flexWrap: 'wrap'}}>
-            {inactive.map((m) => (
-              <span
-                key={m.id}
-                data-roster-inactive="1"
-                data-roster-id={m.id}
-                style={chip('#f3f4f6', '#6b7280', '#e5e7eb')}
-              >
-                {m.name}
-                <button
-                  onClick={() => onSetActive(m.id, true)}
-                  disabled={busy}
-                  title="Reactivate"
-                  style={{...ico, color: '#085041'}}
-                >
-                  ↺
-                </button>
-              </span>
-            ))}
-          </div>
+      {err && (
+        <div
+          style={{
+            marginTop: 10,
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            color: '#b91c1c',
+            padding: '6px 10px',
+            borderRadius: 6,
+            fontSize: 12,
+          }}
+        >
+          {err}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Team Availability per-form filters ───────────────────────────────────
+// Sole writer of webform_config.team_availability. Every active roster
+// member appears in every form by default; admin unchecks a member to hide
+// them from a single form's dropdown without affecting others. Stable
+// roster IDs are referenced — renames preserve hide state. New roster
+// members default to visible everywhere.
+//
+// Read-fresh-then-merge inside saveAvailability mirrors the saveRoster
+// pattern. Inactive entries (already filtered out by normalizeRoster) and
+// orphan IDs (no longer in roster) are no-ops in availableNamesFor — the
+// editor only needs to handle the live roster.
+const FORM_LABELS = {
+  'broiler-dailys': 'Broiler Daily Reports',
+  'cattle-dailys': 'Cattle Daily Reports',
+  'egg-dailys': 'Egg Daily Reports',
+  'fuel-supply': 'Fuel Supply',
+  'layer-dailys': 'Layer Daily Reports',
+  'pig-dailys': 'Pig Daily Reports',
+  'sheep-dailys': 'Sheep Daily Reports',
+  'weigh-ins': 'Weigh-Ins',
+};
+
+function TeamAvailabilityEditor() {
+  const {wfRoster, wfAvailability, setWfAvailability} = useWebformsConfig();
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const [openKey, setOpenKey] = React.useState(null);
+
+  React.useEffect(() => {
+    if (wfAvailability && wfAvailability.forms && Object.keys(wfAvailability.forms).length > 0) return;
+    let cancelled = false;
+    loadAvailability(sb).then((a) => {
+      if (!cancelled && a) setWfAvailability(a);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function onToggle(formKey, id, hidden) {
+    setBusy(true);
+    setErr('');
+    try {
+      const next = setHidden(wfAvailability || {forms: {}}, formKey, id, hidden);
+      const persisted = await saveAvailability(sb, next);
+      setWfAvailability(persisted);
+    } catch (e) {
+      setErr(e?.message ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const roster = Array.isArray(wfRoster) ? wfRoster : [];
+  const availability = wfAvailability && wfAvailability.forms ? wfAvailability : {forms: {}};
+
+  const card = {
+    background: 'white',
+    border: '1px solid #e5e7eb',
+    borderRadius: 10,
+    padding: '14px 16px',
+    marginBottom: 16,
+  };
+  const sectionBtn = {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 10px',
+    background: '#f9fafb',
+    border: '1px solid #e5e7eb',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#374151',
+    marginBottom: 6,
+  };
+  const hiddenBadge = {
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 4,
+    background: '#fef3c7',
+    color: '#92400e',
+  };
+  const rowStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 8px',
+    fontSize: 12,
+    color: '#374151',
+    cursor: 'pointer',
+  };
+
+  return (
+    <div style={card}>
+      <div style={{fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 6}}>
+        Team Member Availability
+        <span style={{fontSize: 11, fontWeight: 400, color: '#9ca3af', marginLeft: 8}}>
+          per-form filters · everyone visible by default
+        </span>
+      </div>
+      <div style={{fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.5}}>
+        Hide team members from individual form dropdowns. Master roster names and history are not changed. New members
+        default to visible everywhere.
+      </div>
+
+      {TEAM_AVAILABILITY_FORM_KEYS.map((formKey) => {
+        const hiddenIds = new Set(availability.forms[formKey]?.hiddenIds || []);
+        const hiddenCount = hiddenIds.size;
+        const isOpen = openKey === formKey;
+        return (
+          <div key={formKey} data-availability-section={formKey}>
+            <button
+              type="button"
+              onClick={() => setOpenKey(isOpen ? null : formKey)}
+              data-availability-toggle={formKey}
+              style={sectionBtn}
+            >
+              <span>
+                {isOpen ? '▾' : '▸'} {FORM_LABELS[formKey]}
+              </span>
+              {hiddenCount > 0 && <span style={hiddenBadge}>{hiddenCount} hidden</span>}
+            </button>
+            {isOpen && (
+              <div style={{display: 'flex', flexWrap: 'wrap', gap: 4, padding: '6px 4px 12px'}}>
+                {roster.length === 0 ? (
+                  <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
+                    No team members in roster yet.
+                  </span>
+                ) : (
+                  roster.map((m) => {
+                    const isHidden = hiddenIds.has(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        data-availability-row={formKey}
+                        data-availability-member={m.id}
+                        data-availability-hidden={isHidden ? '1' : '0'}
+                        style={rowStyle}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!isHidden}
+                          disabled={busy}
+                          onChange={(e) => onToggle(formKey, m.id, !e.target.checked)}
+                          style={{margin: 0, accentColor: '#085041'}}
+                        />
+                        <span>{m.name}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       {err && (
         <div
@@ -533,8 +761,9 @@ export default function WebformsAdminView({
 
         {adminTab === 'webforms' && (
           <div>
-            {/* ── MASTER TEAM ROSTER (only at list level, hidden inside the per-form editor) ── */}
+            {/* ── MASTER TEAM ROSTER + per-form availability filters (only at list level, hidden inside the per-form editor) ── */}
             {!editWfId && <TeamRosterEditor />}
+            {!editWfId && <TeamAvailabilityEditor />}
 
             {/* ── WEIGH-INS EDITOR (per-species lists retired; no editor needed for v1) ── */}
             {editWfId && currentWf && currentWf.id === 'weighins-webform' && (
