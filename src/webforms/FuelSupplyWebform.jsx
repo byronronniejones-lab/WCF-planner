@@ -1,20 +1,31 @@
 // Public Fuel Supply Log webform. Canonical URL is /fueling/supply (tile on
-// the FuelingHub). Legacy /fuel-supply alias is still wired in main.jsx + routes.js
-// so any direct bookmarks keep working.
+// the FuelingHub). Legacy /fuel-supply alias is still wired in main.jsx +
+// routes.js so any direct bookmarks keep working.
 //
-// Logged when there's no fueling checklist for what's being filled with fuel
-// (portable cell fills, gas cans, farm-truck top-offs, etc). Writes to
+// Logged when there's no fueling checklist for what's being filled with
+// fuel (portable cell fills, gas cans, farm-truck top-offs, etc). Writes to
 // fuel_supplies — never counts as equipment consumption.
 //
 // Anonymous access (RLS policy on fuel_supplies allows anon insert). No
 // auth required.
+//
+// Phase 1B canary: submission goes through useOfflineSubmit, which tries
+// the network synchronously and queues to IndexedDB on failure. The form
+// keeps its existing validation, team-member load, and post-submit reset
+// behavior; what changes is the success path — synced rows show "✓ Supply
+// logged" exactly like before; queued rows show "📡 Saved on this device —
+// will sync when online" so the operator knows the row is captured but
+// not yet replicated.
 
 import React from 'react';
 
+import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
+import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
+
 // destination drives whether this row counts as CONSUMPTION in the admin
-// reconciliation view. cell-refill rows are inventory movement (the cell is a
-// storage tank — fuel going INTO it is delivery, not use), and are excluded.
-// All other destinations count as consumption.
+// reconciliation view. cell-refill rows are inventory movement (the cell
+// is a storage tank — fuel going INTO it is delivery, not use), and are
+// excluded. All other destinations count as consumption.
 const DESTINATIONS = [
   {value: 'gas_can', label: 'Gas can(s)'},
   {value: 'farm_truck', label: 'Farm truck'},
@@ -39,7 +50,22 @@ export default function FuelSupplyWebform({sb, onBack}) {
   const [notes, setNotes] = React.useState('');
   const [err, setErr] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
-  const [done, setDone] = React.useState(false);
+  // 'none' | 'synced' | 'queued'
+  const [doneState, setDoneState] = React.useState('none');
+  const [stuckOpen, setStuckOpen] = React.useState(false);
+
+  const {submit, stuckRows, retryStuck, discardStuck} = useOfflineSubmit('fuel_supply');
+
+  // Open the stuck modal automatically the first time we observe stuck rows
+  // (mount or refresh after a failed pass). Operator can close it; we don't
+  // re-open on every render.
+  const initialStuckShownRef = React.useRef(false);
+  React.useEffect(() => {
+    if (stuckRows.length > 0 && !initialStuckShownRef.current) {
+      initialStuckShownRef.current = true;
+      setStuckOpen(true);
+    }
+  }, [stuckRows.length]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -64,7 +90,7 @@ export default function FuelSupplyWebform({sb, onBack}) {
     };
   }, [sb]);
 
-  async function submit() {
+  async function handleSubmit() {
     setErr('');
     if (!team) {
       setErr('Pick a team member.');
@@ -82,28 +108,24 @@ export default function FuelSupplyWebform({sb, onBack}) {
     localStorage.setItem('wcf_team', team);
     setSubmitting(true);
 
-    const id = 'fs-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-    const rec = {
-      id,
-      date,
-      gallons: gal,
-      fuel_type: fuelType || null,
-      destination,
-      team_member: team,
-      notes: notes.trim() || null,
-      source: 'webform',
-    };
-
-    const {error} = await sb.from('fuel_supplies').insert(rec);
-    setSubmitting(false);
-    if (error) {
-      setErr('Save failed: ' + error.message);
-      return;
+    try {
+      const result = await submit({
+        date,
+        gallons: gal,
+        fuel_type: fuelType,
+        destination,
+        team_member: team,
+        notes: notes.trim() || null,
+      });
+      setDoneState(result.state);
+      setGallons('');
+      setNotes('');
+    } catch (e) {
+      // Schema/validation bug — surface it instead of silently queuing.
+      setErr('Save failed: ' + (e && e.message ? e.message : String(e)));
+    } finally {
+      setSubmitting(false);
     }
-    setDone(true);
-    // Reset for a fresh entry
-    setGallons('');
-    setNotes('');
   }
 
   const cardS = {
@@ -146,11 +168,31 @@ export default function FuelSupplyWebform({sb, onBack}) {
       >
         <div style={{fontSize: 18, fontWeight: 700}}>⛽ Fuel Supply Log</div>
         <div style={{fontSize: 11, opacity: 0.85}}>WCF Planner</div>
+        {stuckRows.length > 0 && (
+          <button
+            onClick={() => setStuckOpen(true)}
+            data-stuck-button="1"
+            style={{
+              marginLeft: 'auto',
+              background: '#b45309',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              padding: '4px 10px',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontFamily: 'inherit',
+              fontWeight: 600,
+            }}
+          >
+            ⚠ {stuckRows.length} stuck
+          </button>
+        )}
         {onBack && (
           <button
             onClick={onBack}
             style={{
-              marginLeft: 'auto',
+              marginLeft: stuckRows.length > 0 ? 8 : 'auto',
               background: 'transparent',
               color: 'white',
               border: '1px solid rgba(255,255,255,.4)',
@@ -180,11 +222,23 @@ export default function FuelSupplyWebform({sb, onBack}) {
           </div>
         </div>
 
-        {done && (
-          <div style={{...cardS, background: '#ecfdf5', borderColor: '#a7f3d0'}}>
+        {doneState === 'synced' && (
+          <div data-submit-state="synced" style={{...cardS, background: '#ecfdf5', borderColor: '#a7f3d0'}}>
             <div style={{fontSize: 13, fontWeight: 700, color: '#065f46', marginBottom: 4}}>✓ Supply logged</div>
             <div style={{fontSize: 12, color: '#047857'}}>
               Form reset for another entry. You can keep logging deliveries.
+            </div>
+          </div>
+        )}
+
+        {doneState === 'queued' && (
+          <div data-submit-state="queued" style={{...cardS, background: '#fef3c7', borderColor: '#fde68a'}}>
+            <div style={{fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 4}}>
+              📡 Saved on this device
+            </div>
+            <div style={{fontSize: 12, color: '#78716c'}}>
+              No connection right now. Your entry is queued and will sync as soon as the device is back online. Keep
+              logging — additional entries will queue too.
             </div>
           </div>
         )}
@@ -272,8 +326,9 @@ export default function FuelSupplyWebform({sb, onBack}) {
           )}
 
           <button
-            onClick={submit}
+            onClick={handleSubmit}
             disabled={submitting}
+            data-submit-button="1"
             style={{
               width: '100%',
               padding: '14px 16px',
@@ -291,6 +346,27 @@ export default function FuelSupplyWebform({sb, onBack}) {
           </button>
         </div>
       </div>
+
+      {stuckOpen && (
+        <StuckSubmissionsModal
+          rows={stuckRows}
+          formLabel="fuel supply log"
+          describeRow={(row) => {
+            const p = row.payload || {};
+            const dateStr = p.date || '?';
+            const galStr = p.gallons != null ? `${p.gallons} gal` : '?';
+            const destStr = p.destination || '?';
+            return `${dateStr} · ${galStr} · ${destStr}`;
+          }}
+          onRetry={async (csid) => {
+            await retryStuck(csid);
+          }}
+          onDiscard={async (csid) => {
+            await discardStuck(csid);
+          }}
+          onClose={() => setStuckOpen(false)}
+        />
+      )}
     </div>
   );
 }

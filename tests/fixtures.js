@@ -16,6 +16,7 @@ import {seedPigFCRScenario} from './scenarios/pig_fcr_seed.js';
 import {seedFuelBillScenario} from './scenarios/fuel_bill_seed.js';
 import {seedFuelReconcile} from './scenarios/fuel_reconcile_seed.js';
 import {seedHomeDashboardEquipment} from './scenarios/home_dashboard_equipment_seed.js';
+import {seedFuelSupplyOffline} from './scenarios/fuel_supply_offline_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -151,6 +152,16 @@ export const test = base.extend({
       await resetTestDatabase();
       return seedHomeDashboardEquipment(supabaseAdmin, opts);
     });
+  },
+  // fuelSupplyOfflineScenario — Phase 1B canary setup. Resets DB +
+  // seeds the webform_config team_members the FuelSupplyWebform needs
+  // to render a usable dropdown. Each test inside the canary spec
+  // wipes the browser-side IndexedDB queue separately via
+  // wipeOfflineQueue() so queued rows don't bleed across tests.
+  fuelSupplyOfflineScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedFuelSupplyOffline(supabaseAdmin);
+    await use(ids);
   },
 });
 

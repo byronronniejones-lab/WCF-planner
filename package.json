@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "idb": "^8.0.3",
     "pdfjs-dist": "^5.6.205",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -32,6 +33,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^15.15.0",
     "prettier": "^3.8.3",
     "vite": "^5.4.10",
