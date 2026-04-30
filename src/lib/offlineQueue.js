@@ -1,12 +1,15 @@
-// IndexedDB-backed offline queue for webform submissions and (Phase 2)
-// photo blobs. Wraps `idb` with the minimum surface the useOfflineSubmit
-// hook needs: enqueue, list-by-status, mark-sync-result, retry, discard.
+// IndexedDB-backed offline queue for webform submissions and photo blobs.
+// Wraps `idb` with the minimum surface the useOfflineSubmit hook needs:
+// enqueue, list-by-status, mark-sync-result, retry, discard.
 //
 // Stores:
 //   - submissions: queued webform rows. Key = client_submission_id (text).
-//   - photo_blobs: schema declared in Phase 1B; writes wired in Phase 2.
-//                  Key = `${form_kind}/${client_submission_id}/${photo_key}`
-//                  to mirror the locked storage path scheme.
+//   - photo_blobs: photo bytes for hasPhotos form-kinds. Schema declared in
+//                  Phase 1B; writes wired in Phase 1D-A. Key = the
+//                  deterministic bucket path including the .jpg suffix
+//                  (`${form_kind}/${client_submission_id}/${photo_key}.jpg`)
+//                  so the IDB key matches the storage object's key 1:1 —
+//                  no transform needed at upload time.
 //
 // Status flow:
 //   queued    → ready for the next sync attempt
@@ -120,12 +123,25 @@ export async function markSyncing(csid) {
 }
 
 /**
- * Mark a submission successfully synced — removes it from the store.
+ * Mark a submission successfully synced — removes the submission row AND
+ * cascades to delete any photo_blobs persisted under the same csid.
  * Auditability lives in Supabase; we don't keep "done" rows on the device.
+ *
+ * Phase 1D-A: cascade is unconditional. No-photo csids never have blobs;
+ * the index lookup just returns an empty list and the delete loop is a
+ * no-op.
  */
 export async function markSynced(csid) {
   const db = await getDb();
-  await db.delete(STORE_SUBMISSIONS, csid);
+  const tx = db.transaction([STORE_SUBMISSIONS, STORE_PHOTO_BLOBS], 'readwrite');
+  await tx.objectStore(STORE_SUBMISSIONS).delete(csid);
+  const photoStore = tx.objectStore(STORE_PHOTO_BLOBS);
+  const photoIdx = photoStore.index('by_csid');
+  const photoKeys = await photoIdx.getAllKeys(csid);
+  for (const key of photoKeys) {
+    await photoStore.delete(key);
+  }
+  await tx.done;
 }
 
 /**
@@ -212,12 +228,179 @@ export async function retrySubmission(csid) {
 }
 
 /**
- * Operator-driven discard. Removes the row outright; caller should warn
- * that the submission is dropped, not deferred.
+ * Operator-driven discard. Removes the submission row AND any photo_blobs
+ * persisted under the same csid. Caller should warn that the submission
+ * is dropped, not deferred. Bucket objects (if any uploaded prior to the
+ * stuck state) are NOT auto-deleted — operator/admin cleans up if needed.
  */
 export async function discardSubmission(csid) {
   const db = await getDb();
-  await db.delete(STORE_SUBMISSIONS, csid);
+  const tx = db.transaction([STORE_SUBMISSIONS, STORE_PHOTO_BLOBS], 'readwrite');
+  await tx.objectStore(STORE_SUBMISSIONS).delete(csid);
+  const photoStore = tx.objectStore(STORE_PHOTO_BLOBS);
+  const photoIdx = photoStore.index('by_csid');
+  const photoKeys = await photoIdx.getAllKeys(csid);
+  for (const key of photoKeys) {
+    await photoStore.delete(key);
+  }
+  await tx.done;
+}
+
+// ============================================================================
+// Phase 1D-A — photo_blobs writes + atomic submission+blobs enqueue
+// ============================================================================
+// The submissions store holds row data only (no Blobs/Files). Photo bytes
+// live exclusively in STORE_PHOTO_BLOBS. The two stores are coordinated via
+// a single readwrite transaction so a tab/IDB error mid-write can't leave
+// half-queued state.
+
+/**
+ * Bulk-put prepared photos under one csid. Each entry's primary key is its
+ * deterministic path; the by_csid + by_form_kind indices stay in sync.
+ *
+ * @param {object} args
+ * @param {string} args.csid
+ * @param {string} args.formKind
+ * @param {Array<{photo_key: string, path: string, blob: Blob, mime: string,
+ *   size_bytes: number, name: string, captured_at: string}>} args.photos
+ */
+export async function enqueuePhotoBlobs({csid, formKind, photos}) {
+  if (!csid || !formKind) {
+    throw new Error('offlineQueue.enqueuePhotoBlobs: csid + formKind required');
+  }
+  if (!Array.isArray(photos) || photos.length === 0) return;
+  const db = await getDb();
+  const tx = db.transaction(STORE_PHOTO_BLOBS, 'readwrite');
+  const store = tx.objectStore(STORE_PHOTO_BLOBS);
+  for (const p of photos) {
+    if (!p.photo_key || !p.path || !p.blob) {
+      throw new Error('offlineQueue.enqueuePhotoBlobs: photo_key/path/blob required');
+    }
+    await store.put({
+      key: p.path,
+      csid,
+      form_kind: formKind,
+      photo_key: p.photo_key,
+      blob: p.blob,
+      mime: p.mime ?? 'image/jpeg',
+      size_bytes: p.size_bytes ?? 0,
+      name: p.name ?? null,
+      captured_at: p.captured_at ?? new Date().toISOString(),
+    });
+  }
+  await tx.done;
+}
+
+/**
+ * Read all photo_blobs persisted for a csid, in stable photo_key order
+ * ('photo-1' < 'photo-2' < ...).
+ */
+export async function listPhotoBlobsByCsid(csid) {
+  const db = await getDb();
+  const all = await db.getAllFromIndex(STORE_PHOTO_BLOBS, 'by_csid', csid);
+  // Sort by the numeric tail of photo_key so 'photo-10' doesn't sort before
+  // 'photo-2'. Falls back to lexical compare for non-numeric tails.
+  return all.slice().sort((a, b) => {
+    const ax = parseInt(String(a.photo_key).replace(/^photo-/, ''), 10);
+    const bx = parseInt(String(b.photo_key).replace(/^photo-/, ''), 10);
+    if (Number.isFinite(ax) && Number.isFinite(bx) && ax !== bx) return ax - bx;
+    return String(a.photo_key).localeCompare(String(b.photo_key));
+  });
+}
+
+/**
+ * Bulk-delete photo_blobs by csid. Used by markSynced + discardSubmission
+ * cascades, but exported so the queue worker can also clean up after a
+ * synced row that was inserted via the no-photo flat path but somehow
+ * has stale blobs (defense-in-depth).
+ */
+export async function deletePhotoBlobsByCsid(csid) {
+  const db = await getDb();
+  const tx = db.transaction(STORE_PHOTO_BLOBS, 'readwrite');
+  const store = tx.objectStore(STORE_PHOTO_BLOBS);
+  const idx = store.index('by_csid');
+  const keys = await idx.getAllKeys(csid);
+  for (const key of keys) {
+    await store.delete(key);
+  }
+  await tx.done;
+}
+
+/**
+ * Atomic enqueue: writes the submission row AND every photo_blob in a
+ * SINGLE readwrite transaction over both stores. Either both land or
+ * neither (transaction abort on any error).
+ *
+ * Status defaults to 'queued' (transient failure path); pass status:'failed'
+ * with retry_count:MAX_RETRIES to short-circuit straight to stuck (used
+ * for storage 401/403 + row schema-after-upload).
+ *
+ * @param {object} args
+ * @param {string} args.csid
+ * @param {string} args.formKind
+ * @param {object} args.payload — sanitized, NO File/Blob references
+ * @param {object} args.record — daily-row record with photos jsonb (paths only)
+ * @param {Array} args.photos — PreparedPhoto[]; may be empty for no-photo paths
+ *   though no-photo paths typically use enqueueSubmission directly
+ * @param {'queued' | 'failed'} [args.status='queued']
+ * @param {number} [args.retryCount=0]
+ * @param {string} [args.lastError=null]
+ */
+export async function enqueueSubmissionWithPhotos({
+  csid,
+  formKind,
+  payload,
+  record,
+  photos,
+  status = 'queued',
+  retryCount = 0,
+  lastError = null,
+}) {
+  if (!csid || !formKind || !record) {
+    throw new Error('offlineQueue.enqueueSubmissionWithPhotos: csid, formKind, record required');
+  }
+  // Validate photos UPFRONT before opening the transaction. An auto-commit
+  // semantics quirk in IDB means a partial loop after a successful put may
+  // still commit the prior puts even if the function throws. Pre-validation
+  // makes the atomicity contract trivially correct: we only open the
+  // transaction once the entire input is verified.
+  const photosList = Array.isArray(photos) ? photos : [];
+  for (const p of photosList) {
+    if (!p || !p.photo_key || !p.path || !p.blob) {
+      throw new Error('offlineQueue.enqueueSubmissionWithPhotos: photo_key/path/blob required on every entry');
+    }
+  }
+  const db = await getDb();
+  const now = Date.now();
+  const tx = db.transaction([STORE_SUBMISSIONS, STORE_PHOTO_BLOBS], 'readwrite');
+  await tx.objectStore(STORE_SUBMISSIONS).put({
+    csid,
+    form_kind: formKind,
+    payload: payload ?? null,
+    record,
+    status,
+    retry_count: retryCount,
+    last_error: lastError,
+    created_at: now,
+    last_attempt_at: status === 'queued' ? null : now,
+  });
+  if (photosList.length > 0) {
+    const photoStore = tx.objectStore(STORE_PHOTO_BLOBS);
+    for (const p of photosList) {
+      await photoStore.put({
+        key: p.path,
+        csid,
+        form_kind: formKind,
+        photo_key: p.photo_key,
+        blob: p.blob,
+        mime: p.mime ?? 'image/jpeg',
+        size_bytes: p.size_bytes ?? 0,
+        name: p.name ?? null,
+        captured_at: p.captured_at ?? new Date().toISOString(),
+      });
+    }
+  }
+  await tx.done;
 }
 
 async function mutate(csid, fn) {

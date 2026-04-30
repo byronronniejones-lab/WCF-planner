@@ -69,6 +69,12 @@ const REGISTRY = Object.freeze({
   }),
 
   // Phase 1C-B: PigDailys no-photo offline queue.
+  // Phase 1D-A: hasPhotos flipped to true (semantically "supported", not
+  // "required"). The hook short-circuits at submit() if payload.photos is
+  // empty/absent, falling through to the existing flat path. Existing
+  // tests/pig_dailys_offline.spec.js (4 active cases) lock that behavior.
+  // (Phase 1C-B's 5th case — the photo-online-only "needs a connection"
+  // assertion — was retired in 1D-A when photos became queue-capable.)
   //
   // Important shape rules:
   //   - NO `source` field — current PigDailys rows omit it; preserve the
@@ -77,16 +83,17 @@ const REGISTRY = Object.freeze({
   //     dashboards filter by `source === 'add_feed_webform'` (not by
   //     'webform'). Adding a value here would change row semantics.
   //   - NO `feed_type` — pig_dailys has no such column (§7).
-  //   - `photos: []` literal — Phase 1C-B is no-photo only. The form layer
-  //     gates the queue path on `wfPhotos.length === 0`; a photo-attached
-  //     submission stays fully online and does NOT touch this registry.
-  //     Photo offline support is the Phase 1D photo queue's job.
+  //   - `photos` jsonb — paths-only metadata when payload.photos has entries
+  //     (per the Phase 1D-A prepared-photo flow). Empty array `[]` for the
+  //     no-photo path (preserves the byte-identical row shape Phase 1C-B
+  //     locked). Raw File/Blob refs NEVER reach the row — sanitized in the
+  //     hook before buildRecord runs.
   //   - Numeric coercion (parseInt/parseFloat) happens at the form layer,
   //     not here. The registry passes payload values through unchanged so
   //     replay produces byte-identical rows.
   pig_dailys: Object.freeze({
     table: 'pig_dailys',
-    hasPhotos: false,
+    hasPhotos: true,
     /**
      * @param {object} payload — form-collected fields. The form coerces
      *   numerics before calling submit(); this registry just passes
@@ -95,7 +102,10 @@ const REGISTRY = Object.freeze({
      *      pig_count, feed_lbs,
      *      group_moved, nipple_drinker_moved, nipple_drinker_working,
      *      troughs_moved, fence_walked, fence_voltage,
-     *      issues}
+     *      issues,
+     *      photos?}  // photo-meta array (path/name/mime/size_bytes/captured_at)
+     *                // OR empty/absent for the no-photo flat path. Raw File/Blob
+     *                // never reaches here — hook strips before calling.
      * @param {object} ids
      * @param {string} ids.id — client-generated row id (stable across retries)
      * @param {string} ids.csid — client_submission_id (stable across retries)
@@ -118,7 +128,7 @@ const REGISTRY = Object.freeze({
         fence_walked: payload.fence_walked,
         fence_voltage: payload.fence_voltage,
         issues: payload.issues,
-        photos: [],
+        photos: Array.isArray(payload.photos) ? payload.photos : [],
       };
     },
   }),

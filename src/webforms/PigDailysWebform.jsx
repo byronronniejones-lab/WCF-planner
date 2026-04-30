@@ -4,18 +4,21 @@
 // The legacy pig-dailys public webform (routed at /webform).
 //
 // 2026-04-29 (Phase 1C-B): no-photo submissions flow through the offline
-// queue via useOfflineSubmit('pig_dailys'). Photo-attached submissions
-// stay fully online-only (Phase 1D photo queue territory) — if either
-// the upload or final pig_dailys insert fails, the operator sees an
-// explicit "photos need a connection" message and the submission does
-// NOT enter IDB. Locked by tests/pig_dailys_offline.spec.js.
+// queue via useOfflineSubmit('pig_dailys').
+//
+// 2026-04-30 (Phase 1D-A): photo-attached submissions ALSO flow through
+// the same hook. The hook's hasPhotos branch handles compress-once,
+// atomic submission+photo_blobs enqueue on transient failure, and
+// state:'stuck' on storage 401/403 or row schema-after-upload. The old
+// "photos need a connection" copy is gone. Locked by
+// tests/offline_queue_pig_dailys_photos.spec.js + the existing
+// tests/pig_dailys_offline.spec.js (still locks the empty-photos flat
+// path via the hook's short-circuit).
 // ============================================================================
 import React from 'react';
-import {sb} from '../lib/supabase.js';
 import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 import {availableNamesFor} from '../lib/teamAvailability.js';
-import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
-import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
+import {MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
 import DailyPhotoCapture from './DailyPhotoCapture.jsx';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
@@ -50,16 +53,21 @@ export default function PigDailysWebform() {
     };
   });
   const [wfSubmitting, setWfSubmitting] = React.useState(false);
-  // 'none' | 'synced' | 'queued' — replaces the prior boolean wfDone.
-  // synced = row landed in pig_dailys. queued = persisted in IDB; will replay.
+  // 'none' | 'synced' | 'queued' | 'stuck' — Phase 1D-A adds 'stuck' for
+  // storage 401/403 and row schema-after-photo-upload outcomes.
+  // synced = row landed in pig_dailys.
+  // queued = persisted in IDB; will replay on next online/tick/mount.
+  // stuck  = persisted in IDB at retry budget exhausted; operator surfaces
+  //          via stuck modal.
   const [wfDoneState, setWfDoneState] = React.useState('none');
   const [wfErr, setWfErr] = React.useState('');
   const [wfGroupName, setWfGroupName] = React.useState('');
   const [wfStuckOpen, setWfStuckOpen] = React.useState(false);
 
-  // Phase 1C-B no-photo offline queue. The hook is mounted here so the
-  // background sync (online event + 60s tick) is always live, but submit()
-  // is only called from the no-photo branch of wfSubmit.
+  // Phase 1C-B no-photo offline queue + Phase 1D-A photo offline queue.
+  // The hook handles both via the hasPhotos branch (offlineForms.js
+  // pig_dailys.hasPhotos: true) — empty payload.photos short-circuits to
+  // the flat path (locked by pig_dailys_offline.spec.js).
   const {submit, stuckRows, retryStuck, discardStuck} = useOfflineSubmit('pig_dailys');
 
   // Open the stuck modal automatically the first time we observe stuck rows.
@@ -150,87 +158,52 @@ export default function PigDailysWebform() {
     }
 
     // Validate the photo count cap upfront — DailyPhotoCapture also enforces
-    // it, but a defense-in-depth check catches any future caller mismatch.
+    // it, the hook's preparePhotos throws on >10 too, but a defense-in-depth
+    // check produces a clean inline error rather than a thrown range error.
     if (wfPhotos.length > MAX_PHOTOS_PER_REPORT) {
       setWfSubmitting(false);
       setWfErr(`Up to ${MAX_PHOTOS_PER_REPORT} photos per submission.`);
       return;
     }
 
-    // ── Photo-attached path (Phase 1D photo queue territory) ──────────
-    // Stays fully online-only. Upload-first, insert-after. Failure on
-    // EITHER step surfaces the explicit "photos need a connection"
-    // message and does NOT enter the offline queue. Locked by Test 4
-    // in tests/pig_dailys_offline.spec.js.
-    if (wfPhotos.length > 0) {
-      const csid = newClientSubmissionId();
-      const photoMeta = [];
-      setWfPhotoStatuses(wfPhotos.map(() => 'pending'));
-      for (let i = 0; i < wfPhotos.length; i++) {
-        setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'uploading' : s)));
-        try {
-          const m = await uploadDailyPhoto(sb, 'pig_dailys', csid, `photo-${i + 1}`, wfPhotos[i]);
-          photoMeta.push(m);
-          setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'uploaded' : s)));
-        } catch (e) {
-          setWfPhotoStatuses((prev) => prev.map((s, j) => (j === i ? 'failed' : s)));
-          setWfSubmitting(false);
-          setWfErr(
-            `Photo submission could not be saved: ${e?.message || e}. Photo submissions need a connection — remove photos to save offline, or try again.`,
-          );
-          return;
-        }
-      }
-
-      const record = {
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        client_submission_id: csid,
-        submitted_at: new Date().toISOString(),
-        date: wfForm.date,
-        team_member: wfForm.teamMember.trim(),
-        batch_id: wfForm.batchId.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        batch_label: wfForm.batchId,
-        pig_count: wfForm.pigCount !== '' ? parseInt(wfForm.pigCount) : null,
-        feed_lbs: wfForm.feedLbs !== '' ? parseFloat(wfForm.feedLbs) : null,
-        group_moved: wfForm.groupMoved,
-        nipple_drinker_moved: wfForm.nippleDrinkerMoved,
-        nipple_drinker_working: wfForm.nippleDrinkerWorking,
-        troughs_moved: wfForm.troughsMoved,
-        fence_walked: wfForm.fenceWalked,
-        fence_voltage: wfForm.fenceVoltage !== '' ? parseFloat(wfForm.fenceVoltage) : null,
-        issues: wfForm.issues.trim() || null,
-        photos: photoMeta,
-      };
-      const {error} = await sb.from('pig_dailys').insert(record);
-      setWfSubmitting(false);
-      if (error) {
-        if (photoMeta.length > 0) {
-          console.error(
-            '[PigDailysWebform] pig_dailys insert failed AFTER photo upload — orphan storage paths:',
-            photoMeta.map((p) => p.path),
-          );
-        }
-        setWfErr(
-          `Photo submission could not be saved: ${error.message}. Photo submissions need a connection — remove photos to save offline, or try again.`,
-        );
-        return;
-      }
-      setWfGroupName(wfForm.batchId);
-      setWfPhotos([]);
-      setWfPhotoStatuses([]);
-      setWfDoneState('synced');
-      return;
-    }
-
-    // ── No-photo path: route through the offline queue ─────────────────
+    // Phase 1D-A: single submit path — hook decides flat vs hasPhotos based
+    // on payload.photos. Empty/absent photos → flat insert (existing 1C-B
+    // behavior, locked by pig_dailys_offline.spec.js). 1+ photo → prepared-
+    // photo flow with atomic queue/stuck enqueue on failure.
+    setWfPhotoStatuses(wfPhotos.length > 0 ? wfPhotos.map(() => 'pending') : []);
     try {
-      const result = await submit(buildSubmitPayload());
+      const payload = buildSubmitPayload();
+      if (wfPhotos.length > 0) {
+        payload.photos = wfPhotos; // raw File[] — hook compresses + sanitizes
+      }
+      const result = await submit(payload);
       setWfGroupName(wfForm.batchId);
-      setWfDoneState(result.state); // 'synced' | 'queued'
+      // result.state ∈ {'synced', 'queued', 'stuck'}.
+      setWfDoneState(result.state);
+      // Reflect outcome on the per-photo chips so DailyPhotoCapture's UI
+      // shows the right pill in the success/queued/stuck screen if any
+      // were rendered. (The terminal screens don't render chips, but
+      // status state stays consistent for any test that inspects it.)
+      if (wfPhotos.length > 0) {
+        if (result.state === 'synced') {
+          setWfPhotoStatuses(wfPhotos.map(() => 'uploaded'));
+        } else if (result.state === 'queued') {
+          setWfPhotoStatuses(wfPhotos.map(() => 'queued'));
+        } else if (result.state === 'stuck') {
+          setWfPhotoStatuses(wfPhotos.map(() => 'failed'));
+          // Auto-open stuck modal so the operator sees what went wrong.
+          setWfStuckOpen(true);
+        }
+      }
     } catch (e) {
-      // useOfflineSubmit throws on schema/validation errors. Surface;
-      // do not queue.
+      // useOfflineSubmit throws on schema/validation errors that occur
+      // BEFORE photos enter the bucket (preparePhotos errors, no-photo
+      // schema errors). Photo-after-upload schema errors do NOT throw
+      // here — they're captured into state:'stuck' instead.
       setWfErr('Could not save: ' + (e && e.message ? e.message : String(e)));
+      if (wfPhotos.length > 0) {
+        setWfPhotoStatuses(wfPhotos.map(() => 'failed'));
+      }
     } finally {
       setWfSubmitting(false);
     }
@@ -345,6 +318,33 @@ export default function PigDailysWebform() {
     </div>
   );
 
+  // Phase 1D-A — stuck modal lifted to a shared element so it renders on
+  // BOTH the form screen AND the success/queued/stuck terminal screen
+  // (matches WeighInsWebform's pattern). Auto-open + manual-open from the
+  // 'stuck' state both flow through wfStuckOpen.
+  const stuckModalEl =
+    wfStuckOpen && stuckRows.length > 0 ? (
+      <StuckSubmissionsModal
+        rows={stuckRows}
+        formLabel="pig daily report"
+        describeRow={(row) => {
+          const rec = row.record || row.payload || {};
+          const label = rec.batch_label || rec.batch_id || '?';
+          const date = rec.date || '?';
+          const photoCount = Array.isArray(rec.photos) ? rec.photos.length : 0;
+          const photoSuffix = photoCount > 0 ? ` · ${photoCount} photo${photoCount === 1 ? '' : 's'}` : '';
+          return `${label} · ${date}${photoSuffix} (not yet sent)`;
+        }}
+        onRetry={async (csid) => {
+          await retryStuck(csid);
+        }}
+        onDiscard={async (csid) => {
+          await discardStuck(csid);
+        }}
+        onClose={() => setWfStuckOpen(false)}
+      />
+    ) : null;
+
   if (wfDoneState !== 'none')
     return (
       <div style={{background: '#f6f8f7', minHeight: '100vh'}}>
@@ -376,18 +376,24 @@ export default function PigDailysWebform() {
           <div style={{fontSize: 12, color: 'rgba(255,255,255,.6)'}}>Daily Report</div>
         </div>
         <div style={{maxWidth: 540, margin: '0 auto', padding: '3rem 1rem', textAlign: 'center'}}>
-          <div style={{fontSize: 56, marginBottom: 16}}>{wfDoneState === 'queued' ? '📡' : '✅'}</div>
+          <div style={{fontSize: 56, marginBottom: 16}}>
+            {wfDoneState === 'queued' ? '📡' : wfDoneState === 'stuck' ? '⚠️' : '✅'}
+          </div>
           <div
             style={{
               fontSize: 20,
               fontWeight: 700,
               marginBottom: 8,
-              color: wfDoneState === 'queued' ? '#92400e' : '#111827',
+              color: wfDoneState === 'queued' ? '#92400e' : wfDoneState === 'stuck' ? '#b91c1c' : '#111827',
             }}
           >
-            {wfDoneState === 'queued' ? 'Saved on this device' : 'Report submitted!'}
+            {wfDoneState === 'queued'
+              ? 'Saved on this device'
+              : wfDoneState === 'stuck'
+                ? 'Saved on this device — sync needs help'
+                : 'Report submitted!'}
           </div>
-          {wfDoneState === 'queued' ? (
+          {wfDoneState === 'queued' && (
             <div
               data-submit-state="queued"
               style={{
@@ -405,7 +411,27 @@ export default function PigDailysWebform() {
               No connection right now. Daily report queued for <strong>{wfGroupName}</strong> and will sync as soon as
               the device is back online.
             </div>
-          ) : (
+          )}
+          {wfDoneState === 'stuck' && (
+            <div
+              data-submit-state="stuck"
+              style={{
+                fontSize: 13,
+                color: '#7f1d1d',
+                marginBottom: 22,
+                lineHeight: 1.5,
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: 8,
+                padding: '10px 14px',
+                textAlign: 'left',
+              }}
+            >
+              Your daily report for <strong>{wfGroupName}</strong> is saved on this device, but sync hit an error that
+              won't fix itself by retrying. Open the stuck submissions panel to retry after a fix or discard.
+            </div>
+          )}
+          {wfDoneState === 'synced' && (
             <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28}}>
               <span data-submit-state="synced" style={{display: 'none'}}>
                 synced
@@ -428,7 +454,27 @@ export default function PigDailysWebform() {
           >
             Submit another
           </button>
+          {wfDoneState === 'stuck' && (
+            <button
+              onClick={() => setWfStuckOpen(true)}
+              data-stuck-open="1"
+              style={{
+                marginLeft: 12,
+                padding: '10px 22px',
+                border: '2px solid #b91c1c',
+                borderRadius: 10,
+                background: 'white',
+                color: '#b91c1c',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Open stuck submissions
+            </button>
+          )}
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -746,7 +792,13 @@ export default function PigDailysWebform() {
           </div>,
         )}
 
-        <DailyPhotoCapture files={wfPhotos} statuses={wfPhotoStatuses} onChange={setWfPhotos} disabled={wfSubmitting} />
+        <DailyPhotoCapture
+          files={wfPhotos}
+          statuses={wfPhotoStatuses}
+          onChange={setWfPhotos}
+          disabled={wfSubmitting}
+          offlineCapable={true}
+        />
 
         <button
           onClick={wfSubmit}
@@ -770,27 +822,7 @@ export default function PigDailysWebform() {
         </button>
       </div>
 
-      {wfStuckOpen && (
-        <StuckSubmissionsModal
-          rows={stuckRows}
-          formLabel="pig daily report"
-          describeRow={(row) => {
-            // Pull from row.record (authoritative replay object) per Codex
-            // amendment #5. Falls back to payload only if record is missing.
-            const rec = row.record || row.payload || {};
-            const label = rec.batch_label || rec.batch_id || '?';
-            const date = rec.date || '?';
-            return `${label} · ${date} (not yet sent)`;
-          }}
-          onRetry={async (csid) => {
-            await retryStuck(csid);
-          }}
-          onDiscard={async (csid) => {
-            await discardStuck(csid);
-          }}
-          onClose={() => setWfStuckOpen(false)}
-        />
-      )}
+      {stuckModalEl}
     </div>
   );
 }

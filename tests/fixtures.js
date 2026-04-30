@@ -20,6 +20,7 @@ import {seedFuelSupplyOffline} from './scenarios/fuel_supply_offline_seed.js';
 import {seedAddFeedOffline} from './scenarios/add_feed_offline_seed.js';
 import {seedPigDailysOffline} from './scenarios/pig_dailys_offline_seed.js';
 import {seedWeighInsOffline} from './scenarios/weigh_ins_offline_seed.js';
+import {seedPigDailysPhotosOffline} from './scenarios/pig_dailys_photos_offline_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -189,6 +190,14 @@ export const test = base.extend({
   weighInsOfflineScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedWeighInsOffline(supabaseAdmin);
+    await use(ids);
+  },
+  // pigDailysPhotosOfflineScenario — Phase 1D-A photo queue setup.
+  // Resets DB + seeds active_groups + roster so /webform PigDailys form
+  // can drive both photo and no-photo paths through the hook.
+  pigDailysPhotosOfflineScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedPigDailysPhotosOffline(supabaseAdmin);
     await use(ids);
   },
 });

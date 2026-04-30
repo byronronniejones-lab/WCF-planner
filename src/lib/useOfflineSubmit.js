@@ -3,8 +3,10 @@
 //   - failure-classified queueing (network/5xx/RLS → queue, schema → throw)
 //   - background sync (online event + 60s tick + manual button)
 //   - stuck-row surfacing on mount + after each sync pass
+//   - Phase 1D-A: hasPhotos branch with prepared-photo flow + atomic
+//     submission+photo_blobs enqueue + state:'stuck' return
 //
-// Failure classification (order matters):
+// Failure classification (PostgREST/insert path, order matters):
 //   1. Network / TypeError ("Failed to fetch", etc.) → enqueue + return 'queued'.
 //   2. Duplicate key (code 23505) on `client_submission_id` → SUCCESS (the
 //      row is already there from a prior replay; treat as 'synced'). This
@@ -18,6 +20,17 @@
 //      (PGRST*, 23xxx other than the dup-key path above) → throw. These
 //      are real bugs; surfacing is correct.
 //   6. Anything else → enqueue (safe default).
+//
+// Storage error classification (Phase 1D-A, separate from PostgREST shape):
+//   - Network / fetch / timeout → 'network' (queue + retry)
+//   - status 500-599 / 429       → 'server'  (queue)
+//   - status 409 (Duplicate)     → 'success-409' (continue, do not retry/stuck)
+//   - status 401 / 403           → 'rls-stuck' (markStuckNow immediately —
+//                                  usually missing bucket policy; surface
+//                                  loudly per Codex review v2 #5)
+//   - other 4xx                  → 'schema'  (stuck)
+//   - unknown / no status        → 'unknown' (queue; retry budget eventually
+//                                  stucks via MAX_RETRIES)
 //
 // Idempotency contract:
 //   - The original Codex plan said `.upsert(..., {onConflict, ignoreDuplicates: true})`
@@ -38,10 +51,13 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {sb} from './supabase.js';
 import {newClientSubmissionId} from './clientSubmissionId.js';
 import {buildRecord, getFormConfig} from './offlineForms.js';
+import {preparePhotos, preparedToRowMeta, uploadPreparedPhotosSequential, StorageUploadError} from './dailyPhotos.js';
 import {
   enqueueSubmission,
+  enqueueSubmissionWithPhotos,
   listQueued,
   listStuck,
+  listPhotoBlobsByCsid,
   markSyncing,
   markSynced,
   markFailed,
@@ -49,6 +65,7 @@ import {
   recoverStaleSyncing,
   retrySubmission,
   discardSubmission,
+  MAX_RETRIES,
 } from './offlineQueue.js';
 
 const TICK_INTERVAL_MS = 60_000;
@@ -92,6 +109,47 @@ function classifyError(err) {
     }
   }
 
+  // Codeless schema-class fallback. supabase-js v2 sometimes returns PostgREST
+  // error envelopes WITHOUT a `.status` field on the error object (only the
+  // response status, which we can't read here). Mirrors useOfflineRpcSubmit's
+  // codeless branch — PGRST* / 22* / 23* / P0001 codes always indicate
+  // deterministic schema/validation problems regardless of HTTP status.
+  if (/^PGRST/i.test(code) || /^23/.test(code) || /^22/.test(code) || code === 'P0001') return 'schema';
+
+  return 'unknown';
+}
+
+// ----------------------------------------------------------------------------
+// Storage error classifier (Phase 1D-A)
+// ----------------------------------------------------------------------------
+// supabase-js storage errors don't carry PostgREST shapes. The classifier
+// inspects status/code/message of a StorageUploadError (or any storage
+// error) and returns one of the offline-queue states.
+function classifyStorageError(err) {
+  if (!err) return 'unknown';
+  // Network/fetch/timeout — same logic as the insert classifier's network branch.
+  if (err instanceof TypeError) return 'network';
+  if (err && err.name === 'TypeError') return 'network';
+  if (err && err.message && /failed to fetch|network ?error|load failed|timeout/i.test(err.message)) return 'network';
+
+  // supabase-js storage errors expose the HTTP status as `statusCode`
+  // (string) on the native StorageApiError shape, NOT `status`. The hook's
+  // StorageUploadError wrapper normalizes `status`, but raw storage errors
+  // (e.g. when the queue worker reads error.statusCode directly without
+  // the wrapper) still carry only `statusCode`. Fall back to it so the
+  // classifier doesn't lose the status on either shape.
+  const status = err.status != null ? Number(err.status) : err.statusCode != null ? Number(err.statusCode) : null;
+  const code = err.code != null ? String(err.code) : '';
+
+  if (status != null) {
+    if (status >= 500) return 'server';
+    if (status === 429) return 'server';
+    if (status === 409) return 'success-409';
+    if (status === 401 || status === 403) return 'rls-stuck';
+    if (status >= 400 && status < 500) return 'schema';
+  }
+  // Codeless duplicate hint (some supabase-js paths drop status).
+  if (/duplicate/i.test(code) || /duplicate/i.test(String(err.message))) return 'success-409';
   return 'unknown';
 }
 
@@ -106,7 +164,7 @@ async function attemptInsert(formKind, record) {
 /**
  * @param {string} formKind — registry key (e.g. 'fuel_supply').
  * @returns {{
- *   submit: (payload: object) => Promise<{state: 'synced' | 'queued', csid: string, id: string, record: object}>,
+ *   submit: (payload: object) => Promise<{state: 'synced' | 'queued' | 'stuck', csid: string, id: string, record: object, error?: object}>,
  *   syncNow: () => Promise<void>,
  *   stuckRows: Array<object>,
  *   queuedCount: number,
@@ -144,36 +202,7 @@ export function useOfflineSubmit(formKind) {
       // mid-flight. Fresh in-flight rows (within the threshold) stay
       // 'syncing' so concurrent same-tab passes don't step on each other.
       await recoverStaleSyncing(formKind);
-
-      const queued = await listQueued(formKind);
-      for (const entry of queued) {
-        await markSyncing(entry.csid);
-        try {
-          const {error} = await attemptInsert(formKind, entry.record);
-          if (error) {
-            // Duplicate-csid replay = already synced (the row landed on
-            // a prior attempt; this one is the post-recovery retry that
-            // hit the unique index instead of a network failure).
-            if (isDuplicateCsidViolation(error)) {
-              await markSynced(entry.csid);
-            } else {
-              const kind = classifyError(error);
-              if (kind === 'schema') {
-                // Real bug — escalate to stuck immediately so the operator
-                // sees it. Don't burn the retry budget on a deterministic
-                // failure.
-                await markStuckNow(entry.csid, error.message ?? 'schema error');
-              } else {
-                await markFailed(entry.csid, error.message ?? `${kind} error`);
-              }
-            }
-          } else {
-            await markSynced(entry.csid);
-          }
-        } catch (err) {
-          await markFailed(entry.csid, err && err.message ? err.message : String(err));
-        }
-      }
+      await _drainQueuedFormKind(formKind, sb);
     } finally {
       inFlightRef.current = false;
       if (mountedRef.current) setSyncing(false);
@@ -183,41 +212,7 @@ export function useOfflineSubmit(formKind) {
 
   const submit = useCallback(
     async (payload, opts = {}) => {
-      const csid = newClientSubmissionId();
-      const id = opts.id ?? `${formKind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const record = buildRecord(formKind, payload, {id, csid});
-
-      // Try the network first. Fast happy path.
-      try {
-        const {error} = await attemptInsert(formKind, record);
-        if (!error) {
-          return {state: 'synced', csid, id, record};
-        }
-        // Duplicate-csid = already-synced (idempotent replay of a row that
-        // landed on a previous attempt). Fresh submits won't hit this
-        // because the csid is freshly generated above.
-        if (isDuplicateCsidViolation(error)) {
-          return {state: 'synced', csid, id, record};
-        }
-        const kind = classifyError(error);
-        if (kind === 'schema') {
-          throw new Error(`offlineSubmit: schema/validation error: ${error.message ?? error.code ?? 'unknown'}`);
-        }
-        // Transient — queue it.
-        await enqueueSubmission({formKind, csid, payload, record});
-        await markFailed(csid, error.message ?? `${kind} error`);
-        await refresh();
-        return {state: 'queued', csid, id, record};
-      } catch (err) {
-        const kind = classifyError(err);
-        if (kind === 'schema') {
-          throw err;
-        }
-        await enqueueSubmission({formKind, csid, payload, record});
-        await markFailed(csid, err && err.message ? err.message : String(err));
-        await refresh();
-        return {state: 'queued', csid, id, record};
-      }
+      return _runSubmit({formKind, payload, opts, refresh});
     },
     [formKind, refresh],
   );
@@ -281,5 +276,339 @@ export function useOfflineSubmit(formKind) {
   };
 }
 
-// Internal helper exported for tests
+// ============================================================================
+// Test-exported seams (mirrors useOfflineRpcSubmit pattern)
+// ============================================================================
 export const _classifyError = classifyError;
+export const _classifyStorageError = classifyStorageError;
+
+// ----------------------------------------------------------------------------
+// _runSubmit — the submit() lifecycle without React. Test seam.
+// ----------------------------------------------------------------------------
+//
+// Three return states (Phase 1D-A — Codex review v2.1 correction 4):
+//   - 'synced' : row landed in DB (online happy path, OR 23505=already-synced)
+//   - 'queued' : transient failure (network/5xx/unknown). Will replay later.
+//   - 'stuck'  : deterministic failure (storage 401/403, row schema after
+//                photo upload, etc.). Operator surfaces in stuck modal.
+//
+// Empty-photos short-circuit (Codex review v2.1 correction 7):
+//   When formKind has hasPhotos:true but payload.photos is empty/absent,
+//   the lifecycle falls through to the no-photo flat path so existing
+//   pig_dailys_offline.spec.js cases stay green.
+export async function _runSubmit({formKind, payload, opts = {}, refresh}) {
+  const cfg = getFormConfig(formKind);
+  const csid = opts.csid ?? newClientSubmissionId();
+  const id = opts.id ?? `${formKind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  // hasPhotos branch only fires if hasPhotos:true AND payload.photos has
+  // at least 1 file. Empty/absent → flat path.
+  const photoFiles = cfg.hasPhotos && Array.isArray(payload && payload.photos) ? payload.photos : [];
+  if (photoFiles.length > 0) {
+    return await _runSubmitWithPhotos({formKind, payload, photoFiles, csid, id, refresh});
+  }
+
+  return await _runFlatSubmit({formKind, payload, csid, id, refresh});
+}
+
+// ----------------------------------------------------------------------------
+// Flat-row submit (no-photo path, byte-identical to pre-1D-A behavior)
+// ----------------------------------------------------------------------------
+async function _runFlatSubmit({formKind, payload, csid, id, refresh}) {
+  // Build the row WITHOUT raw photo files (caller may have passed them; the
+  // hasPhotos branch handles those above). buildRecord already coerces to
+  // photos:[] when payload.photos is empty/absent.
+  const sanitized = sanitizePhotosFromPayload(payload, []);
+  const record = buildRecord(formKind, sanitized, {id, csid});
+
+  try {
+    const {error} = await attemptInsert(formKind, record);
+    if (!error) {
+      return {state: 'synced', csid, id, record};
+    }
+    if (isDuplicateCsidViolation(error)) {
+      return {state: 'synced', csid, id, record};
+    }
+    const kind = classifyError(error);
+    if (kind === 'schema') {
+      throw new Error(`offlineSubmit: schema/validation error: ${error.message ?? error.code ?? 'unknown'}`);
+    }
+    await enqueueSubmission({formKind, csid, payload: sanitized, record});
+    await markFailed(csid, error.message ?? `${kind} error`);
+    if (refresh) await refresh();
+    return {state: 'queued', csid, id, record};
+  } catch (err) {
+    const kind = classifyError(err);
+    if (kind === 'schema') {
+      throw err;
+    }
+    await enqueueSubmission({formKind, csid, payload: sanitized, record});
+    await markFailed(csid, err && err.message ? err.message : String(err));
+    if (refresh) await refresh();
+    return {state: 'queued', csid, id, record};
+  }
+}
+
+// ----------------------------------------------------------------------------
+// hasPhotos submit lifecycle (Codex review v2.1 corrections 1+2+3+4)
+// ----------------------------------------------------------------------------
+//
+// Memory-only preparation, atomic enqueue on any queue/stuck path, and
+// state:'stuck' return for deterministic failures (storage 401/403, row
+// schema-after-upload).
+//
+// Online happy path produces NO IDB writes. Tab death pre-upload loses the
+// in-memory blobs — same loss profile as a no-photo submit dying mid-attempt.
+async function _runSubmitWithPhotos({formKind, payload, photoFiles, csid, id, refresh}) {
+  // Step 1: prepare (compress + path/captured_at) ONCE in memory.
+  // preparePhotos errors (RangeError on >10, TypeError on bad input,
+  // compressImage decode failures) are deterministic operator errors.
+  // Let them throw inline — nothing has hit IDB or storage yet, no cleanup
+  // needed. Caller's try/catch surfaces inline.
+  const prepared = await preparePhotos(formKind, csid, photoFiles);
+
+  // Step 2: build the daily-row record with sanitized photo metadata.
+  const photoMeta = preparedToRowMeta(prepared);
+  const sanitized = sanitizePhotosFromPayload(payload, photoMeta);
+  const record = buildRecord(formKind, sanitized, {id, csid});
+
+  // Step 3: try uploads online, sequential.
+  let uploadsCompleted = false;
+  try {
+    await uploadPreparedPhotosSequential(sb, prepared, {upsert: false});
+    uploadsCompleted = true;
+  } catch (uploadErr) {
+    const kind = classifyStorageError(uploadErr);
+    if (kind === 'rls-stuck' || kind === 'schema') {
+      // Codex review v2.1 correction 4: surface loudly via stuck modal.
+      // Atomic enqueue with stuck status so the operator can retry after
+      // a policy/code fix.
+      await enqueueSubmissionWithPhotos({
+        csid,
+        formKind,
+        payload: sanitized,
+        record,
+        photos: prepared,
+        status: 'failed',
+        retryCount: MAX_RETRIES,
+        lastError: storageErrSummary(uploadErr),
+      });
+      if (refresh) await refresh();
+      return {state: 'stuck', csid, id, record, error: uploadErr};
+    }
+    // network / server / unknown / success-409-but-thrown(?) → queue + retry.
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind,
+      payload: sanitized,
+      record,
+      photos: prepared,
+      status: 'queued',
+      retryCount: 1,
+      lastError: storageErrSummary(uploadErr),
+    });
+    if (refresh) await refresh();
+    return {state: 'queued', csid, id, record, error: uploadErr};
+  }
+
+  // Step 4: row insert. Reached only when all photos uploaded.
+  void uploadsCompleted;
+  try {
+    const {error} = await attemptInsert(formKind, record);
+    if (!error) {
+      // Synced happy path. Nothing in IDB to clean up — we never wrote.
+      return {state: 'synced', csid, id, record};
+    }
+    if (isDuplicateCsidViolation(error)) {
+      // Already-synced replay. Same IDB story.
+      return {state: 'synced', csid, id, record};
+    }
+    const kind = classifyError(error);
+    if (kind === 'schema') {
+      // Codex review v2.1 correction 3: schema-after-photo-upload goes to
+      // STUCK (not throw). Photos are already in the bucket; queueing
+      // preserves recovery after a code/schema fix.
+      await enqueueSubmissionWithPhotos({
+        csid,
+        formKind,
+        payload: sanitized,
+        record,
+        photos: prepared,
+        status: 'failed',
+        retryCount: MAX_RETRIES,
+        lastError: error.message ?? error.code ?? 'schema error',
+      });
+      if (refresh) await refresh();
+      return {state: 'stuck', csid, id, record, error};
+    }
+    // network / server / 401/403 / unknown → queue + retry.
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind,
+      payload: sanitized,
+      record,
+      photos: prepared,
+      status: 'queued',
+      retryCount: 1,
+      lastError: error.message ?? `${kind} error`,
+    });
+    if (refresh) await refresh();
+    return {state: 'queued', csid, id, record, error};
+  } catch (err) {
+    const kind = classifyError(err);
+    if (kind === 'schema') {
+      // Same as the error-envelope schema branch — go to stuck, don't throw.
+      await enqueueSubmissionWithPhotos({
+        csid,
+        formKind,
+        payload: sanitized,
+        record,
+        photos: prepared,
+        status: 'failed',
+        retryCount: MAX_RETRIES,
+        lastError: err && err.message ? err.message : String(err),
+      });
+      if (refresh) await refresh();
+      return {state: 'stuck', csid, id, record, error: err};
+    }
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind,
+      payload: sanitized,
+      record,
+      photos: prepared,
+      status: 'queued',
+      retryCount: 1,
+      lastError: err && err.message ? err.message : String(err),
+    });
+    if (refresh) await refresh();
+    return {state: 'queued', csid, id, record, error: err};
+  }
+}
+
+function sanitizePhotosFromPayload(payload, photoMeta) {
+  if (!payload) return {photos: photoMeta};
+  const next = {...payload};
+  next.photos = photoMeta;
+  return next;
+}
+
+function storageErrSummary(err) {
+  if (!err) return 'storage upload failed';
+  if (err instanceof StorageUploadError) {
+    return `${err.message} (status=${err.status ?? '?'} code=${err.code ?? '?'} key=${err.photo_key ?? '?'})`;
+  }
+  return err.message ?? String(err);
+}
+
+// ----------------------------------------------------------------------------
+// _syncQueuedEntry — drain ONE queued entry. Test seam (Codex correction 8).
+// ----------------------------------------------------------------------------
+//
+// hasPhotos branch:
+//   - listPhotoBlobsByCsid(csid) MUST match record.photos.length and every
+//     path. Mismatch → markStuckNow + skip insert (Codex correction 5).
+//   - Sequential upload with upsert:false. 409 = success-continue (the path
+//     already exists in the bucket from a prior partial attempt; same csid
+//     means same content). 401/403 → markStuckNow. Other classifier
+//     branches per the table above.
+//   - On all uploads succeeded, attempt insert. 23505 = synced.
+//
+// Empty-photos branch: drains straight to insert (no-photo flat path).
+export async function _syncQueuedEntry(formKind, entry, sbClient = sb) {
+  await markSyncing(entry.csid);
+  const recordPhotos = Array.isArray(entry.record && entry.record.photos) ? entry.record.photos : [];
+  const cfg = getFormConfig(formKind);
+  const expectsPhotos = cfg.hasPhotos && recordPhotos.length > 0;
+
+  if (expectsPhotos) {
+    // Codex correction 5: replay guard. Confirm photo_blobs exists for every
+    // path in record.photos before touching storage or the row.
+    const blobs = await listPhotoBlobsByCsid(entry.csid);
+    if (blobs.length !== recordPhotos.length) {
+      await markStuckNow(entry.csid, 'photo_blobs missing or incomplete (count mismatch)');
+      return;
+    }
+    const blobPaths = new Set(blobs.map((b) => b.key));
+    for (const meta of recordPhotos) {
+      if (!blobPaths.has(meta.path)) {
+        await markStuckNow(entry.csid, `photo_blobs missing for path ${meta.path}`);
+        return;
+      }
+    }
+    // Sequential upload with upsert:false. Anon RLS on `daily-photos` grants
+    // INSERT only (mig 031 daily_photos_anon_insert) — anon UPDATE is NOT
+    // permitted. upsert:true would trigger an UPSERT (INSERT-OR-UPDATE) and
+    // fail 403 RLS even on a fresh INSERT path because supabase-storage's
+    // upsert path checks the UPDATE policy too. With upsert:false, a fresh
+    // path INSERTs cleanly; an already-existing path 409s, which the
+    // classifier treats as 'success-continue' (idempotent — the prior
+    // upload bytes are identical to ours since path is content-addressed
+    // by csid + photo_key + same compressed source). Net effect matches
+    // upsert:true semantically without needing an UPDATE policy.
+    for (const blob of blobs) {
+      try {
+        const {error} = await sbClient.storage
+          .from('daily-photos')
+          .upload(blob.key, blob.blob, {upsert: false, contentType: blob.mime ?? 'image/jpeg'});
+        if (error) {
+          const wrapped = new StorageUploadError({
+            message: error.message ?? 'storage upload failed',
+            status: error.statusCode != null ? Number(error.statusCode) : error.status,
+            code: error.error ?? error.code,
+            path: blob.key,
+            photo_key: blob.photo_key,
+            cause: error,
+          });
+          const kind = classifyStorageError(wrapped);
+          if (kind === 'success-409') continue;
+          if (kind === 'rls-stuck' || kind === 'schema') {
+            await markStuckNow(entry.csid, storageErrSummary(wrapped));
+            return;
+          }
+          await markFailed(entry.csid, storageErrSummary(wrapped));
+          return;
+        }
+      } catch (err) {
+        const kind = classifyStorageError(err);
+        if (kind === 'rls-stuck' || kind === 'schema') {
+          await markStuckNow(entry.csid, storageErrSummary(err));
+          return;
+        }
+        await markFailed(entry.csid, storageErrSummary(err));
+        return;
+      }
+    }
+  }
+
+  // Insert the row. Same classifier as the flat path.
+  try {
+    const {error} = await sbClient.from(cfg.table).insert(entry.record);
+    if (error) {
+      if (isDuplicateCsidViolation(error)) {
+        await markSynced(entry.csid);
+        return;
+      }
+      const kind = classifyError(error);
+      if (kind === 'schema') {
+        await markStuckNow(entry.csid, error.message ?? 'schema error');
+        return;
+      }
+      await markFailed(entry.csid, error.message ?? `${kind} error`);
+      return;
+    }
+    await markSynced(entry.csid);
+  } catch (err) {
+    await markFailed(entry.csid, err && err.message ? err.message : String(err));
+  }
+}
+
+// ----------------------------------------------------------------------------
+// _drainQueuedFormKind — drain ALL queued entries for a form-kind. Test seam.
+// ----------------------------------------------------------------------------
+export async function _drainQueuedFormKind(formKind, sbClient = sb) {
+  const queued = await listQueued(formKind);
+  for (const entry of queued) {
+    await _syncQueuedEntry(formKind, entry, sbClient);
+  }
+}

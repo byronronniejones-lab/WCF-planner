@@ -5,6 +5,10 @@ import {
   MAX_RETRIES,
   STALE_SYNCING_MS,
   enqueueSubmission,
+  enqueuePhotoBlobs,
+  enqueueSubmissionWithPhotos,
+  listPhotoBlobsByCsid,
+  deletePhotoBlobsByCsid,
   getSubmission,
   listByFormKind,
   listStuck,
@@ -252,5 +256,163 @@ describe('recoverStaleSyncing', () => {
     await new Promise((r) => setTimeout(r, 110));
     const recovered = await recoverStaleSyncing('fuel_supply', {staleAfterMs: 50});
     expect(recovered).toEqual(['tight']);
+  });
+});
+
+// ============================================================================
+// Phase 1D-A — photo_blobs writes + atomic submission+blobs enqueue
+// ============================================================================
+
+function makeBlob(content = 'fake-jpeg-bytes', type = 'image/jpeg') {
+  return new Blob([content], {type});
+}
+
+function preparedPhoto(formKind, csid, idx, opts = {}) {
+  const photo_key = `photo-${idx}`;
+  const path = `${formKind}/${csid}/${photo_key}.jpg`;
+  return {
+    photo_key,
+    path,
+    blob: opts.blob ?? makeBlob(`bytes-${idx}`),
+    mime: 'image/jpeg',
+    size_bytes: opts.size_bytes ?? 80,
+    name: opts.name ?? `${photo_key}.jpg`,
+    captured_at: opts.captured_at ?? '2026-04-30T12:00:00.000Z',
+  };
+}
+
+describe('photo_blobs CRUD', () => {
+  it('enqueuePhotoBlobs writes N rows with deterministic keys', async () => {
+    const photos = [
+      preparedPhoto('pig_dailys', 'csid-A', 1),
+      preparedPhoto('pig_dailys', 'csid-A', 2),
+      preparedPhoto('pig_dailys', 'csid-A', 3),
+    ];
+    await enqueuePhotoBlobs({csid: 'csid-A', formKind: 'pig_dailys', photos});
+    const got = await listPhotoBlobsByCsid('csid-A');
+    expect(got.map((g) => g.key)).toEqual([
+      'pig_dailys/csid-A/photo-1.jpg',
+      'pig_dailys/csid-A/photo-2.jpg',
+      'pig_dailys/csid-A/photo-3.jpg',
+    ]);
+    expect(got.every((g) => g.csid === 'csid-A')).toBe(true);
+    expect(got.every((g) => g.form_kind === 'pig_dailys')).toBe(true);
+  });
+
+  it('listPhotoBlobsByCsid returns rows in numeric photo_key order', async () => {
+    const photos = [];
+    // Insert out of order; photo-10 should sort AFTER photo-2 (numeric, not lexical).
+    for (const i of [3, 1, 10, 2]) {
+      photos.push(preparedPhoto('pig_dailys', 'csid-O', i));
+    }
+    await enqueuePhotoBlobs({csid: 'csid-O', formKind: 'pig_dailys', photos});
+    const got = await listPhotoBlobsByCsid('csid-O');
+    expect(got.map((g) => g.photo_key)).toEqual(['photo-1', 'photo-2', 'photo-3', 'photo-10']);
+  });
+
+  it('deletePhotoBlobsByCsid removes only that csid; other csids untouched', async () => {
+    await enqueuePhotoBlobs({
+      csid: 'csid-1',
+      formKind: 'pig_dailys',
+      photos: [preparedPhoto('pig_dailys', 'csid-1', 1)],
+    });
+    await enqueuePhotoBlobs({
+      csid: 'csid-2',
+      formKind: 'pig_dailys',
+      photos: [preparedPhoto('pig_dailys', 'csid-2', 1), preparedPhoto('pig_dailys', 'csid-2', 2)],
+    });
+    await deletePhotoBlobsByCsid('csid-1');
+    expect(await listPhotoBlobsByCsid('csid-1')).toEqual([]);
+    expect((await listPhotoBlobsByCsid('csid-2')).length).toBe(2);
+  });
+
+  it('enqueueSubmissionWithPhotos atomically writes submission + photos', async () => {
+    const csid = 'csid-atomic';
+    const record = {id: 'r-1', client_submission_id: csid, photos: [{path: 'pig_dailys/csid-atomic/photo-1.jpg'}]};
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind: 'pig_dailys',
+      payload: {date: '2026-04-30', photos: record.photos},
+      record,
+      photos: [preparedPhoto('pig_dailys', csid, 1)],
+    });
+    const sub = await getSubmission(csid);
+    expect(sub).not.toBeNull();
+    expect(sub.status).toBe('queued');
+    expect(sub.record).toEqual(record);
+    const blobs = await listPhotoBlobsByCsid(csid);
+    expect(blobs.length).toBe(1);
+    expect(blobs[0].key).toBe('pig_dailys/csid-atomic/photo-1.jpg');
+  });
+
+  it('enqueueSubmissionWithPhotos with status=failed + retryCount=MAX writes stuck row + photos atomically', async () => {
+    const csid = 'csid-stuck';
+    const record = {id: 'r-2', client_submission_id: csid, photos: [{path: 'pig_dailys/csid-stuck/photo-1.jpg'}]};
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind: 'pig_dailys',
+      payload: {date: '2026-04-30'},
+      record,
+      photos: [preparedPhoto('pig_dailys', csid, 1)],
+      status: 'failed',
+      retryCount: MAX_RETRIES,
+      lastError: 'storage 403 forbidden',
+    });
+    const sub = await getSubmission(csid);
+    expect(sub.status).toBe('failed');
+    expect(sub.retry_count).toBe(MAX_RETRIES);
+    expect(sub.last_error).toBe('storage 403 forbidden');
+    const stuck = await listStuck('pig_dailys');
+    expect(stuck.map((s) => s.csid)).toContain(csid);
+    expect((await listPhotoBlobsByCsid(csid)).length).toBe(1);
+  });
+
+  it('enqueueSubmissionWithPhotos rejects malformed photos and rolls back', async () => {
+    const csid = 'csid-bad';
+    const record = {id: 'r-3', client_submission_id: csid, photos: []};
+    await expect(
+      enqueueSubmissionWithPhotos({
+        csid,
+        formKind: 'pig_dailys',
+        payload: {},
+        record,
+        // Second entry missing path → throws inside the transaction.
+        photos: [preparedPhoto('pig_dailys', csid, 1), {photo_key: 'photo-2', blob: makeBlob()}],
+      }),
+    ).rejects.toThrow(/photo_key\/path\/blob required/);
+    // Neither store has the row.
+    expect(await getSubmission(csid)).toBeNull();
+    expect(await listPhotoBlobsByCsid(csid)).toEqual([]);
+  });
+
+  it('markSynced(csid) cascades photo_blobs delete', async () => {
+    const csid = 'csid-synced';
+    const record = {id: 'r-4', client_submission_id: csid, photos: []};
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind: 'pig_dailys',
+      payload: {},
+      record,
+      photos: [preparedPhoto('pig_dailys', csid, 1), preparedPhoto('pig_dailys', csid, 2)],
+    });
+    expect((await listPhotoBlobsByCsid(csid)).length).toBe(2);
+    await markSynced(csid);
+    expect(await getSubmission(csid)).toBeNull();
+    expect(await listPhotoBlobsByCsid(csid)).toEqual([]);
+  });
+
+  it('discardSubmission(csid) cascades photo_blobs delete', async () => {
+    const csid = 'csid-discard';
+    const record = {id: 'r-5', client_submission_id: csid, photos: []};
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind: 'pig_dailys',
+      payload: {},
+      record,
+      photos: [preparedPhoto('pig_dailys', csid, 1)],
+    });
+    await discardSubmission(csid);
+    expect(await getSubmission(csid)).toBeNull();
+    expect(await listPhotoBlobsByCsid(csid)).toEqual([]);
   });
 });

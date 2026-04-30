@@ -26,14 +26,21 @@ import {MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 //   'uploading'  — in flight
 //   'uploaded'   — succeeded (parent has the metadata stashed)
 //   'failed'     — last attempt errored (parent is about to abort)
+//   'queued'     — Phase 1D-A: offline-capable callers; saved on device,
+//                   will sync when connection returns
 const CHIP_STYLES = {
   pending: {bg: '#f3f4f6', fg: '#6b7280', border: '#e5e7eb', label: 'Ready'},
   uploading: {bg: '#fef3c7', fg: '#92400e', border: '#fde68a', label: 'Uploading…'},
   uploaded: {bg: '#ecfdf5', fg: '#065f46', border: '#a7f3d0', label: '✓ Uploaded'},
   failed: {bg: '#fef2f2', fg: '#b91c1c', border: '#fecaca', label: 'Failed'},
+  queued: {bg: '#fef3c7', fg: '#92400e', border: '#fde68a', label: '📡 Saved on device'},
 };
 
-export default function DailyPhotoCapture({files, statuses = [], onChange, disabled = false}) {
+// Phase 1D-A — offlineCapable=true callers (PigDailysWebform) drop the
+// online-only warning copy and gain the 'queued' chip option. WebformHub
+// callers default to offlineCapable=false, preserving today's online-only
+// online-warning copy until 1D-B migrates them.
+export default function DailyPhotoCapture({files, statuses = [], onChange, disabled = false, offlineCapable = false}) {
   const inputRef = React.useRef(null);
   const onlineNow = typeof navigator !== 'undefined' ? navigator.onLine !== false : true;
 
@@ -93,7 +100,7 @@ export default function DailyPhotoCapture({files, statuses = [], onChange, disab
         />
       </div>
 
-      {!onlineNow && files.length > 0 && (
+      {!onlineNow && files.length > 0 && !offlineCapable && (
         <div
           data-photo-online-warning="1"
           style={{
@@ -107,6 +114,24 @@ export default function DailyPhotoCapture({files, statuses = [], onChange, disab
           }}
         >
           ⚠ This device looks offline. Photo upload needs a connection — submit when you're back online.
+        </div>
+      )}
+      {offlineCapable && files.length > 0 && (
+        <div
+          data-photo-offline-info="1"
+          style={{
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 11,
+            color: '#1e40af',
+            marginBottom: 8,
+          }}
+        >
+          {onlineNow
+            ? '📷 Photos will upload as part of this submission.'
+            : '📡 No connection right now — photos save on this device and sync when you reconnect.'}
         </div>
       )}
 

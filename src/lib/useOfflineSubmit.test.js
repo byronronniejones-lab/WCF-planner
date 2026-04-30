@@ -1,6 +1,12 @@
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import 'fake-indexeddb/auto';
 
+// Mock photoCompress so preparePhotos doesn't try to use a real canvas
+// inside jsdom (compressImage is canvas-bound).
+vi.mock('./photoCompress.js', () => ({
+  compressImage: vi.fn(async () => new Blob([new Uint8Array(50)], {type: 'image/jpeg'})),
+}));
+
 // Mock the supabase client BEFORE importing the hook (the hook imports `sb`
 // at module load).
 vi.mock('./supabase.js', () => {
@@ -8,24 +14,36 @@ vi.mock('./supabase.js', () => {
   const fromMock = vi.fn(() => ({
     insert: (...args) => insertMock(...args),
   }));
+  const uploadMock = vi.fn();
+  const storageFromMock = vi.fn(() => ({
+    upload: (...args) => uploadMock(...args),
+  }));
   return {
-    sb: {from: fromMock},
-    __mocks: {insertMock, fromMock},
+    sb: {from: fromMock, storage: {from: storageFromMock}},
+    __mocks: {insertMock, fromMock, uploadMock, storageFromMock},
   };
 });
 
 import * as supabaseMod from './supabase.js';
-import {_classifyError} from './useOfflineSubmit.js';
+import {
+  _classifyError,
+  _classifyStorageError,
+  _runSubmit,
+  _drainQueuedFormKind,
+  _syncQueuedEntry,
+} from './useOfflineSubmit.js';
 import {
   _resetDbForTests,
   enqueueSubmission,
+  enqueueSubmissionWithPhotos,
   listQueued,
   listStuck,
+  listPhotoBlobsByCsid,
   getSubmission,
   MAX_RETRIES,
 } from './offlineQueue.js';
 
-const {insertMock} = supabaseMod.__mocks;
+const {insertMock, uploadMock} = supabaseMod.__mocks;
 
 function freshIndexedDB() {
   return new Promise((resolve, reject) => {
@@ -38,6 +56,7 @@ function freshIndexedDB() {
 
 beforeEach(async () => {
   insertMock.mockReset();
+  uploadMock.mockReset();
   _resetDbForTests();
   await freshIndexedDB();
 });
@@ -187,5 +206,347 @@ describe('queue persistence + retry semantics under classifier', () => {
     const s = await listStuck('fuel_supply');
     expect(q.map((e) => e.csid)).toEqual(['a']);
     expect(s.map((e) => e.csid)).toEqual(['b']);
+  });
+});
+
+// ============================================================================
+// Phase 1D-A — _classifyStorageError + hasPhotos lifecycle + drain seam
+// ============================================================================
+
+describe('_classifyStorageError', () => {
+  it('TypeError → network', () => {
+    expect(_classifyStorageError(new TypeError('Failed to fetch'))).toBe('network');
+  });
+
+  it('500-599 → server', () => {
+    expect(_classifyStorageError({status: 500, message: 'boom'})).toBe('server');
+    expect(_classifyStorageError({status: 503})).toBe('server');
+  });
+
+  it('429 → server (treat rate-limit as transient backoff)', () => {
+    expect(_classifyStorageError({status: 429, message: 'rate'})).toBe('server');
+  });
+
+  it('409 → success-409 (replay path treats as already-uploaded)', () => {
+    expect(_classifyStorageError({status: 409, code: 'Duplicate', message: 'duplicate'})).toBe('success-409');
+  });
+
+  it('401 → rls-stuck (missing bucket policy; surface loudly)', () => {
+    expect(_classifyStorageError({status: 401, message: 'unauth'})).toBe('rls-stuck');
+  });
+
+  it('403 → rls-stuck', () => {
+    expect(_classifyStorageError({status: 403, message: 'forbidden'})).toBe('rls-stuck');
+  });
+
+  it('other 4xx → schema', () => {
+    expect(_classifyStorageError({status: 400, message: 'bad'})).toBe('schema');
+    expect(_classifyStorageError({status: 422, message: 'unprocessable'})).toBe('schema');
+  });
+
+  it('unknown / no status → unknown', () => {
+    expect(_classifyStorageError({})).toBe('unknown');
+    expect(_classifyStorageError({message: 'who knows'})).toBe('unknown');
+  });
+
+  it('codeless duplicate → success-409', () => {
+    expect(_classifyStorageError({message: 'object Duplicate detected'})).toBe('success-409');
+  });
+
+  // Native supabase-js StorageApiError exposes statusCode (string) instead
+  // of status. Locks the classifier's fallback branch so a raw storage
+  // error (not wrapped in StorageUploadError) still classifies correctly.
+  it('native statusCode "403" → rls-stuck', () => {
+    expect(_classifyStorageError({statusCode: '403', error: 'Unauthorized'})).toBe('rls-stuck');
+  });
+
+  it('native statusCode "409" → success-409', () => {
+    expect(_classifyStorageError({statusCode: '409', error: 'Duplicate'})).toBe('success-409');
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Helpers for hasPhotos lifecycle tests.
+// ----------------------------------------------------------------------------
+function fakeFile(name = 'a.jpg') {
+  const f = new Blob([new Uint8Array(200)], {type: 'image/jpeg'});
+  Object.defineProperty(f, 'name', {value: name, writable: false});
+  return f;
+}
+
+function pigPayload(extras = {}) {
+  return {
+    date: '2026-04-30',
+    team_member: 'BMAN',
+    batch_id: 'p-26-01',
+    batch_label: 'P-26-01',
+    pig_count: 10,
+    feed_lbs: 50,
+    group_moved: true,
+    nipple_drinker_moved: true,
+    nipple_drinker_working: true,
+    troughs_moved: true,
+    fence_walked: true,
+    fence_voltage: 5,
+    issues: null,
+    ...extras,
+  };
+}
+
+describe('_runSubmit — hasPhotos lifecycle (Phase 1D-A)', () => {
+  it('online happy path: state="synced", no IDB rows', async () => {
+    insertMock.mockResolvedValueOnce({error: null});
+    uploadMock.mockResolvedValue({error: null});
+
+    const res = await _runSubmit({
+      formKind: 'pig_dailys',
+      payload: pigPayload({photos: [fakeFile('a.jpg'), fakeFile('b.jpg')]}),
+      opts: {csid: 'csid-syn'},
+      refresh: async () => {},
+    });
+
+    expect(res.state).toBe('synced');
+    expect(await getSubmission('csid-syn')).toBeNull();
+    expect(await listPhotoBlobsByCsid('csid-syn')).toEqual([]);
+    // 2 uploads, 1 insert.
+    expect(uploadMock).toHaveBeenCalledTimes(2);
+    expect(insertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('storage TypeError → state="queued"; sanitized payload (no Blob); photo_blobs persisted', async () => {
+    uploadMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const res = await _runSubmit({
+      formKind: 'pig_dailys',
+      payload: pigPayload({photos: [fakeFile(), fakeFile()]}),
+      opts: {csid: 'csid-q1'},
+      refresh: async () => {},
+    });
+
+    expect(res.state).toBe('queued');
+    const sub = await getSubmission('csid-q1');
+    expect(sub).not.toBeNull();
+    expect(sub.status).toBe('queued');
+    // payload is sanitized: photos is metadata array, no Blob.
+    expect(Array.isArray(sub.payload.photos)).toBe(true);
+    for (const p of sub.payload.photos) {
+      expect('blob' in p).toBe(false);
+      expect(typeof p.path).toBe('string');
+    }
+    // photo_blobs persisted.
+    const blobs = await listPhotoBlobsByCsid('csid-q1');
+    expect(blobs).toHaveLength(2);
+    // Insert never attempted.
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it('storage 403 → state="stuck" atomic, retry_count = MAX_RETRIES', async () => {
+    uploadMock.mockResolvedValueOnce({
+      error: {message: 'forbidden', statusCode: '403', error: 'Unauthorized'},
+    });
+
+    const res = await _runSubmit({
+      formKind: 'pig_dailys',
+      payload: pigPayload({photos: [fakeFile()]}),
+      opts: {csid: 'csid-403'},
+      refresh: async () => {},
+    });
+
+    expect(res.state).toBe('stuck');
+    const sub = await getSubmission('csid-403');
+    expect(sub.status).toBe('failed');
+    expect(sub.retry_count).toBe(MAX_RETRIES);
+    expect((await listPhotoBlobsByCsid('csid-403')).length).toBe(1);
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it('uploads succeed + row insert 5xx → state="queued"', async () => {
+    uploadMock.mockResolvedValue({error: null});
+    insertMock.mockResolvedValueOnce({error: {status: 503, message: 'svc'}});
+    const res = await _runSubmit({
+      formKind: 'pig_dailys',
+      payload: pigPayload({photos: [fakeFile()]}),
+      opts: {csid: 'csid-q5xx'},
+      refresh: async () => {},
+    });
+    expect(res.state).toBe('queued');
+    const sub = await getSubmission('csid-q5xx');
+    expect(sub.status).toBe('queued');
+    expect((await listPhotoBlobsByCsid('csid-q5xx')).length).toBe(1);
+  });
+
+  it('uploads succeed + 23505 csid → state="synced" (idempotent replay)', async () => {
+    uploadMock.mockResolvedValue({error: null});
+    insertMock.mockResolvedValueOnce({
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "pig_dailys_client_submission_id_uq"',
+      },
+    });
+    const res = await _runSubmit({
+      formKind: 'pig_dailys',
+      payload: pigPayload({photos: [fakeFile()]}),
+      opts: {csid: 'csid-23505'},
+      refresh: async () => {},
+    });
+    expect(res.state).toBe('synced');
+    expect(await getSubmission('csid-23505')).toBeNull();
+    expect(await listPhotoBlobsByCsid('csid-23505')).toEqual([]);
+  });
+
+  it('uploads succeed + row schema → state="stuck" atomic (does NOT throw)', async () => {
+    uploadMock.mockResolvedValue({error: null});
+    insertMock.mockResolvedValueOnce({error: {status: 400, code: 'PGRST204', message: 'schema cache stale'}});
+    const res = await _runSubmit({
+      formKind: 'pig_dailys',
+      payload: pigPayload({photos: [fakeFile()]}),
+      opts: {csid: 'csid-schema-up'},
+      refresh: async () => {},
+    });
+    expect(res.state).toBe('stuck');
+    const sub = await getSubmission('csid-schema-up');
+    expect(sub.status).toBe('failed');
+    expect(sub.retry_count).toBe(MAX_RETRIES);
+    expect((await listPhotoBlobsByCsid('csid-schema-up')).length).toBe(1);
+  });
+
+  it('empty payload.photos short-circuits to flat path (Codex correction 7)', async () => {
+    insertMock.mockResolvedValueOnce({error: null});
+    const res = await _runSubmit({
+      formKind: 'pig_dailys',
+      payload: pigPayload({photos: []}),
+      opts: {csid: 'csid-empty'},
+      refresh: async () => {},
+    });
+    expect(res.state).toBe('synced');
+    // Storage upload was never called — flat path.
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    // Record's photos is [].
+    expect(res.record.photos).toEqual([]);
+  });
+});
+
+describe('_drainQueuedFormKind / _syncQueuedEntry', () => {
+  // Make a stub sb client where storage.upload + from(table).insert behaviors
+  // can be injected per test.
+  function makeStubSb({uploadResults = [], insertResult} = {}) {
+    let uploadIdx = 0;
+    return {
+      from() {
+        return {
+          insert: async () => insertResult ?? {error: null},
+        };
+      },
+      storage: {
+        from() {
+          return {
+            upload: async () => {
+              const r = uploadResults[uploadIdx++] ?? {error: null};
+              return r;
+            },
+          };
+        },
+      },
+    };
+  }
+
+  async function seedQueuedWithBlobs(csid, photoCount) {
+    const photos = [];
+    const recordPhotos = [];
+    for (let i = 1; i <= photoCount; i++) {
+      const path = `pig_dailys/${csid}/photo-${i}.jpg`;
+      photos.push({
+        photo_key: `photo-${i}`,
+        path,
+        blob: new Blob([new Uint8Array(50)], {type: 'image/jpeg'}),
+        mime: 'image/jpeg',
+        size_bytes: 50,
+        name: `photo-${i}.jpg`,
+        captured_at: '2026-04-30T12:00:00.000Z',
+      });
+      recordPhotos.push({
+        path,
+        name: `photo-${i}.jpg`,
+        mime: 'image/jpeg',
+        size_bytes: 50,
+        captured_at: '2026-04-30T12:00:00.000Z',
+      });
+    }
+    const record = {
+      id: `r-${csid}`,
+      client_submission_id: csid,
+      ...pigPayload(),
+      photos: recordPhotos,
+    };
+    await enqueueSubmissionWithPhotos({
+      csid,
+      formKind: 'pig_dailys',
+      payload: {...pigPayload(), photos: recordPhotos},
+      record,
+      photos,
+    });
+  }
+
+  it('photo_blobs missing → markStuckNow, no insert', async () => {
+    // Seed only the submission without any blobs.
+    await enqueueSubmission({
+      formKind: 'pig_dailys',
+      csid: 'csid-mismatch',
+      payload: pigPayload({photos: [{path: 'pig_dailys/csid-mismatch/photo-1.jpg'}]}),
+      record: {
+        id: 'r-mm',
+        client_submission_id: 'csid-mismatch',
+        ...pigPayload(),
+        photos: [{path: 'pig_dailys/csid-mismatch/photo-1.jpg', name: 'a.jpg'}],
+      },
+    });
+    const sb = makeStubSb();
+    await _drainQueuedFormKind('pig_dailys', sb);
+    const stuck = await listStuck('pig_dailys');
+    expect(stuck.map((s) => s.csid)).toContain('csid-mismatch');
+  });
+
+  it('full happy path drains: uploads + insert succeed, blobs cleared', async () => {
+    await seedQueuedWithBlobs('csid-happy', 2);
+    const sb = makeStubSb({uploadResults: [{error: null}, {error: null}], insertResult: {error: null}});
+    await _drainQueuedFormKind('pig_dailys', sb);
+    expect(await getSubmission('csid-happy')).toBeNull();
+    expect(await listPhotoBlobsByCsid('csid-happy')).toEqual([]);
+  });
+
+  it('409 conflict on photo upload → continue, insert succeeds', async () => {
+    await seedQueuedWithBlobs('csid-409', 2);
+    const sb = makeStubSb({
+      uploadResults: [{error: {statusCode: '409', error: 'Duplicate', message: 'object exists'}}, {error: null}],
+      insertResult: {error: null},
+    });
+    await _drainQueuedFormKind('pig_dailys', sb);
+    expect(await getSubmission('csid-409')).toBeNull();
+    expect(await listPhotoBlobsByCsid('csid-409')).toEqual([]);
+  });
+
+  it('storage 403 during drain → markStuckNow, no insert', async () => {
+    await seedQueuedWithBlobs('csid-drain-403', 1);
+    const sb = makeStubSb({
+      uploadResults: [{error: {statusCode: '403', error: 'Unauthorized', message: 'no'}}],
+    });
+    await _drainQueuedFormKind('pig_dailys', sb);
+    const stuck = await listStuck('pig_dailys');
+    expect(stuck.map((s) => s.csid)).toContain('csid-drain-403');
+  });
+
+  it('empty-photos row drains via flat insert', async () => {
+    // A queued row with photos:[] in record. _drainQueuedFormKind should
+    // skip the upload step (cfg.hasPhotos && length > 0 gate) and go
+    // straight to insert.
+    await enqueueSubmission({
+      formKind: 'pig_dailys',
+      csid: 'csid-empty-drain',
+      payload: pigPayload({photos: []}),
+      record: {id: 'r-e', client_submission_id: 'csid-empty-drain', ...pigPayload(), photos: []},
+    });
+    const sb = makeStubSb({insertResult: {error: null}});
+    await _drainQueuedFormKind('pig_dailys', sb);
+    expect(await getSubmission('csid-empty-drain')).toBeNull();
   });
 });

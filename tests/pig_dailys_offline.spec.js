@@ -225,64 +225,17 @@ test('recovery: queued PigDailys submission replays on next mount + lands one ro
 });
 
 // --------------------------------------------------------------------------
-// Test 4 — photo-attached: POST aborted does NOT enter the offline queue
+// Test 4 — photo-attached online-only path (1C-B) RETIRED in Phase 1D-A
 // --------------------------------------------------------------------------
-// Photo offline support belongs to the Phase 1D photo queue. Phase 1C-B's
-// rule: any photo-attached submission is online-only. If either the
-// upload succeeds and the insert fails, OR the upload itself fails, the
-// operator sees explicit "needs a connection" copy and IDB queue stays
-// empty.
-test('photo-attached: insert aborted shows explicit photo-needs-connection copy + queue empty', async ({
-  page,
-  supabaseAdmin,
-  pigDailysOfflineScenario,
-}) => {
-  void pigDailysOfflineScenario;
-
-  await page.goto('/webform-pigs');
-  // Block ONLY the pig_dailys row insert. Storage upload to daily-photos
-  // bucket is allowed through so the photo-then-insert sequence runs.
-  await blockPigDailysInsert(page);
-
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-
-  // Attach a 1×1 PNG via the hidden file input.
-  await page.setInputFiles('[data-photo-input="1"]', {
-    name: 'p.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(PNG_1x1_BASE64, 'base64'),
-  });
-
-  // Fill the rest of the form.
-  const teamSelect = page.getByRole('combobox').first();
-  await expect.poll(async () => await teamSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
-  await teamSelect.selectOption({label: 'BMAN'});
-
-  const groupSelect = page.getByRole('combobox').nth(1);
-  await expect.poll(async () => await groupSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
-  await groupSelect.selectOption({label: 'P-26-01'});
-
-  const numberInputs = page.locator('input[type="number"]');
-  await numberInputs.nth(0).fill('20');
-  await numberInputs.nth(1).fill('250');
-  await numberInputs.nth(2).fill('4.2');
-
-  await page.getByRole('button', {name: /^Submit Daily Report$/}).click();
-
-  // Explicit photo-needs-connection copy.
-  await expect(page.getByText(/Photo submission could not be saved/)).toBeVisible({timeout: 15_000});
-  await expect(page.getByText(/need a connection/)).toBeVisible();
-
-  // IDB queue stays empty — photo path never queues.
-  const queue = await readQueue(page);
-  expect(queue).toEqual([]);
-
-  // No pig_dailys row landed.
-  const {data: rows} = await supabaseAdmin.from('pig_dailys').select('id');
-  expect(rows).toHaveLength(0);
-
-  await unblockPigDailysInsert(page);
-});
+// 1C-B locked photos as online-only with explicit "photos need a connection"
+// copy. Phase 1D-A routes photo-attached PigDailys submissions through the
+// hook's hasPhotos branch (queue-capable). The full Phase 1D-A photo
+// behavior is locked by tests/offline_queue_pig_dailys_photos.spec.js
+// (9 cases). This file now exclusively locks the empty-photos flat path
+// (Tests 1, 2, 3, 5) — the path Codex review v2.1 correction 7 requires
+// to keep working unchanged when pig_dailys.hasPhotos flips true.
+//
+// Removed: the photo-online-only assertion. Don't reintroduce.
 
 // --------------------------------------------------------------------------
 // Test 5 — 23505 replay = synced via the existing flat hook
