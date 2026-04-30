@@ -49,6 +49,13 @@ const LivestockWeighInsView = ({
   const [metaTeam, setMetaTeam] = useState('');
   const [metaBusy, setMetaBusy] = useState(false);
   const [metaErr, setMetaErr] = useState('');
+  // Row-scoped error from reopenSession. Shape: {id, message} or null.
+  // Lives outside the expansion effect's reset list so it survives the
+  // post-update loadAll() — the expansion effect fires on `sessions`
+  // change after loadAll, and clearing here would race the error
+  // setter. Scoped by session id so an error from row A never bleeds
+  // onto row B; cleared on the next successful reopen.
+  const [actionErr, setActionErr] = useState(null);
   // Pig send-to-trip state (no-op for broilers)
   const [feederGroups, setFeederGroups] = useState([]);
   const [selectedEntryIds, setSelectedEntryIds] = useState(new Set());
@@ -204,8 +211,38 @@ const LivestockWeighInsView = ({
     setMetaErr('');
   }, [expandedSession, sessions, entries, broilerBatchRecs]);
 
+  // Reopen a complete session (status: complete -> draft, completed_at -> null).
+  // Currently only wired up for broiler via the row-level button below; cattle/
+  // sheep have their own reopen flows in their respective views. For broiler,
+  // the OLD week's stored avg in app_store.ppp-v4 is recomputed from the
+  // latest OTHER complete session (or the wk*Lbs key is deleted when no other
+  // complete session backs it). Mirrors the metadata-edit lane's contract on
+  // weekChanged. Side-effect runs only when species==='broiler' AND the
+  // session was complete AND oldWeek is in {4, 6} (matches
+  // recomputeBroilerBatchWeekAvg's no-op gate). Failures from the cleanup
+  // are surfaced via actionErr after loadAll() so the row reflects DB truth
+  // (draft) without pretending the avg cleanup landed.
   async function reopenSession(s) {
-    await sb.from('weigh_in_sessions').update({status: 'draft', completed_at: null}).eq('id', s.id);
+    const oldWeek = Number(s.broiler_week);
+    const wasComplete = s.status === 'complete';
+    const isBroiler = s.species === 'broiler';
+
+    const r = await sb.from('weigh_in_sessions').update({status: 'draft', completed_at: null}).eq('id', s.id);
+    if (r && r.error) {
+      setActionErr({id: s.id, message: 'Reopen failed: ' + r.error.message});
+      return;
+    }
+
+    if (isBroiler && wasComplete && (oldWeek === 4 || oldWeek === 6)) {
+      const r2 = await recomputeBroilerBatchWeekAvg(sb, s.batch_id, oldWeek, {excludeSessionId: s.id});
+      if (!r2.ok) {
+        setActionErr({id: s.id, message: 'Session reopened, but ppp-v4 cleanup failed: ' + r2.message});
+        await loadAll();
+        return;
+      }
+    }
+
+    setActionErr(null);
     await loadAll();
   }
   // Save the broiler-only metadata edit panel (broiler_week + team_member).
@@ -1101,6 +1138,25 @@ const LivestockWeighInsView = ({
                           {'\u270e Edit Weights'}
                         </button>
                       )}
+                      {species === 'broiler' && isComplete && (
+                        <button
+                          type="button"
+                          data-testid="broiler-reopen-session"
+                          onClick={() => reopenSession(s)}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 6,
+                            border: '1px solid #d1d5db',
+                            background: 'white',
+                            color: '#0f766e',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          Reopen Session
+                        </button>
+                      )}
                       {!isComplete && (
                         <button
                           onClick={() => completeFromAdmin(s)}
@@ -1136,6 +1192,11 @@ const LivestockWeighInsView = ({
                         Delete Weigh-In
                       </button>
                     </div>
+                    {actionErr && actionErr.id === s.id && (
+                      <div data-testid="broiler-reopen-err" style={{fontSize: 11, color: '#b91c1c', marginBottom: 10}}>
+                        {actionErr.message}
+                      </div>
+                    )}
 
                     {gridLabels.length > 0 && (
                       <React.Fragment>

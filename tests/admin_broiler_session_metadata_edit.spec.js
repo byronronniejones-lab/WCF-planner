@@ -230,30 +230,37 @@ test('T5: weight-grid save still preserves entries and notes after metadata-pane
 
 // =============================================================================
 // T6 — Negative UI lock: pig sessions in LivestockWeighInsView do NOT
-// render the broiler metadata panel. (Cattle/sheep are different views.)
+// render the broiler metadata panel OR the broiler-only Reopen Session
+// button. Seeded as COMPLETE so both negatives bite (Reopen only renders
+// when isComplete; the metadata panel is broiler-gated regardless).
+// (Cattle/sheep are different views.)
 // =============================================================================
-test('T6: pig sessions in LivestockWeighInsView do NOT show the broiler metadata panel', async ({
+test('T6: pig complete session does NOT show the broiler metadata panel or Reopen button', async ({
   page,
   supabaseAdmin,
   adminBroilerSessionMetaScenario,
 }) => {
   void adminBroilerSessionMetaScenario;
 
-  // Pig flow needs an active pig group + a draft pig session.
+  // Pig flow needs an active pig group + a complete pig session (so that
+  // the Reopen button's complete-only gate would fire if it were
+  // species-broad — proves the broiler-only gate holds).
   let r = await supabaseAdmin
     .from('webform_config')
     .upsert({key: 'active_groups', data: ['P-26-01']}, {onConflict: 'key'});
   expect(r.error).toBeNull();
   const today = new Date().toISOString().slice(0, 10);
-  const startedAt = new Date().toISOString();
+  const startedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const completedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   r = await supabaseAdmin.from('weigh_in_sessions').insert({
     id: 'pig-sess-1',
     species: 'pig',
-    status: 'draft',
+    status: 'complete',
     date: today,
     team_member: 'BMAN',
     batch_id: 'P-26-01',
     started_at: startedAt,
+    completed_at: completedAt,
   });
   expect(r.error).toBeNull();
 
@@ -267,6 +274,9 @@ test('T6: pig sessions in LivestockWeighInsView do NOT show the broiler metadata
   await expect(page.getByRole('button', {name: 'Delete Weigh-In'})).toBeVisible({timeout: 10_000});
   // Broiler-only metadata panel must NOT render.
   await expect(page.locator('[data-testid="broiler-meta-panel"]')).toHaveCount(0);
+  // Broiler-only Reopen Session button must NOT render on a complete pig
+  // session — locks the species gate added alongside the reopen-avg lane.
+  await expect(page.locator('[data-testid="broiler-reopen-session"]')).toHaveCount(0);
 });
 
 // =============================================================================
@@ -347,4 +357,120 @@ test('T7: legacy team_member preserved across a WK-only save', async ({
   const {data: rows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', retiredId);
   expect(rows[0].team_member).toBe('RETIREE');
   expect(rows[0].broiler_week).toBe(6);
+});
+
+// =============================================================================
+// T8 — Reopen sole complete wk4 session: status flips to draft,
+//      completed_at clears, and ppp-v4.week4Lbs is DELETED because no
+//      other complete wk4 session backs it. Drives the real
+//      /broiler/weighins UI (Reopen Session button).
+// =============================================================================
+test('T8: reopen sole complete wk4 session → draft + completed_at null + week4Lbs deleted', async ({
+  page,
+  supabaseAdmin,
+  adminBroilerSessionMetaScenario,
+}) => {
+  const {batchId, completeId} = adminBroilerSessionMetaScenario;
+  await page.goto('/broiler/weighins');
+
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await page.getByText('complete', {exact: true}).first().click();
+  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+
+  // Click Reopen Session and wait for the button to disappear (the row is
+  // now draft, so the complete-only gate hides the button after loadAll).
+  await page.getByTestId('broiler-reopen-session').click();
+  await expect(page.getByTestId('broiler-reopen-session')).toHaveCount(0, {timeout: 10_000});
+
+  // DB row reflects the reopen.
+  const {data: rows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', completeId);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].status).toBe('draft');
+  expect(rows[0].completed_at).toBeNull();
+
+  // ppp-v4 wk4Lbs key DELETED (no other complete session backs the avg).
+  const batch = await readPppV4Batch(supabaseAdmin, batchId);
+  expect('week4Lbs' in batch).toBe(false);
+  // wk6Lbs was never set in the seed and stays unset.
+  expect(batch.week6Lbs).toBeUndefined();
+});
+
+// =============================================================================
+// T9 — Reopen one of two complete wk4 sessions: ppp-v4.week4Lbs
+//      RECOMPUTES from the OTHER complete wk4 session via excludeSessionId.
+//      Mirrors T4's two-session shape but exercises the reopen path.
+// =============================================================================
+test('T9: reopen later complete wk4 session of two → wk4Lbs recomputes from the other', async ({
+  page,
+  supabaseAdmin,
+  adminBroilerSessionMetaScenario,
+}) => {
+  const {batchId, completeId} = adminBroilerSessionMetaScenario;
+
+  // Pre-seed an EARLIER complete wk4 session for the same batch with avg
+  // 1.7 (3 entries × 1.7). The fixture's seeded complete session is wk4
+  // avg 1.5, completed AFTER this one, so it's the "later" session that
+  // we'll reopen via the UI. After reopen, week4Lbs should recompute from
+  // THIS earlier session's entries (1.7).
+  const otherId = 'sd-complete-other';
+  const today = new Date().toISOString().slice(0, 10);
+  const completedEarlier = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  let r = await supabaseAdmin.from('weigh_in_sessions').insert({
+    id: otherId,
+    species: 'broiler',
+    status: 'complete',
+    date: today,
+    team_member: 'BMAN',
+    batch_id: batchId,
+    broiler_week: 4,
+    started_at: completedEarlier,
+    completed_at: completedEarlier,
+  });
+  expect(r.error).toBeNull();
+  const otherEntries = [1.7, 1.7, 1.7].map((w, i) => ({
+    id: `${otherId}-e${i}`,
+    session_id: otherId,
+    tag: i % 2 === 0 ? '2' : '3',
+    weight: w,
+    note: null,
+    new_tag_flag: false,
+    entered_at: completedEarlier,
+  }));
+  r = await supabaseAdmin.from('weigh_ins').insert(otherEntries);
+  expect(r.error).toBeNull();
+
+  await page.goto('/broiler/weighins');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  // Sessions are ordered by completed_at desc — the FIXTURE's complete
+  // session (1.5) lands first because it was completed AFTER the
+  // pre-seeded other (1.7). Click the first COMPLETE row (the later one).
+  await page.getByText('complete', {exact: true}).first().click();
+  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+
+  await page.getByTestId('broiler-reopen-session').click();
+  // The Reopen Session button only renders inside the EXPANDED tile (and
+  // only when isComplete). Only one tile expands at a time, so before
+  // click the count is 1 (fixture's expanded complete row). After a
+  // successful reopen, fixture flips to draft and the button hides; the
+  // OTHER complete session is still collapsed (no button rendered for
+  // it). Waiting for count == 0 acts as a sync barrier on the async
+  // reopen pipeline (DB update + recompute + loadAll), avoiding the
+  // race where Playwright resolves click() before the React onClick
+  // handler's await chain finishes.
+  await expect(page.getByTestId('broiler-reopen-session')).toHaveCount(0, {timeout: 10_000});
+
+  // Reopened session is now draft.
+  const {data: reopenedRows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', completeId);
+  expect(reopenedRows[0].status).toBe('draft');
+  expect(reopenedRows[0].completed_at).toBeNull();
+
+  // The OTHER session is untouched (still complete).
+  const {data: otherRows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', otherId);
+  expect(otherRows[0].status).toBe('complete');
+
+  // ppp-v4.week4Lbs recomputed from the OTHER session's entries (1.7).
+  const batch = await readPppV4Batch(supabaseAdmin, batchId);
+  expect(batch.week4Lbs).toBe(1.7);
+  expect(batch.week6Lbs).toBeUndefined();
 });
