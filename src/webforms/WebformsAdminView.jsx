@@ -830,8 +830,8 @@ export default function WebformsAdminView({
                   }}
                 >
                   <span style={{color: '#6b7280'}}>Live URL:</span>
-                  <strong style={{color: '#085041'}}>wcfplanner.com/#webforms</strong>
-                  <a href="/#webforms" target="_blank" style={{color: '#085041', fontSize: 11, marginLeft: 'auto'}}>
+                  <strong style={{color: '#085041'}}>wcfplanner.com/webforms</strong>
+                  <a href="/webforms" target="_blank" style={{color: '#085041', fontSize: 11, marginLeft: 'auto'}}>
                     Open form →
                   </a>
                 </div>
@@ -1451,12 +1451,12 @@ export default function WebformsAdminView({
                   const titleColor = isAddFeed ? '#92400e' : isWeighIns ? '#1e40af' : '#111827';
                   const accent = isAddFeed ? '#92400e' : isWeighIns ? '#1e40af' : '#085041';
                   const iconPrefix = isAddFeed ? '🌾 ' : isWeighIns ? '⚖️ ' : '';
-                  const liveHref = isAddFeed ? '/#addfeed' : isWeighIns ? '/weighins' : '/#webforms';
+                  const liveHref = isAddFeed ? '/addfeed' : isWeighIns ? '/weighins' : '/webforms';
                   const liveLabel = isAddFeed
-                    ? 'wcfplanner.com/#addfeed'
+                    ? 'wcfplanner.com/addfeed'
                     : isWeighIns
                       ? 'wcfplanner.com/weighins'
-                      : 'wcfplanner.com/#webforms';
+                      : 'wcfplanner.com/webforms';
                   return (
                     <div
                       key={wf.id}

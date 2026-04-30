@@ -1,7 +1,7 @@
 {
   "name": "WCF Planner",
   "short_name": "WCF",
-  "start_url": "/",
+  "start_url": "/webforms",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
