@@ -8,7 +8,8 @@
 import React from 'react';
 import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
-import {writeBroilerBatchAvg} from '../lib/broiler.js';
+import {writeBroilerBatchAvg, recomputeBroilerBatchWeekAvg} from '../lib/broiler.js';
+import {loadRoster, activeNames as rosterActiveNames} from '../lib/teamMembers.js';
 import {pigSlug} from '../lib/pig.js';
 import PigSendToTripModal from './PigSendToTripModal.jsx';
 const LivestockWeighInsView = ({
@@ -39,6 +40,15 @@ const LivestockWeighInsView = ({
   const [gridNote, setGridNote] = useState('');
   const [savingGrid, setSavingGrid] = useState(false);
   const [gridErr, setGridErr] = useState('');
+  // Active team roster (names only) — drives the broiler-only session
+  // metadata edit dropdown. Loaded once on mount.
+  const [activeRoster, setActiveRoster] = useState([]);
+  // Per-expanded-tile broiler session metadata edit state. Reset on
+  // expansion change (effect below). Only used when species==='broiler'.
+  const [metaWeek, setMetaWeek] = useState(4);
+  const [metaTeam, setMetaTeam] = useState('');
+  const [metaBusy, setMetaBusy] = useState(false);
+  const [metaErr, setMetaErr] = useState('');
   // Pig send-to-trip state (no-op for broilers)
   const [feederGroups, setFeederGroups] = useState([]);
   const [selectedEntryIds, setSelectedEntryIds] = useState(new Set());
@@ -133,6 +143,18 @@ const LivestockWeighInsView = ({
         if (data && Array.isArray(data.data)) setBroilerBatchRecs(data.data);
       });
   }, [species]);
+  // Active team roster — drives the broiler session metadata edit dropdown.
+  // Loaded once. Legacy team_member values not in the active roster are
+  // preserved in the option list per-session via the option-builder below.
+  useEffect(() => {
+    let cancelled = false;
+    loadRoster(sb).then((roster) => {
+      if (!cancelled) setActiveRoster(rosterActiveNames(roster));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Pigs: load feeder groups so the Send-to-Trip modal can list them.
   useEffect(() => {
     if (species !== 'pig') return;
@@ -159,6 +181,9 @@ const LivestockWeighInsView = ({
       setGridErr('');
       setPigAddEntry({weight: '', note: ''});
       setPigErr('');
+      setMetaWeek(4);
+      setMetaTeam('');
+      setMetaErr('');
       return;
     }
     const s = sessions.find((x) => x.id === expandedSession);
@@ -170,10 +195,74 @@ const LivestockWeighInsView = ({
     setGridUnlocked(s.status === 'draft');
     setGridNote(s.notes || '');
     setGridErr('');
+    // Seed metadata-edit state from the just-expanded session. Number()
+    // on broiler_week so the toggle compares cleanly against integers
+    // 4 / 6 (avoids fake-dirty if the row arrives as a string).
+    const w = Number(s.broiler_week);
+    setMetaWeek(w === 4 || w === 6 ? w : 4);
+    setMetaTeam(s.team_member || '');
+    setMetaErr('');
   }, [expandedSession, sessions, entries, broilerBatchRecs]);
 
   async function reopenSession(s) {
     await sb.from('weigh_in_sessions').update({status: 'draft', completed_at: null}).eq('id', s.id);
+    await loadAll();
+  }
+  // Save the broiler-only metadata edit panel (broiler_week + team_member).
+  // No-op if neither field changed. On a complete session whose week
+  // changed, the OLD week's stored avg in app_store.ppp-v4 is recomputed
+  // from the latest OTHER complete session (or cleared if none exist),
+  // and the NEW week's avg is written from this session's current
+  // entries. Status === 'draft' skips the side-effect (matches today's
+  // writeBroilerBatchAvg complete-only gate).
+  async function saveSessionMetadata(s) {
+    if (!s) return;
+    const oldWeek = Number(s.broiler_week);
+    const newWeek = Number(metaWeek);
+    const oldTeam = (s.team_member || '').trim();
+    const newTeam = (metaTeam || '').trim();
+    if (!newTeam) {
+      setMetaErr('Pick a team member.');
+      return;
+    }
+    if (newWeek !== 4 && newWeek !== 6) {
+      setMetaErr('Week must be 4 or 6.');
+      return;
+    }
+    const weekChanged = oldWeek !== newWeek;
+    const teamChanged = oldTeam !== newTeam;
+    if (!weekChanged && !teamChanged) return; // no-op, no DB write
+
+    setMetaBusy(true);
+    setMetaErr('');
+    const upd = {};
+    if (weekChanged) upd.broiler_week = newWeek;
+    if (teamChanged) upd.team_member = newTeam;
+    const r = await sb.from('weigh_in_sessions').update(upd).eq('id', s.id);
+    if (r && r.error) {
+      setMetaBusy(false);
+      setMetaErr('Save failed: ' + r.error.message);
+      return;
+    }
+
+    // Side-effect: only complete sessions and only when week changed.
+    if (s.status === 'complete' && weekChanged) {
+      const r1 = await recomputeBroilerBatchWeekAvg(sb, s.batch_id, oldWeek, {excludeSessionId: s.id});
+      if (!r1.ok) {
+        setMetaBusy(false);
+        setMetaErr('Save partly failed (old week): ' + r1.message);
+        return;
+      }
+      const eR = await sb.from('weigh_ins').select('weight').eq('session_id', s.id);
+      if (eR && eR.error) {
+        setMetaBusy(false);
+        setMetaErr('Save partly failed (entries read): ' + eR.error.message);
+        return;
+      }
+      await writeBroilerBatchAvg(sb, {...s, broiler_week: newWeek}, (eR && eR.data) || []);
+    }
+
+    setMetaBusy(false);
     await loadAll();
   }
   async function completeFromAdmin(s) {
@@ -875,6 +964,124 @@ const LivestockWeighInsView = ({
                 </div>
                 {isExpanded && (
                   <div style={{borderTop: '1px solid #f3f4f6', padding: '12px 16px', background: '#fafafa'}}>
+                    {species === 'broiler' &&
+                      (() => {
+                        // Build team-member options: active roster, with the
+                        // session's CURRENT team_member injected (and marked
+                        // "(retired)") if it's no longer in the active list.
+                        // This avoids blank-rendering historical sessions
+                        // and never offers other retired names.
+                        const baseRoster = activeRoster;
+                        const cur = (s.team_member || '').trim();
+                        const includesCurrent = !cur || baseRoster.includes(cur);
+                        const teamOptions = includesCurrent
+                          ? baseRoster.map((n) => ({value: n, label: n}))
+                          : [{value: cur, label: cur + ' (retired)'}, ...baseRoster.map((n) => ({value: n, label: n}))];
+                        const metaDirty =
+                          Number(metaWeek) !== Number(s.broiler_week) || (metaTeam || '').trim() !== cur;
+                        const wkBtnStyle = (active) => ({
+                          padding: '4px 10px',
+                          borderRadius: 6,
+                          border: '1px solid ' + (active ? '#1e40af' : '#d1d5db'),
+                          background: active ? '#1e40af' : 'white',
+                          color: active ? 'white' : '#374151',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        });
+                        return (
+                          <div
+                            data-testid="broiler-meta-panel"
+                            style={{
+                              border: '1px solid #e5e7eb',
+                              borderRadius: 8,
+                              padding: '10px 12px',
+                              marginBottom: 10,
+                              background: 'white',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 8,
+                            }}
+                          >
+                            <div style={{fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4}}>
+                              {'SESSION METADATA'}
+                            </div>
+                            <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                              <span style={{fontSize: 12, color: '#374151', minWidth: 90}}>{'Week:'}</span>
+                              <button
+                                type="button"
+                                data-testid="broiler-meta-wk4"
+                                onClick={() => setMetaWeek(4)}
+                                aria-pressed={Number(metaWeek) === 4}
+                                style={wkBtnStyle(Number(metaWeek) === 4)}
+                              >
+                                {'WK 4'}
+                              </button>
+                              <button
+                                type="button"
+                                data-testid="broiler-meta-wk6"
+                                onClick={() => setMetaWeek(6)}
+                                aria-pressed={Number(metaWeek) === 6}
+                                style={wkBtnStyle(Number(metaWeek) === 6)}
+                              >
+                                {'WK 6'}
+                              </button>
+                            </div>
+                            <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                              <span style={{fontSize: 12, color: '#374151', minWidth: 90}}>{'Team Member:'}</span>
+                              <select
+                                data-testid="broiler-meta-team"
+                                value={metaTeam}
+                                onChange={(e) => setMetaTeam(e.target.value)}
+                                style={{
+                                  fontFamily: 'inherit',
+                                  fontSize: 13,
+                                  padding: '6px 8px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: 6,
+                                  background: 'white',
+                                  minWidth: 160,
+                                }}
+                              >
+                                {teamOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {metaDirty && (
+                              <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                                <button
+                                  type="button"
+                                  data-testid="broiler-meta-save"
+                                  onClick={() => saveSessionMetadata(s)}
+                                  disabled={metaBusy}
+                                  style={{
+                                    padding: '4px 12px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    background: metaBusy ? '#9ca3af' : '#1e40af',
+                                    color: 'white',
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    cursor: metaBusy ? 'not-allowed' : 'pointer',
+                                    fontFamily: 'inherit',
+                                  }}
+                                >
+                                  {metaBusy ? 'Saving…' : 'Save Metadata'}
+                                </button>
+                              </div>
+                            )}
+                            {metaErr && (
+                              <div data-testid="broiler-meta-err" style={{fontSize: 11, color: '#b91c1c'}}>
+                                {metaErr}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     <div style={{display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap'}}>
                       {isComplete && !gridUnlocked && (
                         <button

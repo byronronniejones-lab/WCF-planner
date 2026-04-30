@@ -1,0 +1,274 @@
+import {describe, it, expect} from 'vitest';
+import {recomputeBroilerBatchWeekAvg} from './broiler.js';
+
+// Minimal Supabase-style query mock.
+//
+// Supports the chainable shape recomputeBroilerBatchWeekAvg + applyPppV4Update
+// build:
+//   sb.from(table).select(cols).eq(col,val)... .order().limit() → Promise
+//   sb.from(table).select(cols).eq(col,val).maybeSingle()       → Promise
+//   sb.from(table).upsert(row, opts)                            → Promise
+//
+// Each mock query records its filters + the table it was issued against and
+// then resolves with whatever the test pre-registered for that table.
+function makeSb(handlers) {
+  const calls = {sessions: [], weighIns: [], appStoreSelect: [], appStoreUpsert: []};
+  function selectChain(table) {
+    const filters = {neq: {}, eq: {}};
+    let order = null;
+    let lim = null;
+    const chain = {
+      eq(col, val) {
+        filters.eq[col] = val;
+        return chain;
+      },
+      neq(col, val) {
+        filters.neq[col] = val;
+        return chain;
+      },
+      order(col, opts) {
+        order = {col, opts};
+        return chain;
+      },
+      limit(n) {
+        lim = n;
+        return chain;
+      },
+      maybeSingle() {
+        return Promise.resolve(handlers.appStoreSelect(filters));
+      },
+      then(resolve, reject) {
+        // Used when callers await the chain directly (sessions / weigh_ins).
+        const action = table === 'weigh_in_sessions' ? handlers.sessions : handlers.weighIns;
+        const recordTo = table === 'weigh_in_sessions' ? calls.sessions : calls.weighIns;
+        recordTo.push({filters, order, lim});
+        return Promise.resolve(action(filters, order, lim)).then(resolve, reject);
+      },
+    };
+    return chain;
+  }
+  return {
+    sb: {
+      from(table) {
+        return {
+          select() {
+            if (table === 'app_store') {
+              return {
+                eq() {
+                  return {
+                    maybeSingle: () =>
+                      Promise.resolve().then(() => {
+                        calls.appStoreSelect.push(true);
+                        return handlers.appStoreSelect();
+                      }),
+                  };
+                },
+              };
+            }
+            return selectChain(table);
+          },
+          upsert(row) {
+            calls.appStoreUpsert.push(row);
+            return Promise.resolve(handlers.appStoreUpsert(row));
+          },
+        };
+      },
+    },
+    calls,
+  };
+}
+
+describe('recomputeBroilerBatchWeekAvg', () => {
+  it('returns {ok:true} for invalid args (defensive no-op)', async () => {
+    const {sb} = makeSb({
+      sessions: () => ({}),
+      weighIns: () => ({}),
+      appStoreSelect: () => ({}),
+      appStoreUpsert: () => ({}),
+    });
+    expect(await recomputeBroilerBatchWeekAvg(null, 'B-1', 4)).toEqual({ok: true});
+    expect(await recomputeBroilerBatchWeekAvg(sb, '', 4)).toEqual({ok: true});
+    expect(await recomputeBroilerBatchWeekAvg(sb, 'B-1', 5)).toEqual({ok: true});
+    expect(await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: null})).toBeTruthy();
+  });
+
+  it('deletes the wk4Lbs key when no other complete sessions back the week', async () => {
+    let upserted = null;
+    const {sb} = makeSb({
+      sessions: () => ({data: [], error: null}),
+      weighIns: () => ({data: [], error: null}),
+      appStoreSelect: () => ({
+        data: {data: [{name: 'B-1', schooner: '2&3', week4Lbs: 1.5, week6Lbs: 2.0}]},
+        error: null,
+      }),
+      appStoreUpsert: (row) => {
+        upserted = row;
+        return {error: null};
+      },
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'sess-x'});
+    expect(r).toEqual({ok: true});
+    expect(upserted.data[0]).not.toHaveProperty('week4Lbs');
+    expect(upserted.data[0].week6Lbs).toBe(2.0);
+  });
+
+  it('deletes the wk6Lbs key when no other complete sessions back wk6', async () => {
+    let upserted = null;
+    const {sb} = makeSb({
+      sessions: () => ({data: [], error: null}),
+      weighIns: () => ({data: [], error: null}),
+      appStoreSelect: () => ({data: {data: [{name: 'B-1', week4Lbs: 1.5, week6Lbs: 2.0}]}, error: null}),
+      appStoreUpsert: (row) => {
+        upserted = row;
+        return {error: null};
+      },
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 6, {excludeSessionId: 'sess-x'});
+    expect(r).toEqual({ok: true});
+    expect(upserted.data[0]).not.toHaveProperty('week6Lbs');
+    expect(upserted.data[0].week4Lbs).toBe(1.5);
+  });
+
+  it('writes the avg of the latest OTHER complete session when one exists', async () => {
+    let upserted = null;
+    const {sb, calls} = makeSb({
+      sessions: () => ({
+        data: [{id: 'sess-other', completed_at: '2026-04-30T10:00:00Z'}],
+        error: null,
+      }),
+      weighIns: () => ({data: [{weight: 1.4}, {weight: 1.6}], error: null}), // avg 1.5
+      appStoreSelect: () => ({data: {data: [{name: 'B-1', week4Lbs: 9.9}]}, error: null}),
+      appStoreUpsert: (row) => {
+        upserted = row;
+        return {error: null};
+      },
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'sess-moved'});
+    expect(r).toEqual({ok: true});
+    expect(upserted.data[0].week4Lbs).toBe(1.5);
+    // Sessions query carried excludeSessionId as a .neq filter.
+    expect(calls.sessions[0].filters.neq).toEqual({id: 'sess-moved'});
+    expect(calls.sessions[0].filters.eq).toMatchObject({
+      species: 'broiler',
+      batch_id: 'B-1',
+      broiler_week: 4,
+      status: 'complete',
+    });
+  });
+
+  it('omits .neq when excludeSessionId is omitted/null', async () => {
+    const {sb, calls} = makeSb({
+      sessions: () => ({data: [{id: 'sess-only', completed_at: '2026-04-30T10:00:00Z'}], error: null}),
+      weighIns: () => ({data: [{weight: 2}, {weight: 2}], error: null}),
+      appStoreSelect: () => ({data: {data: [{name: 'B-1'}]}, error: null}),
+      appStoreUpsert: () => ({error: null}),
+    });
+    const r1 = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4);
+    expect(r1).toEqual({ok: true});
+    expect(calls.sessions[0].filters.neq).toEqual({});
+
+    const r2 = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: null});
+    expect(r2).toEqual({ok: true});
+    expect(calls.sessions[1].filters.neq).toEqual({});
+  });
+
+  it('orders by completed_at desc and limits to 1 (latest wins)', async () => {
+    const {sb, calls} = makeSb({
+      sessions: () => ({data: [{id: 'latest', completed_at: '2026-05-01'}], error: null}),
+      weighIns: () => ({data: [{weight: 1.7}], error: null}),
+      appStoreSelect: () => ({data: {data: [{name: 'B-1'}]}, error: null}),
+      appStoreUpsert: () => ({error: null}),
+    });
+    await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'sess-moved'});
+    expect(calls.sessions[0].order).toEqual({col: 'completed_at', opts: {ascending: false}});
+    expect(calls.sessions[0].lim).toBe(1);
+  });
+
+  it('returns {ok:true} as no-op when picked session has zero usable entries', async () => {
+    let upserted = null;
+    const {sb} = makeSb({
+      sessions: () => ({data: [{id: 'sess-other', completed_at: '2026-04-30'}], error: null}),
+      weighIns: () => ({data: [{weight: 0}, {weight: -1}, {weight: 'NaN'}], error: null}),
+      appStoreSelect: () => ({data: {data: [{name: 'B-1'}]}, error: null}),
+      appStoreUpsert: (row) => {
+        upserted = row;
+        return {error: null};
+      },
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'x'});
+    expect(r).toEqual({ok: true});
+    expect(upserted).toBeNull(); // no upsert fired (no usable entries)
+  });
+
+  it('returns {ok:true} as no-op when ppp-v4 row is absent', async () => {
+    const {sb, calls} = makeSb({
+      sessions: () => ({data: [], error: null}),
+      weighIns: () => ({data: [], error: null}),
+      appStoreSelect: () => ({data: null, error: null}),
+      appStoreUpsert: () => ({error: null}),
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'x'});
+    expect(r).toEqual({ok: true});
+    expect(calls.appStoreUpsert).toEqual([]);
+  });
+
+  it('returns {ok:true} as no-op when batch row is missing from ppp-v4', async () => {
+    const {sb, calls} = makeSb({
+      sessions: () => ({data: [], error: null}),
+      weighIns: () => ({data: [], error: null}),
+      appStoreSelect: () => ({data: {data: [{name: 'OTHER-1', week4Lbs: 1.0}]}, error: null}),
+      appStoreUpsert: () => ({error: null}),
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'x'});
+    expect(r).toEqual({ok: true});
+    expect(calls.appStoreUpsert).toEqual([]);
+  });
+
+  it('returns {ok:false} when sessions read errors', async () => {
+    const {sb} = makeSb({
+      sessions: () => ({data: null, error: {message: 'rls denied'}}),
+      weighIns: () => ({data: [], error: null}),
+      appStoreSelect: () => ({data: null, error: null}),
+      appStoreUpsert: () => ({error: null}),
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'x'});
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/sessions read failed/);
+  });
+
+  it('returns {ok:false} when entries read errors', async () => {
+    const {sb} = makeSb({
+      sessions: () => ({data: [{id: 'sess-other', completed_at: '2026-04-30'}], error: null}),
+      weighIns: () => ({data: null, error: {message: 'boom'}}),
+      appStoreSelect: () => ({data: null, error: null}),
+      appStoreUpsert: () => ({error: null}),
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'x'});
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/entries read failed/);
+  });
+
+  it('returns {ok:false} when ppp-v4 select errors (delete branch)', async () => {
+    const {sb} = makeSb({
+      sessions: () => ({data: [], error: null}),
+      weighIns: () => ({data: [], error: null}),
+      appStoreSelect: () => ({data: null, error: {message: 'select boom'}}),
+      appStoreUpsert: () => ({error: null}),
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'x'});
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/ppp-v4 read failed/);
+  });
+
+  it('returns {ok:false} when ppp-v4 upsert errors (recompute branch)', async () => {
+    const {sb} = makeSb({
+      sessions: () => ({data: [{id: 'sess-other', completed_at: '2026-04-30'}], error: null}),
+      weighIns: () => ({data: [{weight: 1.5}], error: null}),
+      appStoreSelect: () => ({data: {data: [{name: 'B-1'}]}, error: null}),
+      appStoreUpsert: () => ({error: {message: 'upsert boom'}}),
+    });
+    const r = await recomputeBroilerBatchWeekAvg(sb, 'B-1', 4, {excludeSessionId: 'x'});
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/ppp-v4 upsert failed/);
+  });
+});

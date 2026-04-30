@@ -23,6 +23,7 @@ import {seedWeighInsOffline} from './scenarios/weigh_ins_offline_seed.js';
 import {seedPigDailysPhotosOffline} from './scenarios/pig_dailys_photos_offline_seed.js';
 import {seedWebformHubDailysPhotosOffline} from './scenarios/webform_hub_dailys_photos_offline_seed.js';
 import {seedBroilerWeighInSchooners} from './scenarios/broiler_weigh_in_schooners_seed.js';
+import {seedAdminBroilerSessionMeta} from './scenarios/admin_broiler_session_meta_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -222,6 +223,16 @@ export const test = base.extend({
   broilerWeighInSchoonersScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedBroilerWeighInSchooners(supabaseAdmin);
+    await use(ids);
+  },
+  // adminBroilerSessionMetaScenario — admin broiler session metadata edit
+  // (WK + team_member). One active broiler batch with pre-stamped wk4Lbs,
+  // a draft + a complete broiler session for it, and the standard
+  // BMAN/JANE roster. Tests that need legacy / second-complete-session
+  // shapes layer additional rows via supabaseAdmin inside the test body.
+  adminBroilerSessionMetaScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedAdminBroilerSessionMeta(supabaseAdmin);
     await use(ids);
   },
 });
