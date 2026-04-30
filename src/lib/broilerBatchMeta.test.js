@@ -36,15 +36,22 @@ describe('buildBroilerPublicMirror', () => {
     {name: 'B-25-08', status: 'processed', schooner: 'Schooner 5'},
   ];
 
-  it('filters out archived and processed only', () => {
+  it('includes only status === "active" batches (planned/archived/processed all dropped)', () => {
     const {groups, meta} = buildBroilerPublicMirror(sample);
-    expect(groups).toEqual(['B-26-01', 'B-26-02', 'B-26-03']);
-    expect(meta.map((m) => m.name)).toEqual(['B-26-01', 'B-26-02', 'B-26-03']);
+    expect(groups).toEqual(['B-26-01', 'B-26-03']);
+    expect(meta.map((m) => m.name)).toEqual(['B-26-01', 'B-26-03']);
   });
 
-  it('keeps planned alongside active (filter is exclusion-only)', () => {
+  it('drops planned batches', () => {
+    const {groups, meta} = buildBroilerPublicMirror(sample);
+    expect(groups).not.toContain('B-26-02');
+    expect(meta.find((m) => m.name === 'B-26-02')).toBeUndefined();
+  });
+
+  it('drops archived and processed batches', () => {
     const {groups} = buildBroilerPublicMirror(sample);
-    expect(groups).toContain('B-26-02');
+    expect(groups).not.toContain('B-25-09');
+    expect(groups).not.toContain('B-25-08');
   });
 
   it('groups[i] aligns with meta[i].name', () => {
@@ -54,7 +61,7 @@ describe('buildBroilerPublicMirror', () => {
     });
   });
 
-  it('keeps empty-schooner batches with schooners:[] (admin misconfig surfaces at Start Session)', () => {
+  it('keeps active empty-schooner batches with schooners:[] (admin misconfig surfaces at Start Session)', () => {
     const {meta} = buildBroilerPublicMirror(sample);
     const empty = meta.find((m) => m.name === 'B-26-03');
     expect(empty).toEqual({name: 'B-26-03', schooners: []});
@@ -64,8 +71,6 @@ describe('buildBroilerPublicMirror', () => {
     const {meta} = buildBroilerPublicMirror(sample);
     const twoCol = meta.find((m) => m.name === 'B-26-01');
     expect(twoCol.schooners).toEqual(['Schooner 2', 'Schooner 3']);
-    const oneCol = meta.find((m) => m.name === 'B-26-02');
-    expect(oneCol.schooners).toEqual(['Schooner 1']);
   });
 
   it('returns {groups:[], meta:[]} for null/undefined/empty input', () => {
@@ -77,6 +82,11 @@ describe('buildBroilerPublicMirror', () => {
   it('skips falsy rows defensively', () => {
     const {groups} = buildBroilerPublicMirror([null, undefined, {name: 'X', status: 'active', schooner: 'Y'}]);
     expect(groups).toEqual(['X']);
+  });
+
+  it('drops rows with no status field defensively', () => {
+    const {groups} = buildBroilerPublicMirror([{name: 'NoStatus', schooner: 'Y'}]);
+    expect(groups).toEqual([]);
   });
 });
 

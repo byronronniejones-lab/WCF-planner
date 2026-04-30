@@ -2201,10 +2201,10 @@ function App() {
         });
         // Sync broiler groups + per-batch schooner metadata to webform_config
         // for anon webform access. Both keys are derived from the same filtered
-        // list (status !== 'archived' && status !== 'processed') via
-        // buildBroilerPublicMirror so they cannot drift. The public broiler
-        // weigh-in form reads broiler_batch_meta to build column labels —
-        // anon never reads app_store directly. See src/lib/broilerBatchMeta.js.
+        // list (status === 'active') via buildBroilerPublicMirror so they
+        // cannot drift. The public broiler weigh-in form reads
+        // broiler_batch_meta to build column labels — anon never reads
+        // app_store directly. See src/lib/broilerBatchMeta.js.
         {
           const {groups: bGroups, meta: bMeta} = buildBroilerPublicMirror(store['ppp-v4'] || []);
           Promise.all([
@@ -2452,8 +2452,8 @@ function App() {
       const batchList = batchData || batches || [];
       // Public broiler mirror — single source of truth for the dropdown list AND
       // per-batch schooner column labels read by the public weigh-in form. Same
-      // filter (status !== 'archived' && status !== 'processed') applied by
-      // buildBroilerPublicMirror so groups + meta cannot drift.
+      // filter (status === 'active') applied by buildBroilerPublicMirror so
+      // groups + meta cannot drift.
       const {groups: broilerGroupList, meta: broilerBatchMeta} = buildBroilerPublicMirror(batchList);
       // Use explicit lgData param to avoid stale closure
       const lgList = lgData || layerGroups || [];

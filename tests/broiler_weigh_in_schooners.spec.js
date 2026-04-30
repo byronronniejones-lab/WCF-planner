@@ -116,7 +116,9 @@ test.describe('public broiler weigh-in (anon)', () => {
     await page.getByText('Broiler', {exact: true}).click();
     await page.getByRole('combobox').first().selectOption({label: 'BMAN'});
 
-    // The empty-schooner batch IS still visible in the dropdown (Q2 answer).
+    // B-26-03 is an ACTIVE batch with empty schooners — still visible in the
+    // dropdown so admin misconfig surfaces at Start Session rather than
+    // silently hiding the batch (Q2 answer; helper filter is active-only).
     const batchSelect = page.getByRole('combobox').nth(1);
     await expect(batchSelect.locator('option', {hasText: 'B-26-03'})).toHaveCount(1);
 

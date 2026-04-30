@@ -1,10 +1,16 @@
 // Schooner-mapping hotfix scenario for the public broiler weigh-in form.
 //
-// Seeds three broiler batches in webform_config so the public form can
-// exercise:
+// Seeds three ACTIVE broiler batches in webform_config so the public form
+// can exercise:
 //   - Two-schooner batch (B-26-01, schooner '2&3' → headers "Schooner 2" + "Schooner 3")
 //   - One-schooner batch (B-26-02, schooner '1'   → header  "Schooner 1")
-//   - Zero-schooner batch (B-26-03, schooner ''   → admin misconfig; Start Session blocks)
+//   - Zero-schooner active batch (B-26-03, schooner '' → admin misconfig
+//     on an active batch; Start Session blocks with explicit error)
+//
+// All three are status='active'. The buildBroilerPublicMirror helper
+// filters to active-only (per the 2026-04-30 follow-up after a planned
+// batch surfaced in the public dropdown post-rollout). Empty-schooner
+// handling stays — but only for active batches with missing schooners.
 //
 // Schooner-string convention: per src/lib/broiler.js SCHOONERS the canonical
 // values are bare numbers joined by '&' (no spaces) — e.g. '2&3'. The grid
@@ -44,7 +50,7 @@ const PPPV4 = [
     schooner: '',
     breed: 'CC',
     hatchery: 'CREDO FARMS',
-    status: 'planned',
+    status: 'active',
   },
 ];
 

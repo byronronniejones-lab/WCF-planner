@@ -7,10 +7,11 @@
 //   - src/main.jsx (mirror writer at app load + inside syncWebformConfig)
 //   - src/webforms/WeighInsWebform.jsx (column labels for the broiler grid)
 //
-// Filter contract: status !== 'archived' && status !== 'processed'.
-// Includes 'planned' on purpose — admin misconfig (no schooner assigned)
-// surfaces at "Start Session" via deriveBroilerColumnLabels returning [],
-// not by hiding the batch from the dropdown.
+// Filter contract: status === 'active'. Public broiler weigh-ins are for
+// active batches only (Ronnie 2026-04-30 follow-up after a planned batch
+// surfaced in the public dropdown post-rollout). Empty-schooner handling
+// remains — an active batch with no schooners still surfaces in the
+// dropdown and blocks Start Session via deriveBroilerColumnLabels = [].
 
 export function splitSchooners(raw) {
   return String(raw || '')
@@ -20,7 +21,7 @@ export function splitSchooners(raw) {
 }
 
 export function buildBroilerPublicMirror(batchRows) {
-  const active = (batchRows || []).filter((b) => b && b.status !== 'archived' && b.status !== 'processed');
+  const active = (batchRows || []).filter((b) => b && b.status === 'active');
   return {
     groups: active.map((b) => b.name),
     meta: active.map((b) => ({name: b.name, schooners: splitSchooners(b.schooner)})),
