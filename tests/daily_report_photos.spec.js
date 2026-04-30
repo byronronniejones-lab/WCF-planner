@@ -239,17 +239,26 @@ test('admin display: photo chip on tile + thumbnails in edit modal (signed URL)'
 });
 
 // --------------------------------------------------------------------------
-// Test 5 — Photo upload failure aborts the submission (no row insert)
+// Test 5 — Photo upload failure routes through the offline queue (1D-B)
 // --------------------------------------------------------------------------
-test('photo upload failure aborts: no row inserted', async ({page, supabaseAdmin, resetDb, browser}) => {
+// Pre-1D-B (Phase 1B canary contract): an aborted storage upload surfaced
+// "Photo upload failed: ... Submission aborted" inline and the row was
+// dropped. Phase 1D-B routes the same scenario through the hook's network
+// branch — sheep_dailys submission now lands in state:'queued', the row
+// is persisted in IDB, and no row lands in sheep_dailys until the queue
+// drains. This test locks the new contract.
+test('photo upload failure routes to state="queued" (no row inserted yet)', async ({
+  page,
+  supabaseAdmin,
+  resetDb,
+  browser,
+}) => {
   await resetDb();
   await seedTeamRoster(supabaseAdmin);
 
   const anon = await browser.newContext({storageState: undefined});
   const anonPage = await anon.newPage();
   try {
-    // Block the storage upload endpoint for daily-photos. The form's row
-    // insert never fires when upload aborts, so sheep_dailys stays empty.
     await anonPage.route('**/storage/v1/object/daily-photos/**', async (route) => {
       if (route.request().method() === 'POST') {
         await route.abort('failed');
@@ -267,11 +276,10 @@ test('photo upload failure aborts: no row inserted', async ({page, supabaseAdmin
 
     await anonPage.getByRole('button', {name: /Submit Report/i}).click();
 
-    // Error banner mentions the photo-upload abort. The cattle branch surfaces
-    // "Photo upload failed: ... Submission aborted".
-    await expect(anonPage.getByText(/Photo upload failed/i).first()).toBeVisible({timeout: 15_000});
+    // 1D-B contract: state="queued" rendered on the done screen.
+    await expect(anonPage.locator('[data-submit-state="queued"]')).toBeVisible({timeout: 15_000});
 
-    // No row landed.
+    // No row landed in sheep_dailys yet (queue hasn't drained).
     const {data, error} = await supabaseAdmin.from('sheep_dailys').select('*');
     expect(error).toBeNull();
     expect(data).toHaveLength(0);

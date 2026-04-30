@@ -21,6 +21,7 @@ import {seedAddFeedOffline} from './scenarios/add_feed_offline_seed.js';
 import {seedPigDailysOffline} from './scenarios/pig_dailys_offline_seed.js';
 import {seedWeighInsOffline} from './scenarios/weigh_ins_offline_seed.js';
 import {seedPigDailysPhotosOffline} from './scenarios/pig_dailys_photos_offline_seed.js';
+import {seedWebformHubDailysPhotosOffline} from './scenarios/webform_hub_dailys_photos_offline_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -198,6 +199,17 @@ export const test = base.extend({
   pigDailysPhotosOfflineScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedPigDailysPhotosOffline(supabaseAdmin);
+    await use(ids);
+  },
+  // webformHubDailysPhotosOfflineScenario — Phase 1D-B photo queue setup
+  // for the WebformHub broiler/pig/cattle/sheep paths. Seeds team_roster
+  // + broiler_groups + active_groups + cattle_feed_inputs so all 4
+  // in-scope forms render submit-able. Layer + egg negative-lock tests
+  // share this fixture (egg has no extra reqs; layer's negative-lock
+  // doesn't actually submit so its lack of layer_groups doesn't matter).
+  webformHubDailysPhotosOfflineScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedWebformHubDailysPhotosOffline(supabaseAdmin);
     await use(ids);
   },
 });

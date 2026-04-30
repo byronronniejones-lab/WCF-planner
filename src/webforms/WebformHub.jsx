@@ -8,7 +8,9 @@ import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
+import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
 import DailyPhotoCapture from './DailyPhotoCapture.jsx';
+import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 const WebformHub = ({
   sb,
   wfGroups,
@@ -315,6 +317,103 @@ const WebformHub = ({
     return wf?.allowAddGroup === true;
   };
 
+  // ── Phase 1D-B — WebformHub photo offline queue ────────────────────────
+  // Mount one useOfflineSubmit hook per included form-kind. submit handlers
+  // call hook.submit(payload) for single-row paths only. Multi-row Add-Group
+  // (broiler/pig) stays direct-insert (Codex amendment 4). Layer + egg are
+  // OUT of scope for 1D-B (layer's setHousingAnchorFromReport is load-bearing
+  // and routes through 1D-C; egg has no photos column per mig 030).
+  const broilerHook = useOfflineSubmit('poultry_dailys');
+  const pigHook = useOfflineSubmit('pig_dailys');
+  const cattleHook = useOfflineSubmit('cattle_dailys');
+  const sheepHook = useOfflineSubmit('sheep_dailys');
+
+  // Aggregated stuck rows across the four hooks. Sorted newest-first
+  // (created_at desc, retry_count desc tiebreaker per Codex Q4).
+  const allStuck = React.useMemo(() => {
+    const rows = [...broilerHook.stuckRows, ...pigHook.stuckRows, ...cattleHook.stuckRows, ...sheepHook.stuckRows];
+    return rows.slice().sort((a, b) => {
+      const tDelta = (b.created_at || 0) - (a.created_at || 0);
+      if (tDelta !== 0) return tDelta;
+      return (b.retry_count || 0) - (a.retry_count || 0);
+    });
+  }, [broilerHook.stuckRows, pigHook.stuckRows, cattleHook.stuckRows, sheepHook.stuckRows]);
+
+  // Map form_kind -> hook so retry/discard dispatches to the owning hook.
+  const hookByFormKind = {
+    poultry_dailys: broilerHook,
+    pig_dailys: pigHook,
+    cattle_dailys: cattleHook,
+    sheep_dailys: sheepHook,
+  };
+
+  const [wfStuckOpen, setWfStuckOpen] = useState(false);
+  const [doneState, setDoneState] = useState('synced'); // 'synced' | 'queued' | 'stuck'
+  const initialStuckShownRef = React.useRef(false);
+  useEffect(() => {
+    if (allStuck.length > 0 && !initialStuckShownRef.current) {
+      initialStuckShownRef.current = true;
+      setWfStuckOpen(true);
+    }
+  }, [allStuck.length]);
+
+  async function retryAnyStuck(csid) {
+    const row = allStuck.find((r) => r.csid === csid);
+    if (!row) return;
+    const hook = hookByFormKind[row.form_kind];
+    if (hook) await hook.retryStuck(csid);
+  }
+  async function discardAnyStuck(csid) {
+    const row = allStuck.find((r) => r.csid === csid);
+    if (!row) return;
+    const hook = hookByFormKind[row.form_kind];
+    if (hook) await hook.discardStuck(csid);
+  }
+
+  // Lifted stuck-modal element. Codex amendment 1: include {stuckModalEl}
+  // in EVERY return branch (done, form selector, broiler, layer, pig,
+  // cattle, egg, sheep). Bottom-mount-only would miss most paths.
+  const stuckModalEl =
+    wfStuckOpen && allStuck.length > 0 ? (
+      <StuckSubmissionsModal
+        rows={allStuck}
+        formLabel="daily report"
+        describeRow={(row) => {
+          const fk = row.form_kind;
+          const rec = row.record || row.payload || {};
+          const dateStr = rec.date || '?';
+          const who =
+            fk === 'poultry_dailys' || fk === 'pig_dailys'
+              ? rec.batch_label || '?'
+              : fk === 'cattle_dailys'
+                ? rec.herd || '?'
+                : fk === 'sheep_dailys'
+                  ? rec.flock || '?'
+                  : '?';
+          const pretty =
+            fk === 'poultry_dailys'
+              ? 'Broiler'
+              : fk === 'pig_dailys'
+                ? 'Pig'
+                : fk === 'cattle_dailys'
+                  ? 'Cattle'
+                  : fk === 'sheep_dailys'
+                    ? 'Sheep'
+                    : fk;
+          const photoCount = Array.isArray(rec.photos) ? rec.photos.length : 0;
+          const photoSuffix = photoCount > 0 ? ` · ${photoCount} photo${photoCount === 1 ? '' : 's'}` : '';
+          return `${pretty} · ${who} · ${dateStr}${photoSuffix} (not yet sent)`;
+        }}
+        onRetry={async (csid) => {
+          await retryAnyStuck(csid);
+        }}
+        onDiscard={async (csid) => {
+          await discardAnyStuck(csid);
+        }}
+        onClose={() => setWfStuckOpen(false)}
+      />
+    ) : null;
+
   const inputStyle = {
     fontFamily: 'inherit',
     fontSize: 14,
@@ -482,80 +581,110 @@ const WebformHub = ({
     setSubmitting(true);
     localStorage.setItem('wcf_team', bForm.teamMember);
 
-    // Photo upload (after validation, before insert). Aborts on any failure.
-    const csid = newClientSubmissionId();
-    let photoMeta;
-    try {
-      photoMeta = await uploadPhotosOrAbort('poultry_dailys', csid, bPhotos, setBPhotoStatuses);
-    } catch (e) {
+    const extraCount = extraBroilerGroups.filter((g) => g.batchLabel).length;
+
+    // ── Multi-row Add-Group path (NO photos): preserved direct-insert.
+    // Photos + extras is rejected above, so this branch always carries
+    // photos: [] across every row. Hook is single-row only.
+    if (extraCount > 0) {
+      const t0 = Date.now();
+      const buildExtraRec = (g, i) => ({
+        id: String(t0 + i + 1) + Math.random().toString(36).slice(2, 6),
+        client_submission_id: newClientSubmissionId(),
+        submitted_at: new Date().toISOString(),
+        date: bForm.date,
+        team_member: bForm.teamMember,
+        batch_label: g.batchLabel,
+        feed_type: g.feedType || null,
+        feed_lbs: g.feedLbs !== '' ? parseFloat(g.feedLbs) : null,
+        grit_lbs: g.gritLbs !== '' ? parseFloat(g.gritLbs) : null,
+        group_moved: g.groupMoved !== false,
+        waterer_checked: g.watererChecked !== false,
+        mortality_count: g.mortalityCount !== '' ? parseInt(g.mortalityCount) : 0,
+        mortality_reason: g.mortalityReason || null,
+        comments: g.comments || null,
+        photos: [],
+      });
+      const primary = {
+        id: String(t0) + Math.random().toString(36).slice(2, 6),
+        client_submission_id: newClientSubmissionId(),
+        submitted_at: new Date().toISOString(),
+        date: bForm.date,
+        team_member: bForm.teamMember,
+        batch_label: bForm.batchLabel,
+        feed_type: bForm.feedType,
+        feed_lbs: bForm.feedLbs !== '' ? parseFloat(bForm.feedLbs) : null,
+        grit_lbs: bForm.gritLbs !== '' ? parseFloat(bForm.gritLbs) : null,
+        group_moved: bForm.groupMoved,
+        waterer_checked: bForm.watererChecked,
+        mortality_count: bForm.mortalityCount !== '' ? parseInt(bForm.mortalityCount) : 0,
+        mortality_reason: bForm.mortalityReason || null,
+        comments: bForm.comments || null,
+        photos: [],
+      };
+      const recs = [primary, ...extraBroilerGroups.filter((g) => g.batchLabel).map(buildExtraRec)];
+      const {error} = await sb.from('poultry_dailys').insert(recs);
       setSubmitting(false);
-      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+      if (error) {
+        setErr('Could not save: ' + error.message);
+        return;
+      }
+      // Multi-row email behavior preserved (Codex amendment 4).
+      recs
+        .filter((r) => r.feed_type === 'STARTER' && parseFloat(r.feed_lbs) > 0)
+        .forEach((r) => {
+          wcfSendEmail('starter_feed_check', {batch_label: r.batch_label, feed_lbs: r.feed_lbs});
+        });
+      setLastGroup(bForm.batchLabel);
+      setExtraBroilerGroups([]);
+      setBPhotos([]);
+      setBPhotoStatuses([]);
+      setDoneState('synced');
+      setDone(true);
       return;
     }
 
-    const rec = {
-      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-      client_submission_id: csid,
-      submitted_at: new Date().toISOString(),
-      date: bForm.date,
-      team_member: bForm.teamMember,
-      batch_label: bForm.batchLabel,
-      feed_type: bForm.feedType,
-      feed_lbs: bForm.feedLbs !== '' ? parseFloat(bForm.feedLbs) : null,
-      grit_lbs: bForm.gritLbs !== '' ? parseFloat(bForm.gritLbs) : null,
-      group_moved: bForm.groupMoved,
-      waterer_checked: bForm.watererChecked,
-      mortality_count: bForm.mortalityCount !== '' ? parseInt(bForm.mortalityCount) : 0,
-      mortality_reason: bForm.mortalityReason || null,
-      comments: bForm.comments || null,
-      photos: photoMeta,
-    };
-    const recs = [
-      rec,
-      ...extraBroilerGroups
-        .filter((g) => g.batchLabel)
-        .map((g) => ({
-          ...rec,
-          id: String(Date.now() + Math.random()) + Math.random().toString(36).slice(2, 6),
-          // Each extra group gets its own csid (the unique index rejects
-          // sharing). Photos + extras is blocked at the top of submitBroiler
-          // so this `photos: []` is always the value extras carry on disk.
-          client_submission_id: newClientSubmissionId(),
-          batch_label: g.batchLabel,
-          feed_type: g.feedType || null,
-          feed_lbs: g.feedLbs !== '' ? parseFloat(g.feedLbs) : null,
-          grit_lbs: g.gritLbs !== '' ? parseFloat(g.gritLbs) : null,
-          group_moved: g.groupMoved !== false,
-          waterer_checked: g.watererChecked !== false,
-          mortality_count: g.mortalityCount !== '' ? parseInt(g.mortalityCount) : 0,
-          mortality_reason: g.mortalityReason || null,
-          comments: g.comments || null,
-          photos: [],
-        })),
-    ];
-    const {error} = await sb.from('poultry_dailys').insert(recs.length === 1 ? recs[0] : recs);
-    setSubmitting(false);
-    if (error) {
-      if (photoMeta.length > 0) {
-        console.error(
-          '[WebformHub] poultry_dailys insert failed AFTER photo upload — orphan storage paths:',
-          photoMeta.map((p) => p.path),
-        );
+    // ── Single-row path (with or without photos): through the hook.
+    // Phase 1D-B Codex amendment 2: queued/stuck DROPS the starter_feed_check
+    // email; only state:'synced' fires it. Locked by Playwright negative test.
+    setBPhotoStatuses(bPhotos.length > 0 ? bPhotos.map(() => 'pending') : []);
+    try {
+      const payload = {
+        date: bForm.date,
+        team_member: bForm.teamMember,
+        batch_label: bForm.batchLabel,
+        feed_type: bForm.feedType,
+        feed_lbs: bForm.feedLbs !== '' ? parseFloat(bForm.feedLbs) : null,
+        grit_lbs: bForm.gritLbs !== '' ? parseFloat(bForm.gritLbs) : null,
+        group_moved: bForm.groupMoved,
+        waterer_checked: bForm.watererChecked,
+        mortality_count: bForm.mortalityCount !== '' ? parseInt(bForm.mortalityCount) : 0,
+        mortality_reason: bForm.mortalityReason || null,
+        comments: bForm.comments || null,
+      };
+      if (bPhotos.length > 0) payload.photos = bPhotos; // raw File[]; hook compresses + sanitizes
+      const result = await broilerHook.submit(payload);
+      if (result.state === 'synced') {
+        if (payload.feed_type === 'STARTER' && parseFloat(payload.feed_lbs) > 0) {
+          wcfSendEmail('starter_feed_check', {batch_label: payload.batch_label, feed_lbs: payload.feed_lbs});
+        }
       }
-      setErr('Could not save: ' + error.message);
-      return;
+      if (bPhotos.length > 0) {
+        const statusFor = result.state === 'synced' ? 'uploaded' : result.state === 'queued' ? 'queued' : 'failed';
+        setBPhotoStatuses(bPhotos.map(() => statusFor));
+      }
+      if (result.state === 'stuck') setWfStuckOpen(true);
+      setLastGroup(bForm.batchLabel);
+      setExtraBroilerGroups([]);
+      setBPhotos([]);
+      setDoneState(result.state);
+      setDone(true);
+    } catch (e) {
+      setErr('Could not save: ' + (e?.message || e));
+      if (bPhotos.length > 0) setBPhotoStatuses(bPhotos.map(() => 'failed'));
+    } finally {
+      setSubmitting(false);
     }
-    // Check starter feed threshold for each STARTER record submitted (fire-and-forget)
-    recs
-      .filter((r) => r.feed_type === 'STARTER' && parseFloat(r.feed_lbs) > 0)
-      .forEach((r) => {
-        wcfSendEmail('starter_feed_check', {batch_label: r.batch_label, feed_lbs: r.feed_lbs});
-      });
-    setLastGroup(bForm.batchLabel);
-    setExtraBroilerGroups([]);
-    setBPhotos([]);
-    setBPhotoStatuses([]);
-    setDone(true);
   }
   async function submitLayer() {
     if (!lForm.date || !lForm.teamMember || !lForm.batchLabel) {
@@ -697,6 +826,11 @@ const WebformHub = ({
     setExtraLayerGroups([]);
     setLPhotos([]);
     setLPhotoStatuses([]);
+    // Codex review pre-commit: layer's direct-insert path must reset
+    // doneState so a prior queued/stuck broiler/pig/cattle/sheep submit
+    // doesn't leak its done copy onto layer's success screen in the same
+    // mounted hub session.
+    setDoneState('synced');
     setDone(true);
   }
   async function submitPig() {
@@ -739,75 +873,101 @@ const WebformHub = ({
     setSubmitting(true);
     localStorage.setItem('wcf_team', pForm.teamMember);
 
-    const csid = newClientSubmissionId();
-    let photoMeta;
-    try {
-      photoMeta = await uploadPhotosOrAbort('pig_dailys', csid, pPhotos, setPPhotoStatuses);
-    } catch (e) {
+    const extraCount = extraPigGroups.filter((g) => g.batchLabel).length;
+
+    // ── Multi-row Add-Group path (NO photos): preserved direct-insert.
+    if (extraCount > 0) {
+      const t0 = Date.now();
+      const buildExtraRec = (g, i) => ({
+        id: String(t0 + i + 1) + Math.random().toString(36).slice(2, 6),
+        client_submission_id: newClientSubmissionId(),
+        submitted_at: new Date().toISOString(),
+        date: pForm.date,
+        team_member: pForm.teamMember,
+        batch_label: g.batchLabel,
+        batch_id: g.batchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        feed_lbs: g.feedLbs !== '' ? parseFloat(g.feedLbs) : null,
+        pig_count: g.pigCount !== '' ? parseInt(g.pigCount) : null,
+        fence_voltage: g.fenceVoltage !== '' ? parseFloat(g.fenceVoltage) : null,
+        group_moved: g.groupMoved !== false,
+        nipple_drinker_moved: g.nippleDrinkerMoved !== false,
+        nipple_drinker_working: g.nippleDrinkerWorking !== false,
+        troughs_moved: g.troughsMoved !== false,
+        fence_walked: g.fenceWalked !== false,
+        issues: g.issues || null,
+        photos: [],
+      });
+      const primary = {
+        id: String(t0) + Math.random().toString(36).slice(2, 6),
+        client_submission_id: newClientSubmissionId(),
+        submitted_at: new Date().toISOString(),
+        date: pForm.date,
+        team_member: pForm.teamMember,
+        batch_label: pForm.batchLabel,
+        batch_id: pForm.batchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        feed_lbs: pForm.feedLbs !== '' ? parseFloat(pForm.feedLbs) : null,
+        pig_count: pForm.pigCount !== '' ? parseInt(pForm.pigCount) : null,
+        group_moved: pForm.groupMoved,
+        nipple_drinker_moved: pForm.nippleDrinkerMoved,
+        nipple_drinker_working: pForm.nippleDrinkerWorking,
+        troughs_moved: pForm.troughsMoved,
+        fence_walked: pForm.fenceWalked,
+        fence_voltage: pForm.fenceVoltage !== '' ? parseFloat(pForm.fenceVoltage) : null,
+        issues: pForm.issues || null,
+        photos: [],
+      };
+      const recs = [primary, ...extraPigGroups.filter((g) => g.batchLabel).map(buildExtraRec)];
+      const {error} = await sb.from('pig_dailys').insert(recs);
       setSubmitting(false);
-      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
+      if (error) {
+        setErr('Could not save: ' + error.message);
+        return;
+      }
+      setLastGroup(pForm.batchLabel);
+      setExtraPigGroups([]);
+      setPPhotos([]);
+      setPPhotoStatuses([]);
+      setDoneState('synced');
+      setDone(true);
       return;
     }
 
-    // Get pig groups from wfGroups (synced from active_groups in webform_config)
-    const rec = {
-      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-      client_submission_id: csid,
-      submitted_at: new Date().toISOString(),
-      date: pForm.date,
-      team_member: pForm.teamMember,
-      batch_label: pForm.batchLabel,
-      batch_id: pForm.batchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      feed_lbs: pForm.feedLbs !== '' ? parseFloat(pForm.feedLbs) : null,
-      pig_count: pForm.pigCount !== '' ? parseInt(pForm.pigCount) : null,
-      group_moved: pForm.groupMoved,
-      nipple_drinker_moved: pForm.nippleDrinkerMoved,
-      nipple_drinker_working: pForm.nippleDrinkerWorking,
-      troughs_moved: pForm.troughsMoved,
-      fence_walked: pForm.fenceWalked,
-      fence_voltage: pForm.fenceVoltage !== '' ? parseFloat(pForm.fenceVoltage) : null,
-      issues: pForm.issues || null,
-      photos: photoMeta,
-    };
-    const recs = [
-      rec,
-      ...extraPigGroups
-        .filter((g) => g.batchLabel)
-        .map((g) => ({
-          ...rec,
-          id: String(Date.now() + Math.random()) + Math.random().toString(36).slice(2, 6),
-          client_submission_id: newClientSubmissionId(),
-          batch_label: g.batchLabel,
-          batch_id: g.batchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-          feed_lbs: g.feedLbs !== '' ? parseFloat(g.feedLbs) : null,
-          pig_count: g.pigCount !== '' ? parseInt(g.pigCount) : null,
-          fence_voltage: g.fenceVoltage !== '' ? parseFloat(g.fenceVoltage) : null,
-          group_moved: g.groupMoved !== false,
-          nipple_drinker_moved: g.nippleDrinkerMoved !== false,
-          nipple_drinker_working: g.nippleDrinkerWorking !== false,
-          troughs_moved: g.troughsMoved !== false,
-          fence_walked: g.fenceWalked !== false,
-          issues: g.issues || null,
-          photos: [],
-        })),
-    ];
-    const {error} = await sb.from('pig_dailys').insert(recs.length === 1 ? recs[0] : recs);
-    setSubmitting(false);
-    if (error) {
-      if (photoMeta.length > 0) {
-        console.error(
-          '[WebformHub] pig_dailys insert failed AFTER photo upload — orphan storage paths:',
-          photoMeta.map((p) => p.path),
-        );
+    // ── Single-row path: through the hook.
+    setPPhotoStatuses(pPhotos.length > 0 ? pPhotos.map(() => 'pending') : []);
+    try {
+      const payload = {
+        date: pForm.date,
+        team_member: pForm.teamMember,
+        batch_id: pForm.batchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        batch_label: pForm.batchLabel,
+        pig_count: pForm.pigCount !== '' ? parseInt(pForm.pigCount) : null,
+        feed_lbs: pForm.feedLbs !== '' ? parseFloat(pForm.feedLbs) : null,
+        group_moved: pForm.groupMoved,
+        nipple_drinker_moved: pForm.nippleDrinkerMoved,
+        nipple_drinker_working: pForm.nippleDrinkerWorking,
+        troughs_moved: pForm.troughsMoved,
+        fence_walked: pForm.fenceWalked,
+        fence_voltage: pForm.fenceVoltage !== '' ? parseFloat(pForm.fenceVoltage) : null,
+        issues: pForm.issues || null,
+      };
+      if (pPhotos.length > 0) payload.photos = pPhotos;
+      const result = await pigHook.submit(payload);
+      if (pPhotos.length > 0) {
+        const statusFor = result.state === 'synced' ? 'uploaded' : result.state === 'queued' ? 'queued' : 'failed';
+        setPPhotoStatuses(pPhotos.map(() => statusFor));
       }
-      setErr('Could not save: ' + error.message);
-      return;
+      if (result.state === 'stuck') setWfStuckOpen(true);
+      setLastGroup(pForm.batchLabel);
+      setExtraPigGroups([]);
+      setPPhotos([]);
+      setDoneState(result.state);
+      setDone(true);
+    } catch (e) {
+      setErr('Could not save: ' + (e?.message || e));
+      if (pPhotos.length > 0) setPPhotoStatuses(pPhotos.map(() => 'failed'));
+    } finally {
+      setSubmitting(false);
     }
-    setLastGroup(pForm.batchLabel);
-    setExtraPigGroups([]);
-    setPPhotos([]);
-    setPPhotoStatuses([]);
-    setDone(true);
   }
   async function submitEgg() {
     if (!eForm.date || !eForm.teamMember) {
@@ -869,6 +1029,8 @@ const WebformHub = ({
       dozens_on_hand: rec.dozens_on_hand,
       daily_dozen_count: rec.daily_dozen_count,
     });
+    // Codex review pre-commit: same reset reason as submitLayer.
+    setDoneState('synced');
     setDone(true);
   }
   async function submitCattle() {
@@ -933,49 +1095,37 @@ const WebformHub = ({
         };
       })
       .filter(Boolean);
-    const csid = newClientSubmissionId();
-    let photoMeta;
+    setCPhotoStatuses(cPhotos.length > 0 ? cPhotos.map(() => 'pending') : []);
     try {
-      photoMeta = await uploadPhotosOrAbort('cattle_dailys', csid, cPhotos, setCPhotoStatuses);
-    } catch (e) {
-      setSubmitting(false);
-      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
-      return;
-    }
-
-    const rec = {
-      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-      client_submission_id: csid,
-      submitted_at: new Date().toISOString(),
-      date: cForm.date,
-      team_member: cForm.teamMember,
-      herd: cForm.herd,
-      feeds: feedsJ,
-      minerals: mineralsJ,
-      fence_voltage: cForm.fenceVoltage !== '' ? parseFloat(cForm.fenceVoltage) : null,
-      water_checked: cForm.waterChecked,
-      mortality_count: cForm.mortalityCount !== '' ? parseInt(cForm.mortalityCount) : 0,
-      mortality_reason: cForm.mortalityReason || null,
-      issues: cForm.issues || null,
-      source: 'daily_webform',
-      photos: photoMeta,
-    };
-    const {error} = await sb.from('cattle_dailys').insert(rec);
-    setSubmitting(false);
-    if (error) {
-      if (photoMeta.length > 0) {
-        console.error(
-          '[WebformHub] cattle_dailys insert failed AFTER photo upload — orphan storage paths:',
-          photoMeta.map((p) => p.path),
-        );
+      const payload = {
+        date: cForm.date,
+        team_member: cForm.teamMember,
+        herd: cForm.herd,
+        feedsJ,
+        mineralsJ,
+        fence_voltage: cForm.fenceVoltage !== '' ? parseFloat(cForm.fenceVoltage) : null,
+        water_checked: cForm.waterChecked,
+        mortality_count: cForm.mortalityCount !== '' ? parseInt(cForm.mortalityCount) : 0,
+        mortality_reason: cForm.mortalityReason || null,
+        issues: cForm.issues || null,
+      };
+      if (cPhotos.length > 0) payload.photos = cPhotos;
+      const result = await cattleHook.submit(payload);
+      if (cPhotos.length > 0) {
+        const statusFor = result.state === 'synced' ? 'uploaded' : result.state === 'queued' ? 'queued' : 'failed';
+        setCPhotoStatuses(cPhotos.map(() => statusFor));
       }
-      setErr('Could not save: ' + error.message);
-      return;
+      if (result.state === 'stuck') setWfStuckOpen(true);
+      setLastGroup(cForm.herd);
+      setCPhotos([]);
+      setDoneState(result.state);
+      setDone(true);
+    } catch (e) {
+      setErr('Could not save: ' + (e?.message || e));
+      if (cPhotos.length > 0) setCPhotoStatuses(cPhotos.map(() => 'failed'));
+    } finally {
+      setSubmitting(false);
     }
-    setLastGroup(cForm.herd);
-    setCPhotos([]);
-    setCPhotoStatuses([]);
-    setDone(true);
   }
   async function submitSheep() {
     // Hardcoded system fields — always required regardless of admin config
@@ -1017,48 +1167,36 @@ const WebformHub = ({
         };
       })
       .filter(Boolean);
-    const csid = newClientSubmissionId();
-    let photoMeta;
+    setShPhotoStatuses(shPhotos.length > 0 ? shPhotos.map(() => 'pending') : []);
     try {
-      photoMeta = await uploadPhotosOrAbort('sheep_dailys', csid, shPhotos, setShPhotoStatuses);
-    } catch (e) {
-      setSubmitting(false);
-      setErr('Photo upload failed: ' + (e?.message || e) + '. Submission aborted — try again.');
-      return;
-    }
-
-    const rec = {
-      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-      client_submission_id: csid,
-      submitted_at: new Date().toISOString(),
-      date: sForm.date,
-      team_member: sForm.teamMember,
-      flock: sForm.flock,
-      feeds: feedsJ,
-      minerals: mineralsJ,
-      fence_voltage_kv: sForm.fenceVoltageKv !== '' ? parseFloat(sForm.fenceVoltageKv) : null,
-      waterers_working: !!sForm.waterersWorking,
-      mortality_count: 0,
-      comments: sForm.comments || null,
-      source: 'daily_webform',
-      photos: photoMeta,
-    };
-    const {error} = await sb.from('sheep_dailys').insert(rec);
-    setSubmitting(false);
-    if (error) {
-      if (photoMeta.length > 0) {
-        console.error(
-          '[WebformHub] sheep_dailys insert failed AFTER photo upload — orphan storage paths:',
-          photoMeta.map((p) => p.path),
-        );
+      const payload = {
+        date: sForm.date,
+        team_member: sForm.teamMember,
+        flock: sForm.flock,
+        feedsJ,
+        mineralsJ,
+        fence_voltage_kv: sForm.fenceVoltageKv !== '' ? parseFloat(sForm.fenceVoltageKv) : null,
+        waterers_working: !!sForm.waterersWorking,
+        mortality_count: 0,
+        comments: sForm.comments || null,
+      };
+      if (shPhotos.length > 0) payload.photos = shPhotos;
+      const result = await sheepHook.submit(payload);
+      if (shPhotos.length > 0) {
+        const statusFor = result.state === 'synced' ? 'uploaded' : result.state === 'queued' ? 'queued' : 'failed';
+        setShPhotoStatuses(shPhotos.map(() => statusFor));
       }
-      setErr('Could not save: ' + error.message);
-      return;
+      if (result.state === 'stuck') setWfStuckOpen(true);
+      setLastGroup({rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'}[sForm.flock] || sForm.flock);
+      setShPhotos([]);
+      setDoneState(result.state);
+      setDone(true);
+    } catch (e) {
+      setErr('Could not save: ' + (e?.message || e));
+      if (shPhotos.length > 0) setShPhotoStatuses(shPhotos.map(() => 'failed'));
+    } finally {
+      setSubmitting(false);
     }
-    setLastGroup({rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'}[sForm.flock] || sForm.flock);
-    setShPhotos([]);
-    setShPhotoStatuses([]);
-    setDone(true);
   }
 
   function resetAndAnother() {
@@ -1072,6 +1210,7 @@ const WebformHub = ({
       setSForm({...EMPTY_S, date: today, teamMember: team, flock: lastGroup ? sForm.flock : ''});
     else setEForm({...EMPTY_E, date: today, teamMember: team});
     setDone(false);
+    setDoneState('synced'); // Reset so the next submit's done screen starts clean.
     setErr('');
   }
 
@@ -1101,17 +1240,77 @@ const WebformHub = ({
     </div>
   );
 
-  // Success screen
+  // Success screen — Phase 1D-B reads doneState ∈ {synced, queued, stuck}
+  // for the included form-kinds. Layer + egg + multi-row direct paths set
+  // doneState='synced' so existing copy is preserved.
   if (done)
     return (
       <div style={wfBg}>
         <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '2rem', textAlign: 'center'}}>
           {logo}
-          <div style={{fontSize: 56, marginBottom: 12}}>✅</div>
-          <div style={{fontSize: 20, fontWeight: 700, color: '#085041', marginBottom: 8}}>Report Submitted!</div>
-          <div style={{fontSize: 14, color: '#6b7280', marginBottom: 24}}>
-            {lastGroup ? `${lastGroup} — ` : ''}saved successfully.
+          <div style={{fontSize: 56, marginBottom: 12}}>
+            {doneState === 'queued' ? '📡' : doneState === 'stuck' ? '⚠️' : '✅'}
           </div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              color: doneState === 'queued' ? '#92400e' : doneState === 'stuck' ? '#b91c1c' : '#085041',
+              marginBottom: 8,
+            }}
+          >
+            {doneState === 'queued'
+              ? 'Saved on this device'
+              : doneState === 'stuck'
+                ? 'Saved on this device — sync needs help'
+                : 'Report Submitted!'}
+          </div>
+          {doneState === 'queued' && (
+            <div
+              data-submit-state="queued"
+              style={{
+                fontSize: 13,
+                color: '#78716c',
+                marginBottom: 22,
+                lineHeight: 1.5,
+                background: '#fef3c7',
+                border: '1px solid #fde68a',
+                borderRadius: 8,
+                padding: '10px 14px',
+                textAlign: 'left',
+              }}
+            >
+              No connection right now. Daily report queued for <strong>{lastGroup}</strong> and will sync as soon as the
+              device is back online.
+            </div>
+          )}
+          {doneState === 'stuck' && (
+            <div
+              data-submit-state="stuck"
+              style={{
+                fontSize: 13,
+                color: '#7f1d1d',
+                marginBottom: 22,
+                lineHeight: 1.5,
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: 8,
+                padding: '10px 14px',
+                textAlign: 'left',
+              }}
+            >
+              Your daily report for <strong>{lastGroup}</strong> is saved on this device, but sync hit an error that
+              won't fix itself by retrying. Open the stuck submissions panel to retry after a fix or discard.
+            </div>
+          )}
+          {doneState === 'synced' && (
+            <div style={{fontSize: 14, color: '#6b7280', marginBottom: 24}}>
+              <span data-submit-state="synced" style={{display: 'none'}}>
+                synced
+              </span>
+              {lastGroup ? `${lastGroup} — ` : ''}saved successfully.
+            </div>
+          )}
           <button
             onClick={resetAndAnother}
             style={{
@@ -1151,6 +1350,7 @@ const WebformHub = ({
             Back to Forms
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -1250,6 +1450,7 @@ const WebformHub = ({
             </div>
           ))}
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -1591,7 +1792,13 @@ const WebformHub = ({
               {err}
             </div>
           )}
-          <DailyPhotoCapture files={bPhotos} statuses={bPhotoStatuses} onChange={setBPhotos} disabled={submitting} />
+          <DailyPhotoCapture
+            files={bPhotos}
+            statuses={bPhotoStatuses}
+            onChange={setBPhotos}
+            disabled={submitting}
+            offlineCapable={true}
+          />
           <button
             onClick={submitBroiler}
             disabled={submitting}
@@ -1615,6 +1822,7 @@ const WebformHub = ({
               : 'Submit Report'}
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -2000,6 +2208,7 @@ const WebformHub = ({
               : 'Submit Report'}
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -2337,7 +2546,13 @@ const WebformHub = ({
               {err}
             </div>
           )}
-          <DailyPhotoCapture files={pPhotos} statuses={pPhotoStatuses} onChange={setPPhotos} disabled={submitting} />
+          <DailyPhotoCapture
+            files={pPhotos}
+            statuses={pPhotoStatuses}
+            onChange={setPPhotos}
+            disabled={submitting}
+            offlineCapable={true}
+          />
           <button
             onClick={submitPig}
             disabled={submitting}
@@ -2361,6 +2576,7 @@ const WebformHub = ({
               : 'Submit Report'}
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
   }
@@ -2749,7 +2965,13 @@ const WebformHub = ({
             </div>
           )}
 
-          <DailyPhotoCapture files={cPhotos} statuses={cPhotoStatuses} onChange={setCPhotos} disabled={submitting} />
+          <DailyPhotoCapture
+            files={cPhotos}
+            statuses={cPhotoStatuses}
+            onChange={setCPhotos}
+            disabled={submitting}
+            offlineCapable={true}
+          />
           <button
             onClick={submitCattle}
             disabled={submitting || !herdSelected}
@@ -2771,6 +2993,7 @@ const WebformHub = ({
             {submitting ? 'Submitting\u2026' : 'Submit Report'}
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
   }
@@ -2924,6 +3147,7 @@ const WebformHub = ({
             {submitting ? 'Submitting…' : 'Submit Report'}
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -3259,7 +3483,13 @@ const WebformHub = ({
               {err}
             </div>
           )}
-          <DailyPhotoCapture files={shPhotos} statuses={shPhotoStatuses} onChange={setShPhotos} disabled={submitting} />
+          <DailyPhotoCapture
+            files={shPhotos}
+            statuses={shPhotoStatuses}
+            onChange={setShPhotos}
+            disabled={submitting}
+            offlineCapable={true}
+          />
           <button
             onClick={submitSheep}
             disabled={submitting}
@@ -3281,6 +3511,7 @@ const WebformHub = ({
             {submitting ? 'Submitting…' : 'Submit Report'}
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
 };

@@ -91,6 +91,125 @@ const REGISTRY = Object.freeze({
   //   - Numeric coercion (parseInt/parseFloat) happens at the form layer,
   //     not here. The registry passes payload values through unchanged so
   //     replay produces byte-identical rows.
+  // Phase 1D-B: WebformHub broiler / cattle / sheep daily-report photo offline
+  // queue. pig_dailys (above-flipped in 1D-A) is reused by both
+  // PigDailysWebform standalone (1D-A) and WebformHub /webforms/pig (1D-B).
+  // Layer (layer_dailys) deferred to 1D-C — setHousingAnchorFromReport is a
+  // load-bearing post-sync DB write and needs an explicit replay-hook design.
+  // Egg (egg_dailys) permanently excluded — mig 030 omits egg_dailys.photos.
+  //
+  // Each new entry's buildRecord mirrors the row shape today's WebformHub
+  // submit handlers assemble at the time of direct-insert, MINUS raw Blob
+  // refs (sanitized payload contract: payload.photos arrives as metadata
+  // only here; the hook strips raw File[] before calling buildRecord).
+  // Locked exact shapes:
+  //   - poultry_dailys: NO source field (current rows omit it).
+  //   - cattle_dailys: source: 'daily_webform' (current row literal).
+  //   - sheep_dailys:  source: 'daily_webform'; mortality_count default 0.
+  //   - All: photos: [] when payload.photos absent (consistent with pig_dailys).
+  //
+  // Critical replay invariant: cattle/sheep feeds + minerals jsonb arrays
+  // are PASS-THROUGH from payload — the form does the cattle_feed_inputs
+  // nutrition-snapshot lookup ONCE before calling submit(). Replay produces
+  // byte-identical rows even if cattle_feed_inputs values change between
+  // submit and replay (matches the §2.2 cattle Decision 4 snapshot contract:
+  // "editing the parent feed in admin does NOT rewrite historical reports").
+  poultry_dailys: Object.freeze({
+    table: 'poultry_dailys',
+    hasPhotos: true,
+    /**
+     * @param {object} payload
+     *   {date, team_member, batch_label,
+     *    feed_type, feed_lbs, grit_lbs,
+     *    group_moved, waterer_checked,
+     *    mortality_count, mortality_reason, comments,
+     *    photos?}
+     */
+    buildRecord(payload, {id, csid}) {
+      return {
+        id,
+        client_submission_id: csid,
+        submitted_at: new Date().toISOString(),
+        date: payload.date,
+        team_member: payload.team_member,
+        batch_label: payload.batch_label,
+        feed_type: payload.feed_type,
+        feed_lbs: payload.feed_lbs,
+        grit_lbs: payload.grit_lbs,
+        group_moved: payload.group_moved,
+        waterer_checked: payload.waterer_checked,
+        mortality_count: payload.mortality_count,
+        mortality_reason: payload.mortality_reason,
+        comments: payload.comments,
+        photos: Array.isArray(payload.photos) ? payload.photos : [],
+      };
+    },
+  }),
+
+  cattle_dailys: Object.freeze({
+    table: 'cattle_dailys',
+    hasPhotos: true,
+    /**
+     * @param {object} payload
+     *   {date, team_member, herd,
+     *    feedsJ, mineralsJ,        // pre-built jsonb arrays from form layer
+     *    fence_voltage, water_checked,
+     *    mortality_count?, mortality_reason?, issues,
+     *    photos?}
+     */
+    buildRecord(payload, {id, csid}) {
+      return {
+        id,
+        client_submission_id: csid,
+        submitted_at: new Date().toISOString(),
+        date: payload.date,
+        team_member: payload.team_member,
+        herd: payload.herd,
+        feeds: Array.isArray(payload.feedsJ) ? payload.feedsJ : [],
+        minerals: Array.isArray(payload.mineralsJ) ? payload.mineralsJ : [],
+        fence_voltage: payload.fence_voltage,
+        water_checked: payload.water_checked,
+        mortality_count: payload.mortality_count != null ? payload.mortality_count : 0,
+        mortality_reason: payload.mortality_reason ?? null,
+        issues: payload.issues ?? null,
+        source: 'daily_webform',
+        photos: Array.isArray(payload.photos) ? payload.photos : [],
+      };
+    },
+  }),
+
+  sheep_dailys: Object.freeze({
+    table: 'sheep_dailys',
+    hasPhotos: true,
+    /**
+     * @param {object} payload
+     *   {date, team_member, flock,
+     *    feedsJ, mineralsJ,        // pre-built jsonb arrays
+     *    fence_voltage_kv, waterers_working,
+     *    mortality_count?,         // defaults to 0
+     *    comments,
+     *    photos?}
+     */
+    buildRecord(payload, {id, csid}) {
+      return {
+        id,
+        client_submission_id: csid,
+        submitted_at: new Date().toISOString(),
+        date: payload.date,
+        team_member: payload.team_member,
+        flock: payload.flock,
+        feeds: Array.isArray(payload.feedsJ) ? payload.feedsJ : [],
+        minerals: Array.isArray(payload.mineralsJ) ? payload.mineralsJ : [],
+        fence_voltage_kv: payload.fence_voltage_kv,
+        waterers_working: !!payload.waterers_working,
+        mortality_count: payload.mortality_count != null ? payload.mortality_count : 0,
+        comments: payload.comments ?? null,
+        source: 'daily_webform',
+        photos: Array.isArray(payload.photos) ? payload.photos : [],
+      };
+    },
+  }),
+
   pig_dailys: Object.freeze({
     table: 'pig_dailys',
     hasPhotos: true,
