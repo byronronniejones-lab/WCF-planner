@@ -38,6 +38,84 @@
 // critical for replay determinism.
 
 const REGISTRY = Object.freeze({
+  // -----------------------------------------------------------------------
+  // Phase 1C-D — WeighIns fresh-draft session creation (pig + broiler only)
+  // -----------------------------------------------------------------------
+  // Wraps mig 035's submit_weigh_in_session_batch(parent_in jsonb, entries_in
+  // jsonb). Creates one weigh_in_sessions parent + N weigh_ins children
+  // atomically. v1 species allowlist: pig | broiler. v1 status allowlist:
+  // 'draft' only. Completion stays online-direct via finalizeSession (and
+  // for broiler, writeBroilerBatchAvg).
+  //
+  // Determinism contract (Codex review v2):
+  //   - parentId is minted by useOfflineRpcSubmit at submit() entry; reused
+  //     for parent_in.id and as the prefix for child IDs ${parentId}-c${i}.
+  //     So buildArgs is purely positional over payload.entries — local UI
+  //     IDs (e.g. 'local-3') never reach the RPC.
+  //   - started_at / entered_at are PASS-THROUGH fields on the payload.
+  //     The CALLER stamps them (startNewSession for started_at; addEntry /
+  //     pre-saveBatch for entered_at) so byte-identical args are produced
+  //     on every buildRpcRequest(payload, ids) call. If a caller omits a
+  //     timestamp, the RPC defaults the column to now() at INSERT time —
+  //     acceptable, but breaks replay-stable timing.
+  //   - Children carry NO client_submission_id (parent owns dedup; mig 030
+  //     unique index would 23505 on entry #2 if csid bled through).
+  //   - NO side-effect columns: send_to_processor, target_processing_batch_id,
+  //     sent_to_trip_id, transferred_to_breeding, transfer_breeder_id,
+  //     feed_allocation_lbs, prior_herd_or_flock, reconcile_intent. All are
+  //     runtime-only concerns deferred to a future RPC.
+  //   - broiler_week omitted from parent_in when species='pig' (RPC coerces
+  //     to NULL anyway; we keep the queued record clean).
+  weigh_in_session_batch: Object.freeze({
+    rpc: 'submit_weigh_in_session_batch',
+    /**
+     * @param {object} payload
+     *   {species: 'pig' | 'broiler',
+     *    date, team_member,
+     *    batch_id?, broiler_week?,            // broiler_week only for broiler
+     *    started_at?,                          // ISO timestamptz, stamped by caller
+     *    notes?,
+     *    entries: [{weight, tag?, note?, new_tag_flag?, entered_at?}, ...]}
+     * @param {{csid: string, parentId: string}} ids
+     * @returns {{rpc: string, args: {parent_in: object, entries_in: object[]}}}
+     */
+    buildArgs(payload, {csid, parentId}) {
+      const parent_in = {
+        id: parentId,
+        client_submission_id: csid,
+        species: payload.species,
+        status: 'draft',
+        date: payload.date,
+        team_member: payload.team_member,
+        batch_id: payload.batch_id ?? null,
+      };
+      // broiler_week is required for broiler; omitted entirely for pig so
+      // the queued record stays honest with the v1 RPC contract.
+      if (payload.species === 'broiler') {
+        parent_in.broiler_week = payload.broiler_week;
+      }
+      // started_at / notes optional pass-through.
+      if (payload.started_at) parent_in.started_at = payload.started_at;
+      if (payload.notes != null) parent_in.notes = payload.notes;
+
+      const entries_in = (payload.entries ?? []).map((e, i) => {
+        const child = {
+          id: `${parentId}-c${i}`,
+          weight: e.weight,
+          tag: e.tag ?? null,
+          note: e.note ?? null,
+          new_tag_flag: !!e.new_tag_flag,
+        };
+        if (e.entered_at) child.entered_at = e.entered_at;
+        return child;
+      });
+
+      return {
+        rpc: 'submit_weigh_in_session_batch',
+        args: {parent_in, entries_in},
+      };
+    },
+  }),
   add_feed_batch: Object.freeze({
     rpc: 'submit_add_feed_batch',
     /**

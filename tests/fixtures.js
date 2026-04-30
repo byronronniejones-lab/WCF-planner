@@ -19,6 +19,7 @@ import {seedHomeDashboardEquipment} from './scenarios/home_dashboard_equipment_s
 import {seedFuelSupplyOffline} from './scenarios/fuel_supply_offline_seed.js';
 import {seedAddFeedOffline} from './scenarios/add_feed_offline_seed.js';
 import {seedPigDailysOffline} from './scenarios/pig_dailys_offline_seed.js';
+import {seedWeighInsOffline} from './scenarios/weigh_ins_offline_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -180,6 +181,14 @@ export const test = base.extend({
   pigDailysOfflineScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedPigDailysOffline(supabaseAdmin);
+    await use(ids);
+  },
+  // weighInsOfflineScenario — Phase 1C-D RPC queue setup. Resets DB + seeds
+  // active_groups + broiler_groups + ppp-v4 + roster so /weighins can drive
+  // both pig and broiler fresh-session flows offline + online.
+  weighInsOfflineScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedWeighInsOffline(supabaseAdmin);
     await use(ids);
   },
 });

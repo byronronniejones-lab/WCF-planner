@@ -183,6 +183,17 @@ describe('classifyError (RPC variant)', () => {
     expect(_classifyError({code: '23502', message: 'null'})).toBe('schema');
   });
 
+  it('P0001 → schema (PL/pgSQL RAISE EXCEPTION default SQLSTATE)', () => {
+    // Mig 034 + 035 use bare `RAISE EXCEPTION '...'` (no USING ERRCODE)
+    // for every validation path. Postgres returns SQLSTATE P0001
+    // (raise_exception); PostgREST surfaces it with status=400. Without
+    // explicit P0001 handling the classifier returns 'unknown' and the
+    // submission gets enqueued — burning retry budget on a deterministic
+    // input bug instead of throwing inline. Lock both branches.
+    expect(_classifyError({status: 400, code: 'P0001', message: 'team_member required'})).toBe('schema');
+    expect(_classifyError({code: 'P0001', message: 'date required'})).toBe('schema');
+  });
+
   it('"Failed to fetch" message even without TypeError → network', () => {
     expect(_classifyError({message: 'Failed to fetch'})).toBe('network');
   });
@@ -359,6 +370,44 @@ describe('queue persistence under the RPC path', () => {
     expect(thrown).not.toBeNull();
     expect(thrown.code).toBe('23505');
     expect(await getSubmission(csid)).toBeNull();
+  });
+
+  it('submit: P0001 schema response throws AND does NOT enqueue (mig 034/035 RAISE)', async () => {
+    // PL/pgSQL `RAISE EXCEPTION` defaults to SQLSTATE P0001. Mig 035 uses
+    // it for every validation path (missing csid / id / date / team_member /
+    // 0 entries / bad species / bad status / bad broiler_week). Without
+    // P0001 in the schema-class set, _runSubmit would queue the submission
+    // and burn retry budget on a deterministic input bug. Locked here.
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: {status: 400, code: 'P0001', message: 'submit_weigh_in_session_batch: team_member required'},
+    });
+
+    const csid = 'csid-schema-submit-p0001';
+    let thrown = null;
+    try {
+      await _runSubmit({
+        formKind: 'add_feed_batch',
+        payload: {
+          program: 'cattle',
+          date: '2026-04-29',
+          team_member: 'BMAN',
+          cattleHerd: 'mommas',
+          cattleFeedsJ: [],
+        },
+        opts: {csid, parentId: 'P-p0001'},
+        refresh: async () => {},
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).not.toBeNull();
+    expect(thrown.code).toBe('P0001');
+    expect(thrown.status).toBe(400);
+    expect(/team_member required/i.test(String(thrown.message))).toBe(true);
+    expect(await getSubmission(csid)).toBeNull();
+    expect(await listQueued('add_feed_batch')).toEqual([]);
+    expect(await listStuck('add_feed_batch')).toEqual([]);
   });
 
   it('submit: network failure (TypeError) DOES enqueue and returns queued', async () => {

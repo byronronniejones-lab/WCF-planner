@@ -1,13 +1,33 @@
 // Phase 2 Round 5 extraction (verbatim).
+//
+// 2026-04-30 (mig 035 + Phase 1C-D): pig + broiler FRESH draft session
+// creation/save now routes through the parent-aware offline RPC queue
+// (`useOfflineRpcSubmit('weigh_in_session_batch')` against the
+// submit_weigh_in_session_batch RPC). Cattle/sheep paths and the entire
+// completion flow (finalizeSession + writeBroilerBatchAvg) remain
+// online-direct and unchanged. See PROJECT.md §7 mig 035 entry.
+//
+// Fresh-vs-DB-backed branching is gated by `sessionIsFresh`:
+//   - startNewSession for pig/broiler skips the weigh_in_sessions INSERT;
+//     local entries collect in component state until the operator taps
+//     Save Draft (pig) / Save Weights (broiler), which fires the RPC.
+//   - On state='synced', sessionIsFresh flips false, session.id ← parent_in.id,
+//     and entry IDs swap to record.args.entries_in[i].id (deterministic
+//     ${parentId}-c${i}). Operator stays on the session screen so the
+//     existing online-only Complete path still works.
+//   - On state='queued', terminal "Saved on this device" screen.
+//   - 23505 from this RPC remains a stuck/schema bug, never success.
 import React from 'react';
 import {writeBroilerBatchAvg} from '../lib/broiler.js';
 import {fmt} from '../lib/dateUtils.js';
 import {loadRoster} from '../lib/teamMembers.js';
 import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
+import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
 import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
 import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
+import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
 const WeighInsWebform = ({sb}) => {
   const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'
@@ -69,6 +89,46 @@ const WeighInsWebform = ({sb}) => {
   // Send-to-processor modal shown at Complete time when a cattle finishers
   // session has at least one send_to_processor=true entry.
   const [showProcessorModal, setShowProcessorModal] = React.useState(false);
+
+  // Phase 1C-D — fresh-session branching for pig + broiler.
+  //   sessionIsFresh: true  → pre-RPC, local-only state. startNewSession
+  //                           for pig/broiler does NOT INSERT.
+  //   sessionIsFresh: false → DB-backed (resumed OR post-synced fresh).
+  //                           saveEntry / saveBatch use today's direct paths.
+  // Cattle/sheep skip the fresh branch entirely (sessionIsFresh stays false
+  // for them — they direct-INSERT in startNewSession as before).
+  const [sessionIsFresh, setSessionIsFresh] = React.useState(false);
+  // Terminal "Saved on this device" screen state — set only on RPC queued
+  // outcome. Synced + DB-backed completion uses the existing 'done' stage.
+  const [doneState, setDoneState] = React.useState('none'); // 'none' | 'queued'
+  // Hidden marker for Playwright assertions: 'synced' once a fresh session
+  // has been converted to DB-backed via online RPC success.
+  const [lastSubmitOutcome, setLastSubmitOutcome] = React.useState(null);
+  // Stuck submission modal state.
+  const [stuckOpen, setStuckOpen] = React.useState(false);
+
+  // Offline RPC queue hook — pig/broiler fresh draft session creation.
+  const {
+    submit: submitDraftSession,
+    stuckRows,
+    retryStuck,
+    discardStuck,
+  } = useOfflineRpcSubmit('weigh_in_session_batch');
+
+  // Auto-open stuck modal once on mount or first appearance of stuck rows.
+  // Mirrors AddFeedWebform's pattern.
+  const initialStuckShownRef = React.useRef(false);
+  React.useEffect(() => {
+    if (stuckRows.length > 0 && !initialStuckShownRef.current) {
+      initialStuckShownRef.current = true;
+      setStuckOpen(true);
+    }
+  }, [stuckRows.length]);
+
+  // Monotonic counter for local-only entry IDs in pig fresh-collection.
+  // `entries.length` would collide on delete-middle-then-add (Codex review v3
+  // #1) and break React keys + edit/delete targeting.
+  const localIdCounterRef = React.useRef(0);
 
   React.useEffect(() => {
     const d = new Date();
@@ -235,9 +295,16 @@ const WeighInsWebform = ({sb}) => {
 
   // Load entries when session is set, and (for broiler/pig) hydrate the grid
   // so previously-saved weights show up in the input cells they came from.
+  // Phase 1C-D: skip the DB query when session.id is undefined (fresh
+  // pig/broiler session pre-RPC). Local entries[] are managed in component
+  // state until Save Draft / Save Weights fires the RPC.
   React.useEffect(() => {
     if (!session) {
       setEntries([]);
+      return;
+    }
+    if (!session.id) {
+      // Fresh pre-submit pig/broiler — entries are local-only.
       return;
     }
     // Reset to [] first so the grid hydration effect doesn't briefly mix
@@ -292,9 +359,43 @@ const WeighInsWebform = ({sb}) => {
       return;
     }
     setErr('');
+    setLastSubmitOutcome(null);
+    const startedAt = new Date().toISOString();
+    const rec = {
+      // id is left undefined for pig/broiler fresh sessions — the parentId
+      // is minted by the RPC hook at submit() time. Cattle/sheep mint it
+      // client-side and INSERT immediately (today's behavior).
+      id: undefined,
+      date,
+      team_member: teamMember,
+      species,
+      status: 'draft',
+      started_at: startedAt,
+      ...extra,
+    };
+
+    // Phase 1C-D — pig/broiler fresh sessions skip the DB INSERT. The
+    // weigh_in_sessions row only lands at RPC-submit time (synced) or
+    // via queue replay (queued). startNewSession only transitions UI.
+    if (species === 'pig' || species === 'broiler') {
+      setSessionIsFresh(true);
+      if (teamMember) localStorage.setItem('wcf_team', teamMember);
+      if (species === 'broiler') {
+        const labels = deriveColumnLabels(species, extra && extra.batch_id);
+        const finalLabels = labels.length > 0 ? labels : ['1', '2'];
+        setColumnLabels(finalLabels);
+        setWeightInputs(Array(finalLabels.length * 15).fill(''));
+      }
+      setSession(rec);
+      setEntries([]);
+      setStage('session');
+      return;
+    }
+
+    // Cattle / sheep — today's direct INSERT path, unchanged.
     setBusy(true);
     const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
-    const rec = {
+    const dbRec = {
       id,
       date,
       team_member: teamMember,
@@ -302,25 +403,24 @@ const WeighInsWebform = ({sb}) => {
       status: 'draft',
       ...extra,
     };
-    const {error} = await sb.from('weigh_in_sessions').insert(rec);
+    const {error} = await sb.from('weigh_in_sessions').insert(dbRec);
     setBusy(false);
     if (error) {
       setErr('Could not start session: ' + error.message);
       return;
     }
     if (teamMember) localStorage.setItem('wcf_team', teamMember);
-    if (species === 'broiler') {
-      const labels = deriveColumnLabels(species, extra && extra.batch_id);
-      const finalLabels = labels.length > 0 ? labels : ['1', '2'];
-      setColumnLabels(finalLabels);
-      setWeightInputs(Array(finalLabels.length * 15).fill(''));
-    }
-    setSession(rec);
+    setSession(dbRec);
+    setSessionIsFresh(false);
     setEntries([]);
     setStage('session');
   }
   async function resumeSession(s) {
     setSession(s);
+    // Resumed sessions are always DB-backed — every direct-DB path
+    // (saveEntry, saveBatch direct, deleteEntry, finalizeSession) is valid.
+    setSessionIsFresh(false);
+    setLastSubmitOutcome(null);
     if (s.team_member) setTeamMember(s.team_member);
     if (s.notes) setNoteInput(s.notes);
     // Restore the herd/flock selection so the remaining-tags list
@@ -461,6 +561,27 @@ const WeighInsWebform = ({sb}) => {
     if (!session) return;
     if (!weight || parseFloat(weight) <= 0) {
       setErr('Weight is required.');
+      return;
+    }
+    // Phase 1C-D — pig fresh-collection: push to local entries[] only;
+    // no DB write. RPC fires later via Save Draft button. Local IDs use a
+    // monotonic ref so delete-middle-then-add never collides on a key.
+    if (species === 'pig' && sessionIsFresh) {
+      setErr('');
+      const localId = 'local-' + localIdCounterRef.current++;
+      const rec = {
+        id: localId,
+        session_id: undefined, // not yet in DB
+        tag: null,
+        weight: parseFloat(weight),
+        note: note || null,
+        new_tag_flag: false,
+        entered_at: new Date().toISOString(),
+      };
+      setEntries((prev) => [...prev, rec]);
+      setTagInput('');
+      setWeightInput('');
+      setNoteInput('');
       return;
     }
     // Pigs don't wear tags — entries save with tag=null. Everything else
@@ -645,8 +766,17 @@ const WeighInsWebform = ({sb}) => {
       return;
     }
     setErr('');
-    setBusy(true);
     const newNote = (editDraft.note || '').trim();
+
+    // Phase 1C-D — pig fresh: edit local entries[] only, no DB call. Locks
+    // offline edit-before-Save-Draft (Codex review v3 #1).
+    if (species === 'pig' && sessionIsFresh) {
+      setEntries((prev) => prev.map((e) => (e.id === entry.id ? {...e, weight: w, note: newNote || null} : e)));
+      setEditingEntryId(null);
+      return;
+    }
+
+    setBusy(true);
     const {error} = await sb
       .from('weigh_ins')
       .update({weight: w, note: newNote || null})
@@ -686,6 +816,15 @@ const WeighInsWebform = ({sb}) => {
     // Webform is anon-accessible -- _wcfConfirmDelete (App-scoped) isn't
     // mounted here, so fall back to window.confirm unconditionally.
     if (!window.confirm('Delete this entry? This cannot be undone.')) return;
+
+    // Phase 1C-D — pig fresh: drop from local entries[] only, no DB call.
+    // Locks offline delete-before-Save-Draft (Codex review v3 #1).
+    if (species === 'pig' && sessionIsFresh) {
+      setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      if (editingEntryId === entry.id) setEditingEntryId(null);
+      return;
+    }
+
     setBusy(true);
     // If this entry attached a cow/sheep to a processing batch, detach first
     // so batch detail rows and animal.processing_batch_id stay consistent.
@@ -766,6 +905,93 @@ const WeighInsWebform = ({sb}) => {
       rows.push({weight: parseFloat(w), schooner: schooner});
     }
     setErr('');
+
+    // Phase 1C-D — broiler fresh: route the whole grid through the offline
+    // RPC. v1 RPC contract is status='draft' + species='broiler' allowlist
+    // + broiler_week ∈ {4, 6} + non-empty entries. We pre-validate so the
+    // operator gets clean inline errors instead of a 400 round-trip.
+    if (species === 'broiler' && sessionIsFresh) {
+      if (rows.length === 0) {
+        setErr('Fill in at least one weight before saving.');
+        return false;
+      }
+      if (broilerWeek !== 4 && broilerWeek !== 6) {
+        setErr('Week must be 4 or 6.');
+        return false;
+      }
+      setBusy(true);
+      const stampNow = new Date().toISOString();
+      const payloadEntries = rows.map((r) => ({
+        weight: r.weight,
+        tag: r.schooner,
+        note: null,
+        new_tag_flag: false,
+        entered_at: stampNow,
+      }));
+      const trimmedNote = noteInput && noteInput.trim() ? noteInput.trim() : undefined;
+      const payload = {
+        species: 'broiler',
+        date: session.date,
+        team_member: session.team_member,
+        batch_id: session.batch_id ?? null,
+        broiler_week: broilerWeek,
+        started_at: session.started_at,
+        notes: trimmedNote,
+        entries: payloadEntries,
+      };
+      try {
+        const result = await submitDraftSession(payload);
+        if (result.state === 'synced') {
+          // Codex review #1 — convert fresh → DB-backed in place. Stay on
+          // the grid so the existing online-only Complete path still works.
+          const newId = result.record.args.parent_in.id;
+          const newEntries = result.record.args.entries_in.map((e) => ({
+            id: e.id,
+            session_id: newId,
+            tag: e.tag,
+            weight: e.weight,
+            note: e.note,
+            new_tag_flag: !!e.new_tag_flag,
+            entered_at: e.entered_at,
+          }));
+          setSession((prev) => ({...prev, id: newId}));
+          setEntries(newEntries);
+          setSessionIsFresh(false);
+          setLastSubmitOutcome('synced');
+          if (teamMember) {
+            try {
+              localStorage.setItem('wcf_team', teamMember);
+            } catch (_e) {
+              /* best effort */
+            }
+          }
+          setBusy(false);
+          return true;
+        }
+        if (result.state === 'queued') {
+          // Codex review #2 — terminal screen reserved for queued only.
+          setDoneState('queued');
+          if (teamMember) {
+            try {
+              localStorage.setItem('wcf_team', teamMember);
+            } catch (_e) {
+              /* best effort */
+            }
+          }
+          setBusy(false);
+          return false;
+        }
+      } catch (e) {
+        // Schema/validation throw from useOfflineRpcSubmit (PGRST/22*/23*/P0001).
+        // Surface inline; do NOT enqueue.
+        setErr('Could not save: ' + (e && e.message ? e.message : String(e)));
+        setBusy(false);
+        return false;
+      }
+      setBusy(false);
+      return false;
+    }
+
     setBusy(true);
     var del = await sb.from('weigh_ins').delete().eq('session_id', session.id);
     if (del.error) {
@@ -801,6 +1027,77 @@ const WeighInsWebform = ({sb}) => {
     // and writeBroilerBatchAvg requires status='complete' to fire.
     setBusy(false);
     return true;
+  }
+
+  // Phase 1C-D — pig fresh-collection submit. Collects local entries[] into
+  // one RPC call (parent + N atomic). On synced: converts fresh → DB-backed
+  // in place so the existing online Complete path still works (Codex #1+#2).
+  // On queued: terminal screen. On schema throw: inline error.
+  async function saveDraftViaRpc() {
+    if (!session) return;
+    if (entries.length === 0) {
+      setErr('Add at least one entry before saving the draft.');
+      return;
+    }
+    setErr('');
+    setBusy(true);
+    const payloadEntries = entries.map((e) => ({
+      weight: parseFloat(e.weight),
+      tag: e.tag ?? null,
+      note: e.note ?? null,
+      new_tag_flag: !!e.new_tag_flag,
+      entered_at: e.entered_at,
+    }));
+    const trimmedNote = noteInput && noteInput.trim() ? noteInput.trim() : undefined;
+    const payload = {
+      species,
+      date: session.date,
+      team_member: session.team_member,
+      batch_id: session.batch_id ?? null,
+      started_at: session.started_at,
+      notes: trimmedNote,
+      entries: payloadEntries,
+    };
+    try {
+      const result = await submitDraftSession(payload);
+      if (result.state === 'synced') {
+        const newId = result.record.args.parent_in.id;
+        setSession((prev) => ({...prev, id: newId}));
+        setEntries((prev) =>
+          prev.map((local, i) => ({
+            ...local,
+            id: result.record.args.entries_in[i].id,
+            session_id: newId,
+          })),
+        );
+        setSessionIsFresh(false);
+        setLastSubmitOutcome('synced');
+        if (teamMember) {
+          try {
+            localStorage.setItem('wcf_team', teamMember);
+          } catch (_e) {
+            /* best effort */
+          }
+        }
+        setBusy(false);
+        return;
+      }
+      if (result.state === 'queued') {
+        setDoneState('queued');
+        if (teamMember) {
+          try {
+            localStorage.setItem('wcf_team', teamMember);
+          } catch (_e) {
+            /* best effort */
+          }
+        }
+        setBusy(false);
+        return;
+      }
+    } catch (e) {
+      setErr('Could not save: ' + (e && e.message ? e.message : String(e)));
+      setBusy(false);
+    }
   }
 
   // Cattle: list of remaining tags (sorted asc, weighed already removed)
@@ -869,6 +1166,119 @@ const WeighInsWebform = ({sb}) => {
     </div>
   );
 
+  // Phase 1C-D — stuck submission modal must surface on EVERY screen, not
+  // only the session screen. Operator may land on /weighins at the species
+  // picker with stuck rows from a prior offline session and never reach
+  // the session screen if they don't start a new one. (Codex review v3 #2.)
+  const stuckModalEl =
+    stuckOpen && stuckRows.length > 0 ? (
+      <StuckSubmissionsModal
+        rows={stuckRows}
+        formLabel="weigh-in draft session"
+        describeRow={(row) => {
+          const a = row && row.record && row.record.args;
+          const sp = a && a.parent_in && a.parent_in.species;
+          const bid = a && a.parent_in && a.parent_in.batch_id;
+          const n = a && a.entries_in ? a.entries_in.length : 0;
+          return `${sp || '?'} · ${bid || '?'} · ${n} ${n === 1 ? 'entry' : 'entries'} (not yet sent)`;
+        }}
+        onRetry={async (csid) => {
+          await retryStuck(csid);
+        }}
+        onDiscard={async (csid) => {
+          await discardStuck(csid);
+        }}
+        onClose={() => setStuckOpen(false)}
+      />
+    ) : null;
+
+  // ── QUEUED-OFFLINE TERMINAL SCREEN (Phase 1C-D) ──
+  // Set when the RPC submit returned state='queued'. Mirrors AddFeedWebform's
+  // synced/queued copy — operator's draft is captured on-device and will
+  // replay on next online event / 60s tick / next mount.
+  if (doneState === 'queued')
+    return (
+      <div style={wfBg}>
+        <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '2rem', textAlign: 'center'}}>
+          {logoEl}
+          <div style={{fontSize: 56, marginBottom: 12}}>{'📡'}</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: '#92400e', marginBottom: 8}}>Saved on this device</div>
+          <div
+            data-submit-state="queued"
+            style={{
+              fontSize: 12,
+              color: '#78716c',
+              marginBottom: 12,
+              lineHeight: 1.5,
+              background: '#fef3c7',
+              border: '1px solid #fde68a',
+              borderRadius: 8,
+              padding: '8px 12px',
+              textAlign: 'left',
+            }}
+          >
+            No connection right now. Your draft is queued and will sync as soon as the device is back online.
+          </div>
+          <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28, lineHeight: 1.6}}>
+            {entries.length} {entries.length === 1 ? 'entry' : 'entries'} captured.
+          </div>
+          <button
+            onClick={() => {
+              setStage('species');
+              setSpecies('');
+              setSession(null);
+              setEntries([]);
+              setSessionIsFresh(false);
+              setDoneState('none');
+              setLastSubmitOutcome(null);
+              setCattleHerd('');
+              setPigBatchId('');
+              setBroilerBatchId('');
+              setBroilerBatchLabel('');
+              setNoteInput('');
+              setWeightInputs(Array(30).fill(''));
+            }}
+            style={{
+              width: '100%',
+              padding: 14,
+              borderRadius: 10,
+              border: 'none',
+              background: '#1e40af',
+              color: 'white',
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 10,
+            }}
+          >
+            New Weigh-In
+          </button>
+          <button
+            onClick={() => {
+              window.location.hash = '#webforms';
+              window.location.reload();
+            }}
+            style={{
+              width: '100%',
+              padding: 14,
+              borderRadius: 10,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#374151',
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Back to Forms
+          </button>
+        </div>
+        {stuckModalEl}
+      </div>
+    );
+
   // ── DONE SCREEN ──
   if (stage === 'done')
     return (
@@ -891,6 +1301,9 @@ const WeighInsWebform = ({sb}) => {
               setSpecies('');
               setSession(null);
               setEntries([]);
+              setSessionIsFresh(false);
+              setDoneState('none');
+              setLastSubmitOutcome(null);
               setCattleHerd('');
               setPigBatchId('');
               setBroilerBatchId('');
@@ -933,6 +1346,7 @@ const WeighInsWebform = ({sb}) => {
             Back to Forms
           </button>
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -1026,6 +1440,7 @@ const WeighInsWebform = ({sb}) => {
             </button>
           </div>
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -1307,6 +1722,7 @@ const WeighInsWebform = ({sb}) => {
             )}
           </div>
         </div>
+        {stuckModalEl}
       </div>
     );
 
@@ -1836,6 +2252,11 @@ const WeighInsWebform = ({sb}) => {
                   {err}
                 </div>
               )}
+              {sessionIsFresh && (
+                <div style={{fontSize: 11, color: '#78716c', marginBottom: 8, fontStyle: 'italic'}}>
+                  Saving on this device — submit at the end with Save Draft.
+                </div>
+              )}
               <button
                 onClick={() => saveEntry({tag: null, weight: weightInput, note: noteInput, mode: 'normal'})}
                 disabled={busy || !weightInput}
@@ -1852,7 +2273,7 @@ const WeighInsWebform = ({sb}) => {
                   fontFamily: 'inherit',
                 }}
               >
-                {busy ? 'Saving…' : 'Save Entry'}
+                {busy ? 'Saving…' : sessionIsFresh ? 'Add Entry' : 'Save Entry'}
               </button>
             </div>
           )}
@@ -2497,6 +2918,41 @@ const WeighInsWebform = ({sb}) => {
                     return w !== '' && !isNaN(parseFloat(w)) && parseFloat(w) > 0;
                   }).length
                 : entries.length;
+            // Phase 1C-D \u2014 pig fresh-collection: bottom button becomes
+            // "Save Draft" instead of "Complete." Broiler fresh doesn't
+            // get a bottom button at all (the per-grid Save Weights
+            // button at line ~1860 is the only fresh action; once synced,
+            // sessionIsFresh flips false and the regular Complete button
+            // appears here).
+            if (sessionIsFresh && species === 'pig') {
+              var pigDisabled = busy || filledCount === 0;
+              return (
+                <button
+                  onClick={saveDraftViaRpc}
+                  disabled={pigDisabled}
+                  style={{
+                    width: '100%',
+                    padding: 14,
+                    borderRadius: 10,
+                    border: 'none',
+                    background: pigDisabled ? '#9ca3af' : '#1e40af',
+                    color: 'white',
+                    fontSize: 15,
+                    fontWeight: 700,
+                    cursor: pigDisabled ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                    marginTop: 6,
+                  }}
+                >
+                  {busy
+                    ? 'Saving\u2026'
+                    : 'Save Draft (' + filledCount + ' ' + (filledCount === 1 ? 'entry' : 'entries') + ')'}
+                </button>
+              );
+            }
+            if (sessionIsFresh && species === 'broiler') {
+              return null;
+            }
             var isEmpty = filledCount === 0;
             var hasPending = pendingReconciles.length > 0;
             var disabled = busy || isEmpty || hasPending;
@@ -2560,6 +3016,13 @@ const WeighInsWebform = ({sb}) => {
             }}
           />
         )}
+        {/* Phase 1C-D — synced marker (Codex #1: fresh→DB-backed conversion lock) */}
+        {!sessionIsFresh && lastSubmitOutcome === 'synced' && (
+          <div data-submit-state="synced" style={{display: 'none'}}>
+            synced
+          </div>
+        )}
+        {stuckModalEl}
       </div>
     );
 

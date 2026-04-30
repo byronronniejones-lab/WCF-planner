@@ -60,13 +60,21 @@ function classifyError(err) {
     if (status >= 500) return 'server';
     if (status === 401 || status === 403) return 'rls';
     if (status >= 400 && status < 500) {
-      if (/^PGRST/i.test(code) || /^23/.test(code) || /^22/.test(code)) return 'schema';
+      // P0001 = PL/pgSQL `RAISE EXCEPTION` default SQLSTATE (raise_exception).
+      // Mig 034's submit_add_feed_batch and mig 035's
+      // submit_weigh_in_session_batch use bare RAISE EXCEPTION for every
+      // validation path (missing csid / id / date / team_member / 0 entries
+      // / bad species / bad status / bad broiler_week). PostgREST surfaces
+      // those as status=400 + code='P0001'. Without the explicit match
+      // they would fall to 'unknown' → enqueue, which would burn retry
+      // budget on a deterministic input bug.
+      if (/^PGRST/i.test(code) || /^23/.test(code) || /^22/.test(code) || code === 'P0001') return 'schema';
       return 'unknown';
     }
   }
 
-  // Codeless errors with a 23xxx code (some PostgREST shapes drop the status).
-  if (/^23/.test(code) || /^22/.test(code) || /^PGRST/i.test(code)) return 'schema';
+  // Codeless errors with a 23xxx / P0001 code (some PostgREST shapes drop the status).
+  if (/^23/.test(code) || /^22/.test(code) || /^PGRST/i.test(code) || code === 'P0001') return 'schema';
 
   return 'unknown';
 }
