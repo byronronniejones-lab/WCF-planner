@@ -441,6 +441,11 @@ test('broiler offline: queued IDB record carries broiler_week=4 + schooner label
   await expect(page.locator('[data-submit-state="queued"]')).toBeVisible({timeout: 15_000});
   await expect(page.getByText('Saved on this device')).toBeVisible();
 
+  // Broiler queued terminal screen must hide "New Weigh-In" and keep "Back to Forms".
+  // Mirrors the online done-screen contract locked by broiler_weigh_in_schooners T6.
+  await expect(page.getByRole('button', {name: 'New Weigh-In'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Back to Forms'})).toBeVisible();
+
   const queue = await readQueue(page);
   expect(queue).toHaveLength(1);
   expect(queue[0].form_kind).toBe('weigh_in_session_batch');

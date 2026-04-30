@@ -19,6 +19,7 @@
 //   - 23505 from this RPC remains a stuck/schema bug, never success.
 import React from 'react';
 import {writeBroilerBatchAvg} from '../lib/broiler.js';
+import {deriveBroilerColumnLabels} from '../lib/broilerBatchMeta.js';
 import {fmt} from '../lib/dateUtils.js';
 import {loadRoster} from '../lib/teamMembers.js';
 import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
@@ -70,7 +71,11 @@ const WeighInsWebform = ({sb}) => {
   // Pig / Broiler
   const [pigBatches, setPigBatches] = React.useState([]);
   const [broilerBatches, setBroilerBatches] = React.useState([]);
-  const [broilerBatchRecs, setBroilerBatchRecs] = React.useState([]); // full ppp-v4 records (for schooner lookup)
+  // Public broiler schooner mirror — Array<{name, schooners: string[]}>.
+  // Sourced from webform_config.broiler_batch_meta only. The admin-side
+  // weigh-ins view has its own authenticated read of the canonical batch
+  // store; the public form never touches it (anon RLS).
+  const [broilerBatchMeta, setBroilerBatchMeta] = React.useState([]);
   const [pigBatchId, setPigBatchId] = React.useState('');
   const [broilerBatchId, setBroilerBatchId] = React.useState('');
   const [broilerBatchLabel, setBroilerBatchLabel] = React.useState('');
@@ -186,13 +191,17 @@ const WeighInsWebform = ({sb}) => {
         .then(({data}) => {
           if (data && Array.isArray(data.data)) setBroilerBatches(data.data);
         });
-      // Load full broiler batch records so we can resolve the schooner field at session-start.
-      sb.from('app_store')
+      // Load the public broiler schooner mirror so we can resolve column
+      // labels at session-start. Sourced from webform_config.broiler_batch_meta
+      // (mirrored by admin-app load + syncWebformConfig). The previous direct
+      // read of the canonical batch store was anon-blocked under prod RLS
+      // and silently produced "(no schooner)" fallbacks.
+      sb.from('webform_config')
         .select('data')
-        .eq('key', 'ppp-v4')
+        .eq('key', 'broiler_batch_meta')
         .maybeSingle()
         .then(({data}) => {
-          if (data && Array.isArray(data.data)) setBroilerBatchRecs(data.data);
+          if (data && Array.isArray(data.data)) setBroilerBatchMeta(data.data);
         });
     }
     // Look for existing draft sessions in the last 7 days
@@ -338,18 +347,14 @@ const WeighInsWebform = ({sb}) => {
     setWeightInputs(grid);
   }, [entries, columnLabels, session]);
 
-  // Resolve the column labels for a given session: broiler → split batch.schooner on "&";
-  // pig → fixed ['1','2']; cattle → ignored downstream.
+  // Resolve the column labels for a given session.
+  //   broiler → schooner labels from the public mirror (no fallback —
+  //             empty array means admin hasn't assigned schooners and the
+  //             caller MUST block startNewSession / resumeSession).
+  //   pig     → fixed ['1','2'].
+  //   cattle/sheep → ignored downstream (per-entry list, not a grid).
   function deriveColumnLabels(sp, batchId) {
-    if (sp === 'broiler') {
-      const rec = broilerBatchRecs.find((b) => (b.name || '') === batchId);
-      const raw = rec && rec.schooner ? String(rec.schooner) : '';
-      const parts = raw
-        .split('&')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      return parts.length > 0 ? parts : ['(no schooner)'];
-    }
+    if (sp === 'broiler') return deriveBroilerColumnLabels(broilerBatchMeta, batchId);
     if (sp === 'pig') return ['1', '2'];
     return [];
   }
@@ -378,14 +383,17 @@ const WeighInsWebform = ({sb}) => {
     // weigh_in_sessions row only lands at RPC-submit time (synced) or
     // via queue replay (queued). startNewSession only transitions UI.
     if (species === 'pig' || species === 'broiler') {
-      setSessionIsFresh(true);
-      if (teamMember) localStorage.setItem('wcf_team', teamMember);
       if (species === 'broiler') {
         const labels = deriveColumnLabels(species, extra && extra.batch_id);
-        const finalLabels = labels.length > 0 ? labels : ['1', '2'];
-        setColumnLabels(finalLabels);
-        setWeightInputs(Array(finalLabels.length * 15).fill(''));
+        if (labels.length === 0) {
+          setErr('This batch has no schooners assigned. Ask admin to set schooners on the batch before weighing.');
+          return;
+        }
+        setColumnLabels(labels);
+        setWeightInputs(Array(labels.length * 15).fill(''));
       }
+      setSessionIsFresh(true);
+      if (teamMember) localStorage.setItem('wcf_team', teamMember);
       setSession(rec);
       setEntries([]);
       setStage('session');
@@ -429,9 +437,12 @@ const WeighInsWebform = ({sb}) => {
     if (s.species === 'sheep' && s.herd) setSheepFlock(s.herd);
     if (s.species === 'broiler') {
       const labels = deriveColumnLabels(s.species, s.batch_id);
-      const finalLabels = labels.length > 0 ? labels : ['1', '2'];
-      setColumnLabels(finalLabels);
-      setWeightInputs(Array(finalLabels.length * 15).fill(''));
+      if (labels.length === 0) {
+        setErr('This batch has no schooners assigned. Ask admin to set schooners on the batch before weighing.');
+        return;
+      }
+      setColumnLabels(labels);
+      setWeightInputs(Array(labels.length * 15).fill(''));
     }
     setStage('session');
   }
@@ -1222,38 +1233,40 @@ const WeighInsWebform = ({sb}) => {
           <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28, lineHeight: 1.6}}>
             {entries.length} {entries.length === 1 ? 'entry' : 'entries'} captured.
           </div>
-          <button
-            onClick={() => {
-              setStage('species');
-              setSpecies('');
-              setSession(null);
-              setEntries([]);
-              setSessionIsFresh(false);
-              setDoneState('none');
-              setLastSubmitOutcome(null);
-              setCattleHerd('');
-              setPigBatchId('');
-              setBroilerBatchId('');
-              setBroilerBatchLabel('');
-              setNoteInput('');
-              setWeightInputs(Array(30).fill(''));
-            }}
-            style={{
-              width: '100%',
-              padding: 14,
-              borderRadius: 10,
-              border: 'none',
-              background: '#1e40af',
-              color: 'white',
-              fontSize: 15,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              marginBottom: 10,
-            }}
-          >
-            New Weigh-In
-          </button>
+          {species !== 'broiler' && (
+            <button
+              onClick={() => {
+                setStage('species');
+                setSpecies('');
+                setSession(null);
+                setEntries([]);
+                setSessionIsFresh(false);
+                setDoneState('none');
+                setLastSubmitOutcome(null);
+                setCattleHerd('');
+                setPigBatchId('');
+                setBroilerBatchId('');
+                setBroilerBatchLabel('');
+                setNoteInput('');
+                setWeightInputs(Array(30).fill(''));
+              }}
+              style={{
+                width: '100%',
+                padding: 14,
+                borderRadius: 10,
+                border: 'none',
+                background: '#1e40af',
+                color: 'white',
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                marginBottom: 10,
+              }}
+            >
+              New Weigh-In
+            </button>
+          )}
           <button
             onClick={() => {
               window.location.hash = '#webforms';
@@ -1295,36 +1308,38 @@ const WeighInsWebform = ({sb}) => {
               </div>
             )}
           </div>
-          <button
-            onClick={() => {
-              setStage('species');
-              setSpecies('');
-              setSession(null);
-              setEntries([]);
-              setSessionIsFresh(false);
-              setDoneState('none');
-              setLastSubmitOutcome(null);
-              setCattleHerd('');
-              setPigBatchId('');
-              setBroilerBatchId('');
-              setBroilerBatchLabel('');
-            }}
-            style={{
-              width: '100%',
-              padding: 14,
-              borderRadius: 10,
-              border: 'none',
-              background: '#1e40af',
-              color: 'white',
-              fontSize: 15,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              marginBottom: 10,
-            }}
-          >
-            New Weigh-In
-          </button>
+          {species !== 'broiler' && (
+            <button
+              onClick={() => {
+                setStage('species');
+                setSpecies('');
+                setSession(null);
+                setEntries([]);
+                setSessionIsFresh(false);
+                setDoneState('none');
+                setLastSubmitOutcome(null);
+                setCattleHerd('');
+                setPigBatchId('');
+                setBroilerBatchId('');
+                setBroilerBatchLabel('');
+              }}
+              style={{
+                width: '100%',
+                padding: 14,
+                borderRadius: 10,
+                border: 'none',
+                background: '#1e40af',
+                color: 'white',
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                marginBottom: 10,
+              }}
+            >
+              New Weigh-In
+            </button>
+          )}
           <button
             onClick={() => {
               window.location.hash = '#webforms';
@@ -2280,9 +2295,7 @@ const WeighInsWebform = ({sb}) => {
 
           {species === 'broiler' && (
             <div style={cardS}>
-              <label style={lblS}>
-                Bird weights (lbs) <span style={{fontSize: 10, color: '#9ca3af'}}>— blanks are skipped</span>
-              </label>
+              <label style={lblS}>Bird weights (lbs)</label>
               <div
                 style={{
                   display: 'grid',

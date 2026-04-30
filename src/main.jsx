@@ -161,6 +161,7 @@ import {
   reconcileFeederGroupsFromBreeders,
 } from './lib/pig.js';
 import {detectConflicts} from './lib/conflicts.js';
+import {buildBroilerPublicMirror} from './lib/broilerBatchMeta.js';
 if (typeof window !== 'undefined') {
   window.invalidateCattleWeighInsCache = invalidateCattleWeighInsCache;
 }
@@ -2198,13 +2199,19 @@ function App() {
             lhData2,
           );
         });
-        // Sync broiler groups to webform_config for anon webform access
-        const activeBroilerGroups = (store['ppp-v4'] || [])
-          .filter((b) => b.status !== 'archived' && b.status !== 'processed')
-          .map((b) => b.name);
-        sb.from('webform_config')
-          .upsert({key: 'broiler_groups', data: activeBroilerGroups}, {onConflict: 'key'})
-          .then(() => {});
+        // Sync broiler groups + per-batch schooner metadata to webform_config
+        // for anon webform access. Both keys are derived from the same filtered
+        // list (status !== 'archived' && status !== 'processed') via
+        // buildBroilerPublicMirror so they cannot drift. The public broiler
+        // weigh-in form reads broiler_batch_meta to build column labels —
+        // anon never reads app_store directly. See src/lib/broilerBatchMeta.js.
+        {
+          const {groups: bGroups, meta: bMeta} = buildBroilerPublicMirror(store['ppp-v4'] || []);
+          Promise.all([
+            sb.from('webform_config').upsert({key: 'broiler_groups', data: bGroups}, {onConflict: 'key'}),
+            sb.from('webform_config').upsert({key: 'broiler_batch_meta', data: bMeta}, {onConflict: 'key'}),
+          ]).then(() => {});
+        }
       } else if (!error) {
         // No data yet - init farrowing with historical records
         setFarrowingRecs(INITIAL_FARROWING);
@@ -2443,7 +2450,11 @@ function App() {
       //                             every species)
       // Use explicit batchData param to avoid stale closure — batches state may not be set yet
       const batchList = batchData || batches || [];
-      const broilerGroupList = batchList.filter((b) => b.status === 'active').map((b) => b.name);
+      // Public broiler mirror — single source of truth for the dropdown list AND
+      // per-batch schooner column labels read by the public weigh-in form. Same
+      // filter (status !== 'archived' && status !== 'processed') applied by
+      // buildBroilerPublicMirror so groups + meta cannot drift.
+      const {groups: broilerGroupList, meta: broilerBatchMeta} = buildBroilerPublicMirror(batchList);
       // Use explicit lgData param to avoid stale closure
       const lgList = lgData || layerGroups || [];
       // Layer batch names only appear on webform when the batch has NO active housings yet
@@ -2466,6 +2477,7 @@ function App() {
       await Promise.all([
         sb.from('webform_config').upsert({key: 'active_groups', data: pigGroups}, {onConflict: 'key'}),
         sb.from('webform_config').upsert({key: 'broiler_groups', data: broilerGroupList}, {onConflict: 'key'}),
+        sb.from('webform_config').upsert({key: 'broiler_batch_meta', data: broilerBatchMeta}, {onConflict: 'key'}),
         sb.from('webform_config').upsert({key: 'webform_settings', data: {allowAddGroup}}, {onConflict: 'key'}),
         // Push housing→batch mapping for webform info display
         sb.from('webform_config').upsert(

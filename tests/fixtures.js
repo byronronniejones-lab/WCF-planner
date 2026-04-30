@@ -22,6 +22,7 @@ import {seedPigDailysOffline} from './scenarios/pig_dailys_offline_seed.js';
 import {seedWeighInsOffline} from './scenarios/weigh_ins_offline_seed.js';
 import {seedPigDailysPhotosOffline} from './scenarios/pig_dailys_photos_offline_seed.js';
 import {seedWebformHubDailysPhotosOffline} from './scenarios/webform_hub_dailys_photos_offline_seed.js';
+import {seedBroilerWeighInSchooners} from './scenarios/broiler_weigh_in_schooners_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -210,6 +211,17 @@ export const test = base.extend({
   webformHubDailysPhotosOfflineScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedWebformHubDailysPhotosOffline(supabaseAdmin);
+    await use(ids);
+  },
+  // broilerWeighInSchoonersScenario — public broiler weigh-in schooner mapping
+  // hotfix setup. Seeds 3 broiler batches in webform_config (two-schooner,
+  // one-schooner, zero-schooner) plus matching ppp-v4 rows for the admin
+  // hydration assertion. The public form is independent of app_store; the
+  // spec proves that with a network-route lock + the static lock vitest
+  // (tests/static/weighinswebform_no_app_store.test.js).
+  broilerWeighInSchoonersScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedBroilerWeighInSchooners(supabaseAdmin);
     await use(ids);
   },
 });
