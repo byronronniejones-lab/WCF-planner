@@ -53,6 +53,12 @@ const TEST_OWNED_TABLES = [
   // daily_submission_id (no FK). Truncating after the 5 daily child tables
   // is a no-op for cascade purposes; ordering kept for readability.
   'daily_submissions',
+  // Tasks v1 (migs 036-039). task_instances FK to task_templates (RESTRICT);
+  // CASCADE on the TRUNCATE handles the FK so child-before-parent ordering
+  // is just for readability. task_cron_runs has no FK.
+  'task_instances',
+  'task_cron_runs',
+  'task_templates',
 ];
 // NOT truncated:
 //   profiles    — would orphan the test admin user; reseed manually if needed
