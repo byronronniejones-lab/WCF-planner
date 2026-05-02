@@ -24,6 +24,7 @@ import {seedPigDailysPhotosOffline} from './scenarios/pig_dailys_photos_offline_
 import {seedWebformHubDailysPhotosOffline} from './scenarios/webform_hub_dailys_photos_offline_seed.js';
 import {seedBroilerWeighInSchooners} from './scenarios/broiler_weigh_in_schooners_seed.js';
 import {seedAdminBroilerSessionMeta} from './scenarios/admin_broiler_session_meta_seed.js';
+import {seedCattleHerdFilters} from './scenarios/cattle_herd_filters_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -233,6 +234,15 @@ export const test = base.extend({
   adminBroilerSessionMetaScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedAdminBroilerSessionMeta(supabaseAdmin);
+    await use(ids);
+  },
+  // cattleHerdFiltersScenario — composable filter / sort + smart-input
+  // setup. Seeds 11 cattle covering 4 active herds, mixed sexes, varied
+  // calving status, blacklist, weight tiers (fresh/stale/none), one
+  // historical breed (Heritage Wagyu) absent from cattle_breeds.
+  cattleHerdFiltersScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedCattleHerdFilters(supabaseAdmin);
     await use(ids);
   },
 });

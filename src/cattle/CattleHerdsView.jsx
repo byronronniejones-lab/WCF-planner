@@ -1,10 +1,172 @@
-// Phase 2 Round 3 extraction (verbatim).
+// CattleHerdsView — composable filter chips + ordered sort rules + explicit
+// grouped/flat toggle + local smart-filter assistant. See PROJECT.md §8
+// "Cattle Herd filters + maternal-field retirement" for the locked plan.
+//
+// Filter / sort semantics live in src/lib/cattleHerdFilters.js (pure module,
+// vitest-locked). This file is UI wiring only.
+//
+// Maternal-issue UI retired this build (PROJECT.md §8). DB columns
+// `cattle.maternal_issue_flag` + `cattle.maternal_issue_desc` are NOT dropped
+// — that's a separate migration gate.
 import React from 'react';
 import UsersModal from '../auth/UsersModal.jsx';
 import CattleBulkImport from './CattleBulkImport.jsx';
 import CowDetail from './CowDetail.jsx';
 import CollapsibleOutcomeSections from './CollapsibleOutcomeSections.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
+import {
+  buildCattlePredicate,
+  buildCattleComparator,
+  parseSmartFilter,
+  mergeObservedValues,
+  cowTagSet,
+  lastWeightFor,
+  calfCountFor,
+  CATTLE_HERD_KEYS,
+  CATTLE_OUTCOME_KEYS,
+  CATTLE_ALL_HERD_KEYS,
+  CATTLE_QUICK_FILTERS,
+  CATTLE_SORT_KEYS,
+  STALE_WEIGHT_DAYS_DEFAULT,
+} from '../lib/cattleHerdFilters.js';
+
+const HERD_LABELS = {
+  mommas: 'Mommas',
+  backgrounders: 'Backgrounders',
+  finishers: 'Finishers',
+  bulls: 'Bulls',
+  processed: 'Processed',
+  deceased: 'Deceased',
+  sold: 'Sold',
+};
+
+const HERD_COLORS = {
+  mommas: {bg: '#fef2f2', tx: '#991b1b', bd: '#fca5a5'},
+  backgrounders: {bg: '#ffedd5', tx: '#9a3412', bd: '#fdba74'},
+  finishers: {bg: '#fff1f2', tx: '#9f1239', bd: '#fda4af'},
+  bulls: {bg: '#fee2e2', tx: '#7f1d1d', bd: '#fca5a5'},
+  processed: {bg: '#f3f4f6', tx: '#374151', bd: '#d1d5db'},
+  deceased: {bg: '#f9fafb', tx: '#6b7280', bd: '#e5e7eb'},
+  sold: {bg: '#eff6ff', tx: '#1e40af', bd: '#bfdbfe'},
+};
+
+const SEX_OPTIONS = [
+  {key: 'cow', label: 'Cow'},
+  {key: 'heifer', label: 'Heifer'},
+  {key: 'bull', label: 'Bull'},
+  {key: 'steer', label: 'Steer'},
+];
+
+const BREEDING_STATUS_OPTIONS = [
+  {key: 'OPEN', label: 'Open'},
+  {key: 'PREGNANT', label: 'Pregnant'},
+  {key: 'N/A', label: 'N/A'},
+  {key: 'unset', label: '(unset)'},
+];
+
+const SORT_KEY_LABELS = {
+  tag: 'Tag',
+  age: 'Age',
+  lastWeight: 'Last weight',
+  herd: 'Herd',
+  sex: 'Sex',
+  lastCalved: 'Last calved',
+  calfCount: 'Calf count',
+  breed: 'Breed',
+  origin: 'Origin',
+};
+
+const SORT_DIR_LABELS = {
+  tag: {asc: '↑ low→high', desc: '↓ high→low'},
+  age: {asc: 'youngest first', desc: 'oldest first'},
+  lastWeight: {asc: 'lightest first', desc: 'heaviest first'},
+  herd: {asc: '↑ active→outcome', desc: '↓ outcome→active'},
+  sex: {asc: '↑ cow→steer', desc: '↓ steer→cow'},
+  lastCalved: {asc: 'oldest first', desc: 'most recent first'},
+  calfCount: {asc: 'fewest first', desc: 'most first'},
+  breed: {asc: '↑ A→Z', desc: '↓ Z→A'},
+  origin: {asc: '↑ A→Z', desc: '↓ Z→A'},
+};
+
+const EMPTY_COW = {
+  tag: '',
+  sex: 'cow',
+  herd: 'mommas',
+  breed: '',
+  breeding_blacklist: false,
+  pct_wagyu: '',
+  origin: '',
+  birth_date: '',
+  purchase_date: '',
+  purchase_amount: '',
+  dam_tag: '',
+  sire_tag: '',
+  registration_num: '',
+  breeding_status: '',
+  sale_date: '',
+  sale_amount: '',
+  death_date: '',
+  death_reason: '',
+  old_tags: [],
+};
+
+const inpS = {
+  fontSize: 13,
+  padding: '7px 10px',
+  border: '1px solid #d1d5db',
+  borderRadius: 6,
+  fontFamily: 'inherit',
+  width: '100%',
+  boxSizing: 'border-box',
+};
+const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+
+const chipBaseS = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '5px 10px',
+  borderRadius: 999,
+  fontSize: 12,
+  fontFamily: 'inherit',
+  border: '1px solid #d1d5db',
+  background: 'white',
+  color: '#374151',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+const chipActiveS = {
+  ...chipBaseS,
+  border: '1px solid #991b1b',
+  background: '#fef2f2',
+  color: '#991b1b',
+  fontWeight: 600,
+};
+
+function buildSmartProposalPreview(proposal) {
+  if (!proposal) return null;
+  const parts = [];
+  for (const [k, v] of Object.entries(proposal.chips || {})) {
+    if (v == null || (Array.isArray(v) && v.length === 0)) continue;
+    if (k === 'ageMonthsRange') {
+      const r = [];
+      if (v.min != null) r.push('≥ ' + v.min + 'mo');
+      if (v.max != null) r.push('≤ ' + v.max + 'mo');
+      parts.push('Age ' + r.join(' '));
+    } else if (k === 'calvingWindow' && v.mode === 'noneSince') {
+      parts.push('Not calved since ' + v.since);
+    } else if (Array.isArray(v)) {
+      parts.push(k + '=' + v.join(','));
+    } else if (typeof v === 'boolean') {
+      parts.push(k + (v ? '=on' : '=off'));
+    } else {
+      parts.push(k + '=' + v);
+    }
+  }
+  for (const r of proposal.sortRules || []) parts.push('sort ' + r.key + ' ' + r.dir);
+  return parts.join(' · ');
+}
+
 const CattleHerdsView = ({
   sb,
   fmt,
@@ -19,7 +181,7 @@ const CattleHerdsView = ({
   pendingEdit,
   setPendingEdit,
 }) => {
-  const {useState, useEffect} = React;
+  const {useState, useEffect, useMemo} = React;
   const [cattle, setCattle] = useState([]);
   const [weighIns, setWeighIns] = useState([]);
   const [calvingRecs, setCalvingRecs] = useState([]);
@@ -29,9 +191,17 @@ const CattleHerdsView = ({
   const [processingBatches, setProcessingBatches] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('active'); // active | all | mommas | backgrounders | finishers | bulls | processed | deceased | sold
-  const [sortBy, setSortBy] = useState('tag-asc');
+  // Composable filter / sort state.
+  const [viewMode, setViewMode] = useState('grouped'); // 'grouped' | 'flat'
+  const [filters, setFilters] = useState({});
+  const [sortRules, setSortRules] = useState([{key: 'tag', dir: 'asc'}]);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [openFilter, setOpenFilter] = useState(null); // chip popover state — string key
+
+  // Smart-filter assistant state.
+  const [smartInputText, setSmartInputText] = useState('');
+  const [smartProposal, setSmartProposal] = useState(null);
+  const [smartError, setSmartError] = useState(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
@@ -40,60 +210,12 @@ const CattleHerdsView = ({
   const [saving, setSaving] = useState(false);
   const [expandedCow, setExpandedCow] = useState(null);
   const [expandedHerds, setExpandedHerds] = useState({});
-  // Navigation stack for clicking into calving/dam/sire links — lets the
-  // cow detail panel show a "← Back to #X" button to return to the prior cow.
   const [cowNavStack, setCowNavStack] = useState([]);
-
-  const HERDS = ['mommas', 'backgrounders', 'finishers', 'bulls'];
-  const OUTCOMES = ['processed', 'deceased', 'sold'];
-  const ALL_HERDS = [...HERDS, ...OUTCOMES];
-  const HERD_LABELS = {
-    mommas: 'Mommas',
-    backgrounders: 'Backgrounders',
-    finishers: 'Finishers',
-    bulls: 'Bulls',
-    processed: 'Processed',
-    deceased: 'Deceased',
-    sold: 'Sold',
-  };
-  const HERD_COLORS = {
-    mommas: {bg: '#fef2f2', tx: '#991b1b', bd: '#fca5a5'},
-    backgrounders: {bg: '#ffedd5', tx: '#9a3412', bd: '#fdba74'},
-    finishers: {bg: '#fff1f2', tx: '#9f1239', bd: '#fda4af'},
-    bulls: {bg: '#fee2e2', tx: '#7f1d1d', bd: '#fca5a5'},
-    processed: {bg: '#f3f4f6', tx: '#374151', bd: '#d1d5db'},
-    deceased: {bg: '#f9fafb', tx: '#6b7280', bd: '#e5e7eb'},
-    sold: {bg: '#eff6ff', tx: '#1e40af', bd: '#bfdbfe'},
-  };
-
-  const EMPTY_COW = {
-    tag: '',
-    sex: 'cow',
-    herd: 'mommas',
-    breed: '',
-    breeding_blacklist: false,
-    pct_wagyu: '',
-    origin: '',
-    birth_date: '',
-    purchase_date: '',
-    purchase_amount: '',
-    dam_tag: '',
-    sire_tag: '',
-    registration_num: '',
-    breeding_status: '',
-    maternal_issue_flag: false,
-    maternal_issue_desc: '',
-    sale_date: '',
-    sale_amount: '',
-    death_date: '',
-    death_reason: '',
-    old_tags: [], // [{tag, changed_at, source}] — source ∈ 'import'|'weigh_in'|'manual'
-  };
 
   async function loadAll() {
     const [cR, wAll, calR, comR, brR, orR, pbR] = await Promise.all([
       sb.from('cattle').select('*').order('tag'),
-      loadCattleWeighInsCached(sb), // already sorted entered_at desc
+      loadCattleWeighInsCached(sb),
       sb.from('cattle_calving_records').select('*').order('calving_date', {ascending: false}),
       sb.from('cattle_comments').select('*').order('created_at', {ascending: false}),
       sb.from('cattle_breeds').select('*').order('label'),
@@ -113,9 +235,10 @@ const CattleHerdsView = ({
     loadAll();
   }, []);
 
+  // ── helpers (the lib owns the math; these are display-side wrappers) ──────
   function age(birth) {
     if (!birth) return null;
-    const ms = Date.now() - new Date(birth + 'T12:00:00').getTime();
+    const ms = Date.now() - new Date(birth + 'T12:00:00Z').getTime();
     const days = Math.floor(ms / 86400000);
     if (days < 0) return null;
     const y = Math.floor(days / 365);
@@ -125,7 +248,7 @@ const CattleHerdsView = ({
   }
   function ageAtDate(birth, endDate) {
     if (!birth || !endDate) return null;
-    const ms = new Date(endDate + 'T12:00:00').getTime() - new Date(birth + 'T12:00:00').getTime();
+    const ms = new Date(endDate + 'T12:00:00Z').getTime() - new Date(birth + 'T12:00:00Z').getTime();
     const days = Math.floor(ms / 86400000);
     if (days < 0) return null;
     const y = Math.floor(days / 365);
@@ -133,8 +256,6 @@ const CattleHerdsView = ({
     if (y > 0) return y + 'y ' + m + 'm';
     return m + 'm';
   }
-  // For a processed cow, return { date, age } using the linked batch's
-  // actual_process_date (fall back to planned_process_date if actual is null).
   function processingInfo(cow) {
     if (!cow || cow.herd !== 'processed' || !cow.processing_batch_id) return null;
     const b = processingBatches.find((pb) => pb.id === cow.processing_batch_id);
@@ -143,37 +264,16 @@ const CattleHerdsView = ({
     if (!date) return null;
     return {date, age: ageAtDate(cow.birth_date, date)};
   }
-  function cowTagSet(cow) {
-    // Includes current WCF tag + prior WCF tags (source='weigh_in' retags).
-    // Excludes purchase-farm tags (source='import') because those are the
-    // selling farm's numbers and can collide with other WCF cows' tags.
-    const set = new Set();
-    if (cow && cow.tag) set.add(cow.tag);
-    if (cow && Array.isArray(cow.old_tags)) {
-      for (const ot of cow.old_tags) {
-        if (!ot || !ot.tag) continue;
-        if (ot.source === 'import') continue;
-        set.add(ot.tag);
-      }
-    }
-    return set;
-  }
   function lastWeight(cow) {
-    const tags = cowTagSet(cow);
-    if (tags.size === 0) return null;
-    const w = weighIns.find((x) => tags.has(x.tag));
-    return w ? parseFloat(w.weight) : null;
+    return lastWeightFor(cow, weighIns);
   }
-  // For aggregate herd weight: cows without a weigh-in fall back to 1,000 lb
-  // so a freshly-imported group still feeds into the per-herd live-weight
-  // total. Scope: only cows purchased within last 120 days — older un-weighed
-  // records (calves, legacy data gaps) contribute 0. Per-cow rows still show
-  // "no weigh-in" honestly; this fallback is aggregate-only.
+  // Aggregate herd-tile total uses default for recently-purchased cows without
+  // a real weigh-in. Per-cow rows still show "no weigh-in" honestly.
   const HERD_TILE_DEFAULT_COW_WEIGHT = 1000;
   const HERD_TILE_ESTIMATE_DAYS = 120;
   function isHerdTileRecentlyPurchased(cow) {
     if (!cow || !cow.purchase_date) return false;
-    const ms = Date.now() - new Date(cow.purchase_date + 'T12:00:00').getTime();
+    const ms = Date.now() - new Date(cow.purchase_date + 'T12:00:00Z').getTime();
     return ms >= 0 && ms <= HERD_TILE_ESTIMATE_DAYS * 86400000;
   }
   function effectiveWeight(cow) {
@@ -181,102 +281,133 @@ const CattleHerdsView = ({
     if (real != null && real > 0) return real;
     return isHerdTileRecentlyPurchased(cow) ? HERD_TILE_DEFAULT_COW_WEIGHT : 0;
   }
-  // Jump to another cow's detail (called from calving / dam / sire links).
-  // Pushes the currently-open cow onto a back stack so the detail panel can
-  // render a "← Back" button. Handles both tile mode (active herds) and
-  // flat mode (outcome herds) by adjusting filter + ensuring the target's
-  // herd tile is expanded.
-  function navigateToCow(target, fromCowId) {
-    if (!target || !target.id) return;
-    if (fromCowId && fromCowId !== target.id) setCowNavStack((s) => [...s, fromCowId]);
-    if (HERDS.includes(target.herd)) {
-      setSearch('');
-      setStatusFilter('active');
-      setExpandedHerds((prev) => ({...prev, [target.herd]: true}));
-    } else {
-      // Outcome herd — put the cow in flat-list view filtered to that outcome
-      setSearch('');
-      setStatusFilter(target.herd);
+
+  // ── filter + sort: pure-helper-driven ─────────────────────────────────────
+  // Default behavior matches today's "active" mode: when no herdSet chip is
+  // explicitly set, cap the result to active herd keys (UNLESS the user has
+  // a textSearch active — then relax to all so prior outcomes can match).
+  const breedFilterOptions = useMemo(
+    () => mergeObservedValues(breedOpts, [...new Set(cattle.map((c) => c.breed).filter(Boolean))]),
+    [breedOpts, cattle],
+  );
+  const originFilterOptions = useMemo(
+    () => mergeObservedValues(originOpts, [...new Set(cattle.map((c) => c.origin).filter(Boolean))]),
+    [originOpts, cattle],
+  );
+
+  const filtered = useMemo(() => {
+    const effectiveFilters = {...filters};
+    const userSetHerd = Array.isArray(filters.herdSet) && filters.herdSet.length > 0;
+    const searching = typeof filters.textSearch === 'string' && filters.textSearch.trim();
+    if (!userSetHerd && !searching) {
+      effectiveFilters.herdSet = [...CATTLE_HERD_KEYS];
     }
-    setExpandedCow(target.id);
-    setTimeout(() => {
-      const el = document.getElementById('cow-' + target.id);
-      if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-    }, 80);
+    const predicate = buildCattlePredicate(effectiveFilters, {
+      todayMs: Date.now(),
+      calvingRecs,
+      weighIns,
+      staleDaysThreshold: STALE_WEIGHT_DAYS_DEFAULT,
+    });
+    return cattle.filter(predicate);
+  }, [cattle, filters, calvingRecs, weighIns]);
+
+  const sortedFlat = useMemo(() => {
+    const cmp = buildCattleComparator(sortRules, {calvingRecs, weighIns});
+    return [...filtered].sort(cmp);
+  }, [filtered, sortRules, calvingRecs, weighIns]);
+
+  // ── filter chip handlers ───────────────────────────────────────────────────
+  function setFilter(key, value) {
+    setFilters((prev) => {
+      const next = {...prev};
+      if (
+        value == null ||
+        value === '' ||
+        (Array.isArray(value) && value.length === 0) ||
+        (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)
+      ) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return next;
+    });
   }
-  function navigateBack() {
-    if (cowNavStack.length === 0) {
-      setExpandedCow(null);
+  function clearFilter(key) {
+    setFilter(key, null);
+  }
+  function clearAllFilters() {
+    setFilters({});
+  }
+
+  function toggleFilterArrayValue(key, value) {
+    setFilters((prev) => {
+      const cur = Array.isArray(prev[key]) ? prev[key] : [];
+      const next = cur.includes(value) ? cur.filter((x) => x !== value) : [...cur, value];
+      const out = {...prev};
+      if (next.length === 0) delete out[key];
+      else out[key] = next;
+      return out;
+    });
+  }
+
+  // ── sort rule handlers ─────────────────────────────────────────────────────
+  function addSortRule(key) {
+    setSortRules((prev) => {
+      if (prev.find((r) => r.key === key)) return prev;
+      return [...prev, {key, dir: 'asc'}];
+    });
+  }
+  function removeSortRule(idx) {
+    setSortRules((prev) => prev.filter((_, i) => i !== idx));
+  }
+  function flipSortDir(idx) {
+    setSortRules((prev) => prev.map((r, i) => (i === idx ? {...r, dir: r.dir === 'asc' ? 'desc' : 'asc'} : r)));
+  }
+  function moveSortRule(idx, delta) {
+    setSortRules((prev) => {
+      const next = [...prev];
+      const target = idx + delta;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+
+  // ── smart-assistant handlers ───────────────────────────────────────────────
+  function runSmartFilter() {
+    const text = smartInputText;
+    setSmartError(null);
+    if (!text.trim()) {
+      setSmartProposal(null);
       return;
     }
-    const prevId = cowNavStack[cowNavStack.length - 1];
-    const prev = cattle.find((c) => c.id === prevId);
-    setCowNavStack((s) => s.slice(0, -1));
-    if (prev) {
-      if (HERDS.includes(prev.herd)) {
-        setStatusFilter('active');
-        setExpandedHerds((p) => ({...p, [prev.herd]: true}));
-      } else {
-        setStatusFilter(prev.herd);
-      }
-      setExpandedCow(prev.id);
-      setTimeout(() => {
-        const el = document.getElementById('cow-' + prev.id);
-        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-      }, 80);
-    } else {
-      setExpandedCow(null);
+    const proposal = parseSmartFilter(text, {
+      todayMs: Date.now(),
+      breedOptions: breedFilterOptions,
+      originOptions: originFilterOptions,
+    });
+    if (proposal.confidence === 'low') {
+      setSmartProposal(null);
+      setSmartError("I couldn't parse this. Try the filter chips below.");
+      return;
     }
+    setSmartProposal(proposal);
   }
-  function lastCalving(tag) {
-    if (!tag) return null;
-    return calvingRecs.find((r) => r.dam_tag === tag);
-  }
-  // Calves derived from cattle_calving_records (Codex revision 2026-04-29):
-  // sum total_born across the cow's calving rows (so twins count as 2),
-  // falling back to 1 per record when total_born is null / missing /
-  // non-positive. Replaces the prior cattle.dam_tag count which under-
-  // counted whenever a calving event didn't mint a tagged cattle row
-  // (sold-young calves, never-tagged stillbirths, etc.). Does NOT subtract
-  // deaths — Ronnie wants total calves born, not living-only; a separate
-  // label can surface that later if needed.
-  function calfCount(tag) {
-    if (!tag) return 0;
-    return calvingRecs
-      .filter((r) => r.dam_tag === tag)
-      .reduce((sum, r) => {
-        const tb = parseInt(r.total_born, 10);
-        return sum + (Number.isFinite(tb) && tb > 0 ? tb : 1);
-      }, 0);
-  }
-
-  // Filter + sort. When the user is actively searching, relax the default
-  // 'active' restriction so outcome cows (processed/deceased/sold) match too.
-  // Explicit per-herd filters still apply.
-  const filtered = cattle.filter((c) => {
-    const searching = !!search;
-    if (!searching && statusFilter === 'active' && !HERDS.includes(c.herd)) return false;
-    if (statusFilter !== 'all' && statusFilter !== 'active' && c.herd !== statusFilter) return false;
-    if (searching) {
-      const s = search.toLowerCase().trim();
-      const fields = [c.tag, c.dam_tag, c.sire_tag, c.breed, c.origin].map((x) => (x || '').toLowerCase());
-      if (!fields.some((f) => f.includes(s))) return false;
+  function applySmartProposal() {
+    if (!smartProposal) return;
+    setFilters((prev) => ({...prev, ...smartProposal.chips}));
+    if (Array.isArray(smartProposal.sortRules) && smartProposal.sortRules.length > 0) {
+      setSortRules(smartProposal.sortRules);
     }
-    return true;
-  });
+    setSmartProposal(null);
+    setSmartInputText('');
+  }
+  function discardSmartProposal() {
+    setSmartProposal(null);
+  }
 
-  const sorted = [...filtered].sort((a, b) => {
-    if (sortBy === 'tag-asc')
-      return (parseFloat(a.tag) || 0) - (parseFloat(b.tag) || 0) || (a.tag || '').localeCompare(b.tag || '');
-    if (sortBy === 'tag-desc')
-      return (parseFloat(b.tag) || 0) - (parseFloat(a.tag) || 0) || (b.tag || '').localeCompare(a.tag || '');
-    if (sortBy === 'age-asc') return (a.birth_date || '9999').localeCompare(b.birth_date || '9999');
-    if (sortBy === 'age-desc') return (b.birth_date || '').localeCompare(a.birth_date || '');
-    if (sortBy === 'weight-desc') return (lastWeight(b) || 0) - (lastWeight(a) || 0);
-    if (sortBy === 'weight-asc') return (lastWeight(a) || 0) - (lastWeight(b) || 0);
-    return 0;
-  });
-
+  // ── Add / Edit / Delete / Transfer / Comments / Calving — preserved ───────
   function openAdd() {
     setForm({...EMPTY_COW});
     setEditId(null);
@@ -294,12 +425,10 @@ const CattleHerdsView = ({
       sale_date: cow.sale_date || '',
       death_date: cow.death_date || '',
       breeding_status: cow.breeding_status || '',
-      maternal_issue_desc: cow.maternal_issue_desc || '',
       old_tags: Array.isArray(cow.old_tags)
         ? cow.old_tags.map(function (t) {
             return {
               tag: t.tag || '',
-              // changed_at can be a full ISO string or just YYYY-MM-DD; strip to date for the picker.
               changed_at: (t.changed_at || '').slice(0, 10),
               source: t.source || 'manual',
             };
@@ -310,9 +439,6 @@ const CattleHerdsView = ({
     setShowAddForm(true);
   }
   async function saveCow() {
-    if (!form.tag.trim() && form.herd !== 'mommas') {
-      // Allow tagless calves only when herd is mommas
-    }
     if (!form.tag.trim()) {
       if (!confirm('Save cow without a tag? (For unweaned calves; admin can tag later.)')) return;
     }
@@ -333,14 +459,10 @@ const CattleHerdsView = ({
       sire_tag: form.sire_tag || null,
       registration_num: form.registration_num || null,
       breeding_status: isFemale ? form.breeding_status || null : null,
-      maternal_issue_flag: !!form.maternal_issue_flag,
-      maternal_issue_desc: form.maternal_issue_desc || null,
       sale_date: form.sale_date || null,
       sale_amount: form.sale_amount !== '' ? parseFloat(form.sale_amount) : null,
       death_date: form.death_date || null,
       death_reason: form.death_reason || null,
-      // Clean + persist prior-tag entries. Drop empty tags; keep date + source
-      // so the original import stamp survives intact when admin edits other fields.
       old_tags: (Array.isArray(form.old_tags) ? form.old_tags : [])
         .map(function (t) {
           var tag = String(t.tag || '').trim();
@@ -376,9 +498,6 @@ const CattleHerdsView = ({
     setEditId(null);
     setForm(null);
   }
-  // Inline auto-save patch for a single cow. Called from CowDetail's
-  // editable inputs (defaultValue + onBlur pattern). Updates DB column-by-
-  // column then reflects locally so the read-only badges/labels refresh.
   async function patchCow(cowId, fields) {
     if (!cowId || !fields) return;
     const {error} = await sb.from('cattle').update(fields).eq('id', cowId);
@@ -486,20 +605,402 @@ const CattleHerdsView = ({
       await loadAll();
     });
   }
+  function lastCalving(tag) {
+    if (!tag) return null;
+    return calvingRecs.find((r) => r.dam_tag === tag);
+  }
+  function calfCount(tag) {
+    return calfCountFor(tag, calvingRecs);
+  }
+  function navigateToCow(target, fromCowId) {
+    if (!target || !target.id) return;
+    if (fromCowId && fromCowId !== target.id) setCowNavStack((s) => [...s, fromCowId]);
+    if (CATTLE_HERD_KEYS.includes(target.herd)) {
+      setViewMode('grouped');
+      setExpandedHerds((prev) => ({...prev, [target.herd]: true}));
+    } else {
+      setViewMode('flat');
+      setFilter('herdSet', [target.herd]);
+    }
+    setExpandedCow(target.id);
+    setTimeout(() => {
+      const el = document.getElementById('cow-' + target.id);
+      if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+    }, 80);
+  }
+  function navigateBack() {
+    if (cowNavStack.length === 0) {
+      setExpandedCow(null);
+      return;
+    }
+    const prevId = cowNavStack[cowNavStack.length - 1];
+    const prev = cattle.find((c) => c.id === prevId);
+    setCowNavStack((s) => s.slice(0, -1));
+    if (prev) {
+      if (CATTLE_HERD_KEYS.includes(prev.herd)) {
+        setViewMode('grouped');
+        setExpandedHerds((p) => ({...p, [prev.herd]: true}));
+      } else {
+        setViewMode('flat');
+        setFilter('herdSet', [prev.herd]);
+      }
+      setExpandedCow(prev.id);
+      setTimeout(() => {
+        const el = document.getElementById('cow-' + prev.id);
+        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+      }, 80);
+    } else {
+      setExpandedCow(null);
+    }
+  }
 
-  const inpS = {
-    fontSize: 13,
-    padding: '7px 10px',
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    fontFamily: 'inherit',
-    width: '100%',
-    boxSizing: 'border-box',
-  };
-  const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+  // ── filter / sort UI subcomponents (inline for context) ────────────────────
+  function FilterChip({label, active, onClick, dataAttr}) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        style={active ? chipActiveS : chipBaseS}
+        data-filter-chip={dataAttr || undefined}
+      >
+        {label}
+      </button>
+    );
+  }
 
-  // Determine if we're in flat-list mode (filtered/searched) or per-herd-tile mode
-  const isFlatMode = search || statusFilter !== 'active';
+  function quickFilterButtons() {
+    return CATTLE_QUICK_FILTERS.map((key) => {
+      if (key === 'textSearch') return null; // handled by separate search input
+      const active = key in filters;
+      let label;
+      switch (key) {
+        case 'herdSet':
+          label = active ? 'Herd: ' + (filters.herdSet || []).map((h) => HERD_LABELS[h] || h).join(', ') : '+ Herd';
+          break;
+        case 'sex':
+          label = active
+            ? 'Sex: ' +
+              (filters.sex || []).map((s) => (SEX_OPTIONS.find((o) => o.key === s) || {}).label || s).join(', ')
+            : '+ Sex';
+          break;
+        case 'ageMonthsRange': {
+          if (!active) {
+            label = '+ Age';
+          } else {
+            const r = [];
+            if (filters.ageMonthsRange.min != null) r.push('≥' + filters.ageMonthsRange.min + 'mo');
+            if (filters.ageMonthsRange.max != null) r.push('≤' + filters.ageMonthsRange.max + 'mo');
+            label = 'Age: ' + r.join(' ');
+          }
+          break;
+        }
+        case 'calvedStatus': {
+          if (active) {
+            label = 'Calved: ' + (filters.calvedStatus === 'yes' ? 'yes' : 'no');
+          } else if (filters.calvingWindow && filters.calvingWindow.mode === 'noneSince') {
+            label = 'Not calved since ' + filters.calvingWindow.since;
+          } else {
+            label = '+ Calved';
+          }
+          break;
+        }
+        case 'breedingBlacklist':
+          if (filters.breedingBlacklist === true) label = 'Blacklist: only';
+          else if (filters.breedingBlacklist === false) label = 'Blacklist: hide';
+          else label = '+ Blacklist';
+          break;
+        case 'weightTier':
+          if (active) {
+            const tierLabels = {
+              hasWeight: 'has weight',
+              noWeight: 'no weight',
+              staleWeight: 'stale weight',
+              staleOrNoWeight: 'stale or no weight',
+            };
+            label = 'Weight: ' + (tierLabels[filters.weightTier] || filters.weightTier);
+          } else {
+            label = '+ Weight';
+          }
+          break;
+        default:
+          label = key;
+      }
+      const isOpen = openFilter === key;
+      const chipActive = active || (key === 'calvedStatus' && filters.calvingWindow);
+      return (
+        <div key={key} style={{position: 'relative', display: 'inline-block'}}>
+          <FilterChip
+            label={label + (chipActive ? ' ×' : '')}
+            active={chipActive}
+            dataAttr={key}
+            onClick={(e) => {
+              if (chipActive && (e.shiftKey || e.metaKey || e.altKey)) {
+                clearFilter(key);
+                if (key === 'calvedStatus') clearFilter('calvingWindow');
+                return;
+              }
+              setOpenFilter(isOpen ? null : key);
+            }}
+          />
+          {isOpen && (
+            <FilterChipPopover
+              filterKey={key}
+              filters={filters}
+              setFilters={setFilters}
+              setFilter={setFilter}
+              clearFilter={clearFilter}
+              toggleFilterArrayValue={toggleFilterArrayValue}
+              breedFilterOptions={breedFilterOptions}
+              originFilterOptions={originFilterOptions}
+              onClose={() => setOpenFilter(null)}
+            />
+          )}
+        </div>
+      );
+    });
+  }
+
+  function moreFiltersButtons() {
+    if (!showMoreFilters) return null;
+    const dims = [
+      'birthDateRange',
+      'lastCalvedRange',
+      'calfCountRange',
+      'breedingStatus',
+      'damPresence',
+      'sirePresence',
+      'weightRange',
+      'breed',
+      'origin',
+      'wagyuPctRange',
+    ];
+    return dims.map((key) => {
+      const active = key in filters;
+      let label;
+      switch (key) {
+        case 'birthDateRange': {
+          if (!active) label = '+ Birth date';
+          else {
+            const r = filters.birthDateRange;
+            label = 'Born ' + (r.after ? 'after ' + r.after : '') + (r.before ? ' before ' + r.before : '');
+          }
+          break;
+        }
+        case 'lastCalvedRange': {
+          if (!active) label = '+ Last calved';
+          else {
+            const r = filters.lastCalvedRange;
+            label = 'Last calved ' + (r.after ? 'after ' + r.after : '') + (r.before ? ' before ' + r.before : '');
+          }
+          break;
+        }
+        case 'calfCountRange': {
+          if (!active) label = '+ Calf count';
+          else {
+            const r = filters.calfCountRange;
+            const parts = [];
+            if (r.min != null) parts.push('≥' + r.min);
+            if (r.max != null) parts.push('≤' + r.max);
+            label = 'Calves ' + parts.join(' ');
+          }
+          break;
+        }
+        case 'breedingStatus':
+          label = active
+            ? 'Status: ' +
+              (filters.breedingStatus || [])
+                .map((s) => (BREEDING_STATUS_OPTIONS.find((o) => o.key === s) || {}).label || s)
+                .join(', ')
+            : '+ Breeding status';
+          break;
+        case 'damPresence':
+          label = active ? 'Dam: ' + filters.damPresence : '+ Dam';
+          break;
+        case 'sirePresence':
+          label = active ? 'Sire: ' + filters.sirePresence : '+ Sire';
+          break;
+        case 'weightRange': {
+          if (!active) label = '+ Weight range';
+          else {
+            const r = filters.weightRange;
+            const parts = [];
+            if (r.min != null) parts.push('≥' + r.min + 'lb');
+            if (r.max != null) parts.push('≤' + r.max + 'lb');
+            label = 'Weight ' + parts.join(' ');
+          }
+          break;
+        }
+        case 'breed':
+          label = active ? 'Breed: ' + (filters.breed || []).join(', ') : '+ Breed';
+          break;
+        case 'origin':
+          label = active ? 'Origin: ' + (filters.origin || []).join(', ') : '+ Origin';
+          break;
+        case 'wagyuPctRange': {
+          if (!active) label = '+ Wagyu %';
+          else {
+            const r = filters.wagyuPctRange;
+            const parts = [];
+            if (r.min != null) parts.push('≥' + r.min);
+            if (r.max != null) parts.push('≤' + r.max);
+            label = 'Wagyu ' + parts.join(' ') + '%';
+          }
+          break;
+        }
+        default:
+          label = key;
+      }
+      const isOpen = openFilter === key;
+      return (
+        <div key={key} style={{position: 'relative', display: 'inline-block'}}>
+          <FilterChip
+            label={label + (active ? ' ×' : '')}
+            active={active}
+            dataAttr={key}
+            onClick={(e) => {
+              if (active && (e.shiftKey || e.metaKey || e.altKey)) {
+                clearFilter(key);
+                return;
+              }
+              setOpenFilter(isOpen ? null : key);
+            }}
+          />
+          {isOpen && (
+            <FilterChipPopover
+              filterKey={key}
+              filters={filters}
+              setFilters={setFilters}
+              setFilter={setFilter}
+              clearFilter={clearFilter}
+              toggleFilterArrayValue={toggleFilterArrayValue}
+              breedFilterOptions={breedFilterOptions}
+              originFilterOptions={originFilterOptions}
+              onClose={() => setOpenFilter(null)}
+            />
+          )}
+        </div>
+      );
+    });
+  }
+
+  function sortBar() {
+    const used = new Set(sortRules.map((r) => r.key));
+    const available = CATTLE_SORT_KEYS.filter((k) => !used.has(k));
+    return (
+      <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
+        <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4}}>Sort:</span>
+        {sortRules.length === 0 && <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>(none)</span>}
+        {sortRules.map((r, i) => (
+          <span
+            key={r.key}
+            data-sort-rule={r.key}
+            data-sort-dir={r.dir}
+            style={{
+              ...chipActiveS,
+              cursor: 'default',
+              gap: 4,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#374151',
+              fontWeight: 500,
+            }}
+          >
+            <span style={{fontWeight: 600, color: '#991b1b'}}>{i + 1}.</span>
+            <span>{SORT_KEY_LABELS[r.key] || r.key}</span>
+            <button
+              type="button"
+              onClick={() => flipSortDir(i)}
+              title="Toggle direction"
+              style={{
+                fontSize: 11,
+                background: '#f9fafb',
+                border: '1px solid #d1d5db',
+                borderRadius: 4,
+                padding: '0 6px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {(SORT_DIR_LABELS[r.key] || {})[r.dir] || r.dir}
+            </button>
+            <button
+              type="button"
+              onClick={() => moveSortRule(i, -1)}
+              disabled={i === 0}
+              title="Move up"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: i === 0 ? '#d1d5db' : '#6b7280',
+                cursor: i === 0 ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                padding: '0 2px',
+              }}
+            >
+              {'▲'}
+            </button>
+            <button
+              type="button"
+              onClick={() => moveSortRule(i, 1)}
+              disabled={i === sortRules.length - 1}
+              title="Move down"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: i === sortRules.length - 1 ? '#d1d5db' : '#6b7280',
+                cursor: i === sortRules.length - 1 ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                padding: '0 2px',
+              }}
+            >
+              {'▼'}
+            </button>
+            <button
+              type="button"
+              onClick={() => removeSortRule(i)}
+              title="Remove sort"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#b91c1c',
+                cursor: 'pointer',
+                fontSize: 14,
+                lineHeight: 1,
+                padding: '0 4px',
+              }}
+            >
+              {'×'}
+            </button>
+          </span>
+        ))}
+        {available.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value) {
+                addSortRule(e.target.value);
+                e.target.value = '';
+              }
+            }}
+            style={{...inpS, width: 'auto', fontSize: 11, padding: '4px 8px'}}
+            data-sort-add
+          >
+            <option value="">+ Sort by…</option>
+            {available.map((k) => (
+              <option key={k} value={k}>
+                {SORT_KEY_LABELS[k] || k}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    );
+  }
+
+  // ── derived UI flags ───────────────────────────────────────────────────────
+  const isFlat = viewMode === 'flat';
+  const filterCount = Object.keys(filters).length;
+  const search = filters.textSearch || '';
 
   return (
     <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -515,6 +1016,126 @@ const CattleHerdsView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1200, margin: '0 auto'}}>
+        {/* Smart-filter row */}
+        <div
+          style={{
+            background: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: 10,
+            padding: '10px 14px',
+            marginBottom: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span aria-hidden style={{fontSize: 16}}>
+            {'🪄'}
+          </span>
+          <input
+            type="text"
+            value={smartInputText}
+            placeholder="Try in plain English: heffers older than 18 months"
+            data-smart-input
+            onChange={(e) => setSmartInputText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') runSmartFilter();
+            }}
+            style={{...inpS, flex: 1, minWidth: 240}}
+          />
+          <button
+            type="button"
+            onClick={runSmartFilter}
+            data-smart-apply
+            disabled={!smartInputText.trim()}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #991b1b',
+              background: 'white',
+              color: '#991b1b',
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: smartInputText.trim() ? 'pointer' : 'not-allowed',
+              fontFamily: 'inherit',
+              opacity: smartInputText.trim() ? 1 : 0.5,
+            }}
+          >
+            Parse
+          </button>
+        </div>
+        {(smartProposal || smartError) && (
+          <div
+            data-smart-preview
+            style={{
+              background: smartError ? '#fef2f2' : '#eff6ff',
+              border: '1px solid ' + (smartError ? '#fca5a5' : '#bfdbfe'),
+              borderRadius: 8,
+              padding: '10px 14px',
+              marginBottom: 8,
+              fontSize: 12,
+              color: smartError ? '#b91c1c' : '#1e3a8a',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            {smartError && <span>{smartError}</span>}
+            {smartProposal && (
+              <>
+                <span style={{fontWeight: 600}}>Proposed:</span>
+                <span>{buildSmartProposalPreview(smartProposal) || '(none)'}</span>
+                {smartProposal.unmapped && smartProposal.unmapped.length > 0 && (
+                  <span style={{color: '#92400e', fontStyle: 'italic'}}>
+                    Unmapped: {smartProposal.unmapped.join(', ')}
+                  </span>
+                )}
+                {smartProposal.notes && smartProposal.notes.length > 0 && (
+                  <span style={{color: '#1e3a8a', fontStyle: 'italic'}}>{smartProposal.notes.join('; ')}</span>
+                )}
+                <span style={{flex: 1}} />
+                <button
+                  type="button"
+                  onClick={applySmartProposal}
+                  data-smart-apply-proposal
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: '#1d4ed8',
+                    color: 'white',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Apply
+                </button>
+                <button
+                  type="button"
+                  onClick={discardSmartProposal}
+                  data-smart-discard
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#6b7280',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Discard
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Top toolbar */}
         <div
           style={{
@@ -524,80 +1145,142 @@ const CattleHerdsView = ({
             padding: '12px 16px',
             marginBottom: 14,
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: 'column',
             gap: 10,
-            flexWrap: 'wrap',
           }}
         >
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by tag, dam, sire, breed, origin..."
-            style={{...inpS, flex: 1, minWidth: 200}}
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{...inpS, width: 'auto'}}
-          >
-            <option value="active">All Active Herds</option>
-            <option value="all">All (including outcomes)</option>
-            <option disabled>{'\u2500\u2500\u2500'}</option>
-            {HERDS.map((h) => (
-              <option key={h} value={h}>
-                {HERD_LABELS[h]}
-              </option>
-            ))}
-            <option disabled>{'\u2500\u2500\u2500'}</option>
-            {OUTCOMES.map((h) => (
-              <option key={h} value={h}>
-                {HERD_LABELS[h]}
-              </option>
-            ))}
-          </select>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{...inpS, width: 'auto'}}>
-            <option value="tag-asc">Tag {'\u2191'}</option>
-            <option value="tag-desc">Tag {'\u2193'}</option>
-            <option value="age-asc">Age (youngest first)</option>
-            <option value="age-desc">Age (oldest first)</option>
-            <option value="weight-desc">Weight {'\u2193'}</option>
-            <option value="weight-asc">Weight {'\u2191'}</option>
-          </select>
-          <button
-            onClick={() => setShowBulkImport(true)}
-            style={{
-              padding: '7px 14px',
-              borderRadius: 7,
-              border: '1px solid #991b1b',
-              background: 'white',
-              color: '#991b1b',
-              fontWeight: 600,
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {'\ud83d\udce5'} Bulk Import
-          </button>
-          <button
-            onClick={openAdd}
-            style={{
-              padding: '7px 16px',
-              borderRadius: 7,
-              border: 'none',
-              background: '#991b1b',
-              color: 'white',
-              fontWeight: 600,
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            + Add Cow
-          </button>
+          <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setFilter('textSearch', e.target.value)}
+              placeholder="Search by tag, dam, sire, breed, origin..."
+              style={{...inpS, flex: 1, minWidth: 200}}
+            />
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                color: '#374151',
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                padding: '4px 8px',
+              }}
+            >
+              <span style={{color: '#6b7280', marginRight: 4}}>View</span>
+              <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                <input
+                  type="radio"
+                  name="cattleViewMode"
+                  checked={viewMode === 'grouped'}
+                  onChange={() => setViewMode('grouped')}
+                  data-view-mode="grouped"
+                />
+                Grouped
+              </label>
+              <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                <input
+                  type="radio"
+                  name="cattleViewMode"
+                  checked={viewMode === 'flat'}
+                  onChange={() => setViewMode('flat')}
+                  data-view-mode="flat"
+                />
+                Flat
+              </label>
+            </div>
+            <button
+              onClick={() => setShowBulkImport(true)}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 7,
+                border: '1px solid #991b1b',
+                background: 'white',
+                color: '#991b1b',
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {'📥'} Bulk Import
+            </button>
+            <button
+              onClick={openAdd}
+              style={{
+                padding: '7px 16px',
+                borderRadius: 7,
+                border: 'none',
+                background: '#991b1b',
+                color: 'white',
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              + Add Cow
+            </button>
+          </div>
+
+          <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
+            <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4}}>Filters:</span>
+            {quickFilterButtons()}
+            <button
+              type="button"
+              onClick={() => setShowMoreFilters((v) => !v)}
+              style={{
+                ...chipBaseS,
+                color: '#1d4ed8',
+                border: '1px dashed #bfdbfe',
+              }}
+              data-more-filters-toggle
+            >
+              {showMoreFilters ? 'Hide more filters' : 'More filters…'}
+            </button>
+            {filterCount > 0 && (
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                style={{
+                  ...chipBaseS,
+                  color: '#b91c1c',
+                  border: '1px solid #fecaca',
+                  background: '#fef2f2',
+                }}
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+          {showMoreFilters && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                flexWrap: 'wrap',
+                paddingLeft: 50,
+                paddingTop: 4,
+                borderTop: '1px dashed #e5e7eb',
+              }}
+              data-more-filters-panel
+            >
+              {moreFiltersButtons()}
+            </div>
+          )}
+
+          {sortBar()}
+
+          <div style={{fontSize: 11, color: '#6b7280'}} data-cattle-match-count>
+            {sortedFlat.length} {sortedFlat.length === 1 ? 'match' : 'cattle match'}
+            {filterCount > 0 && ' · ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}
+            {sortRules.length > 0 && ' · ' + sortRules.length + ' sort' + (sortRules.length === 1 ? '' : 's')}
+          </div>
         </div>
 
         {showBulkImport && (
@@ -611,7 +1294,7 @@ const CattleHerdsView = ({
           />
         )}
 
-        {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'\u2026'}</div>}
+        {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>}
         {!loading && cattle.length === 0 && (
           <div
             style={{
@@ -628,9 +1311,12 @@ const CattleHerdsView = ({
           </div>
         )}
 
-        {/* FLAT MODE — search or non-active filter */}
-        {!loading && isFlatMode && cattle.length > 0 && (
-          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}>
+        {/* FLAT MODE */}
+        {!loading && isFlat && cattle.length > 0 && (
+          <div
+            data-cattle-flat-list
+            style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}
+          >
             <div
               style={{
                 padding: '10px 16px',
@@ -641,19 +1327,19 @@ const CattleHerdsView = ({
                 color: '#4b5563',
               }}
             >
-              {sorted.length} cattle match
+              {sortedFlat.length} cattle
             </div>
-            {sorted.length === 0 && (
+            {sortedFlat.length === 0 && (
               <div style={{padding: '2rem', textAlign: 'center', color: '#9ca3af', fontSize: 13}}>
                 No cattle match the current filter.
               </div>
             )}
-            {sorted.map((c, i) => {
+            {sortedFlat.map((c, i) => {
               const hc = HERD_COLORS[c.herd] || HERD_COLORS.mommas;
               const lw = lastWeight(c);
               const isExpanded = expandedCow === c.id;
               const cTags = cowTagSet(c);
-              const cowWeighIns = weighIns.filter((w) => cTags.has(w.tag));
+              const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
               const cowCalving = calvingRecs.filter((r) => r.dam_tag === c.tag);
               const cowComments = comments
                 .filter((cm) => cm.cattle_id === c.id || cm.cattle_tag === c.tag)
@@ -662,7 +1348,8 @@ const CattleHerdsView = ({
                 <div
                   key={c.id}
                   id={'cow-' + c.id}
-                  style={{borderBottom: i < sorted.length - 1 ? '1px solid #f3f4f6' : 'none'}}
+                  data-cow-row-tag={c.tag || ''}
+                  style={{borderBottom: i < sortedFlat.length - 1 ? '1px solid #f3f4f6' : 'none'}}
                 >
                   {!isExpanded && (
                     <div
@@ -697,7 +1384,7 @@ const CattleHerdsView = ({
                       >
                         {i + 1}
                       </span>
-                      <span style={{fontSize: 11, color: '#9ca3af'}}>{isExpanded ? '\u25bc' : '\u25b6'}</span>
+                      <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
                       <span style={{fontWeight: 700, fontSize: 13, color: '#111827'}}>
                         {c.tag ? '#' + c.tag : '(no tag)'}
                       </span>
@@ -718,7 +1405,7 @@ const CattleHerdsView = ({
                       >
                         {HERD_LABELS[c.herd]}
                       </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '\u2014'}</span>
+                      <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '—'}</span>
                       <span
                         style={{
                           fontSize: 11,
@@ -728,28 +1415,14 @@ const CattleHerdsView = ({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {c.breed || '\u2014'}
+                        {c.breed || '—'}
                       </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '\u2014'}</span>
+                      <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
                       <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
                         {lw ? lw.toLocaleString() + ' lb' : 'no weigh-in'}
                       </span>
                       <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
                         {c.dam_tag && <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + c.dam_tag}</span>}
-                        {c.maternal_issue_flag && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                              fontWeight: 600,
-                            }}
-                          >
-                            MATERNAL ISSUE
-                          </span>
-                        )}
                         {c.breeding_blacklist && (
                           <span
                             style={{
@@ -777,7 +1450,7 @@ const CattleHerdsView = ({
                       dam={cattle.find((x) => x.tag === c.dam_tag)}
                       cattleList={cattle}
                       fmt={fmt}
-                      HERDS={ALL_HERDS}
+                      HERDS={CATTLE_ALL_HERD_KEYS}
                       HERD_LABELS={HERD_LABELS}
                       HERD_COLORS={HERD_COLORS}
                       onEdit={() => openEdit(c)}
@@ -808,11 +1481,15 @@ const CattleHerdsView = ({
           </div>
         )}
 
-        {/* HERD TILES MODE — default view */}
-        {!loading && !isFlatMode && cattle.length > 0 && (
+        {/* GROUPED MODE — herd tiles */}
+        {!loading && !isFlat && cattle.length > 0 && (
           <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
-            {HERDS.map((h) => {
-              const cows = sorted.filter((c) => c.herd === h);
+            {CATTLE_HERD_KEYS.map((h) => {
+              // Per-tile sort applies inside the herd group (Codex implementation
+              // note 2026-05-02). Filter the global filtered list to this herd
+              // then run the comparator within.
+              const cmp = buildCattleComparator(sortRules, {calvingRecs, weighIns});
+              const cows = filtered.filter((c) => c.herd === h).sort(cmp);
               const totalWt = cows.reduce((s, c) => s + effectiveWeight(c), 0);
               const estCount = cows.filter(
                 (c) => (lastWeight(c) == null || lastWeight(c) === 0) && isHerdTileRecentlyPurchased(c),
@@ -839,16 +1516,14 @@ const CattleHerdsView = ({
                       cursor: 'pointer',
                     }}
                   >
-                    <span style={{fontSize: 12, color: hc.tx}}>{herdOpen ? '\u25bc' : '\u25b6'}</span>
-                    <span style={{fontSize: 15, fontWeight: 700, color: hc.tx}}>
-                      {'\ud83d\udc04 ' + HERD_LABELS[h]}
-                    </span>
+                    <span style={{fontSize: 12, color: hc.tx}}>{herdOpen ? '▼' : '▶'}</span>
+                    <span style={{fontSize: 15, fontWeight: 700, color: hc.tx}}>{'🐄 ' + HERD_LABELS[h]}</span>
                     <span style={{fontSize: 12, color: hc.tx, opacity: 0.8}}>
                       {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
                     </span>
                     {totalWt > 0 && (
                       <span style={{fontSize: 12, color: hc.tx, opacity: 0.8}}>
-                        {'\u00b7 ' + Math.round(totalWt).toLocaleString() + ' lbs total'}
+                        {'· ' + Math.round(totalWt).toLocaleString() + ' lbs total'}
                       </span>
                     )}
                     {estCount > 0 && (
@@ -859,7 +1534,7 @@ const CattleHerdsView = ({
                   </div>
                   {herdOpen && cows.length === 0 && (
                     <div style={{padding: '1rem 18px', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}>
-                      No cows in this herd yet.
+                      {filterCount > 0 ? 'No cows match the current filters.' : 'No cows in this herd yet.'}
                     </div>
                   )}
                   {herdOpen &&
@@ -869,13 +1544,18 @@ const CattleHerdsView = ({
                       const cc = calfCount(c.tag);
                       const isExpanded = expandedCow === c.id;
                       const cTags = cowTagSet(c);
-                      const cowWeighIns = weighIns.filter((w) => cTags.has(w.tag));
+                      const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
                       const cowCalving = calvingRecs.filter((r) => r.dam_tag === c.tag);
                       const cowComments = comments
                         .filter((cm) => cm.cattle_id === c.id || cm.cattle_tag === c.tag)
                         .slice(0, 20);
                       return (
-                        <div key={c.id} id={'cow-' + c.id} style={{borderBottom: '1px solid #f3f4f6'}}>
+                        <div
+                          key={c.id}
+                          id={'cow-' + c.id}
+                          data-cow-row-tag={c.tag || ''}
+                          style={{borderBottom: '1px solid #f3f4f6'}}
+                        >
                           {!isExpanded && (
                             <div
                               onClick={() => setExpandedCow(c.id)}
@@ -909,11 +1589,11 @@ const CattleHerdsView = ({
                               >
                                 {cowIdx + 1}
                               </span>
-                              <span style={{fontSize: 11, color: '#9ca3af'}}>{isExpanded ? '\u25bc' : '\u25b6'}</span>
+                              <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
                               <span style={{fontWeight: 700, fontSize: 13, color: '#111827'}}>
                                 {c.tag ? '#' + c.tag : '(no tag)'}
                               </span>
-                              <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '\u2014'}</span>
+                              <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '—'}</span>
                               <span
                                 style={{
                                   fontSize: 11,
@@ -923,13 +1603,13 @@ const CattleHerdsView = ({
                                   whiteSpace: 'nowrap',
                                 }}
                               >
-                                {c.breed || '\u2014'}
+                                {c.breed || '—'}
                               </span>
-                              <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '\u2014'}</span>
+                              <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
                               <span
                                 style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}
                               >
-                                {lw ? lw.toLocaleString() + ' lb' : '\u2014'}
+                                {lw ? lw.toLocaleString() + ' lb' : '—'}
                               </span>
                               <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
                                 {c.dam_tag && (
@@ -943,20 +1623,6 @@ const CattleHerdsView = ({
                                 {h === 'mommas' && lc && (
                                   <span style={{fontSize: 11, color: '#9ca3af'}}>
                                     {'last calved ' + fmt(lc.calving_date)}
-                                  </span>
-                                )}
-                                {c.maternal_issue_flag && (
-                                  <span
-                                    style={{
-                                      fontSize: 10,
-                                      padding: '1px 6px',
-                                      borderRadius: 4,
-                                      background: '#fef2f2',
-                                      color: '#b91c1c',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    MATERNAL
                                   </span>
                                 )}
                                 {c.breeding_blacklist && (
@@ -986,7 +1652,7 @@ const CattleHerdsView = ({
                               dam={cattle.find((x) => x.tag === c.dam_tag)}
                               cattleList={cattle}
                               fmt={fmt}
-                              HERDS={ALL_HERDS}
+                              HERDS={CATTLE_ALL_HERD_KEYS}
                               HERD_LABELS={HERD_LABELS}
                               HERD_COLORS={HERD_COLORS}
                               onEdit={() => openEdit(c)}
@@ -1017,21 +1683,29 @@ const CattleHerdsView = ({
                 </div>
               );
             })}
-            {/* Outcome herds shown collapsed at the bottom */}
             <CollapsibleOutcomeSections
               cattle={cattle}
               weighIns={weighIns}
               HERD_COLORS={HERD_COLORS}
               HERD_LABELS={HERD_LABELS}
-              OUTCOMES={OUTCOMES}
+              OUTCOMES={CATTLE_OUTCOME_KEYS}
               fmt={fmt}
-              setStatusFilter={setStatusFilter}
+              setStatusFilter={(value) => {
+                if (!value || value === 'active') return;
+                if (value === 'all') {
+                  setViewMode('flat');
+                  clearFilter('herdSet');
+                  return;
+                }
+                setViewMode('flat');
+                setFilter('herdSet', [value]);
+              }}
               processingInfo={processingInfo}
               expandedCow={expandedCow}
               setExpandedCow={setExpandedCow}
               renderCowDetail={(c) => {
                 const cTags = cowTagSet(c);
-                const cowWeighIns = weighIns.filter((w) => cTags.has(w.tag));
+                const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
                 const cowCalving = calvingRecs.filter((r) => r.dam_tag === c.tag);
                 const cowComments = comments
                   .filter((cm) => cm.cattle_id === c.id || cm.cattle_tag === c.tag)
@@ -1046,7 +1720,7 @@ const CattleHerdsView = ({
                     dam={cattle.find((x) => x.tag === c.dam_tag)}
                     cattleList={cattle}
                     fmt={fmt}
-                    HERDS={ALL_HERDS}
+                    HERDS={CATTLE_ALL_HERD_KEYS}
                     HERD_LABELS={HERD_LABELS}
                     HERD_COLORS={HERD_COLORS}
                     onEdit={() => openEdit(c)}
@@ -1129,7 +1803,7 @@ const CattleHerdsView = ({
                 }}
                 style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
               >
-                {'\u00d7'}
+                {'×'}
               </button>
             </div>
             <div
@@ -1163,7 +1837,7 @@ const CattleHerdsView = ({
               <div>
                 <label style={lbl}>Herd *</label>
                 <select value={form.herd} onChange={(e) => setForm({...form, herd: e.target.value})} style={inpS}>
-                  {ALL_HERDS.map((h) => (
+                  {CATTLE_ALL_HERD_KEYS.map((h) => (
                     <option key={h} value={h}>
                       {HERD_LABELS[h]}
                     </option>
@@ -1177,7 +1851,7 @@ const CattleHerdsView = ({
                   onChange={(e) => setForm({...form, breed: e.target.value})}
                   style={inpS}
                 >
-                  <option value="">{'\u2014 select \u2014'}</option>
+                  <option value="">{'— select —'}</option>
                   {breedOpts
                     .filter(function (b) {
                       return b.active;
@@ -1235,7 +1909,7 @@ const CattleHerdsView = ({
                   }}
                   style={inpS}
                 >
-                  <option value="">{'\u2014 select \u2014'}</option>
+                  <option value="">{'— select —'}</option>
                   {originOpts
                     .filter(function (o) {
                       return o.active;
@@ -1247,7 +1921,7 @@ const CattleHerdsView = ({
                     !originOpts.some(function (o) {
                       return o.active && o.label === form.origin;
                     }) && <option value={form.origin}>{form.origin}</option>}
-                  <option value="__add__">{'+ Add new origin\u2026'}</option>
+                  <option value="__add__">{'+ Add new origin…'}</option>
                 </select>
               </div>
               <div>
@@ -1311,7 +1985,7 @@ const CattleHerdsView = ({
                     onChange={(e) => setForm({...form, breeding_status: e.target.value})}
                     style={inpS}
                   >
-                    <option value="">{'\u2014 not set \u2014'}</option>
+                    <option value="">{'— not set —'}</option>
                     <option value="OPEN">Open</option>
                     <option value="PREGNANT">Pregnant</option>
                     <option value="N/A">N/A</option>
@@ -1319,7 +1993,6 @@ const CattleHerdsView = ({
                 </div>
               )}
 
-              {/* Prior Tags — purchase tag + any replacement-tag history */}
               <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 12, marginTop: 4}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
                   <label
@@ -1433,14 +2106,13 @@ const CattleHerdsView = ({
                           fontFamily: 'inherit',
                         }}
                       >
-                        {'\u00d7'}
+                        {'×'}
                       </button>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Breeding blacklist — hidden for steers (they can't breed). */}
               {form.sex !== 'steer' && (
                 <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 12, marginTop: 4}}>
                   <label
@@ -1532,7 +2204,7 @@ const CattleHerdsView = ({
                   opacity: saving ? 0.6 : 1,
                 }}
               >
-                {saving ? 'Saving\u2026' : editId ? 'Save' : 'Add Cow'}
+                {saving ? 'Saving…' : editId ? 'Save' : 'Add Cow'}
               </button>
               {editId && (
                 <button
@@ -1577,5 +2249,499 @@ const CattleHerdsView = ({
     </div>
   );
 };
+
+// ── FilterChipPopover ────────────────────────────────────────────────────────
+function FilterChipPopover({
+  filterKey,
+  filters,
+  setFilters,
+  setFilter,
+  clearFilter,
+  toggleFilterArrayValue,
+  breedFilterOptions,
+  originFilterOptions,
+  onClose,
+}) {
+  const popS = {
+    position: 'absolute',
+    top: 'calc(100% + 4px)',
+    left: 0,
+    background: 'white',
+    border: '1px solid #d1d5db',
+    borderRadius: 8,
+    padding: '10px 12px',
+    boxShadow: '0 4px 16px rgba(0,0,0,.08)',
+    zIndex: 50,
+    minWidth: 220,
+  };
+  const rowS = {display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 12};
+
+  function FemaleHint() {
+    return (
+      <div style={{fontSize: 10, color: '#6b7280', fontStyle: 'italic', marginTop: 4}}>Applies to females only.</div>
+    );
+  }
+
+  switch (filterKey) {
+    case 'herdSet':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          {[...CATTLE_HERD_KEYS, ...CATTLE_OUTCOME_KEYS].map((h) => (
+            <label key={h} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="checkbox"
+                checked={(filters.herdSet || []).includes(h)}
+                onChange={() => toggleFilterArrayValue('herdSet', h)}
+              />
+              <span>{HERD_LABELS[h]}</span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('herdSet')} onClose={onClose} />
+        </div>
+      );
+    case 'sex':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          {SEX_OPTIONS.map((opt) => (
+            <label key={opt.key} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="checkbox"
+                checked={(filters.sex || []).includes(opt.key)}
+                onChange={() => toggleFilterArrayValue('sex', opt.key)}
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('sex')} onClose={onClose} />
+        </div>
+      );
+    case 'ageMonthsRange':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <div style={rowS}>
+            <span>Min months:</span>
+            <input
+              type="number"
+              min="0"
+              value={(filters.ageMonthsRange && filters.ageMonthsRange.min) ?? ''}
+              onChange={(e) => {
+                const v = e.target.value === '' ? null : parseInt(e.target.value);
+                setFilter('ageMonthsRange', {...(filters.ageMonthsRange || {}), min: v});
+              }}
+              style={{...inpS, width: 80}}
+            />
+          </div>
+          <div style={rowS}>
+            <span>Max months:</span>
+            <input
+              type="number"
+              min="0"
+              value={(filters.ageMonthsRange && filters.ageMonthsRange.max) ?? ''}
+              onChange={(e) => {
+                const v = e.target.value === '' ? null : parseInt(e.target.value);
+                setFilter('ageMonthsRange', {...(filters.ageMonthsRange || {}), max: v});
+              }}
+              style={{...inpS, width: 80}}
+            />
+          </div>
+          <PopoverFooter onClear={() => clearFilter('ageMonthsRange')} onClose={onClose} />
+        </div>
+      );
+    case 'calvedStatus':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <label style={{...rowS, cursor: 'pointer'}}>
+            <input
+              type="radio"
+              name="calvedStatus"
+              checked={filters.calvedStatus === 'yes' && !filters.calvingWindow}
+              onChange={() => {
+                clearFilter('calvingWindow');
+                setFilter('calvedStatus', 'yes');
+              }}
+            />
+            <span>Has calved</span>
+          </label>
+          <label style={{...rowS, cursor: 'pointer'}}>
+            <input
+              type="radio"
+              name="calvedStatus"
+              checked={filters.calvedStatus === 'no' && !filters.calvingWindow}
+              onChange={() => {
+                clearFilter('calvingWindow');
+                setFilter('calvedStatus', 'no');
+              }}
+            />
+            <span>Never calved</span>
+          </label>
+          <label style={{...rowS, cursor: 'pointer'}}>
+            <input
+              type="radio"
+              name="calvedStatus"
+              checked={!!filters.calvingWindow && filters.calvingWindow.mode === 'noneSince'}
+              onChange={() => {
+                clearFilter('calvedStatus');
+                const yr = new Date().getUTCFullYear();
+                setFilter('calvingWindow', {mode: 'noneSince', since: `${yr}-01-01`});
+              }}
+            />
+            <span>Not calved this year</span>
+          </label>
+          <FemaleHint />
+          <PopoverFooter
+            onClear={() => {
+              clearFilter('calvedStatus');
+              clearFilter('calvingWindow');
+            }}
+            onClose={onClose}
+          />
+        </div>
+      );
+    case 'breedingBlacklist':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <label style={{...rowS, cursor: 'pointer'}}>
+            <input
+              type="radio"
+              name="breedingBlacklist"
+              checked={filters.breedingBlacklist === true}
+              onChange={() => setFilter('breedingBlacklist', true)}
+            />
+            <span>Only blacklisted</span>
+          </label>
+          <label style={{...rowS, cursor: 'pointer'}}>
+            <input
+              type="radio"
+              name="breedingBlacklist"
+              checked={filters.breedingBlacklist === false}
+              onChange={() => setFilter('breedingBlacklist', false)}
+            />
+            <span>Hide blacklisted</span>
+          </label>
+          <PopoverFooter onClear={() => clearFilter('breedingBlacklist')} onClose={onClose} />
+        </div>
+      );
+    case 'weightTier':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          {[
+            {k: 'hasWeight', label: 'Has weight'},
+            {k: 'noWeight', label: 'No weight'},
+            {k: 'staleWeight', label: 'Stale weight (>90 days)'},
+            {k: 'staleOrNoWeight', label: 'Stale or no weight'},
+          ].map((opt) => (
+            <label key={opt.k} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="radio"
+                name="weightTier"
+                checked={filters.weightTier === opt.k}
+                onChange={() => setFilter('weightTier', opt.k)}
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('weightTier')} onClose={onClose} />
+        </div>
+      );
+    case 'birthDateRange':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <div style={rowS}>
+            <span>After:</span>
+            <input
+              type="date"
+              value={(filters.birthDateRange && filters.birthDateRange.after) || ''}
+              onChange={(e) =>
+                setFilter('birthDateRange', {...(filters.birthDateRange || {}), after: e.target.value || null})
+              }
+              style={{...inpS, width: 140}}
+            />
+          </div>
+          <div style={rowS}>
+            <span>Before:</span>
+            <input
+              type="date"
+              value={(filters.birthDateRange && filters.birthDateRange.before) || ''}
+              onChange={(e) =>
+                setFilter('birthDateRange', {...(filters.birthDateRange || {}), before: e.target.value || null})
+              }
+              style={{...inpS, width: 140}}
+            />
+          </div>
+          <PopoverFooter onClear={() => clearFilter('birthDateRange')} onClose={onClose} />
+        </div>
+      );
+    case 'lastCalvedRange':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <div style={rowS}>
+            <span>After:</span>
+            <input
+              type="date"
+              value={(filters.lastCalvedRange && filters.lastCalvedRange.after) || ''}
+              onChange={(e) =>
+                setFilter('lastCalvedRange', {...(filters.lastCalvedRange || {}), after: e.target.value || null})
+              }
+              style={{...inpS, width: 140}}
+            />
+          </div>
+          <div style={rowS}>
+            <span>Before:</span>
+            <input
+              type="date"
+              value={(filters.lastCalvedRange && filters.lastCalvedRange.before) || ''}
+              onChange={(e) =>
+                setFilter('lastCalvedRange', {...(filters.lastCalvedRange || {}), before: e.target.value || null})
+              }
+              style={{...inpS, width: 140}}
+            />
+          </div>
+          <FemaleHint />
+          <PopoverFooter onClear={() => clearFilter('lastCalvedRange')} onClose={onClose} />
+        </div>
+      );
+    case 'calfCountRange':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <div style={rowS}>
+            <span>Min:</span>
+            <input
+              type="number"
+              min="0"
+              value={(filters.calfCountRange && filters.calfCountRange.min) ?? ''}
+              onChange={(e) =>
+                setFilter('calfCountRange', {
+                  ...(filters.calfCountRange || {}),
+                  min: e.target.value === '' ? null : parseInt(e.target.value),
+                })
+              }
+              style={{...inpS, width: 80}}
+            />
+          </div>
+          <div style={rowS}>
+            <span>Max:</span>
+            <input
+              type="number"
+              min="0"
+              value={(filters.calfCountRange && filters.calfCountRange.max) ?? ''}
+              onChange={(e) =>
+                setFilter('calfCountRange', {
+                  ...(filters.calfCountRange || {}),
+                  max: e.target.value === '' ? null : parseInt(e.target.value),
+                })
+              }
+              style={{...inpS, width: 80}}
+            />
+          </div>
+          <FemaleHint />
+          <PopoverFooter onClear={() => clearFilter('calfCountRange')} onClose={onClose} />
+        </div>
+      );
+    case 'breedingStatus':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          {BREEDING_STATUS_OPTIONS.map((opt) => (
+            <label key={opt.key} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="checkbox"
+                checked={(filters.breedingStatus || []).includes(opt.key)}
+                onChange={() => toggleFilterArrayValue('breedingStatus', opt.key)}
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('breedingStatus')} onClose={onClose} />
+        </div>
+      );
+    case 'damPresence':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          {['any', 'present', 'missing'].map((v) => (
+            <label key={v} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="radio"
+                name="damPresence"
+                checked={(filters.damPresence || 'any') === v}
+                onChange={() => (v === 'any' ? clearFilter('damPresence') : setFilter('damPresence', v))}
+              />
+              <span>{v}</span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('damPresence')} onClose={onClose} />
+        </div>
+      );
+    case 'sirePresence':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          {['any', 'present', 'missing'].map((v) => (
+            <label key={v} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="radio"
+                name="sirePresence"
+                checked={(filters.sirePresence || 'any') === v}
+                onChange={() => (v === 'any' ? clearFilter('sirePresence') : setFilter('sirePresence', v))}
+              />
+              <span>{v}</span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('sirePresence')} onClose={onClose} />
+        </div>
+      );
+    case 'weightRange':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <div style={rowS}>
+            <span>Min lb:</span>
+            <input
+              type="number"
+              min="0"
+              value={(filters.weightRange && filters.weightRange.min) ?? ''}
+              onChange={(e) =>
+                setFilter('weightRange', {
+                  ...(filters.weightRange || {}),
+                  min: e.target.value === '' ? null : parseFloat(e.target.value),
+                })
+              }
+              style={{...inpS, width: 100}}
+            />
+          </div>
+          <div style={rowS}>
+            <span>Max lb:</span>
+            <input
+              type="number"
+              min="0"
+              value={(filters.weightRange && filters.weightRange.max) ?? ''}
+              onChange={(e) =>
+                setFilter('weightRange', {
+                  ...(filters.weightRange || {}),
+                  max: e.target.value === '' ? null : parseFloat(e.target.value),
+                })
+              }
+              style={{...inpS, width: 100}}
+            />
+          </div>
+          <PopoverFooter onClear={() => clearFilter('weightRange')} onClose={onClose} />
+        </div>
+      );
+    case 'breed':
+      return (
+        <div style={{...popS, maxHeight: 280, overflowY: 'auto'}} data-filter-popover={filterKey}>
+          {breedFilterOptions.map((opt) => (
+            <label key={opt.label} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="checkbox"
+                checked={(filters.breed || []).includes(opt.label)}
+                onChange={() => toggleFilterArrayValue('breed', opt.label)}
+              />
+              <span>
+                {opt.label}
+                {opt.source === 'historical' && <em style={{color: '#9ca3af', marginLeft: 4}}>(historical)</em>}
+              </span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('breed')} onClose={onClose} />
+        </div>
+      );
+    case 'origin':
+      return (
+        <div style={{...popS, maxHeight: 280, overflowY: 'auto'}} data-filter-popover={filterKey}>
+          {originFilterOptions.map((opt) => (
+            <label key={opt.label} style={{...rowS, cursor: 'pointer'}}>
+              <input
+                type="checkbox"
+                checked={(filters.origin || []).includes(opt.label)}
+                onChange={() => toggleFilterArrayValue('origin', opt.label)}
+              />
+              <span>
+                {opt.label}
+                {opt.source === 'historical' && <em style={{color: '#9ca3af', marginLeft: 4}}>(historical)</em>}
+              </span>
+            </label>
+          ))}
+          <PopoverFooter onClear={() => clearFilter('origin')} onClose={onClose} />
+        </div>
+      );
+    case 'wagyuPctRange':
+      return (
+        <div style={popS} data-filter-popover={filterKey}>
+          <div style={rowS}>
+            <span>Min %:</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={(filters.wagyuPctRange && filters.wagyuPctRange.min) ?? ''}
+              onChange={(e) =>
+                setFilter('wagyuPctRange', {
+                  ...(filters.wagyuPctRange || {}),
+                  min: e.target.value === '' ? null : parseFloat(e.target.value),
+                })
+              }
+              style={{...inpS, width: 80}}
+            />
+          </div>
+          <div style={rowS}>
+            <span>Max %:</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={(filters.wagyuPctRange && filters.wagyuPctRange.max) ?? ''}
+              onChange={(e) =>
+                setFilter('wagyuPctRange', {
+                  ...(filters.wagyuPctRange || {}),
+                  max: e.target.value === '' ? null : parseFloat(e.target.value),
+                })
+              }
+              style={{...inpS, width: 80}}
+            />
+          </div>
+          <PopoverFooter onClear={() => clearFilter('wagyuPctRange')} onClose={onClose} />
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+function PopoverFooter({onClear, onClose}) {
+  return (
+    <div style={{display: 'flex', gap: 6, marginTop: 6, paddingTop: 6, borderTop: '1px solid #f3f4f6'}}>
+      <button
+        type="button"
+        onClick={onClear}
+        style={{
+          fontSize: 11,
+          color: '#b91c1c',
+          background: 'none',
+          border: '1px solid #fecaca',
+          borderRadius: 5,
+          padding: '3px 8px',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        Clear
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        style={{
+          fontSize: 11,
+          color: '#374151',
+          background: 'white',
+          border: '1px solid #d1d5db',
+          borderRadius: 5,
+          padding: '3px 8px',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          marginLeft: 'auto',
+        }}
+      >
+        Close
+      </button>
+    </div>
+  );
+}
 
 export default CattleHerdsView;
