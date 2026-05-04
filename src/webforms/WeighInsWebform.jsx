@@ -3007,7 +3007,9 @@ const WeighInsWebform = ({sb}) => {
             session={session}
             flaggedEntries={entries.filter((e) => e.send_to_processor === true)}
             cattleList={cattleList}
+            weighIns={[]}
             teamMember={teamMember}
+            authState={null}
             onCancel={() => setShowProcessorModal(false)}
             onConfirmed={async () => {
               setShowProcessorModal(false);

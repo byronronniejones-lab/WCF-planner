@@ -1,13 +1,37 @@
-// Phase 2 Round 3 extraction (verbatim).
+// CattleBatchesView — three-section layout introduced with the Cattle
+// Forecast build (mig 043). Going forward the only DB-stored batch statuses
+// are 'active' and 'complete'. "Planned" batches are virtual/computed by the
+// shared Forecast helper, displayed here as a read-only collapsed section
+// at the top so admin can see what the next 12 months look like.
+//
+// Sections (top→bottom):
+//   - Show Planned Batches    — collapsed, virtual, next 12 months
+//   - Active                  — default visible, real DB rows, hanging-weight editor
+//   - Show Completed Batches  — collapsed, real DB rows, finalized
+//
+// Real batches are CREATED ONLY through Send-to-Processor at WeighIns.
+// The + New Batch button is gone. Manual edit-in-place (rename + processing
+// cost + notes + hanging weights) is restricted to management/admin via UI.
+// Auto-flip: when every cow in an active batch has hanging_weight > 0, the
+// batch promotes to 'complete'. Reopen drops it back to 'active'.
 import React from 'react';
 import UsersModal from '../auth/UsersModal.jsx';
-import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
-import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
-import PigSendToTripModal from '../livestock/PigSendToTripModal.jsx';
-import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
-import LivestockWeighInsView from '../livestock/LivestockWeighInsView.jsx';
 import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
+import {
+  buildForecast,
+  batchHasAllHangingWeights,
+  batchMissingHangingTags,
+  validateRealBatchRename,
+} from '../lib/cattleForecast.js';
+import {
+  loadForecastSettings,
+  loadHeiferIncludes,
+  loadHidden,
+  markBatchComplete,
+  reopenBatch,
+} from '../lib/cattleForecastApi.js';
+
 const CattleBatchesView = ({
   sb,
   fmt,
@@ -20,66 +44,75 @@ const CattleBatchesView = ({
   setAllUsers,
   loadUsers,
 }) => {
-  const {useState, useEffect} = React;
+  const {useState, useEffect, useMemo} = React;
+  const role = authState && authState.role;
+  const canEdit = role === 'admin' || role === 'management';
+
   const [batches, setBatches] = useState([]);
   const [cattle, setCattle] = useState([]);
   const [weighIns, setWeighIns] = useState([]);
+  const [calvingRecs, setCalvingRecs] = useState([]);
+  const [forecastSettings, setForecastSettings] = useState(null);
+  const [heiferIncludes, setHeiferIncludes] = useState(new Set());
+  const [hidden, setHidden] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState(null);
-  // Per-cow weight input local state keyed by `${batchId}|${cattleId}|${field}`
-  // so editing doesn't round-trip to Supabase on every keystroke.
+
   const [cowDraft, setCowDraft] = useState({});
-  // Which batch tile is currently expanded. null = all collapsed.
   const [expandedBatchId, setExpandedBatchId] = useState(null);
+  const [showPlanned, setShowPlanned] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [renameDraft, setRenameDraft] = useState({}); // batchId → string
+  const [renameErr, setRenameErr] = useState({}); // batchId → reason
 
   async function loadAll() {
-    const [bR, cR, wAll] = await Promise.all([
-      sb.from('cattle_processing_batches').select('*').order('planned_process_date', {ascending: false}),
+    const [bR, cR, wAll, calR, settings, inc, hid] = await Promise.all([
+      sb.from('cattle_processing_batches').select('*').order('actual_process_date', {ascending: false}),
       sb.from('cattle').select('*'),
       loadCattleWeighInsCached(sb),
+      sb.from('cattle_calving_records').select('*'),
+      loadForecastSettings(sb),
+      loadHeiferIncludes(sb),
+      loadHidden(sb),
     ]);
     if (bR.data) {
-      // Date-descending: prefer actual_process_date (real event), fall back
-      // to planned_process_date, then created_at. Newest first.
       const byDate = (x) => x.actual_process_date || x.planned_process_date || x.created_at || '';
       setBatches(bR.data.slice().sort((a, b) => byDate(b).localeCompare(byDate(a))));
     }
     if (cR.data) setCattle(cR.data);
-    setWeighIns(wAll);
+    setWeighIns(wAll || []);
+    if (calR.data) setCalvingRecs(calR.data);
+    setForecastSettings(settings);
+    setHeiferIncludes(inc);
+    setHidden(hid);
     setLoading(false);
   }
+
   useEffect(() => {
     loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function cowTagSet(cow) {
-    // Includes current WCF tag + prior WCF tags (source='weigh_in' retags).
-    // Excludes purchase-farm tags (source='import') because those are the
-    // selling farm's numbers and can collide with other WCF cows' tags.
-    const set = new Set();
-    if (cow && cow.tag) set.add(cow.tag);
-    if (cow && Array.isArray(cow.old_tags)) {
-      for (const ot of cow.old_tags) {
-        if (!ot || !ot.tag) continue;
-        if (ot.source === 'import') continue;
-        set.add(ot.tag);
-      }
-    }
-    return set;
-  }
-  function lastWeight(cow) {
-    const tags = cowTagSet(cow);
-    if (tags.size === 0) return null;
-    const sorted = [...weighIns]
-      .filter((w) => tags.has(w.tag))
-      .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
-    return sorted[0] ? parseFloat(sorted[0].weight) : null;
-  }
+  // Compute virtual planned batches via the shared helper. Restrict the
+  // visible window to the next 12 months per the build packet.
+  const virtualPlanned = useMemo(() => {
+    if (!forecastSettings) return [];
+    const f = buildForecast({
+      cattle,
+      weighIns,
+      settings: forecastSettings,
+      includes: heiferIncludes,
+      hidden,
+      realBatches: batches,
+      todayMs: Date.now(),
+    });
+    const nowYm = new Date().toISOString().slice(0, 7);
+    const limitMs = Date.now() + 365 * 86400000;
+    const limitYm = new Date(limitMs).toISOString().slice(0, 7);
+    return f.virtualBatches.filter((vb) => vb.monthKey >= nowYm && vb.monthKey <= limitYm);
+  }, [cattle, weighIns, forecastSettings, heiferIncludes, hidden, batches]);
 
-  function cowsDetailOf(batch) {
-    return Array.isArray(batch.cows_detail) ? batch.cows_detail : [];
+  function cowsDetailOf(b) {
+    return Array.isArray(b.cows_detail) ? b.cows_detail : [];
   }
   function recomputeTotals(rows) {
     const live = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
@@ -89,120 +122,88 @@ const CattleBatchesView = ({
       total_hanging_weight: hang > 0 ? Math.round(hang * 10) / 10 : null,
     };
   }
-
-  function openAdd() {
-    const yr = new Date().getFullYear().toString().slice(-2);
-    const existing = batches
-      .filter((b) => b.name && b.name.startsWith('C-' + yr + '-'))
-      .map((b) => parseInt(b.name.slice(5)) || 0);
-    const next = (Math.max(0, ...existing) + 1).toString().padStart(2, '0');
-    setForm({
-      name: 'C-' + yr + '-' + next,
-      planned_process_date: '',
-      actual_process_date: '',
-      processing_cost: '',
-      notes: '',
-      status: 'planned',
-    });
-    setEditId(null);
-    setShowForm(true);
+  async function saveCowWeight(batch, cattleId, field, value) {
+    if (!canEdit) return;
+    const rows = cowsDetailOf(batch).map((r) =>
+      r.cattle_id === cattleId ? {...r, [field]: value === '' || value == null ? null : parseFloat(value)} : r,
+    );
+    const totals = recomputeTotals(rows);
+    await sb
+      .from('cattle_processing_batches')
+      .update({cows_detail: rows, ...totals})
+      .eq('id', batch.id);
+    const nextBatch = {...batch, cows_detail: rows, ...totals};
+    setBatches((prev) => prev.map((b) => (b.id === batch.id ? nextBatch : b)));
+    // Auto-flip to complete if every cow has hanging_weight > 0.
+    if (field === 'hanging_weight' && nextBatch.status === 'active' && batchHasAllHangingWeights(nextBatch)) {
+      try {
+        await markBatchComplete(sb, batch.id, {processedDate: nextBatch.actual_process_date});
+        setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...nextBatch, status: 'complete'} : b)));
+      } catch (e) {
+        alert('Auto-complete failed: ' + (e.message || e));
+      }
+    }
   }
-  function openEdit(b) {
-    setForm({
-      name: b.name,
-      planned_process_date: b.planned_process_date || '',
-      actual_process_date: b.actual_process_date || '',
-      processing_cost: b.processing_cost != null ? String(b.processing_cost) : '',
-      notes: b.notes || '',
-      status: b.status || 'planned',
-    });
-    setEditId(b.id);
-    setShowForm(true);
+  async function reopenComplete(batch) {
+    if (!canEdit) return;
+    try {
+      await reopenBatch(sb, batch.id);
+      setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, status: 'active'} : b)));
+    } catch (e) {
+      alert('Reopen failed: ' + (e.message || e));
+    }
   }
-  // Save a batch shell (name + dates + status + notes). Cattle membership
-  // is exclusively controlled by the Send-to-Processor flag on a finisher
-  // weigh-in entry — there's no manual cow attach in this view anymore.
-  async function saveBatch() {
-    if (!form.name.trim()) {
-      alert('Batch name required.');
+  async function markCompleteClick(batch) {
+    if (!canEdit) return;
+    if (!batchHasAllHangingWeights(batch)) {
+      const missing = batchMissingHangingTags(batch);
+      alert(
+        'Cannot mark complete — these tags are missing hanging weights:\n\n#' +
+          missing.join('  #') +
+          '\n\nEnter every cow’s hanging weight first.',
+      );
       return;
     }
-    const rec = {
-      name: form.name.trim(),
-      planned_process_date: form.planned_process_date || null,
-      actual_process_date: form.actual_process_date || null,
-      processing_cost: form.processing_cost !== '' ? parseFloat(form.processing_cost) : null,
-      notes: form.notes || null,
-      status: form.status || 'planned',
-    };
-    if (editId) {
-      await sb.from('cattle_processing_batches').update(rec).eq('id', editId);
-      // Marking complete keeps any linked cattle as 'processed' (which they
-      // already are if they were attached via the Send-to-Processor flow).
-      // No automatic herd movement needed here anymore.
-    } else {
-      const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
-      await sb
-        .from('cattle_processing_batches')
-        .insert({id, ...rec, cows_detail: [], total_live_weight: null, total_hanging_weight: null});
+    try {
+      await markBatchComplete(sb, batch.id, {processedDate: batch.actual_process_date});
+      setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, status: 'complete'} : b)));
+    } catch (e) {
+      alert('Mark complete failed: ' + (e.message || e));
     }
-    await loadAll();
-    setShowForm(false);
-    setEditId(null);
-    setForm(null);
   }
-  // Detach every cow from this batch (with success/failure reporting per
-  // Codex Edge Case #2), then delete the batch row. Failures are surfaced
-  // with their reason so admin can manually move any blocked cows.
-  async function deleteBatch(id) {
-    if (!window._wcfConfirmDelete) return;
-    window._wcfConfirmDelete(
-      'Delete this processing batch? Linked cattle will be detached and reverted to their prior herds where possible.',
-      async () => {
-        const batch = batches.find((b) => b.id === id);
-        const cowIds = (batch && Array.isArray(batch.cows_detail) ? batch.cows_detail : [])
-          .map((r) => r.cattle_id)
-          .filter(Boolean);
-        const reverted = [];
-        const blocked = [];
-        for (const cowId of cowIds) {
-          const r = await detachCowFromBatch(sb, cowId, id, {
-            teamMember: authState && authState.name ? authState.name : null,
-          });
-          if (r.ok) reverted.push(r);
-          else blocked.push(r);
-        }
-        // Clear any cattle still pointing at this batch (defensive — covers
-        // detach failures + rows that were FK'd but absent from cows_detail).
-        await sb.from('cattle').update({processing_batch_id: null}).eq('processing_batch_id', id);
-        await sb.from('cattle_processing_batches').delete().eq('id', id);
-        invalidateCattleWeighInsCache();
-        if (blocked.length > 0) {
-          const lines = blocked.map((b) => '#' + (b.cow?.tag || b.cowId || '?') + ' (' + b.reason + ')').join('\n');
-          alert(
-            'Batch deleted. ' +
-              reverted.length +
-              ' cow' +
-              (reverted.length === 1 ? '' : 's') +
-              ' reverted. ' +
-              blocked.length +
-              ' could not be auto-reverted:\n\n' +
-              lines +
-              '\n\nManually move them via the Herds tab if needed.',
-          );
-        }
-        await loadAll();
-        setShowForm(false);
-        setEditId(null);
-        setForm(null);
-      },
-    );
+  async function saveRename(batch) {
+    if (!canEdit) return;
+    const proposed = (renameDraft[batch.id] || '').trim();
+    if (!proposed || proposed === batch.name) {
+      setRenameErr((p) => ({...p, [batch.id]: null}));
+      setRenameDraft((p) => {
+        const x = {...p};
+        delete x[batch.id];
+        return x;
+      });
+      return;
+    }
+    const v = validateRealBatchRename({proposedName: proposed, currentName: batch.name, realBatches: batches});
+    if (!v.ok) {
+      setRenameErr((p) => ({...p, [batch.id]: v.reason}));
+      return;
+    }
+    const r = await sb.from('cattle_processing_batches').update({name: proposed}).eq('id', batch.id);
+    if (r.error) {
+      setRenameErr((p) => ({...p, [batch.id]: 'db_error'}));
+      alert('Rename failed: ' + r.error.message);
+      return;
+    }
+    setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, name: proposed} : b)));
+    setRenameErr((p) => ({...p, [batch.id]: null}));
+    setRenameDraft((p) => {
+      const x = {...p};
+      delete x[batch.id];
+      return x;
+    });
   }
-  // Per-cow detach button on an expanded batch row. Shows the reason if
-  // the detach can't auto-revert (no prior_herd_or_flock + no audit row).
-  // Invalidates the cattle weigh-ins cache so the weigh-in view re-fetches
-  // and the now-cleared "✓ Processor" chip disappears on next render.
   async function detachCowAndReport(batch, cow) {
+    if (!canEdit) return;
     if (!cow || !cow.id) return;
     const r = await detachCowFromBatch(sb, cow.id, batch.id, {
       teamMember: authState && authState.name ? authState.name : null,
@@ -210,11 +211,7 @@ const CattleBatchesView = ({
     if (!r.ok) {
       const tag = cow.tag || r.cow?.tag || '?';
       if (r.reason === 'no_prior_herd') {
-        alert(
-          'Cannot auto-detach #' +
-            tag +
-            ': no prior herd recorded for this cow + batch. Manually move via the Herds tab.',
-        );
+        alert('Cannot auto-detach #' + tag + ': no prior herd recorded. Manually move via the Herds tab.');
       } else {
         alert('Detach failed for #' + tag + ': ' + r.reason + (r.error ? ' — ' + r.error : ''));
       }
@@ -222,28 +219,9 @@ const CattleBatchesView = ({
     invalidateCattleWeighInsCache();
     await loadAll();
   }
-  async function saveCowWeight(batch, cattleId, field, value) {
-    const rows = cowsDetailOf(batch).map((r) =>
-      r.cattle_id === cattleId ? {...r, [field]: value === '' || value == null ? null : parseFloat(value)} : r,
-    );
-    const tots = recomputeTotals(rows);
-    await sb
-      .from('cattle_processing_batches')
-      .update({cows_detail: rows, ...tots})
-      .eq('id', batch.id);
-    setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, cows_detail: rows, ...tots} : b)));
-  }
 
-  const inpS = {
-    fontSize: 13,
-    padding: '7px 10px',
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    fontFamily: 'inherit',
-    width: '100%',
-    boxSizing: 'border-box',
-  };
-  const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+  const active = batches.filter((b) => b.status === 'active');
+  const completed = batches.filter((b) => b.status === 'complete');
 
   return (
     <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -260,486 +238,567 @@ const CattleBatchesView = ({
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
-          <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}}>
-            Processing Batches <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280'}}>({batches.length})</span>
+          <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}} data-cattle-batches-root>
+            Processing Batches{' '}
+            <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280'}}>
+              {active.length} active · {completed.length} complete
+            </span>
           </div>
-          <button
-            onClick={openAdd}
-            style={{
-              padding: '7px 16px',
-              borderRadius: 7,
-              border: 'none',
-              background: '#991b1b',
-              color: 'white',
-              fontWeight: 600,
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            + New Batch
-          </button>
+          {!canEdit && (
+            <span
+              style={{
+                fontSize: 11,
+                padding: '3px 8px',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: 6,
+                color: '#1e40af',
+                fontWeight: 600,
+              }}
+            >
+              READ-ONLY
+            </span>
+          )}
         </div>
 
-        {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'\u2026'}</div>}
-        {!loading && batches.length === 0 && (
-          <div
-            style={{
-              background: 'white',
-              border: '1px solid #e5e7eb',
-              borderRadius: 12,
-              padding: '2rem',
-              textAlign: 'center',
-              color: '#6b7280',
-              fontSize: 13,
-            }}
+        {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'…'}</div>}
+
+        {/* Show Planned Batches (virtual, top, collapsed) */}
+        {!loading && (
+          <CollapsibleSection
+            label="Show Planned Batches"
+            count={virtualPlanned.length}
+            expanded={showPlanned}
+            onToggle={() => setShowPlanned((v) => !v)}
+            color="#fef2f2"
+            border="#fca5a5"
+            text="#991b1b"
+            dataKey="planned"
           >
-            No processing batches yet. Click <strong>+ New Batch</strong> to plan one. Cattle enter this batch only via
-            the Send-to-Processor flag on a finisher weigh-in entry.
+            {virtualPlanned.length === 0 ? (
+              <div style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}>
+                No planned batches in the next 12 months — the forecast has no eligible cattle landing in the display
+                window.
+              </div>
+            ) : (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 6, padding: '0.5rem 0.75rem'}}>
+                {virtualPlanned.map((vb) => (
+                  <div
+                    key={vb.name}
+                    data-virtual-batch={vb.name}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      flexWrap: 'wrap',
+                      padding: '8px 10px',
+                      background: 'white',
+                      border: '1px dashed #fca5a5',
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  >
+                    <strong style={{color: '#991b1b'}}>{vb.name}</strong>
+                    <span style={{color: '#6b7280'}}>{vb.label}</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: '1px 6px',
+                        background: '#fef2f2',
+                        color: '#991b1b',
+                        border: '1px solid #fca5a5',
+                        borderRadius: 4,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Virtual
+                    </span>
+                    <span style={{color: '#6b7280'}}>
+                      {vb.animalIds.length} {vb.animalIds.length === 1 ? 'cow' : 'cows'}
+                    </span>
+                    {vb.projectedTotalLbs > 0 && (
+                      <span style={{color: '#065f46', fontWeight: 600}}>
+                        {Math.round(vb.projectedTotalLbs).toLocaleString()} lb projected
+                      </span>
+                    )}
+                    <span style={{flex: 1}} />
+                    <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>
+                      Created when sent to processor at WeighIns
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CollapsibleSection>
+        )}
+
+        {/* Active batches (default visible, middle) */}
+        {!loading && (
+          <div style={{marginTop: 12}}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#1d4ed8',
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+                marginBottom: 8,
+              }}
+            >
+              Active ({active.length})
+            </div>
+            {active.length === 0 ? (
+              <div
+                style={{
+                  background: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 12,
+                  padding: '1.25rem',
+                  textAlign: 'center',
+                  color: '#6b7280',
+                  fontSize: 13,
+                }}
+              >
+                No active batches. Cattle enter an active batch only via the Send-to-Processor flag on a finishers
+                weigh-in session.
+              </div>
+            ) : (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+                {active.map((b) => (
+                  <BatchTile
+                    key={b.id}
+                    batch={b}
+                    cattle={cattle}
+                    cowDraft={cowDraft}
+                    setCowDraft={setCowDraft}
+                    saveCowWeight={saveCowWeight}
+                    detach={detachCowAndReport}
+                    onMarkComplete={() => markCompleteClick(b)}
+                    onReopen={() => reopenComplete(b)}
+                    canEdit={canEdit}
+                    expanded={expandedBatchId === b.id}
+                    onToggle={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
+                    fmt={fmt}
+                    renameDraft={renameDraft}
+                    setRenameDraft={setRenameDraft}
+                    renameErr={renameErr[b.id]}
+                    onSaveRename={() => saveRename(b)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-          {batches.map((b) => {
-            const rows = cowsDetailOf(b);
-            const totalLive = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
-            const totalHang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
-            const yieldPct = totalLive > 0 && totalHang > 0 ? Math.round((totalHang / totalLive) * 1000) / 10 : null;
-            const draftKey = (cid, field) => `${b.id}|${cid}|${field}`;
-            const draftVal = (cid, field, curr) => {
-              const k = draftKey(cid, field);
-              return cowDraft[k] != null ? cowDraft[k] : curr != null ? String(curr) : '';
-            };
-            const isExpanded = expandedBatchId === b.id;
-            return (
-              <div
-                key={b.id}
-                style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}
-              >
-                <div
-                  onClick={() => setExpandedBatchId(isExpanded ? null : b.id)}
-                  style={{
-                    padding: '12px 18px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                  }}
-                  className="hoverable-tile"
-                >
-                  <span style={{fontSize: 11, color: '#9ca3af'}}>{isExpanded ? '▼' : '▶'}</span>
-                  <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{b.name}</span>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: 10,
-                      background: b.status === 'complete' ? '#374151' : '#1d4ed8',
-                      color: 'white',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {b.status}
-                  </span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>
-                    {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
-                  </span>
-                  {b.planned_process_date && (
-                    <span style={{fontSize: 11, color: '#6b7280'}}>planned {fmt(b.planned_process_date)}</span>
-                  )}
-                  {b.actual_process_date && (
-                    <span style={{fontSize: 11, color: '#065f46'}}>processed {fmt(b.actual_process_date)}</span>
-                  )}
-                  {yieldPct && (
-                    <span style={{fontSize: 11, fontWeight: 600, color: '#065f46'}}>{yieldPct + '% yield'}</span>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEdit(b);
-                    }}
-                    style={{
-                      marginLeft: 'auto',
-                      fontSize: 11,
-                      color: '#1d4ed8',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    Edit
-                  </button>
+        {/* Completed batches (collapsed, bottom) */}
+        {!loading && (
+          <div style={{marginTop: 14}}>
+            <CollapsibleSection
+              label="Show Completed Batches"
+              count={completed.length}
+              expanded={showCompleted}
+              onToggle={() => setShowCompleted((v) => !v)}
+              color="#f3f4f6"
+              border="#d1d5db"
+              text="#374151"
+              dataKey="completed"
+            >
+              {completed.length === 0 ? (
+                <div style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}>
+                  No completed batches yet.
                 </div>
-                {isExpanded && (
-                  <div style={{borderTop: '1px solid #f3f4f6', padding: '14px 18px', background: '#fafafa'}}>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                        gap: 8,
-                        fontSize: 11,
-                        color: '#4b5563',
-                        marginBottom: 10,
-                      }}
-                    >
-                      <div>
-                        <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Live wt total</div>
-                        <div style={{fontWeight: 600}}>
-                          {totalLive > 0 ? Math.round(totalLive).toLocaleString() + ' lb' : '\u2014'}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Hanging wt</div>
-                        <div style={{fontWeight: 600}}>
-                          {totalHang > 0 ? Math.round(totalHang).toLocaleString() + ' lb' : '\u2014'}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Yield</div>
-                        <div style={{fontWeight: 600, color: yieldPct ? '#065f46' : '#9ca3af'}}>
-                          {yieldPct ? yieldPct + '%' : '\u2014'}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Cost</div>
-                        <div style={{fontWeight: 600}}>
-                          {b.processing_cost ? '$' + b.processing_cost.toLocaleString() : '\u2014'}
-                        </div>
-                      </div>
-                    </div>
-                    {rows.length > 0 && (
-                      <div style={{border: '1px solid #f3f4f6', borderRadius: 8, overflow: 'hidden', marginBottom: 8}}>
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '70px 90px 1fr 1fr 60px 28px',
-                            gap: 6,
-                            background: '#f9fafb',
-                            padding: '6px 10px',
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: '#6b7280',
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            alignItems: 'center',
-                          }}
-                        >
-                          <div>Tag</div>
-                          <div>Breed</div>
-                          <div>Live wt (lb)</div>
-                          <div>Hanging wt (lb)</div>
-                          <div style={{textAlign: 'right'}}>Yield</div>
-                          <div></div>
-                        </div>
-                        {rows.map((r) => {
-                          const cow = cattle.find((c) => c.id === r.cattle_id);
-                          const lv = parseFloat(r.live_weight);
-                          const hw = parseFloat(r.hanging_weight);
-                          const y = lv > 0 && hw > 0 ? Math.round((hw / lv) * 1000) / 10 : null;
-                          return (
-                            <div
-                              key={r.cattle_id}
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: '70px 90px 1fr 1fr 60px 28px',
-                                gap: 6,
-                                padding: '5px 10px',
-                                fontSize: 12,
-                                borderTop: '1px solid #f3f4f6',
-                                alignItems: 'center',
-                              }}
-                            >
-                              <div style={{fontWeight: 700, color: '#111827'}}>{'#' + (r.tag || cow?.tag || '?')}</div>
-                              <div style={{fontSize: 11, color: '#6b7280'}}>{cow?.breed || '\u2014'}</div>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                placeholder={'\u2014'}
-                                value={draftVal(r.cattle_id, 'live', r.live_weight)}
-                                onChange={(e) =>
-                                  setCowDraft((p) => ({...p, [draftKey(r.cattle_id, 'live')]: e.target.value}))
-                                }
-                                onBlur={(e) => {
-                                  saveCowWeight(b, r.cattle_id, 'live_weight', e.target.value);
-                                  setCowDraft((p) => {
-                                    const x = {...p};
-                                    delete x[draftKey(r.cattle_id, 'live')];
-                                    return x;
-                                  });
-                                }}
-                                style={{
-                                  fontSize: 12,
-                                  padding: '4px 8px',
-                                  border: '1px solid #e5e7eb',
-                                  borderRadius: 5,
-                                  fontFamily: 'inherit',
-                                  width: '100%',
-                                  boxSizing: 'border-box',
-                                }}
-                              />
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                placeholder={'\u2014'}
-                                value={draftVal(r.cattle_id, 'hanging', r.hanging_weight)}
-                                onChange={(e) =>
-                                  setCowDraft((p) => ({...p, [draftKey(r.cattle_id, 'hanging')]: e.target.value}))
-                                }
-                                onBlur={(e) => {
-                                  saveCowWeight(b, r.cattle_id, 'hanging_weight', e.target.value);
-                                  setCowDraft((p) => {
-                                    const x = {...p};
-                                    delete x[draftKey(r.cattle_id, 'hanging')];
-                                    return x;
-                                  });
-                                }}
-                                style={{
-                                  fontSize: 12,
-                                  padding: '4px 8px',
-                                  border: '1px solid #e5e7eb',
-                                  borderRadius: 5,
-                                  fontFamily: 'inherit',
-                                  width: '100%',
-                                  boxSizing: 'border-box',
-                                }}
-                              />
-                              <div
-                                style={{
-                                  textAlign: 'right',
-                                  fontSize: 11,
-                                  color: y ? '#065f46' : '#9ca3af',
-                                  fontWeight: y ? 600 : 400,
-                                }}
-                              >
-                                {y ? y + '%' : '\u2014'}
-                              </div>
-                              <button
-                                onClick={() => detachCowAndReport(b, cow || {id: r.cattle_id, tag: r.tag})}
-                                title="Detach cow from batch (reverts herd)"
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#b91c1c',
-                                  cursor: 'pointer',
-                                  fontSize: 14,
-                                  lineHeight: 1,
-                                  padding: '0 2px',
-                                  fontFamily: 'inherit',
-                                }}
-                              >
-                                {'\u00d7'}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {b.status !== 'complete' && (
-                      <div style={{fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>
-                        Cattle enter this batch only via the Send-to-Processor flag on a finisher weigh-in entry.
-                      </div>
-                    )}
-                    {b.notes && (
-                      <div style={{marginTop: 6, fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>{b.notes}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              ) : (
+                <div style={{display: 'flex', flexDirection: 'column', gap: 10, padding: '0.5rem 0'}}>
+                  {completed.map((b) => (
+                    <BatchTile
+                      key={b.id}
+                      batch={b}
+                      cattle={cattle}
+                      cowDraft={cowDraft}
+                      setCowDraft={setCowDraft}
+                      saveCowWeight={saveCowWeight}
+                      detach={detachCowAndReport}
+                      onMarkComplete={() => markCompleteClick(b)}
+                      onReopen={() => reopenComplete(b)}
+                      canEdit={canEdit}
+                      expanded={expandedBatchId === b.id}
+                      onToggle={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
+                      fmt={fmt}
+                      renameDraft={renameDraft}
+                      setRenameDraft={setRenameDraft}
+                      renameErr={renameErr[b.id]}
+                      onSaveRename={() => saveRename(b)}
+                    />
+                  ))}
+                </div>
+              )}
+            </CollapsibleSection>
+          </div>
+        )}
       </div>
+    </div>
+  );
+};
 
-      {/* Batch form modal */}
-      {showForm && form && (
-        <div
-          onClick={() => {
-            setShowForm(false);
-            setEditId(null);
-            setForm(null);
-          }}
+function CollapsibleSection({label, count, expanded, onToggle, color, border, text, children, dataKey}) {
+  return (
+    <div
+      style={{
+        background: 'white',
+        border: '1px solid #e5e7eb',
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: 0,
+      }}
+      data-batches-section={dataKey}
+    >
+      <div
+        onClick={onToggle}
+        style={{
+          padding: '12px 16px',
+          background: color,
+          borderBottom: expanded ? '1px solid ' + border : 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{fontSize: 12, color: text}}>{expanded ? '▼' : '▶'}</span>
+        <span style={{fontSize: 13, fontWeight: 700, color: text}}>{label}</span>
+        <span style={{fontSize: 11, color: text, opacity: 0.7}}>({count})</span>
+      </div>
+      {expanded && children}
+    </div>
+  );
+}
+
+function BatchTile({
+  batch,
+  cattle,
+  cowDraft,
+  setCowDraft,
+  saveCowWeight,
+  detach,
+  onMarkComplete,
+  onReopen,
+  canEdit,
+  expanded,
+  onToggle,
+  fmt,
+  renameDraft,
+  setRenameDraft,
+  renameErr,
+  onSaveRename,
+}) {
+  const rows = Array.isArray(batch.cows_detail) ? batch.cows_detail : [];
+  const totalLive = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
+  const totalHang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
+  const yieldPct = totalLive > 0 && totalHang > 0 ? Math.round((totalHang / totalLive) * 1000) / 10 : null;
+  const isComplete = batch.status === 'complete';
+  const draftKey = (cid, field) => `${batch.id}|${cid}|${field}`;
+  const draftVal = (cid, field, curr) => {
+    const k = draftKey(cid, field);
+    return cowDraft[k] != null ? cowDraft[k] : curr != null ? String(curr) : '';
+  };
+  return (
+    <div
+      style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}
+      data-batch-row={batch.id}
+      data-batch-name={batch.name}
+      data-batch-status={batch.status}
+    >
+      <div
+        onClick={onToggle}
+        style={{
+          padding: '12px 18px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+        }}
+        className="hoverable-tile"
+      >
+        <span style={{fontSize: 11, color: '#9ca3af'}}>{expanded ? '▼' : '▶'}</span>
+        <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{batch.name}</span>
+        <span
           style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,.45)',
-            zIndex: 500,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '1rem',
-            overflowY: 'auto',
+            fontSize: 10,
+            fontWeight: 700,
+            padding: '2px 8px',
+            borderRadius: 10,
+            background: isComplete ? '#374151' : '#1d4ed8',
+            color: 'white',
+            textTransform: 'uppercase',
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'white',
-              borderRadius: 12,
-              width: '100%',
-              maxWidth: 480,
-              boxShadow: '0 8px 32px rgba(0,0,0,.2)',
-              marginTop: 40,
-            }}
-          >
-            <div
-              style={{
-                padding: '14px 20px',
-                borderBottom: '1px solid #e5e7eb',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <div style={{fontSize: 15, fontWeight: 600, color: '#991b1b'}}>
-                {editId ? 'Edit Batch' : 'New Processing Batch'}
-              </div>
-              <button
-                onClick={() => {
-                  setShowForm(false);
-                  setEditId(null);
-                  setForm(null);
-                }}
-                style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
-              >
-                {'\u00d7'}
-              </button>
-            </div>
-            <div style={{padding: '16px 20px'}}>
-              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
-                <div style={{gridColumn: '1/-1'}}>
-                  <label style={lbl}>Name *</label>
-                  <input value={form.name} onChange={(e) => setForm({...form, name: e.target.value})} style={inpS} />
-                </div>
-                <div>
-                  <label style={lbl}>Status</label>
-                  <select value={form.status} onChange={(e) => setForm({...form, status: e.target.value})} style={inpS}>
-                    <option value="planned">Planned</option>
-                    <option value="complete">Complete</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={lbl}>Processing Cost ($)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.processing_cost}
-                    onChange={(e) => setForm({...form, processing_cost: e.target.value})}
-                    style={inpS}
-                  />
-                </div>
-                <div>
-                  <label style={lbl}>Planned Process Date</label>
-                  <input
-                    type="date"
-                    value={form.planned_process_date}
-                    onChange={(e) => setForm({...form, planned_process_date: e.target.value})}
-                    style={inpS}
-                  />
-                </div>
-                <div>
-                  <label style={lbl}>Actual Process Date</label>
-                  <input
-                    type="date"
-                    value={form.actual_process_date}
-                    onChange={(e) => setForm({...form, actual_process_date: e.target.value})}
-                    style={inpS}
-                  />
-                </div>
-                <div style={{gridColumn: '1/-1'}}>
-                  <label style={lbl}>Notes</label>
-                  <textarea
-                    value={form.notes}
-                    onChange={(e) => setForm({...form, notes: e.target.value})}
-                    rows={2}
-                    style={{...inpS, resize: 'vertical'}}
-                  />
-                </div>
-              </div>
-              {!editId && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: '10px 12px',
-                    background: '#f9fafb',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 6,
-                    fontSize: 11,
-                    color: '#6b7280',
-                  }}
-                >
-                  Cattle enter this batch only via the Send-to-Processor flag on a finisher weigh-in entry. Create the
-                  empty batch shell here; cows attach themselves once they're flagged at the chute.
-                </div>
-              )}
-            </div>
-            <div style={{padding: '12px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8}}>
-              <button
-                onClick={saveBatch}
+          {batch.status}
+        </span>
+        <span style={{fontSize: 11, color: '#6b7280'}}>
+          {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
+        </span>
+        {batch.actual_process_date && (
+          <span style={{fontSize: 11, color: '#065f46'}}>processed {fmt(batch.actual_process_date)}</span>
+        )}
+        {yieldPct && <span style={{fontSize: 11, fontWeight: 600, color: '#065f46'}}>{yieldPct + '% yield'}</span>}
+      </div>
+      {expanded && (
+        <div style={{borderTop: '1px solid #f3f4f6', padding: '14px 18px', background: '#fafafa'}}>
+          {/* Rename + Mark complete / Reopen controls (management/admin only) */}
+          {canEdit && (
+            <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10}}>
+              <label style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Name:</label>
+              <input
+                type="text"
+                value={renameDraft[batch.id] != null ? renameDraft[batch.id] : batch.name}
+                onChange={(e) => setRenameDraft((p) => ({...p, [batch.id]: e.target.value}))}
+                data-rename-input={batch.id}
                 style={{
-                  padding: '8px 20px',
-                  borderRadius: 7,
-                  border: 'none',
-                  background: '#991b1b',
-                  color: 'white',
-                  fontWeight: 600,
                   fontSize: 13,
-                  cursor: 'pointer',
+                  padding: '5px 9px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 5,
                   fontFamily: 'inherit',
+                  width: 130,
                 }}
-              >
-                Save
-              </button>
-              {editId && (
-                <button
-                  onClick={() => deleteBatch(editId)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: 7,
-                    border: '1px solid #F09595',
-                    background: 'white',
-                    color: '#b91c1c',
-                    fontSize: 13,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  Delete
-                </button>
-              )}
+              />
               <button
-                onClick={() => {
-                  setShowForm(false);
-                  setEditId(null);
-                  setForm(null);
-                }}
+                onClick={onSaveRename}
+                data-save-rename={batch.id}
                 style={{
-                  padding: '8px 16px',
-                  borderRadius: 7,
+                  fontSize: 11,
+                  padding: '5px 11px',
+                  borderRadius: 5,
                   border: '1px solid #d1d5db',
                   background: 'white',
-                  color: '#6b7280',
-                  fontSize: 13,
+                  color: '#374151',
                   cursor: 'pointer',
                   fontFamily: 'inherit',
+                  fontWeight: 600,
                 }}
               >
-                Cancel
+                Save name
               </button>
+              {renameErr && (
+                <span style={{fontSize: 11, color: '#b91c1c'}} data-rename-err={batch.id}>
+                  {renameErr === 'format' && 'Use C-YY-NN'}
+                  {renameErr === 'duplicate' && 'Name already used'}
+                  {renameErr === 'sequence_gap' && 'Would skip a sequence number'}
+                  {renameErr === 'new_year_must_start_at_01' && 'New year must start at 01'}
+                  {renameErr === 'db_error' && 'Save error'}
+                </span>
+              )}
+              <span style={{flex: 1}} />
+              {!isComplete ? (
+                <button
+                  onClick={onMarkComplete}
+                  data-mark-complete={batch.id}
+                  style={{
+                    fontSize: 12,
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: '#374151',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontWeight: 600,
+                  }}
+                >
+                  Mark complete
+                </button>
+              ) : (
+                <button
+                  onClick={onReopen}
+                  data-reopen={batch.id}
+                  style={{
+                    fontSize: 12,
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    border: '1px solid #1d4ed8',
+                    background: 'white',
+                    color: '#1d4ed8',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontWeight: 600,
+                  }}
+                >
+                  Reopen to active
+                </button>
+              )}
             </div>
+          )}
+          {/* Stat row */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+              gap: 8,
+              fontSize: 11,
+              color: '#4b5563',
+              marginBottom: 10,
+            }}
+          >
+            <Stat label="Live wt total" value={totalLive > 0 ? Math.round(totalLive).toLocaleString() + ' lb' : '—'} />
+            <Stat label="Hanging wt" value={totalHang > 0 ? Math.round(totalHang).toLocaleString() + ' lb' : '—'} />
+            <Stat label="Yield" value={yieldPct ? yieldPct + '%' : '—'} color={yieldPct ? '#065f46' : '#9ca3af'} />
+            <Stat label="Cost" value={batch.processing_cost ? '$' + batch.processing_cost.toLocaleString() : '—'} />
           </div>
+          {rows.length > 0 && (
+            <div style={{border: '1px solid #f3f4f6', borderRadius: 8, overflow: 'hidden', marginBottom: 8}}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '70px 90px 1fr 1fr 60px 28px',
+                  gap: 6,
+                  background: '#f9fafb',
+                  padding: '6px 10px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  alignItems: 'center',
+                }}
+              >
+                <div>Tag</div>
+                <div>Breed</div>
+                <div>Live wt (lb)</div>
+                <div>Hanging wt (lb)</div>
+                <div style={{textAlign: 'right'}}>Yield</div>
+                <div></div>
+              </div>
+              {rows.map((r) => {
+                const cow = cattle.find((c) => c.id === r.cattle_id);
+                const lv = parseFloat(r.live_weight);
+                const hw = parseFloat(r.hanging_weight);
+                const y = lv > 0 && hw > 0 ? Math.round((hw / lv) * 1000) / 10 : null;
+                return (
+                  <div
+                    key={r.cattle_id}
+                    data-batch-cow-row={r.cattle_id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '70px 90px 1fr 1fr 60px 28px',
+                      gap: 6,
+                      padding: '5px 10px',
+                      fontSize: 12,
+                      borderTop: '1px solid #f3f4f6',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div style={{fontWeight: 700, color: '#111827'}}>{'#' + (r.tag || cow?.tag || '?')}</div>
+                    <div style={{fontSize: 11, color: '#6b7280'}}>{cow?.breed || '—'}</div>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder={'—'}
+                      value={draftVal(r.cattle_id, 'live', r.live_weight)}
+                      disabled={!canEdit}
+                      data-batch-live-weight={r.cattle_id}
+                      onChange={(e) => setCowDraft((p) => ({...p, [draftKey(r.cattle_id, 'live')]: e.target.value}))}
+                      onBlur={(e) => {
+                        saveCowWeight(batch, r.cattle_id, 'live_weight', e.target.value);
+                        setCowDraft((p) => {
+                          const x = {...p};
+                          delete x[draftKey(r.cattle_id, 'live')];
+                          return x;
+                        });
+                      }}
+                      style={{
+                        fontSize: 12,
+                        padding: '4px 8px',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 5,
+                        fontFamily: 'inherit',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: canEdit ? 'white' : '#f9fafb',
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder={'—'}
+                      value={draftVal(r.cattle_id, 'hanging', r.hanging_weight)}
+                      disabled={!canEdit}
+                      data-batch-hanging-weight={r.cattle_id}
+                      onChange={(e) => setCowDraft((p) => ({...p, [draftKey(r.cattle_id, 'hanging')]: e.target.value}))}
+                      onBlur={(e) => {
+                        saveCowWeight(batch, r.cattle_id, 'hanging_weight', e.target.value);
+                        setCowDraft((p) => {
+                          const x = {...p};
+                          delete x[draftKey(r.cattle_id, 'hanging')];
+                          return x;
+                        });
+                      }}
+                      style={{
+                        fontSize: 12,
+                        padding: '4px 8px',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 5,
+                        fontFamily: 'inherit',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: canEdit ? 'white' : '#f9fafb',
+                      }}
+                    />
+                    <div
+                      style={{
+                        textAlign: 'right',
+                        fontSize: 11,
+                        color: y ? '#065f46' : '#9ca3af',
+                        fontWeight: y ? 600 : 400,
+                      }}
+                    >
+                      {y ? y + '%' : '—'}
+                    </div>
+                    {canEdit ? (
+                      <button
+                        onClick={() => detach(batch, cow || {id: r.cattle_id, tag: r.tag})}
+                        title="Detach cow from batch (reverts herd)"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#b91c1c',
+                          cursor: 'pointer',
+                          fontSize: 14,
+                          lineHeight: 1,
+                          padding: '0 2px',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {'×'}
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {batch.notes && (
+            <div style={{marginTop: 6, fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>{batch.notes}</div>
+          )}
         </div>
       )}
     </div>
   );
-};
+}
+
+function Stat({label, value, color = '#111827'}) {
+  return (
+    <div>
+      <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>{label}</div>
+      <div style={{fontWeight: 600, color}}>{value}</div>
+    </div>
+  );
+}
 
 export default CattleBatchesView;

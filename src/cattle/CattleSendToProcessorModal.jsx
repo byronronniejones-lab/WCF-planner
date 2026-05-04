@@ -1,91 +1,121 @@
-// CattleSendToProcessorModal
+// CattleSendToProcessorModal — reworked for the Cattle Forecast lane.
 // ---------------------------------------------------------------------------
 // Pops up when a cattle finisher session is being completed and at least
-// one entry has send_to_processor=true. User picks an existing planned
-// processing batch OR creates a new one; on confirm, the flagged entries'
-// cows are attached to the batch (live_weight from this session's entries),
-// moved to the 'processed' herd, and a cattle_transfers row logged per cow.
+// one entry has send_to_processor=true.
 //
-// Batch status stays 'planned' -- the actual processing event happens later
-// at the processor and is marked complete from the Batches tab.
+// New flow (mig 043 + Forecast):
+//   - No batch picker. The Forecast helper computes the next virtual batch
+//     name and the allowed tag set; the modal shows that name + count and
+//     enforces the gate on submit.
+//   - Hard forecast gate: every selected tag MUST be in the next virtual
+//     batch's allowedTagSet. If any tag is outside, the WHOLE send is
+//     blocked with explicit "adjust hide/unhide in Forecast first" copy
+//     listing the blocked tags.
+//   - Partial subset of the next virtual batch is allowed (sent subset
+//     becomes the new active C-YY-NN; remaining unhidden cattle from that
+//     virtual batch shift to the next virtual sequence number on next
+//     forecast recompute).
+//   - Real attach creates an ACTIVE batch (mig 043 retired the 'planned'
+//     DB status). actual_process_date = weigh_in_sessions.date (NOT today).
 // ---------------------------------------------------------------------------
 import React from 'react';
 import {createProcessingBatch, attachEntriesToBatch} from '../lib/cattleProcessingBatch.js';
+import {buildForecast, checkProcessorGate} from '../lib/cattleForecast.js';
+import {loadForecastSettings, loadHeiferIncludes, loadHidden} from '../lib/cattleForecastApi.js';
 
 export default function CattleSendToProcessorModal({
   sb,
   session,
   flaggedEntries,
   cattleList,
+  weighIns,
   teamMember,
+  authState,
   onCancel,
   onConfirmed,
 }) {
-  const [plannedBatches, setPlannedBatches] = React.useState([]);
+  const role = authState && authState.role;
+  const canSend = role === 'admin' || role === 'management';
   const [loading, setLoading] = React.useState(true);
-  const [mode, setMode] = React.useState('existing'); // 'existing' | 'new'
-  const [batchId, setBatchId] = React.useState('');
-  const [newName, setNewName] = React.useState('');
-  const [newPlannedDate, setNewPlannedDate] = React.useState(
-    (session && session.date) || new Date().toISOString().slice(0, 10),
-  );
+  const [forecast, setForecast] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  const [gateBlocked, setGateBlocked] = React.useState([]);
 
   React.useEffect(() => {
     let cancelled = false;
-    sb.from('cattle_processing_batches')
-      .select('*')
-      .eq('status', 'planned')
-      .is('actual_process_date', null)
-      .order('planned_process_date', {ascending: true, nullsFirst: false})
-      .then(({data, error}) => {
+    (async () => {
+      try {
+        const [settings, includes, hidden, batchesR] = await Promise.all([
+          loadForecastSettings(sb),
+          loadHeiferIncludes(sb),
+          loadHidden(sb),
+          sb.from('cattle_processing_batches').select('*'),
+        ]);
         if (cancelled) return;
-        if (error) {
-          setErr('Could not load planned batches: ' + error.message);
-          setLoading(false);
-          return;
-        }
-        const rows = data || [];
-        setPlannedBatches(rows);
-        // If no planned batches exist, default the UI to "+ New batch" so the
-        // user isn't staring at an empty list wondering what to pick.
-        if (rows.length === 0) setMode('new');
-        // Seed a default new-batch name like C-26-NN based on existing rows.
-        const yr = new Date().getFullYear().toString().slice(-2);
-        const existingNums = rows.map((b) =>
-          (b.name || '').startsWith('C-' + yr + '-') ? parseInt(b.name.slice(5)) || 0 : 0,
-        );
-        const next = (Math.max(0, ...existingNums) + 1).toString().padStart(2, '0');
-        setNewName('C-' + yr + '-' + next);
+        const realBatches = batchesR.data || [];
+        const f = buildForecast({
+          cattle: cattleList || [],
+          weighIns: weighIns || [],
+          settings,
+          includes,
+          hidden,
+          realBatches,
+          todayMs: Date.now(),
+        });
+        setForecast({...f, _realBatches: realBatches});
         setLoading(false);
-      });
+      } catch (e) {
+        if (!cancelled) {
+          setErr('Could not load forecast: ' + (e.message || e));
+          setLoading(false);
+        }
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [sb]);
+  }, [sb, cattleList, weighIns]);
 
   const totalWeight = flaggedEntries.reduce((s, e) => s + (parseFloat(e.weight) || 0), 0);
+  const selectedTags = flaggedEntries.map((e) => e.tag).filter(Boolean);
+  const next = forecast?.nextProcessorBatch || null;
+  const sessionDate = (session && session.date) || new Date().toISOString().slice(0, 10);
+  // Real batch name MUST match the displayed virtual batch name exactly —
+  // this is the locked contract: "planned batch numbers need to match the
+  // forecast number exactly." The Forecast tab and Batches tab both show
+  // `next.name`; what gets saved must be the same string.
+  const gate = next
+    ? checkProcessorGate({selectedTags, nextProcessorBatch: next})
+    : {ok: false, reason: 'no_next_batch', blockedTags: []};
+
+  // Surface the gate result to the operator in real-time (no Submit needed).
+  React.useEffect(() => {
+    setGateBlocked(gate.ok ? [] : gate.blockedTags);
+  }, [gate.ok, gate.blockedTags.join(',')]);
 
   async function go() {
     setErr('');
-    if (mode === 'existing' && !batchId) {
-      setErr('Pick a planned batch or switch to + New.');
+    if (!canSend) {
+      setErr('Send-to-Processor is restricted to management/admin.');
       return;
     }
-    if (mode === 'new' && !newName.trim()) {
-      setErr('Name the new batch.');
+    if (!gate.ok) {
+      setErr(
+        gate.reason === 'no_next_batch'
+          ? 'No next virtual batch — there are no cattle eligible for processing yet.'
+          : gate.reason === 'empty_next_batch'
+            ? 'The next virtual batch is empty.'
+            : 'Some selected tags are not in the next forecast batch. Adjust hide/unhide in Forecast first.',
+      );
       return;
     }
     setBusy(true);
     try {
-      let batch;
-      if (mode === 'existing') {
-        batch = plannedBatches.find((b) => b.id === batchId);
-        if (!batch) throw new Error('Selected batch not found.');
-      } else {
-        batch = await createProcessingBatch(sb, {name: newName, plannedDate: newPlannedDate});
-      }
+      const batch = await createProcessingBatch(sb, {
+        name: next.name,
+        processingDate: sessionDate,
+      });
       const {attached, skipped} = await attachEntriesToBatch(sb, {
         batch,
         entries: flaggedEntries,
@@ -99,18 +129,6 @@ export default function CattleSendToProcessorModal({
     }
   }
 
-  const lblS = {display: 'block', fontSize: 12, color: '#374151', marginBottom: 4, fontWeight: 600};
-  const inpS = {
-    fontFamily: 'inherit',
-    fontSize: 13,
-    padding: '8px 10px',
-    border: '1px solid #d1d5db',
-    borderRadius: 6,
-    width: '100%',
-    boxSizing: 'border-box',
-    background: 'white',
-  };
-
   return (
     <div
       style={{
@@ -123,12 +141,13 @@ export default function CattleSendToProcessorModal({
         justifyContent: 'center',
         padding: 16,
       }}
+      data-cattle-send-modal
     >
       <div
         style={{
           background: 'white',
           borderRadius: 12,
-          maxWidth: 480,
+          maxWidth: 540,
           width: '100%',
           padding: '18px 20px',
           boxShadow: '0 12px 40px rgba(0,0,0,.25)',
@@ -141,98 +160,101 @@ export default function CattleSendToProcessorModal({
             (flaggedEntries.length === 1 ? '' : 's') +
             ' to processor'}
         </div>
-        <div style={{fontSize: 11, color: '#6b7280', marginBottom: 14}}>
-          {'Total live weight: ' +
-            Math.round(totalWeight).toLocaleString() +
-            ' lb. These cows will move to the Processed herd and attach to the batch. The batch stays ‘planned’ until you mark it complete from the Batches tab.'}
+        <div style={{fontSize: 11, color: '#6b7280', marginBottom: 10}}>
+          {'Total live weight: ' + Math.round(totalWeight).toLocaleString() + ' lb · session date ' + sessionDate}
         </div>
 
         {loading && (
           <div style={{padding: '20px 0', textAlign: 'center', color: '#9ca3af', fontSize: 12}}>
-            Loading planned batches{'…'}
+            Loading forecast{'…'}
           </div>
         )}
 
-        {!loading && (
-          <div style={{marginBottom: 10}}>
-            <div style={{display: 'flex', gap: 6, marginBottom: 8}}>
-              <button
-                type="button"
-                onClick={() => setMode('existing')}
-                disabled={plannedBatches.length === 0}
-                style={{
-                  flex: 1,
-                  padding: '7px 10px',
-                  borderRadius: 6,
-                  border: '1px solid ' + (mode === 'existing' ? '#991b1b' : '#d1d5db'),
-                  background: mode === 'existing' ? '#991b1b' : 'white',
-                  color: mode === 'existing' ? 'white' : plannedBatches.length === 0 ? '#d1d5db' : '#374151',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: plannedBatches.length === 0 ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                {'Existing planned (' + plannedBatches.length + ')'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('new')}
-                style={{
-                  flex: 1,
-                  padding: '7px 10px',
-                  borderRadius: 6,
-                  border: '1px solid ' + (mode === 'new' ? '#991b1b' : '#d1d5db'),
-                  background: mode === 'new' ? '#991b1b' : 'white',
-                  color: mode === 'new' ? 'white' : '#374151',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                + New batch
-              </button>
+        {!loading && next && (
+          <div
+            style={{
+              padding: '10px 12px',
+              border: '1px solid #fca5a5',
+              borderLeft: '4px solid #991b1b',
+              borderRadius: 8,
+              background: '#fef2f2',
+              marginBottom: 12,
+            }}
+            data-send-modal-next-batch
+          >
+            <div
+              style={{fontSize: 11, color: '#991b1b', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.5}}
+            >
+              Next forecast batch
             </div>
+            <div style={{fontSize: 14, fontWeight: 700, color: '#111827', marginTop: 2}}>{next.name}</div>
+            <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>
+              {next.label} · {next.animalIds.length} {next.animalIds.length === 1 ? 'cow' : 'cows'} eligible
+            </div>
+          </div>
+        )}
 
-            {mode === 'existing' && (
-              <select value={batchId} onChange={(e) => setBatchId(e.target.value)} style={inpS}>
-                <option value="">Select planned batch{'…'}</option>
-                {plannedBatches.map((b) => {
-                  const n = Array.isArray(b.cows_detail) ? b.cows_detail.length : 0;
-                  const when = b.planned_process_date ? ' · planned ' + b.planned_process_date : '';
-                  return (
-                    <option key={b.id} value={b.id}>
-                      {b.name + when + ' · ' + n + (n === 1 ? ' cow' : ' cows')}
-                    </option>
-                  );
-                })}
-              </select>
-            )}
+        {!loading && !next && (
+          <div
+            style={{
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: '#fef2f2',
+              border: '1px solid #fca5a5',
+              color: '#991b1b',
+              fontSize: 12,
+              marginBottom: 12,
+            }}
+          >
+            No virtual batch from the Forecast — no eligible cattle land in the display window. Add weights or DOB to
+            bring cattle into the forecast first.
+          </div>
+        )}
 
-            {mode === 'new' && (
-              <div style={{display: 'flex', gap: 8}}>
-                <div style={{flex: 1}}>
-                  <label style={lblS}>Batch name *</label>
-                  <input
-                    type="text"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="C-26-01"
-                    style={inpS}
-                  />
-                </div>
-                <div style={{width: 140}}>
-                  <label style={lblS}>Planned date</label>
-                  <input
-                    type="date"
-                    value={newPlannedDate}
-                    onChange={(e) => setNewPlannedDate(e.target.value)}
-                    style={inpS}
-                  />
-                </div>
-              </div>
-            )}
+        {!loading && gateBlocked.length > 0 && (
+          <div
+            data-send-modal-blocked
+            style={{
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: '#fef2f2',
+              border: '1px solid #fca5a5',
+              color: '#991b1b',
+              fontSize: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div style={{fontWeight: 700, marginBottom: 4}}>Blocked: tags outside the next forecast batch</div>
+            <div style={{display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6}}>
+              {gateBlocked.map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: 'white',
+                    color: '#991b1b',
+                    border: '1px solid #fca5a5',
+                  }}
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+            <div style={{fontSize: 11, color: '#7f1d1d'}}>
+              Adjust hide/unhide in the Forecast tab so the next virtual batch matches the cattle you want to send. The
+              whole send is blocked until every selected tag is in the next batch.
+            </div>
+          </div>
+        )}
+
+        {!loading && next && gate.ok && (
+          <div style={{fontSize: 12, color: '#374151', marginBottom: 12}}>
+            This will create active batch <strong>{next.name}</strong> and send <strong>{flaggedEntries.length}</strong>{' '}
+            {flaggedEntries.length === 1 ? 'cow' : 'cattle'} to processor. Processing date will be set to{' '}
+            <strong>{sessionDate}</strong>.
           </div>
         )}
 
@@ -271,22 +293,17 @@ export default function CattleSendToProcessorModal({
           </button>
           <button
             onClick={go}
-            disabled={busy || loading || (mode === 'existing' && !batchId) || (mode === 'new' && !newName.trim())}
+            disabled={busy || loading || !gate.ok || !canSend}
+            data-send-modal-confirm
             style={{
               padding: '8px 16px',
               borderRadius: 7,
               border: 'none',
-              background:
-                busy || loading || (mode === 'existing' && !batchId) || (mode === 'new' && !newName.trim())
-                  ? '#9ca3af'
-                  : '#991b1b',
+              background: busy || loading || !gate.ok || !canSend ? '#9ca3af' : '#991b1b',
               color: 'white',
               fontWeight: 700,
               fontSize: 12,
-              cursor:
-                busy || loading || (mode === 'existing' && !batchId) || (mode === 'new' && !newName.trim())
-                  ? 'not-allowed'
-                  : 'pointer',
+              cursor: busy || loading || !gate.ok || !canSend ? 'not-allowed' : 'pointer',
               fontFamily: 'inherit',
             }}
           >

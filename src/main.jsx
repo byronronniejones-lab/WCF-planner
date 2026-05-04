@@ -177,6 +177,7 @@ import SheepHomeView from './sheep/SheepHomeView.jsx';
 import CattleHerdsView from './cattle/CattleHerdsView.jsx';
 import CattleBreedingView from './cattle/CattleBreedingView.jsx';
 import CattleBatchesView from './cattle/CattleBatchesView.jsx';
+import CattleForecastView from './cattle/CattleForecastView.jsx';
 
 // Phase 2 Round 4: admin panels.
 import FeedCostsPanel from './admin/FeedCostsPanel.jsx';
@@ -1566,6 +1567,7 @@ function App() {
     'cattledailys',
     'cattleweighins',
     'cattlebreeding',
+    'cattleforecast',
     'cattlebatches',
     'broilerweighins',
     'pigweighins',
@@ -1612,6 +1614,7 @@ function App() {
     cattledailys: 'cattle',
     cattleweighins: 'cattle',
     cattlebreeding: 'cattle',
+    cattleforecast: 'cattle',
     cattlebatches: 'cattle',
     sheepHome: 'sheep',
     sheepflocks: 'sheep',
@@ -1710,7 +1713,23 @@ function App() {
       const profilePromise = sb.from('profiles').select('*').eq('id', user.id).single();
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
       const {data: profile} = await Promise.race([profilePromise, timeoutPromise]).catch(() => ({data: null}));
-      setAuthState({user, role: profile?.role || 'farm_team', profile, name: profile?.full_name || user.email});
+      // DEV-only role override for Playwright role-tier coverage. The
+      // production bundle tree-shakes this `import.meta.env.DEV` branch
+      // entirely; no prod surface exists. Spec sets
+      // localStorage.setItem('wcf-test-role-override', 'farm_team') before
+      // navigation; the override applies for the rest of that page session.
+      let resolvedRole = profile?.role || 'farm_team';
+      if (import.meta.env.DEV) {
+        try {
+          const override = window.localStorage.getItem('wcf-test-role-override');
+          if (override && ['admin', 'management', 'farm_team', 'inactive'].includes(override)) {
+            resolvedRole = override;
+          }
+        } catch {
+          /* localStorage may be unavailable in some sandboxes */
+        }
+      }
+      setAuthState({user, role: resolvedRole, profile, name: profile?.full_name || user.email});
       await loadAllData();
     } catch (e) {
       console.error('loadUser error:', e);
@@ -3215,6 +3234,19 @@ function App() {
     });
   if (view === 'cattlebreeding')
     return React.createElement(CattleBreedingView, {
+      sb,
+      fmt,
+      Header,
+      authState,
+      setView,
+      showUsers,
+      setShowUsers,
+      allUsers,
+      setAllUsers,
+      loadUsers,
+    });
+  if (view === 'cattleforecast')
+    return React.createElement(CattleForecastView, {
       sb,
       fmt,
       Header,

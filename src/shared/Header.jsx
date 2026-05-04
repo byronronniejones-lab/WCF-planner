@@ -32,6 +32,7 @@ export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirm
     'cattledailys',
     'cattleweighins',
     'cattlebreeding',
+    'cattleforecast',
     'cattlebatches',
   ];
   const sheepViews = ['sheepHome', 'sheepflocks', 'sheepdailys', 'sheepweighins', 'sheepbatches'];
@@ -413,8 +414,9 @@ export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirm
               ['cattleherds', 'Herds'],
               ['cattlebreeding', 'Breeding'],
               ['cattleweighins', 'Weigh-Ins'],
-              ['cattledailys', 'Dailys'],
+              ['cattleforecast', 'Forecast'],
               ['cattlebatches', 'Batches'],
+              ['cattledailys', 'Dailys'],
             ].map(([v, l]) => (
               <button key={v} style={nb(view === v)} onClick={() => setView(v)}>
                 {l}

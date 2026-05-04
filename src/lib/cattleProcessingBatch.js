@@ -27,19 +27,22 @@ function findCowByAnyTag(cattleList, tag) {
   );
 }
 
-// Create a new planned processing batch with the supplied name + date.
+// Create a new ACTIVE processing batch from a Send-to-Processor flow.
+// Mig 043 retired the 'planned' DB status; planned batches are virtual now,
+// so any batch that reaches the database is already active. The processing
+// date is the weigh_in_sessions.date, NOT the system date.
 // Returns the inserted row. No cows_detail yet -- attachEntriesToBatch
 // handles that in the next step.
-export async function createProcessingBatch(sb, {name, plannedDate}) {
+export async function createProcessingBatch(sb, {name, processingDate}) {
   const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
   const rec = {
     id,
     name: (name || '').trim(),
-    planned_process_date: plannedDate || null,
-    actual_process_date: null,
+    planned_process_date: processingDate || null,
+    actual_process_date: processingDate || null,
     processing_cost: null,
     notes: null,
-    status: 'planned',
+    status: 'active',
     cows_detail: [],
     total_live_weight: null,
     total_hanging_weight: null,

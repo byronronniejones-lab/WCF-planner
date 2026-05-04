@@ -50,9 +50,10 @@ export const VIEW_TO_PATH = {
   cattleHome: '/cattle',
   cattleherds: '/cattle/herds',
   cattlebreeding: '/cattle/breeding',
+  cattleweighins: '/cattle/weighins',
+  cattleforecast: '/cattle/forecast',
   cattlebatches: '/cattle/batches',
   cattledailys: '/cattle/dailys',
-  cattleweighins: '/cattle/weighins',
 
   // Sheep
   sheepHome: '/sheep',

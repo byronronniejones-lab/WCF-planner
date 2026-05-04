@@ -65,7 +65,11 @@ async function installConfirmDeleteStub(page) {
 // --------------------------------------------------------------------------
 // Test 1 — happy-path attach via UI
 // --------------------------------------------------------------------------
-test('attach: complete session + modal stamps prior_herd_or_flock and writes audit', async ({
+// SKIPPED 2026-05-04: the Cattle Forecast lane (mig 043) replaced the modal's
+// existing-batch picker with an auto-computed next-virtual-batch flow. The
+// new attach happy-path is locked by tests/cattle_forecast.spec.js Test 3
+// ("forecast → send: active batch saved with exact virtual batch name").
+test.skip('attach: complete session + modal stamps prior_herd_or_flock and writes audit', async ({
   page,
   cattleSendToProcessorScenario,
   supabaseAdmin,
@@ -171,54 +175,74 @@ test('attach: complete session + modal stamps prior_herd_or_flock and writes aud
 // --------------------------------------------------------------------------
 // Test 2 — toggle-clear detach (full UI round-trip: attach → reopen → toggle)
 // --------------------------------------------------------------------------
+// REWRITTEN 2026-05-04 for the Cattle Forecast lane (mig 043). Old setup
+// drove a retired modal-with-batch-picker; the operator toggle-clear flow
+// itself stays — admin can still reopen a complete session and unflag an
+// attached entry to detach. The rewrite drives the new forecast-backed
+// send modal first to create the active batch, then reopens and toggle-
+// clears one entry.
 test('toggle-clear: reopen + clear flag detaches via prior_herd_or_flock', async ({
   page,
   cattleSendToProcessorScenario,
   supabaseAdmin,
 }) => {
-  const {batchId, sessionId} = cattleSendToProcessorScenario;
+  const {sessionId} = cattleSendToProcessorScenario;
 
+  // Drop the seed's pre-created C-26-01 batch so the new send flow creates
+  // its own active batch. The seed cattle live in 'finishers' regardless.
+  await supabaseAdmin.from('cattle_processing_batches').delete().neq('id', '__never_match__');
+  await supabaseAdmin
+    .from('cattle')
+    .update({processing_batch_id: null})
+    .in('id', ['cow-test-2001', 'cow-test-2002', 'cow-test-2003']);
+
+  // Seed weights are 1080-1150 lb — below the default 1200 display window.
+  // Widen the window to 1000-1500 just for this test so all 3 cows land
+  // in next.allowedTagSet and the gate accepts the 3-cow send.
+  await supabaseAdmin
+    .from('cattle_forecast_settings')
+    .upsert({id: 'global', display_weight_min: 1000, display_weight_max: 1500}, {onConflict: 'id'});
+
+  // Step 1: drive the new send modal (no batch picker; auto-creates active).
   await page.goto('/cattle/weighins');
-
-  // Step 1: attach via UI (same flow as Test 1, condensed).
   const sessionRow = page.locator('.hoverable-tile').filter({hasText: HERD_LABEL}).filter({hasText: /draft/i});
   await sessionRow.click();
   await page.getByRole('button', {name: /Complete Session/}).click();
-  await expect(page.getByText(/Send 3 finishers to processor/)).toBeVisible({timeout: 5_000});
-  const select = page
-    .locator('select')
-    .filter({has: page.locator(`option[value="${batchId}"]`)})
-    .first();
-  await select.selectOption(batchId);
-  await page.getByRole('button', {name: 'Send to processor'}).click();
-  await expect(page.getByText(/Send 3 finishers to processor/)).toHaveCount(0, {timeout: 10_000});
+  await expect(page.locator('[data-cattle-send-modal]')).toBeVisible({timeout: 5_000});
+  // Confirm should be enabled — all 3 tags in allowed set.
+  const confirm = page.locator('[data-send-modal-confirm]');
+  await expect(confirm).toBeEnabled({timeout: 5_000});
+  await confirm.click();
+  await expect(page.locator('[data-cattle-send-modal]')).toHaveCount(0, {timeout: 10_000});
 
-  // Wait for attach to fully land before reopening (otherwise the toggle
-  // sees stale local state).
+  // Step 2: locate the new active batch and capture its id.
   await expect
     .poll(
       async () => {
         const r = await supabaseAdmin
           .from('cattle_processing_batches')
-          .select('cows_detail')
-          .eq('id', batchId)
-          .single();
-        return (r.data?.cows_detail || []).length;
+          .select('id, cows_detail')
+          .eq('status', 'active');
+        return (r.data || [])[0]?.cows_detail?.length || 0;
       },
-      {timeout: 10_000},
+      {timeout: 10_000, message: 'attach did not land 3 cows on the new active batch'},
     )
     .toBe(3);
+  const batchRow = await supabaseAdmin
+    .from('cattle_processing_batches')
+    .select('id, name')
+    .eq('status', 'active')
+    .single();
+  const newBatchId = batchRow.data.id;
 
-  // Step 2: Reopen session — flips status to 'draft' and re-renders the
-  // toggle button (the read-only span only shows on complete sessions).
-  // Don't click the row again — finalizeComplete preserves expandedSession
-  // state, so the panel is still open. Clicking would COLLAPSE it and hide
-  // Reopen Session.
+  // Step 3: reopen the (now-complete) session so the toggle button re-renders.
+  // The completion flow preserves expandedSession state, so the panel is
+  // still open — DON'T re-click the row, that would COLLAPSE it.
   await page.getByRole('button', {name: 'Reopen Session'}).click();
 
-  // Step 3: clear the flag on tag #2002. The button label is '✓ Processor'
-  // because send_to_processor is still true after reopen (no cleanup happens
-  // on reopen — that's the very state toggle-clear was built to handle).
+  // Step 4: clear the flag on tag #2002. The button label is '✓ Processor'
+  // because send_to_processor stays true after reopen — that's the very
+  // state toggle-clear was built to handle.
   const entry2002 = uniqueRow(page, '2002');
   const toggle = entry2002.getByRole('button', {name: '✓ Processor'});
   await expect(toggle).toBeVisible({timeout: 5_000});
@@ -239,21 +263,24 @@ test('toggle-clear: reopen + clear flag detaches via prior_herd_or_flock', async
     )
     .toEqual({herd: 'finishers', processing_batch_id: null});
 
-  // Other cows still attached.
   for (const cowId of ['cow-test-2001', 'cow-test-2003']) {
     const r = await supabaseAdmin.from('cattle').select('herd, processing_batch_id').eq('id', cowId).single();
     expect(r.data.herd).toBe('processed');
-    expect(r.data.processing_batch_id).toBe(batchId);
+    expect(r.data.processing_batch_id).toBe(newBatchId);
   }
 
   // batch.cows_detail dropped tag 2002.
-  const batchR = await supabaseAdmin.from('cattle_processing_batches').select('cows_detail').eq('id', batchId).single();
+  const batchR = await supabaseAdmin
+    .from('cattle_processing_batches')
+    .select('cows_detail')
+    .eq('id', newBatchId)
+    .single();
   const detailTags = (batchR.data.cows_detail || []).map((r) => r.tag);
   expect(detailTags).toEqual(expect.arrayContaining(['2001', '2003']));
   expect(detailTags).not.toContain('2002');
 
   // weigh_ins for tag 2002 fully cleared (both flags per
-  // cattleProcessingBatch.js:215–230).
+  // cattleProcessingBatch.js detach helper).
   const wi = await supabaseAdmin
     .from('weigh_ins')
     .select('send_to_processor, target_processing_batch_id')
@@ -271,7 +298,7 @@ test('toggle-clear: reopen + clear flag detaches via prior_herd_or_flock', async
   expect(undo.data).toHaveLength(1);
   expect(undo.data[0].from_herd).toBe('processed');
   expect(undo.data[0].to_herd).toBe('finishers');
-  expect(undo.data[0].reference_id).toBe(batchId);
+  expect(undo.data[0].reference_id).toBe(newBatchId);
 });
 
 // --------------------------------------------------------------------------
@@ -382,7 +409,13 @@ test('session-delete: detaches all 3 attached cows then deletes session+entries'
 // --------------------------------------------------------------------------
 // Test 5 — batch-delete detach (drives the real DeleteModal UI once)
 // --------------------------------------------------------------------------
-test('batch-delete: real DeleteModal flow detaches all 3 cows and removes batch', async ({
+// SKIPPED 2026-05-04: the Cattle Forecast lane removed the Edit-Batch modal
+// + Delete button on cattle batches (no admin path to delete an active or
+// complete batch from the UI; cattle batches only end via auto-flip on full
+// hanging weights). Multi-row detach is still covered by the session-delete
+// test below, which exercises the same cattleProcessingBatch.detach helper
+// loop on a multi-cow batch.
+test.skip('batch-delete: real DeleteModal flow detaches all 3 cows and removes batch', async ({
   page,
   cattleMultiCowPreAttachedScenario,
   supabaseAdmin,
@@ -576,31 +609,18 @@ test('no_prior_herd: missing audit row + null prior_herd_or_flock blocks detach'
 // --------------------------------------------------------------------------
 // Test 9 — no manual batch-membership bypass (negative assertion)
 // --------------------------------------------------------------------------
-test('no manual bypass: /cattle/batches has no manual cow-attach UI', async ({page, cattleSendToProcessorScenario}) => {
-  const {batchName} = cattleSendToProcessorScenario;
-
+test('no manual bypass: /cattle/batches has no + New Batch and no manual cow-attach UI', async ({
+  page,
+  cattleSendToProcessorScenario,
+}) => {
+  // The Cattle Forecast lane (mig 043) retired manual batch creation; real
+  // batches only land via Send-to-Processor at /cattle/weighins. The +
+  // New Batch button is gone entirely.
   await page.goto('/cattle/batches');
+  await expect(page.locator('[data-cattle-batches-root]')).toBeVisible({timeout: 15_000});
 
-  // + New Batch modal hint cites the §7 batch-membership rule.
-  await page.getByRole('button', {name: '+ New Batch'}).click();
-  await expect(page.getByText(/New Processing Batch/)).toBeVisible({timeout: 5_000});
-  await expect(page.getByText(/finisher weigh-in entry/i)).toBeVisible();
-
-  // No element offering manual cow attach. Both phrasings rejected: the
-  // "+ Add cow from finishers" dropdown that used to live here AND any
-  // "attach cattle from the Herds tab" copy.
+  // Positive-absence assertions — no creation surface, no manual attach.
+  await expect(page.getByRole('button', {name: '+ New Batch'})).toHaveCount(0);
   expect(await page.getByText(/Add cow from finishers/i).count()).toBe(0);
   expect(await page.getByText(/from the Herds tab/i).count()).toBe(0);
-
-  // Close the new-batch modal (Cancel button in modal footer).
-  await page.getByRole('button', {name: 'Cancel'}).click();
-
-  // Same hint surfaces on the expanded existing-batch view (different copy
-  // anchor — confirms the §7 rule is messaged in both empty-create and
-  // already-exists contexts).
-  const tile = page.locator('.hoverable-tile').filter({hasText: batchName});
-  await tile.click();
-  await expect(
-    page.getByText(/Cattle enter this batch only via the Send-to-Processor flag on a finisher weigh-in entry/i),
-  ).toBeVisible({timeout: 5_000});
 });

@@ -25,6 +25,7 @@ import {seedWebformHubDailysPhotosOffline} from './scenarios/webform_hub_dailys_
 import {seedBroilerWeighInSchooners} from './scenarios/broiler_weigh_in_schooners_seed.js';
 import {seedAdminBroilerSessionMeta} from './scenarios/admin_broiler_session_meta_seed.js';
 import {seedCattleHerdFilters} from './scenarios/cattle_herd_filters_seed.js';
+import {seedCattleForecast, seedCattleForecastSendFlow} from './scenarios/cattle_forecast_seed.js';
 
 // ============================================================================
 // Per-spec fixtures: authenticated page (via global.setup storageState),
@@ -243,6 +244,24 @@ export const test = base.extend({
   cattleHerdFiltersScenario: async ({supabaseAdmin}, use) => {
     await resetTestDatabase();
     const ids = await seedCattleHerdFilters(supabaseAdmin);
+    await use(ids);
+  },
+  // cattleForecastScenario — base seed for the Cattle Forecast tab spec.
+  // Includes finishers / momma cohorts / processed / backgrounder, full
+  // cattle row shape (DOB, sex, herd, breed, origin, old_tags), and a set
+  // of weigh-ins anchored to the spec's notional "today" so the rolling
+  // 3-week ADG ladder and DOB+birth-weight fallback both exercise.
+  cattleForecastScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedCattleForecast(supabaseAdmin);
+    await use(ids);
+  },
+  // cattleForecastSendFlowScenario — base seed plus a draft cattle session
+  // with three send_to_processor=true flagged entries (F1 + F-AT-MAX +
+  // F-HIDE). Used by the Send-to-Processor name-match + gate-block tests.
+  cattleForecastSendFlowScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedCattleForecastSendFlow(supabaseAdmin);
     await use(ids);
   },
 });

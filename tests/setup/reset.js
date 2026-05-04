@@ -24,6 +24,12 @@ const TEST_OWNED_TABLES = [
   'cattle_feed_tests',
   'cattle_feed_inputs',
   'cattle_transfers',
+  // Mig 043 forecast children — FK cattle(id) ON DELETE CASCADE. Truncate
+  // BEFORE cattle so explicit row removal stays clean even if cascade is
+  // deferred. Settings is a singleton — truncate then re-seed via the helper.
+  'cattle_forecast_hidden',
+  'cattle_forecast_heifer_includes',
+  'cattle_forecast_settings',
   'sheep_lambing_records',
   'sheep_transfers',
   'weigh_ins',

@@ -25,6 +25,7 @@ const CattleWeighInsView = ({
   const {useState, useEffect} = React;
   const [sessions, setSessions] = useState([]);
   const [entries, setEntries] = useState({}); // session_id -> [entries]
+  const [weighIns, setWeighIns] = useState([]); // flat list, desc by entered_at — for the Send-to-Processor forecast gate
   const [cattle, setCattle] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState(null);
@@ -61,9 +62,16 @@ const CattleWeighInsView = ({
         .order('date', {ascending: false})
         .order('started_at', {ascending: false}),
       loadCattleWeighInsCached(sb),
-      sb.from('cattle').select('id, tag, herd, old_tags'),
+      // Full cow rows so the Send-to-Processor modal can run the SAME
+      // forecast computation the Forecast tab does (DOB-based projection,
+      // sex-aware eligibility, etc. all need the full shape).
+      sb.from('cattle').select('*'),
     ]);
     if (sR.data) setSessions(sR.data);
+    // Flat list (desc-by-entered_at via cattleCache contract) — passed to
+    // the Send-to-Processor modal so its forecast gate has full retag
+    // history available for the gate computation.
+    setWeighIns(eAll || []);
     // Group cache rows by session_id; entries within a session display by
     // ascending tag # (numeric where possible, locale fallback; tagless
     // entries sink to the bottom by insertion time).
@@ -1126,7 +1134,9 @@ const CattleWeighInsView = ({
           session={sessionForModal}
           flaggedEntries={(entries[sessionForModal.id] || []).filter((e) => e.send_to_processor === true)}
           cattleList={cattle}
+          weighIns={weighIns}
           teamMember={(authState && authState.name) || null}
+          authState={authState}
           onCancel={() => setSessionForModal(null)}
           onConfirmed={async () => {
             const s = sessionForModal;

@@ -7,6 +7,8 @@ import CowDetail from './CowDetail.jsx';
 import SheepDetail from '../sheep/SheepDetail.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
 import {toISO} from '../lib/dateUtils.js';
+import {buildForecast} from '../lib/cattleForecast.js';
+import {loadForecastSettings, loadHeiferIncludes, loadHidden} from '../lib/cattleForecastApi.js';
 const CattleHomeView = ({
   sb,
   fmt,
@@ -27,6 +29,7 @@ const CattleHomeView = ({
   const [targets, setTargets] = useState({});
   const [loading, setLoading] = useState(true);
   const [cattleDashPeriod, setCattleDashPeriod] = useState(30);
+  const [forecastTile, setForecastTile] = useState(null);
   const HERDS = ['mommas', 'backgrounders', 'finishers', 'bulls'];
   const HERD_LABELS = {mommas: 'Mommas', backgrounders: 'Backgrounders', finishers: 'Finishers', bulls: 'Bulls'};
   const HERD_COLORS = {mommas: '#dc2626', backgrounders: '#ea580c', finishers: '#e11d48', bulls: '#991b1b'};
@@ -42,7 +45,11 @@ const CattleHomeView = ({
       loadCattleWeighInsCached(sb),
       sb.from('cattle_calving_records').select('*'),
       sb.from('cattle_nutrition_targets').select('*'),
-    ]).then(([cR, dR, wAll, calvR, tR]) => {
+      sb.from('cattle_processing_batches').select('*'),
+      loadForecastSettings(sb).catch(() => null),
+      loadHeiferIncludes(sb).catch(() => new Set()),
+      loadHidden(sb).catch(() => []),
+    ]).then(([cR, dR, wAll, calvR, tR, bR, settings, includes, hidden]) => {
       if (cR.data) setCattle(cR.data);
       if (dR.data) setDailys(dR.data);
       setWeighIns(wAll);
@@ -53,6 +60,26 @@ const CattleHomeView = ({
           m[r.herd] = r;
         });
         setTargets(m);
+      }
+      // Forecast tile — next processor batch + current-year ready count.
+      if (settings && cR.data) {
+        try {
+          const f = buildForecast({
+            cattle: cR.data,
+            weighIns: wAll || [],
+            settings,
+            includes,
+            hidden,
+            realBatches: bR.data || [],
+            todayMs: Date.now(),
+          });
+          setForecastTile({
+            nextBatch: f.nextProcessorBatch,
+            currentYearReady: f.summary.readyThisYear,
+          });
+        } catch {
+          /* tolerate forecast errors on the home tile */
+        }
       }
       setLoading(false);
     });
@@ -401,6 +428,59 @@ const CattleHomeView = ({
             color="#92400e"
           />
         </div>
+
+        {forecastTile && (
+          <div
+            data-cattle-home-forecast-tile
+            onClick={() => setView('cattleforecast')}
+            style={{
+              background: 'white',
+              border: '1px solid #fca5a5',
+              borderLeft: '4px solid #991b1b',
+              borderRadius: 12,
+              padding: '14px 18px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              flexWrap: 'wrap',
+            }}
+            className="hoverable-tile"
+          >
+            <span
+              style={{
+                fontSize: 11,
+                padding: '3px 8px',
+                background: '#991b1b',
+                color: 'white',
+                borderRadius: 4,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              Forecast
+            </span>
+            {forecastTile.nextBatch ? (
+              <>
+                <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                  Next: {forecastTile.nextBatch.name}
+                </span>
+                <span style={{fontSize: 12, color: '#6b7280'}}>
+                  {forecastTile.nextBatch.label} \u00b7 {forecastTile.nextBatch.animalIds.length}{' '}
+                  {forecastTile.nextBatch.animalIds.length === 1 ? 'cow' : 'cows'}
+                </span>
+              </>
+            ) : (
+              <span style={{fontSize: 13, color: '#6b7280', fontStyle: 'italic'}}>No virtual batch yet</span>
+            )}
+            <span style={{flex: 1}} />
+            <span style={{fontSize: 12, color: '#374151'}}>
+              <strong>{forecastTile.currentYearReady}</strong> ready <span style={{color: '#9ca3af'}}>this year</span>
+            </span>
+            <span style={{fontSize: 11, color: '#1d4ed8', textDecoration: 'underline'}}>Open Forecast {'\u2192'}</span>
+          </div>
+        )}
 
         {/* Per-herd breakdown */}
         <div>
