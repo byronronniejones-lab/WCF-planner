@@ -135,6 +135,9 @@ const COWS = [
     old_tags: [],
   },
   // Momma heifer — default-excluded; one test includes via modal.
+  // DOB 2025-08-01 keeps her under the 15-month modal cap at TODAY=2026-05-04
+  // (≈9 months old). The Forecast/Heifers modal filters out heifers older
+  // than 15 months and PREGNANT heifers — see isHeiferEligibleForInclude.
   {
     id: 'M-HEIFER',
     tag: '2003',
@@ -143,7 +146,7 @@ const COWS = [
     breed: 'Angus',
     breeding_blacklist: false,
     origin: 'Smith Ranch',
-    birth_date: '2024-09-01',
+    birth_date: '2025-08-01',
     old_tags: [],
   },
   // Backgrounder.

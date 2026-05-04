@@ -17,6 +17,7 @@ import {
   monthStartMs,
   parseMonthKey,
   formatAdgCalc,
+  isHeiferEligibleForInclude,
   projectedWeightAtMonth,
   WATCHLIST_REASONS,
   FORECAST_DISPLAY_WEIGHT_MIN_DEFAULT,
@@ -1176,6 +1177,7 @@ function MonthBucketTile({
                   <th style={{padding: '4px 8px'}}>Tag</th>
                   <th style={{padding: '4px 8px'}}>Sex</th>
                   <th style={{padding: '4px 8px'}}>Herd</th>
+                  <th style={{padding: '4px 8px'}}>Origin</th>
                   <th style={{padding: '4px 8px'}}>Age</th>
                   <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
                   <th style={{padding: '4px 8px', textAlign: 'right'}}>Projected</th>
@@ -1196,6 +1198,9 @@ function MonthBucketTile({
                       <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
+                      <td data-month-row-origin={cid} style={{padding: '6px 8px', color: '#6b7280'}}>
+                        {cow.origin || '—'}
+                      </td>
                       <td
                         data-month-row-age={cid}
                         style={{padding: '6px 8px', color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}
@@ -1275,6 +1280,9 @@ function MonthBucketTile({
                       <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
+                      <td data-month-hidden-row-origin={cid} style={{padding: '6px 8px', color: '#9ca3af'}}>
+                        {cow.origin || '—'}
+                      </td>
                       <td
                         data-month-hidden-row-age={cid}
                         style={{padding: '6px 8px', color: '#9ca3af', fontVariantNumeric: 'tabular-nums'}}
@@ -1519,8 +1527,68 @@ function IncludeHeifersModal({
   reload,
 }) {
   const {useState, useMemo} = React;
-  const heifers = useMemo(() => cattle.filter((c) => c.herd === 'mommas' && c.sex === 'heifer'), [cattle]);
-  const [staged, setStaged] = useState(new Set(initialIncludes));
+  // Filter + sort momma-herd heifers for the include modal.
+  //  - Filter: isHeiferEligibleForInclude removes pregnant heifers and
+  //    heifers older than 15 months. No-DOB heifers stay visible per Ronnie's
+  //    instruction.
+  //  - Sort: youngest first by birth_date desc; no-DOB rows sink to the
+  //    bottom. Tie-break on tag (numeric when both are ints, else string).
+  const todayMs = useMemo(() => Date.now(), []);
+  const heifers = useMemo(() => {
+    const list = cattle.filter((c) => isHeiferEligibleForInclude(c, todayMs));
+    const tagKey = (c) => {
+      const t = String(c.tag || '');
+      const n = parseInt(t, 10);
+      return Number.isFinite(n) && String(n) === t ? n : Number.POSITIVE_INFINITY;
+    };
+    return list.slice().sort((a, b) => {
+      const aHas = !!a.birth_date;
+      const bHas = !!b.birth_date;
+      if (aHas && !bHas) return -1;
+      if (!aHas && bHas) return 1;
+      if (aHas && bHas) {
+        const cmp = String(b.birth_date).localeCompare(String(a.birth_date));
+        if (cmp !== 0) return cmp;
+      }
+      const an = tagKey(a);
+      const bn = tagKey(b);
+      if (an !== bn) return an - bn;
+      return String(a.tag || '').localeCompare(String(b.tag || ''));
+    });
+  }, [cattle, todayMs]);
+  // Stale-include guard at the modal level. cattle_forecast_heifer_includes
+  // can carry IDs that point at heifers who are now ineligible (pregnant,
+  // over 15 months, or auto-promoted to cow on calving via mig 044). Those
+  // rows must NOT count as "selected" in the modal — and on Confirm
+  // Selections the diff-based save in cattleForecastApi.saveHeiferIncludes
+  // will then DELETE them from the DB because they're no longer in the
+  // staged set. This is the modal-side prune; buildForecast also has a
+  // helper-level guard so stale rows can never leak into the forecast even
+  // if Ronnie never opens the modal.
+  const eligibleHeiferIds = useMemo(() => new Set(heifers.map((h) => h.id)), [heifers]);
+  const initialEligibleIncludes = useMemo(() => {
+    const out = new Set();
+    for (const id of initialIncludes || []) if (eligibleHeiferIds.has(id)) out.add(id);
+    return out;
+  }, [initialIncludes, eligibleHeiferIds]);
+  const [staged, setStaged] = useState(() => new Set(initialEligibleIncludes));
+  // Mid-flight prune: if `cattle` reloads while the modal is open and a
+  // staged heifer becomes ineligible (newly pregnant, aged out, or
+  // auto-promoted to cow on calving), drop her from the staged set so
+  // Confirm can't re-write her ID into the DB. patchCow inside the row's
+  // CowDetail triggers a parent reload which re-flows the cattle prop down
+  // and re-runs this effect.
+  React.useEffect(() => {
+    setStaged((prev) => {
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (eligibleHeiferIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [eligibleHeiferIds]);
   const [expandedId, setExpandedId] = useState(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -1605,7 +1673,7 @@ function IncludeHeifersModal({
           ) : (
             heifers.map((h) => {
               const checked = staged.has(h.id);
-              const wasIncluded = initialIncludes.has(h.id);
+              const wasIncluded = initialEligibleIncludes.has(h.id);
               const isExpanded = expandedId === h.id;
               const cTags = cowTagSet(h);
               const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
@@ -1748,9 +1816,9 @@ function IncludeHeifersModal({
         >
           <span style={{fontSize: 11, color: '#6b7280'}}>
             {staged.size} selected
-            {staged.size !== initialIncludes.size && (
+            {staged.size !== initialEligibleIncludes.size && (
               <span style={{marginLeft: 6, color: '#92400e', fontStyle: 'italic'}}>
-                ({initialIncludes.size} previously)
+                ({initialEligibleIncludes.size} previously)
               </span>
             )}
           </span>
@@ -1759,7 +1827,14 @@ function IncludeHeifersModal({
             <button
               onClick={async () => {
                 setConfirming(true);
-                await onConfirm(staged);
+                // Defensive sanitize at save time: even if useEffect hasn't
+                // fired yet (race during a reload), only persist staged IDs
+                // that are CURRENTLY eligible. Pairs with the buildForecast
+                // helper-level guard so a stale row can't sneak into either
+                // the DB or the forecast totals.
+                const sanitized = new Set();
+                for (const id of staged) if (eligibleHeiferIds.has(id)) sanitized.add(id);
+                await onConfirm(sanitized);
                 setConfirming(false);
               }}
               disabled={confirming}

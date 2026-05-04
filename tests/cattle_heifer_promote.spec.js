@@ -234,3 +234,237 @@ test('backfill: promotes existing heifer with calving history; idempotent on re-
   const backfillCount2 = (comments2 || []).filter((c) => /backfill/i.test(c.comment)).length;
   expect(backfillCount2).toBe(1);
 });
+
+// --------------------------------------------------------------------------
+// Test 4 — Mig 044: trigger flips breeding_status PREGNANT → OPEN on calving
+// --------------------------------------------------------------------------
+test('trigger: pregnant cow flips breeding_status to OPEN on calving record insert', async ({
+  supabaseAdmin,
+  resetDb,
+}) => {
+  await resetDb();
+  const PREG_COW = {
+    id: 'cow-preg-001',
+    tag: 'P-001',
+    sex: 'cow',
+    herd: 'mommas',
+    breed: 'Angus',
+    breeding_status: 'PREGNANT',
+  };
+  await supabaseAdmin.from('cattle').insert(PREG_COW);
+
+  const calvingId = 'cr-bs-trigger-1';
+  await supabaseAdmin.from('cattle_calving_records').insert({
+    id: calvingId,
+    dam_tag: PREG_COW.tag,
+    calving_date: '2026-05-04',
+    total_born: 1,
+    deaths: 0,
+  });
+
+  // breeding_status must now be OPEN.
+  const {data: after} = await supabaseAdmin
+    .from('cattle')
+    .select('sex, breeding_status')
+    .eq('id', PREG_COW.id)
+    .maybeSingle();
+  expect(after.sex).toBe('cow');
+  expect(after.breeding_status).toBe('OPEN');
+
+  // A calving-source audit comment was written referencing the calving id.
+  const {data: comments} = await supabaseAdmin
+    .from('cattle_comments')
+    .select('*')
+    .eq('cattle_id', PREG_COW.id)
+    .eq('source', 'calving');
+  const flipComment = (comments || []).find(
+    (c) => /breeding status set to open on calving record/i.test(c.comment) && c.reference_id === calvingId,
+  );
+  expect(flipComment).toBeTruthy();
+});
+
+// --------------------------------------------------------------------------
+// Test 5 — Mig 044: pregnant heifer gets BOTH promote + breeding_status flip
+// --------------------------------------------------------------------------
+test('trigger: pregnant heifer promotes to cow AND flips PREGNANT → OPEN; both audit comments written', async ({
+  supabaseAdmin,
+  resetDb,
+}) => {
+  await resetDb();
+  const PREG_HEIFER = {
+    id: 'heifer-preg-001',
+    tag: 'PH-001',
+    sex: 'heifer',
+    herd: 'mommas',
+    breed: 'Angus',
+    breeding_status: 'PREGNANT',
+  };
+  await supabaseAdmin.from('cattle').insert(PREG_HEIFER);
+
+  const calvingId = 'cr-bs-trigger-2';
+  await supabaseAdmin.from('cattle_calving_records').insert({
+    id: calvingId,
+    dam_tag: PREG_HEIFER.tag,
+    calving_date: '2026-05-04',
+    total_born: 1,
+    deaths: 0,
+  });
+
+  const {data: after} = await supabaseAdmin
+    .from('cattle')
+    .select('sex, breeding_status')
+    .eq('id', PREG_HEIFER.id)
+    .maybeSingle();
+  expect(after.sex).toBe('cow');
+  expect(after.breeding_status).toBe('OPEN');
+
+  const {data: comments} = await supabaseAdmin
+    .from('cattle_comments')
+    .select('*')
+    .eq('cattle_id', PREG_HEIFER.id)
+    .eq('source', 'calving');
+  const promoteComment = (comments || []).find((c) => /automatically promoted from heifer to cow/i.test(c.comment));
+  const flipComment = (comments || []).find((c) => /breeding status set to open on calving record/i.test(c.comment));
+  expect(promoteComment).toBeTruthy();
+  expect(flipComment).toBeTruthy();
+  expect(promoteComment.reference_id).toBe(calvingId);
+  expect(flipComment.reference_id).toBe(calvingId);
+});
+
+// --------------------------------------------------------------------------
+// Test 6 — Mig 044: trigger leaves non-PREGNANT cows alone on calving
+// --------------------------------------------------------------------------
+test('trigger: cow whose breeding_status is OPEN/null is unchanged on calving insert', async ({
+  supabaseAdmin,
+  resetDb,
+}) => {
+  await resetDb();
+  const OPEN_COW = {
+    id: 'cow-open-001',
+    tag: 'O-001',
+    sex: 'cow',
+    herd: 'mommas',
+    breed: 'Angus',
+    breeding_status: 'OPEN',
+  };
+  await supabaseAdmin.from('cattle').insert(OPEN_COW);
+  await supabaseAdmin.from('cattle_calving_records').insert({
+    id: 'cr-bs-trigger-3',
+    dam_tag: OPEN_COW.tag,
+    calving_date: '2026-05-04',
+    total_born: 1,
+    deaths: 0,
+  });
+
+  const {data: after} = await supabaseAdmin
+    .from('cattle')
+    .select('breeding_status')
+    .eq('id', OPEN_COW.id)
+    .maybeSingle();
+  expect(after.breeding_status).toBe('OPEN');
+
+  // No "Breeding status set to OPEN" audit comment because nothing flipped.
+  const {data: comments} = await supabaseAdmin
+    .from('cattle_comments')
+    .select('*')
+    .eq('cattle_id', OPEN_COW.id)
+    .eq('source', 'calving');
+  const flipComment = (comments || []).find((c) => /breeding status set to open/i.test(c.comment));
+  expect(flipComment).toBeFalsy();
+});
+
+// --------------------------------------------------------------------------
+// Test 7 — Mig 044 backfill: existing PREGNANT cow with calving record →
+// flipped to OPEN with backfill audit comment; idempotent on re-run.
+// --------------------------------------------------------------------------
+const BREEDING_BACKFILL_SQL = `
+DO $$
+DECLARE
+  flipped_cow RECORD;
+BEGIN
+  FOR flipped_cow IN
+    SELECT DISTINCT c.id AS cattle_id, c.tag AS cattle_tag
+      FROM cattle c
+      JOIN cattle_calving_records cr ON cr.dam_tag = c.tag
+     WHERE c.breeding_status = 'PREGNANT'
+       AND NOT EXISTS (
+         SELECT 1 FROM cattle_comments cc
+          WHERE cc.cattle_id = c.id
+            AND cc.source = 'calving'
+            AND cc.comment LIKE 'Breeding status set to OPEN%'
+       )
+  LOOP
+    UPDATE cattle SET breeding_status = 'OPEN' WHERE id = flipped_cow.cattle_id;
+
+    INSERT INTO cattle_comments (id, cattle_id, cattle_tag, comment, source, reference_id)
+    VALUES (
+      replace(gen_random_uuid()::text, '-', ''),
+      flipped_cow.cattle_id,
+      flipped_cow.cattle_tag,
+      'Breeding status set to OPEN (backfill 2026-05-04 — existing calving records found).',
+      'calving',
+      NULL
+    );
+  END LOOP;
+END $$;
+`;
+
+test('backfill: pregnant cow with calving history flips to OPEN; idempotent', async ({supabaseAdmin, resetDb}) => {
+  await resetDb();
+  const COW = {
+    id: 'cow-bf-preg-001',
+    tag: 'BF-001',
+    sex: 'cow',
+    herd: 'mommas',
+    breed: 'Angus',
+    breeding_status: 'PREGNANT',
+  };
+  await supabaseAdmin.from('cattle').insert(COW);
+  await supabaseAdmin.from('cattle_calving_records').insert({
+    id: 'cr-bs-backfill-1',
+    dam_tag: COW.tag,
+    calving_date: '2026-01-01',
+    total_born: 1,
+    deaths: 0,
+  });
+  // Trigger fires and flips her — undo so we can exercise the backfill path.
+  await supabaseAdmin.from('cattle').update({breeding_status: 'PREGNANT'}).eq('id', COW.id);
+  // Also remove the trigger-generated 'set to OPEN' comment so the backfill
+  // guard sees her as un-flipped.
+  await supabaseAdmin
+    .from('cattle_comments')
+    .delete()
+    .eq('cattle_id', COW.id)
+    .like('comment', 'Breeding status set to OPEN%');
+
+  // Sanity: she's PREGNANT again with no flip-comment.
+  const before = await supabaseAdmin.from('cattle').select('breeding_status').eq('id', COW.id).maybeSingle();
+  expect(before.data.breeding_status).toBe('PREGNANT');
+
+  // Run the backfill.
+  const {error: bf1Err} = await supabaseAdmin.rpc('exec_sql', {sql: BREEDING_BACKFILL_SQL});
+  expect(bf1Err).toBeNull();
+
+  const after1 = await supabaseAdmin.from('cattle').select('breeding_status').eq('id', COW.id).maybeSingle();
+  expect(after1.data.breeding_status).toBe('OPEN');
+
+  const {data: comments1} = await supabaseAdmin
+    .from('cattle_comments')
+    .select('*')
+    .eq('cattle_id', COW.id)
+    .eq('source', 'calving');
+  const backfillComments1 = (comments1 || []).filter((c) => /\(backfill 2026-05-04/i.test(c.comment));
+  expect(backfillComments1.length).toBe(1);
+
+  // Re-run — idempotent: no new flip, no new comment.
+  const {error: bf2Err} = await supabaseAdmin.rpc('exec_sql', {sql: BREEDING_BACKFILL_SQL});
+  expect(bf2Err).toBeNull();
+
+  const {data: comments2} = await supabaseAdmin
+    .from('cattle_comments')
+    .select('*')
+    .eq('cattle_id', COW.id)
+    .eq('source', 'calving');
+  const backfillComments2 = (comments2 || []).filter((c) => /\(backfill 2026-05-04/i.test(c.comment));
+  expect(backfillComments2.length).toBe(1);
+});

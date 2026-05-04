@@ -12,6 +12,7 @@ import {
   computeLast2ADG,
   resolveADGForCow,
   eligibilityFor,
+  isHeiferEligibleForInclude,
   projectedWeightAtMonth,
   findFirstEligibleUnhiddenMonth,
   buildForecast,
@@ -272,6 +273,138 @@ describe('eligibilityFor — locked inclusion rules', () => {
   });
 });
 
+describe('isHeiferEligibleForInclude — modal + buildForecast guard', () => {
+  it('momma heifer under 15 months and not pregnant is eligible', () => {
+    const c = cow({herd: 'mommas', sex: 'heifer', birth_date: '2025-08-01'});
+    expect(isHeiferEligibleForInclude(c, TODAY)).toBe(true);
+  });
+  it('momma heifer over 15 months is excluded', () => {
+    // TODAY = 2026-05-02. DOB 2024-09-01 → ~20 calendar months.
+    const c = cow({herd: 'mommas', sex: 'heifer', birth_date: '2024-09-01'});
+    expect(isHeiferEligibleForInclude(c, TODAY)).toBe(false);
+  });
+  it('15-month boundary: <=15 cal months eligible, >=16 cal months excluded', () => {
+    // TODAY = 2026-05-02. Calendar-month math, day-of-month-aware.
+    // DOB 2025-02-02 → exactly 15 cal months → eligible.
+    expect(isHeiferEligibleForInclude(cow({herd: 'mommas', sex: 'heifer', birth_date: '2025-02-02'}), TODAY)).toBe(
+      true,
+    );
+    // DOB 2025-02-01 → 15 cal months and 1 day → still eligible.
+    expect(isHeiferEligibleForInclude(cow({herd: 'mommas', sex: 'heifer', birth_date: '2025-02-01'}), TODAY)).toBe(
+      true,
+    );
+    // DOB 2025-01-01 → 16 cal months → excluded.
+    expect(isHeiferEligibleForInclude(cow({herd: 'mommas', sex: 'heifer', birth_date: '2025-01-01'}), TODAY)).toBe(
+      false,
+    );
+  });
+  it('pregnant heifer is excluded regardless of age', () => {
+    const c = cow({herd: 'mommas', sex: 'heifer', birth_date: '2025-08-01', breeding_status: 'PREGNANT'});
+    expect(isHeiferEligibleForInclude(c, TODAY)).toBe(false);
+  });
+  it('non-momma or non-heifer is excluded', () => {
+    expect(isHeiferEligibleForInclude(cow({herd: 'finishers', sex: 'heifer'}), TODAY)).toBe(false);
+    expect(isHeiferEligibleForInclude(cow({herd: 'mommas', sex: 'cow'}), TODAY)).toBe(false);
+    expect(isHeiferEligibleForInclude(cow({herd: 'mommas', sex: 'steer'}), TODAY)).toBe(false);
+  });
+  it('heifer with no birth_date is kept visible (per Ronnie 2026-05-04)', () => {
+    const c = cow({herd: 'mommas', sex: 'heifer', birth_date: null});
+    expect(isHeiferEligibleForInclude(c, TODAY)).toBe(true);
+  });
+});
+
+describe('buildForecast — stale heifer-include rows do not leak ineligible heifers', () => {
+  it('pregnant momma heifer in includes does not become forecast-eligible', () => {
+    const pregnantHeifer = cow({
+      id: 'm-heifer-pg',
+      tag: '9001',
+      herd: 'mommas',
+      sex: 'heifer',
+      birth_date: '2025-08-01',
+      breeding_status: 'PREGNANT',
+    });
+    const r = buildForecast({
+      cattle: [pregnantHeifer],
+      weighIns: [],
+      settings: {fallbackAdg: 1.5},
+      includes: new Set(['m-heifer-pg']),
+      hidden: [],
+      realBatches: [],
+      todayMs: TODAY,
+    });
+    // Stale include must be filtered out — animalRows is empty, watchlist
+    // ignores her too because she's not auto-eligible without the include.
+    expect(r.animalRows.find((row) => row.cow.id === 'm-heifer-pg')).toBeUndefined();
+    expect(r.watchlist.find((row) => row.cow.id === 'm-heifer-pg')).toBeUndefined();
+  });
+  it('over-15-month momma heifer in includes does not become forecast-eligible', () => {
+    const oldHeifer = cow({
+      id: 'm-heifer-old',
+      tag: '9002',
+      herd: 'mommas',
+      sex: 'heifer',
+      birth_date: '2024-09-01',
+    });
+    const r = buildForecast({
+      cattle: [oldHeifer],
+      weighIns: [],
+      settings: {fallbackAdg: 1.5},
+      includes: new Set(['m-heifer-old']),
+      hidden: [],
+      realBatches: [],
+      todayMs: TODAY,
+    });
+    expect(r.animalRows.find((row) => row.cow.id === 'm-heifer-old')).toBeUndefined();
+  });
+  it('auto-promoted cow (was-heifer) in includes does not leak as forecast-eligible', () => {
+    // After mig 044's trigger fires, heifer.sex becomes 'cow'. The
+    // heifer_includes row still references her id, but eligibilityFor
+    // routes mommas+cow to excluded-momma-cow regardless of includes.
+    const promoted = cow({
+      id: 'm-promoted',
+      tag: '9003',
+      herd: 'mommas',
+      sex: 'cow',
+      birth_date: '2025-08-01',
+    });
+    const r = buildForecast({
+      cattle: [promoted],
+      weighIns: [],
+      settings: {fallbackAdg: 1.5},
+      includes: new Set(['m-promoted']),
+      hidden: [],
+      realBatches: [],
+      todayMs: TODAY,
+    });
+    expect(r.animalRows.find((row) => row.cow.id === 'm-promoted')).toBeUndefined();
+  });
+  it('valid heifer-include still produces a forecast row', () => {
+    const h = cow({
+      id: 'm-heifer-ok',
+      tag: '9004',
+      herd: 'mommas',
+      sex: 'heifer',
+      birth_date: '2025-08-01',
+    });
+    const r = buildForecast({
+      cattle: [h],
+      weighIns: [],
+      settings: {fallbackAdg: 1.5},
+      includes: new Set(['m-heifer-ok']),
+      hidden: [],
+      realBatches: [],
+      todayMs: TODAY,
+    });
+    // No weigh-ins → DOB+global ladder kicks in; she should at least be
+    // in the helper output (animalRow or watchlist depending on the
+    // displayMin window). Either way, she didn't get filtered as stale.
+    const mentioned =
+      r.animalRows.some((row) => row.cow.id === 'm-heifer-ok') ||
+      r.watchlist.some((row) => row.cow.id === 'm-heifer-ok');
+    expect(mentioned).toBe(true);
+  });
+});
+
 // ── projection / month assignment ────────────────────────────────────────────
 describe('projectedWeightAtMonth + findFirstEligibleUnhiddenMonth', () => {
   it('linear projection from anchor — month checkpoint is the 15th', () => {
@@ -501,10 +634,11 @@ describe('buildForecast — orchestrator end-to-end', () => {
       cow({id: 'F1', tag: '1001', sex: 'steer', herd: 'finishers', birth_date: '2024-08-01'}),
       // M-Steer: momma steer → uses global ADG only
       cow({id: 'MS1', tag: '2001', sex: 'steer', herd: 'mommas', birth_date: '2025-04-01'}),
-      // M-Heifer included via modal
-      cow({id: 'MH1', tag: '3001', sex: 'heifer', herd: 'mommas', birth_date: '2024-09-01'}),
+      // M-Heifer included via modal — DOB 2025-08-01 keeps her under the
+      // 15-month modal cap at TODAY=2026-05-02 (~9 months).
+      cow({id: 'MH1', tag: '3001', sex: 'heifer', herd: 'mommas', birth_date: '2025-08-01'}),
       // M-Heifer NOT included → excluded
-      cow({id: 'MH2', tag: '3002', sex: 'heifer', herd: 'mommas', birth_date: '2024-09-01'}),
+      cow({id: 'MH2', tag: '3002', sex: 'heifer', herd: 'mommas', birth_date: '2025-08-01'}),
       // M-Cow → never forecast
       cow({id: 'MC1', tag: '3100', sex: 'cow', herd: 'mommas'}),
       // Outcome → never forecast

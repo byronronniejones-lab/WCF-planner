@@ -248,6 +248,37 @@ export function resolveADGForCow({cow, history, settings, todayMs, eligibility})
   return {adg: null, source: ADG_SOURCES.NONE, latest: null, prior: null, negative: false};
 }
 
+// ── heifer-include eligibility (Forecast modal + helper-level guard) ──────────
+
+// A momma heifer is eligible for the Include Momma Herd Heifers list ONLY when:
+//   - sex === 'heifer'
+//   - herd === 'mommas'
+//   - breeding_status !== 'PREGNANT' (pregnant heifers are out of scope)
+//   - age <= 15 months as of todayMs (calendar months; no-DOB heifers stay
+//     visible per Ronnie's instruction so they don't silently disappear when
+//     birth_date is missing)
+//
+// This same predicate gates buildForecast's includesSet so a stale
+// cattle_forecast_heifer_includes row can't make a now-ineligible heifer
+// (newly pregnant, aged out, or auto-promoted to cow) leak back into the
+// forecast.
+export function isHeiferEligibleForInclude(cow, todayMs = Date.now()) {
+  if (!cow) return false;
+  if (cow.sex !== 'heifer') return false;
+  if (cow.herd !== 'mommas') return false;
+  if (String(cow.breeding_status || '').toUpperCase() === 'PREGNANT') return false;
+  if (cow.birth_date) {
+    const birth = new Date(String(cow.birth_date) + 'T12:00:00Z');
+    const today = new Date(todayMs);
+    if (Number.isFinite(birth.getTime()) && Number.isFinite(today.getTime())) {
+      let months = (today.getUTCFullYear() - birth.getUTCFullYear()) * 12 + (today.getUTCMonth() - birth.getUTCMonth());
+      if (today.getUTCDate() < birth.getUTCDate()) months -= 1;
+      if (months > 15) return false;
+    }
+  }
+  return true;
+}
+
 // ── eligibility ───────────────────────────────────────────────────────────────
 
 // Returns:
@@ -442,7 +473,19 @@ export function buildForecast({
   const displayHorizon = monthsInHorizon(todayMs, horizonYears);
   const assignmentHorizon = monthsForAssignment(todayMs, horizonYears);
 
-  const includesSet = includes instanceof Set ? includes : new Set(includes || []);
+  // Raw includes from cattle_forecast_heifer_includes are filtered against
+  // the current isHeiferEligibleForInclude predicate so stale rows (heifer
+  // since auto-promoted to cow on calving, newly pregnant, or aged past 15
+  // months) cannot leak a now-ineligible heifer back into the forecast. This
+  // is the single helper-level guard — UI surfaces share the same predicate.
+  const rawIncludesSet = includes instanceof Set ? includes : new Set(includes || []);
+  const cattleById = new Map();
+  for (const c of cattle) if (c && c.id) cattleById.set(c.id, c);
+  const includesSet = new Set();
+  for (const cid of rawIncludesSet) {
+    const cow = cattleById.get(cid);
+    if (cow && isHeiferEligibleForInclude(cow, todayMs)) includesSet.add(cid);
+  }
   const hiddenSet = new Set();
   const hiddenByCow = new Map();
   for (const row of hidden || []) {

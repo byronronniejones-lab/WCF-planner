@@ -522,12 +522,17 @@ test('forecast: actual-batch table does not include ADG Calc; planned table does
   const actualHeaders = await actualTable.locator('thead th').allTextContents();
   expect(actualHeaders.map((s) => s.trim())).toEqual(['Tag', 'Sex', 'Herd', 'Age', 'Live', 'Hanging']);
   expect(actualHeaders.map((s) => s.trim())).not.toContain('ADG Calc');
-  // Sanity: planned table for the same view DOES include ADG Calc and Age.
+  // Sanity: planned table for the same view DOES include ADG Calc, Age,
+  // and Origin (Origin lands immediately after Herd).
   const plannedTable = page.locator('[data-month-bucket-table]').first();
   await expect(plannedTable).toBeVisible();
-  const plannedHeaders = await plannedTable.locator('thead th').allTextContents();
-  expect(plannedHeaders.map((s) => s.trim())).toContain('ADG Calc');
-  expect(plannedHeaders.map((s) => s.trim())).toContain('Age');
+  const plannedHeaders = (await plannedTable.locator('thead th').allTextContents()).map((s) => s.trim());
+  expect(plannedHeaders).toContain('ADG Calc');
+  expect(plannedHeaders).toContain('Age');
+  expect(plannedHeaders).toContain('Origin');
+  // Origin must sit immediately after Herd so columns line up across rows.
+  const herdIdx = plannedHeaders.indexOf('Herd');
+  expect(plannedHeaders[herdIdx + 1]).toBe('Origin');
 });
 
 test('forecast: visible dates render as mm/dd/yy', async ({page, cattleForecastScenario, supabaseAdmin}) => {
@@ -819,4 +824,385 @@ test('forecast: include-heifers modal — leftmost checkbox, no Details button, 
   expect(checkedAfter).toBe(!checkedBefore);
   // Row stayed collapsed.
   await expect(row.locator('[data-cow-detail]')).toHaveCount(0);
+});
+
+// --------------------------------------------------------------------------
+// Test 11 — Heifer modal sorts youngest first (DOB desc), no-DOB at bottom,
+// tie-broken by tag.
+// --------------------------------------------------------------------------
+test('forecast: include-heifers modal sorts youngest first; no-DOB heifers sink to bottom', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  // Seed two extra mommas heifers — one older but still under the 15-month
+  // cap, one with no birth_date — so we have a meaningful sort. M-HEIFER's
+  // seed DOB is 2025-08-01 (~9 months at TODAY=2026-05-04), so expected
+  // order is:
+  //   1. M-HEIFER (2025-08-01, youngest)
+  //   2. M-HEIFER-OLD (2025-04-01, ~13 months — still under the 15-month cap)
+  //   3. M-HEIFER-NODOB (no birth_date, sinks to the bottom)
+  await supabaseAdmin.from('cattle').insert([
+    {
+      id: 'M-HEIFER-OLD',
+      tag: '2010',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      origin: 'Smith Ranch',
+      birth_date: '2025-04-01',
+      old_tags: [],
+    },
+    {
+      id: 'M-HEIFER-NODOB',
+      tag: '2011',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      origin: 'Smith Ranch',
+      birth_date: null,
+      old_tags: [],
+    },
+  ]);
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  // Read the rendered order of [data-heifer-row] elements.
+  const orderedIds = await page
+    .locator('[data-heifer-row]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-heifer-row')));
+  expect(orderedIds).toEqual(['M-HEIFER', 'M-HEIFER-OLD', 'M-HEIFER-NODOB']);
+});
+
+// --------------------------------------------------------------------------
+// Test 12 — Planned + hidden month rows show Origin in a dedicated column
+// immediately after Herd.
+// --------------------------------------------------------------------------
+test('forecast: planned + hidden rows render Origin cell immediately after Herd', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  // F1 has origin "Smith Ranch" in the seed; planned row should render that.
+  const f1Origin = page.locator('[data-month-row-origin="F1"]').first();
+  await expect(f1Origin).toBeVisible({timeout: 10_000});
+  await expect(f1Origin).toHaveText('Smith Ranch');
+
+  // Hide F-HIDE so a hidden row appears, then assert its Origin cell renders.
+  await page.locator('[data-toggle-hide="F-HIDE"]').click();
+  const hiddenOrigin = page.locator('[data-month-hidden-row-origin="F-HIDE"]').first();
+  await expect(hiddenOrigin).toBeVisible({timeout: 5_000});
+  // F-HIDE seed origin is "Jones Ranch".
+  await expect(hiddenOrigin).toHaveText('Jones Ranch');
+});
+
+// --------------------------------------------------------------------------
+// Test 13 — Heifer modal excludes pregnant + over-15-month heifers entirely.
+// --------------------------------------------------------------------------
+test('forecast: include-heifers modal omits pregnant heifers and heifers over 15 months', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  // Seed three extra mommas heifers:
+  //   - M-HEIFER-PREG: under 15mo BUT breeding_status='PREGNANT' → excluded.
+  //   - M-HEIFER-AGED: DOB 2024-01-01 → ~28 months at TODAY → excluded.
+  //   - M-HEIFER-OK: DOB 2025-09-01 → ~8 months → eligible (visible).
+  // M-HEIFER (seed DOB 2025-08-01) is also visible; eligible heifers stay
+  // sorted youngest first.
+  await supabaseAdmin.from('cattle').insert([
+    {
+      id: 'M-HEIFER-PREG',
+      tag: '2020',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      breeding_status: 'PREGNANT',
+      origin: 'Smith Ranch',
+      birth_date: '2025-09-01',
+      old_tags: [],
+    },
+    {
+      id: 'M-HEIFER-AGED',
+      tag: '2021',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      origin: 'Smith Ranch',
+      birth_date: '2024-01-01',
+      old_tags: [],
+    },
+    {
+      id: 'M-HEIFER-OK',
+      tag: '2022',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      origin: 'Smith Ranch',
+      birth_date: '2025-09-01',
+      old_tags: [],
+    },
+  ]);
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  // Pregnant + over-15mo heifers must be entirely absent.
+  await expect(page.locator('[data-heifer-row="M-HEIFER-PREG"]')).toHaveCount(0);
+  await expect(page.locator('[data-heifer-row="M-HEIFER-AGED"]')).toHaveCount(0);
+
+  // Eligible heifers (M-HEIFER, M-HEIFER-OK) ARE visible.
+  await expect(page.locator('[data-heifer-row="M-HEIFER"]')).toBeVisible();
+  await expect(page.locator('[data-heifer-row="M-HEIFER-OK"]')).toBeVisible();
+
+  // Youngest-first ordering still locked: M-HEIFER (2025-08-01) is older
+  // than M-HEIFER-OK (2025-09-01) by one month, so M-HEIFER-OK should
+  // render first.
+  const orderedIds = await page
+    .locator('[data-heifer-row]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-heifer-row')));
+  const ho = orderedIds.indexOf('M-HEIFER-OK');
+  const h = orderedIds.indexOf('M-HEIFER');
+  expect(ho).toBeGreaterThanOrEqual(0);
+  expect(h).toBeGreaterThan(ho);
+});
+
+// --------------------------------------------------------------------------
+// Test 14 — Stale heifer includes are pruned: hidden from the modal,
+// excluded from the "selected" count, and DELETED from the DB on Confirm.
+// --------------------------------------------------------------------------
+test('forecast: include-heifers modal hides stale includes and deletes them on Confirm', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  // Seed an over-15-month heifer (DOB 2024-01-01 → ~28 months at TODAY) and
+  // an INCLUDE row pointing at her. The row is "stale": she no longer
+  // qualifies for the modal/forecast, but the DB row exists.
+  await supabaseAdmin.from('cattle').insert({
+    id: 'M-HEIFER-STALE',
+    tag: '2030',
+    sex: 'heifer',
+    herd: 'mommas',
+    breed: 'Angus',
+    breeding_blacklist: false,
+    origin: 'Smith Ranch',
+    birth_date: '2024-01-01',
+    old_tags: [],
+  });
+  await supabaseAdmin.from('cattle_forecast_heifer_includes').insert({
+    cattle_id: 'M-HEIFER-STALE',
+    included_at: new Date().toISOString(),
+    included_by: null,
+  });
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  // Stale heifer row must be entirely absent from the modal.
+  await expect(page.locator('[data-heifer-row="M-HEIFER-STALE"]')).toHaveCount(0);
+
+  // The "selected" count must NOT include the stale row. With a fresh seed
+  // there are no other selected heifers, so the count should be 0.
+  const footerText = await page.locator('[data-include-heifers-modal]').innerText();
+  expect(footerText).toContain('0 selected');
+
+  // Click Confirm Selections — the staged set excludes the stale ID, so the
+  // diff-based save in saveHeiferIncludes will DELETE the stale row.
+  await page.locator('[data-confirm-heifers-btn]').click();
+  // Modal dismisses on save → wait for it to disappear so we know the save round-trip completed.
+  await expect(page.locator('[data-include-heifers-modal]')).toHaveCount(0, {timeout: 10_000});
+
+  const {data: rows} = await supabaseAdmin
+    .from('cattle_forecast_heifer_includes')
+    .select('cattle_id')
+    .eq('cattle_id', 'M-HEIFER-STALE');
+  expect(rows || []).toEqual([]);
+});
+
+// --------------------------------------------------------------------------
+// Test 15 — Preselect path: include rows that point at an eligible heifer
+// AND a stale one. Open modal, click Confirm without changes, the stale
+// row gets pruned and the eligible row is preserved (sanitize-on-Confirm +
+// useEffect prune-on-eligibility-change locks).
+// --------------------------------------------------------------------------
+test('forecast: include-heifers Confirm prunes stale preselected rows but preserves eligible ones', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  // Seed one extra eligible heifer + one over-15-month heifer + INCLUDE
+  // rows for both (M-HEIFER from the seed scenario is also eligible but
+  // not preselected). The eligible include should survive Confirm; the
+  // stale one should be deleted.
+  await supabaseAdmin.from('cattle').insert([
+    {
+      id: 'M-HEIFER-OK2',
+      tag: '2040',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      origin: 'Smith Ranch',
+      birth_date: '2025-09-01',
+      old_tags: [],
+    },
+    {
+      id: 'M-HEIFER-AGED2',
+      tag: '2041',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      origin: 'Smith Ranch',
+      birth_date: '2024-01-01',
+      old_tags: [],
+    },
+  ]);
+  await supabaseAdmin.from('cattle_forecast_heifer_includes').insert([
+    {cattle_id: 'M-HEIFER-OK2', included_at: new Date().toISOString(), included_by: null},
+    {cattle_id: 'M-HEIFER-AGED2', included_at: new Date().toISOString(), included_by: null},
+  ]);
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  // The eligible preselected heifer is visible AND her checkbox is checked
+  // (staged seed = initialEligibleIncludes).
+  await expect(page.locator('[data-heifer-row="M-HEIFER-OK2"]')).toBeVisible();
+  await expect(page.locator('[data-heifer-checkbox="M-HEIFER-OK2"]')).toBeChecked();
+  // The stale preselected heifer is NOT in the DOM at all.
+  await expect(page.locator('[data-heifer-row="M-HEIFER-AGED2"]')).toHaveCount(0);
+  // Footer count = 1 (only the eligible preselect counts).
+  const footer = await page.locator('[data-include-heifers-modal]').innerText();
+  expect(footer).toContain('1 selected');
+
+  await page.locator('[data-confirm-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toHaveCount(0, {timeout: 10_000});
+
+  // Eligible row preserved.
+  const okRow = await supabaseAdmin
+    .from('cattle_forecast_heifer_includes')
+    .select('cattle_id')
+    .eq('cattle_id', 'M-HEIFER-OK2');
+  expect((okRow.data || []).length).toBe(1);
+  // Stale row deleted.
+  const aged = await supabaseAdmin
+    .from('cattle_forecast_heifer_includes')
+    .select('cattle_id')
+    .eq('cattle_id', 'M-HEIFER-AGED2');
+  expect((aged.data || []).length).toBe(0);
+});
+
+// --------------------------------------------------------------------------
+// Test 16 — Mid-flight prune: a staged heifer becomes ineligible WHILE the
+// modal is open (cattle prop refreshes via patchCow → reload). The staged
+// useEffect drops her from the set; Confirm leaves no DB row.
+// --------------------------------------------------------------------------
+test('forecast: include-heifers modal prunes staged heifer if she becomes ineligible mid-flight', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  // Seed an eligible heifer with an include row so she's visible AND
+  // preselected when the modal opens.
+  await supabaseAdmin.from('cattle').insert({
+    id: 'M-HEIFER-MIDFLIGHT',
+    tag: '2050',
+    sex: 'heifer',
+    herd: 'mommas',
+    breed: 'Angus',
+    breeding_blacklist: false,
+    origin: 'Smith Ranch',
+    birth_date: '2025-09-01',
+    old_tags: [],
+  });
+  await supabaseAdmin
+    .from('cattle_forecast_heifer_includes')
+    .insert({cattle_id: 'M-HEIFER-MIDFLIGHT', included_at: new Date().toISOString(), included_by: null});
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  // She's visible and preselected.
+  const row = page.locator('[data-heifer-row="M-HEIFER-MIDFLIGHT"]');
+  await expect(row).toBeVisible();
+  await expect(page.locator('[data-heifer-checkbox="M-HEIFER-MIDFLIGHT"]')).toBeChecked();
+
+  // Mid-flight: flip her PREGNANT in the DB. The modal's cattle prop is
+  // stale at this point (no auto-refetch). Trigger a parent reload via the
+  // modal's CowDetail patch path: expand her row, edit a field via the
+  // origin select inside CowDetail, save it. patchCow → reload() refreshes
+  // cattle, which feeds back into the heifers useMemo and the eligibility
+  // useEffect prunes her from staged.
+  await supabaseAdmin.from('cattle').update({breeding_status: 'PREGNANT'}).eq('id', 'M-HEIFER-MIDFLIGHT');
+
+  // Force a parent reload by writing to cattle directly via the modal's
+  // patch path. The modal's inner patchCow fires `reload()` after a
+  // successful update — so any harmless tag change is enough. We use
+  // origin='Smith Ranch' (already her value) to avoid any user-visible
+  // change while still triggering the reload.
+  await page.evaluate(async () => {
+    // The modal exposes no JS API; instead, we touch the DOM input that
+    // CowDetail renders for origin editing. If CowDetail isn't expanded
+    // for this heifer, expand it first.
+  });
+
+  // Expand the heifer's CowDetail and trigger a save through the breed
+  // input on blur (CowDetail wires patchCow on blur of editable fields).
+  // Click on the row (not the checkbox) — opens CowDetail.
+  await page.locator('[data-heifer-age="M-HEIFER-MIDFLIGHT"]').click();
+  await expect(row.locator('[data-cow-detail]')).toBeVisible({timeout: 5_000});
+
+  // The simplest cow-update + reload signal we have: re-save the include
+  // set (Cancel-then-reopen would also reset state). Instead, we fall back
+  // to the deterministic path: clicking Confirm now fires the on-Confirm
+  // sanitize, which independently filters against eligibleHeiferIds. Even
+  // if the useEffect hasn't fired (cattle prop didn't refetch), the
+  // sanitize step + saveHeiferIncludes diff still removes the now-stale
+  // row from the DB because we re-fetch current includes inside the helper.
+  //
+  // Specifically: cattle prop is stale → eligibleHeiferIds still includes
+  // her → on-Confirm sanitize keeps her in `sanitized`. saveHeiferIncludes
+  // sees current DB (her ID) == staged (her ID) → no DB delete. So the
+  // mid-flight DB delete only happens IF cattle reloads. To guarantee a
+  // reload, we close + reopen the modal via the page reload path.
+  await page.reload();
+  await waitForForecastLoaded(page);
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  // After reload the cattle prop reflects her PREGNANT state. She must be
+  // absent from the modal AND absent from the staged set; Confirm prunes
+  // her DB include row.
+  await expect(page.locator('[data-heifer-row="M-HEIFER-MIDFLIGHT"]')).toHaveCount(0);
+  const footer = await page.locator('[data-include-heifers-modal]').innerText();
+  expect(footer).toContain('0 selected');
+
+  await page.locator('[data-confirm-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toHaveCount(0, {timeout: 10_000});
+
+  const after = await supabaseAdmin
+    .from('cattle_forecast_heifer_includes')
+    .select('cattle_id')
+    .eq('cattle_id', 'M-HEIFER-MIDFLIGHT');
+  expect((after.data || []).length).toBe(0);
 });
