@@ -15,7 +15,7 @@ import {
   buildForecast,
   monthLabel,
   parseMonthKey,
-  ADG_SOURCES,
+  formatAdgCalc,
   WATCHLIST_REASONS,
   FORECAST_DISPLAY_WEIGHT_MIN_DEFAULT,
   FORECAST_DISPLAY_WEIGHT_MAX_DEFAULT,
@@ -54,20 +54,12 @@ const HERD_COLORS = {
   sold: {bg: '#eff6ff', tx: '#1e40af', bd: '#bfdbfe'},
 };
 
-const ADG_SOURCE_LABELS = {
-  [ADG_SOURCES.ROLLING]: 'rolling 3-week',
-  [ADG_SOURCES.TWO_RECENT]: 'two recent',
-  [ADG_SOURCES.ONE_PLUS_FALLBACK]: '1 weigh-in + global',
-  [ADG_SOURCES.DOB_PLUS_FALLBACK]: 'DOB + global',
-  [ADG_SOURCES.GLOBAL_ONLY]: 'global only',
-  [ADG_SOURCES.NONE]: '—',
-};
-
 const WATCHLIST_REASON_LABELS = {
   [WATCHLIST_REASONS.NO_WEIGHT_NO_DOB]: 'No weight + no DOB',
   [WATCHLIST_REASONS.NEGATIVE_ADG_NO_FINISH]: 'Negative ADG, no finish month',
   [WATCHLIST_REASONS.NEVER_REACHES_WINDOW]: 'Never reaches display window',
   [WATCHLIST_REASONS.ALREADY_OVER_MAX]: 'Already over max weight',
+  [WATCHLIST_REASONS.PROJECTS_PAST_MAX]: 'Projects past max by current month',
   [WATCHLIST_REASONS.ALL_ELIGIBLE_HIDDEN]: 'All eligible months hidden',
 };
 
@@ -127,7 +119,6 @@ const CattleForecastView = ({
   const [loading, setLoading] = useState(true);
   const [savingSettings, setSavingSettings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showHidden, setShowHidden] = useState(false);
   const [yearFilter, setYearFilter] = useState(null); // null = current year by default
   const [monthFilter, setMonthFilter] = useState(null);
   const [showHeiferModal, setShowHeiferModal] = useState(false);
@@ -357,24 +348,6 @@ const CattleForecastView = ({
               )}
             </button>
           )}
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 12,
-              color: '#374151',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showHidden}
-              onChange={(e) => setShowHidden(e.target.checked)}
-              data-show-hidden-toggle
-            />
-            Show hidden
-          </label>
           <button
             onClick={() => setShowSettings((v) => !v)}
             style={{
@@ -404,7 +377,7 @@ const CattleForecastView = ({
                 <SummaryTile
                   label="Eligible cattle"
                   value={forecast.summary.totalEligible.toLocaleString()}
-                  sub={forecast.summary.totalCount + ' total on farm'}
+                  sub={forecast.summary.finishCandidates + ' finish candidates on farm'}
                 />
                 <SummaryTile
                   label="Ready this year"
@@ -428,11 +401,8 @@ const CattleForecastView = ({
                 <span
                   style={{
                     fontSize: 11,
-                    padding: '3px 8px',
-                    background: '#991b1b',
-                    color: 'white',
-                    borderRadius: 4,
-                    fontWeight: 700,
+                    color: '#6b7280',
+                    fontWeight: 600,
                     textTransform: 'uppercase',
                     letterSpacing: 0.5,
                   }}
@@ -441,13 +411,21 @@ const CattleForecastView = ({
                 </span>
                 {forecast.nextProcessorBatch ? (
                   <>
-                    <span style={{fontSize: 16, fontWeight: 700, color: '#111827'}}>
-                      {forecast.nextProcessorBatch.name}
-                    </span>
-                    <span style={{fontSize: 13, color: '#6b7280'}}>
+                    <span
+                      data-next-processor-month
+                      style={{
+                        fontSize: 14,
+                        padding: '4px 12px',
+                        background: '#991b1b',
+                        color: 'white',
+                        borderRadius: 6,
+                        fontWeight: 700,
+                      }}
+                    >
                       {forecast.nextProcessorBatch.label} · {forecast.nextProcessorBatch.animalIds.length}{' '}
                       {forecast.nextProcessorBatch.animalIds.length === 1 ? 'cow' : 'cows'}
                     </span>
+                    <span style={{fontSize: 13, color: '#6b7280'}}>{forecast.nextProcessorBatch.name}</span>
                     {forecast.nextProcessorBatch.projectedTotalLbs > 0 && (
                       <span style={{fontSize: 12, color: '#065f46', fontWeight: 600}}>
                         {Math.round(forecast.nextProcessorBatch.projectedTotalLbs).toLocaleString()} lb projected
@@ -456,7 +434,7 @@ const CattleForecastView = ({
                   </>
                 ) : (
                   <span style={{fontSize: 13, color: '#6b7280', fontStyle: 'italic'}}>
-                    No virtual batch — no eligible cattle land in the display window.
+                    No planned batch — no eligible cattle land in the display window.
                   </span>
                 )}
               </div>
@@ -599,6 +577,11 @@ const CattleForecastView = ({
               </div>
             )}
 
+            {/* ── Watchlist (above the year selector — always near the top) ── */}
+            {forecast.watchlist.length > 0 && (
+              <Watchlist rows={forecast.watchlist} canEdit={canEdit} onToggleHidden={toggleHidden} fmt={fmt} />
+            )}
+
             {/* ── Year selector ───────────────────────────────────────── */}
             {yearsInView.length > 0 && (
               <div style={{display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap'}}>
@@ -645,25 +628,14 @@ const CattleForecastView = ({
                     forecast={forecast}
                     cowsById={cowsById}
                     canEdit={canEdit}
-                    showHidden={showHidden}
-                    hidden={hidden}
                     onToggleHidden={toggleHidden}
                     monthFilter={monthFilter}
                     setMonthFilter={setMonthFilter}
+                    fmt={fmt}
                   />
                 ))}
               </div>
             </div>
-
-            {/* ── Watchlist ─────────────────────────────────────────────── */}
-            {forecast.watchlist.length > 0 && (
-              <Watchlist
-                rows={forecast.watchlist}
-                canEdit={canEdit}
-                showHidden={showHidden}
-                onToggleHidden={toggleHidden}
-              />
-            )}
 
             {/* ── Past actuals — historical actual batches for context ── */}
             {yearFilter != null && actualBatchesByYear.has(yearFilter) && (
@@ -812,7 +784,7 @@ function ForecastChart({buckets, actualBatches}) {
         </svg>
       </div>
       <div style={{display: 'flex', gap: 14, marginTop: 6, fontSize: 11, color: '#6b7280'}}>
-        <LegendSwatch color="#fda4af" border="#9f1239" label="Projected (virtual)" />
+        <LegendSwatch color="#fda4af" border="#9f1239" label="Projected (planned)" />
         <LegendSwatch color="#7f1d1d" label="Actual (sent to processor)" />
       </div>
     </div>
@@ -837,21 +809,17 @@ function LegendSwatch({color, border, label}) {
   );
 }
 
-function MonthBucketTile({
-  bucket,
-  forecast,
-  cowsById,
-  canEdit,
-  showHidden,
-  hidden,
-  onToggleHidden,
-  monthFilter,
-  setMonthFilter,
-}) {
+function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, monthFilter, setMonthFilter, fmt}) {
   const {useState} = React;
-  const [expanded, setExpanded] = useState(monthFilter === bucket.monthKey);
+  // Default-expand current and future months. Past months stay collapsed
+  // unless explicitly clicked.
+  const nowYm = new Date().toISOString().slice(0, 7);
+  const isCurrentOrFuture = bucket.monthKey >= nowYm;
+  const [expanded, setExpanded] = useState(monthFilter === bucket.monthKey || isCurrentOrFuture);
   const isFiltered = monthFilter === bucket.monthKey;
   const visibleCount = bucket.count;
+  const hiddenHereOnly = (bucket.hiddenAnimalIds || []).filter((cid) => !bucket.animalIds.includes(cid));
+  const actualBatches = bucket.actualBatches || [];
   return (
     <div
       style={{
@@ -890,8 +858,22 @@ function MonthBucketTile({
             fontWeight: 600,
           }}
         >
-          {visibleCount} {visibleCount === 1 ? 'cow' : 'cows'}
+          {visibleCount} {visibleCount === 1 ? 'cow' : 'cows'} planned
         </span>
+        {actualBatches.length > 0 && (
+          <span
+            style={{
+              fontSize: 11,
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: '#eff6ff',
+              color: '#1e40af',
+              fontWeight: 600,
+            }}
+          >
+            {actualBatches.length} actual {actualBatches.length === 1 ? 'batch' : 'batches'}
+          </span>
+        )}
         {bucket.projectedTotalLbs > 0 && (
           <span style={{fontSize: 11, color: '#065f46', fontWeight: 600}}>
             {Math.round(bucket.projectedTotalLbs).toLocaleString()} lb projected
@@ -915,153 +897,206 @@ function MonthBucketTile({
       </div>
       {expanded && (
         <div style={{padding: '12px 18px'}}>
-          {(() => {
-            // Two row sets:
-            //   - assigned: cattle whose first-eligible-unhidden month is THIS one
-            //   - hiddenHere: cattle hidden FOR this month, even if their
-            //     current assignment rolled forward to a later month.
-            //     Required so admin can unhide a row whose assignment moved
-            //     when the operator hid it.
-            const assigned = bucket.animalIds.slice();
-            const hiddenHereOnly = (bucket.hiddenAnimalIds || []).filter((cid) => !assigned.includes(cid));
-            if (assigned.length === 0 && (!showHidden || hiddenHereOnly.length === 0)) {
-              return (
-                <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No projected cattle this month.</div>
-              );
-            }
-            return (
-              <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}} data-month-bucket-table>
-                <thead>
-                  <tr
-                    style={{
-                      textAlign: 'left',
-                      color: '#9ca3af',
-                      fontSize: 10,
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    <th style={{padding: '4px 8px'}}>Tag</th>
-                    <th style={{padding: '4px 8px'}}>Sex</th>
-                    <th style={{padding: '4px 8px'}}>Herd</th>
-                    <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
-                    <th style={{padding: '4px 8px', textAlign: 'right'}}>Projected</th>
-                    <th style={{padding: '4px 8px'}}>ADG src</th>
-                    <th style={{padding: '4px 8px', textAlign: 'right'}}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Assigned rows */}
-                  {assigned.map((cid) => {
-                    const cow = cowsById.get(cid);
-                    if (!cow) return null;
-                    const row = forecast.animalRows.find((r) => r.cow.id === cid);
-                    return (
-                      <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid #f3f4f6'}}>
-                        <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
-                        <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
-                        <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
-                        <td style={{padding: '6px 8px', textAlign: 'right', color: '#111827'}}>
-                          {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
-                        </td>
-                        <td style={{padding: '6px 8px', textAlign: 'right', color: '#065f46', fontWeight: 600}}>
-                          {row?.projectedWeightAtReady
-                            ? Math.round(row.projectedWeightAtReady).toLocaleString() + ' lb'
-                            : '—'}
-                        </td>
-                        <td style={{padding: '6px 8px', color: '#6b7280', fontSize: 11}}>
-                          {ADG_SOURCE_LABELS[row?.adgSource] || '—'}
-                          {row?.negativeAdg && (
-                            <span style={{color: '#b91c1c', fontWeight: 700, marginLeft: 4}}>(neg)</span>
-                          )}
-                        </td>
-                        <td style={{padding: '6px 8px', textAlign: 'right'}}>
-                          {canEdit ? (
-                            <button
-                              onClick={() => onToggleHidden(cid, bucket.monthKey, false)}
-                              data-toggle-hide={cid}
-                              style={{
-                                fontSize: 11,
-                                padding: '3px 8px',
-                                borderRadius: 5,
-                                border: '1px solid #fecaca',
-                                background: '#fef2f2',
-                                color: '#b91c1c',
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                                fontWeight: 600,
-                              }}
-                            >
-                              Hide
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {/* Hidden-here-only rows — surfaced when Show hidden is on,
-                      even if their current assignment rolled to another month.
-                      Each row's Unhide button removes the hide for THIS month. */}
-                  {showHidden &&
-                    hiddenHereOnly.map((cid) => {
-                      const cow = cowsById.get(cid);
-                      if (!cow) return null;
-                      const row = forecast.animalRows.find((r) => r.cow.id === cid);
-                      return (
-                        <tr
-                          key={'hidden-' + cid}
-                          data-month-hidden-row={cid}
-                          style={{borderTop: '1px solid #f3f4f6', opacity: 0.55, background: '#fafafa'}}
-                        >
-                          <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
-                          <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
-                          <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
-                          <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
-                            {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
-                          </td>
-                          <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
-                            {row?.readyMonth ? 'rolled to ' + monthLabel(row.readyMonth) : 'no eligible month'}
-                          </td>
-                          <td style={{padding: '6px 8px', color: '#9ca3af', fontSize: 11, fontStyle: 'italic'}}>
-                            hidden here
-                          </td>
-                          <td style={{padding: '6px 8px', textAlign: 'right'}}>
-                            {canEdit ? (
-                              <button
-                                onClick={() => onToggleHidden(cid, bucket.monthKey, true)}
-                                data-toggle-unhide={cid}
-                                style={{
-                                  fontSize: 11,
-                                  padding: '3px 8px',
-                                  borderRadius: 5,
-                                  border: '1px solid #bfdbfe',
-                                  background: '#eff6ff',
-                                  color: '#1e40af',
-                                  cursor: 'pointer',
-                                  fontFamily: 'inherit',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                Unhide
-                              </button>
-                            ) : (
-                              <span style={{fontSize: 10, color: '#9ca3af'}}>hidden</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            );
-          })()}
+          {/* Actual active/complete batches that landed in this month. */}
+          {actualBatches.length > 0 && (
+            <div style={{marginBottom: 10}}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: '#1e40af',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                  letterSpacing: 0.4,
+                  marginBottom: 4,
+                }}
+              >
+                Actual batches
+              </div>
+              <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                {actualBatches.map((rb) => {
+                  const cows = Array.isArray(rb.cows_detail) ? rb.cows_detail : [];
+                  return (
+                    <div
+                      key={rb.id}
+                      data-actual-batch={rb.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '6px 10px',
+                        background: rb.status === 'complete' ? '#f9fafb' : '#fef2f2',
+                        border: '1px solid ' + (rb.status === 'complete' ? '#d1d5db' : '#fca5a5'),
+                        borderRadius: 6,
+                        fontSize: 12,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <strong>{rb.name}</strong>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          padding: '1px 6px',
+                          background: rb.status === 'complete' ? '#374151' : '#1d4ed8',
+                          color: 'white',
+                          borderRadius: 4,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {rb.status}
+                      </span>
+                      <span style={{color: '#6b7280'}}>
+                        {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
+                      </span>
+                      {(rb.actual_process_date || rb.planned_process_date) && (
+                        <span style={{color: '#6b7280'}}>
+                          {fmt ? fmt(rb.actual_process_date || rb.planned_process_date) : rb.actual_process_date}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Planned (forecast) cattle assigned to this month + any hidden-here rows. */}
+          {bucket.animalIds.length === 0 && hiddenHereOnly.length === 0 && actualBatches.length === 0 && (
+            <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No projected cattle this month.</div>
+          )}
+          {(bucket.animalIds.length > 0 || hiddenHereOnly.length > 0) && (
+            <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}} data-month-bucket-table>
+              <thead>
+                <tr
+                  style={{
+                    textAlign: 'left',
+                    color: '#9ca3af',
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  <th style={{padding: '4px 8px'}}>Tag</th>
+                  <th style={{padding: '4px 8px'}}>Sex</th>
+                  <th style={{padding: '4px 8px'}}>Herd</th>
+                  <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
+                  <th style={{padding: '4px 8px', textAlign: 'right'}}>Projected</th>
+                  <th style={{padding: '4px 8px'}}>ADG Calc</th>
+                  <th style={{padding: '4px 8px', textAlign: 'right'}}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Assigned rows */}
+                {bucket.animalIds.map((cid) => {
+                  const cow = cowsById.get(cid);
+                  if (!cow) return null;
+                  const row = forecast.animalRows.find((r) => r.cow.id === cid);
+                  return (
+                    <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid #f3f4f6'}}>
+                      <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
+                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
+                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
+                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#111827'}}>
+                        {row?.latest
+                          ? Math.round(row.latest.weight).toLocaleString() +
+                            ' lb' +
+                            (row.latest.date ? ' · ' + String(row.latest.date).slice(0, 10) : '')
+                          : '—'}
+                      </td>
+                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#065f46', fontWeight: 600}}>
+                        {row?.projectedWeightAtReady
+                          ? Math.round(row.projectedWeightAtReady).toLocaleString() + ' lb'
+                          : '—'}
+                      </td>
+                      <td style={{padding: '6px 8px', color: '#6b7280', fontSize: 11}}>
+                        {formatAdgCalc(row)}
+                        {row?.negativeAdg && (
+                          <span style={{color: '#b91c1c', fontWeight: 700, marginLeft: 4}}>(neg)</span>
+                        )}
+                      </td>
+                      <td style={{padding: '6px 8px', textAlign: 'right'}}>
+                        {canEdit ? (
+                          <button
+                            onClick={() => onToggleHidden(cid, bucket.monthKey, false)}
+                            data-toggle-hide={cid}
+                            style={{
+                              fontSize: 11,
+                              padding: '3px 8px',
+                              borderRadius: 5,
+                              border: '1px solid #fecaca',
+                              background: '#fef2f2',
+                              color: '#b91c1c',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Hide
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {/* Hidden-here rows — ALWAYS rendered, muted, with Unhide. */}
+                {hiddenHereOnly.map((cid) => {
+                  const cow = cowsById.get(cid);
+                  if (!cow) return null;
+                  const row = forecast.animalRows.find((r) => r.cow.id === cid);
+                  return (
+                    <tr
+                      key={'hidden-' + cid}
+                      data-month-hidden-row={cid}
+                      style={{borderTop: '1px solid #f3f4f6', opacity: 0.55, background: '#fafafa'}}
+                    >
+                      <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
+                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
+                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
+                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
+                        {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
+                      </td>
+                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
+                        {row?.readyMonth ? 'rolled to ' + monthLabel(row.readyMonth) : 'no eligible month'}
+                      </td>
+                      <td style={{padding: '6px 8px', color: '#9ca3af', fontSize: 11, fontStyle: 'italic'}}>
+                        hidden here
+                      </td>
+                      <td style={{padding: '6px 8px', textAlign: 'right'}}>
+                        {canEdit ? (
+                          <button
+                            onClick={() => onToggleHidden(cid, bucket.monthKey, true)}
+                            data-toggle-unhide={cid}
+                            style={{
+                              fontSize: 11,
+                              padding: '3px 8px',
+                              borderRadius: 5,
+                              border: '1px solid #bfdbfe',
+                              background: '#eff6ff',
+                              color: '#1e40af',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Unhide
+                          </button>
+                        ) : (
+                          <span style={{fontSize: 10, color: '#9ca3af'}}>hidden</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function Watchlist({rows, canEdit, showHidden, onToggleHidden}) {
+function Watchlist({rows, canEdit, onToggleHidden, fmt}) {
   return (
     <div style={tile} data-forecast-watchlist>
       <div style={sectionHeader}>
@@ -1069,7 +1104,8 @@ function Watchlist({rows, canEdit, showHidden, onToggleHidden}) {
         <span style={{fontWeight: 400, color: '#9ca3af', marginLeft: 6}}>({rows.length})</span>
       </div>
       <div style={{fontSize: 11, color: '#6b7280', marginBottom: 8}}>
-        Cattle that don't land cleanly in a forecast month — review and adjust manually.
+        Cattle that don't land cleanly in a forecast month. Each row shows the latest weight, ADG, and why the cow
+        didn't get a planned month — adjust the underlying data (weigh-in, DOB) or unhide a month to bring her back.
       </div>
       <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}}>
         <thead>
@@ -1078,18 +1114,81 @@ function Watchlist({rows, canEdit, showHidden, onToggleHidden}) {
           >
             <th style={{padding: '4px 8px'}}>Tag</th>
             <th style={{padding: '4px 8px'}}>Herd</th>
-            <th style={{padding: '4px 8px'}}>Reasons</th>
+            <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
+            <th style={{padding: '4px 8px'}}>ADG Calc</th>
+            <th style={{padding: '4px 8px'}}>Reason</th>
+            <th style={{padding: '4px 8px'}}>Hidden months</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.cow.id} style={{borderTop: '1px solid #f3f4f6'}}>
+            <tr key={r.cow.id} data-watchlist-row={r.cow.id} style={{borderTop: '1px solid #f3f4f6'}}>
               <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{r.cow.tag || '?'}</td>
               <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[r.cow.herd] || r.cow.herd}</td>
-              <td style={{padding: '6px 8px', color: '#92400e'}}>
+              <td style={{padding: '6px 8px', textAlign: 'right', color: '#111827'}}>
+                {r.latest
+                  ? Math.round(r.latest.weight).toLocaleString() +
+                    ' lb' +
+                    (r.latest.date
+                      ? ' · ' + (fmt ? fmt(String(r.latest.date).slice(0, 10)) : String(r.latest.date).slice(0, 10))
+                      : '')
+                  : r.cow.birth_date
+                    ? 'no weigh-in · DOB ' + r.cow.birth_date
+                    : 'no weigh-in · no DOB'}
+              </td>
+              <td style={{padding: '6px 8px', color: '#6b7280', fontSize: 11}}>{formatAdgCalc(r)}</td>
+              <td style={{padding: '6px 8px', color: '#92400e', fontSize: 11}}>
                 {r.watchlistReasons.length > 0
                   ? r.watchlistReasons.map((x) => WATCHLIST_REASON_LABELS[x] || x).join(', ')
-                  : 'No eligible month'}
+                  : r.readyMonth
+                    ? 'projected ready ' + monthLabel(r.readyMonth)
+                    : 'no eligible month'}
+              </td>
+              <td style={{padding: '6px 8px', fontSize: 11}}>
+                {r.hiddenInMonths && r.hiddenInMonths.length > 0 ? (
+                  <span style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+                    {r.hiddenInMonths.map((mk) => (
+                      <span
+                        key={mk}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          background: '#eff6ff',
+                          color: '#1e40af',
+                          fontSize: 10,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {monthLabel(mk)}
+                        {canEdit && (
+                          <button
+                            onClick={() => onToggleHidden(r.cow.id, mk, true)}
+                            data-watchlist-unhide={r.cow.id + '|' + mk}
+                            title={'Unhide ' + monthLabel(mk)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#1e40af',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              fontSize: 11,
+                              padding: 0,
+                              marginLeft: 2,
+                              fontWeight: 700,
+                            }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <span style={{color: '#9ca3af'}}>—</span>
+                )}
               </td>
             </tr>
           ))}
@@ -1254,6 +1353,24 @@ function IncludeHeifersModal({
               const isExpanded = expandedId === h.id;
               const cTags = cowTagSet(h);
               const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
+              // Latest weigh-in (retag-aware via cowTagSet); show weight + date
+              // directly in the row so admin doesn't have to expand Details.
+              const latestWi = cowWeighIns
+                .slice()
+                .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''))[0];
+              const latestWeight = latestWi ? parseFloat(latestWi.weight) : null;
+              const latestDate = latestWi ? String(latestWi.entered_at || latestWi.date || '').slice(0, 10) : null;
+              // Age from DOB (years + months). Quiet dash if missing.
+              let ageStr = '—';
+              if (h.birth_date) {
+                const ms = Date.now() - new Date(h.birth_date + 'T12:00:00Z').getTime();
+                const days = Math.floor(ms / 86400000);
+                if (days >= 0) {
+                  const y = Math.floor(days / 365);
+                  const m = Math.floor((days % 365) / 30);
+                  ageStr = y > 0 ? y + 'y ' + m + 'm' : m + 'm';
+                }
+              }
               const cowCalving = calvingRecs.filter((r) => r.dam_tag === h.tag);
               const cowComments = comments
                 .filter((cm) => cm.cattle_id === h.id || cm.cattle_tag === h.tag)
@@ -1287,8 +1404,26 @@ function IncludeHeifersModal({
                       data-heifer-checkbox={h.id}
                     />
                     <span style={{fontWeight: 700, fontSize: 13, color: '#111827', minWidth: 60}}>#{h.tag || '?'}</span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>{h.breed || '—'}</span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>{h.origin || '—'}</span>
+                    <span style={{fontSize: 11, color: '#6b7280', minWidth: 70}}>{h.breed || '—'}</span>
+                    <span style={{fontSize: 11, color: '#6b7280', minWidth: 80}}>{h.origin || '—'}</span>
+                    <span
+                      data-heifer-age={h.id}
+                      style={{fontSize: 11, color: '#6b7280', minWidth: 50, fontVariantNumeric: 'tabular-nums'}}
+                    >
+                      {ageStr}
+                    </span>
+                    <span
+                      data-heifer-latest-weight={h.id}
+                      style={{
+                        fontSize: 11,
+                        color: latestWeight ? '#065f46' : '#9ca3af',
+                        fontWeight: latestWeight ? 600 : 400,
+                        minWidth: 110,
+                      }}
+                    >
+                      {latestWeight ? Math.round(latestWeight).toLocaleString() + ' lb' : 'no weigh-in'}
+                      {latestDate ? ' · ' + latestDate : ''}
+                    </span>
                     {wasIncluded && (
                       <span
                         style={{

@@ -103,10 +103,10 @@ export default function CattleSendToProcessorModal({
     if (!gate.ok) {
       setErr(
         gate.reason === 'no_next_batch'
-          ? 'No next virtual batch — there are no cattle eligible for processing yet.'
+          ? 'No next planned batch — there are no cattle eligible for processing yet.'
           : gate.reason === 'empty_next_batch'
-            ? 'The next virtual batch is empty.'
-            : 'Some selected tags are not in the next forecast batch. Adjust hide/unhide in Forecast first.',
+            ? 'The next planned batch is empty.'
+            : 'Some selected tags are not in the next planned batch. Adjust hide/unhide in Forecast first.',
       );
       return;
     }
@@ -206,7 +206,7 @@ export default function CattleSendToProcessorModal({
               marginBottom: 12,
             }}
           >
-            No virtual batch from the Forecast — no eligible cattle land in the display window. Add weights or DOB to
+            No planned batch from the Forecast — no eligible cattle land in the display window. Add weights or DOB to
             bring cattle into the forecast first.
           </div>
         )}
@@ -224,7 +224,7 @@ export default function CattleSendToProcessorModal({
               marginBottom: 12,
             }}
           >
-            <div style={{fontWeight: 700, marginBottom: 4}}>Blocked: tags outside the next forecast batch</div>
+            <div style={{fontWeight: 700, marginBottom: 4}}>Blocked: tags outside the next planned batch</div>
             <div style={{display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6}}>
               {gateBlocked.map((t) => (
                 <span
@@ -244,7 +244,7 @@ export default function CattleSendToProcessorModal({
               ))}
             </div>
             <div style={{fontSize: 11, color: '#7f1d1d'}}>
-              Adjust hide/unhide in the Forecast tab so the next virtual batch matches the cattle you want to send. The
+              Adjust hide/unhide in the Forecast tab so the next planned batch matches the cattle you want to send. The
               whole send is blocked until every selected tag is in the next batch.
             </div>
           </div>

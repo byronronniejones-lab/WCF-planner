@@ -7,8 +7,8 @@ import {
   monthLabel,
   dateToMonthKey,
   cowWeighInHistory,
-  computeRollingADG,
-  computeTwoMostRecentADG,
+  computeLast3ADG,
+  computeLast2ADG,
   resolveADGForCow,
   eligibilityFor,
   projectedWeightAtMonth,
@@ -126,42 +126,44 @@ describe('cowWeighInHistory', () => {
 });
 
 // ── ADG ladder ───────────────────────────────────────────────────────────────
-describe('computeRollingADG (3-week window)', () => {
-  it('null when fewer than 2 in-window points', () => {
-    const h = [{weight: 1000, ms: TODAY}];
-    expect(computeRollingADG(h, TODAY)).toBe(null);
+describe('computeLast3ADG (count-based, last 3 weigh-ins)', () => {
+  it('null when fewer than 3 points', () => {
+    expect(computeLast3ADG([{weight: 1000, ms: TODAY}])).toBe(null);
+    expect(
+      computeLast3ADG([
+        {weight: 1100, ms: TODAY},
+        {weight: 1000, ms: TODAY - 60 * 86400000},
+      ]),
+    ).toBe(null);
   });
-  it('two points 14 days apart inside the window', () => {
+  it('uses newest and 3rd-most-recent regardless of calendar window', () => {
     const h = [
-      {weight: 1100, ms: TODAY},
-      {weight: 1072, ms: TODAY - 14 * 86400000},
+      {weight: 1200, ms: TODAY}, // newest
+      {weight: 1140, ms: TODAY - 30 * 86400000},
+      {weight: 1080, ms: TODAY - 60 * 86400000}, // 3rd-most-recent
+      {weight: 900, ms: TODAY - 200 * 86400000}, // ignored — older than top-3
     ];
-    const r = computeRollingADG(h, TODAY);
+    const r = computeLast3ADG(h);
     expect(r).not.toBe(null);
+    // (1200 - 1080) / 60 = 2.0 lb/day
     expect(r.adg).toBeCloseTo(2.0);
-    expect(r.gapDays).toBe(14);
-  });
-  it('older points outside the 21-day window are excluded', () => {
-    const h = [
-      {weight: 1100, ms: TODAY},
-      {weight: 1080, ms: TODAY - 30 * 86400000}, // outside window
-    ];
-    expect(computeRollingADG(h, TODAY)).toBe(null);
+    expect(r.gapDays).toBe(60);
+    expect(r.weightsUsed).toBe(3);
   });
 });
 
-describe('computeTwoMostRecentADG (any age)', () => {
-  it('uses the 2 most recent points regardless of age', () => {
+describe('computeLast2ADG', () => {
+  it('uses the 2 most recent points', () => {
     const h = [
       {weight: 1100, ms: TODAY},
       {weight: 800, ms: TODAY - 200 * 86400000},
     ];
-    const r = computeTwoMostRecentADG(h);
+    const r = computeLast2ADG(h);
     expect(r).not.toBe(null);
     expect(r.adg).toBeCloseTo(1.5);
   });
   it('null when fewer than 2 points', () => {
-    expect(computeTwoMostRecentADG([{weight: 1000, ms: TODAY}])).toBe(null);
+    expect(computeLast2ADG([{weight: 1000, ms: TODAY}])).toBe(null);
   });
 });
 
@@ -170,24 +172,25 @@ describe('resolveADGForCow — 5-step ladder', () => {
   const eligNorm = {eligible: true, useGlobalAdgOnly: false};
   const eligGlobal = {eligible: true, useGlobalAdgOnly: true};
 
-  it('1) rolling 3-week ADG when available', () => {
+  it('1) last 3 weigh-ins ADG when available', () => {
     const c = cow();
     const h = [
-      {weight: 1100, ms: TODAY},
-      {weight: 1072, ms: TODAY - 14 * 86400000},
+      {weight: 1200, ms: TODAY},
+      {weight: 1140, ms: TODAY - 30 * 86400000},
+      {weight: 1080, ms: TODAY - 60 * 86400000},
     ];
     const r = resolveADGForCow({cow: c, history: h, settings, todayMs: TODAY, eligibility: eligNorm});
-    expect(r.source).toBe(ADG_SOURCES.ROLLING);
+    expect(r.source).toBe(ADG_SOURCES.LAST_3);
     expect(r.adg).toBeCloseTo(2.0);
   });
-  it('2) two most-recent (any age) when rolling underfilled', () => {
+  it('2) last 2 weigh-ins when only 2 history points exist', () => {
     const c = cow();
     const h = [
       {weight: 1100, ms: TODAY},
       {weight: 800, ms: TODAY - 200 * 86400000},
     ];
     const r = resolveADGForCow({cow: c, history: h, settings, todayMs: TODAY, eligibility: eligNorm});
-    expect(r.source).toBe(ADG_SOURCES.TWO_RECENT);
+    expect(r.source).toBe(ADG_SOURCES.LAST_2);
     expect(r.adg).toBeCloseTo(1.5);
   });
   it('3) one weigh-in + global ADG', () => {
@@ -212,14 +215,15 @@ describe('resolveADGForCow — 5-step ladder', () => {
   it('momma steers + selected momma heifers always use GLOBAL_ONLY', () => {
     const c = cow({herd: 'mommas', sex: 'steer'});
     const h = [
-      {weight: 1100, ms: TODAY},
-      {weight: 1072, ms: TODAY - 14 * 86400000},
+      {weight: 1200, ms: TODAY},
+      {weight: 1140, ms: TODAY - 30 * 86400000},
+      {weight: 1080, ms: TODAY - 60 * 86400000},
     ];
     const r = resolveADGForCow({cow: c, history: h, settings, todayMs: TODAY, eligibility: eligGlobal});
     expect(r.source).toBe(ADG_SOURCES.GLOBAL_ONLY);
     expect(r.adg).toBe(1.18);
   });
-  it('flags negative ADG honestly when computed (not bypassed by fallback)', () => {
+  it('flags negative ADG honestly when computed (last 2 weigh-ins, no fallback)', () => {
     const c = cow();
     const h = [
       {weight: 1000, ms: TODAY},
@@ -228,6 +232,7 @@ describe('resolveADGForCow — 5-step ladder', () => {
     const r = resolveADGForCow({cow: c, history: h, settings, todayMs: TODAY, eligibility: eligNorm});
     expect(r.adg).toBeCloseTo(-100 / 14);
     expect(r.negative).toBe(true);
+    expect(r.source).toBe(ADG_SOURCES.LAST_2);
   });
 });
 

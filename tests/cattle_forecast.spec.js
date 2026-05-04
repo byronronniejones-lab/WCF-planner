@@ -84,26 +84,15 @@ test('forecast: hide a cow, reveal under Show hidden, unhide from same month', a
   await page.goto(FORECAST_PATH);
   await waitForForecastLoaded(page);
 
-  // Find F-HIDE's assigned month bucket. Seed projection: ~250 lb gain at
-  // 2 lb/d = 125 days from 2026-05-04 → 2026-09-06 → 2026-09. Expand
-  // whatever bucket carries cow-row data-month-row="F-HIDE".
-  const fHideRow = page.locator('[data-month-row="F-HIDE"]');
-  // Click each month bucket header in turn until F-HIDE's row is rendered.
-  const monthBuckets = page.locator('[data-month-bucket]');
-  const monthCount = await monthBuckets.count();
-  let hiddenMonth = null;
-  for (let i = 0; i < monthCount; i++) {
-    const tile = monthBuckets.nth(i);
-    const tileMk = await tile.getAttribute('data-month-bucket');
-    // Open the bucket header (always-clickable row).
-    await tile.locator('> div').first().click();
-    if ((await fHideRow.count()) > 0) {
-      hiddenMonth = tileMk;
-      break;
-    }
-    // Re-collapse so we don't pollute later assertions.
-    await tile.locator('> div').first().click();
-  }
+  // Current + future tiles default-expanded (Codex 2026-05-04). F-HIDE's
+  // assigned row is therefore already in the DOM somewhere. Find it and
+  // read its parent month-bucket attribute.
+  const fHideRow = page.locator('[data-month-row="F-HIDE"]').first();
+  await expect(fHideRow).toBeVisible({timeout: 10_000});
+  const hiddenMonth = await fHideRow.evaluate((el) => {
+    const bucket = el.closest('[data-month-bucket]');
+    return bucket ? bucket.getAttribute('data-month-bucket') : null;
+  });
   expect(hiddenMonth).toBeTruthy();
 
   // Click Hide on F-HIDE in that month.
@@ -111,8 +100,12 @@ test('forecast: hide a cow, reveal under Show hidden, unhide from same month', a
   await expect(hideBtn).toBeVisible();
   await hideBtn.click();
 
-  // Row should leave the assigned bucket (assignment rolls forward).
-  await expect(fHideRow).toHaveCount(0, {timeout: 5_000});
+  // In the ORIGINAL hide month, the assigned row goes away AND a muted
+  // hidden-here row appears in its place — no global toggle needed (Codex
+  // 2026-05-04 hide UX rework). F-HIDE's assignment rolls forward to a
+  // different month and may render there too; that's expected.
+  const hideMonthAssigned = page.locator(`[data-month-bucket="${hiddenMonth}"] [data-month-row="F-HIDE"]`);
+  await expect(hideMonthAssigned).toHaveCount(0, {timeout: 5_000});
 
   // Verify a hidden row landed in the DB.
   const hiddenRows = await supabaseAdmin
@@ -122,12 +115,9 @@ test('forecast: hide a cow, reveal under Show hidden, unhide from same month', a
   expect(hiddenRows.data?.length).toBe(1);
   expect(hiddenRows.data?.[0].month_key).toBe(hiddenMonth);
 
-  // Toggle Show hidden ON — the hidden-here row must surface in the
-  // ORIGINAL hidden month even though F-HIDE's assignment has rolled forward.
-  await page.locator('[data-show-hidden-toggle]').check();
-  // Re-open the bucket where we hid F-HIDE.
+  // Hidden-here row must be visible directly in the same tile. The bucket
+  // may be auto-collapsed by the parent's monthFilter toggle; reopen if so.
   const targetBucket = page.locator(`[data-month-bucket="${hiddenMonth}"]`);
-  // Bucket may already be open from the loop above; ensure expanded.
   if ((await targetBucket.locator('[data-month-bucket-table]').count()) === 0) {
     await targetBucket.locator('> div').first().click();
   }
@@ -270,9 +260,6 @@ test('forecast: farm_team is read-only, no Include Heifers / Settings save', asy
   await page.getByRole('button', {name: 'Settings'}).click();
   await expect(page.locator('[data-forecast-settings-panel]')).toBeVisible();
   await expect(page.locator('[data-save-settings-btn]')).toHaveCount(0);
-  // Show hidden toggle is rendered (read-only users can preview hidden) —
-  // but per-row Hide/Unhide buttons are absent.
-  await expect(page.locator('[data-show-hidden-toggle]')).toBeVisible();
 });
 
 test('send-to-processor: farm_team cannot send even when the tag gate would otherwise pass', async ({
@@ -309,6 +296,65 @@ test('send-to-processor: farm_team cannot send even when the tag gate would othe
   const r = await supabaseAdmin.from('cattle_processing_batches').select('id');
   expect(r.error).toBeNull();
   expect(r.data?.length || 0).toBe(0);
+});
+
+test('forecast: current and future month tiles default to expanded; past months collapsed', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  const nowYm = new Date().toISOString().slice(0, 7);
+  const tile = page.locator(`[data-month-bucket="${nowYm}"]`);
+  await expect(tile).toBeVisible();
+  // Current month tile renders the inner table without a click.
+  await expect(tile.locator('[data-month-bucket-table]')).toBeVisible({timeout: 5_000});
+
+  // Pick a past month in the same year that the tile renders for.
+  const pastYm = nowYm.slice(0, 5) + '01'; // YYYY-01
+  if (pastYm < nowYm) {
+    const past = page.locator(`[data-month-bucket="${pastYm}"]`);
+    if ((await past.count()) > 0) {
+      // Past month tile starts collapsed → no inner table rendered yet.
+      await expect(past.locator('[data-month-bucket-table]')).toHaveCount(0);
+    }
+  }
+});
+
+test('forecast: per-cow row shows ADG value + calc text', async ({page, cattleForecastScenario}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  // Find the next-processor batch month + open it. Has at least F-AT-MAX
+  // (1450 lb) in May or later.
+  const panel = page.locator('[data-next-processor-panel]');
+  const m = (await panel.innerText()).match(/(\w{3} \d{4})/);
+  expect(m).toBeTruthy();
+  // Find a month bucket and confirm row text contains "lb/day · …" calc string.
+  const anyRow = page.locator('[data-month-row]').first();
+  await expect(anyRow).toBeVisible();
+  const rowText = await anyRow.innerText();
+  // Calc string format: "X.XX lb/day · last 3 weigh-ins" / "last 2 weigh-ins"
+  // / "1 weigh-in + global" / "DOB + global" / "global only".
+  expect(rowText).toMatch(/lb\/day · (last [23] weigh-ins|1 weigh-in \+ global|DOB \+ global|global only)/);
+});
+
+test('forecast: include-heifers modal rows show age + latest weight visible without expanding', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  const heiferRow = page.locator('[data-heifer-row="M-HEIFER"]');
+  await expect(heiferRow).toBeVisible();
+  // Age + latest-weight cells render directly in the row (no Details click).
+  await expect(page.locator('[data-heifer-age="M-HEIFER"]')).toBeVisible();
+  await expect(page.locator('[data-heifer-latest-weight="M-HEIFER"]')).toBeVisible();
 });
 
 test('forecast: admin can save settings + open Include Heifers modal', async ({page, cattleForecastScenario}) => {

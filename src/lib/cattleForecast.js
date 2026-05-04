@@ -20,16 +20,22 @@ export const FORECAST_FALLBACK_ADG_DEFAULT = 1.18;
 export const FORECAST_BIRTH_WEIGHT_LB_DEFAULT = 64;
 export const FORECAST_HORIZON_YEARS_DEFAULT = 3;
 export const FORECAST_INCLUDED_HERDS_DEFAULT = Object.freeze(['finishers', 'backgrounders']);
-export const FORECAST_ROLLING_ADG_WINDOW_DAYS = 21; // ~3 weeks
-
-// ADG source labels emitted on every animal row.
+// ADG source labels emitted on every animal row. Codex 2026-05-04 ladder:
+// cattle weigh-ins happen ~1x/month max, so a calendar-window rolling ADG
+// over-rejects valid cattle. Switched to count-based "last N weigh-ins":
+//   LAST_3:  ≥ 3 usable weigh-ins → ADG over the span of latest 3
+//   LAST_2:  exactly 2 usable     → ADG over those two
+//   ONE_PLUS_FALLBACK: 1 weigh-in + global ADG
+//   DOB_PLUS_FALLBACK: no weigh-ins + DOB + birth weight + global ADG
+//   GLOBAL_ONLY: momma steers + selected momma heifers (ladder bypassed)
+//   NONE: watchlist
 export const ADG_SOURCES = Object.freeze({
-  ROLLING: 'rolling',
-  TWO_RECENT: 'two_recent',
+  LAST_3: 'last_3',
+  LAST_2: 'last_2',
   ONE_PLUS_FALLBACK: 'one_plus_fallback',
   DOB_PLUS_FALLBACK: 'dob_plus_fallback',
-  GLOBAL_ONLY: 'global_only', // momma steers + selected momma heifers
-  NONE: 'none', // watchlist
+  GLOBAL_ONLY: 'global_only',
+  NONE: 'none',
 });
 
 // Watchlist reasons (one cow can carry multiple).
@@ -38,6 +44,7 @@ export const WATCHLIST_REASONS = Object.freeze({
   NEGATIVE_ADG_NO_FINISH: 'negative_adg_no_finish',
   NEVER_REACHES_WINDOW: 'never_reaches_window',
   ALREADY_OVER_MAX: 'already_over_max',
+  PROJECTS_PAST_MAX: 'projects_past_max', // assignment-horizon-start projection > displayMax
   ALL_ELIGIBLE_HIDDEN: 'all_eligible_hidden',
 });
 
@@ -141,34 +148,29 @@ export function cowWeighInHistory(cow, weighIns) {
 
 // ── ADG ladder ────────────────────────────────────────────────────────────────
 
-// Rolling ADG = linear regression slope (lb/day) over weigh-ins entered
-// within FORECAST_ROLLING_ADG_WINDOW_DAYS of `todayMs`. Needs >= 2 points.
-// Returns {adg, weightsUsed, gapDays} or null if window underfilled.
-export function computeRollingADG(history, todayMs) {
-  if (!Array.isArray(history) || history.length < 2) return null;
-  const cutoff = todayMs - FORECAST_ROLLING_ADG_WINDOW_DAYS * DAY_MS;
-  const inWindow = history.filter((h) => h.ms >= cutoff);
-  if (inWindow.length < 2) return null;
-  // Two-point slope between the most recent and the OLDEST in window —
-  // matches the spec ("rolling 3-week ADG"). Linear-fit could be noisier
-  // with measurement error; two anchors is what Nick uses on the spreadsheet.
-  const newest = inWindow[0];
-  const oldest = inWindow[inWindow.length - 1];
+// Count-based ADG over the latest 3 weigh-ins. Cattle weigh-ins happen
+// ~1x/month max, so a calendar-window approach (e.g., 21 days) would
+// reject most valid finishers. Returns {adg, weightsUsed:3, gapDays} or
+// null if fewer than 3 points.
+export function computeLast3ADG(history) {
+  if (!Array.isArray(history) || history.length < 3) return null;
+  const newest = history[0];
+  const oldest = history[2];
   const days = (newest.ms - oldest.ms) / DAY_MS;
   if (days <= 0) return null;
   const adg = (newest.weight - oldest.weight) / days;
-  return {adg, weightsUsed: inWindow.length, gapDays: days};
+  return {adg, weightsUsed: 3, gapDays: days};
 }
 
-// ADG from the two most-recent weigh-ins regardless of window age.
-export function computeTwoMostRecentADG(history) {
+// ADG from the two most-recent weigh-ins regardless of age.
+export function computeLast2ADG(history) {
   if (!Array.isArray(history) || history.length < 2) return null;
   const a = history[0];
   const b = history[1];
   const days = (a.ms - b.ms) / DAY_MS;
   if (days <= 0) return null;
   const adg = (a.weight - b.weight) / days;
-  return {adg, gapDays: days};
+  return {adg, weightsUsed: 2, gapDays: days};
 }
 
 // Resolve ADG via the locked 5-step ladder. Returns:
@@ -196,28 +198,28 @@ export function resolveADGForCow({cow, history, settings, todayMs, eligibility})
     };
   }
 
-  // 1. rolling 3-week ADG
-  const rolling = computeRollingADG(history, todayMs);
-  if (rolling && Number.isFinite(rolling.adg)) {
+  // 1. last 3 weigh-ins (count-based)
+  const last3 = computeLast3ADG(history);
+  if (last3 && Number.isFinite(last3.adg)) {
     return {
-      adg: rolling.adg,
-      source: ADG_SOURCES.ROLLING,
+      adg: last3.adg,
+      source: ADG_SOURCES.LAST_3,
       latest,
       prior,
-      gapDays: rolling.gapDays,
-      negative: rolling.adg < 0,
+      gapDays: last3.gapDays,
+      negative: last3.adg < 0,
     };
   }
-  // 2. two most-recent weigh-ins (any age)
-  const two = computeTwoMostRecentADG(history);
-  if (two && Number.isFinite(two.adg)) {
+  // 2. last 2 weigh-ins
+  const last2 = computeLast2ADG(history);
+  if (last2 && Number.isFinite(last2.adg)) {
     return {
-      adg: two.adg,
-      source: ADG_SOURCES.TWO_RECENT,
+      adg: last2.adg,
+      source: ADG_SOURCES.LAST_2,
       latest,
       prior,
-      gapDays: two.gapDays,
-      negative: two.adg < 0,
+      gapDays: last2.gapDays,
+      negative: last2.adg < 0,
     };
   }
   // 3. one weigh-in + global ADG
@@ -519,9 +521,21 @@ export function buildForecast({
       watchlistReasons.push(WATCHLIST_REASONS.ALREADY_OVER_MAX);
     } else if (anchorWeight != null && Number.isFinite(adgResult.adg) && readyMonth == null) {
       // Projected but never lands in window across the assignment horizon.
+      // Disambiguate: under-min at horizon end → NEVER_REACHES_WINDOW;
+      // over-max already at horizon start → PROJECTS_PAST_MAX (the cow
+      // would have landed in a past month or already exceeded display max).
+      const firstKey = assignmentHorizon[0];
       const lastKey = assignmentHorizon[assignmentHorizon.length - 1];
-      const proj = projectedWeightAtMonth({anchorWeight, anchorMs, targetMonthKey: lastKey, adg: adgResult.adg});
-      if (proj != null && proj < displayMin) {
+      const projFirst = projectedWeightAtMonth({
+        anchorWeight,
+        anchorMs,
+        targetMonthKey: firstKey,
+        adg: adgResult.adg,
+      });
+      const projLast = projectedWeightAtMonth({anchorWeight, anchorMs, targetMonthKey: lastKey, adg: adgResult.adg});
+      if (projFirst != null && projFirst > displayMax) {
+        watchlistReasons.push(WATCHLIST_REASONS.PROJECTS_PAST_MAX);
+      } else if (projLast != null && projLast < displayMin) {
         watchlistReasons.push(WATCHLIST_REASONS.NEVER_REACHES_WINDOW);
       } else {
         // Eligible months exist mathematically but every one is hidden.
@@ -581,6 +595,10 @@ export function buildForecast({
     hiddenAnimalIds: [],
     projectedTotalLbs: 0,
     overCapacity: false,
+    // Real active/complete batches whose actual_process_date (or planned
+    // when actual is null) falls in this month. Surfaced on the tile so
+    // operators see projected + actual side-by-side per Codex 2026-05-04.
+    actualBatches: [],
   }));
   const bucketByKey = new Map(monthBuckets.map((b) => [b.monthKey, b]));
   for (const r of animalRows) {
@@ -608,15 +626,39 @@ export function buildForecast({
     }
   }
 
+  // Attach real (active|complete) batches to their month bucket.
+  for (const rb of realBatches || []) {
+    if (!rb) continue;
+    const dt = rb.actual_process_date || rb.planned_process_date;
+    if (!dt) continue;
+    const mk = String(dt).slice(0, 7);
+    const bucket = bucketByKey.get(mk);
+    if (bucket) bucket.actualBatches.push(rb);
+  }
+
   // ── summary ────────────────────────────────────────────────────────────────
   const todayYear = new Date(todayMs).getUTCFullYear();
   const readyByYear = {};
   for (const b of monthBuckets) {
     readyByYear[b.year] = (readyByYear[b.year] || 0) + b.count;
   }
+  // "Finish candidates on farm" = the herd-shape that could ever finish:
+  // every backgrounder + every finisher + momma steers + momma heifers.
+  // Excludes momma cows, bulls, and outcome herds (processed/sold/deceased).
+  // Codex 2026-05-04 correction: Summary's "Eligible cattle" subtext shows
+  // this number, not raw cattle.length, so operators don't see historical
+  // outcome cattle counted as on-farm.
+  const finishCandidates = (cattle || []).filter((c) => {
+    if (!c) return false;
+    if (c.herd === 'backgrounders' || c.herd === 'finishers') return true;
+    if (c.herd === 'mommas' && (c.sex === 'steer' || c.sex === 'heifer')) return true;
+    return false;
+  }).length;
+
   const summary = {
     totalEligible: animalRows.length,
     totalCount: cattle.length,
+    finishCandidates,
     readyByYear,
     readyThisYear: readyByYear[todayYear] || 0,
     readyNextYear: readyByYear[todayYear + 1] || 0,
@@ -840,6 +882,44 @@ export function batchHasAllHangingWeights(batch) {
     const v = parseFloat(r && r.hanging_weight);
     return Number.isFinite(v) && v > 0;
   });
+}
+
+// Human-readable ADG-calc string for the Forecast UI. Surfaces the actual
+// number plus enough context that admins don't have to guess at the calc.
+// Examples:
+//   "1.42 lb/day · last 3 weigh-ins (62-day gap)"
+//   "1.10 lb/day · last 2 weigh-ins (28-day gap)"
+//   "1.18 lb/day · 1 weigh-in + global"
+//   "1.18 lb/day · DOB + global (2024-08-01)"
+//   "1.18 lb/day · global only"
+//   "—"   (NONE)
+export function formatAdgCalc(row) {
+  if (!row) return '—';
+  const adg = row.adg;
+  const v = Number.isFinite(adg) ? adg.toFixed(2) + ' lb/day' : null;
+  switch (row.adgSource) {
+    case ADG_SOURCES.LAST_3: {
+      const h = row.history;
+      const gap = h && h.length >= 3 ? Math.round((h[0].ms - h[2].ms) / DAY_MS) : null;
+      return (v || '—') + ' · last 3 weigh-ins' + (gap != null ? ` (${gap}-day gap)` : '');
+    }
+    case ADG_SOURCES.LAST_2: {
+      const h = row.history;
+      const gap = h && h.length >= 2 ? Math.round((h[0].ms - h[1].ms) / DAY_MS) : null;
+      return (v || '—') + ' · last 2 weigh-ins' + (gap != null ? ` (${gap}-day gap)` : '');
+    }
+    case ADG_SOURCES.ONE_PLUS_FALLBACK:
+      return (v || '—') + ' · 1 weigh-in + global';
+    case ADG_SOURCES.DOB_PLUS_FALLBACK: {
+      const dob = row.cow && row.cow.birth_date ? ` (${row.cow.birth_date})` : '';
+      return (v || '—') + ' · DOB + global' + dob;
+    }
+    case ADG_SOURCES.GLOBAL_ONLY:
+      return (v || '—') + ' · global only';
+    case ADG_SOURCES.NONE:
+    default:
+      return '—';
+  }
 }
 
 // List of cattle.id values in `batch` whose hanging_weight is missing/<=0.

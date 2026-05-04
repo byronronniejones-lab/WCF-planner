@@ -472,7 +472,7 @@ const CattleHomeView = ({
                 </span>
               </>
             ) : (
-              <span style={{fontSize: 13, color: '#6b7280', fontStyle: 'italic'}}>No virtual batch yet</span>
+              <span style={{fontSize: 13, color: '#6b7280', fontStyle: 'italic'}}>No planned batch yet</span>
             )}
             <span style={{flex: 1}} />
             <span style={{fontSize: 12, color: '#374151'}}>

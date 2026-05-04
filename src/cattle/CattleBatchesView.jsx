@@ -312,7 +312,7 @@ const CattleBatchesView = ({
                         textTransform: 'uppercase',
                       }}
                     >
-                      Virtual
+                      Planned
                     </span>
                     <span style={{color: '#6b7280'}}>
                       {vb.animalIds.length} {vb.animalIds.length === 1 ? 'cow' : 'cows'}
