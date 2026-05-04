@@ -564,6 +564,12 @@ export function buildForecast({
       adg: adgResult.adg,
       adgSource: adgResult.source,
       negativeAdg: adgResult.negative,
+      // Anchor for any-month projection. The view uses these to compute a
+      // hidden-month's projected weight (not just the assigned month) so
+      // operators can see how heavy the cow would have been if she'd been
+      // sent in that hidden month.
+      anchorWeight,
+      anchorMs,
       readyMonth,
       projectedWeightAtReady,
       flags,

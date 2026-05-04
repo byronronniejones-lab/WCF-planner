@@ -16,6 +16,7 @@ import {
   monthLabel,
   parseMonthKey,
   formatAdgCalc,
+  projectedWeightAtMonth,
   WATCHLIST_REASONS,
   FORECAST_DISPLAY_WEIGHT_MIN_DEFAULT,
   FORECAST_DISPLAY_WEIGHT_MAX_DEFAULT,
@@ -577,10 +578,10 @@ const CattleForecastView = ({
               </div>
             )}
 
-            {/* ── Watchlist (above the year selector — always near the top) ── */}
-            {forecast.watchlist.length > 0 && (
-              <Watchlist rows={forecast.watchlist} canEdit={canEdit} onToggleHidden={toggleHidden} fmt={fmt} />
-            )}
+            {/* ── Attention section (always-rendered; empty state when none).
+                Lifted above the year selector + month tiles so an operator
+                can spot tag-#241-style anomalies without scrolling. */}
+            <AttentionSection rows={forecast.watchlist} canEdit={canEdit} onToggleHidden={toggleHidden} fmt={fmt} />
 
             {/* ── Year selector ───────────────────────────────────────── */}
             {yearsInView.length > 0 && (
@@ -817,9 +818,15 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
   const isCurrentOrFuture = bucket.monthKey >= nowYm;
   const [expanded, setExpanded] = useState(monthFilter === bucket.monthKey || isCurrentOrFuture);
   const isFiltered = monthFilter === bucket.monthKey;
-  const visibleCount = bucket.count;
+  const plannedCount = bucket.count;
   const hiddenHereOnly = (bucket.hiddenAnimalIds || []).filter((cid) => !bucket.animalIds.includes(cid));
   const actualBatches = bucket.actualBatches || [];
+  // Active = sent to processor, hanging weights pending. Active still
+  // counts as "processed" for display per Codex 2026-05-04.
+  const processedCount = actualBatches.reduce(
+    (s, rb) => s + (Array.isArray(rb.cows_detail) ? rb.cows_detail.length : 0),
+    0,
+  );
   return (
     <div
       style={{
@@ -848,20 +855,30 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
       >
         <span style={{fontSize: 12, color: '#9ca3af'}}>{expanded ? '▼' : '▶'}</span>
         <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{bucket.label}</span>
-        <span
-          style={{
-            fontSize: 11,
-            padding: '2px 8px',
-            borderRadius: 999,
-            background: visibleCount > 0 ? '#fef2f2' : '#f3f4f6',
-            color: visibleCount > 0 ? '#991b1b' : '#6b7280',
-            fontWeight: 600,
-          }}
-        >
-          {visibleCount} {visibleCount === 1 ? 'cow' : 'cows'} planned
-        </span>
-        {actualBatches.length > 0 && (
+        {/* Pill 1: planned forecast count. Suppressed when this month
+            ONLY has actual batches — operators don't want to see "0 cows
+            planned" on a month that's fully processed. */}
+        {(plannedCount > 0 || (plannedCount === 0 && processedCount === 0)) && (
           <span
+            data-month-planned-count
+            style={{
+              fontSize: 11,
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: plannedCount > 0 ? '#fef2f2' : '#f3f4f6',
+              color: plannedCount > 0 ? '#991b1b' : '#6b7280',
+              fontWeight: 600,
+            }}
+          >
+            {plannedCount} {plannedCount === 1 ? 'cow' : 'cows'} planned
+          </span>
+        )}
+        {/* Pill 2: actual processed count (sum of cows_detail across the
+            month's active + complete batches). Active counts as processed
+            for display purposes per Codex 2026-05-04. */}
+        {processedCount > 0 && (
+          <span
+            data-month-processed-count
             style={{
               fontSize: 11,
               padding: '2px 8px',
@@ -871,7 +888,7 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
               fontWeight: 600,
             }}
           >
-            {actualBatches.length} actual {actualBatches.length === 1 ? 'batch' : 'batches'}
+            {processedCount} {processedCount === 1 ? 'cow' : 'cows'} processed
           </span>
         )}
         {bucket.projectedTotalLbs > 0 && (
@@ -912,7 +929,7 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
               >
                 Actual batches
               </div>
-              <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+              <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
                 {actualBatches.map((rb) => {
                   const cows = Array.isArray(rb.cows_detail) ? rb.cows_detail : [];
                   return (
@@ -920,38 +937,113 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                       key={rb.id}
                       data-actual-batch={rb.id}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '6px 10px',
                         background: rb.status === 'complete' ? '#f9fafb' : '#fef2f2',
                         border: '1px solid ' + (rb.status === 'complete' ? '#d1d5db' : '#fca5a5'),
                         borderRadius: 6,
-                        fontSize: 12,
-                        flexWrap: 'wrap',
+                        overflow: 'hidden',
                       }}
                     >
-                      <strong>{rb.name}</strong>
-                      <span
+                      <div
                         style={{
-                          fontSize: 10,
-                          padding: '1px 6px',
-                          background: rb.status === 'complete' ? '#374151' : '#1d4ed8',
-                          color: 'white',
-                          borderRadius: 4,
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '6px 10px',
+                          fontSize: 12,
+                          flexWrap: 'wrap',
+                          borderBottom: cows.length > 0 ? '1px solid rgba(0,0,0,.05)' : 'none',
                         }}
                       >
-                        {rb.status}
-                      </span>
-                      <span style={{color: '#6b7280'}}>
-                        {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
-                      </span>
-                      {(rb.actual_process_date || rb.planned_process_date) && (
-                        <span style={{color: '#6b7280'}}>
-                          {fmt ? fmt(rb.actual_process_date || rb.planned_process_date) : rb.actual_process_date}
+                        <strong>{rb.name}</strong>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            background: rb.status === 'complete' ? '#374151' : '#1d4ed8',
+                            color: 'white',
+                            borderRadius: 4,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {rb.status}
                         </span>
+                        <span style={{color: '#6b7280'}}>
+                          {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
+                        </span>
+                        {(rb.actual_process_date || rb.planned_process_date) && (
+                          <span style={{color: '#6b7280'}}>
+                            {fmt ? fmt(rb.actual_process_date || rb.planned_process_date) : rb.actual_process_date}
+                          </span>
+                        )}
+                      </div>
+                      {/* Per-cow rows under the batch — operator needs to see
+                          which cattle were sent. Tag + sex/herd from the
+                          cattle row (if still present) + live + hanging
+                          weight from cows_detail. ADG Calc may not be
+                          available because processed cattle leave animalRows;
+                          show "—" for those. Codex 2026-05-04 follow-up #2. */}
+                      {cows.length > 0 && (
+                        <table
+                          style={{width: '100%', borderCollapse: 'collapse', fontSize: 11}}
+                          data-actual-batch-table={rb.id}
+                        >
+                          <thead>
+                            <tr
+                              style={{
+                                textAlign: 'left',
+                                color: '#9ca3af',
+                                fontSize: 10,
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.4,
+                                background: 'rgba(0,0,0,.02)',
+                              }}
+                            >
+                              <th style={{padding: '3px 8px'}}>Tag</th>
+                              <th style={{padding: '3px 8px'}}>Sex</th>
+                              <th style={{padding: '3px 8px'}}>Herd</th>
+                              <th style={{padding: '3px 8px', textAlign: 'right'}}>Live</th>
+                              <th style={{padding: '3px 8px', textAlign: 'right'}}>Hanging</th>
+                              <th style={{padding: '3px 8px'}}>ADG Calc</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cows.map((c) => {
+                              const cowRow = cowsById.get(c.cattle_id);
+                              const fRow = forecast.animalRows.find((r) => r.cow.id === c.cattle_id);
+                              const live = parseFloat(c.live_weight);
+                              const hang = parseFloat(c.hanging_weight);
+                              return (
+                                <tr
+                                  key={c.cattle_id}
+                                  data-actual-batch-row={c.cattle_id}
+                                  style={{borderTop: '1px solid rgba(0,0,0,.04)'}}
+                                >
+                                  <td style={{padding: '3px 8px', fontWeight: 700, color: '#111827'}}>
+                                    #{c.tag || cowRow?.tag || '?'}
+                                  </td>
+                                  <td style={{padding: '3px 8px', color: '#6b7280'}}>{cowRow?.sex || '—'}</td>
+                                  <td style={{padding: '3px 8px', color: '#6b7280'}}>
+                                    {cowRow ? HERD_LABELS[cowRow.herd] || cowRow.herd : '—'}
+                                  </td>
+                                  <td style={{padding: '3px 8px', textAlign: 'right', color: '#111827'}}>
+                                    {Number.isFinite(live) && live > 0
+                                      ? Math.round(live).toLocaleString() + ' lb'
+                                      : '—'}
+                                  </td>
+                                  <td style={{padding: '3px 8px', textAlign: 'right', color: '#065f46'}}>
+                                    {Number.isFinite(hang) && hang > 0
+                                      ? Math.round(hang).toLocaleString() + ' lb'
+                                      : '—'}
+                                  </td>
+                                  <td style={{padding: '3px 8px', color: '#6b7280', fontSize: 10}}>
+                                    {fRow ? formatAdgCalc(fRow) : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       )}
                     </div>
                   );
@@ -1043,6 +1135,21 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                   const cow = cowsById.get(cid);
                   if (!cow) return null;
                   const row = forecast.animalRows.find((r) => r.cow.id === cid);
+                  // Projected weight for THIS hide month — operator wants to
+                  // see what she'd weigh if sent in this month, even though
+                  // she's excluded from the totals (Codex 2026-05-04 #3).
+                  const hideMonthProjected =
+                    row &&
+                    Number.isFinite(row.anchorWeight) &&
+                    Number.isFinite(row.anchorMs) &&
+                    Number.isFinite(row.adg)
+                      ? projectedWeightAtMonth({
+                          anchorWeight: row.anchorWeight,
+                          anchorMs: row.anchorMs,
+                          targetMonthKey: bucket.monthKey,
+                          adg: row.adg,
+                        })
+                      : null;
                   return (
                     <tr
                       key={'hidden-' + cid}
@@ -1055,8 +1162,24 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                       <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
                         {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
                       </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
-                        {row?.readyMonth ? 'rolled to ' + monthLabel(row.readyMonth) : 'no eligible month'}
+                      <td
+                        data-hidden-projected={cid}
+                        style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}
+                      >
+                        {hideMonthProjected != null && Number.isFinite(hideMonthProjected) ? (
+                          <>
+                            {Math.round(hideMonthProjected).toLocaleString() + ' lb'}
+                            {row?.readyMonth && row.readyMonth !== bucket.monthKey && (
+                              <span style={{display: 'block', fontSize: 10, fontStyle: 'italic'}}>
+                                rolled to {monthLabel(row.readyMonth)}
+                              </span>
+                            )}
+                          </>
+                        ) : row?.readyMonth ? (
+                          'rolled to ' + monthLabel(row.readyMonth)
+                        ) : (
+                          'no eligible month'
+                        )}
                       </td>
                       <td style={{padding: '6px 8px', color: '#9ca3af', fontSize: 11, fontStyle: 'italic'}}>
                         hidden here
@@ -1096,16 +1219,26 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
   );
 }
 
-function Watchlist({rows, canEdit, onToggleHidden, fmt}) {
+function AttentionSection({rows, canEdit, onToggleHidden, fmt}) {
+  if (!rows || rows.length === 0) {
+    return (
+      <div style={tile} data-forecast-attention data-forecast-watchlist>
+        <div style={sectionHeader}>NEEDS ATTENTION</div>
+        <div data-attention-empty style={{fontSize: 12, color: '#6b7280', fontStyle: 'italic', padding: '4px 0'}}>
+          No cattle need attention.
+        </div>
+      </div>
+    );
+  }
   return (
-    <div style={tile} data-forecast-watchlist>
+    <div style={tile} data-forecast-attention data-forecast-watchlist>
       <div style={sectionHeader}>
-        WATCHLIST
+        NEEDS ATTENTION
         <span style={{fontWeight: 400, color: '#9ca3af', marginLeft: 6}}>({rows.length})</span>
       </div>
       <div style={{fontSize: 11, color: '#6b7280', marginBottom: 8}}>
-        Cattle that don't land cleanly in a forecast month. Each row shows the latest weight, ADG, and why the cow
-        didn't get a planned month — adjust the underlying data (weigh-in, DOB) or unhide a month to bring her back.
+        Cattle that don't land cleanly in a planned month. Each row shows the latest weight, ADG, and why the cow didn't
+        get a planned month — adjust the underlying data (weigh-in, DOB) or unhide a month to bring her back.
       </div>
       <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}}>
         <thead>

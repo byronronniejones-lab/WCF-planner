@@ -340,6 +340,112 @@ test('forecast: per-cow row shows ADG value + calc text', async ({page, cattleFo
   expect(rowText).toMatch(/lb\/day · (last [23] weigh-ins|1 weigh-in \+ global|DOB \+ global|global only)/);
 });
 
+test('forecast: Attention section near top with rows or empty state', async ({page, cattleForecastScenario}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  // The Attention section ALWAYS renders, even when empty (Codex 2026-05-04
+  // follow-up). With the seed's W1 cow (no weight + no DOB), at least one
+  // attention row exists, so the empty-state element is absent.
+  const attention = page.locator('[data-forecast-attention]');
+  await expect(attention).toBeVisible();
+  // Section header text is the explicit operator label.
+  await expect(attention).toContainText(/NEEDS ATTENTION/i);
+  // Attention must render BEFORE the year selector — no scroll past month
+  // tiles to find it. Compare DOM position via getBoundingClientRect.
+  const yearBtn = page.locator('[data-year-button]').first();
+  if ((await yearBtn.count()) > 0) {
+    const aBox = await attention.boundingBox();
+    const yBox = await yearBtn.boundingBox();
+    expect(aBox.y).toBeLessThan(yBox.y);
+  }
+});
+
+test('forecast: actual-batch month shows "X cows processed" and lists cow tags', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  // Seed an actual ACTIVE batch in current month so its month tile renders
+  // a "processed" pill + per-cow detail under the batch row.
+  const monthKey = new Date().toISOString().slice(0, 7);
+  await supabaseAdmin.from('cattle_processing_batches').insert({
+    id: 'b-actual-test-1',
+    name: 'C-26-90',
+    status: 'active',
+    actual_process_date: monthKey + '-04',
+    planned_process_date: monthKey + '-04',
+    cows_detail: [
+      {cattle_id: 'F1', tag: '1001', live_weight: 1100, hanging_weight: null},
+      {cattle_id: 'F-AT-MAX', tag: '1002', live_weight: 1450, hanging_weight: null},
+    ],
+    total_live_weight: 2550,
+    total_hanging_weight: null,
+  });
+  await supabaseAdmin
+    .from('cattle')
+    .update({herd: 'processed', processing_batch_id: 'b-actual-test-1'})
+    .in('id', ['F1', 'F-AT-MAX']);
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  const tile = page.locator(`[data-month-bucket="${monthKey}"]`);
+  await expect(tile).toBeVisible();
+
+  // Pill: "2 cows processed" rendered by the new processed-count pill.
+  const processedPill = tile.locator('[data-month-processed-count]');
+  await expect(processedPill).toBeVisible();
+  await expect(processedPill).toContainText('2 cows processed');
+
+  // The actual batch row carries cow tags + status + name.
+  const batchRow = tile.locator('[data-actual-batch="b-actual-test-1"]');
+  await expect(batchRow).toBeVisible();
+  await expect(batchRow).toContainText('C-26-90');
+  await expect(batchRow).toContainText('1001');
+  await expect(batchRow).toContainText('1002');
+
+  // Per-cow expanded table.
+  const innerTable = page.locator('[data-actual-batch-table="b-actual-test-1"]');
+  await expect(innerTable).toBeVisible();
+  await expect(innerTable.locator('[data-actual-batch-row="F1"]')).toBeVisible();
+  await expect(innerTable.locator('[data-actual-batch-row="F-AT-MAX"]')).toBeVisible();
+});
+
+test('forecast: hidden row shows projected weight for the hide month + Unhide button', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  // Find F-HIDE's assigned month bucket (current/future tiles default-expanded).
+  const fHideRow = page.locator('[data-month-row="F-HIDE"]').first();
+  await expect(fHideRow).toBeVisible({timeout: 10_000});
+  const hiddenMonth = await fHideRow.evaluate((el) => {
+    const bucket = el.closest('[data-month-bucket]');
+    return bucket ? bucket.getAttribute('data-month-bucket') : null;
+  });
+
+  // Hide F-HIDE in that month.
+  await page.locator('[data-toggle-hide="F-HIDE"]').click();
+  // DB row landed.
+  await expect
+    .poll(async () => {
+      const r = await supabaseAdmin.from('cattle_forecast_hidden').select('cattle_id').eq('cattle_id', 'F-HIDE');
+      return r.data?.length || 0;
+    })
+    .toBe(1);
+
+  // Hidden-here row in the original tile shows a projected weight (lb)
+  // for THAT month — not just "rolled to …" — and an Unhide button.
+  const hiddenCell = page.locator(`[data-month-bucket="${hiddenMonth}"] [data-hidden-projected="F-HIDE"]`);
+  await expect(hiddenCell).toBeVisible({timeout: 5_000});
+  await expect(hiddenCell).toContainText(/\d+,?\d* lb/);
+  await expect(page.locator('[data-toggle-unhide="F-HIDE"]')).toBeVisible();
+});
+
 test('forecast: include-heifers modal rows show age + latest weight visible without expanding', async ({
   page,
   cattleForecastScenario,
