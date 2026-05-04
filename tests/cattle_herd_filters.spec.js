@@ -86,16 +86,12 @@ test('age sort youngest-first orders newest birth_date first inside tile', async
   await page.goto('/cattle/herds');
   await waitForLoaded(page);
 
-  // Default sort is [{tag asc}]. Remove it so age becomes the primary sort
-  // (otherwise age would be a tiebreaker behind tag and the order assertion
-  // would fail).
-  const tagRule = page.locator('[data-sort-rule="tag"]');
-  await expect(tagRule).toBeVisible();
-  await tagRule.locator('button').last().click(); // × remove
-  await expect(tagRule).toHaveCount(0);
-
-  // Add age sort.
+  // Add age sort. Adding a non-tag sort replaces the default Tag sort so
+  // the visible chip order matches the actual primary sort.
   await page.locator('select[data-sort-add]').selectOption('age');
+  const sortRules = page.locator('[data-sort-rule]');
+  await expect(sortRules.nth(0)).toHaveAttribute('data-sort-rule', 'age');
+  await expect(sortRules).toHaveCount(1);
   // Default dir is asc = youngest first. Verify chip badge.
   const ageRule = page.locator('[data-sort-rule="age"]');
   await expect(ageRule).toBeVisible();
@@ -165,7 +161,46 @@ test('sex + age compose; same survivors across grouped and flat modes', async ({
 });
 
 // --------------------------------------------------------------------------
-// Test 4 — calved=no in mommas
+// Test 4 — Sex popover option alignment
+// --------------------------------------------------------------------------
+test('choice filter popovers align controls and labels in clean rows', async ({page, cattleHerdFiltersScenario}) => {
+  await page.goto('/cattle/herds');
+  await waitForLoaded(page);
+
+  async function assertChoiceRows(filterKey, inputType, labels) {
+    await openFilter(page, filterKey);
+    const popover = page.locator(`[data-filter-popover="${filterKey}"]`);
+    const inputBoxes = [];
+    const labelBoxes = [];
+    for (const [i, label] of labels.entries()) {
+      const inputBox = await popover.locator(`input[type="${inputType}"]`).nth(i).boundingBox();
+      const labelBox = await popover.getByText(label, {exact: true}).boundingBox();
+      expect(inputBox).toBeTruthy();
+      expect(labelBox).toBeTruthy();
+      inputBoxes.push(inputBox);
+      labelBoxes.push(labelBox);
+    }
+
+    for (let i = 1; i < inputBoxes.length; i += 1) {
+      expect(Math.abs(inputBoxes[i].x - inputBoxes[0].x)).toBeLessThan(1);
+      expect(Math.abs(labelBoxes[i].x - labelBoxes[0].x)).toBeLessThan(1);
+      expect(labelBoxes[i].height).toBeLessThan(22);
+    }
+    expect(labelBoxes[0].x - inputBoxes[0].x).toBeLessThan(36);
+    await popover.getByText('Close', {exact: true}).click();
+  }
+
+  await assertChoiceRows('sex', 'checkbox', ['Cow', 'Heifer', 'Bull', 'Steer']);
+  await assertChoiceRows('weightTier', 'radio', [
+    'Has weight',
+    'No weight',
+    'Stale weight (>90 days)',
+    'Stale or no weight',
+  ]);
+});
+
+// --------------------------------------------------------------------------
+// Test 5 — calved=no in mommas
 // --------------------------------------------------------------------------
 test('calved=no in mommas surfaces only the never-calved heifer', async ({page, cattleHerdFiltersScenario}) => {
   await page.goto('/cattle/herds');

@@ -693,15 +693,17 @@ export function buildForecast({
     readyByYear[b.year] = (readyByYear[b.year] || 0) + b.count;
   }
   // "Finish candidates on farm" = the herd-shape that could ever finish:
-  // every backgrounder + every finisher + momma steers + momma heifers.
-  // Excludes momma cows, bulls, and outcome herds (processed/sold/deceased).
+  // every backgrounder + every finisher + momma steers + eligible momma heifers.
+  // Excludes momma cows, bulls, outcome herds (processed/sold/deceased), plus
+  // momma heifers filtered out of the Include modal (pregnant or over 15 months).
   // Codex 2026-05-04 correction: Summary's "Eligible cattle" subtext shows
   // this number, not raw cattle.length, so operators don't see historical
   // outcome cattle counted as on-farm.
   const finishCandidates = (cattle || []).filter((c) => {
     if (!c) return false;
     if (c.herd === 'backgrounders' || c.herd === 'finishers') return true;
-    if (c.herd === 'mommas' && (c.sex === 'steer' || c.sex === 'heifer')) return true;
+    if (c.herd === 'mommas' && c.sex === 'steer') return true;
+    if (isHeiferEligibleForInclude(c, todayMs)) return true;
     return false;
   }).length;
 

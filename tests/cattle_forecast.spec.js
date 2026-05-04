@@ -46,6 +46,13 @@ async function setRoleOverride(page, role) {
   }, role);
 }
 
+async function readFinishCandidateCount(page) {
+  const text = await page.locator('[data-forecast-summary-strip]').innerText();
+  const match = /(\d[\d,]*)\s+finish candidates on farm/i.exec(text);
+  expect(match).toBeTruthy();
+  return Number(match[1].replace(/,/g, ''));
+}
+
 // --------------------------------------------------------------------------
 // Test 1 — Past-month regression: nextProcessorBatch month is current or future.
 // --------------------------------------------------------------------------
@@ -70,6 +77,28 @@ test('forecast: nextProcessorBatch lands in current or future month, never past'
   // both eligible, so a panel with "No virtual batch" copy would mean the
   // helper miscomputed.
   expect(panelText).not.toContain('no virtual batch');
+});
+
+test('forecast: summary year tiles use bold numeric years instead of relative labels', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  const summary = page.locator('[data-forecast-summary-strip]');
+  const text = await summary.innerText();
+  const currentYear = new Date().getUTCFullYear();
+
+  for (const year of [currentYear, currentYear + 1, currentYear + 2, currentYear + 3]) {
+    const yearLabel = summary.locator(`[data-summary-tile-label="${year}"]`);
+    await expect(yearLabel).toBeVisible();
+    await expect(yearLabel).toHaveCSS('font-weight', /^(700|800|bold)$/);
+  }
+  expect(text).not.toContain('Ready this year');
+  expect(text).not.toContain('Next year');
+  expect(text).not.toContain('2 yr out');
+  expect(text).not.toContain('3 yr out');
 });
 
 // --------------------------------------------------------------------------
@@ -980,7 +1009,54 @@ test('forecast: include-heifers modal omits pregnant heifers and heifers over 15
 });
 
 // --------------------------------------------------------------------------
-// Test 14 — Stale heifer includes are pruned: hidden from the modal,
+// Test 14 — Finish candidate summary excludes momma heifers that the modal
+// filters out (pregnant or over 15 months).
+// --------------------------------------------------------------------------
+test('forecast: finish candidate summary excludes pregnant and over-15-month momma heifers', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+  const before = await readFinishCandidateCount(page);
+
+  await supabaseAdmin.from('cattle').insert([
+    {
+      id: 'M-HEIFER-SUMMARY-PREG',
+      tag: '2030',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      breeding_status: 'PREGNANT',
+      origin: 'Smith Ranch',
+      birth_date: '2025-09-01',
+      old_tags: [],
+    },
+    {
+      id: 'M-HEIFER-SUMMARY-AGED',
+      tag: '2031',
+      sex: 'heifer',
+      herd: 'mommas',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      origin: 'Smith Ranch',
+      birth_date: '2024-01-01',
+      old_tags: [],
+    },
+  ]);
+  await supabaseAdmin
+    .from('cattle_forecast_heifer_includes')
+    .insert([{cattle_id: 'M-HEIFER-SUMMARY-PREG'}, {cattle_id: 'M-HEIFER-SUMMARY-AGED'}]);
+
+  await page.reload();
+  await waitForForecastLoaded(page);
+  await expect.poll(() => readFinishCandidateCount(page)).toBe(before);
+});
+
+// --------------------------------------------------------------------------
+// Test 15 — Stale heifer includes are pruned: hidden from the modal,
 // excluded from the "selected" count, and DELETED from the DB on Confirm.
 // --------------------------------------------------------------------------
 test('forecast: include-heifers modal hides stale includes and deletes them on Confirm', async ({
@@ -1035,7 +1111,7 @@ test('forecast: include-heifers modal hides stale includes and deletes them on C
 });
 
 // --------------------------------------------------------------------------
-// Test 15 — Preselect path: include rows that point at an eligible heifer
+// Test 16 — Preselect path: include rows that point at an eligible heifer
 // AND a stale one. Open modal, click Confirm without changes, the stale
 // row gets pruned and the eligible row is preserved (sanitize-on-Confirm +
 // useEffect prune-on-eligibility-change locks).
@@ -1111,7 +1187,7 @@ test('forecast: include-heifers Confirm prunes stale preselected rows but preser
 });
 
 // --------------------------------------------------------------------------
-// Test 16 — Mid-flight prune: a staged heifer becomes ineligible WHILE the
+// Test 17 — Mid-flight prune: a staged heifer becomes ineligible WHILE the
 // modal is open (cattle prop refreshes via patchCow → reload). The staged
 // useEffect drops her from the set; Confirm leaves no DB row.
 // --------------------------------------------------------------------------

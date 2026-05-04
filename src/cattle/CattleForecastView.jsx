@@ -216,6 +216,7 @@ const CattleForecastView = ({
       todayMs: Date.now(),
     });
   }, [cattle, weighIns, settings, includes, hidden, realBatches]);
+  const summaryYear = new Date().getUTCFullYear();
 
   // ── settings panel handlers ────────────────────────────────────────────────
   function patchDraft(patch) {
@@ -466,13 +467,26 @@ const CattleForecastView = ({
                   sub={forecast.summary.finishCandidates + ' finish candidates on farm'}
                 />
                 <SummaryTile
-                  label="Ready this year"
+                  label={String(summaryYear)}
                   value={forecast.summary.readyThisYear.toLocaleString()}
                   color="#991b1b"
+                  labelStrong
                 />
-                <SummaryTile label="Next year" value={forecast.summary.readyNextYear.toLocaleString()} />
-                <SummaryTile label="2 yr out" value={forecast.summary.readyTwoYears.toLocaleString()} />
-                <SummaryTile label="3 yr out" value={forecast.summary.readyThreeYears.toLocaleString()} />
+                <SummaryTile
+                  label={String(summaryYear + 1)}
+                  value={forecast.summary.readyNextYear.toLocaleString()}
+                  labelStrong
+                />
+                <SummaryTile
+                  label={String(summaryYear + 2)}
+                  value={forecast.summary.readyTwoYears.toLocaleString()}
+                  labelStrong
+                />
+                <SummaryTile
+                  label={String(summaryYear + 3)}
+                  value={forecast.summary.readyThreeYears.toLocaleString()}
+                  labelStrong
+                />
                 <SummaryTile
                   label="Watchlist"
                   value={forecast.summary.watchlistCount.toLocaleString()}
@@ -763,10 +777,20 @@ const CattleForecastView = ({
 
 // ── small UI subcomponents ────────────────────────────────────────────────────
 
-function SummaryTile({label, value, sub, color = '#991b1b'}) {
+function SummaryTile({label, value, sub, color = '#991b1b', labelStrong = false}) {
   return (
     <div style={tile}>
-      <div style={{fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4}}>
+      <div
+        data-summary-tile-label={label}
+        style={{
+          fontSize: 10,
+          color: '#9ca3af',
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          marginBottom: 4,
+          fontWeight: labelStrong ? 800 : 600,
+        }}
+      >
         {label}
       </div>
       <div style={{fontSize: 22, fontWeight: 700, color, lineHeight: 1}}>{value}</div>

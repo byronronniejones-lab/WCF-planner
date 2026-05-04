@@ -356,6 +356,39 @@ describe('buildForecast — stale heifer-include rows do not leak ineligible hei
     });
     expect(r.animalRows.find((row) => row.cow.id === 'm-heifer-old')).toBeUndefined();
   });
+  it('finish candidate summary excludes pregnant and over-15-month momma heifers', () => {
+    const cattle = [
+      cow({id: 'finisher', tag: '9101', herd: 'finishers', sex: 'steer'}),
+      cow({id: 'backgrounder', tag: '9102', herd: 'backgrounders', sex: 'heifer'}),
+      cow({id: 'momma-steer', tag: '9103', herd: 'mommas', sex: 'steer'}),
+      cow({id: 'momma-heifer-ok', tag: '9104', herd: 'mommas', sex: 'heifer', birth_date: '2025-08-01'}),
+      cow({
+        id: 'momma-heifer-pregnant',
+        tag: '9105',
+        herd: 'mommas',
+        sex: 'heifer',
+        birth_date: '2025-08-01',
+        breeding_status: 'PREGNANT',
+      }),
+      cow({id: 'momma-heifer-aged', tag: '9106', herd: 'mommas', sex: 'heifer', birth_date: '2024-09-01'}),
+      cow({id: 'momma-cow', tag: '9107', herd: 'mommas', sex: 'cow'}),
+      cow({id: 'bull', tag: '9108', herd: 'bulls', sex: 'bull'}),
+      cow({id: 'processed', tag: '9109', herd: 'processed', sex: 'steer'}),
+    ];
+    const out = buildForecast({
+      cattle,
+      weighIns: [],
+      settings: {fallbackAdg: 1.5},
+      // Stale include rows must not make filtered heifers count as on-farm
+      // finish candidates.
+      includes: new Set(['momma-heifer-ok', 'momma-heifer-pregnant', 'momma-heifer-aged']),
+      hidden: [],
+      realBatches: [],
+      todayMs: TODAY,
+    });
+
+    expect(out.summary.finishCandidates).toBe(4);
+  });
   it('auto-promoted cow (was-heifer) in includes does not leak as forecast-eligible', () => {
     // After mig 044's trigger fires, heifer.sex becomes 'cow'. The
     // heifer_includes row still references her id, but eligibilityFor

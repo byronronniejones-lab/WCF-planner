@@ -355,7 +355,10 @@ const CattleHerdsView = ({
   function addSortRule(key) {
     setSortRules((prev) => {
       if (prev.find((r) => r.key === key)) return prev;
-      return [...prev, {key, dir: 'asc'}];
+      const nextRule = {key, dir: 'asc'};
+      const onlyDefaultTag = prev.length === 1 && prev[0].key === 'tag' && prev[0].dir === 'asc';
+      if (onlyDefaultTag && key !== 'tag') return [nextRule];
+      return [nextRule, ...prev];
     });
   }
   function removeSortRule(idx) {
@@ -2272,9 +2275,20 @@ function FilterChipPopover({
     padding: '10px 12px',
     boxShadow: '0 4px 16px rgba(0,0,0,.08)',
     zIndex: 50,
-    minWidth: 220,
+    minWidth: 260,
   };
   const rowS = {display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 12};
+  const choiceRowS = {
+    display: 'grid',
+    gridTemplateColumns: '18px 1fr',
+    columnGap: 8,
+    alignItems: 'center',
+    marginBottom: 6,
+    fontSize: 12,
+    width: '100%',
+    justifyItems: 'start',
+  };
+  const choiceTextS = {minWidth: 0, whiteSpace: 'nowrap'};
 
   function FemaleHint() {
     return (
@@ -2287,13 +2301,13 @@ function FilterChipPopover({
       return (
         <div style={popS} data-filter-popover={filterKey}>
           {[...CATTLE_HERD_KEYS, ...CATTLE_OUTCOME_KEYS].map((h) => (
-            <label key={h} style={{...rowS, cursor: 'pointer'}}>
+            <label key={h} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="checkbox"
                 checked={(filters.herdSet || []).includes(h)}
                 onChange={() => toggleFilterArrayValue('herdSet', h)}
               />
-              <span>{HERD_LABELS[h]}</span>
+              <span style={choiceTextS}>{HERD_LABELS[h]}</span>
             </label>
           ))}
           <PopoverFooter onClear={() => clearFilter('herdSet')} onClose={onClose} />
@@ -2303,13 +2317,13 @@ function FilterChipPopover({
       return (
         <div style={popS} data-filter-popover={filterKey}>
           {SEX_OPTIONS.map((opt) => (
-            <label key={opt.key} style={{...rowS, cursor: 'pointer'}}>
+            <label key={opt.key} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="checkbox"
                 checked={(filters.sex || []).includes(opt.key)}
                 onChange={() => toggleFilterArrayValue('sex', opt.key)}
               />
-              <span>{opt.label}</span>
+              <span style={choiceTextS}>{opt.label}</span>
             </label>
           ))}
           <PopoverFooter onClear={() => clearFilter('sex')} onClose={onClose} />
@@ -2350,7 +2364,7 @@ function FilterChipPopover({
     case 'calvedStatus':
       return (
         <div style={popS} data-filter-popover={filterKey}>
-          <label style={{...rowS, cursor: 'pointer'}}>
+          <label style={{...choiceRowS, cursor: 'pointer'}}>
             <input
               type="radio"
               name="calvedStatus"
@@ -2360,9 +2374,9 @@ function FilterChipPopover({
                 setFilter('calvedStatus', 'yes');
               }}
             />
-            <span>Has calved</span>
+            <span style={choiceTextS}>Has calved</span>
           </label>
-          <label style={{...rowS, cursor: 'pointer'}}>
+          <label style={{...choiceRowS, cursor: 'pointer'}}>
             <input
               type="radio"
               name="calvedStatus"
@@ -2372,9 +2386,9 @@ function FilterChipPopover({
                 setFilter('calvedStatus', 'no');
               }}
             />
-            <span>Never calved</span>
+            <span style={choiceTextS}>Never calved</span>
           </label>
-          <label style={{...rowS, cursor: 'pointer'}}>
+          <label style={{...choiceRowS, cursor: 'pointer'}}>
             <input
               type="radio"
               name="calvedStatus"
@@ -2385,7 +2399,7 @@ function FilterChipPopover({
                 setFilter('calvingWindow', {mode: 'noneSince', since: `${yr}-01-01`});
               }}
             />
-            <span>Not calved this year</span>
+            <span style={choiceTextS}>Not calved this year</span>
           </label>
           <FemaleHint />
           <PopoverFooter
@@ -2400,23 +2414,23 @@ function FilterChipPopover({
     case 'breedingBlacklist':
       return (
         <div style={popS} data-filter-popover={filterKey}>
-          <label style={{...rowS, cursor: 'pointer'}}>
+          <label style={{...choiceRowS, cursor: 'pointer'}}>
             <input
               type="radio"
               name="breedingBlacklist"
               checked={filters.breedingBlacklist === true}
               onChange={() => setFilter('breedingBlacklist', true)}
             />
-            <span>Only blacklisted</span>
+            <span style={choiceTextS}>Only blacklisted</span>
           </label>
-          <label style={{...rowS, cursor: 'pointer'}}>
+          <label style={{...choiceRowS, cursor: 'pointer'}}>
             <input
               type="radio"
               name="breedingBlacklist"
               checked={filters.breedingBlacklist === false}
               onChange={() => setFilter('breedingBlacklist', false)}
             />
-            <span>Hide blacklisted</span>
+            <span style={choiceTextS}>Hide blacklisted</span>
           </label>
           <PopoverFooter onClear={() => clearFilter('breedingBlacklist')} onClose={onClose} />
         </div>
@@ -2430,14 +2444,14 @@ function FilterChipPopover({
             {k: 'staleWeight', label: 'Stale weight (>90 days)'},
             {k: 'staleOrNoWeight', label: 'Stale or no weight'},
           ].map((opt) => (
-            <label key={opt.k} style={{...rowS, cursor: 'pointer'}}>
+            <label key={opt.k} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="radio"
                 name="weightTier"
                 checked={filters.weightTier === opt.k}
                 onChange={() => setFilter('weightTier', opt.k)}
               />
-              <span>{opt.label}</span>
+              <span style={choiceTextS}>{opt.label}</span>
             </label>
           ))}
           <PopoverFooter onClear={() => clearFilter('weightTier')} onClose={onClose} />
@@ -2541,13 +2555,13 @@ function FilterChipPopover({
       return (
         <div style={popS} data-filter-popover={filterKey}>
           {BREEDING_STATUS_OPTIONS.map((opt) => (
-            <label key={opt.key} style={{...rowS, cursor: 'pointer'}}>
+            <label key={opt.key} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="checkbox"
                 checked={(filters.breedingStatus || []).includes(opt.key)}
                 onChange={() => toggleFilterArrayValue('breedingStatus', opt.key)}
               />
-              <span>{opt.label}</span>
+              <span style={choiceTextS}>{opt.label}</span>
             </label>
           ))}
           <PopoverFooter onClear={() => clearFilter('breedingStatus')} onClose={onClose} />
@@ -2557,14 +2571,14 @@ function FilterChipPopover({
       return (
         <div style={popS} data-filter-popover={filterKey}>
           {['any', 'present', 'missing'].map((v) => (
-            <label key={v} style={{...rowS, cursor: 'pointer'}}>
+            <label key={v} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="radio"
                 name="damPresence"
                 checked={(filters.damPresence || 'any') === v}
                 onChange={() => (v === 'any' ? clearFilter('damPresence') : setFilter('damPresence', v))}
               />
-              <span>{v}</span>
+              <span style={choiceTextS}>{v}</span>
             </label>
           ))}
           <PopoverFooter onClear={() => clearFilter('damPresence')} onClose={onClose} />
@@ -2574,14 +2588,14 @@ function FilterChipPopover({
       return (
         <div style={popS} data-filter-popover={filterKey}>
           {['any', 'present', 'missing'].map((v) => (
-            <label key={v} style={{...rowS, cursor: 'pointer'}}>
+            <label key={v} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="radio"
                 name="sirePresence"
                 checked={(filters.sirePresence || 'any') === v}
                 onChange={() => (v === 'any' ? clearFilter('sirePresence') : setFilter('sirePresence', v))}
               />
-              <span>{v}</span>
+              <span style={choiceTextS}>{v}</span>
             </label>
           ))}
           <PopoverFooter onClear={() => clearFilter('sirePresence')} onClose={onClose} />
@@ -2627,13 +2641,13 @@ function FilterChipPopover({
       return (
         <div style={{...popS, maxHeight: 280, overflowY: 'auto'}} data-filter-popover={filterKey}>
           {breedFilterOptions.map((opt) => (
-            <label key={opt.label} style={{...rowS, cursor: 'pointer'}}>
+            <label key={opt.label} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="checkbox"
                 checked={(filters.breed || []).includes(opt.label)}
                 onChange={() => toggleFilterArrayValue('breed', opt.label)}
               />
-              <span>
+              <span style={choiceTextS}>
                 {opt.label}
                 {opt.source === 'historical' && <em style={{color: '#9ca3af', marginLeft: 4}}>(historical)</em>}
               </span>
@@ -2646,13 +2660,13 @@ function FilterChipPopover({
       return (
         <div style={{...popS, maxHeight: 280, overflowY: 'auto'}} data-filter-popover={filterKey}>
           {originFilterOptions.map((opt) => (
-            <label key={opt.label} style={{...rowS, cursor: 'pointer'}}>
+            <label key={opt.label} style={{...choiceRowS, cursor: 'pointer'}}>
               <input
                 type="checkbox"
                 checked={(filters.origin || []).includes(opt.label)}
                 onChange={() => toggleFilterArrayValue('origin', opt.label)}
               />
-              <span>
+              <span style={choiceTextS}>
                 {opt.label}
                 {opt.source === 'historical' && <em style={{color: '#9ca3af', marginLeft: 4}}>(historical)</em>}
               </span>

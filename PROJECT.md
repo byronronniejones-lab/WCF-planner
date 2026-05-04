@@ -2,74 +2,55 @@
 
 **Farm-management web app for White Creek Farm.** Owner + admin: Ronnie Jones. Live at [https://wcfplanner.com](https://wcfplanner.com).
 
-Started as a single-file ~19,445-line `index.html` using Babel-in-browser. Over April 19–21, 2026 it was migrated to a Vite build with 54+ extracted components under `src/`, 14 feature-scoped libs, 10 React Contexts, and per-tab URLs via a React Router adapter. Production serves the Vite bundle from branch `main`. This doc is the living reference; for per-session narrative history see [`archive/SESSION_LOG.md`](archive/SESSION_LOG.md).
+Started as a single-file ~19,445-line `index.html` using Babel-in-browser. Over April 19–21, 2026 it was migrated to a Vite build with 54+ extracted components under `src/`, 14 feature-scoped libs, 10 React Contexts, and per-tab URLs via a React Router adapter. Production serves the Vite bundle from branch `main`.
 
-**Last consolidated:** 2026-04-21 session 3 (post-polish cutover). **Last session-index update:** 2026-05-01 (Tasks Phase B PROD deploy P1-P6 green; P7 pending; Tasks v1 combined-build plan rev 5 captured — see §8). Update again to "Phase B PROD deploy complete" once P7 verifies.
+`PROJECT.md` is the project-specific source of truth: product goal, stack, architecture, schema, domain rules, design constraints, load-bearing contracts, roadmap, and build history. Reusable workflow SOP, prompt-relay rules, branch/merge approval rules, validation floor, and session-wrap rules live in [`HO.md`](HO.md) and should not be duplicated here. For per-session narrative history, see [`archive/SESSION_LOG.md`](archive/SESSION_LOG.md).
+
+**Last consolidated:** 2026-04-21 session 3 (post-polish cutover). **Last session-index update:** 2026-05-04 (Cattle Forecast shipped, PROD mig 043 applied, forecast/heifer/herd hotfixes captured — see §8 + Part 4). Update Tasks Phase B to "PROD deploy complete" once P7 verifies.
 
 ---
 
 ## Table of contents
 
-- **Part 1 — Living Reference** — how to run a session, infrastructure, schema, architecture, domain, design rules, don't-touch list, roadmap
+- **Part 1 — Project Reference** — product goal, infrastructure, schema, architecture, domain, design constraints, load-bearing contracts, roadmap
 - **Part 2 — Design Decisions** — load-bearing choices with rationale and rejected alternatives
 - **Part 3 — History** — migration origin, phase tally, transferable lessons
 - **Part 4 — Session Index** — one-line map of every dated session; detail lives in git log + `archive/SESSION_LOG.md`
 
 ---
 
-# Part 1 — Living Reference
+# Part 1 — Project Reference
 
-## 1. How to run a session
+## 1. Project overview
 
-### SOP
+WCF Planner is White Creek Farm's internal farm-management application. It centralizes livestock planning, daily reports, weigh-ins, feed/fuel workflows, equipment records, public webforms, operational tasking, and reporting surfaces that support farm decisions.
 
-1. Read this document top to bottom.
-2. Ask Ronnie what he wants to work on — don't assume.
-3. Read the relevant `src/` file(s) before writing any code.
-4. Check §8 (Open items / roadmap) for pending work.
-5. If the task touches anything in §7 (Don't-touch list), stop and ask before editing.
+The app is a React/Vite SPA backed by Supabase and deployed through Netlify. It favors practical farm operations over marketing-style UI: dense but readable dashboards, clear tables, direct edit flows, and fast access to the current operational state.
 
-### Deployment SOP — NEVER skip
+Workflow SOP, agent roles, prompt formats, approval gates, branch/merge rules, and session-wrap rules are intentionally not maintained in this file. Those belong in `HO.md`. This file should stay focused on facts and decisions that are specific to WCF Planner.
 
-**NEVER run `git commit`, `git push`, or any deploy/merge command without explicit user approval in the current session turn.**
+### Design constraints
 
-- `commit` = do it. One-line status update. No "ready to push?" follow-up.
-- `push` / `deploy` / `merge` / `cutover` = fresh explicit approval in the same turn. Commit approval does NOT extend.
-- **Lane approval** (e.g., "go on C1 deploy", "go on C4 PROD apply") covers SQL writes, Vault provisioning, Supabase function deploys, `.env.prod.local`-driven psql, and migration applies inside that lane. Commit and push remain separate explicit approvals. `exec_sql` in PROD remains absolutely forbidden under any approval shape.
-- **Session wrap / docs rule:** Ronnie alone declares session wrap. HO.md, PROJECT.md, archive/session docs, and session-index/wrap updates are not touched just because work appears complete. They are updated only after Ronnie explicitly asks for wrap/handoff/docs work, or requests a specific doc update.
-- Approval for one change does NOT imply approval for subsequent changes.
-- If Ronnie says "make change X," make the change and wait — do not commit.
-- Background agents and worktrees follow the same rule.
-- Never merge anything to `main` without "merge" or "cutover" from Ronnie. Production runs from `main`.
-- Never run destructive Supabase ops (`DROP`, `TRUNCATE`, schema changes, `DELETE` without `WHERE`) without approval.
-
-### Ronnie's working style
-
-- Ask lots of questions before building. Never jump into code without fully understanding scope.
-- When scope is large, map out the FULL design, confirm it, then build in phases.
-- Never assume. If something is ambiguous, ask.
-- Be honest about mistakes. Ronnie notices when Claude confirms things without checking the code.
-- **No purple colors anywhere in the UI.**
-- Prefers bulletproof over fast. No shortcuts.
-- "We don't spare any expense for tokens" — read the full file if needed, don't skim.
+- **No purple-heavy UI.** Keep the product grounded in the existing farm-management palette and program-specific visual language.
+- Operational views should be efficient and scannable. Avoid decorative landing-page patterns where the user needs a working tool.
+- User-facing flows should preserve existing farm vocabulary unless a lane explicitly renames it.
 
 ### Critical codebase constraints (post-migration)
 
 - **Vite build, not Babel-in-browser.** Source is ESM under `src/`. A one-time `wcf-babel-*` localStorage purge runs on every mount — safe to leave in forever.
 - **React hooks rules:** never put `useState` / `useEffect` / `useRef` inside conditional blocks. Always at top level of the component function.
-- **Hook-based view extractions close over many App-scope names.** Missing one = runtime `ReferenceError` on first nav to that view. Builds pass silently; only the browser catches these. Run the bare-name audit before pushing any hook-based extraction (see §Part 3 "Lessons").
+- **Hook-based view extractions close over many App-scope names.** Missing one = runtime `ReferenceError` on first nav to that view. Builds pass silently; only the browser catches these. The repo's bare-name audit practice for hook-based extractions is documented in §Part 3 "Lessons".
 - **`\u` JSX escape literals stay** (em-dashes, bullets, en-dashes). They're on the don't-touch list — removing them mid-migration is risk-for-nothing.
 - **Router is BrowserRouter with a view↔URL adapter.** `setView('X')` and `useNavigate('/path')` both work. Legacy `/#weighins` etc. bookmarks are rewritten to clean paths by a sync shim in `main.jsx` before `root.render()`.
 
-### Deployment process
+### Deployment facts
 
-1. Code changes on a feature branch (or small changes direct to `main` with approval).
-2. `git commit`, `git push`.
-3. Netlify auto-builds from `main` for production, from any other branch for preview.
-4. Production rebuild takes ~90s after push.
-5. Production: `https://wcfplanner.com` (alias `https://cheerful-narwhal-1e39f5.netlify.app`).
-6. Preview: `<branch>--cheerful-narwhal-1e39f5.netlify.app` (if branch deploys enabled) or `deploy-preview-N--…` via a PR.
-7. Rollback paths (fastest first): Netlify UI → Deploys → "Publish deploy" on a pre-incident build → `git revert -m 1 <merge-commit> && git push` → restore `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` as nuclear option.
+- Netlify auto-builds production from GitHub branch `main`.
+- Netlify can build previews from feature branches or PR deploy previews.
+- Production rebuilds usually settle in about 90 seconds after `main` updates.
+- Production: `https://wcfplanner.com` (alias `https://cheerful-narwhal-1e39f5.netlify.app`).
+- Preview shape: `<branch>--cheerful-narwhal-1e39f5.netlify.app` when branch deploys are enabled, or `deploy-preview-N--...` via a PR.
+- Rollback paths, fastest first: Netlify UI -> Deploys -> "Publish deploy" on a pre-incident build; revert the merge commit and rebuild; restore `~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19` only as a nuclear option.
 
 ---
 
@@ -105,7 +86,7 @@ Started as a single-file ~19,445-line `index.html` using Babel-in-browser. Over 
 - **SheetJS/XLSX** (`xlsx@0.18.5`) lazy-loaded via `await import('xlsx')` on first use.
 - **Geist** font from Google Fonts.
 - No TypeScript, no CSS framework — all styles are inline `style={{…}}` + scoped webform CSS in `index.html`.
-- Pre-merge gates: `format:check` (Prettier), `lint` (ESLint 9 flat config), `vitest`, `build`, focused `Playwright` per lane. CI workflow at `.github/workflows/ci.yml` runs the same set on every PR + push to main.
+- Quality tooling: `format:check` (Prettier), `lint` (ESLint 9 flat config), `vitest`, `build`, and Playwright. CI workflow at `.github/workflows/ci.yml` runs on PRs and pushes to `main`.
 
 ### Farm location
 
@@ -144,7 +125,8 @@ Affected: `profiles`, `app_store`, `webform_config`, `poultry_dailys`, `layer_da
 | `sheep_dailys` | Sheep daily reports. Sheep-specific fields (bales of hay, alfalfa lbs, minerals given/% eaten). |
 | `layer_batches` | Layer batch parent records (dedicated table). |
 | `layer_housings` | Per-housing records with `current_count` anchor model. |
-| `cattle`, `cattle_calving_records`, `cattle_processing_batches`, `cattle_feed_inputs`, `cattle_feed_tests`, `cattle_comments` | Cattle module. `cattle_comments` uses a `source` column for multi-origin timeline (`manual`/`weigh_in`/`daily_report`/`calving`). `cattle.old_tags` is jsonb — don't change its shape. |
+| `cattle`, `cattle_calving_records`, `cattle_processing_batches`, `cattle_feed_inputs`, `cattle_feed_tests`, `cattle_comments` | Cattle module. `cattle_comments` uses a `source` column for multi-origin timeline (`manual`/`weigh_in`/`daily_report`/`calving`). `cattle.old_tags` is jsonb — don't change its shape. Mig 043 simplified real `cattle_processing_batches.status` to `active|complete`; "planned" is now a computed Forecast/Batches UI concept, not a stored DB status. |
+| `cattle_forecast_settings`, `cattle_forecast_heifer_includes`, `cattle_forecast_hidden` | Cattle Forecast v1 persistence from mig 043 (source `d2eccda`; PROD + TEST applied 2026-05-04). Settings singleton controls target/display weights, fallback ADG, horizon, capacity, and included herds. Heifer includes stores explicit momma-heifer finish candidates. Hidden stores per-cow/per-month hides. |
 | `sheep`, `sheep_lambing_records` | Sheep module. |
 | `weigh_in_sessions` + `weigh_ins` | Shared across cattle/pig/broiler/sheep via `species` column. |
 | `profiles` | User profiles + roles (`farm_team`, `management`, `admin`, `inactive`). Per-program access via `program_access` text array. |
@@ -523,7 +505,7 @@ Role-derived predicates also live in main.jsx: `canEditAll`, `canDeleteDailys`, 
 
 ## 7. Don't-touch list
 
-If a change modifies any of the following, **stop and ask first.** These are ongoing constraints, not migration-era artifacts. They were originally documented in `MIGRATION_PLAN.md §10` and are promoted here as authoritative.
+The following are load-bearing project contracts, not migration-era artifacts. Changes that touch them require explicit planning and review before implementation. They were originally documented in `MIGRATION_PLAN.md §10` and are promoted here as authoritative.
 
 - **`wcfSelectAll` pagination** (`.range(from, from+999)` + while-loop pattern in `src/lib/pagination.js`). `.limit()` silently caps at 1000 — the pagination helper is the only correct way to load >1000 rows.
 - **Two-query `loadCattleWeighInsCached`** in `src/lib/cattleCache.js`. Session IDs first, then `weigh_ins.in()`. **No `!inner` joins anywhere.**
@@ -652,7 +634,7 @@ Lint at 0 errors closed Initiative B's hard milestone. Phase 2.4 (Prettier) ship
   - P4 ✓ — Mig 039 applied via psql Session Pooler. Effect checks all green: `requires_photo` dropped from both task tables; recurrence CHECK extended to include `quarterly` (interval CHECK preserved); `invoke_tasks_cron()` + `generate_task_instances(text, date[])` both SECDEF; cron.job has exactly one row `tasks-cron-daily` at `0 4 * * *` active=t; zero weekly jobs.
   - P5 ✓ — Manual 3-layer audit via `SELECT public.invoke_tasks_cron();` walked end-to-end. L1=request_id 1; L2=net._http_response status_code 200, body `{"ok":true,"generated_count":0,"skipped_count":0,"cap_exceeded":[]}`, sb-project-ref=pzfujbjtayhkdlxiblwe; L3=task_cron_runs row run_mode='cron', error_message NULL.
   - P6 ✓ — `node scripts/probe_tasks_cron_function.cjs` against PROD: 10 of 10 active probes green (cases 1-5,7,9-11 + case 5 sub-check). Cases 6+8 admin-mode probes skipped cleanly (no PROD admin creds supplied; PROD-allowed per script). PROD now carries one `tcr-probe-*` row in `task_cron_runs` from case 5 (kept as real audit per Codex Q4).
-  - P7 ⏳ PENDING — wait for first scheduled cron fire at **2026-05-02 04:00 UTC = 2026-05-01 23:00 CDT**. After fire, run via psql against PROD with `.env.prod.local` PROD_DB_URL (lane approval per §1 SOP; no `exec_sql` in PROD):
+  - P7 ⏳ PENDING — wait for first scheduled cron fire at **2026-05-02 04:00 UTC = 2026-05-01 23:00 CDT**. After fire, audit PROD via psql with `.env.prod.local` PROD_DB_URL:
 
     ```sql
     -- Layer 1: cron.job_run_details — did pg_cron's scheduler fire?
@@ -676,8 +658,8 @@ Lint at 0 errors closed Initiative B's hard milestone. Phase 2.4 (Prettier) ship
     ORDER BY ran_at DESC LIMIT 5;
     ```
 
-    Expected post-fire shape: L1 row with `status='succeeded'`; L2 row HTTP 200 + body `{"ok":true,"generated_count":0,...}`; L3 row `run_mode='cron'` counts 0/0 `error_message NULL` (no templates exist yet — counts will become non-zero once C1 ships and admin creates active templates). Missing L3 ≠ "cron didn't fire" — walk all three. If only L1+L2 present, check Edge Function logs via Supabase Dashboard before retrying. On all 3 green: update §8 + Part 4 to mark Phase B PROD deploy COMPLETE — but only after Ronnie explicitly initiates a wrap/docs update per the §1 session-wrap rule.
-- **Next source build after PROD deploy: Tasks v1 combined-build (Phase C+D+E+F merged).** Plan rev 5 cleared Codex review 2026-05-01 with no architecture blockers; Ronnie still controls the gate/go. One build, four internal checkpoints C1-C4, gated behind P7 verification. Per-checkpoint cadence: Ronnie's "go" before checkpoint implementation begins; pre-merge gate runs locally (format:check, lint, vitest, build, focused Playwright + RLS/security regression); commit and push remain separate explicit approvals. Lane approval (e.g., a C4 PROD deploy lane) covers SQL writes + Vault provisioning + function deploys + `.env.prod.local` psql + mig applies inside that lane; `exec_sql` in PROD remains forbidden.
+    Expected post-fire shape: L1 row with `status='succeeded'`; L2 row HTTP 200 + body `{"ok":true,"generated_count":0,...}`; L3 row `run_mode='cron'` counts 0/0 `error_message NULL` (no templates exist yet — counts will become non-zero once C1 ships and admin creates active templates). Missing L3 ≠ "cron didn't fire" — verify all three layers. If only L1+L2 present, check Edge Function logs via Supabase Dashboard before retrying. On all 3 green, the project state becomes Phase B PROD deploy COMPLETE.
+- **Next source build after PROD deploy: Tasks v1 combined-build (Phase C+D+E+F merged).** Plan rev 5 cleared architecture review 2026-05-01 with no architecture blockers. One build, four internal checkpoints C1-C4, functionally gated behind P7 verification. Validation scope: format check, lint, vitest, build, focused Playwright, and RLS/security regression for the touched checkpoint.
   - **C1 — Admin Tasks UI.** Admin-only `/admin/tasks` view with component-level guard (new `src/shared/UnauthorizedRedirect.jsx`, redirects non-admin to home — does NOT rely on header dropdown gating alone). Sections: template CRUD list + create/edit modal (no `requires_photo` field anywhere), open task_instances read-only list, last-5 cron audit footer, "Run Cron Now" button calling `sb.functions.invoke('tasks-cron', {body:{mode:'admin'}})` with no `probe:true`. Recurrence dropdown sources from `RECURRENCE_OPTIONS` constant in pure-helpers `src/lib/tasks.js` (matches mig 039 enum). Assignee dropdown from `useAuth().allUsers` filtered to `role !== 'inactive'`. Side-effect wrappers (`runCronNow`) live in `src/lib/tasksAdminApi.js`, NOT `tasks.js`. Test corner: second Run Cron Now click expects `generated=0, skipped=0` (the function pre-filters existing dates before the rpc call; no missing dates means no rpc call means skipped stays 0).
   - **C2 — `/my-tasks` + complete RPC + optional completion photo.** New `src/auth/MyTasksView.jsx` (auth-gated, NOT admin-gated; standard auth gate only). New `mig 040` adds `public.complete_task_instance(p_instance_id text, p_completion_photo_path text DEFAULT NULL)` SECDEF; assignee-or-admin only via `auth.uid()` check + `is_admin()`. Photos OPTIONAL never required. RPC validates path with `left(path, length(prefix)) = prefix` (NOT `LIKE` — `_`/`%` are wildcards) + filename has no `/` or `\` and is non-empty (blocks nested-folder traversal AND `../` tricks). Canonical path shape locked: storage upload arg = `<assignee_uid>/<instance_id>/<filename>`; DB `completion_photo_path` = `task-photos/<assignee_uid>/<instance_id>/<filename>` (with bucket prefix); converters `buildTaskPhotoPath` + `stripTaskPhotoBucket` in `src/lib/tasks.js`. Anon photo upload disallowed (mig 038 already authenticated-only). Idempotent replay returns `{ok:true, idempotent_replay:true}`.
   - **C3 — Public `/webforms/tasks` form + 2 RPCs + offline queue + availability key.** New `src/webforms/TasksWebform.jsx` (anon, no auth). NO recurrence selector — public submits are one-time only; copy: "Need a recurring task? Log in to the planner and create it from Tasks." New `mig 041` adds `public.list_eligible_assignees() → (id uuid, full_name text)` SECDEF (anon-callable; returns id+full_name only, NO role leak) for the assignee dropdown, AND `public.submit_task_instance(parent_in jsonb)` SECDEF idempotent-by-csid (mig 034 pattern). `submit_task_instance` validates `submitted_by_team_member` against the SAME source the UI dropdown uses: `webform_config.team_roster` row's `data` field IS the roster array (NOT `data->'team_roster'`; see `loadRoster` in `src/lib/teamMembers.js`), filtered by `webform_config.team_availability.data->'forms'->'tasks-public'->'hiddenIds'`; null-safe `coalesce(... = ANY(...), false)`. Add `'tasks-public'` to `TEAM_AVAILABILITY_FORM_KEYS` array in `src/lib/teamAvailability.js` (alphabetic; surfaces automatically in WebformsAdminView's TeamAvailabilityEditor). Offline queue uses `useOfflineRpcSubmit('task_submit')` against new `task_submit` registry entry in **`src/lib/offlineRpcForms.js`** (NOT `offlineForms.js` — RPC-mediated submit, not flat insert). Registry entry shape matches existing `weigh_in_session_batch`: `Object.freeze({rpc: 'submit_task_instance', buildArgs(payload, {csid, parentId}) {...; return {rpc, args:{parent_in}};}})`. TasksWebform must pass `opts.parentId = 'ti-' + crypto.randomUUID()` since `useOfflineRpcSubmit` defaults parentId to `${formKind}-<ts>-<rand>` not `ti-<uuid>`. Public-form people model: assignee = `profiles.id` login user (`assignee_profile_id` uuid); submitted-by = team-roster display-name string (`submitted_by_team_member` text); roster id NEVER stored as assignee. `template_id` NULL, `submission_source = 'public_webform'`.
@@ -686,7 +668,7 @@ Lint at 0 errors closed Initiative B's hard milestone. Phase 2.4 (Prettier) ship
 
 ### Locked decisions for queued builds
 
-These are pre-locked design decisions Ronnie has captured for the upcoming roadmap items. CC should walk these at PLAN time before each build, not just at edit time (per the §7 working rule).
+These are pre-locked design decisions captured for upcoming roadmap items. Review them during build planning so the implementation stays aligned with the existing product direction and §7 contracts.
 
 **Daily Report Photos (Phase 3 of Initiative C):**
 - Scope: pig, poultry, layer, cattle, sheep. **Egg explicitly excluded.**
@@ -729,71 +711,48 @@ These are pre-locked design decisions Ronnie has captured for the upcoming roadm
   blacklist filtering, grouped/flat mode, and maternal issue controls/badges
   being absent from cattle UI.
 
-**Cattle Forecast tab (queued):**
-- Add a new Cattle Forecast tab/view for finisher processing projections. This
-  is distinct from the Herd tab filter/sort rebuild. It should replace the
-  current manual Excel workflow (`Steer_2026_Processing_Forecast.xlsx`) and stay
-  live from planner data instead of requiring Podio/app exports.
-- Forecast horizon: current year plus 3 years ahead. Default to calendar-year
-  buckets, with month-level detail and a rolling "as of today" calculation.
-- Source data: `cattle` rows, completed cattle `weigh_in_sessions` +
-  `weigh_ins`, current herd/status, birth date/age, sex, origin, breed/Wagyu
-  percent, and existing `cattle_processing_batches` where relevant. Use current
-  and prior tags so retagged animals keep their weigh history.
-- Locked target window: a forecast animal is process-ready at **1,250-1,450 lb
-  live weight**.
-- `Processed/month` means calculated readiness: how many head could be processed
-  in that month based on projected weight. Already processed cattle do not count.
-- Default eligibility: active `finishers` + active `backgrounders` + all active
-  steers. Also support saved manual inclusion of heifers that are still in the
-  momma herd. Exclude processed/deceased/sold from the active forecast unless a
-  separate historical view is added later.
-- Calculation model:
-  - Find each eligible animal's latest completed weigh-in and previous completed
-    weigh-in.
-  - For animals currently in `finishers` or `backgrounders`, compute ADG from a
-    rolling 3-week average where enough completed weigh-in history exists.
-  - For animals outside those herds, or animals without enough recent data, use
-    the editable fallback ADG setting. Default fallback: **1.18 lb/day**.
-  - Project future live weight to the **15th of each month**.
-  - Surface confidence/exception states for no weight, stale weight, negative
-    ADG, tiny date gaps, missing birth date, and missing origin.
-- Forecast should suggest animal-to-month assignments. V1 also needs saved
-  manual overrides: include/exclude a specific animal and lock a specific
-  processing month.
-- UI surfaces:
-  - Summary cards: ready this year, ready next 3 years, overdue/over-target,
-    missing-data count, projected live-weight total by month.
-  - Month/year buckets: forecast processing counts by month with animal lists,
-    projected weights, average age, origin mix, and total projected live weight.
-  - Animal table: tag, sex, herd, origin, age, latest weight/date, previous
-    weight/date, ADG source, projected ready date/month, projected weight at
-    month, and exception badges.
-  - Scenario controls: target processing weight or range, monthly processor
-    capacity, checkpoint day-of-month, ADG fallback, stale-weight threshold, and
-    include/exclude herds.
-- Persistence is required in v1. Plan a migration-owned forecast table or tables
-  for saved settings and per-animal overrides; do not hide this state in
-  localStorage. Keep RLS authenticated/admin-shaped like the rest of cattle
-  admin surfaces.
-- Processing-batch integration:
-  - WeighIns remains the official/final send-to-processor action.
-  - Forecast can create **planned** processing batches from forecast month
-    assignments.
-  - Forecast must not mark cattle processed or attach cattle as final processor
-    entries. Those transitions remain in the WeighIns send-to-processor flow.
-  - Batches tab needs a status rework: `planned` = forecast/scheduled,
-    `in_progress` = cattle sent to processor but hanging/final data not entered,
-    `complete` = processed/final weights entered.
-  - When WeighIns sends cattle to an existing planned batch, that batch should
-    become `in_progress`.
-- No CSV/XLSX export in v1. The planner view should be good enough that the
-  spreadsheet/export workflow is no longer needed.
-- Test plan: pure unit tests for ADG, checkpoint projection, readiness date,
-  month assignment, capacity bucketing, missing-data flags, and retag history;
-  Playwright seed covering a new completed cattle weigh-in changing the forecast
-  without manual refresh/export; regression that processed/sold/deceased cattle
-  do not appear unless explicitly included.
+**Cattle Forecast tab (shipped 2026-05-04):**
+- Forecast source shipped in `d2eccda` with mig 043. PROD and TEST both have mig
+  043 applied as of 2026-05-04. The tab replaces the manual finisher forecast
+  workflow with live projections from planner data.
+- Real `cattle_processing_batches.status` values are now only `active` or
+  `complete`. Stored `planned` rows were backfilled to `active`; "planned" is a
+  Forecast/Batches display concept generated from forecast month assignments.
+- Forecast data comes from `cattle`, completed cattle weigh-ins, current
+  herd/status, prior/current tags, `cattle_processing_batches`, forecast
+  settings, heifer includes, and hidden-month rows.
+- Projection checkpoint is the **15th of each month**. ADG is count-based from
+  the last 3 weigh-ins where available, then last 2 weigh-ins, then fallback ADG.
+  The row UI exposes latest weight/date, projected weight, age for the target
+  month, origin, and ADG calculation context for planned cattle.
+- Finish candidates on farm = backgrounders + finishers + momma steers +
+  eligible momma heifers. Momma heifers are eligible only when still heifers in
+  mommas, not pregnant, and not over 15 months old; stale include rows are
+  pruned/ignored by both the modal and helper. Processed/sold/deceased cattle,
+  bulls, momma cows, pregnant momma heifers, and aged-out momma heifers do not
+  count.
+- The Include Momma Herd Heifers modal sorts youngest first, has a left-side
+  checkbox, row-click expansion, aligned age/latest-weight/breed/origin columns,
+  and no Details button. Pregnant and over-15-month heifers are removed from the
+  list entirely.
+- Month tiles show planned cattle, hidden cattle in muted rows with same-tile
+  Unhide controls, projected weights for hidden rows, age as of the tile month,
+  and real active/complete batches in the matching month. Actual-batch cow
+  detail omits ADG calc and uses `mm/dd/yy` dates.
+- Watchlist and Needs Attention are year-independent operator surfaces. Watchlist
+  rows show latest weight/date, ADG calc, reason, and hidden-month chips so tag
+  investigation is visible without database digging.
+- Summary year tiles use numeric years in bold instead of relative labels; the
+  finish-candidate subtext must use the filtered finish-candidate count above,
+  not raw cattle count.
+- Mig 044 (`8cb0bdf`) extends calving automation: when a calf is recorded, a
+  heifer is promoted to cow and a PREGNANT cow/heifer is flipped to OPEN. Source
+  is shipped and TEST-applied; PROD apply remains a separate DB lane if not
+  already completed.
+- Herd tab follow-up hotfixes in this wrap: default Tag sort is replaced when a
+  non-tag sort is added, so Age youngest-first becomes the real primary sort;
+  checkbox/radio filter popovers use a two-column grid so controls and labels
+  align cleanly.
 
 **Equipment Material List (queued):**
 - Add structured `parts_required` metadata to each `equipment.service_intervals[].tasks[]` entry.
@@ -1197,8 +1156,6 @@ One line per working session. Detail lives in git log (`git log --oneline --date
 | 2026-05-01 | `4874f1d` + this wrap | **Broiler reopen avg cleanup + Tasks Module Phase A + future-build planning.** `2dcdb20` fixed the deferred broiler stale-average case: reopening a complete broiler session now excludes that session and recomputes/clears `ppp-v4 wk*Lbs` via the same helper contract as the metadata-edit lane. `4874f1d` shipped Tasks Phase A (migs 036-038): task tables, `is_admin()` helper + RLS policies, indexes, private `task-photos` bucket, and a TEST recon script. TEST recon was green across anon/farm_team self/farm_team other/admin/service-role plus task-photos bucket policies; PROD + TEST + source are aligned. Decisions locked for Tasks Phase B: pg_cron + pg_net + Vault, daily generator 04:00 UTC, weekly summary Monday 13:00 UTC, quarterly recurrence included, and no required-photo behavior anywhere. Planning captured for future cattle work: Herd tab filter/sort rebuild with maternal issue retired from cattle, and a Forecast tab replacing the Excel finisher forecast workflow with live projections, planned batches, ADG rules, and saved overrides. |
 | 2026-05-01 | `a44971a` + this wrap | **Tasks Module Phase B — schema cleanup + cron generator (source ship; TEST-verified; PROD pending P1-P7).** 1 build commit + 1 doc-wrap (this). **Build commit (`a44971a`)** — 10 files, 2132 insertions: `supabase-migrations/039_tasks_phase_b.sql` (drops `requires_photo` from both task tables; extends recurrence CHECK to include `quarterly` via narrowed-name discovery + enum-literal fallback so the unrelated `task_templates_recurrence_interval_check` stays untouched; installs `pg_cron` + `pg_net` + `pgcrypto`; Vault preflight DO-block RAISEs on missing/empty secrets; `public.invoke_tasks_cron()` SECDEF helper owns Vault read + `net.http_post`; `public.generate_task_instances(text, date[])` SECDEF owns the partial-unique-index ON CONFLICT contract; cron schedule `tasks-cron-daily` at `0 4 * * *` UTC; explicitly NOT scheduling Mon 13:00 UTC weekly slot — Phase F-only). Edge Function at canonical CLI layout `supabase/functions/tasks-cron/index.ts` + byte-identical math copy at `supabase/functions/_shared/tasksRecurrence.js` (parity vs `src/lib/tasksRecurrence.js` locked by `tests/static/tasks_recurrence_parity.test.js` via `fs.readFileSync` + CRLF→LF normalize). 25 vitest cases on the recurrence helper; 11 Playwright cases on `generate_task_instances` RPC contract (single/bulk/idempotent/mixed-overlap/empty/unknown/inactive/concurrent/anon-deny via PGRST002). New `scripts/recon_tasks_phase_b.cjs` (TEST-only, exec_sql for catalog reads since `pg_constraint`/`pg_extension`/`pg_proc`/`vault.decrypted_secrets`/`cron.job`/`net._http_response` aren't PostgREST-exposed) + `scripts/probe_tasks_cron_function.cjs` (HTTP-only auth probes, TEST + PROD safe). `tests/setup/reset.js` whitelist gains `task_instances`/`task_cron_runs`/`task_templates`. **TEST verification ALL GREEN (6 gates):** function deploy via CLI bundled `index.ts` + `_shared/` correctly; mig 039 applied via SQL Editor (`SELECT cron.schedule(...)` returned jobid 1); full Vault → `invoke_tasks_cron()` → `net.http_post` → Edge Function → `task_cron_runs` audit chain validated end-to-end (Layer 2 status_code 200 + Layer 3 row with `run_mode='cron'`/counts 0/0/error_message NULL); `recon_tasks_phase_b.cjs` 36/36; `probe_tasks_cron_function.cjs` 13/13 auth probes; RPC spec 11/11; `recon_tasks_rls.cjs` Phase A regression intact (5 caller probes + 10 storage probes). **Iteration findings during deploy** (now §7 deploy-lessons entry): Dashboard-paste of function secret picked up trailing whitespace (length 97 vs Vault 96) → defensive `envTrim()` + prefer `supabase secrets set` CLI; Vault stored `TASKS_CRON_SERVICE_ROLE_KEY` at length 227 instead of canonical 219 (8 stray chars in middle of stored value) → rewrote in-flight via service-role + exec_sql + `vault.update_secret`; new Supabase TEST projects auto-inject `SUPABASE_SERVICE_ROLE_KEY` env as 41-char `sb_secret_*` format NOT the legacy JWT pg_cron sends → function compares cron bearer against dedicated `TASKS_CRON_SERVICE_ROLE_KEY` env (Codex's foreseen amendment); PostgREST schema-cache quirk on freshly-CREATEd public scratch tables → patched both recon + probe `ensureScratchTable` to `NOTIFY pgrst, 'reload schema'` + 1.5s delay before `.from()`; anon caller of `generate_task_instances` returns `PGRST002 "schema cache"` rather than clean `42501` → broadened the RPC spec's anon-deny regex (mirrors the same Supabase quirk documented for `is_admin()`'s anon-deny in mig 037). **Supabase CLI installed during this session** — Scoop + `scoop install supabase` + `supabase login` (one-time setup; same auth covers PROD when ready). **Local gates:** format:check clean, lint 0 errors / 669 warnings (net +0), vitest 400/400 (+28 new), build clean. **PROD impact:** zero; src/ runtime untouched (the new `src/lib/tasksRecurrence.js` is consumed only by vitest + the Edge Function helper copy; tree-shaken from prod bundle). **Pushed to `main`** as `a44971a`; prod 200 verified post-push (dev-only push class per `feedback_deploy_verification`). PROD database deploy is the immediate operational lane — see §8 Next build P1-P7. **Wrap commit (this):** §3 task-tables description amended to mark Phase B source-shipped; §7 adds Phase B contract entry below Phase A + a Phase B deploy-lessons entry (5 pitfalls); §8 Next build replaced from "Phase B" to "PROD Phase B deploy + Phase C admin UI"; this Part 4 row added; HO.md refreshed. |
 | 2026-05-01 (PROD deploy) | (this wrap) | **Tasks Phase B PROD deploy P1-P6 GREEN + Tasks v1 combined-build plan rev 5 cleared Codex architecture review.** Operational deploy lane (no source code changes). Ronnie chose Option B: CC drives every step via psql + Supabase CLI; Ronnie supplied PROD credentials once per session, persisted to new `.env.prod.local` (gitignored via `.env.*` rule, machine-local) holding `PROD_DB_URL` (Session Pooler URI for Postgres 17.6 — direct connection blocked by no-IPv4 on this network) + `PROD_SERVICE_ROLE_JWT` (legacy 219-char service-role JWT) + `PROD_ANON_KEY` + `PROD_TASKS_CRON_SECRET` (P1 mint capture). **P1** Vault provisioned via psql: 3 entries via `vault.create_secret(...)` with idempotent DELETE-then-create — `TASKS_CRON_FUNCTION_URL`, `TASKS_CRON_SECRET` (server-minted via `gen_random_bytes(48)→base64`, length 64), `TASKS_CRON_SERVICE_ROLE_KEY` (length 219). **P2** `supabase functions deploy tasks-cron --project-ref pzfujbjtayhkdlxiblwe` shipped `index.ts` + `_shared/tasksRecurrence.js` (Docker-not-running warning is benign — Docker only used for local dev, not deploy uploads). **P3** `supabase secrets set --env-file <temp>` for both function env vars; integrity check via SHA256 — local-computed SHA256 of each value matched the CLI-reported digests exactly for both secrets (`5bb88bc296...` for cron-secret, `c9a7882607...` for service-role-jwt) confirming zero whitespace drift; the TEST-iteration Dashboard-paste pitfall (length 97 vs Vault 96) is avoided here because CLI was used. **P4** Mig 039 applied via psql Session Pooler with `--set ON_ERROR_STOP=1`; clean BEGIN/COMMIT, returned `cron.schedule` jobid 1. 6 effect checks all green: requires_photo dropped from both task_templates + task_instances; recurrence CHECK = `('once','daily','weekly','biweekly','monthly','quarterly')` while preserving the unrelated `recurrence_interval >= 1` CHECK; `invoke_tasks_cron()` exists SECDEF returns bigint; `generate_task_instances(p_template_id text, p_dates date[])` exists SECDEF returns int; `cron.job` has exactly one `tasks-cron-daily` row at `0 4 * * *` active=t database=postgres; zero weekly jobs. **P5** Manual 3-layer audit walked end-to-end: L1 `SELECT public.invoke_tasks_cron()` returned request_id 1; L2 `net._http_response` row id=1 status_code 200, body `{"ok":true,"generated_count":0,"skipped_count":0,"cap_exceeded":[]}`, headers confirm `sb-project-ref: pzfujbjtayhkdlxiblwe` + `x-sb-edge-region: us-west-2` + `x-served-by: supabase-edge-runtime`; L3 `task_cron_runs` row `tcr-e294abe749e14a7596d41080dd03675b` ran_at 2026-05-01 18:30:15 UTC run_mode='cron' counts 0/0 cap_exceeded=`[]` error_message NULL — counts of 0/0 are correct since Phase A created tables but no templates exist yet (templates land in C1). **P6** `node scripts/probe_tasks_cron_function.cjs` against PROD (loadEnv override via PowerShell pre-set + temp `Move-Item .env.test.local .env.test.local.probebak` to prevent TEST admin creds bleeding into PROD signin attempt; restored in finally): 10 of 10 active probes green (no Auth → 401, anon JWT cron-mode no secret → 401, service-role + missing/wrong cron-secret → 401, service-role + correct cron-secret + probe → 200 with probe:true echo, anon JWT admin-mode → 401, service-role + cron-secret admin-mode mismatched → 401, mode missing/unknown → 400). Cases 6+8 admin-mode probes skipped cleanly (PROD admin creds not supplied; PROD-allowed per script per Codex Q4). PROD now carries one `tcr-probe-*` row in `task_cron_runs` from case 5 (kept as real audit per Codex Q4). **P7 PENDING** — first scheduled cron fire is 2026-05-02 04:00 UTC = 2026-05-01 23:00 CDT. Tomorrow's session walks `cron.job_run_details` joined to `cron.job` on `jobid` (run_details has no jobname column) WHERE jobname='tasks-cron-daily' + `net._http_response` + `task_cron_runs`; on green, mark Phase B PROD deploy complete. Ronnie did NOT override the gate. **Tasks v1 combined-build plan rev 5 cleared Codex architecture review** (Codex: "no remaining architecture objection"; Ronnie controls the gate/go). Ronnie's direction: combine Phase C+D+E+F into one build with 4 internal checkpoints C1-C4 (detail in §8 Next build). Plan went through 5 revisions; final locked decisions: (1) completion photo OPTIONAL never required (mig 038's `task-photos` bucket + `completion_photo_path` column wake up; assignee-only authenticated upload); (2) C4 secrets reuse `TASKS_CRON_SECRET` + `TASKS_CRON_SERVICE_ROLE_KEY` and mint only one new Vault entry `TASKS_SUMMARY_FUNCTION_URL`; (3) public submits one-time only (no recurrence selector; copy directs users to log in for recurring); (4) public-form people model: assignee=profiles.id login user, submitted-by=roster display name filtered by team_availability hiddenIds — assignee NEVER resolves to a roster id. Codex pushed back across 5 review rounds catching: file-shape mismatches (offlineRpcForms.js NOT offlineForms.js; `rpc`+`buildArgs` NOT `rpcName`+`buildRequest`; loadRoster reads `data` directly NOT `data->'team_roster'`); LIKE wildcard collisions in path validation (use `left()`+`substring()` not LIKE); rapid-processor location (in-repo at legacy flat `supabase-functions/rapid-processor.ts`, not out-of-repo); idempotent DO-block for new RLS policies; approval-cadence framing (lane approval covers SQL inside, commit/push always separate). All folded into rev 5. **No code work begins until P7 verifies.** **Wrap commit (this):** §8 "Next build" Phase B status block + combined-build C1-C4 detail (replaces the prior Phase-C-only entry); this Part 4 row added; HO.md refreshed for next-session launch. No source changes; docs-only. |
+| 2026-05-04 | `d2eccda`..`8cb0bdf` + this wrap | **Cattle Forecast shipped, PROD-smoked, and polished; Herd filter/sort follow-up.** `d2eccda` added the Forecast tab, reworked Cattle Batches, updated Send-to-Processor, and shipped mig 043 (`cattle_forecast_settings`, `cattle_forecast_heifer_includes`, `cattle_forecast_hidden`; real batch status simplified to `active|complete`). Ronnie applied mig 043 to PROD on 2026-05-04; TEST also has 043. Subsequent commits (`3e68e92`, `ea9694e`, `4e76ca0`, `a2f1956`, `8cb0bdf`) folded in the PROD smoke fixes: watchlist/Needs Attention visibility, count-based ADG from last 3/2 weigh-ins, same-tile hide/unhide with hidden projected weights, real active/complete batches on month tiles, actual-batch cow detail, tag search, `mm/dd/yy` dates, 15th-of-month projection anchor, Age/Origin columns, polished heifer modal, heifer include eligibility guards, stale include pruning, and mig 044 calving automation (heifer with calf -> cow; PREGNANT cow/heifer with calf -> OPEN). This wrap updates the project reference from queued Forecast plan to shipped contracts and adds the latest local fixes: finish-candidate summary excludes pregnant/over-15-month momma heifers, summary year labels are bold numeric years, non-tag Herd sorts replace the default Tag sort, and filter popover checkbox/radio rows align cleanly. |
 
 **How to use this index:** if you need the exact commit message or a specific bugfix commit, run `git log --oneline <date>..` or filter by filename. If you need the narrator's-voice session-end summary, see the matching block in `archive/SESSION_LOG.md`. Git log is the authoritative timeline — this table is just the map.
-
-
-
