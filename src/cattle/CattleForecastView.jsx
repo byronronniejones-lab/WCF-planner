@@ -123,6 +123,26 @@ const CattleForecastView = ({
   const [yearFilter, setYearFilter] = useState(null); // null = current year by default
   const [monthFilter, setMonthFilter] = useState(null);
   const [showHeiferModal, setShowHeiferModal] = useState(false);
+  // Tag search — client-side filter applied across planned rows, hidden
+  // rows, actual-batch rows, and Attention rows. Empty string = show all.
+  const [tagSearch, setTagSearch] = useState('');
+  const tagSearchTrim = tagSearch.trim().toLowerCase();
+  // Predicate every renderable row uses. Matches against current cow.tag
+  // PLUS retag-aware prior tags via cowTagSet so old tag numbers still find
+  // the cow. For actual-batch rows the cow record may have been re-herded
+  // already; cowRow may be missing — fall back to the cows_detail tag.
+  function tagMatch({cow, cowRow, tag}) {
+    if (!tagSearchTrim) return true;
+    const candidates = [];
+    if (cow) {
+      for (const t of cowTagSet(cow)) candidates.push(String(t).toLowerCase());
+    }
+    if (cowRow && cowRow !== cow) {
+      for (const t of cowTagSet(cowRow)) candidates.push(String(t).toLowerCase());
+    }
+    if (tag) candidates.push(String(tag).toLowerCase());
+    return candidates.some((c) => c.includes(tagSearchTrim));
+  }
 
   async function loadAll() {
     const [cR, wAll, calR, comR, brR, orR, bR, s, inc, hid] = await Promise.all([
@@ -367,6 +387,55 @@ const CattleForecastView = ({
           </button>
         </div>
 
+        {/* ── Tag search (client-side filter across all rows) ────────── */}
+        {!loading && forecast && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 0',
+            }}
+          >
+            <input
+              type="text"
+              value={tagSearch}
+              onChange={(e) => setTagSearch(e.target.value)}
+              placeholder="Search by tag #…"
+              data-forecast-tag-search
+              style={{
+                fontSize: 13,
+                padding: '7px 10px',
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                fontFamily: 'inherit',
+                width: '100%',
+                maxWidth: 320,
+                boxSizing: 'border-box',
+              }}
+            />
+            {tagSearch && (
+              <button
+                type="button"
+                onClick={() => setTagSearch('')}
+                data-forecast-tag-search-clear
+                style={{
+                  fontSize: 11,
+                  padding: '6px 10px',
+                  borderRadius: 5,
+                  border: '1px solid #d1d5db',
+                  background: 'white',
+                  color: '#6b7280',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
         {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>}
 
         {!loading && forecast && (
@@ -581,7 +650,13 @@ const CattleForecastView = ({
             {/* ── Attention section (always-rendered; empty state when none).
                 Lifted above the year selector + month tiles so an operator
                 can spot tag-#241-style anomalies without scrolling. */}
-            <AttentionSection rows={forecast.watchlist} canEdit={canEdit} onToggleHidden={toggleHidden} fmt={fmt} />
+            <AttentionSection
+              rows={forecast.watchlist}
+              canEdit={canEdit}
+              onToggleHidden={toggleHidden}
+              fmt={fmt}
+              tagMatch={tagMatch}
+            />
 
             {/* ── Year selector ───────────────────────────────────────── */}
             {yearsInView.length > 0 && (
@@ -633,6 +708,7 @@ const CattleForecastView = ({
                     monthFilter={monthFilter}
                     setMonthFilter={setMonthFilter}
                     fmt={fmt}
+                    tagMatch={tagMatch}
                   />
                 ))}
               </div>
@@ -810,7 +886,17 @@ function LegendSwatch({color, border, label}) {
   );
 }
 
-function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, monthFilter, setMonthFilter, fmt}) {
+function MonthBucketTile({
+  bucket,
+  forecast,
+  cowsById,
+  canEdit,
+  onToggleHidden,
+  monthFilter,
+  setMonthFilter,
+  fmt,
+  tagMatch,
+}) {
   const {useState} = React;
   // Default-expand current and future months. Past months stay collapsed
   // unless explicitly clicked.
@@ -977,12 +1063,10 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                           </span>
                         )}
                       </div>
-                      {/* Per-cow rows under the batch — operator needs to see
-                          which cattle were sent. Tag + sex/herd from the
-                          cattle row (if still present) + live + hanging
-                          weight from cows_detail. ADG Calc may not be
-                          available because processed cattle leave animalRows;
-                          show "—" for those. Codex 2026-05-04 follow-up #2. */}
+                      {/* Per-cow rows under the batch — actuals show who was
+                          processed and weights only. ADG Calc is a forecast
+                          concept and intentionally absent here per Codex
+                          2026-05-04 polish. */}
                       {cows.length > 0 && (
                         <table
                           style={{width: '100%', borderCollapse: 'collapse', fontSize: 11}}
@@ -1004,15 +1088,14 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                               <th style={{padding: '3px 8px'}}>Herd</th>
                               <th style={{padding: '3px 8px', textAlign: 'right'}}>Live</th>
                               <th style={{padding: '3px 8px', textAlign: 'right'}}>Hanging</th>
-                              <th style={{padding: '3px 8px'}}>ADG Calc</th>
                             </tr>
                           </thead>
                           <tbody>
                             {cows.map((c) => {
                               const cowRow = cowsById.get(c.cattle_id);
-                              const fRow = forecast.animalRows.find((r) => r.cow.id === c.cattle_id);
                               const live = parseFloat(c.live_weight);
                               const hang = parseFloat(c.hanging_weight);
+                              if (!tagMatch({tag: c.tag, cowRow})) return null;
                               return (
                                 <tr
                                   key={c.cattle_id}
@@ -1035,9 +1118,6 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                                     {Number.isFinite(hang) && hang > 0
                                       ? Math.round(hang).toLocaleString() + ' lb'
                                       : '—'}
-                                  </td>
-                                  <td style={{padding: '3px 8px', color: '#6b7280', fontSize: 10}}>
-                                    {fRow ? formatAdgCalc(fRow) : '—'}
                                   </td>
                                 </tr>
                               );
@@ -1082,6 +1162,7 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                 {bucket.animalIds.map((cid) => {
                   const cow = cowsById.get(cid);
                   if (!cow) return null;
+                  if (!tagMatch({cow})) return null;
                   const row = forecast.animalRows.find((r) => r.cow.id === cid);
                   return (
                     <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid #f3f4f6'}}>
@@ -1092,7 +1173,7 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                         {row?.latest
                           ? Math.round(row.latest.weight).toLocaleString() +
                             ' lb' +
-                            (row.latest.date ? ' · ' + String(row.latest.date).slice(0, 10) : '')
+                            (row.latest.date && fmt ? ' · ' + fmt(String(row.latest.date).slice(0, 10)) : '')
                           : '—'}
                       </td>
                       <td style={{padding: '6px 8px', textAlign: 'right', color: '#065f46', fontWeight: 600}}>
@@ -1134,6 +1215,7 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
                 {hiddenHereOnly.map((cid) => {
                   const cow = cowsById.get(cid);
                   if (!cow) return null;
+                  if (!tagMatch({cow})) return null;
                   const row = forecast.animalRows.find((r) => r.cow.id === cid);
                   // Projected weight for THIS hide month — operator wants to
                   // see what she'd weigh if sent in this month, even though
@@ -1219,13 +1301,14 @@ function MonthBucketTile({bucket, forecast, cowsById, canEdit, onToggleHidden, m
   );
 }
 
-function AttentionSection({rows, canEdit, onToggleHidden, fmt}) {
-  if (!rows || rows.length === 0) {
+function AttentionSection({rows, canEdit, onToggleHidden, fmt, tagMatch}) {
+  const visible = (rows || []).filter((r) => (tagMatch ? tagMatch({cow: r.cow}) : true));
+  if (visible.length === 0) {
     return (
       <div style={tile} data-forecast-attention data-forecast-watchlist>
         <div style={sectionHeader}>NEEDS ATTENTION</div>
         <div data-attention-empty style={{fontSize: 12, color: '#6b7280', fontStyle: 'italic', padding: '4px 0'}}>
-          No cattle need attention.
+          {rows && rows.length > 0 ? 'No matching attention rows.' : 'No cattle need attention.'}
         </div>
       </div>
     );
@@ -1234,7 +1317,7 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt}) {
     <div style={tile} data-forecast-attention data-forecast-watchlist>
       <div style={sectionHeader}>
         NEEDS ATTENTION
-        <span style={{fontWeight: 400, color: '#9ca3af', marginLeft: 6}}>({rows.length})</span>
+        <span style={{fontWeight: 400, color: '#9ca3af', marginLeft: 6}}>({visible.length})</span>
       </div>
       <div style={{fontSize: 11, color: '#6b7280', marginBottom: 8}}>
         Cattle that don't land cleanly in a planned month. Each row shows the latest weight, ADG, and why the cow didn't
@@ -1254,7 +1337,7 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt}) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {visible.map((r) => (
             <tr key={r.cow.id} data-watchlist-row={r.cow.id} style={{borderTop: '1px solid #f3f4f6'}}>
               <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{r.cow.tag || '?'}</td>
               <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[r.cow.herd] || r.cow.herd}</td>
@@ -1555,7 +1638,7 @@ function IncludeHeifersModal({
                       }}
                     >
                       {latestWeight ? Math.round(latestWeight).toLocaleString() + ' lb' : 'no weigh-in'}
-                      {latestDate ? ' · ' + latestDate : ''}
+                      {latestDate && fmt ? ' · ' + fmt(latestDate) : ''}
                     </span>
                     {wasIncluded && (
                       <span

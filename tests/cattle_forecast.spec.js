@@ -446,6 +446,119 @@ test('forecast: hidden row shows projected weight for the hide month + Unhide bu
   await expect(page.locator('[data-toggle-unhide="F-HIDE"]')).toBeVisible();
 });
 
+test('forecast: tag search filters planned + actual batch rows; clear restores', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  // Seed an actual ACTIVE batch with F-AT-MAX so tag search has both a
+  // planned row (F1 → tag 1001) AND an actual-batch row (F-AT-MAX → tag 1002)
+  // to discriminate against.
+  const monthKey = new Date().toISOString().slice(0, 7);
+  await supabaseAdmin.from('cattle_processing_batches').insert({
+    id: 'b-search-test-1',
+    name: 'C-26-91',
+    status: 'active',
+    actual_process_date: monthKey + '-04',
+    planned_process_date: monthKey + '-04',
+    cows_detail: [{cattle_id: 'F-AT-MAX', tag: '1002', live_weight: 1450, hanging_weight: null}],
+    total_live_weight: 1450,
+    total_hanging_weight: null,
+  });
+  await supabaseAdmin
+    .from('cattle')
+    .update({herd: 'processed', processing_batch_id: 'b-search-test-1'})
+    .eq('id', 'F-AT-MAX');
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  const search = page.locator('[data-forecast-tag-search]');
+  await expect(search).toBeVisible();
+
+  // Search "1001" — F1 row visible; F-AT-MAX actual batch row hidden.
+  await search.fill('1001');
+  await expect(page.locator('[data-month-row="F1"]')).toBeVisible();
+  await expect(page.locator('[data-actual-batch-row="F-AT-MAX"]')).toHaveCount(0);
+
+  // Search "1002" — actual-batch row visible; F1 planned row hidden.
+  await search.fill('1002');
+  await expect(page.locator('[data-actual-batch-row="F-AT-MAX"]')).toBeVisible();
+  await expect(page.locator('[data-month-row="F1"]')).toHaveCount(0);
+
+  // Clear button restores both.
+  await page.locator('[data-forecast-tag-search-clear]').click();
+  await expect(page.locator('[data-month-row="F1"]')).toBeVisible();
+  await expect(page.locator('[data-actual-batch-row="F-AT-MAX"]')).toBeVisible();
+});
+
+test('forecast: actual-batch table does not include ADG Calc; planned table does', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  const monthKey = new Date().toISOString().slice(0, 7);
+  await supabaseAdmin.from('cattle_processing_batches').insert({
+    id: 'b-no-adg-test',
+    name: 'C-26-92',
+    status: 'active',
+    actual_process_date: monthKey + '-04',
+    planned_process_date: monthKey + '-04',
+    cows_detail: [{cattle_id: 'F-AT-MAX', tag: '1002', live_weight: 1450, hanging_weight: null}],
+    total_live_weight: 1450,
+    total_hanging_weight: null,
+  });
+  await supabaseAdmin
+    .from('cattle')
+    .update({herd: 'processed', processing_batch_id: 'b-no-adg-test'})
+    .eq('id', 'F-AT-MAX');
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  // Actual batch table headers: Tag / Sex / Herd / Live / Hanging — no ADG Calc.
+  const actualTable = page.locator('[data-actual-batch-table="b-no-adg-test"]');
+  await expect(actualTable).toBeVisible();
+  const actualHeaders = await actualTable.locator('thead th').allTextContents();
+  expect(actualHeaders.map((s) => s.trim())).toEqual(['Tag', 'Sex', 'Herd', 'Live', 'Hanging']);
+  // Sanity: planned table for the same view DOES include ADG Calc.
+  const plannedTable = page.locator('[data-month-bucket-table]').first();
+  await expect(plannedTable).toBeVisible();
+  const plannedHeaders = await plannedTable.locator('thead th').allTextContents();
+  expect(plannedHeaders.map((s) => s.trim())).toContain('ADG Calc');
+});
+
+test('forecast: visible dates render as mm/dd/yy', async ({page, cattleForecastScenario, supabaseAdmin}) => {
+  // Seed an actual batch so a batch-date renders + the planned row's latest
+  // weigh-in already has a date in the seed.
+  const monthKey = new Date().toISOString().slice(0, 7);
+  await supabaseAdmin.from('cattle_processing_batches').insert({
+    id: 'b-date-test',
+    name: 'C-26-93',
+    status: 'active',
+    actual_process_date: monthKey + '-04',
+    planned_process_date: monthKey + '-04',
+    cows_detail: [{cattle_id: 'F-AT-MAX', tag: '1002', live_weight: 1450, hanging_weight: null}],
+    total_live_weight: 1450,
+    total_hanging_weight: null,
+  });
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  // Planned-row Latest cell: weight + " · MM/DD/YY".
+  const f1Row = page.locator('[data-month-row="F1"]');
+  await expect(f1Row).toBeVisible();
+  await expect(f1Row).toContainText(/\d{2}\/\d{2}\/\d{2}/);
+  // Raw YYYY-MM-DD must NOT appear in the planned-row text.
+  const f1Text = await f1Row.innerText();
+  expect(f1Text).not.toMatch(/\b\d{4}-\d{2}-\d{2}\b/);
+
+  // Actual-batch header date renders mm/dd/yy too.
+  const batchHeader = page.locator('[data-actual-batch="b-date-test"]');
+  await expect(batchHeader).toContainText(/\d{2}\/\d{2}\/\d{2}/);
+});
+
 test('forecast: include-heifers modal rows show age + latest weight visible without expanding', async ({
   page,
   cattleForecastScenario,
