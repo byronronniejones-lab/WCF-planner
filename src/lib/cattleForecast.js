@@ -97,12 +97,13 @@ export function monthsForAssignment(todayMs, horizonYears) {
   return out;
 }
 
-// First-of-month at UTC noon — date math anchors here so projection lengths
-// across hosts in different timezones produce identical results.
+// 15th-of-month at UTC noon — every forecast month is anchored to its 15th
+// (the project's processing/checkpoint date). UTC-noon avoids host-timezone
+// drift so the same input produces the same projection on any machine.
 export function monthStartMs(key) {
   const p = parseMonthKey(key);
   if (!p) return null;
-  return Date.UTC(p.year, p.month - 1, 1, 12, 0, 0);
+  return Date.UTC(p.year, p.month - 1, 15, 12, 0, 0);
 }
 
 export function monthLabel(key) {

@@ -158,6 +158,7 @@ const CowDetail = ({
   };
   return (
     <div
+      data-cow-detail
       style={{
         background: '#ffffff',
         padding: '14px 18px',

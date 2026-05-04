@@ -14,6 +14,7 @@ import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
 import {
   buildForecast,
   monthLabel,
+  monthStartMs,
   parseMonthKey,
   formatAdgCalc,
   projectedWeightAtMonth,
@@ -84,6 +85,20 @@ const tile = {
 };
 
 const sectionHeader = {fontSize: 13, fontWeight: 600, color: '#4b5563', letterSpacing: 0.3, marginBottom: 8};
+
+// Compact age string from birth_date (YYYY-MM-DD) to a target Date.
+// Renders as "Xy Ym" (e.g. "2y 4m"), or just "Ym" when under a year, or "—".
+// Forecast months always anchor to YYYY-MM-15 via monthStartMs (lib helper).
+function ageAt(birthDate, targetMs) {
+  if (!birthDate) return '—';
+  const birthMs = new Date(String(birthDate) + 'T12:00:00Z').getTime();
+  if (!Number.isFinite(birthMs) || !Number.isFinite(targetMs)) return '—';
+  const days = Math.floor((targetMs - birthMs) / 86400000);
+  if (days < 0) return '—';
+  const y = Math.floor(days / 365);
+  const m = Math.floor((days % 365) / 30);
+  return y > 0 ? y + 'y ' + m + 'm' : m + 'm';
+}
 
 const CattleForecastView = ({
   sb,
@@ -1086,6 +1101,7 @@ function MonthBucketTile({
                               <th style={{padding: '3px 8px'}}>Tag</th>
                               <th style={{padding: '3px 8px'}}>Sex</th>
                               <th style={{padding: '3px 8px'}}>Herd</th>
+                              <th style={{padding: '3px 8px'}}>Age</th>
                               <th style={{padding: '3px 8px', textAlign: 'right'}}>Live</th>
                               <th style={{padding: '3px 8px', textAlign: 'right'}}>Hanging</th>
                             </tr>
@@ -1096,6 +1112,9 @@ function MonthBucketTile({
                               const live = parseFloat(c.live_weight);
                               const hang = parseFloat(c.hanging_weight);
                               if (!tagMatch({tag: c.tag, cowRow})) return null;
+                              const procDateStr = rb.actual_process_date || rb.planned_process_date;
+                              const procMs = procDateStr ? new Date(String(procDateStr) + 'T12:00:00Z').getTime() : NaN;
+                              const ageAtProc = ageAt(cowRow?.birth_date, procMs);
                               return (
                                 <tr
                                   key={c.cattle_id}
@@ -1108,6 +1127,12 @@ function MonthBucketTile({
                                   <td style={{padding: '3px 8px', color: '#6b7280'}}>{cowRow?.sex || '—'}</td>
                                   <td style={{padding: '3px 8px', color: '#6b7280'}}>
                                     {cowRow ? HERD_LABELS[cowRow.herd] || cowRow.herd : '—'}
+                                  </td>
+                                  <td
+                                    data-actual-batch-row-age={c.cattle_id}
+                                    style={{padding: '3px 8px', color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}
+                                  >
+                                    {ageAtProc}
                                   </td>
                                   <td style={{padding: '3px 8px', textAlign: 'right', color: '#111827'}}>
                                     {Number.isFinite(live) && live > 0
@@ -1151,6 +1176,7 @@ function MonthBucketTile({
                   <th style={{padding: '4px 8px'}}>Tag</th>
                   <th style={{padding: '4px 8px'}}>Sex</th>
                   <th style={{padding: '4px 8px'}}>Herd</th>
+                  <th style={{padding: '4px 8px'}}>Age</th>
                   <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
                   <th style={{padding: '4px 8px', textAlign: 'right'}}>Projected</th>
                   <th style={{padding: '4px 8px'}}>ADG Calc</th>
@@ -1164,11 +1190,18 @@ function MonthBucketTile({
                   if (!cow) return null;
                   if (!tagMatch({cow})) return null;
                   const row = forecast.animalRows.find((r) => r.cow.id === cid);
+                  const ageInMonth = ageAt(cow.birth_date, monthStartMs(bucket.monthKey));
                   return (
                     <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid #f3f4f6'}}>
                       <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
+                      <td
+                        data-month-row-age={cid}
+                        style={{padding: '6px 8px', color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}
+                      >
+                        {ageInMonth}
+                      </td>
                       <td style={{padding: '6px 8px', textAlign: 'right', color: '#111827'}}>
                         {row?.latest
                           ? Math.round(row.latest.weight).toLocaleString() +
@@ -1232,6 +1265,7 @@ function MonthBucketTile({
                           adg: row.adg,
                         })
                       : null;
+                  const hiddenAgeInMonth = ageAt(cow.birth_date, monthStartMs(bucket.monthKey));
                   return (
                     <tr
                       key={'hidden-' + cid}
@@ -1241,6 +1275,12 @@ function MonthBucketTile({
                       <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
                       <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
+                      <td
+                        data-month-hidden-row-age={cid}
+                        style={{padding: '6px 8px', color: '#9ca3af', fontVariantNumeric: 'tabular-nums'}}
+                      >
+                        {hiddenAgeInMonth}
+                      </td>
                       <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
                         {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
                       </td>
@@ -1604,12 +1644,14 @@ function IncludeHeifersModal({
                   }}
                 >
                   <div
+                    onClick={() => setExpandedId(isExpanded ? null : h.id)}
                     style={{
                       padding: '8px 12px',
-                      display: 'flex',
+                      display: 'grid',
+                      gridTemplateColumns: '24px 70px 60px 150px 90px 110px 1fr',
                       alignItems: 'center',
                       gap: 10,
-                      flexWrap: 'wrap',
+                      cursor: 'pointer',
                     }}
                   >
                     <input
@@ -1617,14 +1659,13 @@ function IncludeHeifersModal({
                       checked={checked}
                       disabled={!canEdit}
                       onChange={() => toggle(h.id)}
+                      onClick={(e) => e.stopPropagation()}
                       data-heifer-checkbox={h.id}
                     />
-                    <span style={{fontWeight: 700, fontSize: 13, color: '#111827', minWidth: 60}}>#{h.tag || '?'}</span>
-                    <span style={{fontSize: 11, color: '#6b7280', minWidth: 70}}>{h.breed || '—'}</span>
-                    <span style={{fontSize: 11, color: '#6b7280', minWidth: 80}}>{h.origin || '—'}</span>
+                    <span style={{fontWeight: 700, fontSize: 13, color: '#111827'}}>#{h.tag || '?'}</span>
                     <span
                       data-heifer-age={h.id}
-                      style={{fontSize: 11, color: '#6b7280', minWidth: 50, fontVariantNumeric: 'tabular-nums'}}
+                      style={{fontSize: 11, color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}
                     >
                       {ageStr}
                     </span>
@@ -1634,13 +1675,14 @@ function IncludeHeifersModal({
                         fontSize: 11,
                         color: latestWeight ? '#065f46' : '#9ca3af',
                         fontWeight: latestWeight ? 600 : 400,
-                        minWidth: 110,
                       }}
                     >
                       {latestWeight ? Math.round(latestWeight).toLocaleString() + ' lb' : 'no weigh-in'}
                       {latestDate && fmt ? ' · ' + fmt(latestDate) : ''}
                     </span>
-                    {wasIncluded && (
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{h.breed || '—'}</span>
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{h.origin || '—'}</span>
+                    {wasIncluded ? (
                       <span
                         style={{
                           fontSize: 10,
@@ -1650,27 +1692,14 @@ function IncludeHeifersModal({
                           color: 'white',
                           fontWeight: 700,
                           textTransform: 'uppercase',
+                          justifySelf: 'end',
                         }}
                       >
                         previously selected
                       </span>
+                    ) : (
+                      <span />
                     )}
-                    <span style={{flex: 1}} />
-                    <button
-                      onClick={() => setExpandedId(isExpanded ? null : h.id)}
-                      style={{
-                        fontSize: 11,
-                        padding: '3px 9px',
-                        borderRadius: 5,
-                        border: '1px solid #d1d5db',
-                        background: 'white',
-                        color: '#374151',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {isExpanded ? 'Collapse' : 'Details'}
-                    </button>
                   </div>
                   {isExpanded && (
                     <CowDetail

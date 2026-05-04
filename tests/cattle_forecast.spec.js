@@ -516,16 +516,18 @@ test('forecast: actual-batch table does not include ADG Calc; planned table does
   await page.goto(FORECAST_PATH);
   await waitForForecastLoaded(page);
 
-  // Actual batch table headers: Tag / Sex / Herd / Live / Hanging — no ADG Calc.
+  // Actual batch table headers: Tag / Sex / Herd / Age / Live / Hanging — no ADG Calc.
   const actualTable = page.locator('[data-actual-batch-table="b-no-adg-test"]');
   await expect(actualTable).toBeVisible();
   const actualHeaders = await actualTable.locator('thead th').allTextContents();
-  expect(actualHeaders.map((s) => s.trim())).toEqual(['Tag', 'Sex', 'Herd', 'Live', 'Hanging']);
-  // Sanity: planned table for the same view DOES include ADG Calc.
+  expect(actualHeaders.map((s) => s.trim())).toEqual(['Tag', 'Sex', 'Herd', 'Age', 'Live', 'Hanging']);
+  expect(actualHeaders.map((s) => s.trim())).not.toContain('ADG Calc');
+  // Sanity: planned table for the same view DOES include ADG Calc and Age.
   const plannedTable = page.locator('[data-month-bucket-table]').first();
   await expect(plannedTable).toBeVisible();
   const plannedHeaders = await plannedTable.locator('thead th').allTextContents();
   expect(plannedHeaders.map((s) => s.trim())).toContain('ADG Calc');
+  expect(plannedHeaders.map((s) => s.trim())).toContain('Age');
 });
 
 test('forecast: visible dates render as mm/dd/yy', async ({page, cattleForecastScenario, supabaseAdmin}) => {
@@ -705,4 +707,116 @@ test('batches: active auto-flips to complete on full hanging weights; reopen res
   await expect(page.getByText(/^Active \(1\)/)).toBeVisible({timeout: 5_000});
   const r = await supabaseAdmin.from('cattle_processing_batches').select('status').eq('id', batchId).single();
   expect(r.data.status).toBe('active');
+});
+
+// --------------------------------------------------------------------------
+// Test 8 — Month tile rows (planned + hidden) show Age as of that month.
+// --------------------------------------------------------------------------
+test('forecast: month tile planned + hidden rows show Age as of that forecast month', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  // F1 has birth_date 2024-08-01 → at any forecast month it has a non-empty
+  // age cell (e.g. "1y 9m"). The data hook is keyed on cattle id.
+  const f1Row = page.locator('[data-month-row="F1"]').first();
+  await expect(f1Row).toBeVisible({timeout: 10_000});
+  const f1Age = page.locator('[data-month-row-age="F1"]').first();
+  await expect(f1Age).toBeVisible();
+  await expect(f1Age).toHaveText(/(\d+y\s+)?\d+m/);
+
+  // Hide F-HIDE so a hidden row renders alongside, and assert the hidden
+  // row's age cell is still visible.
+  const fHideRow = page.locator('[data-month-row="F-HIDE"]').first();
+  await expect(fHideRow).toBeVisible();
+  await page.locator('[data-toggle-hide="F-HIDE"]').click();
+
+  const hiddenAge = page.locator('[data-month-hidden-row-age="F-HIDE"]').first();
+  await expect(hiddenAge).toBeVisible({timeout: 5_000});
+  await expect(hiddenAge).toHaveText(/(\d+y\s+)?\d+m/);
+});
+
+// --------------------------------------------------------------------------
+// Test 9 — Actual batch per-cow row shows Age (as of the batch processing date).
+// --------------------------------------------------------------------------
+test('forecast: actual-batch per-cow row shows age as of the processing date', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  const monthKey = new Date().toISOString().slice(0, 7);
+  await supabaseAdmin.from('cattle_processing_batches').insert({
+    id: 'b-age-test-1',
+    name: 'C-26-92',
+    status: 'active',
+    actual_process_date: monthKey + '-04',
+    planned_process_date: monthKey + '-04',
+    cows_detail: [{cattle_id: 'F1', tag: '1001', live_weight: 1100, hanging_weight: null}],
+    total_live_weight: 1100,
+    total_hanging_weight: null,
+  });
+  await supabaseAdmin.from('cattle').update({herd: 'processed', processing_batch_id: 'b-age-test-1'}).eq('id', 'F1');
+
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  const ageCell = page.locator('[data-actual-batch-row-age="F1"]');
+  await expect(ageCell).toBeVisible({timeout: 10_000});
+  await expect(ageCell).toHaveText(/(\d+y\s+)?\d+m/);
+});
+
+// --------------------------------------------------------------------------
+// Test 10 — Heifer modal polish: leftmost checkbox, no Details button,
+// row click toggles CowDetail expand.
+// --------------------------------------------------------------------------
+test('forecast: include-heifers modal — leftmost checkbox, no Details button, row click expands', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await page.goto(FORECAST_PATH);
+  await waitForForecastLoaded(page);
+
+  await page.locator('[data-include-heifers-btn]').click();
+  await expect(page.locator('[data-include-heifers-modal]')).toBeVisible({timeout: 5_000});
+
+  // Details button is gone; the row itself is the click target.
+  await expect(page.getByRole('button', {name: /^Details$/})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: /^Collapse$/})).toHaveCount(0);
+
+  // Checkbox is the leftmost interactive element of the row (DOM order check).
+  const row = page.locator('[data-heifer-row="M-HEIFER"]');
+  await expect(row).toBeVisible();
+  const firstChildIsCheckbox = await row.evaluate((el) => {
+    // Find first input under the visible row container (skip the optional
+    // expanded CowDetail panel below by querying within the row's first child).
+    const first = el.querySelector('input[type="checkbox"]');
+    if (!first) return false;
+    // Walk siblings before the checkbox — none of them should be inputs.
+    let prev = first.previousElementSibling;
+    while (prev) {
+      if (prev.querySelector && prev.querySelector('input')) return false;
+      prev = prev.previousElementSibling;
+    }
+    return true;
+  });
+  expect(firstChildIsCheckbox).toBe(true);
+
+  // Click on the row (not the checkbox) — CowDetail expands.
+  await page.locator('[data-heifer-age="M-HEIFER"]').click();
+  await expect(row.locator('[data-cow-detail]')).toBeVisible({timeout: 5_000});
+
+  // Click the row again — collapses.
+  await page.locator('[data-heifer-age="M-HEIFER"]').click();
+  await expect(row.locator('[data-cow-detail]')).toHaveCount(0);
+
+  // Clicking the checkbox itself does NOT toggle the row (stopPropagation).
+  const cb = page.locator('[data-heifer-checkbox="M-HEIFER"]');
+  const checkedBefore = await cb.isChecked();
+  await cb.click();
+  const checkedAfter = await cb.isChecked();
+  expect(checkedAfter).toBe(!checkedBefore);
+  // Row stayed collapsed.
+  await expect(row.locator('[data-cow-detail]')).toHaveCount(0);
 });

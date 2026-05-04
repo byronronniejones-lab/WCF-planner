@@ -1,6 +1,7 @@
 import {describe, it, expect} from 'vitest';
 import {
   monthKey,
+  monthStartMs,
   parseMonthKey,
   monthsInHorizon,
   monthsForAssignment,
@@ -273,7 +274,7 @@ describe('eligibilityFor — locked inclusion rules', () => {
 
 // ── projection / month assignment ────────────────────────────────────────────
 describe('projectedWeightAtMonth + findFirstEligibleUnhiddenMonth', () => {
-  it('linear projection from anchor', () => {
+  it('linear projection from anchor — month checkpoint is the 15th', () => {
     const anchorMs = new Date('2026-05-01T12:00:00Z').getTime();
     const proj = projectedWeightAtMonth({
       anchorWeight: 1000,
@@ -281,10 +282,14 @@ describe('projectedWeightAtMonth + findFirstEligibleUnhiddenMonth', () => {
       targetMonthKey: '2026-08',
       adg: 2,
     });
-    // 2026-05-01 → 2026-08-01 = 92 days. 1000 + 2*92 = 1184.
-    expect(proj).toBeCloseTo(1184);
+    // 2026-05-01 12:00Z → 2026-08-15 12:00Z = 106 days. 1000 + 2*106 = 1212.
+    expect(proj).toBeCloseTo(1212);
   });
-  it('first eligible unhidden month — picks earliest in window', () => {
+  it('monthStartMs anchors a YYYY-MM key to the 15th of the month', () => {
+    const ms = monthStartMs('2026-08');
+    expect(new Date(ms).toISOString()).toBe('2026-08-15T12:00:00.000Z');
+  });
+  it('first eligible unhidden month — picks earliest in window (15th anchor)', () => {
     const horizon = monthsInHorizon(TODAY, 1);
     const anchorMs = new Date('2026-05-01T12:00:00Z').getTime();
     const r = findFirstEligibleUnhiddenMonth({
@@ -298,15 +303,16 @@ describe('projectedWeightAtMonth + findFirstEligibleUnhiddenMonth', () => {
       hiddenSet: new Set(),
     });
     // Need 200 lb gain at 2 lb/day = 100 days. 2026-05-01 + 100d ≈ 2026-08-09.
-    // First month-start projection >= 1200 is 2026-09 (2026-09-01 = 123 days
-    // out, projected 1246). 2026-08-01 is 92 days out → 1184, below 1200.
+    // First month-15 projection >= 1200 is 2026-08 (2026-08-15 = 106 days
+    // out, projected 1212). With month-1 anchor this would land in 2026-09;
+    // the 15th anchor moves it forward by ~half a month.
     expect(r).not.toBe(null);
-    expect(r.monthKey).toBe('2026-09');
+    expect(r.monthKey).toBe('2026-08');
   });
   it('hidden month is skipped — assignment lands in the next eligible', () => {
     const horizon = monthsInHorizon(TODAY, 1);
     const anchorMs = new Date('2026-05-01T12:00:00Z').getTime();
-    const hidden = new Set(['c-x|2026-09']);
+    const hidden = new Set(['c-x|2026-08']);
     const r = findFirstEligibleUnhiddenMonth({
       cow: cow({id: 'c-x'}),
       anchorWeight: 1000,
@@ -317,7 +323,7 @@ describe('projectedWeightAtMonth + findFirstEligibleUnhiddenMonth', () => {
       weightMax: 1500,
       hiddenSet: hidden,
     });
-    expect(r.monthKey).toBe('2026-10');
+    expect(r.monthKey).toBe('2026-09');
   });
 });
 
