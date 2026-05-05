@@ -58,4 +58,9 @@ describe('canonical anchors (paths printed on field materials per §7)', () => {
     expect(VIEW_TO_PATH.adminTasks).toBe('/admin/tasks');
     expect(PATH_TO_VIEW['/admin/tasks']).toBe('adminTasks');
   });
+
+  it('public tasks webform mounts at /webforms/tasks', () => {
+    expect(VIEW_TO_PATH.tasksWebform).toBe('/webforms/tasks');
+    expect(PATH_TO_VIEW['/webforms/tasks']).toBe('tasksWebform');
+  });
 });

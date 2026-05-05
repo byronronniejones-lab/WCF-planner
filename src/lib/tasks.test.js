@@ -1,5 +1,13 @@
 import {describe, it, expect} from 'vitest';
-import {RECURRENCE_OPTIONS, isOpenTaskInstance} from './tasks.js';
+import {
+  RECURRENCE_OPTIONS,
+  isOpenTaskInstance,
+  TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY,
+  normalizePublicAssigneeAvailability,
+  isPublicAssigneeHidden,
+  setPublicAssigneeHidden,
+  visiblePublicAssignees,
+} from './tasks.js';
 
 // Pure helpers — see ./tasks.js. Tests stay equally pure.
 
@@ -28,5 +36,66 @@ describe('isOpenTaskInstance', () => {
     expect(isOpenTaskInstance({})).toBe(false);
     expect(isOpenTaskInstance(null)).toBe(false);
     expect(isOpenTaskInstance(undefined)).toBe(false);
+  });
+});
+
+describe('public assignee availability helpers', () => {
+  it('exposes the canonical webform_config key name', () => {
+    expect(TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY).toBe('tasks_public_assignee_availability');
+  });
+
+  it('normalizePublicAssigneeAvailability collapses garbage to {hiddenProfileIds: []}', () => {
+    expect(normalizePublicAssigneeAvailability(null)).toEqual({hiddenProfileIds: []});
+    expect(normalizePublicAssigneeAvailability(undefined)).toEqual({hiddenProfileIds: []});
+    expect(normalizePublicAssigneeAvailability('garbage')).toEqual({hiddenProfileIds: []});
+    expect(normalizePublicAssigneeAvailability([])).toEqual({hiddenProfileIds: []});
+    expect(normalizePublicAssigneeAvailability({})).toEqual({hiddenProfileIds: []});
+  });
+
+  it('normalizePublicAssigneeAvailability filters non-strings and dedupes', () => {
+    const out = normalizePublicAssigneeAvailability({
+      hiddenProfileIds: ['uuid-a', null, 'uuid-a', '', 'uuid-b', 42],
+    });
+    expect(out.hiddenProfileIds.sort()).toEqual(['uuid-a', 'uuid-b']);
+  });
+
+  it('isPublicAssigneeHidden returns true only when id is in the list', () => {
+    const av = {hiddenProfileIds: ['uuid-a', 'uuid-b']};
+    expect(isPublicAssigneeHidden('uuid-a', av)).toBe(true);
+    expect(isPublicAssigneeHidden('uuid-c', av)).toBe(false);
+    expect(isPublicAssigneeHidden('', av)).toBe(false);
+  });
+
+  it('setPublicAssigneeHidden hides + unhides idempotently', () => {
+    let av = {hiddenProfileIds: []};
+    av = setPublicAssigneeHidden(av, 'uuid-a', true);
+    expect(av.hiddenProfileIds).toEqual(['uuid-a']);
+    av = setPublicAssigneeHidden(av, 'uuid-a', true); // re-hide
+    expect(av.hiddenProfileIds).toEqual(['uuid-a']);
+    av = setPublicAssigneeHidden(av, 'uuid-a', false);
+    expect(av.hiddenProfileIds).toEqual([]);
+  });
+
+  it('setPublicAssigneeHidden throws on missing profileId', () => {
+    expect(() => setPublicAssigneeHidden({hiddenProfileIds: []}, '', true)).toThrow();
+  });
+
+  it('visiblePublicAssignees applies the filter and returns a copy', () => {
+    const profiles = [
+      {id: 'uuid-a', full_name: 'ALICE'},
+      {id: 'uuid-b', full_name: 'BOB'},
+      {id: 'uuid-c', full_name: 'CARL'},
+    ];
+    const av = {hiddenProfileIds: ['uuid-b']};
+    const out = visiblePublicAssignees(profiles, av);
+    expect(out.map((p) => p.id)).toEqual(['uuid-a', 'uuid-c']);
+    // Empty / missing availability returns full list copy.
+    expect(visiblePublicAssignees(profiles, null).map((p) => p.id)).toEqual(['uuid-a', 'uuid-b', 'uuid-c']);
+  });
+
+  it('visiblePublicAssignees tolerates orphan ids in hiddenProfileIds', () => {
+    const profiles = [{id: 'uuid-a', full_name: 'ALICE'}];
+    const out = visiblePublicAssignees(profiles, {hiddenProfileIds: ['uuid-orphan']});
+    expect(out.map((p) => p.id)).toEqual(['uuid-a']);
   });
 });

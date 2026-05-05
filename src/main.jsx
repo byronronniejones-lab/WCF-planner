@@ -195,6 +195,7 @@ import WebformsAdminView from './webforms/WebformsAdminView.jsx';
 import PigDailysWebform from './webforms/PigDailysWebform.jsx';
 import AdminTasksView from './admin/AdminTasksView.jsx';
 import UnauthorizedRedirect from './shared/UnauthorizedRedirect.jsx';
+import TasksWebform from './webforms/TasksWebform.jsx';
 
 // Phase 2 Round 8: equipment placeholder.
 import EquipmentHome from './equipment/EquipmentHome.jsx';
@@ -1215,16 +1216,26 @@ function App() {
     // WebformHub owns its own sub-routing under /webforms/<form>. Treat any
     // such path as view='webformhub' so the browser back button can traverse
     // selector ↔ sub-form boundaries without the app snapping to home.
-    const isWebformSubpath = location.pathname.startsWith('/webforms/');
-    const isEquipmentSubpath = location.pathname.startsWith('/equipment/') || location.pathname === '/equipment';
-    const isFuelingSubpath = location.pathname.startsWith('/fueling/') || location.pathname === '/fueling';
+    //
+    // EXCEPT for paths that have an explicit PATH_TO_VIEW entry — those
+    // are dedicated top-level views that happen to live under /webforms/.
+    // Currently: /webforms/tasks → 'tasksWebform' (C3). The exact-match
+    // PATH_TO_VIEW lookup beats the generic subpath fallback so the
+    // dedicated component mounts instead of WebformHub trying to render
+    // it as an internal sub-form.
+    const exactPathView = PATH_TO_VIEW[location.pathname];
+    const isWebformSubpath = !exactPathView && location.pathname.startsWith('/webforms/');
+    const isEquipmentSubpath =
+      !exactPathView && (location.pathname.startsWith('/equipment/') || location.pathname === '/equipment');
+    const isFuelingSubpath =
+      !exactPathView && (location.pathname.startsWith('/fueling/') || location.pathname === '/fueling');
     const viewFromUrl = isWebformSubpath
       ? 'webformhub'
       : isEquipmentSubpath
         ? 'equipmentHome'
         : isFuelingSubpath
           ? 'fuelingHub'
-          : PATH_TO_VIEW[location.pathname];
+          : exactPathView;
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -1556,6 +1567,7 @@ function App() {
     'webforms',
     'adminTasks',
     'webformhub',
+    'tasksWebform',
     'webform',
     'broilerdailys',
     'pigdailys',
@@ -3090,6 +3102,7 @@ function App() {
   if (view === 'webform') return React.createElement(PigDailysWebform);
   if (view === 'addfeed') return React.createElement(AddFeedWebform, {sb});
   if (view === 'weighins') return React.createElement(WeighInsWebform, {sb});
+  if (view === 'tasksWebform') return React.createElement(TasksWebform, {sb});
   if (view === 'webformhub')
     return React.createElement(WebformHub, {
       sb,

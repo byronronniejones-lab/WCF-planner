@@ -18,6 +18,8 @@ import {
   saveAvailability,
   setHidden,
 } from '../lib/teamAvailability.js';
+import {setPublicAssigneeHidden} from '../lib/tasks.js';
+import {loadPublicAssigneeAvailability, savePublicAssigneeAvailability} from '../lib/tasksAdminApi.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import FeedCostsPanel from '../admin/FeedCostsPanel.jsx';
 import FeedCostByMonthPanel from '../admin/FeedCostByMonthPanel.jsx';
@@ -345,20 +347,55 @@ const FORM_LABELS = {
   'layer-dailys': 'Layer Daily Reports',
   'pig-dailys': 'Pig Daily Reports',
   'sheep-dailys': 'Sheep Daily Reports',
+  'tasks-public': 'Public Tasks',
   'weigh-ins': 'Weigh-Ins',
 };
 
-function TeamAvailabilityEditor() {
+function TeamAvailabilityEditor({loadUsers}) {
   const {wfRoster, wfAvailability, setWfAvailability} = useWebformsConfig();
+  const {allUsers} = useAuth();
+
+  // Hydrate allUsers when this editor mounts and the auth context's list
+  // is empty. Mirrors AdminTasksView's hydration path for direct admin
+  // /webforms loads (URL bar / bookmark / page reload bypasses the Header
+  // → Users modal click that would otherwise populate allUsers). The
+  // 'tasks-public' assignee section depends on allUsers being non-empty
+  // to render any checkboxes; without this, a fresh /admin/Webforms hit
+  // would show "No eligible planner users yet" until the admin clicks
+  // the Header → Users option.
+  React.useEffect(() => {
+    if (typeof loadUsers !== 'function') return;
+    if (Array.isArray(allUsers) && allUsers.length > 0) return;
+    loadUsers();
+    // Fire-once on mount; allUsers transitions from [] to populated once
+    // the load resolves. eslint-disable to keep the deps array empty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [openKey, setOpenKey] = React.useState(null);
+  // Public-tasks assignee availability lives in a separate webform_config
+  // key ('tasks_public_assignee_availability'). Stored shape:
+  // {hiddenProfileIds: [<profile uuid>, ...]}. Roster IDs (gated above
+  // via wfAvailability.forms['tasks-public'].hiddenIds) and profile UUIDs
+  // (gated here) are kept in DIFFERENT keys per Codex's "do not mix" rule.
+  const [publicAssigneeAv, setPublicAssigneeAv] = React.useState({hiddenProfileIds: []});
 
   React.useEffect(() => {
     if (wfAvailability && wfAvailability.forms && Object.keys(wfAvailability.forms).length > 0) return;
     let cancelled = false;
     loadAvailability(sb).then((a) => {
       if (!cancelled && a) setWfAvailability(a);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    loadPublicAssigneeAvailability(sb).then((av) => {
+      if (!cancelled) setPublicAssigneeAv(av);
     });
     return () => {
       cancelled = true;
@@ -372,6 +409,20 @@ function TeamAvailabilityEditor() {
       const next = setHidden(wfAvailability || {forms: {}}, formKey, id, hidden);
       const persisted = await saveAvailability(sb, next);
       setWfAvailability(persisted);
+    } catch (e) {
+      setErr(e?.message ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onToggleAssignee(profileId, hidden) {
+    setBusy(true);
+    setErr('');
+    try {
+      const next = setPublicAssigneeHidden(publicAssigneeAv, profileId, hidden);
+      const persisted = await savePublicAssigneeAvailability(sb, next);
+      setPublicAssigneeAv(persisted);
     } catch (e) {
       setErr(e?.message ? e.message : String(e));
     } finally {
@@ -439,7 +490,15 @@ function TeamAvailabilityEditor() {
       {TEAM_AVAILABILITY_FORM_KEYS.map((formKey) => {
         const hiddenIds = new Set(availability.forms[formKey]?.hiddenIds || []);
         const hiddenCount = hiddenIds.size;
+        const isPublicTasks = formKey === 'tasks-public';
+        const hiddenAssigneeIds = new Set(publicAssigneeAv.hiddenProfileIds || []);
+        const hiddenAssigneeCount = isPublicTasks ? hiddenAssigneeIds.size : 0;
+        const totalHiddenCount = hiddenCount + hiddenAssigneeCount;
         const isOpen = openKey === formKey;
+        const eligibleProfiles = (Array.isArray(allUsers) ? allUsers : [])
+          .filter((u) => u && u.id && u.role !== 'inactive')
+          .slice()
+          .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
         return (
           <div key={formKey} data-availability-section={formKey}>
             <button
@@ -451,36 +510,79 @@ function TeamAvailabilityEditor() {
               <span>
                 {isOpen ? '▾' : '▸'} {FORM_LABELS[formKey]}
               </span>
-              {hiddenCount > 0 && <span style={hiddenBadge}>{hiddenCount} hidden</span>}
+              {totalHiddenCount > 0 && <span style={hiddenBadge}>{totalHiddenCount} hidden</span>}
             </button>
             {isOpen && (
-              <div style={{display: 'flex', flexWrap: 'wrap', gap: 4, padding: '6px 4px 12px'}}>
-                {roster.length === 0 ? (
-                  <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
-                    No team members in roster yet.
-                  </span>
-                ) : (
-                  roster.map((m) => {
-                    const isHidden = hiddenIds.has(m.id);
-                    return (
-                      <label
-                        key={m.id}
-                        data-availability-row={formKey}
-                        data-availability-member={m.id}
-                        data-availability-hidden={isHidden ? '1' : '0'}
-                        style={rowStyle}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!isHidden}
-                          disabled={busy}
-                          onChange={(e) => onToggle(formKey, m.id, !e.target.checked)}
-                          style={{margin: 0, accentColor: '#085041'}}
-                        />
-                        <span>{m.name}</span>
-                      </label>
-                    );
-                  })
+              <div style={{padding: '6px 4px 12px'}}>
+                {isPublicTasks && (
+                  <div style={{fontSize: 11, color: '#6b7280', marginBottom: 6, fontWeight: 600}}>
+                    Submitted-by / Assignor (roster names)
+                  </div>
+                )}
+                <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
+                  {roster.length === 0 ? (
+                    <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
+                      No team members in roster yet.
+                    </span>
+                  ) : (
+                    roster.map((m) => {
+                      const isHidden = hiddenIds.has(m.id);
+                      return (
+                        <label
+                          key={m.id}
+                          data-availability-row={formKey}
+                          data-availability-member={m.id}
+                          data-availability-hidden={isHidden ? '1' : '0'}
+                          style={rowStyle}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!isHidden}
+                            disabled={busy}
+                            onChange={(e) => onToggle(formKey, m.id, !e.target.checked)}
+                            style={{margin: 0, accentColor: '#085041'}}
+                          />
+                          <span>{m.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                {isPublicTasks && (
+                  <>
+                    <div style={{fontSize: 11, color: '#6b7280', margin: '12px 0 6px', fontWeight: 600}}>
+                      Assignee (planner users)
+                    </div>
+                    <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
+                      {eligibleProfiles.length === 0 ? (
+                        <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
+                          No eligible planner users yet.
+                        </span>
+                      ) : (
+                        eligibleProfiles.map((u) => {
+                          const isHidden = hiddenAssigneeIds.has(u.id);
+                          return (
+                            <label
+                              key={u.id}
+                              data-availability-assignee-row="tasks-public"
+                              data-availability-assignee-id={u.id}
+                              data-availability-assignee-hidden={isHidden ? '1' : '0'}
+                              style={rowStyle}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!isHidden}
+                                disabled={busy}
+                                onChange={(e) => onToggleAssignee(u.id, !e.target.checked)}
+                                style={{margin: 0, accentColor: '#085041'}}
+                              />
+                              <span>{u.full_name || u.email || u.id.slice(0, 8)}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -764,7 +866,7 @@ export default function WebformsAdminView({
           <div>
             {/* ── MASTER TEAM ROSTER + per-form availability filters (only at list level, hidden inside the per-form editor) ── */}
             {!editWfId && <TeamRosterEditor />}
-            {!editWfId && <TeamAvailabilityEditor />}
+            {!editWfId && <TeamAvailabilityEditor loadUsers={loadUsers} />}
 
             {/* ── WEIGH-INS EDITOR (per-species lists retired; no editor needed for v1) ── */}
             {editWfId && currentWf && currentWf.id === 'weighins-webform' && (

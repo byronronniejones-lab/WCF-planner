@@ -116,6 +116,49 @@ const REGISTRY = Object.freeze({
       };
     },
   }),
+  // -----------------------------------------------------------------------
+  // C3 — Public Tasks webform submit
+  // -----------------------------------------------------------------------
+  // Wraps mig 041's submit_task_instance(parent_in jsonb). Anon-callable
+  // SECDEF function: validates submitted_by against the visible-roster
+  // filter for 'tasks-public', validates assignee against eligible profiles
+  // minus tasks_public_assignee_availability.hiddenProfileIds, and inserts
+  // one task_instances row idempotent-by-csid.
+  //
+  // TasksWebform passes opts.parentId = 'ti-' + crypto.randomUUID() so the
+  // queued record's parent.id matches the task_instances PK convention. If
+  // the caller forgot, useOfflineRpcSubmit defaults parentId to
+  // ${formKind}-<ts>-<rand>, which would PASS but break the conventional
+  // 'ti-...' shape.
+  //
+  // Idempotency: the RPC handles the 23505 path internally and returns
+  // {idempotent_replay: true} on replay. Callers see no error.
+  task_submit: Object.freeze({
+    rpc: 'submit_task_instance',
+    /**
+     * @param {object} payload
+     *   {title, description, due_date,
+     *    assignee_profile_id, submitted_by_team_member}
+     * @param {{csid: string, parentId: string}} ids
+     * @returns {{rpc: string, args: {parent_in: object}}}
+     */
+    buildArgs(payload, {csid, parentId}) {
+      return {
+        rpc: 'submit_task_instance',
+        args: {
+          parent_in: {
+            id: parentId,
+            client_submission_id: csid,
+            title: payload.title,
+            description: payload.description ?? null,
+            due_date: payload.due_date,
+            assignee_profile_id: payload.assignee_profile_id,
+            submitted_by_team_member: payload.submitted_by_team_member,
+          },
+        },
+      };
+    },
+  }),
   add_feed_batch: Object.freeze({
     rpc: 'submit_add_feed_batch',
     /**

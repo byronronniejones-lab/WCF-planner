@@ -1400,7 +1400,7 @@ const WebformHub = ({
               background: '#eff6ff',
               borderRadius: 12,
               padding: '16px 18px',
-              marginBottom: 16,
+              marginBottom: 10,
               cursor: 'pointer',
               boxShadow: '0 1px 3px rgba(0,0,0,.08)',
               display: 'flex',
@@ -1420,6 +1420,34 @@ const WebformHub = ({
               </div>
             </div>
             <div style={{color: '#1e40af', fontSize: 18}}>{'\u203a'}</div>
+          </div>
+          <div
+            data-tile="tasks"
+            onClick={() => navigate('/webforms/tasks')}
+            style={{
+              background: '#f0fdfa',
+              borderRadius: 12,
+              padding: '16px 18px',
+              marginBottom: 16,
+              cursor: 'pointer',
+              boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              border: '1px solid #99f6e4',
+            }}
+          >
+            <div style={{fontSize: 32}}>{'\u2705'}</div>
+            <div style={{flex: 1}}>
+              <div style={{fontSize: 16, fontWeight: 700, color: '#0f766e'}}>Submit a Task</div>
+              <div style={{fontSize: 12, color: '#0f766e', opacity: 0.8}}>
+                One-time task for a planner user \u2014 admin will see it on Tasks Center
+              </div>
+              <div style={{fontSize: 11, color: '#0f766e', opacity: 0.6, marginTop: 2}}>
+                {'Anyone on the roster can submit'}
+              </div>
+            </div>
+            <div style={{color: '#0f766e', fontSize: 18}}>{'\u203a'}</div>
           </div>
           {[
             {id: 'broiler', label: '🐔 Broiler Daily Report'},

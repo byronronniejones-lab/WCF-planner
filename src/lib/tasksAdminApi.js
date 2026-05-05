@@ -8,6 +8,14 @@
 // loadCronAuditTail) were removed alongside the operator-facing UI for
 // cron runs. The Edge Function and audit table stay intact — admins
 // just don't drive them through this module anymore.
+//
+// C3 added: load/savePublicAssigneeAvailability for the Public Tasks
+// availability tile. Roster-side filtering for the Submitted-by dropdown
+// goes through teamAvailability.js (forms['tasks-public'].hiddenIds);
+// profile-uuid filtering for the Assignee dropdown lives in a separate
+// webform_config key — see tasks.js for the canonical key name + shape.
+
+import {TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY, normalizePublicAssigneeAvailability} from './tasks.js';
 
 export async function loadTaskTemplates(sb) {
   const {data, error} = await sb.from('task_templates').select('*').order('title', {ascending: true});
@@ -35,6 +43,42 @@ export async function upsertTaskTemplate(sb, template) {
 export async function deleteTaskTemplate(sb, id) {
   const {error} = await sb.from('task_templates').delete().eq('id', id);
   if (error) throw new Error(`deleteTaskTemplate: ${error.message}`);
+}
+
+// ── Public Tasks assignee availability (admin-managed) ──────────────────
+
+export async function loadPublicAssigneeAvailability(sb) {
+  const {data: row} = await sb
+    .from('webform_config')
+    .select('data')
+    .eq('key', TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY)
+    .maybeSingle();
+  return normalizePublicAssigneeAvailability(row && row.data ? row.data : null);
+}
+
+/**
+ * Persist the public-tasks assignee availability. Read-fresh-then-merge
+ * per PROJECT.md §7 line 543 (webform_config jsonb keys must re-fetch
+ * before upsert). Local-wins on the full list — matches
+ * saveAvailability's per-formKey local-wins philosophy. Single-admin
+ * tile usage in practice; if concurrent admins both write here, last
+ * writer's snapshot is what persists.
+ *
+ * Returns the persisted availability.
+ */
+export async function savePublicAssigneeAvailability(sb, nextAvailability) {
+  const local = normalizePublicAssigneeAvailability(nextAvailability);
+  // §7 read-fresh-then-write contract: fetch the latest stored row even
+  // though local-wins overwrites it. The fetch validates the key path
+  // and lets future merge strategies plug in without changing the call
+  // site.
+  await sb.from('webform_config').select('data').eq('key', TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY).maybeSingle();
+
+  const {error} = await sb
+    .from('webform_config')
+    .upsert({key: TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY, data: local}, {onConflict: 'key'});
+  if (error) throw new Error(`savePublicAssigneeAvailability: write failed: ${error.message}`);
+  return local;
 }
 
 // One-time admin-created task instance. Inserts directly into task_instances

@@ -74,6 +74,7 @@ export const VIEW_TO_PATH = {
   // Public (no-auth) — these also have /#X legacy hash bookmarks that the
   // Phase 3.3 shim rewrites to these clean paths.
   webformhub: '/webforms',
+  tasksWebform: '/webforms/tasks',
   addfeed: '/addfeed',
   weighins: '/weighins',
   webform: '/webform-pigs', // legacy standalone pig-dailys public form (rare)

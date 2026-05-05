@@ -27,9 +27,16 @@ import {normalizeRoster} from './teamMembers.js';
 
 const KEY = 'team_availability';
 
-// The 9 form keys this module gates. Keep alphabetic for stable admin UI
+// The 10 form keys this module gates. Keep alphabetic for stable admin UI
 // rendering. Adding a new form is one entry here + one consumer call to
 // `availableNamesFor`.
+//
+// 'tasks-public' (added 2026-05-05 with C3) gates the Submitted-by /
+// Assignor dropdown on /webforms/tasks. The Assignee dropdown on the
+// same form is gated by a SEPARATE config key
+// `webform_config.tasks_public_assignee_availability`
+// ({hiddenProfileIds: [<uuid>, ...]}) — roster IDs (here) and profile
+// UUIDs (there) MUST NOT mix in the same hiddenIds array.
 export const TEAM_AVAILABILITY_FORM_KEYS = [
   'add-feed',
   'broiler-dailys',
@@ -39,6 +46,7 @@ export const TEAM_AVAILABILITY_FORM_KEYS = [
   'layer-dailys',
   'pig-dailys',
   'sheep-dailys',
+  'tasks-public',
   'weigh-ins',
 ];
 
