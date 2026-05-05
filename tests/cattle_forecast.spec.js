@@ -1161,8 +1161,25 @@ test('forecast: include-heifers Confirm prunes stale preselected rows but preser
 
   // The eligible preselected heifer is visible AND her checkbox is checked
   // (staged seed = initialEligibleIncludes).
-  await expect(page.locator('[data-heifer-row="M-HEIFER-OK2"]')).toBeVisible();
-  await expect(page.locator('[data-heifer-checkbox="M-HEIFER-OK2"]')).toBeChecked();
+  const okModalRow = page.locator('[data-heifer-row="M-HEIFER-OK2"]');
+  const okCheckbox = page.locator('[data-heifer-checkbox="M-HEIFER-OK2"]');
+  const okBadge = page.locator('[data-heifer-inclusion-badge="M-HEIFER-OK2"]');
+  await expect(okModalRow).toBeVisible();
+  await expect(okCheckbox).toBeChecked();
+  await expect(okModalRow).toHaveAttribute('data-heifer-inclusion-state', 'included');
+  await expect(okBadge).toHaveText('Included');
+
+  // Unchecking an included heifer keeps her visible but marks the pending
+  // removal plainly. This is the operator-facing "disinclude later" state.
+  await okCheckbox.click();
+  await expect(okModalRow).toHaveAttribute('data-heifer-inclusion-state', 'will-remove');
+  await expect(okBadge).toHaveText('Will remove');
+  await expect(page.locator('[data-heifer-include-footer]')).toContainText('-1 remove pending');
+
+  // Re-check before the preservation assertion below.
+  await okCheckbox.click();
+  await expect(okModalRow).toHaveAttribute('data-heifer-inclusion-state', 'included');
+  await expect(okBadge).toHaveText('Included');
   // The stale preselected heifer is NOT in the DOM at all.
   await expect(page.locator('[data-heifer-row="M-HEIFER-AGED2"]')).toHaveCount(0);
   // Footer count = 1 (only the eligible preselect counts).

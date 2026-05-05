@@ -1596,6 +1596,14 @@ function IncludeHeifersModal({
     return out;
   }, [initialIncludes, eligibleHeiferIds]);
   const [staged, setStaged] = useState(() => new Set(initialEligibleIncludes));
+  const pendingAddCount = useMemo(
+    () => [...staged].filter((id) => !initialEligibleIncludes.has(id)).length,
+    [staged, initialEligibleIncludes],
+  );
+  const pendingRemoveCount = useMemo(
+    () => [...initialEligibleIncludes].filter((id) => !staged.has(id)).length,
+    [staged, initialEligibleIncludes],
+  );
   // Mid-flight prune: if `cattle` reloads while the modal is open and a
   // staged heifer becomes ineligible (newly pregnant, aged out, or
   // auto-promoted to cow on calving), drop her from the staged set so
@@ -1684,10 +1692,10 @@ function IncludeHeifersModal({
             {'×'}
           </button>
         </div>
-        <div style={{padding: '8px 20px 4px', fontSize: 11, color: '#6b7280'}}>
-          {heifers.length} heifer{heifers.length === 1 ? '' : 's'} currently in mommas. Selected heifers are included in
-          the forecast using global ADG. Previously selected heifers are highlighted; click rows to expand and edit
-          details. Save the exact checked set with <strong>Confirm Selections</strong>.
+        <div style={{padding: '8px 20px 4px', fontSize: 11, color: '#6b7280'}} data-heifer-include-help>
+          {heifers.length} heifer{heifers.length === 1 ? '' : 's'} currently in mommas. Checked heifers are included in
+          the forecast using global ADG. Uncheck an included heifer to remove her when you{' '}
+          <strong>Confirm Selections</strong>. Eligible heifers stay listed so they can be included again later.
         </div>
         <div style={{padding: '12px 20px 0', maxHeight: '60vh', overflowY: 'auto'}}>
           {heifers.length === 0 ? (
@@ -1698,6 +1706,22 @@ function IncludeHeifersModal({
             heifers.map((h) => {
               const checked = staged.has(h.id);
               const wasIncluded = initialEligibleIncludes.has(h.id);
+              const pendingAdd = checked && !wasIncluded;
+              const pendingRemove = wasIncluded && !checked;
+              const inclusionState = pendingRemove
+                ? 'will-remove'
+                : pendingAdd
+                  ? 'will-include'
+                  : checked
+                    ? 'included'
+                    : 'excluded';
+              const badge = pendingRemove
+                ? {label: 'Will remove', bg: '#f3f4f6', color: '#4b5563', border: '#d1d5db'}
+                : pendingAdd
+                  ? {label: 'Will include', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe'}
+                  : checked
+                    ? {label: 'Included', bg: '#ecfdf5', color: '#065f46', border: '#a7f3d0'}
+                    : {label: 'Excluded', bg: '#f9fafb', color: '#6b7280', border: '#e5e7eb'};
               const isExpanded = expandedId === h.id;
               const cTags = cowTagSet(h);
               const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
@@ -1727,12 +1751,14 @@ function IncludeHeifersModal({
                 <div
                   key={h.id}
                   data-heifer-row={h.id}
+                  data-heifer-inclusion-state={inclusionState}
                   style={{
-                    border: '1px solid ' + (checked ? '#fca5a5' : '#e5e7eb'),
+                    border: '1px solid ' + badge.border,
                     borderRadius: 8,
                     marginBottom: 8,
                     overflow: 'hidden',
-                    background: wasIncluded ? '#fef2f2' : 'white',
+                    background: pendingRemove ? '#f9fafb' : checked ? '#f8fffb' : 'white',
+                    opacity: pendingRemove ? 0.72 : 1,
                   }}
                 >
                   <div
@@ -1740,7 +1766,7 @@ function IncludeHeifersModal({
                     style={{
                       padding: '8px 12px',
                       display: 'grid',
-                      gridTemplateColumns: '24px 70px 60px 150px 90px 110px 1fr',
+                      gridTemplateColumns: '24px 70px 60px 150px 90px 110px 112px',
                       alignItems: 'center',
                       gap: 10,
                       cursor: 'pointer',
@@ -1774,24 +1800,23 @@ function IncludeHeifersModal({
                     </span>
                     <span style={{fontSize: 11, color: '#6b7280'}}>{h.breed || '—'}</span>
                     <span style={{fontSize: 11, color: '#6b7280'}}>{h.origin || '—'}</span>
-                    {wasIncluded ? (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          background: '#991b1b',
-                          color: 'white',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          justifySelf: 'end',
-                        }}
-                      >
-                        previously selected
-                      </span>
-                    ) : (
-                      <span />
-                    )}
+                    <span
+                      data-heifer-inclusion-badge={h.id}
+                      style={{
+                        fontSize: 10,
+                        padding: '2px 7px',
+                        borderRadius: 999,
+                        background: badge.bg,
+                        color: badge.color,
+                        border: '1px solid ' + badge.border,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        justifySelf: 'end',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {badge.label}
+                    </span>
                   </div>
                   {isExpanded && (
                     <CowDetail
@@ -1838,11 +1863,14 @@ function IncludeHeifersModal({
             alignItems: 'center',
           }}
         >
-          <span style={{fontSize: 11, color: '#6b7280'}}>
-            {staged.size} selected
-            {staged.size !== initialEligibleIncludes.size && (
+          <span style={{fontSize: 11, color: '#6b7280'}} data-heifer-include-footer>
+            {staged.size} selected after confirm
+            {pendingAddCount > 0 && (
+              <span style={{marginLeft: 6, color: '#1d4ed8', fontStyle: 'italic'}}>+{pendingAddCount} add pending</span>
+            )}
+            {pendingRemoveCount > 0 && (
               <span style={{marginLeft: 6, color: '#92400e', fontStyle: 'italic'}}>
-                ({initialEligibleIncludes.size} previously)
+                -{pendingRemoveCount} remove pending
               </span>
             )}
           </span>
