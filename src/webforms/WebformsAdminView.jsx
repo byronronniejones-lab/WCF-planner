@@ -515,9 +515,23 @@ function TeamAvailabilityEditor({loadUsers}) {
             {isOpen && (
               <div style={{padding: '6px 4px 12px'}}>
                 {isPublicTasks && (
-                  <div style={{fontSize: 11, color: '#6b7280', marginBottom: 6, fontWeight: 600}}>
-                    Submitted-by / Assignor (roster names)
-                  </div>
+                  <>
+                    <div
+                      data-availability-default-copy="tasks-public"
+                      style={{
+                        fontSize: 11,
+                        color: '#6b7280',
+                        marginBottom: 8,
+                        lineHeight: 1.5,
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      New roster members and active planner users are included by default. Uncheck to hide.
+                    </div>
+                    <div style={{fontSize: 11, color: '#6b7280', marginBottom: 6, fontWeight: 600}}>
+                      Submitted-by / Assignor (roster names)
+                    </div>
+                  </>
                 )}
                 <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
                   {roster.length === 0 ? (

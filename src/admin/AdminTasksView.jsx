@@ -490,18 +490,35 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
               />
             </div>
 
-            {/* Make-recurring toggle: hidden when editing an existing template
-                (you can't toggle a template back to a single instance — that
-                would require deleting the template + creating an instance). */}
+            {/* Repeat-this-task toggle: hidden when editing an existing
+                template (you can't toggle a template back to a single
+                instance — that would require deleting the template +
+                creating an instance). Single full-width row directly
+                under Due date; helper copy underneath. Recurrence fields
+                expand directly below only when checked. */}
             {!isEditingTemplate && (
-              <label style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer'}}>
-                <input
-                  type="checkbox"
-                  checked={editForm.recurring}
-                  onChange={(e) => setEditForm({...editForm, recurring: e.target.checked})}
-                />
-                <span style={{fontSize: 13, color: '#374151'}}>Make recurring</span>
-              </label>
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: '10px 12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 8,
+                  background: '#f9fafb',
+                }}
+              >
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer'}}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.recurring}
+                    onChange={(e) => setEditForm({...editForm, recurring: e.target.checked})}
+                  />
+                  <span style={{fontSize: 14, fontWeight: 600, color: '#111827'}}>Repeat this task</span>
+                </label>
+                <div style={{fontSize: 11, color: '#6b7280', marginLeft: 24, marginTop: 2}}>
+                  Generates instances on a schedule (daily, weekly, monthly, etc.). The planner creates active recurring
+                  tasks daily; one-time tasks land in Open Tasks immediately.
+                </div>
+              </div>
             )}
 
             {editForm.recurring && (

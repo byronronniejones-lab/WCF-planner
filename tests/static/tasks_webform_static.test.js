@@ -41,6 +41,7 @@ const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
 const hubSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/WebformHub.jsx'), 'utf8');
 const formSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/TasksWebform.jsx'), 'utf8');
 const adminSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/WebformsAdminView.jsx'), 'utf8');
+const adminTasksSrc = fs.readFileSync(path.join(ROOT, 'src/admin/AdminTasksView.jsx'), 'utf8');
 const migSrc = fs.readFileSync(path.join(ROOT, 'supabase-migrations/041_tasks_public_rpcs.sql'), 'utf8');
 
 describe('Routes wiring', () => {
@@ -181,6 +182,48 @@ describe('Team availability + admin tile', () => {
     expect(adminSrc).toMatch(/typeof loadUsers !==\s*'function'/);
     expect(adminSrc).toMatch(/allUsers\.length\s*>\s*0/);
     expect(adminSrc).toMatch(/loadUsers\(\)/);
+  });
+
+  it('Public Tasks tile shows the default-inclusion copy at the top of the tile (C3.1a)', () => {
+    // Codex-locked exact phrase. Lives only inside the 'tasks-public'
+    // tile branch — locked via the data-availability-default-copy attr.
+    expect(adminSrc).toMatch(/data-availability-default-copy="tasks-public"/);
+    expect(adminSrc).toMatch(/New roster members and active planner users are included by default\. Uncheck to hide\./);
+  });
+});
+
+describe('AdminTasksView Repeat-this-task UI (C3.1a)', () => {
+  it('the Repeat-this-task toggle row sits directly after the Due date input', () => {
+    // After the Due-date input closes, the next form section in the modal
+    // is the Repeat-this-task toggle. JSX comments + whitespace are
+    // allowed between them. The `{!isEditingTemplate` gate is the
+    // marker that the toggle wrapper begins.
+    const m = adminTasksSrc.match(/<input\s+type="date"[\s\S]{0,1000}?<\/div>([\s\S]{0,1500}?)Repeat this task/);
+    expect(m, 'expected Repeat-this-task toggle proximate to the Due date input').not.toBeNull();
+    // The gap between the Due-date `</div>` and the toggle should
+    // include the `{!isEditingTemplate` guard — proves the toggle is
+    // the first form section after the Due date, not buried under the
+    // recurrence-fields block.
+    expect(m[1]).toMatch(/\{!isEditingTemplate\b/);
+  });
+
+  it("the toggle label reads exactly 'Repeat this task' (not 'Make recurring')", () => {
+    expect(adminTasksSrc).toMatch(/>\s*Repeat this task\s*<\/span>/);
+    // strip comments + jsdoc; comments mentioning the old label are OK.
+    const stripped = adminTasksSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(stripped).not.toMatch(/>\s*Make recurring\s*<\/span>/);
+  });
+
+  it('the toggle row has small helper copy below the label', () => {
+    // Lock that there's a sibling div with smaller font + grey color
+    // immediately after the toggle label. Use a permissive regex —
+    // exact wording can drift, but the helper-copy block must exist.
+    expect(adminTasksSrc).toMatch(/Repeat this task[\s\S]{0,200}<\/label>\s*\n\s*<div[^>]*fontSize:\s*11/);
+  });
+
+  it('recurrence + interval + active fields render only when editForm.recurring is true', () => {
+    // Existing C1.1 lock — the gate stays.
+    expect(adminTasksSrc).toMatch(/\{editForm\.recurring\s*&&/);
   });
 });
 
