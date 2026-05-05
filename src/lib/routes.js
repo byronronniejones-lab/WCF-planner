@@ -71,6 +71,9 @@ export const VIEW_TO_PATH = {
   webforms: '/admin',
   adminTasks: '/admin/tasks',
 
+  // Logged-in (any role)
+  myTasks: '/my-tasks',
+
   // Public (no-auth) — these also have /#X legacy hash bookmarks that the
   // Phase 3.3 shim rewrites to these clean paths.
   webformhub: '/webforms',

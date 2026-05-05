@@ -197,6 +197,7 @@ import PigDailysWebform from './webforms/PigDailysWebform.jsx';
 import AdminTasksView from './admin/AdminTasksView.jsx';
 import UnauthorizedRedirect from './shared/UnauthorizedRedirect.jsx';
 import TasksWebform from './webforms/TasksWebform.jsx';
+import MyTasksView from './auth/MyTasksView.jsx';
 
 // Phase 2 Round 8: equipment placeholder.
 import EquipmentHome from './equipment/EquipmentHome.jsx';
@@ -1567,6 +1568,7 @@ function App() {
     'sows',
     'webforms',
     'adminTasks',
+    'myTasks',
     'webformhub',
     'tasksWebform',
     'webform',
@@ -3503,6 +3505,16 @@ function App() {
       UnauthorizedRedirect,
       {authState, setView, requireAdmin: true, fallbackView: 'home'},
       React.createElement(AdminTasksView, {Header, sb, allUsers, loadUsers, setView}),
+    );
+
+  // ── MY TASKS (C2) ──
+  // Auth-gated (any role); requireAdmin: false. Unauthenticated users
+  // get redirected home where LoginScreen renders.
+  if (view === 'myTasks')
+    return React.createElement(
+      UnauthorizedRedirect,
+      {authState, setView, requireAdmin: false, fallbackView: 'home'},
+      React.createElement(MyTasksView, {Header, sb, authState}),
     );
 
   // ── WEBFORMS ADMIN VIEW ──

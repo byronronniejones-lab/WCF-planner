@@ -22,7 +22,7 @@ import {
   TASK_REQUEST_PHOTO_DEFAULT_FILENAME,
   buildTaskRequestPhotoStoragePath,
   buildTaskRequestPhotoDbPath,
-  stripTaskRequestPhotoBucket,
+  isStorageDuplicateError,
 } from './tasks.js';
 import {compressImage} from './photoCompress.js';
 
@@ -102,18 +102,23 @@ export async function savePublicAssigneeAvailability(sb, nextAvailability) {
 /**
  * Compress the chosen photo + upload to the task-request-photos bucket
  * at the deterministic '<instanceId>/photo-1.jpg' path. Returns the
- * bucket-prefixed DB path on success. Throws on storage error so the
- * caller can surface the message inline and abort the row insert.
+ * bucket-prefixed DB path on success.
  *
- * Retry-safety contract (Codex C3.1b review):
- *   The modal holds a stable oneTimeInstanceId across Save retries
- *   (admin can click Save twice if the createOneTimeTaskInstance call
- *   blips). Both retries land at the SAME deterministic storage path.
- *   We use upsert:true so the second upload is idempotent at the
- *   storage layer rather than a "Duplicate" error that would block
- *   the admin from finishing the task. The admin context is trusted
- *   (authenticated RLS) so overwriting their own just-uploaded photo
- *   is acceptable.
+ * Retry-safety (Codex C2 review supersedes the C3.1b upsert:true
+ * approach): the task-request-photos bucket is intentionally append-
+ * only — mig 042 grants anon/authenticated INSERT + authenticated
+ * SELECT only, no UPDATE. Supabase storage's `upsert:true` requires
+ * UPDATE policy, so we keep upsert:false and treat Duplicate / 409 /
+ * "already exists" as idempotent success. The bytes from the first
+ * attempt stay authoritative; the retry call returns the same
+ * canonical dbPath without writing.
+ *
+ * Why this still satisfies the original C3.1b retry concern: the
+ * modal holds a stable oneTimeInstanceId across Save retries, so
+ * both attempts hit the SAME deterministic storage path. The first
+ * attempt persists; the second attempt's storage error is caught
+ * and treated as success; createOneTimeTaskInstance proceeds with
+ * the path; the admin sees a clean Save outcome.
  */
 export async function uploadTaskRequestPhoto(sb, instanceId, blobOrFile) {
   if (!instanceId) {
@@ -125,30 +130,20 @@ export async function uploadTaskRequestPhoto(sb, instanceId, blobOrFile) {
   const compressed = await compressImage(blobOrFile);
   const filename = TASK_REQUEST_PHOTO_DEFAULT_FILENAME;
   const storagePath = buildTaskRequestPhotoStoragePath(instanceId, filename);
+  const dbPath = buildTaskRequestPhotoDbPath(instanceId, filename);
   const {error} = await sb.storage
     .from(TASK_REQUEST_PHOTOS_BUCKET)
-    .upload(storagePath, compressed, {contentType: compressed.type || 'image/jpeg', upsert: true});
-  if (error) {
+    .upload(storagePath, compressed, {contentType: compressed.type || 'image/jpeg', upsert: false});
+  if (error && !isStorageDuplicateError(error)) {
     throw new Error(`uploadTaskRequestPhoto: ${error.message || String(error)}`);
   }
-  return buildTaskRequestPhotoDbPath(instanceId, filename);
+  return dbPath;
 }
 
-/**
- * Generate a short-lived signed URL for an authenticated admin to view
- * a request photo. Lazy: callers fetch this on click, not eagerly per
- * row in the Open Tasks list (Codex Q3). Returns null if the dbPath is
- * missing or doesn't carry the expected bucket prefix.
- */
-export async function getRequestPhotoSignedUrl(sb, dbPath, ttlSeconds = 600) {
-  const storagePath = stripTaskRequestPhotoBucket(dbPath);
-  if (!storagePath) return null;
-  const {data, error} = await sb.storage.from(TASK_REQUEST_PHOTOS_BUCKET).createSignedUrl(storagePath, ttlSeconds);
-  if (error) {
-    throw new Error(`getRequestPhotoSignedUrl: ${error.message || String(error)}`);
-  }
-  return data && data.signedUrl ? data.signedUrl : null;
-}
+// (getRequestPhotoSignedUrl moved to tasksUserApi.js per Codex C2
+// amendment 3. Both admin and assignee surfaces read request photos
+// via that single helper. AdminTasksView imports it from
+// tasksUserApi.js.)
 
 // One-time admin-created task instance. Inserts directly into task_instances
 // with template_id=null and submission_source='admin_manual'. Existing admin

@@ -63,4 +63,9 @@ describe('canonical anchors (paths printed on field materials per §7)', () => {
     expect(VIEW_TO_PATH.tasksWebform).toBe('/webforms/tasks');
     expect(PATH_TO_VIEW['/webforms/tasks']).toBe('tasksWebform');
   });
+
+  it('logged-in my-tasks mounts at /my-tasks', () => {
+    expect(VIEW_TO_PATH.myTasks).toBe('/my-tasks');
+    expect(PATH_TO_VIEW['/my-tasks']).toBe('myTasks');
+  });
 });

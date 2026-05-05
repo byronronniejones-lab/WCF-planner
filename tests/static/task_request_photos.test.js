@@ -154,12 +154,17 @@ describe('useOfflineRpcSubmit hasPhoto branch wiring', () => {
     expect(hookSrc).toMatch(/if\s*\(cfg\.hasPhoto\s*&&\s*opts\.photo\)/);
   });
 
-  it('the submit-time photo upload uses upsert:false (deterministic path; first upload only)', () => {
-    expect(hookSrc).toMatch(/uploadTaskRequestPhoto\([\s\S]{0,200}?\{\s*upsert:\s*false\s*\}\s*\)/);
-  });
-
-  it('the replay loop re-uploads with upsert:true (idempotent on same path)', () => {
-    expect(hookSrc).toMatch(/uploadTaskRequestPhoto\([\s\S]{0,200}?\{\s*upsert:\s*true\s*\}\s*\)/);
+  it('the upload helper uses upsert:false + duplicate-as-success (Codex C2 review)', () => {
+    // The local helper in useOfflineRpcSubmit.js is the single
+    // upload path used by both submit-time AND replay; both go
+    // through upsert:false. Storage Duplicate errors are caught
+    // via isStorageDuplicateError. Same retry-safety as before
+    // without needing a storage UPDATE policy.
+    const fnMatch = hookSrc.match(/async function uploadTaskRequestPhoto\([\s\S]*?\n\}\s*\n/);
+    expect(fnMatch, 'expected local uploadTaskRequestPhoto helper').not.toBeNull();
+    expect(fnMatch[0]).toMatch(/upsert:\s*false/);
+    expect(fnMatch[0]).not.toMatch(/upsert:\s*true/);
+    expect(fnMatch[0]).toMatch(/isStorageDuplicateError\(error\)/);
   });
 
   it('replay rebuilds parent_in.request_photo_path on the in-memory record (no IDB mutation)', () => {
@@ -197,12 +202,15 @@ describe('Public TasksWebform photo wiring', () => {
 });
 
 describe('AdminTasksView photo wiring (one-time only)', () => {
-  it('imports uploadTaskRequestPhoto + getRequestPhotoSignedUrl from tasksAdminApi.js', () => {
+  it('imports uploadTaskRequestPhoto from tasksAdminApi.js', () => {
     expect(adminViewSrc).toMatch(
       /import\s*\{[^}]*\buploadTaskRequestPhoto\b[^}]*\}\s*from\s*'\.\.\/lib\/tasksAdminApi\.js'/,
     );
+  });
+
+  it('imports getRequestPhotoSignedUrl from tasksUserApi.js (relocated per Codex C2 amendment 3)', () => {
     expect(adminViewSrc).toMatch(
-      /import\s*\{[^}]*\bgetRequestPhotoSignedUrl\b[^}]*\}\s*from\s*'\.\.\/lib\/tasksAdminApi\.js'/,
+      /import\s*\{[^}]*\bgetRequestPhotoSignedUrl\b[^}]*\}\s*from\s*'\.\.\/lib\/tasksUserApi\.js'/,
     );
   });
 
@@ -250,26 +258,29 @@ describe('tasksAdminApi photo helpers', () => {
     expect(adminApiSrc).toMatch(/export async function uploadTaskRequestPhoto\(sb,\s*instanceId,\s*blobOrFile\)/);
     expect(adminApiSrc).toMatch(/compressImage\(blobOrFile\)/);
     expect(adminApiSrc).toMatch(/sb\.storage[\s\S]{0,200}?\.upload\(storagePath/);
-    expect(adminApiSrc).toMatch(/return buildTaskRequestPhotoDbPath/);
+    // dbPath is precomputed via buildTaskRequestPhotoDbPath then
+    // returned (so the duplicate-as-success branch can return the
+    // same canonical path without re-computing).
+    expect(adminApiSrc).toMatch(/buildTaskRequestPhotoDbPath\(instanceId,\s*filename\)/);
+    expect(adminApiSrc).toMatch(/return dbPath/);
   });
 
-  it('uploadTaskRequestPhoto is retry-safe: uses upsert:true so a re-Save reuses the same path', () => {
-    // Codex C3.1b review: the admin holds a stable oneTimeInstanceId
-    // across Save retries. If the photo upload succeeds but the
-    // createOneTimeTaskInstance call fails, the admin's second Save
-    // re-uploads to the SAME deterministic path. upsert:false would
-    // cause a "Duplicate" error and block the admin. upsert:true
-    // makes the storage call idempotent for the same bytes/path.
+  it('uploadTaskRequestPhoto is retry-safe via upsert:false + duplicate-as-success (Codex C2 review)', () => {
+    // Codex C2 review supersedes the C3.1b upsert:true approach:
+    // the bucket is append-only (no UPDATE policy), so upsert:true
+    // would fail at the policy layer. Keep upsert:false and treat
+    // Duplicate / 409 / "already exists" as idempotent success.
     const fnMatch = adminApiSrc.match(/export async function uploadTaskRequestPhoto\([\s\S]*?\n\}\s*\n/);
     expect(fnMatch, 'expected uploadTaskRequestPhoto function body').not.toBeNull();
-    expect(fnMatch[0]).toMatch(/upsert:\s*true/);
-    expect(fnMatch[0]).not.toMatch(/upsert:\s*false/);
+    expect(fnMatch[0]).toMatch(/upsert:\s*false/);
+    expect(fnMatch[0]).not.toMatch(/upsert:\s*true/);
+    expect(fnMatch[0]).toMatch(/isStorageDuplicateError\(error\)/);
   });
 
-  it('getRequestPhotoSignedUrl strips the bucket prefix + calls createSignedUrl', () => {
-    expect(adminApiSrc).toMatch(/export async function getRequestPhotoSignedUrl\(sb,\s*dbPath/);
-    expect(adminApiSrc).toMatch(/stripTaskRequestPhotoBucket\(dbPath\)/);
-    expect(adminApiSrc).toMatch(/createSignedUrl\(storagePath/);
+  it('getRequestPhotoSignedUrl is no longer exported from tasksAdminApi.js (relocated to tasksUserApi.js per Codex C2 amendment 3)', () => {
+    expect(adminApiSrc).not.toMatch(/export async function getRequestPhotoSignedUrl/);
+    // The actual helper is locked separately by tests/static/my_tasks_static.test.js
+    // under "tasksUserApi.js — assignee/admin completion + signed URLs".
   });
 });
 

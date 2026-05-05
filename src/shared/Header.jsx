@@ -248,7 +248,7 @@ export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirm
           )}
         </div>
         <div style={{display: 'flex', gap: 6, alignItems: 'center', position: 'relative'}}>
-          {authState?.role === 'admin' && (
+          {authState?.user && (
             <div style={{position: 'relative'}}>
               <button
                 onClick={() => setShowMenu((m) => !m)}
@@ -286,10 +286,11 @@ export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirm
                     overflow: 'hidden',
                   }}
                 >
+                  {/* My Tasks is visible to ANY authenticated user
+                      (Codex C2 amendment, Q3) — outside the admin gate. */}
                   <button
                     onClick={() => {
-                      setShowUsers(true);
-                      loadUsers();
+                      setView('myTasks');
                       setShowMenu(false);
                     }}
                     style={{
@@ -305,29 +306,55 @@ export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirm
                       fontFamily: 'inherit',
                     }}
                   >
-                    👥 Users
+                    📋 My Tasks
                   </button>
-                  <button
-                    onClick={() => {
-                      setView('adminTasks');
-                      setShowMenu(false);
-                    }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      padding: '10px 16px',
-                      border: 'none',
-                      borderTop: '1px solid #f3f4f6',
-                      background: 'none',
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      textAlign: 'left',
-                      color: '#111827',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    ✅ Tasks Center
-                  </button>
+                  {authState?.role === 'admin' && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowUsers(true);
+                          loadUsers();
+                          setShowMenu(false);
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '10px 16px',
+                          border: 'none',
+                          borderTop: '1px solid #f3f4f6',
+                          background: 'none',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          textAlign: 'left',
+                          color: '#111827',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        👥 Users
+                      </button>
+                      <button
+                        onClick={() => {
+                          setView('adminTasks');
+                          setShowMenu(false);
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '10px 16px',
+                          border: 'none',
+                          borderTop: '1px solid #f3f4f6',
+                          background: 'none',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          textAlign: 'left',
+                          color: '#111827',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        ✅ Tasks Center
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>

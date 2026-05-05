@@ -12,6 +12,12 @@ import {
   buildTaskRequestPhotoStoragePath,
   buildTaskRequestPhotoDbPath,
   stripTaskRequestPhotoBucket,
+  TASK_PHOTOS_BUCKET,
+  TASK_COMPLETION_PHOTO_DEFAULT_FILENAME,
+  buildCompletionPhotoStoragePath,
+  buildCompletionPhotoDbPath,
+  stripCompletionPhotoBucket,
+  isStorageDuplicateError,
 } from './tasks.js';
 
 // Pure helpers — see ./tasks.js. Tests stay equally pure.
@@ -138,5 +144,77 @@ describe('task request photo path helpers (C3.1b)', () => {
     expect(stripTaskRequestPhotoBucket('')).toBeNull();
     expect(stripTaskRequestPhotoBucket('task-photos/ti-abc/photo-1.jpg')).toBeNull(); // wrong bucket
     expect(stripTaskRequestPhotoBucket('ti-abc/photo-1.jpg')).toBeNull(); // no prefix
+  });
+});
+
+describe('task completion photo path helpers (C2)', () => {
+  it('exposes the canonical bucket name + default filename', () => {
+    expect(TASK_PHOTOS_BUCKET).toBe('task-photos');
+    expect(TASK_COMPLETION_PHOTO_DEFAULT_FILENAME).toBe('completion-1.jpg');
+  });
+
+  it('buildCompletionPhotoStoragePath returns <assigneeUid>/<instanceId>/<filename>', () => {
+    expect(buildCompletionPhotoStoragePath('uid-1', 'ti-abc', 'completion-1.jpg')).toBe(
+      'uid-1/ti-abc/completion-1.jpg',
+    );
+  });
+
+  it('buildCompletionPhotoStoragePath defaults the filename when omitted', () => {
+    expect(buildCompletionPhotoStoragePath('uid-1', 'ti-abc')).toBe('uid-1/ti-abc/completion-1.jpg');
+  });
+
+  it('buildCompletionPhotoDbPath returns task-photos/<assigneeUid>/<instanceId>/<filename>', () => {
+    expect(buildCompletionPhotoDbPath('uid-1', 'ti-abc', 'completion-1.jpg')).toBe(
+      'task-photos/uid-1/ti-abc/completion-1.jpg',
+    );
+  });
+
+  it('throws on missing assigneeUid or instanceId', () => {
+    expect(() => buildCompletionPhotoStoragePath('', 'ti-abc')).toThrow();
+    expect(() => buildCompletionPhotoStoragePath('uid-1', '')).toThrow();
+    expect(() => buildCompletionPhotoStoragePath(null, 'ti-abc')).toThrow();
+  });
+
+  it('stripCompletionPhotoBucket round-trips with build*DbPath', () => {
+    const dbPath = buildCompletionPhotoDbPath('uid-1', 'ti-abc', 'completion-1.jpg');
+    expect(stripCompletionPhotoBucket(dbPath)).toBe('uid-1/ti-abc/completion-1.jpg');
+  });
+
+  it('stripCompletionPhotoBucket returns null for missing or wrong-bucket paths', () => {
+    expect(stripCompletionPhotoBucket(null)).toBeNull();
+    expect(stripCompletionPhotoBucket('')).toBeNull();
+    expect(stripCompletionPhotoBucket('task-request-photos/uid-1/ti-abc/photo.jpg')).toBeNull(); // wrong bucket
+    expect(stripCompletionPhotoBucket('uid-1/ti-abc/photo.jpg')).toBeNull(); // no prefix
+  });
+});
+
+describe('isStorageDuplicateError (Codex C2 — duplicate-as-success contract)', () => {
+  it('matches statusCode 409 (string and number)', () => {
+    expect(isStorageDuplicateError({statusCode: '409'})).toBe(true);
+    expect(isStorageDuplicateError({statusCode: 409})).toBe(true);
+  });
+
+  it("matches error: 'Duplicate' (case-insensitive)", () => {
+    expect(isStorageDuplicateError({error: 'Duplicate'})).toBe(true);
+    expect(isStorageDuplicateError({error: 'duplicate'})).toBe(true);
+  });
+
+  it("matches name: 'Duplicate' (case-insensitive)", () => {
+    expect(isStorageDuplicateError({name: 'Duplicate'})).toBe(true);
+  });
+
+  it("matches message containing 'already exists' (case-insensitive)", () => {
+    expect(isStorageDuplicateError({message: 'The resource already exists'})).toBe(true);
+    expect(isStorageDuplicateError({message: 'object Already Exists in bucket'})).toBe(true);
+  });
+
+  it('rejects null, undefined, generic errors, and non-duplicate codes', () => {
+    expect(isStorageDuplicateError(null)).toBe(false);
+    expect(isStorageDuplicateError(undefined)).toBe(false);
+    expect(isStorageDuplicateError({})).toBe(false);
+    expect(isStorageDuplicateError({statusCode: '500'})).toBe(false);
+    expect(isStorageDuplicateError({statusCode: 403})).toBe(false);
+    expect(isStorageDuplicateError({error: 'NotFound'})).toBe(false);
+    expect(isStorageDuplicateError({message: 'Unauthorized'})).toBe(false);
   });
 });

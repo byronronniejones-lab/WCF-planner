@@ -53,6 +53,7 @@ import {
   TASK_REQUEST_PHOTO_DEFAULT_FILENAME,
   buildTaskRequestPhotoStoragePath,
   buildTaskRequestPhotoDbPath,
+  isStorageDuplicateError,
 } from './tasks.js';
 
 const TICK_INTERVAL_MS = 60_000;
@@ -125,16 +126,29 @@ async function prepareTaskRequestPhoto(blobOrFile, parentId) {
 }
 
 /**
- * Single-shot upload to the task-request-photos bucket. upsert:true so
- * a replay of the same deterministic path is idempotent (storage 200s
- * back without re-writing the object). Throws on storage error so the
- * caller can route to the queued/stuck branch.
+ * Single-shot upload to the task-request-photos bucket.
+ *
+ * Retry-safety (Codex C2 review): the task-request-photos bucket is
+ * intentionally append-only — mig 042 has no UPDATE policy, and
+ * Supabase storage's `upsert:true` would need one. Using upsert:false
+ * everywhere and treating Duplicate / 409 / "already exists" as
+ * idempotent success. Both submit-time first attempts AND replay
+ * re-uploads end up at the same deterministic '<id>/photo-1.jpg'
+ * path, so duplicate-as-success covers:
+ *   - submit-time retry where a previous attempt's bytes are still
+ *     in the bucket (rare; e.g. tab-killed mid-RPC after upload
+ *     succeeded),
+ *   - replay re-upload after a queued submission's blob landed on
+ *     the original attempt.
+ *
+ * Throws on any non-duplicate storage error so the caller can route
+ * to the queued / stuck branch.
  */
-async function uploadTaskRequestPhoto(storagePath, blob, mime, {upsert = false} = {}) {
+async function uploadTaskRequestPhoto(storagePath, blob, mime) {
   const {error} = await sb.storage
     .from(TASK_REQUEST_PHOTOS_BUCKET)
-    .upload(storagePath, blob, {contentType: mime || 'image/jpeg', upsert});
-  if (error) throw error;
+    .upload(storagePath, blob, {contentType: mime || 'image/jpeg', upsert: false});
+  if (error && !isStorageDuplicateError(error)) throw error;
 }
 
 async function attemptRpc(formKind, record) {
@@ -216,7 +230,7 @@ export function useOfflineRpcSubmit(formKind) {
             if (blobs.length > 0) {
               const blob = blobs[0]; // one-photo-max contract
               try {
-                await uploadTaskRequestPhoto(blob.path, blob.blob, blob.mime, {upsert: true});
+                await uploadTaskRequestPhoto(blob.path, blob.blob, blob.mime);
               } catch (uploadErr) {
                 await markFailed(entry.csid, uploadErr && uploadErr.message ? uploadErr.message : String(uploadErr));
                 continue;
@@ -370,7 +384,7 @@ export async function _runSubmit({formKind, payload, opts = {}, refresh}) {
     preparedPhoto = await prepareTaskRequestPhoto(opts.photo, parentId);
     requestPhotoDbPath = buildTaskRequestPhotoDbPath(parentId, TASK_REQUEST_PHOTO_DEFAULT_FILENAME);
     try {
-      await uploadTaskRequestPhoto(preparedPhoto.path, preparedPhoto.blob, preparedPhoto.mime, {upsert: false});
+      await uploadTaskRequestPhoto(preparedPhoto.path, preparedPhoto.blob, preparedPhoto.mime);
     } catch (uploadErr) {
       // Upload failed online (network / RLS / size). Persist the blob
       // alongside the queued submission so replay can re-upload, and

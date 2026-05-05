@@ -8,8 +8,8 @@ import {
   createOneTimeTaskInstance,
   loadPublicAssigneeAvailability,
   uploadTaskRequestPhoto,
-  getRequestPhotoSignedUrl,
 } from '../lib/tasksAdminApi.js';
+import {getRequestPhotoSignedUrl} from '../lib/tasksUserApi.js';
 
 // Admin Tasks Center — C1 + C1.1 (product-correction round).
 // Sections (admin-only; see UnauthorizedRedirect wrapper at the route mount):

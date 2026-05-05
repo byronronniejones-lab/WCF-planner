@@ -73,6 +73,75 @@ export function stripTaskRequestPhotoBucket(dbPath) {
   return dbPath.slice(prefix.length);
 }
 
+// ── Task completion photos (C2) ──────────────────────────────────────────
+// Bucket name + path-shape helpers for the assignee-uploaded photo at
+// task completion time. Separate bucket from task-request-photos
+// (request photos go in upstream during submit; completion photos go
+// in here at the end of the task lifecycle). The shape is locked by
+// mig 038's bucket policy + mig 040's complete_task_instance RPC
+// validation:
+//
+//   storage upload arg:  '<assignee_uid>/<instance_id>/<filename>'
+//   DB column value:     'task-photos/<assignee_uid>/<instance_id>/<filename>'
+//
+// CRITICAL: the prefix uses the row's assignee_profile_id, NOT the
+// completer's auth.uid(). When admin completes someone else's task,
+// the path still goes under the assignee's directory (Codex C3
+// amendment 5). Callers MUST pass `ti.assignee_profile_id`, not the
+// current user's id.
+
+export const TASK_PHOTOS_BUCKET = 'task-photos';
+export const TASK_COMPLETION_PHOTO_DEFAULT_FILENAME = 'completion-1.jpg';
+
+export function buildCompletionPhotoStoragePath(assigneeUid, instanceId, filename) {
+  if (typeof assigneeUid !== 'string' || !assigneeUid) {
+    throw new Error('buildCompletionPhotoStoragePath: assigneeUid required');
+  }
+  if (typeof instanceId !== 'string' || !instanceId) {
+    throw new Error('buildCompletionPhotoStoragePath: instanceId required');
+  }
+  const fname = filename || TASK_COMPLETION_PHOTO_DEFAULT_FILENAME;
+  return `${assigneeUid}/${instanceId}/${fname}`;
+}
+
+export function buildCompletionPhotoDbPath(assigneeUid, instanceId, filename) {
+  return `${TASK_PHOTOS_BUCKET}/${buildCompletionPhotoStoragePath(assigneeUid, instanceId, filename)}`;
+}
+
+export function stripCompletionPhotoBucket(dbPath) {
+  if (typeof dbPath !== 'string' || !dbPath) return null;
+  const prefix = `${TASK_PHOTOS_BUCKET}/`;
+  if (!dbPath.startsWith(prefix)) return null;
+  return dbPath.slice(prefix.length);
+}
+
+// ── Storage retry-safety: duplicate-as-success ──────────────────────────
+// task-photos and task-request-photos are intentionally append-only —
+// neither bucket has a storage.objects UPDATE policy, so `upsert:true`
+// would fail at the policy layer (Supabase docs:
+// https://supabase.com/docs/guides/storage/security/access-control —
+// upsert needs SELECT + UPDATE). Codex C2 review caught this and
+// chose the alternative: keep buckets append-only, use upsert:false,
+// and treat the deterministic-path "Duplicate / 409 / already exists"
+// response as idempotent success. The bytes that landed first stay
+// authoritative; the retry call's caller proceeds with the canonical
+// dbPath as if the upload had just succeeded.
+//
+// Recognizes the storage error shape across SDK + raw HTTP variants.
+export function isStorageDuplicateError(err) {
+  if (!err) return false;
+  // SDK surfaces statusCode as '409' or 409 depending on transport.
+  if (err.statusCode === '409' || err.statusCode === 409) return true;
+  // Some shapes carry .error: 'Duplicate'.
+  if (typeof err.error === 'string' && err.error.toLowerCase() === 'duplicate') return true;
+  // Defensive: .name = 'Duplicate' on certain SDK error wrappers.
+  if (typeof err.name === 'string' && err.name.toLowerCase() === 'duplicate') return true;
+  // Fallback: message text. Storage HTTP body is "The resource already
+  // exists"; SDK wrappers usually pass that through.
+  if (typeof err.message === 'string' && /already exists/i.test(err.message)) return true;
+  return false;
+}
+
 /**
  * Coerce any input into the canonical `{hiddenProfileIds: []}` shape.
  * Garbage / null / arrays / wrong types collapse to an empty list. The
