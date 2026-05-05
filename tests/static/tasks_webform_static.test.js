@@ -221,9 +221,79 @@ describe('AdminTasksView Repeat-this-task UI (C3.1a)', () => {
     expect(adminTasksSrc).toMatch(/Repeat this task[\s\S]{0,200}<\/label>\s*\n\s*<div[^>]*fontSize:\s*11/);
   });
 
+  it('the toggle row has NO bordered card — checkbox sits immediately beside the label', () => {
+    // Codex C3.1a hotfix: drop the border/padding/background card and
+    // use a plain compact checkbox row. The label must use inline-flex
+    // (or flex) with a small gap (≤ 12) and NO justifyContent that
+    // pushes the label across the modal. Lock the absence of the card
+    // styles + presence of the tight checkbox/label proximity.
+    const m = adminTasksSrc.match(
+      /\{!isEditingTemplate && \(\s*\n\s*<div[\s\S]{0,200}?>([\s\S]{0,800}?)Repeat this task/,
+    );
+    expect(m, 'expected the Repeat-this-task wrapper to render').not.toBeNull();
+    const wrapper = m[0];
+    // No card chrome.
+    expect(wrapper).not.toMatch(/border:\s*'1px solid/);
+    expect(wrapper).not.toMatch(/background:\s*'#f9fafb'/);
+    expect(wrapper).not.toMatch(/borderRadius/);
+    expect(wrapper).not.toMatch(/padding:\s*'10px 12px'/);
+    // Tight label: flex / inline-flex with a small gap.
+    expect(wrapper).toMatch(/(?:inline-flex|flex)[\s\S]{0,100}gap:\s*[0-9]+/);
+    // No justifyContent that would split label off to the right.
+    expect(wrapper).not.toMatch(/justifyContent:\s*'space-between'/);
+  });
+
   it('recurrence + interval + active fields render only when editForm.recurring is true', () => {
     // Existing C1.1 lock — the gate stays.
     expect(adminTasksSrc).toMatch(/\{editForm\.recurring\s*&&/);
+  });
+});
+
+describe('AdminTasksView Assignee dropdown respects tasks_public_assignee_availability (C3.1a hotfix)', () => {
+  it('imports visiblePublicAssignees + loadPublicAssigneeAvailability', () => {
+    expect(adminTasksSrc).toMatch(/import\s*\{[^}]*\bvisiblePublicAssignees\b[^}]*\}\s*from\s*'\.\.\/lib\/tasks\.js'/);
+    expect(adminTasksSrc).toMatch(
+      /import\s*\{[^}]*\bloadPublicAssigneeAvailability\b[^}]*\}\s*from\s*'\.\.\/lib\/tasksAdminApi\.js'/,
+    );
+  });
+
+  it('eligibleAssignees pipes the active list through visiblePublicAssignees', () => {
+    // The assignee-availability config gates BOTH the public form AND
+    // the admin Tasks Center New Task dropdown. Lock that both halves
+    // appear in the same useMemo: role-active filter + visiblePublicAssignees.
+    expect(adminTasksSrc).toMatch(
+      /const eligibleAssignees\s*=\s*React\.useMemo\([\s\S]{0,500}?role !==\s*'inactive'[\s\S]{0,200}?visiblePublicAssignees\([^)]*assigneeAvailability/,
+    );
+  });
+
+  it('loads assignee availability state in the refresh callback', () => {
+    expect(adminTasksSrc).toMatch(
+      /Promise\.all\(\[[\s\S]{0,200}?loadPublicAssigneeAvailability\(sb\)[\s\S]{0,100}?\]\)/,
+    );
+    expect(adminTasksSrc).toMatch(/setAssigneeAvailability/);
+  });
+
+  it("when the open modal's selected assignee becomes hidden, falls back to the first visible (or clears)", () => {
+    // The watch effect uses `eligibleAssignees.some(...assignee_profile_id...)`
+    // for the still-eligible check AND `eligibleAssignees[0]?.id || ''`
+    // for the fallback. Both must be present.
+    expect(adminTasksSrc).toMatch(/eligibleAssignees\.some\([\s\S]{0,300}?assignee_profile_id/);
+    expect(adminTasksSrc).toMatch(/eligibleAssignees\[0\]\?\.id\s*\|\|\s*''/);
+  });
+
+  it('the re-pin effect depends on BOTH eligibleAssignees AND editForm?.assignee_profile_id', () => {
+    // Codex C3.1a hotfix re-review: the effect must re-run when the
+    // selected assignee changes too, so startEditTemplate(tpl) on a
+    // template whose assignee is hidden gets caught even though
+    // eligibleAssignees didn't change. Lock both deps in the array.
+    // Anchor on .some(...assignee_profile_id...) and walk forward to
+    // the deps array — that closes the useEffect.
+    const m = adminTasksSrc.match(
+      /eligibleAssignees\.some\([\s\S]{0,300}?assignee_profile_id[\s\S]{0,800}?\}\s*,\s*\[([^\]]+)\]\s*\)/,
+    );
+    expect(m, 'expected to find the re-pin effect deps array').not.toBeNull();
+    expect(m[1]).toMatch(/eligibleAssignees/);
+    expect(m[1]).toMatch(/editForm\?\.assignee_profile_id/);
   });
 });
 

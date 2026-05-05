@@ -1,11 +1,12 @@
 import React from 'react';
-import {RECURRENCE_OPTIONS} from '../lib/tasks.js';
+import {RECURRENCE_OPTIONS, visiblePublicAssignees} from '../lib/tasks.js';
 import {
   loadTaskTemplates,
   loadOpenTaskInstances,
   upsertTaskTemplate,
   deleteTaskTemplate,
   createOneTimeTaskInstance,
+  loadPublicAssigneeAvailability,
 } from '../lib/tasksAdminApi.js';
 
 // Admin Tasks Center — C1 + C1.1 (product-correction round).
@@ -134,12 +135,24 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
   const [editForm, setEditForm] = React.useState(null); // null = closed
   const [saving, setSaving] = React.useState(false);
 
+  // Public-Tasks assignee availability (webform_config.tasks_public_assignee_availability).
+  // Codex C3.1a hotfix: the same hidden-profile-ids list that gates the
+  // /webforms/tasks Assign-to dropdown also applies to this admin view.
+  // Hiding a planner user in the Public Tasks tile must hide them from
+  // BOTH dropdowns.
+  const [assigneeAvailability, setAssigneeAvailability] = React.useState({hiddenProfileIds: []});
+
   const refresh = React.useCallback(async () => {
     setErr('');
     try {
-      const [tpls, opens] = await Promise.all([loadTaskTemplates(sb), loadOpenTaskInstances(sb)]);
+      const [tpls, opens, av] = await Promise.all([
+        loadTaskTemplates(sb),
+        loadOpenTaskInstances(sb),
+        loadPublicAssigneeAvailability(sb),
+      ]);
       setTemplates(tpls);
       setOpenInstances(opens);
+      setAssigneeAvailability(av);
     } catch (e) {
       setErr(e && e.message ? e.message : String(e));
     } finally {
@@ -166,16 +179,49 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Eligible assignees = profiles with role !== 'inactive'. The dropdown
-  // sources from useAuth().allUsers per PROJECT.md §8 plan rev 5. Sort by
-  // full_name for stable rendering.
+  // Eligible assignees = active profiles minus the
+  // tasks_public_assignee_availability hidden-list. The hidden-list gates
+  // BOTH the /webforms/tasks Assign-to dropdown AND this admin view —
+  // hiding a user in the admin Public Tasks tile must hide them
+  // everywhere a task can be assigned. Sort by full_name for stable
+  // rendering.
   const eligibleAssignees = React.useMemo(() => {
     const list = Array.isArray(allUsers) ? allUsers : [];
-    return list
-      .filter((u) => u && u.id && u.role !== 'inactive')
-      .slice()
-      .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
-  }, [allUsers]);
+    const active = list.filter((u) => u && u.id && u.role !== 'inactive');
+    const visible = visiblePublicAssignees(active, assigneeAvailability);
+    return visible.slice().sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+  }, [allUsers, assigneeAvailability]);
+
+  // Coerce the open modal's selected assignee to a visible one. Three
+  // entry paths reach here, all handled by depending on BOTH
+  // eligibleAssignees AND editForm?.assignee_profile_id (Codex C3.1a
+  // hotfix re-review):
+  //   (a) availability config loads AFTER startNew already preselected
+  //       a now-hidden user → eligibleAssignees changes → effect
+  //       re-pins.
+  //   (b) admin hides the currently-selected assignee in another tab
+  //       while the modal is open → same as (a).
+  //   (c) startEditTemplate copies a template's hidden
+  //       assignee_profile_id into editForm without changing
+  //       eligibleAssignees → editForm.assignee_profile_id changes →
+  //       effect re-pins.
+  // If the form is open with no assignee but visible options exist,
+  // preselect the first one (covers the "modal opened before
+  // eligibleAssignees populated" race).
+  React.useEffect(() => {
+    if (!editForm) return;
+    const firstVisible = eligibleAssignees[0]?.id || '';
+    if (!editForm.assignee_profile_id) {
+      if (firstVisible) {
+        setEditForm((prev) => (prev ? {...prev, assignee_profile_id: firstVisible} : prev));
+      }
+      return;
+    }
+    const stillEligible = eligibleAssignees.some((u) => u.id === editForm.assignee_profile_id);
+    if (stillEligible) return;
+    setEditForm((prev) => (prev ? {...prev, assignee_profile_id: firstVisible} : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on assignee_profile_id only; full editForm would re-fire on every title/description keystroke
+  }, [eligibleAssignees, editForm?.assignee_profile_id]);
 
   function startNew() {
     const f = emptyTaskForm();
@@ -490,33 +536,26 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
               />
             </div>
 
-            {/* Repeat-this-task toggle: hidden when editing an existing
-                template (you can't toggle a template back to a single
+            {/* Repeat-this-task toggle (C3.1a hotfix): plain compact row.
+                NO bordered card. Checkbox sits immediately beside its
+                label with a small gap. Helper copy aligns under the
+                label text. Hidden when editing an existing template
+                (you can't toggle a template back to a single
                 instance — that would require deleting the template +
-                creating an instance). Single full-width row directly
-                under Due date; helper copy underneath. Recurrence fields
-                expand directly below only when checked. */}
+                creating an instance). */}
             {!isEditingTemplate && (
-              <div
-                style={{
-                  marginBottom: 12,
-                  padding: '10px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 8,
-                  background: '#f9fafb',
-                }}
-              >
-                <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer'}}>
+              <div style={{marginBottom: 12}}>
+                <label style={{display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer'}}>
                   <input
                     type="checkbox"
                     checked={editForm.recurring}
                     onChange={(e) => setEditForm({...editForm, recurring: e.target.checked})}
+                    style={{margin: 0}}
                   />
-                  <span style={{fontSize: 14, fontWeight: 600, color: '#111827'}}>Repeat this task</span>
+                  <span style={{fontSize: 13, color: '#374151'}}>Repeat this task</span>
                 </label>
-                <div style={{fontSize: 11, color: '#6b7280', marginLeft: 24, marginTop: 2}}>
-                  Generates instances on a schedule (daily, weekly, monthly, etc.). The planner creates active recurring
-                  tasks daily; one-time tasks land in Open Tasks immediately.
+                <div style={{fontSize: 11, color: '#6b7280', marginLeft: 24, marginTop: 4, lineHeight: 1.4}}>
+                  Creates scheduled tasks automatically. One-time tasks appear in Open Tasks immediately.
                 </div>
               </div>
             )}
