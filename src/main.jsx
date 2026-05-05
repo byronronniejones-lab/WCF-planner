@@ -193,6 +193,8 @@ import FuelingHub from './webforms/FuelingHub.jsx';
 import FuelSupplyWebform from './webforms/FuelSupplyWebform.jsx';
 import WebformsAdminView from './webforms/WebformsAdminView.jsx';
 import PigDailysWebform from './webforms/PigDailysWebform.jsx';
+import AdminTasksView from './admin/AdminTasksView.jsx';
+import UnauthorizedRedirect from './shared/UnauthorizedRedirect.jsx';
 
 // Phase 2 Round 8: equipment placeholder.
 import EquipmentHome from './equipment/EquipmentHome.jsx';
@@ -1552,6 +1554,7 @@ function App() {
     'farrowing',
     'sows',
     'webforms',
+    'adminTasks',
     'webformhub',
     'webform',
     'broilerdailys',
@@ -3462,6 +3465,17 @@ function App() {
       showArchBatches,
       setShowArchBatches,
     });
+
+  // ── ADMIN TASKS CENTER (C1) ──
+  // Component-level guard: non-admin → setView('home') in UnauthorizedRedirect.
+  // Header dropdown gating alone is not enough; a non-admin pasting
+  // /admin/tasks into the URL bar must not see admin UI even momentarily.
+  if (view === 'adminTasks')
+    return React.createElement(
+      UnauthorizedRedirect,
+      {authState, setView, requireAdmin: true, fallbackView: 'home'},
+      React.createElement(AdminTasksView, {Header, sb, allUsers, loadUsers, setView}),
+    );
 
   // ── WEBFORMS ADMIN VIEW ──
   if (view === 'webforms')

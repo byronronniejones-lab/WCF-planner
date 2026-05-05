@@ -69,6 +69,7 @@ export const VIEW_TO_PATH = {
 
   // Admin (logged-in only)
   webforms: '/admin',
+  adminTasks: '/admin/tasks',
 
   // Public (no-auth) — these also have /#X legacy hash bookmarks that the
   // Phase 3.3 shim rewrites to these clean paths.

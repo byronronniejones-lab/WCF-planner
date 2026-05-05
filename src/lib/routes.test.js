@@ -53,4 +53,9 @@ describe('canonical anchors (paths printed on field materials per §7)', () => {
     expect(VIEW_TO_PATH.addfeed).toBe('/addfeed');
     expect(VIEW_TO_PATH.weighins).toBe('/weighins');
   });
+
+  it('admin tasks center mounts at /admin/tasks', () => {
+    expect(VIEW_TO_PATH.adminTasks).toBe('/admin/tasks');
+    expect(PATH_TO_VIEW['/admin/tasks']).toBe('adminTasks');
+  });
 });

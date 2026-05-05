@@ -307,6 +307,27 @@ export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirm
                   >
                     👥 Users
                   </button>
+                  <button
+                    onClick={() => {
+                      setView('adminTasks');
+                      setShowMenu(false);
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      padding: '10px 16px',
+                      border: 'none',
+                      borderTop: '1px solid #f3f4f6',
+                      background: 'none',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      textAlign: 'left',
+                      color: '#111827',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    ✅ Tasks Center
+                  </button>
                 </div>
               )}
             </div>
