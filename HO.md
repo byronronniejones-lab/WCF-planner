@@ -1,6 +1,6 @@
 # HO - static workflow SOP
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 This file is the static operating prompt for Ronnie, CC (Claude Code), and
 Codex. It is not a session log and must not carry current project state.
@@ -287,6 +287,10 @@ CC owns implementation by default:
 - Walk any touched Section 7 contracts in the plan.
 - Keep edits scoped to the approved lane.
 - Preserve unrelated user or agent changes.
+- Use CC's Supabase CLI access, approved SQL paths, and Supabase verification
+  tools to run needed SQL, migrations, function deploys, and checks inside an
+  approved lane instead of handing routine Supabase execution back to Ronnie.
+  PROD `exec_sql` remains forbidden.
 - Run the required validation for the lane.
 - Report changed files, gates, risks, skipped validation, and open questions.
 - Do not update docs/wrap files unless Ronnie explicitly asks.

@@ -1,7 +1,9 @@
 // Phase 2 Round 3 extraction (verbatim).
 import React, {useState} from 'react';
 import {sb} from '../lib/supabase.js';
+import {useAuth} from '../contexts/AuthContext.jsx';
 function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUsers}) {
+  const {setAuthState} = useAuth() || {};
   const [umTab, setUmTab] = React.useState('users');
   const [addEmail, setAddEmail] = React.useState('');
   const [addName, setAddName] = React.useState('');
@@ -90,8 +92,19 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
   }
 
   async function updateName(userId, newName) {
-    await sb.from('profiles').update({full_name: newName}).eq('id', userId);
-    setAllUsers((prev) => prev.map((p) => (p.id === userId ? {...p, full_name: newName} : p)));
+    const fullName = (newName || '').trim();
+    await sb.from('profiles').update({full_name: fullName}).eq('id', userId);
+    setAllUsers((prev) => prev.map((p) => (p.id === userId ? {...p, full_name: fullName} : p)));
+    if (userId === authState?.user?.id && typeof setAuthState === 'function') {
+      setAuthState((prev) => {
+        if (!prev || prev === false || prev.user?.id !== userId) return prev;
+        return {
+          ...prev,
+          profile: prev.profile ? {...prev.profile, full_name: fullName} : prev.profile,
+          name: fullName || prev.user?.email || prev.name || '',
+        };
+      });
+    }
     setEditingUser(null);
   }
 
@@ -374,22 +387,23 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
                               you
                             </span>
                           )}
-                          {u.id !== authState?.user?.id && (
-                            <button
-                              onClick={() => setEditingUser({id: u.id, full_name: u.full_name || ''})}
-                              style={{
-                                fontSize: 11,
-                                color: '#9ca3af',
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '0 2px',
-                                flexShrink: 0,
-                              }}
-                            >
-                              ✎
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            title="Edit name"
+                            aria-label={`Edit name for ${u.full_name || u.email || 'user'}`}
+                            onClick={() => setEditingUser({id: u.id, full_name: u.full_name || ''})}
+                            style={{
+                              fontSize: 11,
+                              color: '#9ca3af',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '0 2px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            ✎
+                          </button>
                         </div>
                       )}
                       <div
