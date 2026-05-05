@@ -3,25 +3,11 @@
 // public-webform wrappers belong in tasksPublicApi.js. Keep this module
 // admin-surface only so the four-module split (per PROJECT.md §8 plan
 // rev 5) stays clean.
-
-const ADMIN_INVOKE_BODY = {mode: 'admin'}; // NO probe:true — this is the
-// real-effect Run Cron Now path.
-
-// Invoke the tasks-cron Edge Function in admin mode. The function:
-//   - validates the caller's JWT + rpc('is_admin') === true,
-//   - runs the same generator that the daily 04:00 UTC cron runs,
-//   - returns {ok, generated_count, skipped_count, cap_exceeded[]}.
-// Idempotency: a second call inside the same generator window will produce
-// generated=0/skipped=0 because the function pre-filters dates against
-// the partial-unique-index ON CONFLICT (template_id, due_date) contract
-// (mig 037 + mig 039).
-export async function runCronNow(sb) {
-  const {data, error} = await sb.functions.invoke('tasks-cron', {body: ADMIN_INVOKE_BODY});
-  if (error) {
-    throw new Error(`runCronNow failed: ${error.message || String(error)}`);
-  }
-  return data;
-}
+//
+// C1.1 product-correction: cron-surface wrappers (runCronNow,
+// loadCronAuditTail) were removed alongside the operator-facing UI for
+// cron runs. The Edge Function and audit table stay intact — admins
+// just don't drive them through this module anymore.
 
 export async function loadTaskTemplates(sb) {
   const {data, error} = await sb.from('task_templates').select('*').order('title', {ascending: true});
@@ -40,12 +26,6 @@ export async function loadOpenTaskInstances(sb) {
   return data || [];
 }
 
-export async function loadCronAuditTail(sb, n = 5) {
-  const {data, error} = await sb.from('task_cron_runs').select('*').order('ran_at', {ascending: false}).limit(n);
-  if (error) throw new Error(`loadCronAuditTail: ${error.message}`);
-  return data || [];
-}
-
 export async function upsertTaskTemplate(sb, template) {
   const {data, error} = await sb.from('task_templates').upsert(template).select().single();
   if (error) throw new Error(`upsertTaskTemplate: ${error.message}`);
@@ -55,4 +35,28 @@ export async function upsertTaskTemplate(sb, template) {
 export async function deleteTaskTemplate(sb, id) {
   const {error} = await sb.from('task_templates').delete().eq('id', id);
   if (error) throw new Error(`deleteTaskTemplate: ${error.message}`);
+}
+
+// One-time admin-created task instance. Inserts directly into task_instances
+// with template_id=null and submission_source='admin_manual'. Existing admin
+// RLS already covers admin INSERT; no migration needed for this path.
+//
+// Caller mints a stable id (the modal holds it across Save retries) so a
+// retry on a network blip doesn't double-insert. If the first INSERT did
+// land and the second attempt arrives with the same id, Postgres raises
+// 23505 unique_violation on the PK; we treat that as "already created"
+// and SELECT the row back instead of failing the user.
+export async function createOneTimeTaskInstance(sb, payload) {
+  const {data, error} = await sb.from('task_instances').insert(payload).select().single();
+  if (!error) return data;
+  if (error.code === '23505' && payload && payload.id) {
+    const {data: existing, error: selErr} = await sb
+      .from('task_instances')
+      .select('*')
+      .eq('id', payload.id)
+      .maybeSingle();
+    if (selErr) throw new Error(`createOneTimeTaskInstance replay select: ${selErr.message}`);
+    if (existing) return existing;
+  }
+  throw new Error(`createOneTimeTaskInstance: ${error.message}`);
 }

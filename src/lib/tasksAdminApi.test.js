@@ -1,22 +1,24 @@
 import {describe, it, expect, vi} from 'vitest';
 import {
-  runCronNow,
   loadTaskTemplates,
   loadOpenTaskInstances,
-  loadCronAuditTail,
   upsertTaskTemplate,
   deleteTaskTemplate,
+  createOneTimeTaskInstance,
 } from './tasksAdminApi.js';
 
 // Side-effect wrappers around the supabase client. We mock the client and
 // assert that each wrapper:
-//   - calls the right table/function with the right shape,
+//   - calls the right table with the right shape,
 //   - returns clean data on success,
 //   - throws a useful Error on failure.
+//
+// C1.1 product-correction: runCronNow + loadCronAuditTail were removed.
+// createOneTimeTaskInstance was added for the New Task one-time path.
 
 function makeChain(returnValue) {
-  // Builds a chainable mock that supports .select/.eq/.order/.limit/.upsert/.delete/.single
-  // and finally awaits to returnValue.
+  // Chainable mock supporting .select/.eq/.order/.limit/.upsert/.insert/.delete/.single
+  // that finally awaits to returnValue.
   const fn = vi.fn();
   const chain = {
     select: fn,
@@ -24,8 +26,10 @@ function makeChain(returnValue) {
     order: fn,
     limit: fn,
     upsert: fn,
+    insert: fn,
     delete: fn,
     single: fn,
+    maybeSingle: fn,
     then(resolve, reject) {
       return Promise.resolve(returnValue).then(resolve, reject);
     },
@@ -34,35 +38,18 @@ function makeChain(returnValue) {
   return chain;
 }
 
-function makeSb({tableResult, fnResult} = {}) {
-  return {
-    from: vi.fn(() => makeChain(tableResult)),
-    functions: {invoke: vi.fn(async () => fnResult)},
-  };
+function makeSb({tableResult, tableResults} = {}) {
+  // tableResults (array) — consumed in order, one per from() call. Falls
+  // back to tableResult (scalar) for tests that only do one DB op.
+  if (Array.isArray(tableResults)) {
+    let i = 0;
+    return {from: vi.fn(() => makeChain(tableResults[i++]))};
+  }
+  return {from: vi.fn(() => makeChain(tableResult))};
 }
 
-describe('runCronNow', () => {
-  it('invokes the tasks-cron Edge Function with admin mode and no probe flag', async () => {
-    const sb = makeSb({
-      fnResult: {data: {ok: true, generated_count: 2, skipped_count: 0, cap_exceeded: []}, error: null},
-    });
-    const result = await runCronNow(sb);
-    expect(sb.functions.invoke).toHaveBeenCalledWith('tasks-cron', {body: {mode: 'admin'}});
-    // Critical: NO probe:true — that would short-circuit to the audit-only path.
-    const callArg = sb.functions.invoke.mock.calls[0][1];
-    expect(callArg.body).not.toHaveProperty('probe');
-    expect(result.ok).toBe(true);
-    expect(result.generated_count).toBe(2);
-  });
-
-  it('throws on Edge Function error', async () => {
-    const sb = makeSb({fnResult: {data: null, error: {message: 'auth failed'}}});
-    await expect(runCronNow(sb)).rejects.toThrow(/auth failed/);
-  });
-});
-
 describe('loadTaskTemplates', () => {
-  it('selects from task_templates ordered by title', async () => {
+  it('selects from task_templates', async () => {
     const sb = makeSb({tableResult: {data: [{id: 'tt-1', title: 'A'}], error: null}});
     const out = await loadTaskTemplates(sb);
     expect(sb.from).toHaveBeenCalledWith('task_templates');
@@ -89,20 +76,6 @@ describe('loadOpenTaskInstances', () => {
   });
 });
 
-describe('loadCronAuditTail', () => {
-  it('selects task_cron_runs ordered desc with default limit 5', async () => {
-    const sb = makeSb({tableResult: {data: [], error: null}});
-    await loadCronAuditTail(sb);
-    expect(sb.from).toHaveBeenCalledWith('task_cron_runs');
-  });
-
-  it('respects an explicit limit', async () => {
-    const sb = makeSb({tableResult: {data: [], error: null}});
-    await loadCronAuditTail(sb, 10);
-    expect(sb.from).toHaveBeenCalledWith('task_cron_runs');
-  });
-});
-
 describe('upsertTaskTemplate / deleteTaskTemplate', () => {
   it('upsert returns the persisted row', async () => {
     const sb = makeSb({tableResult: {data: {id: 'tt-1'}, error: null}});
@@ -113,5 +86,55 @@ describe('upsertTaskTemplate / deleteTaskTemplate', () => {
   it('delete throws on error', async () => {
     const sb = makeSb({tableResult: {error: {message: 'fk constraint'}}});
     await expect(deleteTaskTemplate(sb, 'tt-1')).rejects.toThrow(/fk constraint/);
+  });
+});
+
+describe('createOneTimeTaskInstance', () => {
+  it('inserts into task_instances and returns the persisted row', async () => {
+    const sb = makeSb({
+      tableResult: {data: {id: 'ti-1', status: 'open', submission_source: 'admin_manual'}, error: null},
+    });
+    const out = await createOneTimeTaskInstance(sb, {
+      id: 'ti-1',
+      template_id: null,
+      assignee_profile_id: '00000000-0000-0000-0000-000000000001',
+      due_date: '2026-05-10',
+      title: 'Refill mineral',
+      submission_source: 'admin_manual',
+      status: 'open',
+    });
+    expect(sb.from).toHaveBeenCalledWith('task_instances');
+    expect(out.submission_source).toBe('admin_manual');
+  });
+
+  it('throws on insert error', async () => {
+    const sb = makeSb({tableResult: {data: null, error: {message: 'check_violation'}}});
+    await expect(createOneTimeTaskInstance(sb, {id: 'ti-2', submission_source: 'admin_manual'})).rejects.toThrow(
+      /check_violation/,
+    );
+  });
+
+  it('treats 23505 unique_violation as idempotent replay and returns the existing row', async () => {
+    // First DB call: insert raises 23505 because the row already landed
+    // on a prior attempt (same id). Second DB call: select the existing
+    // row and hand it back to the caller as if the insert had succeeded.
+    const existing = {
+      id: 'ti-replay',
+      template_id: null,
+      submission_source: 'admin_manual',
+      status: 'open',
+      title: 'Refill mineral',
+    };
+    const sb = makeSb({
+      tableResults: [
+        {data: null, error: {code: '23505', message: 'duplicate key value violates unique constraint'}},
+        {data: existing, error: null},
+      ],
+    });
+    const out = await createOneTimeTaskInstance(sb, {id: 'ti-replay', submission_source: 'admin_manual'});
+    expect(out).toEqual(existing);
+    expect(sb.from).toHaveBeenCalledTimes(2);
+    expect(sb.from).toHaveBeenNthCalledWith(1, 'task_instances');
+    expect(sb.from).toHaveBeenNthCalledWith(2, 'task_instances');
   });
 });

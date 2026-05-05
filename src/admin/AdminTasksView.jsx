@@ -3,22 +3,25 @@ import {RECURRENCE_OPTIONS} from '../lib/tasks.js';
 import {
   loadTaskTemplates,
   loadOpenTaskInstances,
-  loadCronAuditTail,
   upsertTaskTemplate,
   deleteTaskTemplate,
-  runCronNow,
+  createOneTimeTaskInstance,
 } from '../lib/tasksAdminApi.js';
 
-// Admin Tasks Center — C1.
+// Admin Tasks Center — C1 + C1.1 (product-correction round).
 // Sections (admin-only; see UnauthorizedRedirect wrapper at the route mount):
-//   1. Template CRUD list + create/edit modal
-//   2. Open task_instances read-only list
-//   3. Last-5 cron audit footer
-//   4. "Run Cron Now" button
-//   5. "Manage Team Roster" CTA → existing WebformsAdminView
+//   1. Recurring Tasks list + edit modal (existing task_templates)
+//   2. Open Tasks list (task_instances; both generated + admin_manual)
+//   3. New Task modal: defaults to one-time mode; "Make recurring" toggle
+//      reveals the recurrence/interval/first-due/active fields and switches
+//      the save path from task_instances (admin_manual) to task_templates.
 //
-// `requires_photo` is intentionally absent from every form here — it was
-// dropped from task_templates + task_instances by mig 039.
+// Cron infrastructure (Edge Function, schedule, audit table) stays intact;
+// it just isn't surfaced on the operator UI anymore. Run Cron Now and the
+// task_cron_runs audit footer were removed in C1.1.
+//
+// `requires_photo` is intentionally absent from every form here — that
+// column was dropped from task_templates + task_instances by mig 039.
 
 const PAGE_BG = {
   minHeight: '100vh',
@@ -80,15 +83,29 @@ const RECURRENCE_LABELS = {
   quarterly: 'Quarterly',
 };
 
-function emptyTemplateForm() {
+// Modal default = one-time mode. The "Make recurring" toggle below the
+// always-visible fields gates the recurrence-specific fields. Same form
+// state covers both branches; `dueDate` maps to task_instances.due_date in
+// one-time mode and task_templates.first_due_date in recurring mode at
+// save time.
+//
+// `oneTimeInstanceId` is minted once at modal-open time and reused on every
+// Save attempt within that modal session. If the first Save errors mid-flight
+// and the user clicks Save again, the second attempt carries the same id —
+// so a replay against the row that did land (idempotency in
+// createOneTimeTaskInstance) returns it rather than creating a duplicate.
+// Closing and re-opening the modal mints a fresh id for the next session.
+function emptyTaskForm() {
   return {
+    recurring: false,
     id: '',
+    oneTimeInstanceId: '',
     title: '',
     description: '',
     assignee_profile_id: '',
+    dueDate: '',
     recurrence: 'once',
     recurrence_interval: 1,
-    first_due_date: '',
     notes: '',
     active: false,
   };
@@ -98,35 +115,31 @@ function mintTemplateId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return 'tt-' + crypto.randomUUID().replace(/-/g, '');
   }
-  // Fallback for environments without crypto.randomUUID — Date+random is
-  // collision-safe enough for an admin-only mint path.
   return 'tt-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+function mintInstanceId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return 'ti-' + crypto.randomUUID().replace(/-/g, '');
+  }
+  return 'ti-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 
 export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView}) {
   const [templates, setTemplates] = React.useState([]);
   const [openInstances, setOpenInstances] = React.useState([]);
-  const [cronTail, setCronTail] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
 
   const [editForm, setEditForm] = React.useState(null); // null = closed
   const [saving, setSaving] = React.useState(false);
 
-  const [runningCron, setRunningCron] = React.useState(false);
-  const [cronResult, setCronResult] = React.useState(null);
-
   const refresh = React.useCallback(async () => {
     setErr('');
     try {
-      const [tpls, opens, audit] = await Promise.all([
-        loadTaskTemplates(sb),
-        loadOpenTaskInstances(sb),
-        loadCronAuditTail(sb, 5),
-      ]);
+      const [tpls, opens] = await Promise.all([loadTaskTemplates(sb), loadOpenTaskInstances(sb)]);
       setTemplates(tpls);
       setOpenInstances(opens);
-      setCronTail(audit);
     } catch (e) {
       setErr(e && e.message ? e.message : String(e));
     } finally {
@@ -165,20 +178,22 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
   }, [allUsers]);
 
   function startNew() {
-    const f = emptyTemplateForm();
+    const f = emptyTaskForm();
+    f.oneTimeInstanceId = mintInstanceId();
     if (eligibleAssignees.length > 0) f.assignee_profile_id = eligibleAssignees[0].id;
     setEditForm(f);
   }
 
-  function startEdit(tpl) {
+  function startEditTemplate(tpl) {
     setEditForm({
+      recurring: true, // editing an existing template ⇒ recurring branch
       id: tpl.id,
       title: tpl.title || '',
       description: tpl.description || '',
       assignee_profile_id: tpl.assignee_profile_id || '',
+      dueDate: tpl.first_due_date || '',
       recurrence: tpl.recurrence || 'once',
       recurrence_interval: tpl.recurrence_interval || 1,
-      first_due_date: tpl.first_due_date || '',
       notes: tpl.notes || '',
       active: !!tpl.active,
     });
@@ -188,7 +203,7 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
     setEditForm(null);
   }
 
-  async function saveTemplate() {
+  async function saveTask() {
     if (!editForm) return;
     if (!editForm.title.trim()) {
       setErr('Title is required.');
@@ -198,30 +213,53 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
       setErr('Assignee is required.');
       return;
     }
-    if (!editForm.first_due_date) {
-      setErr('First due date is required.');
+    if (!editForm.dueDate) {
+      setErr(editForm.recurring ? 'First due date is required.' : 'Due date is required.');
       return;
     }
-    const interval = parseInt(editForm.recurrence_interval, 10);
-    if (!Number.isFinite(interval) || interval < 1) {
-      setErr('Recurrence interval must be at least 1.');
-      return;
+    if (editForm.recurring) {
+      const interval = parseInt(editForm.recurrence_interval, 10);
+      if (!Number.isFinite(interval) || interval < 1) {
+        setErr('Recurrence interval must be at least 1.');
+        return;
+      }
     }
     setErr('');
     setSaving(true);
     try {
-      const payload = {
-        id: editForm.id || mintTemplateId(),
-        title: editForm.title.trim(),
-        description: editForm.description.trim() || null,
-        assignee_profile_id: editForm.assignee_profile_id,
-        recurrence: editForm.recurrence,
-        recurrence_interval: interval,
-        first_due_date: editForm.first_due_date,
-        notes: editForm.notes.trim() || null,
-        active: !!editForm.active,
-      };
-      await upsertTaskTemplate(sb, payload);
+      if (editForm.recurring) {
+        // Recurring: upsert task_templates. Cron generator picks up active
+        // templates and writes task_instances on its 04:00 UTC fire.
+        const payload = {
+          id: editForm.id || mintTemplateId(),
+          title: editForm.title.trim(),
+          description: editForm.description.trim() || null,
+          assignee_profile_id: editForm.assignee_profile_id,
+          recurrence: editForm.recurrence,
+          recurrence_interval: parseInt(editForm.recurrence_interval, 10),
+          first_due_date: editForm.dueDate,
+          notes: editForm.notes.trim() || null,
+          active: !!editForm.active,
+        };
+        await upsertTaskTemplate(sb, payload);
+      } else {
+        // One-time: insert a single task_instances row directly.
+        // template_id null + submission_source='admin_manual' per spec.
+        // `id` is the form-held oneTimeInstanceId minted when the modal
+        // opened — stable across Save retries inside the same modal
+        // session so a network-blip retry doesn't double-insert.
+        const payload = {
+          id: editForm.oneTimeInstanceId,
+          template_id: null,
+          assignee_profile_id: editForm.assignee_profile_id,
+          due_date: editForm.dueDate,
+          title: editForm.title.trim(),
+          description: editForm.description.trim() || null,
+          submission_source: 'admin_manual',
+          status: 'open',
+        };
+        await createOneTimeTaskInstance(sb, payload);
+      }
       closeEdit();
       await refresh();
     } catch (e) {
@@ -232,7 +270,7 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
   }
 
   async function removeTemplate(tpl) {
-    if (!confirm(`Delete template "${tpl.title}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete recurring task "${tpl.title}"? This cannot be undone.`)) return;
     setErr('');
     try {
       await deleteTaskTemplate(sb, tpl.id);
@@ -242,26 +280,18 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
     }
   }
 
-  async function handleRunCronNow() {
-    setRunningCron(true);
-    setCronResult(null);
-    setErr('');
-    try {
-      const result = await runCronNow(sb);
-      setCronResult(result);
-      await refresh();
-    } catch (e) {
-      setErr(e && e.message ? e.message : String(e));
-    } finally {
-      setRunningCron(false);
-    }
-  }
-
   function nameOf(profileId) {
     if (!profileId) return '—';
     const u = (allUsers || []).find((x) => x && x.id === profileId);
     return (u && (u.full_name || u.email)) || profileId.slice(0, 8) + '…';
   }
+
+  const isEditingTemplate = !!(editForm && editForm.id);
+  const modalTitle = isEditingTemplate
+    ? 'Edit Recurring Task'
+    : editForm && editForm.recurring
+      ? 'New Recurring Task'
+      : 'New Task';
 
   return (
     <div style={PAGE_BG}>
@@ -271,9 +301,7 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14}}>
           <div>
             <h1 style={{fontSize: 20, margin: 0, color: '#111827'}}>Tasks Center</h1>
-            <div style={SUB}>
-              Admin-only. Templates generate task instances daily; assignees complete via /my-tasks.
-            </div>
+            <div style={SUB}>Admin-only. Manage one-time tasks and recurring tasks.</div>
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
@@ -284,8 +312,8 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
             >
               Manage Team Roster
             </button>
-            <button type="button" onClick={handleRunCronNow} disabled={runningCron} style={PRIMARY_BTN}>
-              {runningCron ? 'Running…' : 'Run Cron Now'}
+            <button type="button" onClick={startNew} style={PRIMARY_BTN}>
+              + New Task
             </button>
           </div>
         </div>
@@ -306,38 +334,45 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
           </div>
         )}
 
-        {cronResult && (
-          <div
-            style={{
-              background: '#ecfdf5',
-              border: '1px solid #a7f3d0',
-              color: '#065f46',
-              padding: '8px 12px',
-              borderRadius: 8,
-              marginBottom: 12,
-              fontSize: 13,
-            }}
-          >
-            Cron run complete — generated: {Number(cronResult.generated_count) || 0} · skipped:{' '}
-            {Number(cronResult.skipped_count) || 0}
-            {Array.isArray(cronResult.cap_exceeded) && cronResult.cap_exceeded.length > 0
-              ? ` · cap exceeded for ${cronResult.cap_exceeded.length} template(s)`
-              : ''}
-          </div>
-        )}
-
-        {/* ── Templates ─────────────────────────────────────────────── */}
+        {/* ── Open Tasks ──────────────────────────────────────────── */}
         <div style={CARD}>
-          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8}}>
-            <div style={SECTION_TITLE}>Task templates</div>
-            <button type="button" onClick={startNew} style={PRIMARY_BTN}>
-              + New template
-            </button>
-          </div>
+          <div style={SECTION_TITLE}>Open Tasks ({openInstances.length})</div>
+          {loading ? (
+            <div style={SUB}>Loading…</div>
+          ) : openInstances.length === 0 ? (
+            <div style={SUB}>No open tasks.</div>
+          ) : (
+            <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+              {openInstances.map((ti) => (
+                <div
+                  key={ti.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '110px 2fr 1.4fr 1fr',
+                    gap: 8,
+                    padding: '6px 10px',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{color: '#6b7280'}}>{ti.due_date}</div>
+                  <div style={{color: '#111827', fontWeight: 500}}>{ti.title}</div>
+                  <div style={{color: '#374151'}}>{nameOf(ti.assignee_profile_id)}</div>
+                  <div style={SUB}>{ti.submission_source || 'generated'}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Recurring Tasks ─────────────────────────────────────── */}
+        <div style={CARD}>
+          <div style={SECTION_TITLE}>Recurring Tasks</div>
           {loading ? (
             <div style={SUB}>Loading…</div>
           ) : templates.length === 0 ? (
-            <div style={SUB}>No templates yet. Create one to schedule recurring tasks.</div>
+            <div style={SUB}>No recurring tasks yet.</div>
           ) : (
             <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
               {templates.map((tpl) => (
@@ -368,7 +403,7 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
                     {tpl.active ? 'ACTIVE' : 'inactive'}
                   </div>
                   <div style={{display: 'flex', gap: 6}}>
-                    <button type="button" onClick={() => startEdit(tpl)} style={SECONDARY_BTN}>
+                    <button type="button" onClick={() => startEditTemplate(tpl)} style={SECONDARY_BTN}>
                       Edit
                     </button>
                     <button type="button" onClick={() => removeTemplate(tpl)} style={DANGER_BTN}>
@@ -380,75 +415,9 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
             </div>
           )}
         </div>
-
-        {/* ── Open task instances ──────────────────────────────────── */}
-        <div style={CARD}>
-          <div style={SECTION_TITLE}>Open task instances ({openInstances.length})</div>
-          {loading ? (
-            <div style={SUB}>Loading…</div>
-          ) : openInstances.length === 0 ? (
-            <div style={SUB}>No open tasks. The next 04:00 UTC cron fire will generate any due ones.</div>
-          ) : (
-            <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-              {openInstances.map((ti) => (
-                <div
-                  key={ti.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '110px 2fr 1.4fr 1fr',
-                    gap: 8,
-                    padding: '6px 10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 6,
-                    fontSize: 12,
-                  }}
-                >
-                  <div style={{color: '#6b7280'}}>{ti.due_date}</div>
-                  <div style={{color: '#111827', fontWeight: 500}}>{ti.title}</div>
-                  <div style={{color: '#374151'}}>{nameOf(ti.assignee_profile_id)}</div>
-                  <div style={SUB}>{ti.submission_source || 'generated'}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── Cron audit footer ────────────────────────────────────── */}
-        <div style={CARD}>
-          <div style={SECTION_TITLE}>Last 5 cron audit rows (task_cron_runs)</div>
-          {loading ? (
-            <div style={SUB}>Loading…</div>
-          ) : cronTail.length === 0 ? (
-            <div style={SUB}>No cron audit rows yet.</div>
-          ) : (
-            <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-              {cronTail.map((row) => (
-                <div
-                  key={row.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '170px 80px 1fr 1fr 2fr',
-                    gap: 8,
-                    padding: '6px 10px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 6,
-                    fontSize: 11,
-                    color: '#374151',
-                  }}
-                >
-                  <div>{row.ran_at}</div>
-                  <div>{row.run_mode}</div>
-                  <div>generated {row.generated_count ?? 0}</div>
-                  <div>skipped {row.skipped_count ?? 0}</div>
-                  <div style={{color: row.error_message ? '#991b1b' : '#9ca3af'}}>{row.error_message || '—'}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* ── Create/Edit template modal ─────────────────────────────── */}
+      {/* ── New / Edit Task modal ──────────────────────────────────── */}
       {editForm && (
         <div
           style={{
@@ -473,9 +442,7 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
               overflow: 'auto',
             }}
           >
-            <div style={{fontSize: 16, fontWeight: 700, marginBottom: 12}}>
-              {editForm.id ? 'Edit template' : 'New template'}
-            </div>
+            <div style={{fontSize: 16, fontWeight: 700, marginBottom: 12}}>{modalTitle}</div>
 
             <div style={{marginBottom: 10}}>
               <label style={LBL}>Title *</label>
@@ -513,44 +480,72 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
               </select>
             </div>
 
-            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10}}>
-              <div>
-                <label style={LBL}>Recurrence *</label>
-                <select
-                  value={editForm.recurrence}
-                  onChange={(e) => setEditForm({...editForm, recurrence: e.target.value})}
-                  style={INP}
-                >
-                  {RECURRENCE_OPTIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {RECURRENCE_LABELS[r] || r}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={LBL}>Interval *</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={editForm.recurrence_interval}
-                  onChange={(e) => setEditForm({...editForm, recurrence_interval: e.target.value})}
-                  style={INP}
-                />
-              </div>
-              <div>
-                <label style={LBL}>First due *</label>
-                <input
-                  type="date"
-                  value={editForm.first_due_date}
-                  onChange={(e) => setEditForm({...editForm, first_due_date: e.target.value})}
-                  style={INP}
-                />
-              </div>
+            <div style={{marginBottom: 10}}>
+              <label style={LBL}>{editForm.recurring ? 'First due *' : 'Due date *'}</label>
+              <input
+                type="date"
+                value={editForm.dueDate}
+                onChange={(e) => setEditForm({...editForm, dueDate: e.target.value})}
+                style={INP}
+              />
             </div>
 
-            <div style={{marginBottom: 10}}>
+            {/* Make-recurring toggle: hidden when editing an existing template
+                (you can't toggle a template back to a single instance — that
+                would require deleting the template + creating an instance). */}
+            {!isEditingTemplate && (
+              <label style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer'}}>
+                <input
+                  type="checkbox"
+                  checked={editForm.recurring}
+                  onChange={(e) => setEditForm({...editForm, recurring: e.target.checked})}
+                />
+                <span style={{fontSize: 13, color: '#374151'}}>Make recurring</span>
+              </label>
+            )}
+
+            {editForm.recurring && (
+              <>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10}}>
+                  <div>
+                    <label style={LBL}>Recurrence *</label>
+                    <select
+                      value={editForm.recurrence}
+                      onChange={(e) => setEditForm({...editForm, recurrence: e.target.value})}
+                      style={INP}
+                    >
+                      {RECURRENCE_OPTIONS.map((r) => (
+                        <option key={r} value={r}>
+                          {RECURRENCE_LABELS[r] || r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={LBL}>Interval *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={editForm.recurrence_interval}
+                      onChange={(e) => setEditForm({...editForm, recurrence_interval: e.target.value})}
+                      style={INP}
+                    />
+                  </div>
+                </div>
+
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer'}}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.active}
+                    onChange={(e) => setEditForm({...editForm, active: e.target.checked})}
+                  />
+                  <span style={{fontSize: 13, color: '#374151'}}>Active (generate due instances on schedule)</span>
+                </label>
+              </>
+            )}
+
+            <div style={{marginBottom: 14}}>
               <label style={LBL}>Notes</label>
               <textarea
                 rows={2}
@@ -560,21 +555,12 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
               />
             </div>
 
-            <label style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, cursor: 'pointer'}}>
-              <input
-                type="checkbox"
-                checked={editForm.active}
-                onChange={(e) => setEditForm({...editForm, active: e.target.checked})}
-              />
-              <span style={{fontSize: 13, color: '#374151'}}>Active (cron generates instances when checked)</span>
-            </label>
-
             <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8}}>
               <button type="button" onClick={closeEdit} style={SECONDARY_BTN}>
                 Cancel
               </button>
-              <button type="button" onClick={saveTemplate} disabled={saving} style={PRIMARY_BTN}>
-                {saving ? 'Saving…' : 'Save template'}
+              <button type="button" onClick={saveTask} disabled={saving} style={PRIMARY_BTN}>
+                {saving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
