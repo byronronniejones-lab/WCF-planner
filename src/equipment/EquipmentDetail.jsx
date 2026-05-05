@@ -640,20 +640,38 @@ export default function EquipmentDetail({
                         </div>
                         <div>
                           <div style={{fontSize: 10, color: '#9ca3af'}}>Team</div>
-                          <input
-                            type="text"
-                            defaultValue={f.team_member || ''}
-                            onChange={(e) => queueFuelingSave(f.id, 'team_member', e.target.value, 'text')}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 7px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              width: '100%',
-                              boxSizing: 'border-box',
-                            }}
-                          />
+                          {(() => {
+                            const assignedTM = Array.isArray(eq.team_members) ? eq.team_members : [];
+                            const cur = f.team_member || '';
+                            const isLegacy = cur && !assignedTM.includes(cur);
+                            const noOptions = assignedTM.length === 0 && !isLegacy;
+                            return (
+                              <select
+                                key={`tm-${f.id}-${cur}`}
+                                defaultValue={cur}
+                                disabled={noOptions}
+                                onChange={(e) => queueFuelingSave(f.id, 'team_member', e.target.value, 'text')}
+                                style={{
+                                  fontSize: 12,
+                                  padding: '4px 7px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: 5,
+                                  fontFamily: 'inherit',
+                                  width: '100%',
+                                  boxSizing: 'border-box',
+                                  background: noOptions ? '#f3f4f6' : 'white',
+                                }}
+                              >
+                                <option value="">{noOptions ? 'No team members assigned' : 'Select…'}</option>
+                                {isLegacy && <option value={cur}>{cur} (legacy — not currently assigned)</option>}
+                                {assignedTM.map((n) => (
+                                  <option key={n} value={n}>
+                                    {n}
+                                  </option>
+                                ))}
+                              </select>
+                            );
+                          })()}
                         </div>
                         <div>
                           <div style={{fontSize: 10, color: '#9ca3af'}}>Gallons</div>

@@ -27,10 +27,11 @@ import {normalizeRoster} from './teamMembers.js';
 
 const KEY = 'team_availability';
 
-// The 8 form keys this module gates. Keep alphabetic for stable admin UI
+// The 9 form keys this module gates. Keep alphabetic for stable admin UI
 // rendering. Adding a new form is one entry here + one consumer call to
 // `availableNamesFor`.
 export const TEAM_AVAILABILITY_FORM_KEYS = [
+  'add-feed',
   'broiler-dailys',
   'cattle-dailys',
   'egg-dailys',

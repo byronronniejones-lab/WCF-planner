@@ -20,7 +20,8 @@
 // Feed is on the RPC path because it produces N child rows from one
 // submission and atomicity matters.
 import React from 'react';
-import {loadRoster, activeNames} from '../lib/teamMembers.js';
+import {loadRoster} from '../lib/teamMembers.js';
+import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
@@ -95,17 +96,21 @@ const AddFeedWebform = ({sb}) => {
       sb.from('webform_config').select('data').eq('key', 'full_config').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'webform_settings').maybeSingle(),
       loadRoster(sb),
+      loadAvailability(sb),
     ]).then(function (results) {
       var hbm = results[0],
         bg = results[1],
         ag = results[2],
         fc = results[3],
         ws = results[4],
-        roster = results[5];
+        roster = results[5],
+        availability = results[6];
       if (hbm && hbm.data && hbm.data.data) setHousingBatchMap(hbm.data.data);
       if (bg && bg.data && Array.isArray(bg.data.data) && bg.data.data.length > 0) setBroilerGroups(bg.data.data);
       if (ag && ag.data && Array.isArray(ag.data.data) && ag.data.data.length > 0) setPigGroups(ag.data.data);
-      if (Array.isArray(roster) && roster.length > 0) setAllTeamMembers(activeNames(roster));
+      if (Array.isArray(roster) && roster.length > 0) {
+        setAllTeamMembers(availableNamesFor('add-feed', roster, availability));
+      }
       if (ws && ws.data && ws.data.data) setWfSettings(ws.data.data);
       if (fc && fc.data && fc.data.data) {
         setWfCfg(fc.data.data);
@@ -180,8 +185,9 @@ const AddFeedWebform = ({sb}) => {
     return [];
   }
   function getTeamMemberList() {
-    // Per-form filtering retired 2026-04-29 — every active master roster
-    // member appears in this dropdown.
+    // allTeamMembers holds the roster pre-filtered by the 'add-feed'
+    // availability key (TeamAvailabilityEditor). Members hidden for
+    // Add Feed in admin do not appear here.
     return allTeamMembers;
   }
 

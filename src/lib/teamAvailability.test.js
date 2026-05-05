@@ -16,8 +16,9 @@ const ROSTER = [
 ];
 
 describe('TEAM_AVAILABILITY_FORM_KEYS', () => {
-  it('lists the 8 expected form keys', () => {
+  it('lists the 9 expected form keys', () => {
     expect(TEAM_AVAILABILITY_FORM_KEYS).toEqual([
+      'add-feed',
       'broiler-dailys',
       'cattle-dailys',
       'egg-dailys',

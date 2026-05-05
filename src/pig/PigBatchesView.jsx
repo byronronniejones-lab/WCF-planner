@@ -403,14 +403,17 @@ export default function PigBatchesView({
     });
   }
 
-  function calcAgeRange(cycleId) {
+  function calcAgeRange(cycleId, asOfDate) {
     const cycle = breedingCycles.find((c) => c.id === cycleId);
     if (!cycle) return {text: '—', hasActual: false, count: 0, total: 0};
     const tl = calcBreedingTimeline(cycle.exposureStart);
     if (!tl) return {text: '—', hasActual: false, count: 0, total: 0};
 
     const recs = cycleRecords(cycle);
-    const today = new Date();
+    // Caller may pin the reference point (e.g. latest processor-trip date
+    // once a batch's current count hits 0) so the displayed age stops
+    // advancing. Default = today.
+    const ref = asOfDate instanceof Date && !isNaN(asOfDate.getTime()) ? asOfDate : new Date();
 
     let firstDate,
       lastDate,
@@ -428,8 +431,8 @@ export default function PigBatchesView({
       lastDate = new Date(tl.farrowingEnd + 'T12:00:00');
     }
 
-    const oldestDays = Math.round((today - firstDate) / 86400000);
-    const youngestDays = Math.round((today - lastDate) / 86400000);
+    const oldestDays = Math.round((ref - firstDate) / 86400000);
+    const youngestDays = Math.round((ref - lastDate) / 86400000);
 
     if (oldestDays <= 0)
       return {text: 'Not yet born', hasActual, count: recs.length, total: parseInt(cycle.sowCount) || 0};
@@ -1342,7 +1345,6 @@ export default function PigBatchesView({
           .map((g) => {
             const cycle = breedingCycles.find((c) => c.id === g.cycleId);
             const tl = cycle ? calcBreedingTimeline(cycle.exposureStart) : null;
-            const ageRange = calcAgeRange(g.cycleId);
             const sc = statusColors[g.status] || statusColors.active;
             const C = cycle ? PIG_GROUP_COLORS[cycle.group] : null;
             const trips = g.processingTrips || [];
@@ -1444,6 +1446,22 @@ export default function PigBatchesView({
                   ? Math.max(0, parentStarted - parentTrips - parentTransfers - parentMort)
                   : (latestDaily?.pig_count ?? null);
             }
+            // Freeze age once the batch is empty AND has at least one
+            // processor trip — pin the reference date to the latest trip
+            // so age stops advancing while the batch lingers archived.
+            // Mortality/transfer-only emptying does NOT freeze (no trip
+            // date to pin to). If a trip is later edited away and current
+            // > 0 again, age resumes using today.
+            const latestTripDate =
+              trips
+                .map((t) => (typeof t?.date === 'string' && t.date ? t.date : null))
+                .filter(Boolean)
+                .sort()
+                .slice(-1)[0] || null;
+            const ageRange =
+              currentPigCount === 0 && latestTripDate
+                ? calcAgeRange(g.cycleId, new Date(latestTripDate + 'T12:00:00'))
+                : calcAgeRange(g.cycleId);
             // Started count for denominators: sum-of-subs (for hasSubBatches)
             // or parent stored gilts+boars. Both are now stable across
             // transfers — they reflect what entered the batch.

@@ -337,6 +337,7 @@ function TeamRosterEditor() {
 // orphan IDs (no longer in roster) are no-ops in availableNamesFor — the
 // editor only needs to handle the live roster.
 const FORM_LABELS = {
+  'add-feed': 'Add Feed',
   'broiler-dailys': 'Broiler Daily Reports',
   'cattle-dailys': 'Cattle Daily Reports',
   'egg-dailys': 'Egg Daily Reports',
