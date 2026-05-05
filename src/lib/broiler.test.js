@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {recomputeBroilerBatchWeekAvg} from './broiler.js';
+import {calcPoultryStatus, shouldAutoActivateBroilerBatch, recomputeBroilerBatchWeekAvg} from './broiler.js';
 
 // Minimal Supabase-style query mock.
 //
@@ -77,6 +77,30 @@ function makeSb(handlers) {
     calls,
   };
 }
+
+describe('broiler hatch-date status promotion', () => {
+  it('auto-computes planned batches as active on their hatch date', () => {
+    expect(calcPoultryStatus({status: 'planned', hatchDate: '2026-05-05', breed: 'CC'}, '2026-05-05')).toBe('active');
+  });
+
+  it('keeps planned batches planned before hatch date', () => {
+    expect(calcPoultryStatus({status: 'planned', hatchDate: '2026-05-06', breed: 'CC'}, '2026-05-05')).toBe('planned');
+  });
+
+  it('does not override explicit active or processed states', () => {
+    expect(calcPoultryStatus({status: 'active', hatchDate: '2026-05-10', breed: 'CC'}, '2026-05-05')).toBe('active');
+    expect(calcPoultryStatus({status: 'processed', hatchDate: '2026-05-01', breed: 'CC'}, '2026-05-05')).toBe(
+      'processed',
+    );
+  });
+
+  it('flags only planned batches whose hatch date is today or earlier for persistence', () => {
+    expect(shouldAutoActivateBroilerBatch({status: 'planned', hatchDate: '2026-05-05'}, '2026-05-05')).toBe(true);
+    expect(shouldAutoActivateBroilerBatch({status: 'planned', hatchDate: '2026-05-04'}, '2026-05-05')).toBe(true);
+    expect(shouldAutoActivateBroilerBatch({status: 'planned', hatchDate: '2026-05-06'}, '2026-05-05')).toBe(false);
+    expect(shouldAutoActivateBroilerBatch({status: 'active', hatchDate: '2026-05-05'}, '2026-05-05')).toBe(false);
+  });
+});
 
 describe('recomputeBroilerBatchWeekAvg', () => {
   it('returns {ok:true} for invalid args (defensive no-op)', async () => {

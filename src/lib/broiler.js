@@ -139,15 +139,29 @@ export function calcTimeline(hatchDate, breed, processingDate) {
   return {brooderIn, brooderOut, schoonerIn, schoonerOut};
 }
 
-export function calcPoultryStatus(batch) {
-  // Trust user's explicit status choice. Auto-compute only when not set.
-  if (batch.status) return batch.status;
+function isISODateLike(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.slice(0, 10));
+}
+
+export function shouldAutoActivateBroilerBatch(batch, asOfDate = todayISO()) {
+  if (!batch || batch.status !== 'planned') return false;
+  const hatchDate = String(batch.hatchDate || '').slice(0, 10);
+  const today = String(asOfDate || todayISO()).slice(0, 10);
+  if (!isISODateLike(hatchDate) || !isISODateLike(today)) return false;
+  return today >= hatchDate;
+}
+
+export function calcPoultryStatus(batch, asOfDate = todayISO()) {
+  // Manual terminal state wins. Planned is the one status that can age
+  // forward automatically once hatch day arrives.
+  if (batch && batch.status === 'processed') return 'processed';
+  if (batch && batch.status === 'active') return 'active';
   if (!batch.hatchDate) return 'planned';
-  const today = todayISO();
+  const today = String(asOfDate || todayISO()).slice(0, 10);
   const tl = calcTimeline(batch.hatchDate, batch.breed, batch.processingDate);
   if (!tl) return 'planned';
   if (today < tl.brooderIn) return 'planned';
-  if (batch.processingDate && today > batch.processingDate) return 'processed';
+  if (!batch.status && batch.processingDate && today > batch.processingDate) return 'processed';
   return 'active';
 }
 

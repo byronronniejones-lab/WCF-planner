@@ -272,7 +272,7 @@ export default function BroilerListView({
                         })()}
                       </td>
                       <td style={{padding: '8px 10px'}}>
-                        <span style={S.badge(S2.bg, S2.tx)}>{b.status}</span>
+                        <span style={S.badge(S2.bg, S2.tx)}>{autoSt}</span>
                       </td>
                       <td style={{padding: '8px 10px', whiteSpace: 'nowrap'}}>
                         {isMgmt && (

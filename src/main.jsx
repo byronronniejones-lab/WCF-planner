@@ -137,6 +137,7 @@ import {
   calcLayerFeedForMonth,
   calcTimeline,
   calcPoultryStatus,
+  shouldAutoActivateBroilerBatch,
   calcBroilerStatsFromDailys,
   getBatchColor,
   breedLabel,
@@ -1763,10 +1764,23 @@ function App() {
           // Migrate: archived → processed, brooderIn=hatchDate → hatchDate+1, FR breed for B-24-02..B-25-01
           let changed = false;
           const frBatchNames = ['B-24-02', 'B-24-03', 'B-24-04', 'B-25-01'];
+          const loadedFeedCosts = {starter: 0, grower: 0, layer: 0, pig: 0, grit: 0, ...store['ppp-feed-costs-v1']};
           const migrated = store['ppp-v4'].map((b) => {
             let nb = b;
             if (b.status === 'archived') {
               nb = {...nb, status: 'processed'};
+              changed = true;
+            }
+            // Hotfix 2026-05-05: planned broiler batches become active on
+            // hatch day without requiring an edit/save. Persist it so the
+            // active-only public weigh-in mirror sees the batch too.
+            if (shouldAutoActivateBroilerBatch(nb)) {
+              nb = {...nb, status: 'active'};
+              if (!nb.perLbStarterCost || !nb.perLbStandardCost) {
+                nb.perLbStarterCost = loadedFeedCosts.starter || 0;
+                nb.perLbStandardCost = loadedFeedCosts.grower || 0;
+                nb.perLbGritCost = loadedFeedCosts.grit || 0;
+              }
               changed = true;
             }
             // Fix brooderIn if it equals hatchDate (was same-day, should be +1)
@@ -1804,6 +1818,7 @@ function App() {
             }
             return nb;
           });
+          store['ppp-v4'] = migrated;
           setBatches(migrated);
           if (changed) {
             sb.from('app_store')
