@@ -7,6 +7,8 @@ import {
   deleteTaskTemplate,
   createOneTimeTaskInstance,
   loadPublicAssigneeAvailability,
+  uploadTaskRequestPhoto,
+  getRequestPhotoSignedUrl,
 } from '../lib/tasksAdminApi.js';
 
 // Admin Tasks Center — C1 + C1.1 (product-correction round).
@@ -109,6 +111,7 @@ function emptyTaskForm() {
     recurrence_interval: 1,
     notes: '',
     active: false,
+    photoFile: null,
   };
 }
 
@@ -294,6 +297,13 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
         // `id` is the form-held oneTimeInstanceId minted when the modal
         // opened — stable across Save retries inside the same modal
         // session so a network-blip retry doesn't double-insert.
+        // Photo (optional, one-time only): synchronous upload BEFORE
+        // the row insert. If upload fails, surface inline and bail —
+        // never INSERT a row pointing at a missing photo path.
+        let requestPhotoDbPath = null;
+        if (editForm.photoFile) {
+          requestPhotoDbPath = await uploadTaskRequestPhoto(sb, editForm.oneTimeInstanceId, editForm.photoFile);
+        }
         const payload = {
           id: editForm.oneTimeInstanceId,
           template_id: null,
@@ -303,6 +313,7 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
           description: editForm.description.trim() || null,
           submission_source: 'admin_manual',
           status: 'open',
+          request_photo_path: requestPhotoDbPath,
         };
         await createOneTimeTaskInstance(sb, payload);
       }
@@ -323,6 +334,24 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
       await refresh();
     } catch (e) {
       setErr(e && e.message ? e.message : String(e));
+    }
+  }
+
+  // Lazy click-to-fetch signed URL for an Open Tasks row's request
+  // photo. Codex Q3: don't eagerly fetch all signed URLs on list mount.
+  // Each click opens a fresh URL in a new tab; the URL has a short TTL
+  // (10 min default in the helper). Errors surface inline via setErr.
+  async function openRequestPhoto(dbPath) {
+    setErr('');
+    try {
+      const url = await getRequestPhotoSignedUrl(sb, dbPath);
+      if (!url) {
+        setErr('Photo path missing or malformed.');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      setErr('Could not open photo: ' + (e && e.message ? e.message : String(e)));
     }
   }
 
@@ -394,18 +423,41 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
                   key={ti.id}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '110px 2fr 1.4fr 1fr',
+                    gridTemplateColumns: '110px 2fr 1.4fr 1fr 80px',
                     gap: 8,
                     padding: '6px 10px',
                     border: '1px solid #e5e7eb',
                     borderRadius: 6,
                     fontSize: 12,
+                    alignItems: 'center',
                   }}
                 >
                   <div style={{color: '#6b7280'}}>{ti.due_date}</div>
                   <div style={{color: '#111827', fontWeight: 500}}>{ti.title}</div>
                   <div style={{color: '#374151'}}>{nameOf(ti.assignee_profile_id)}</div>
                   <div style={SUB}>{ti.submission_source || 'generated'}</div>
+                  <div>
+                    {ti.request_photo_path && (
+                      <button
+                        type="button"
+                        data-task-photo-link={ti.id}
+                        onClick={() => openRequestPhoto(ti.request_photo_path)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#085041',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          padding: 0,
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        📎 Photo
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -510,6 +562,53 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
               />
             </div>
 
+            {/* Photo input: one-time tasks only. Hidden when recurring,
+                because templates would generate stale-photo instances on
+                every cron fire. The toggle's onChange clears photoFile
+                when switching to recurring (one-photo-only contract,
+                Codex amendment 4). */}
+            {!editForm.recurring && (
+              <div style={{marginBottom: 10}}>
+                <label style={LBL}>Photo (optional)</label>
+                {editForm.photoFile ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: '#374151',
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      📎 {editForm.photoFile.name || 'photo.jpg'} ({Math.round((editForm.photoFile.size || 0) / 1024)}{' '}
+                      KB)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({...editForm, photoFile: null})}
+                      style={SECONDARY_BTN}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files && e.target.files[0];
+                      if (f) setEditForm({...editForm, photoFile: f});
+                    }}
+                    style={{...INP, padding: '6px 8px'}}
+                  />
+                )}
+                <div style={{fontSize: 11, color: '#6b7280', marginTop: 4}}>
+                  One photo max. Compressed before upload. One-time tasks only.
+                </div>
+              </div>
+            )}
+
             <div style={{marginBottom: 10}}>
               <label style={LBL}>Assignee *</label>
               <select
@@ -549,7 +648,16 @@ export default function AdminTasksView({Header, sb, allUsers, loadUsers, setView
                   <input
                     type="checkbox"
                     checked={editForm.recurring}
-                    onChange={(e) => setEditForm({...editForm, recurring: e.target.checked})}
+                    onChange={(e) => {
+                      const recurring = e.target.checked;
+                      setEditForm({
+                        ...editForm,
+                        recurring,
+                        // Clear any attached request photo when switching
+                        // to recurring mode — photos are one-time-only.
+                        photoFile: recurring ? null : editForm.photoFile,
+                      });
+                    }}
                     style={{margin: 0}}
                   />
                   <span style={{fontSize: 13, color: '#374151'}}>Repeat this task</span>

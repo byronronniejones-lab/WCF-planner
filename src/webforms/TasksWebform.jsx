@@ -72,6 +72,7 @@ const TasksWebform = ({sb}) => {
   const [dueDate, setDueDate] = React.useState(today);
   const [submittedBy, setSubmittedBy] = React.useState('');
   const [assignee, setAssignee] = React.useState('');
+  const [photoFile, setPhotoFile] = React.useState(null); // Optional File / Blob; one max
   const [submitting, setSubmitting] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [doneState, setDoneState] = React.useState('none'); // 'none' | 'synced' | 'queued'
@@ -129,7 +130,7 @@ const TasksWebform = ({sb}) => {
         assignee_profile_id: assignee,
         submitted_by_team_member: submittedBy,
       };
-      const result = await submit(payload, {parentId: mintTiInstanceId()});
+      const result = await submit(payload, {parentId: mintTiInstanceId(), photo: photoFile || null});
       try {
         localStorage.setItem('wcf_team', submittedBy);
       } catch (_e) {
@@ -148,6 +149,7 @@ const TasksWebform = ({sb}) => {
     setDescription('');
     setDueDate(today);
     setAssignee('');
+    setPhotoFile(null);
     setErr('');
     setDoneState('none');
   }
@@ -335,6 +337,45 @@ const TasksWebform = ({sb}) => {
               No eligible assignees available. Ask an admin to enable a planner user for public tasks.
             </div>
           )}
+        </div>
+
+        <div style={cardS}>
+          <label style={lblS}>Photo (optional)</label>
+          {photoFile ? (
+            <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+              <span style={{fontSize: 12, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                📎 {photoFile.name || 'photo.jpg'} ({Math.round((photoFile.size || 0) / 1024)} KB)
+              </span>
+              <button
+                type="button"
+                onClick={() => setPhotoFile(null)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  color: '#374151',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => {
+                const f = e.target.files && e.target.files[0];
+                if (f) setPhotoFile(f);
+              }}
+              style={{...inpS, padding: '8px 10px'}}
+            />
+          )}
+          <div style={{fontSize: 11, color: '#6b7280', marginTop: 4}}>One photo max. Compressed before upload.</div>
         </div>
 
         {err && (

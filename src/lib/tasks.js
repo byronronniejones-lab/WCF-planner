@@ -23,6 +23,56 @@ export function isOpenTaskInstance(ti) {
 
 export const TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY = 'tasks_public_assignee_availability';
 
+// ── Task request photos (C3.1b) ───────────────────────────────────────────
+// Bucket name + path-shape helpers shared by both the public form
+// (anon upload) and the admin Tasks Center (authenticated upload).
+// One photo max per request; deterministic filename so a queued/replay
+// upload to the same storage path is idempotent.
+
+export const TASK_REQUEST_PHOTOS_BUCKET = 'task-request-photos';
+
+// Default filename for the single photo allowed per task. Deterministic
+// so the offline-replay path can re-upload without minting a new name.
+// (Storage's INSERT semantics treat the same path as an upsert when
+// upsert:true is passed; we rely on that for replay safety.)
+export const TASK_REQUEST_PHOTO_DEFAULT_FILENAME = 'photo-1.jpg';
+
+/**
+ * Storage upload arg (no bucket prefix). Caller passes this to
+ * supabase.storage.from(TASK_REQUEST_PHOTOS_BUCKET).upload(<path>, blob).
+ */
+export function buildTaskRequestPhotoStoragePath(instanceId, filename) {
+  if (typeof instanceId !== 'string' || !instanceId) {
+    throw new Error('buildTaskRequestPhotoStoragePath: instanceId required');
+  }
+  const fname = filename || TASK_REQUEST_PHOTO_DEFAULT_FILENAME;
+  return `${instanceId}/${fname}`;
+}
+
+/**
+ * DB column value (with bucket prefix). Stored on
+ * task_instances.request_photo_path. The mig 042 RPC validates against
+ * `task-request-photos/<id>/` prefix exactly.
+ */
+export function buildTaskRequestPhotoDbPath(instanceId, filename) {
+  return `${TASK_REQUEST_PHOTOS_BUCKET}/${buildTaskRequestPhotoStoragePath(instanceId, filename)}`;
+}
+
+/**
+ * Strip the bucket prefix off a DB-stored path so the result is the
+ * storage upload arg. Used by the admin signed-URL flow:
+ *   const storagePath = stripTaskRequestPhotoBucket(ti.request_photo_path);
+ *   supabase.storage.from(BUCKET).createSignedUrl(storagePath, ttl);
+ * Returns null if the path is missing or doesn't start with the bucket
+ * prefix (orphan / malformed value).
+ */
+export function stripTaskRequestPhotoBucket(dbPath) {
+  if (typeof dbPath !== 'string' || !dbPath) return null;
+  const prefix = `${TASK_REQUEST_PHOTOS_BUCKET}/`;
+  if (!dbPath.startsWith(prefix)) return null;
+  return dbPath.slice(prefix.length);
+}
+
 /**
  * Coerce any input into the canonical `{hiddenProfileIds: []}` shape.
  * Garbage / null / arrays / wrong types collapse to an empty list. The

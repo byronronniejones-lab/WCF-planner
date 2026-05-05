@@ -135,27 +135,39 @@ const REGISTRY = Object.freeze({
   // {idempotent_replay: true} on replay. Callers see no error.
   task_submit: Object.freeze({
     rpc: 'submit_task_instance',
+    // C3.1b opt-in: useOfflineRpcSubmit's hasPhoto branch fires only for
+    // entries that carry this flag. Other registry entries
+    // (weigh_in_session_batch, add_feed_batch) keep their existing
+    // no-photo path verbatim — no opts.photo, no blob persistence,
+    // no replay re-upload.
+    hasPhoto: true,
     /**
      * @param {object} payload
      *   {title, description, due_date,
      *    assignee_profile_id, submitted_by_team_member}
-     * @param {{csid: string, parentId: string}} ids
+     * @param {{csid: string, parentId: string, requestPhotoDbPath?: string}} ids
+     *   `requestPhotoDbPath` is the bucket-prefixed storage path the
+     *   task-request-photos bucket holds; the hook only sets it after
+     *   a successful upload, otherwise it stays null/undefined and the
+     *   field is omitted from parent_in.
      * @returns {{rpc: string, args: {parent_in: object}}}
      */
-    buildArgs(payload, {csid, parentId}) {
+    buildArgs(payload, {csid, parentId, requestPhotoDbPath}) {
+      const parent_in = {
+        id: parentId,
+        client_submission_id: csid,
+        title: payload.title,
+        description: payload.description ?? null,
+        due_date: payload.due_date,
+        assignee_profile_id: payload.assignee_profile_id,
+        submitted_by_team_member: payload.submitted_by_team_member,
+      };
+      if (requestPhotoDbPath) {
+        parent_in.request_photo_path = requestPhotoDbPath;
+      }
       return {
         rpc: 'submit_task_instance',
-        args: {
-          parent_in: {
-            id: parentId,
-            client_submission_id: csid,
-            title: payload.title,
-            description: payload.description ?? null,
-            due_date: payload.due_date,
-            assignee_profile_id: payload.assignee_profile_id,
-            submitted_by_team_member: payload.submitted_by_team_member,
-          },
-        },
+        args: {parent_in},
       };
     },
   }),

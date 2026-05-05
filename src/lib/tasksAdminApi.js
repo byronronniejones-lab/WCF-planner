@@ -15,7 +15,16 @@
 // profile-uuid filtering for the Assignee dropdown lives in a separate
 // webform_config key — see tasks.js for the canonical key name + shape.
 
-import {TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY, normalizePublicAssigneeAvailability} from './tasks.js';
+import {
+  TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY,
+  normalizePublicAssigneeAvailability,
+  TASK_REQUEST_PHOTOS_BUCKET,
+  TASK_REQUEST_PHOTO_DEFAULT_FILENAME,
+  buildTaskRequestPhotoStoragePath,
+  buildTaskRequestPhotoDbPath,
+  stripTaskRequestPhotoBucket,
+} from './tasks.js';
+import {compressImage} from './photoCompress.js';
 
 export async function loadTaskTemplates(sb) {
   const {data, error} = await sb.from('task_templates').select('*').order('title', {ascending: true});
@@ -79,6 +88,66 @@ export async function savePublicAssigneeAvailability(sb, nextAvailability) {
     .upsert({key: TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY, data: local}, {onConflict: 'key'});
   if (error) throw new Error(`savePublicAssigneeAvailability: write failed: ${error.message}`);
   return local;
+}
+
+// ── Task request photos (admin path) ───────────────────────────────────
+//
+// Admin Tasks Center New Task modal supports ONE optional photo on
+// one-time tasks (recurring templates do not — Codex amendment 4).
+// Upload is synchronous: the modal's Save handler awaits this before
+// calling createOneTimeTaskInstance, and on failure the row is NOT
+// inserted (no orphan task pointing at a missing photo). No offline
+// queue on the admin side — admin is always authenticated + online.
+
+/**
+ * Compress the chosen photo + upload to the task-request-photos bucket
+ * at the deterministic '<instanceId>/photo-1.jpg' path. Returns the
+ * bucket-prefixed DB path on success. Throws on storage error so the
+ * caller can surface the message inline and abort the row insert.
+ *
+ * Retry-safety contract (Codex C3.1b review):
+ *   The modal holds a stable oneTimeInstanceId across Save retries
+ *   (admin can click Save twice if the createOneTimeTaskInstance call
+ *   blips). Both retries land at the SAME deterministic storage path.
+ *   We use upsert:true so the second upload is idempotent at the
+ *   storage layer rather than a "Duplicate" error that would block
+ *   the admin from finishing the task. The admin context is trusted
+ *   (authenticated RLS) so overwriting their own just-uploaded photo
+ *   is acceptable.
+ */
+export async function uploadTaskRequestPhoto(sb, instanceId, blobOrFile) {
+  if (!instanceId) {
+    throw new Error('uploadTaskRequestPhoto: instanceId required');
+  }
+  if (!blobOrFile) {
+    throw new Error('uploadTaskRequestPhoto: blobOrFile required');
+  }
+  const compressed = await compressImage(blobOrFile);
+  const filename = TASK_REQUEST_PHOTO_DEFAULT_FILENAME;
+  const storagePath = buildTaskRequestPhotoStoragePath(instanceId, filename);
+  const {error} = await sb.storage
+    .from(TASK_REQUEST_PHOTOS_BUCKET)
+    .upload(storagePath, compressed, {contentType: compressed.type || 'image/jpeg', upsert: true});
+  if (error) {
+    throw new Error(`uploadTaskRequestPhoto: ${error.message || String(error)}`);
+  }
+  return buildTaskRequestPhotoDbPath(instanceId, filename);
+}
+
+/**
+ * Generate a short-lived signed URL for an authenticated admin to view
+ * a request photo. Lazy: callers fetch this on click, not eagerly per
+ * row in the Open Tasks list (Codex Q3). Returns null if the dbPath is
+ * missing or doesn't carry the expected bucket prefix.
+ */
+export async function getRequestPhotoSignedUrl(sb, dbPath, ttlSeconds = 600) {
+  const storagePath = stripTaskRequestPhotoBucket(dbPath);
+  if (!storagePath) return null;
+  const {data, error} = await sb.storage.from(TASK_REQUEST_PHOTOS_BUCKET).createSignedUrl(storagePath, ttlSeconds);
+  if (error) {
+    throw new Error(`getRequestPhotoSignedUrl: ${error.message || String(error)}`);
+  }
+  return data && data.signedUrl ? data.signedUrl : null;
 }
 
 // One-time admin-created task instance. Inserts directly into task_instances

@@ -35,6 +35,8 @@ import {newClientSubmissionId} from './clientSubmissionId.js';
 import {buildRpcRequest, getRpcFormConfig} from './offlineRpcForms.js';
 import {
   enqueueSubmission,
+  enqueueSubmissionWithPhotos,
+  listPhotoBlobsByCsid,
   listQueued,
   listStuck,
   markSyncing,
@@ -45,6 +47,13 @@ import {
   retrySubmission,
   discardSubmission,
 } from './offlineQueue.js';
+import {compressImage} from './photoCompress.js';
+import {
+  TASK_REQUEST_PHOTOS_BUCKET,
+  TASK_REQUEST_PHOTO_DEFAULT_FILENAME,
+  buildTaskRequestPhotoStoragePath,
+  buildTaskRequestPhotoDbPath,
+} from './tasks.js';
 
 const TICK_INTERVAL_MS = 60_000;
 
@@ -77,6 +86,55 @@ function classifyError(err) {
   if (/^23/.test(code) || /^22/.test(code) || /^PGRST/i.test(code) || code === 'P0001') return 'schema';
 
   return 'unknown';
+}
+
+// ── hasPhoto branch helpers (C3.1b: task_submit only) ──────────────────
+//
+// Opt-in via cfg.hasPhoto in offlineRpcForms.js. weigh_in_session_batch
+// and add_feed_batch don't carry that flag, so their behavior is byte-
+// identical to today. Only registered hasPhoto:true entries flow through
+// the photo upload + blob persistence + replay-re-upload path below.
+
+const REQUEST_PHOTO_KEY = 'photo-1';
+
+/**
+ * Compress an arbitrary File/Blob into the canonical task-request-photo
+ * shape the queue + storage flow expects. Deterministic photo_key +
+ * path so replay uploads to the same storage object idempotently
+ * (upsert:true at the storage level).
+ */
+async function prepareTaskRequestPhoto(blobOrFile, parentId) {
+  if (!blobOrFile) {
+    throw new Error('useOfflineRpcSubmit: opts.photo must be a Blob or File');
+  }
+  if (Array.isArray(blobOrFile)) {
+    // One-photo-max contract for v1 — surface the misuse loudly.
+    throw new TypeError('useOfflineRpcSubmit: opts.photo must be a single Blob/File, not an array');
+  }
+  const compressed = await compressImage(blobOrFile);
+  const filename = TASK_REQUEST_PHOTO_DEFAULT_FILENAME;
+  return {
+    photo_key: REQUEST_PHOTO_KEY,
+    path: buildTaskRequestPhotoStoragePath(parentId, filename),
+    blob: compressed,
+    mime: compressed.type || 'image/jpeg',
+    size_bytes: compressed.size || 0,
+    name: blobOrFile.name || filename,
+    captured_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Single-shot upload to the task-request-photos bucket. upsert:true so
+ * a replay of the same deterministic path is idempotent (storage 200s
+ * back without re-writing the object). Throws on storage error so the
+ * caller can route to the queued/stuck branch.
+ */
+async function uploadTaskRequestPhoto(storagePath, blob, mime, {upsert = false} = {}) {
+  const {error} = await sb.storage
+    .from(TASK_REQUEST_PHOTOS_BUCKET)
+    .upload(storagePath, blob, {contentType: mime || 'image/jpeg', upsert});
+  if (error) throw error;
 }
 
 async function attemptRpc(formKind, record) {
@@ -139,10 +197,47 @@ export function useOfflineRpcSubmit(formKind) {
       await recoverStaleSyncing(formKind);
 
       const queued = await listQueued(formKind);
+      const cfg = getRpcFormConfig(formKind);
       for (const entry of queued) {
         await markSyncing(entry.csid);
         try {
-          const {error} = await attemptRpc(formKind, entry.record);
+          // ── hasPhoto replay branch (C3.1b) ──
+          // For hasPhoto:true entries, look up persisted blob(s) and
+          // re-upload BEFORE the RPC call. upsert:true makes a same-
+          // path re-upload a no-op at the storage layer. Inject the
+          // dbPath into the record's parent_in so submit_task_instance
+          // sees the request_photo_path on this attempt — the queued
+          // record may have been written without it (upload-failed
+          // first attempt) or with it (upload-succeeded first attempt
+          // then RPC failed).
+          let recordToSend = entry.record;
+          if (cfg.hasPhoto) {
+            const blobs = await listPhotoBlobsByCsid(entry.csid);
+            if (blobs.length > 0) {
+              const blob = blobs[0]; // one-photo-max contract
+              try {
+                await uploadTaskRequestPhoto(blob.path, blob.blob, blob.mime, {upsert: true});
+              } catch (uploadErr) {
+                await markFailed(entry.csid, uploadErr && uploadErr.message ? uploadErr.message : String(uploadErr));
+                continue;
+              }
+              const dbPath = `${TASK_REQUEST_PHOTOS_BUCKET}/${blob.path}`;
+              // Defensive deep-clone-ish: don't mutate the IDB-loaded
+              // object (some browsers freeze cursor results). Build a
+              // fresh record with the dbPath baked in.
+              recordToSend = {
+                ...entry.record,
+                args: {
+                  ...entry.record.args,
+                  parent_in: {
+                    ...entry.record.args.parent_in,
+                    request_photo_path: dbPath,
+                  },
+                },
+              };
+            }
+          }
+          const {error} = await attemptRpc(formKind, recordToSend);
           if (error) {
             const kind = classifyError(error);
             if (kind === 'schema') {
@@ -263,7 +358,39 @@ export const _classifyError = classifyError;
 export async function _runSubmit({formKind, payload, opts = {}, refresh}) {
   const csid = opts.csid ?? newClientSubmissionId();
   const parentId = opts.parentId ?? `${formKind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const record = buildRpcRequest(formKind, payload, {csid, parentId});
+  const cfg = getRpcFormConfig(formKind);
+
+  // ── hasPhoto opt-in branch (C3.1b) ──
+  // Only fires when BOTH the registry config has hasPhoto:true AND the
+  // caller passed opts.photo. Existing form-kinds without hasPhoto run
+  // the no-photo path below unchanged.
+  let preparedPhoto = null;
+  let requestPhotoDbPath = null;
+  if (cfg.hasPhoto && opts.photo) {
+    preparedPhoto = await prepareTaskRequestPhoto(opts.photo, parentId);
+    requestPhotoDbPath = buildTaskRequestPhotoDbPath(parentId, TASK_REQUEST_PHOTO_DEFAULT_FILENAME);
+    try {
+      await uploadTaskRequestPhoto(preparedPhoto.path, preparedPhoto.blob, preparedPhoto.mime, {upsert: false});
+    } catch (uploadErr) {
+      // Upload failed online (network / RLS / size). Persist the blob
+      // alongside the queued submission so replay can re-upload, and
+      // queue the row WITHOUT the dbPath baked in — replay rebuilds the
+      // record once the upload succeeds.
+      const recordNoPath = buildRpcRequest(formKind, payload, {csid, parentId});
+      await enqueueSubmissionWithPhotos({
+        csid,
+        formKind,
+        payload,
+        record: recordNoPath,
+        photos: [preparedPhoto],
+      });
+      await markFailed(csid, uploadErr && uploadErr.message ? uploadErr.message : String(uploadErr));
+      if (refresh) await refresh();
+      return {state: 'queued', csid, parentId, record: recordNoPath, data: null};
+    }
+  }
+
+  const record = buildRpcRequest(formKind, payload, {csid, parentId, requestPhotoDbPath});
 
   // Step 1: try the network. attemptRpc CAN throw synchronously
   // (rpc-mismatch defensive guard, or the underlying fetch throws). Those
@@ -278,8 +405,14 @@ export async function _runSubmit({formKind, payload, opts = {}, refresh}) {
       // Deterministic bug (e.g. rpc-mismatch). Don't queue.
       throw err;
     }
-    // network / rls / server / unknown — queue.
-    await enqueueSubmission({formKind, csid, payload, record});
+    // network / rls / server / unknown — queue. If we already uploaded
+    // a photo, persist the blob alongside so replay can re-upload
+    // idempotently and re-call the RPC.
+    if (preparedPhoto) {
+      await enqueueSubmissionWithPhotos({csid, formKind, payload, record, photos: [preparedPhoto]});
+    } else {
+      await enqueueSubmission({formKind, csid, payload, record});
+    }
     await markFailed(csid, err && err.message ? err.message : String(err));
     if (refresh) await refresh();
     return {state: 'queued', csid, parentId, record, data: null};
@@ -302,7 +435,11 @@ export async function _runSubmit({formKind, payload, opts = {}, refresh}) {
     throw wrapped;
   }
   // Transient (network/rls/server/unknown) — queue.
-  await enqueueSubmission({formKind, csid, payload, record});
+  if (preparedPhoto) {
+    await enqueueSubmissionWithPhotos({csid, formKind, payload, record, photos: [preparedPhoto]});
+  } else {
+    await enqueueSubmission({formKind, csid, payload, record});
+  }
   await markFailed(csid, error.message ?? `${kind} error`);
   if (refresh) await refresh();
   return {state: 'queued', csid, parentId, record, data: null};

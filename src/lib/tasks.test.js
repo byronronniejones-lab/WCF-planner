@@ -7,6 +7,11 @@ import {
   isPublicAssigneeHidden,
   setPublicAssigneeHidden,
   visiblePublicAssignees,
+  TASK_REQUEST_PHOTOS_BUCKET,
+  TASK_REQUEST_PHOTO_DEFAULT_FILENAME,
+  buildTaskRequestPhotoStoragePath,
+  buildTaskRequestPhotoDbPath,
+  stripTaskRequestPhotoBucket,
 } from './tasks.js';
 
 // Pure helpers — see ./tasks.js. Tests stay equally pure.
@@ -97,5 +102,41 @@ describe('public assignee availability helpers', () => {
     const profiles = [{id: 'uuid-a', full_name: 'ALICE'}];
     const out = visiblePublicAssignees(profiles, {hiddenProfileIds: ['uuid-orphan']});
     expect(out.map((p) => p.id)).toEqual(['uuid-a']);
+  });
+});
+
+describe('task request photo path helpers (C3.1b)', () => {
+  it('exposes the canonical bucket name + default filename', () => {
+    expect(TASK_REQUEST_PHOTOS_BUCKET).toBe('task-request-photos');
+    expect(TASK_REQUEST_PHOTO_DEFAULT_FILENAME).toBe('photo-1.jpg');
+  });
+
+  it('buildTaskRequestPhotoStoragePath returns <instanceId>/<filename>', () => {
+    expect(buildTaskRequestPhotoStoragePath('ti-abc', 'photo-1.jpg')).toBe('ti-abc/photo-1.jpg');
+  });
+
+  it('buildTaskRequestPhotoStoragePath defaults filename when omitted', () => {
+    expect(buildTaskRequestPhotoStoragePath('ti-abc')).toBe('ti-abc/photo-1.jpg');
+  });
+
+  it('buildTaskRequestPhotoDbPath returns task-request-photos/<instanceId>/<filename>', () => {
+    expect(buildTaskRequestPhotoDbPath('ti-abc', 'photo-1.jpg')).toBe('task-request-photos/ti-abc/photo-1.jpg');
+  });
+
+  it('buildTaskRequestPhotoStoragePath throws on missing instanceId', () => {
+    expect(() => buildTaskRequestPhotoStoragePath('', 'photo-1.jpg')).toThrow();
+    expect(() => buildTaskRequestPhotoStoragePath(null, 'photo-1.jpg')).toThrow();
+  });
+
+  it('stripTaskRequestPhotoBucket round-trips with build*DbPath', () => {
+    const dbPath = buildTaskRequestPhotoDbPath('ti-abc', 'photo-1.jpg');
+    expect(stripTaskRequestPhotoBucket(dbPath)).toBe('ti-abc/photo-1.jpg');
+  });
+
+  it('stripTaskRequestPhotoBucket returns null for missing or wrong-bucket paths', () => {
+    expect(stripTaskRequestPhotoBucket(null)).toBeNull();
+    expect(stripTaskRequestPhotoBucket('')).toBeNull();
+    expect(stripTaskRequestPhotoBucket('task-photos/ti-abc/photo-1.jpg')).toBeNull(); // wrong bucket
+    expect(stripTaskRequestPhotoBucket('ti-abc/photo-1.jpg')).toBeNull(); // no prefix
   });
 });
