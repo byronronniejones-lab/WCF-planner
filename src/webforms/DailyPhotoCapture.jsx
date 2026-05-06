@@ -92,7 +92,6 @@ export default function DailyPhotoCapture({files, statuses = [], onChange, disab
           type="file"
           accept="image/*"
           multiple
-          capture="environment"
           onChange={pick}
           disabled={disabled || atCap}
           data-photo-input="1"
