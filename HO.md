@@ -1,9 +1,10 @@
 # HO - static workflow SOP
 
-Last updated: 2026-05-05
+Last updated: 2026-05-06
 
-This file is the static operating prompt for Ronnie, CC (Claude Code), and
-Codex. It is not a session log and must not carry current project state.
+This file is the static start-of-session operating prompt for Ronnie, CC
+(Claude Code), and Codex. It is not a session log and must not carry current
+project state.
 Current state, roadmap, contracts, build history, and next tasks live in
 `PROJECT.md`.
 
@@ -12,6 +13,9 @@ Read order for every new session:
 1. Read `HO.md`.
 2. Read the relevant parts of `PROJECT.md`.
 3. Inspect the repo before planning or editing.
+
+Treat `HO.md` as the durable static instruction layer at session start. Do not
+replace it with chat summaries, per-session handoffs, or current-state notes.
 
 Do not edit `HO.md` unless Ronnie explicitly asks to edit `HO.md` by name.
 Do not create extra handoff docs unless Ronnie explicitly asks.
