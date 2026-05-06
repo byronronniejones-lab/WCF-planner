@@ -36,6 +36,7 @@ const hookSrc = fs.readFileSync(path.join(ROOT, 'src/lib/useOfflineRpcSubmit.js'
 const adminApiSrc = fs.readFileSync(path.join(ROOT, 'src/lib/tasksAdminApi.js'), 'utf8');
 const adminViewSrc = fs.readFileSync(path.join(ROOT, 'src/admin/AdminTasksView.jsx'), 'utf8');
 const webformSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/TasksWebform.jsx'), 'utf8');
+const dailyPhotoCaptureSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/DailyPhotoCapture.jsx'), 'utf8');
 
 describe('Mig 042 — column + bucket + storage policies', () => {
   it('adds task_instances.request_photo_path (nullable, IF NOT EXISTS)', () => {
@@ -191,9 +192,10 @@ describe('Public TasksWebform photo wiring', () => {
     );
   });
 
-  it('renders an optional file input with image/* + capture environment', () => {
+  it('renders an optional file input with image/* and NO capture attribute (mobile must allow library pick)', () => {
     expect(webformSrc).toMatch(/type="file"[\s\S]{0,200}?accept="image\/\*"/);
-    expect(webformSrc).toMatch(/capture="environment"/);
+    // Negative lookbehind avoids matching `data-...-capture="..."` data attributes.
+    expect(webformSrc).not.toMatch(/(?<!-)capture=/);
   });
 
   it('clears photoFile in resetForm (and on Remove)', () => {
@@ -291,6 +293,16 @@ describe('tasks.js path-shape constants exist (pure)', () => {
     expect(tasksSrc).toMatch(/export function buildTaskRequestPhotoStoragePath/);
     expect(tasksSrc).toMatch(/export function buildTaskRequestPhotoDbPath/);
     expect(tasksSrc).toMatch(/export function stripTaskRequestPhotoBucket/);
+  });
+});
+
+describe('DailyPhotoCapture file input (daily report photos)', () => {
+  it('renders type="file" + accept="image/*" + multiple, with NO capture attribute (mobile must allow library pick)', () => {
+    expect(dailyPhotoCaptureSrc).toMatch(/type="file"/);
+    expect(dailyPhotoCaptureSrc).toMatch(/accept="image\/\*"/);
+    expect(dailyPhotoCaptureSrc).toMatch(/\bmultiple\b/);
+    // Negative lookbehind avoids matching the `data-daily-photo-capture="1"` selector marker.
+    expect(dailyPhotoCaptureSrc).not.toMatch(/(?<!-)capture=/);
   });
 });
 

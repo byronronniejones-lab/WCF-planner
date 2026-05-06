@@ -367,7 +367,6 @@ const TasksWebform = ({sb}) => {
             <input
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={(e) => {
                 const f = e.target.files && e.target.files[0];
                 if (f) setPhotoFile(f);
