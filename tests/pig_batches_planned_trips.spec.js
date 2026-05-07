@@ -108,6 +108,12 @@ test('Global ADG control: admin sees edit affordance; manual value displays the 
 
   await page.goto('/pig/batches');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Wait for the parent batch tile to render before any band/card checks.
+  // This is the deterministic signal that feederGroups loaded and the
+  // sub-row map ran (the planned-trip band is a sibling of the sub-row).
+  // Without this gate, the band-visibility assertion can race the
+  // PigContext load on first navigation after resetDb.
+  await expect(page.locator(`text=${PARENT_BATCH}`).first()).toBeVisible({timeout: 15_000});
 
   // Manual ADG value visible.
   await expect(page.locator('text=1.50 lb/day').first()).toBeVisible({timeout: 15_000});
@@ -127,6 +133,12 @@ test('Pre-weigh-in: planned trips render from cycle age + Global ADG when no wei
 
   await page.goto('/pig/batches');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Wait for the parent batch tile to render before any band/card checks.
+  // This is the deterministic signal that feederGroups loaded and the
+  // sub-row map ran (the planned-trip band is a sibling of the sub-row).
+  // Without this gate, the band-visibility assertion can race the
+  // PigContext load on first navigation after resetDb.
+  await expect(page.locator(`text=${PARENT_BATCH}`).first()).toBeVisible({timeout: 15_000});
 
   // The auto-allocation effect writes plannedProcessingTrips on first
   // render. Wait for the planned trips band to appear for the gilt sub.
@@ -147,6 +159,12 @@ test('Mixed-sex sub renders the split warning and does NOT auto-allocate', async
 
   await page.goto('/pig/batches');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Wait for the parent batch tile to render before any band/card checks.
+  // This is the deterministic signal that feederGroups loaded and the
+  // sub-row map ran (the planned-trip band is a sibling of the sub-row).
+  // Without this gate, the band-visibility assertion can race the
+  // PigContext load on first navigation after resetDb.
+  await expect(page.locator(`text=${PARENT_BATCH}`).first()).toBeVisible({timeout: 15_000});
 
   const mixedBand = page.locator(`[data-planned-trips-sub="${SUB_MIXED_ID}"]`);
   await expect(mixedBand).toBeVisible({timeout: 15_000});
@@ -173,11 +191,121 @@ test('No cycle linkage renders the link-cycle hint and does NOT auto-allocate', 
 
   await page.goto('/pig/batches');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Wait for the parent batch tile to render before any band/card checks.
+  // This is the deterministic signal that feederGroups loaded and the
+  // sub-row map ran (the planned-trip band is a sibling of the sub-row).
+  // Without this gate, the band-visibility assertion can race the
+  // PigContext load on first navigation after resetDb.
+  await expect(page.locator(`text=${PARENT_BATCH}`).first()).toBeVisible({timeout: 15_000});
 
   const band = page.locator(`[data-planned-trips-sub="${SUB_GILTS_ID}"]`);
   await expect(band).toBeVisible({timeout: 15_000});
   await expect(band).toContainText('Link a breeding cycle');
   await expect(band.locator('[data-planned-trip-id]')).toHaveCount(0);
+});
+
+test('Admin date edit: changing a planned trip date updates the projection', async ({supabaseAdmin, resetDb, page}) => {
+  await resetDb();
+  // Two manual planned trips at +30 and +90 days, 6 gilts each.
+  const today = new Date();
+  const inDays = (n) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  await seedFeederGraph(supabaseAdmin, {
+    plannedProcessingTrips: [
+      {id: 'pt-edit-1', date: inDays(30), sex: 'gilt', subBatchId: SUB_GILTS_ID, plannedCount: 6, order: 0},
+      {id: 'pt-edit-2', date: inDays(90), sex: 'gilt', subBatchId: SUB_GILTS_ID, plannedCount: 6, order: 1},
+    ],
+  });
+  await seedManualGlobalAdg(supabaseAdmin, 1.5);
+
+  await page.goto('/pig/batches');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Wait for the parent batch tile to render before any band/card checks.
+  // This is the deterministic signal that feederGroups loaded and the
+  // sub-row map ran (the planned-trip band is a sibling of the sub-row).
+  // Without this gate, the band-visibility assertion can race the
+  // PigContext load on first navigation after resetDb.
+  await expect(page.locator(`text=${PARENT_BATCH}`).first()).toBeVisible({timeout: 15_000});
+
+  const editCard = page.locator('[data-planned-trip-id="pt-edit-1"]');
+  await expect(editCard).toBeVisible({timeout: 15_000});
+  // Capture initial avg text. Format: "~NNN lb avg".
+  const beforeText = await editCard.textContent();
+  const beforeMatch = beforeText.match(/~(\d+) lb avg/);
+  expect(beforeMatch, 'expected ~NNN lb avg in initial card').not.toBeNull();
+  const beforeAvg = parseInt(beforeMatch[1]);
+
+  // Open the inline date editor and push the date 90 days further out.
+  await editCard.locator('[data-planned-trip-edit-date="pt-edit-1"]').click();
+  const dateInput = editCard.locator('input[type="date"]');
+  await dateInput.fill(inDays(120));
+  await editCard.locator('[data-planned-trip-save-date="pt-edit-1"]').click();
+
+  // Projection must increase: more days × ADG → heavier projected avg.
+  const afterText = await page.locator('[data-planned-trip-id="pt-edit-1"]').textContent();
+  const afterMatch = afterText.match(/~(\d+) lb avg/);
+  const afterAvg = parseInt(afterMatch[1]);
+  expect(afterAvg).toBeGreaterThan(beforeAvg);
+});
+
+test('Admin count move: −1 → next preserves total and toggles the under-5 chip', async ({
+  supabaseAdmin,
+  resetDb,
+  page,
+}) => {
+  await resetDb();
+  const today = new Date();
+  const inDays = (n) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  // 6 + 6 starts within bounds (no Under 5 chip on either).
+  await seedFeederGraph(supabaseAdmin, {
+    plannedProcessingTrips: [
+      {id: 'pt-mv-1', date: inDays(30), sex: 'gilt', subBatchId: SUB_GILTS_ID, plannedCount: 6, order: 0},
+      {id: 'pt-mv-2', date: inDays(60), sex: 'gilt', subBatchId: SUB_GILTS_ID, plannedCount: 6, order: 1},
+    ],
+  });
+  await seedManualGlobalAdg(supabaseAdmin, 1.5);
+
+  await page.goto('/pig/batches');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Wait for the parent batch tile to render before any band/card checks.
+  // This is the deterministic signal that feederGroups loaded and the
+  // sub-row map ran (the planned-trip band is a sibling of the sub-row).
+  // Without this gate, the band-visibility assertion can race the
+  // PigContext load on first navigation after resetDb.
+  await expect(page.locator(`text=${PARENT_BATCH}`).first()).toBeVisible({timeout: 15_000});
+
+  const card1 = page.locator('[data-planned-trip-id="pt-mv-1"]');
+  const card2 = page.locator('[data-planned-trip-id="pt-mv-2"]');
+  await expect(card1).toBeVisible({timeout: 15_000});
+  await expect(card1).toContainText('6 gilts');
+  await expect(card2).toContainText('6 gilts');
+  // Neither card has the under-5 chip.
+  await expect(card1).not.toContainText('Under 5');
+  await expect(card2).not.toContainText('Under 5');
+
+  // Move 2 from card 1 to card 2: click −1 → next twice.
+  await card1.locator('[data-planned-trip-move-out="pt-mv-1"]').click();
+  await expect(card1).toContainText('5 gilts'); // 6 - 1
+  await page.locator('[data-planned-trip-id="pt-mv-1"]').locator('[data-planned-trip-move-out="pt-mv-1"]').click();
+  await expect(page.locator('[data-planned-trip-id="pt-mv-1"]')).toContainText('4 gilts'); // 5 - 1
+  await expect(page.locator('[data-planned-trip-id="pt-mv-2"]')).toContainText('8 gilts'); // 6 + 2
+  // Total preserved.
+  // Under-5 chip now on card 1.
+  await expect(page.locator('[data-planned-trip-id="pt-mv-1"]')).toContainText('Under 5');
+
+  // Move 1 back via card 1's "+1 ← next" button. Sum still 12.
+  await page.locator('[data-planned-trip-id="pt-mv-1"]').locator('[data-planned-trip-move-in="pt-mv-1"]').click();
+  await expect(page.locator('[data-planned-trip-id="pt-mv-1"]')).toContainText('5 gilts');
+  await expect(page.locator('[data-planned-trip-id="pt-mv-2"]')).toContainText('7 gilts');
+  // Under-5 chip cleared from card 1.
+  await expect(page.locator('[data-planned-trip-id="pt-mv-1"]')).not.toContainText('Under 5');
 });
 
 test('Existing plannedProcessingTrips are NOT regenerated by auto-allocation', async ({
@@ -204,6 +332,12 @@ test('Existing plannedProcessingTrips are NOT regenerated by auto-allocation', a
 
   await page.goto('/pig/batches');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  // Wait for the parent batch tile to render before any band/card checks.
+  // This is the deterministic signal that feederGroups loaded and the
+  // sub-row map ran (the planned-trip band is a sibling of the sub-row).
+  // Without this gate, the band-visibility assertion can race the
+  // PigContext load on first navigation after resetDb.
+  await expect(page.locator(`text=${PARENT_BATCH}`).first()).toBeVisible({timeout: 15_000});
 
   const band = page.locator(`[data-planned-trips-sub="${SUB_GILTS_ID}"]`);
   await expect(band).toBeVisible({timeout: 15_000});

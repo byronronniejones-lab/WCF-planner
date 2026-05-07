@@ -99,6 +99,75 @@ describe('Commit 4a — Persisted shape stays minimal', () => {
   });
 });
 
+describe('Commit 4b — date edit + count move handler hard gates', () => {
+  // Anchor on the handler bodies so unrelated JSX doesn't false-match.
+  const dateHandler = viewSrc.match(/function setPlannedTripDateById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
+  const moveHandler = viewSrc.match(/function movePlannedTripPigsById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
+
+  it('setPlannedTripDateById exists', () => {
+    expect(dateHandler, 'expected setPlannedTripDateById handler').not.toBeNull();
+  });
+
+  it('movePlannedTripPigsById exists', () => {
+    expect(moveHandler, 'expected movePlannedTripPigsById handler').not.toBeNull();
+  });
+
+  it('both handlers persist via persistFeeders only — never to processingTrips/weigh_ins', () => {
+    for (const body of [dateHandler[0], moveHandler[0]]) {
+      expect(body).not.toMatch(/processingTrips:/);
+      expect(body).not.toMatch(/sent_to_trip_id/);
+      expect(body).not.toMatch(/sent_to_group_id/);
+      expect(body).not.toMatch(/from\(['"]weigh_ins['"]\)/);
+    }
+  });
+
+  it('setPlannedTripDateById preserves all six persistable fields via {...t}', () => {
+    expect(dateHandler[0]).toMatch(/\{\.\.\.t,\s*date:\s*newDate\s*\}/);
+    // Negative lock: must NOT introduce projection/warning/ready fields
+    // into the persisted shape.
+    expect(dateHandler[0]).not.toMatch(/projectedMinLbs:/);
+    expect(dateHandler[0]).not.toMatch(/projectedMaxLbs:/);
+    expect(dateHandler[0]).not.toMatch(/projectedAvgLbs:/);
+    expect(dateHandler[0]).not.toMatch(/ready:/);
+    expect(dateHandler[0]).not.toMatch(/warnings:/);
+    expect(dateHandler[0]).not.toMatch(/daysUntil:/);
+  });
+
+  it('movePlannedTripPigsById delegates to movePigsBetweenTrips (preserves shape and rejects cross-pair)', () => {
+    expect(moveHandler[0]).toMatch(/movePigsBetweenTrips\(/);
+    // Single-pig moves only (Codex W1) — count arg literal is 1.
+    expect(moveHandler[0]).toMatch(/movePigsBetweenTrips\([\s\S]*?,\s*1\s*\)/);
+  });
+
+  it('Edit / Save / Cancel / move buttons all gate on isManager (admin-only)', () => {
+    // Each gated control's data-attr is preceded by an isManager check.
+    const gatedAttrs = [
+      'data-planned-trip-edit-date',
+      'data-planned-trip-save-date',
+      'data-planned-trip-move-out',
+      'data-planned-trip-move-in',
+    ];
+    for (const attr of gatedAttrs) {
+      // The attribute should appear inside an {isManager && ...} block.
+      // Loose anchor: look for "isManager" within the 4000 chars preceding
+      // the attribute usage. The card body is large enough that the second
+      // move button sits ~2500 chars after its enclosing `{isManager &&`.
+      const idx = viewSrc.indexOf(attr);
+      expect(idx, `expected ${attr} to render in JSX`).toBeGreaterThan(0);
+      const window = viewSrc.slice(Math.max(0, idx - 4000), idx);
+      expect(window, `expected ${attr} to be gated by isManager`).toMatch(/isManager/);
+    }
+  });
+
+  it('explicit Save button (no blur-saving — Codex W3 correction)', () => {
+    // Date input itself has no onBlur handler; saves only when the Save
+    // button is clicked.
+    const inputDecl = viewSrc.match(/<input\s+type="date"[\s\S]*?\/>/);
+    expect(inputDecl, 'expected <input type="date">').not.toBeNull();
+    expect(inputDecl[0]).not.toMatch(/onBlur=/);
+  });
+});
+
 describe('Commit 4a — calcAgeRange numeric bounds extension', () => {
   it('calcAgeRange returns minDays/maxDays alongside text', () => {
     const libSrc = fs.readFileSync(path.join(ROOT, 'src/lib/pig.js'), 'utf8');

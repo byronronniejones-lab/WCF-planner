@@ -34,6 +34,7 @@ import {
   allocatePlannedTrips,
   recalculateProjections,
   seedGlobalADG,
+  movePigsBetweenTrips,
 } from '../lib/pigForecast.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
@@ -136,6 +137,14 @@ export default function PigBatchesView({
   const [adgEditing, setAdgEditing] = React.useState(false);
   const [adgInput, setAdgInput] = React.useState('');
   const [adgSaving, setAdgSaving] = React.useState(false);
+  // Commit 4b — inline date editor state for planned-trip cards.
+  // editingPlannedTripId is the single trip being edited (null when no
+  // edit is open). editingPlannedTripDate is the YYYY-MM-DD input value.
+  // Codex W3 locked single-card-at-a-time inline edit — no bulk mode.
+  // Date saves on explicit Save click only (Codex W3 correction —
+  // blur-saving was rejected as too easy to trigger accidentally).
+  const [editingPlannedTripId, setEditingPlannedTripId] = React.useState(null);
+  const [editingPlannedTripDate, setEditingPlannedTripDate] = React.useState('');
   React.useEffect(() => {
     sb.from('app_store')
       .select('data')
@@ -275,6 +284,42 @@ export default function PigBatchesView({
         setGlobalAdgRow(next);
         setAdgEditing(false);
       });
+  }
+
+  // Commit 4b — admin date edit for a single planned trip. Updates the
+  // matching trip's date field and persists. Other fields are preserved
+  // via {...t}; the persistable shape stays minimal (id, date, sex,
+  // subBatchId, plannedCount, order). recalculateProjections re-runs on
+  // the next render with the new daysUntil.
+  function setPlannedTripDateById(groupId, tripId, newDate) {
+    const nb = feederGroups.map((fg) => {
+      if (fg.id !== groupId) return fg;
+      return {
+        ...fg,
+        plannedProcessingTrips: (fg.plannedProcessingTrips || []).map((t) =>
+          t.id === tripId ? {...t, date: newDate} : t,
+        ),
+      };
+    });
+    persistFeeders(nb);
+  }
+
+  // Commit 4b — admin count move between two planned trips in the same
+  // (subBatchId, sex) pair. Caller already scoped the to-trip to the
+  // adjacent same-pair sibling, so the cross-pair guard inside
+  // movePigsBetweenTrips is structurally unreachable from this UI; the
+  // guard remains as defense in depth. Single-pig moves only for v1
+  // (Codex W1); zero-count trips stay visible (Codex W2).
+  function movePlannedTripPigsById(groupId, fromTripId, toTripId) {
+    const fg = feederGroups.find((g) => g.id === groupId);
+    if (!fg) return;
+    const r = movePigsBetweenTrips(fg.plannedProcessingTrips || [], fromTripId, toTripId, 1);
+    if (r.error) {
+      console.warn('movePlannedTripPigsById:', r.error);
+      return;
+    }
+    const nb = feederGroups.map((g) => (g.id !== groupId ? g : {...g, plannedProcessingTrips: r.trips}));
+    persistFeeders(nb);
   }
 
   // Auto-allocate planned trips for any (sub, sex) pair that satisfies all
@@ -2544,13 +2589,19 @@ export default function PigBatchesView({
                                     gap: 6,
                                   }}
                                 >
-                                  {plannedProjected.map((t) => {
+                                  {plannedProjected.map((t, ti) => {
                                     const projRange =
                                       t.projectedMinLbs != null && t.projectedMaxLbs != null
                                         ? `${Math.round(t.projectedMinLbs)} – ${Math.round(t.projectedMaxLbs)} lb`
                                         : '—';
                                     const projAvg =
                                       t.projectedAvgLbs != null ? `~${Math.round(t.projectedAvgLbs)} lb avg` : '';
+                                    // Commit 4b — move target is the next same-sex trip
+                                    // in this (sub, sex) sequence. plannedProjected is
+                                    // already sorted by (date, order) and scoped to this
+                                    // sub via plannedRawForSub upstream.
+                                    const nextSameSex = plannedProjected.slice(ti + 1).find((nt) => nt.sex === t.sex);
+                                    const isEditingDate = editingPlannedTripId === t.id;
                                     return (
                                       <div
                                         key={t.id}
@@ -2572,14 +2623,94 @@ export default function PigBatchesView({
                                             display: 'flex',
                                             justifyContent: 'space-between',
                                             alignItems: 'center',
+                                            gap: 4,
+                                            flexWrap: 'wrap',
                                           }}
                                         >
-                                          <span style={{fontWeight: 700, color: '#111827'}}>{fmt(t.date)}</span>
+                                          {!isEditingDate && (
+                                            <span style={{fontWeight: 700, color: '#111827'}}>{fmt(t.date)}</span>
+                                          )}
+                                          {!isEditingDate && isManager && (
+                                            <button
+                                              data-planned-trip-edit-date={t.id}
+                                              onClick={() => {
+                                                setEditingPlannedTripId(t.id);
+                                                setEditingPlannedTripDate(t.date || '');
+                                              }}
+                                              style={{
+                                                fontSize: 10,
+                                                padding: '1px 6px',
+                                                borderRadius: 5,
+                                                border: '1px solid #d1d5db',
+                                                background: 'white',
+                                                color: '#1d4ed8',
+                                                cursor: 'pointer',
+                                                fontFamily: 'inherit',
+                                              }}
+                                              title="Edit planned trip date"
+                                            >
+                                              ✎
+                                            </button>
+                                          )}
+                                          {isEditingDate && (
+                                            <input
+                                              type="date"
+                                              value={editingPlannedTripDate}
+                                              onChange={(e) => setEditingPlannedTripDate(e.target.value)}
+                                              style={{
+                                                fontSize: 11,
+                                                padding: '2px 4px',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: 5,
+                                                fontFamily: 'inherit',
+                                              }}
+                                            />
+                                          )}
                                           <span style={{color: '#1e40af', fontWeight: 600}}>
                                             {t.plannedCount} {t.sex === 'gilt' ? 'gilt' : 'boar'}
                                             {t.plannedCount === 1 ? '' : 's'}
                                           </span>
                                         </div>
+                                        {isEditingDate && isManager && (
+                                          <div style={{display: 'flex', gap: 4, marginTop: 2}}>
+                                            <button
+                                              data-planned-trip-save-date={t.id}
+                                              onClick={() => {
+                                                if (editingPlannedTripDate && editingPlannedTripDate !== t.date) {
+                                                  setPlannedTripDateById(g.id, t.id, editingPlannedTripDate);
+                                                }
+                                                setEditingPlannedTripId(null);
+                                              }}
+                                              style={{
+                                                fontSize: 10,
+                                                padding: '2px 8px',
+                                                borderRadius: 5,
+                                                border: '1px solid #085041',
+                                                background: '#085041',
+                                                color: 'white',
+                                                cursor: 'pointer',
+                                                fontFamily: 'inherit',
+                                              }}
+                                            >
+                                              Save
+                                            </button>
+                                            <button
+                                              onClick={() => setEditingPlannedTripId(null)}
+                                              style={{
+                                                fontSize: 10,
+                                                padding: '2px 8px',
+                                                borderRadius: 5,
+                                                border: '1px solid #d1d5db',
+                                                background: 'white',
+                                                color: '#6b7280',
+                                                cursor: 'pointer',
+                                                fontFamily: 'inherit',
+                                              }}
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        )}
                                         <div style={{color: '#374151'}}>{projRange}</div>
                                         {projAvg && <div style={{color: '#6b7280'}}>{projAvg}</div>}
                                         <div style={{display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2}}>
@@ -2629,6 +2760,54 @@ export default function PigBatchesView({
                                             </span>
                                           )}
                                         </div>
+                                        {/* Admin count-move arrows. Single-pig moves
+                                          per Codex W1; zero-count source/destination
+                                          disables the corresponding button. Last-trip
+                                          (no nextSameSex) hides both buttons. */}
+                                        {isManager && nextSameSex && (
+                                          <div style={{display: 'flex', gap: 4, marginTop: 2}}>
+                                            <button
+                                              data-planned-trip-move-out={t.id}
+                                              disabled={(parseInt(t.plannedCount) || 0) <= 0}
+                                              onClick={() => movePlannedTripPigsById(g.id, t.id, nextSameSex.id)}
+                                              style={{
+                                                fontSize: 10,
+                                                padding: '2px 6px',
+                                                borderRadius: 5,
+                                                border: '1px solid #d1d5db',
+                                                background: 'white',
+                                                color: (parseInt(t.plannedCount) || 0) > 0 ? '#1d4ed8' : '#9ca3af',
+                                                cursor: (parseInt(t.plannedCount) || 0) > 0 ? 'pointer' : 'not-allowed',
+                                                fontFamily: 'inherit',
+                                              }}
+                                              title="Move 1 pig to the next planned trip"
+                                            >
+                                              −1 →
+                                            </button>
+                                            <button
+                                              data-planned-trip-move-in={t.id}
+                                              disabled={(parseInt(nextSameSex.plannedCount) || 0) <= 0}
+                                              onClick={() => movePlannedTripPigsById(g.id, nextSameSex.id, t.id)}
+                                              style={{
+                                                fontSize: 10,
+                                                padding: '2px 6px',
+                                                borderRadius: 5,
+                                                border: '1px solid #d1d5db',
+                                                background: 'white',
+                                                color:
+                                                  (parseInt(nextSameSex.plannedCount) || 0) > 0 ? '#1d4ed8' : '#9ca3af',
+                                                cursor:
+                                                  (parseInt(nextSameSex.plannedCount) || 0) > 0
+                                                    ? 'pointer'
+                                                    : 'not-allowed',
+                                                fontFamily: 'inherit',
+                                              }}
+                                              title="Take 1 pig from the next planned trip"
+                                            >
+                                              ← +1
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   })}
