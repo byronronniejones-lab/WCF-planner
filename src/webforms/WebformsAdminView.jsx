@@ -1,10 +1,10 @@
 ﻿// ============================================================================
 // src/webforms/WebformsAdminView.jsx  —  Phase 2 Round 6
 // ----------------------------------------------------------------------------
-// Admin-only webforms config editor. Most form state is App-scope (Round 0
-// deliberately left these out of WebformsConfigContext per §14's unowned
-// state list) and comes in as a pile of props. webformsConfig itself is
-// in useWebformsConfig(); the persist helper is passed in.
+// Admin-only webforms config editor. Editor UI state lives inside this
+// component (relocated from App during the per-view internalization lane);
+// webformsConfig itself comes from useWebformsConfig(); the persist helper
+// and the cross-tab adminTab toggle are passed in.
 // ============================================================================
 import React from 'react';
 import {sb} from '../lib/supabase.js';
@@ -631,18 +631,6 @@ export default function WebformsAdminView({
   confirmDelete,
   adminTab,
   setAdminTab,
-  // (5 pig-dailys-webform state props removed — that form now owns its own
-  // state in src/webforms/PigDailysWebform.jsx)
-  editFldLbl,
-  setEditFldLbl,
-  editFldVal,
-  setEditFldVal,
-  editSecIdx,
-  setEditSecIdx,
-  editSecVal,
-  setEditSecVal,
-  newOpt,
-  setNewOpt,
 }) {
   const [wfView, setWfView] = React.useState('list'); // list | edit-webform | edit-field
   const [editWfId, setEditWfId] = React.useState(null);
@@ -650,6 +638,11 @@ export default function WebformsAdminView({
   const [wfFieldForm, setWfFieldForm] = React.useState({label: '', type: 'text', required: false, options: []});
   const [newTeamMember, setNewTeamMember] = React.useState('');
   const [addingTo, setAddingTo] = React.useState(null);
+  const [editFldLbl, setEditFldLbl] = React.useState(null);
+  const [editFldVal, setEditFldVal] = React.useState('');
+  const [editSecIdx, setEditSecIdx] = React.useState(null);
+  const [editSecVal, setEditSecVal] = React.useState('');
+  const [newOpt, setNewOpt] = React.useState('');
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {webformsConfig, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers} = useWebformsConfig();
   const {feedCosts} = useFeedCosts();

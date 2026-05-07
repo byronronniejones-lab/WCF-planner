@@ -1343,11 +1343,6 @@ function App() {
   // wfForm/wfSubmitting/wfDone/wfErr/wfGroupName moved into
   // src/webforms/PigDailysWebform.jsx as internal state — App no longer
   // needs them; they were only ever read by the extracted webform.
-  const [editFldLbl, setEditFldLbl] = useState(null);
-  const [editFldVal, setEditFldVal] = useState('');
-  const [editSecIdx, setEditSecIdx] = useState(null);
-  const [editSecVal, setEditSecVal] = useState('');
-  const [newOpt, setNewOpt] = useState('');
   const [collapsedBatches, setCollapsedBatches] = useState(new Set());
   const [collapsedMonths, setCollapsedMonths] = useState(() => {
     // Auto-collapse past months on init
@@ -3560,16 +3555,6 @@ function App() {
       confirmDelete,
       adminTab,
       setAdminTab,
-      editFldLbl,
-      setEditFldLbl,
-      editFldVal,
-      setEditFldVal,
-      editSecIdx,
-      setEditSecIdx,
-      editSecVal,
-      setEditSecVal,
-      newOpt,
-      setNewOpt,
     });
 
   // ── PIG DAILY WEBFORM (public, no auth) ──
