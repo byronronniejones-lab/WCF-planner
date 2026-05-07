@@ -582,6 +582,13 @@ describe('Admin editor wiring — writes to materials table, not service_interva
     expect(adminSrc).toMatch(/import EquipmentMaterialsEditor from '\.\/EquipmentMaterialsEditor\.jsx'/);
     expect(adminSrc).toMatch(/<EquipmentMaterialsEditor\s+equipment=\{selected\}\s+onReload=\{loadAll\}\s*\/>/);
   });
+
+  it('EquipmentWebformsAdmin reloads equipment in-place after the initial load', () => {
+    expect(adminSrc).toMatch(/const didInitialLoadRef = React\.useRef\(false\)/);
+    expect(adminSrc).toMatch(/if \(!didInitialLoadRef\.current\) setLoading\(true\)/);
+    expect(adminSrc).toMatch(/didInitialLoadRef\.current = true/);
+    expect(adminSrc).not.toMatch(/const loadAll = React\.useCallback\(async \(\) => \{\s*setLoading\(true\)/);
+  });
 });
 
 describe('EquipmentHome — /fleet/materials sub-route + nav button gated by !isEquipmentTech', () => {

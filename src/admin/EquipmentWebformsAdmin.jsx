@@ -55,9 +55,10 @@ export default function EquipmentWebformsAdmin() {
   const [selectedId, setSelectedId] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [missingSchema, setMissingSchema] = React.useState(false);
+  const didInitialLoadRef = React.useRef(false);
 
   const loadAll = React.useCallback(async () => {
-    setLoading(true);
+    if (!didInitialLoadRef.current) setLoading(true);
     const {data, error} = await sb.from('equipment').select('*').order('category').order('name');
     if (error && /does not exist|relation/i.test(error.message || '')) {
       setMissingSchema(true);
@@ -65,6 +66,7 @@ export default function EquipmentWebformsAdmin() {
       return;
     }
     setEquipment(data || []);
+    didInitialLoadRef.current = true;
     setLoading(false);
   }, []);
   React.useEffect(() => {
