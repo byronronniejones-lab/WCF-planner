@@ -1351,11 +1351,7 @@ function App() {
     // We'll populate this in the feed view
     return s;
   });
-  const [pigNotes, setPigNotes] = useState('');
-  const [layerNotes, setLayerNotes] = useState('');
-  const [dailysFilter, setDailysFilter] = useState({batchId: 'all', dateFrom: '', dateTo: ''});
   const [showDailyForm, setShowDailyForm] = useState(false);
-  const [editDailyId, setEditDailyId] = useState(null);
   const EMPTY_DAILY = {
     date: '',
     teamMember: '',
@@ -1371,26 +1367,6 @@ function App() {
     fenceVoltage: '',
     issues: '',
   };
-  const [dailyForm, setDailyForm] = useState(() => {
-    const d = new Date();
-    return {
-      ...{
-        date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-        teamMember: '',
-        batchId: '',
-        batchLabel: '',
-        pigCount: '',
-        feedLbs: '',
-        groupMoved: true,
-        nippleDrinkerMoved: true,
-        nippleDrinkerWorking: true,
-        troughsMoved: true,
-        fenceWalked: true,
-        fenceVoltage: '',
-        issues: '',
-      },
-    };
-  });
 
   // ── AUTH LISTENER & DATA LOADING ──
   // Load webform config (anon, no auth needed) — team roster + active groups.
@@ -2268,8 +2244,6 @@ function App() {
         if (store['ppp-pig-feed-inventory-v1']) setPigFeedInventory(store['ppp-pig-feed-inventory-v1']);
         if (store['ppp-poultry-feed-inventory-v1']) setPoultryFeedInventory(store['ppp-poultry-feed-inventory-v1']);
         if (store['ppp-broiler-notes-v1']) setBroilerNotes(store['ppp-broiler-notes-v1'] || '');
-        if (store['ppp-pig-notes-v1']) setPigNotes(store['ppp-pig-notes-v1'] || '');
-        if (store['ppp-layer-notes-v1']) setLayerNotes(store['ppp-layer-notes-v1'] || '');
         // Load layer batches and housings from dedicated tables, THEN sync webform config
         var lbPromise = sb.from('layer_batches').select('*').order('name');
         var lhPromise = sb.from('layer_housings').select('*').order('start_date');

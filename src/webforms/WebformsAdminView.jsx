@@ -632,7 +632,6 @@ export default function WebformsAdminView({
   adminTab,
   setAdminTab,
 }) {
-  const [wfView, setWfView] = React.useState('list'); // list | edit-webform | edit-field
   const [editWfId, setEditWfId] = React.useState(null);
   const [editFieldId, setEditFieldId] = React.useState(null);
   const [wfFieldForm, setWfFieldForm] = React.useState({label: '', type: 'text', required: false, options: []});
@@ -754,7 +753,6 @@ export default function WebformsAdminView({
     const nf = {id: 'c-' + Date.now(), ...wfFieldForm, system: false, enabled: true};
     updateSections(currentWf.sections.map((s, i) => (i !== si ? s : {...s, fields: [...s.fields, nf]})));
     setWfFieldForm({label: '', type: 'text', required: false, options: []});
-    setWfView('list');
   }
 
   return (
@@ -804,7 +802,6 @@ export default function WebformsAdminView({
               onClick={() => {
                 setAdminTab(t.id);
                 setEditWfId(null);
-                setWfView('list');
               }}
               style={{
                 padding: '7px 16px',
@@ -876,7 +873,6 @@ export default function WebformsAdminView({
                   <button
                     onClick={() => {
                       setEditWfId(null);
-                      setWfView('list');
                       setAddingTo(null);
                     }}
                     style={{fontSize: 12, color: '#1d4ed8', background: 'none', border: 'none', cursor: 'pointer'}}
@@ -910,7 +906,6 @@ export default function WebformsAdminView({
                   <button
                     onClick={() => {
                       setEditWfId(null);
-                      setWfView('list');
                       setAddingTo(null);
                     }}
                     style={{fontSize: 12, color: '#1d4ed8', background: 'none', border: 'none', cursor: 'pointer'}}
@@ -1598,7 +1593,6 @@ export default function WebformsAdminView({
                         <button
                           onClick={() => {
                             setEditWfId(wf.id);
-                            setWfView('list');
                             setAddingTo(null);
                           }}
                           style={{
