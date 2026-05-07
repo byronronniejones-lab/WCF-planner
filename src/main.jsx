@@ -1210,7 +1210,7 @@ function App() {
     webformsConfig,
     setWebformsConfig,
   } = useWebformsConfig();
-  const {feedCosts, setFeedCosts, broilerNotes, setBroilerNotes, missedCleared, setMissedCleared} = useFeedCosts();
+  const {feedCosts, setFeedCosts, missedCleared, setMissedCleared} = useFeedCosts();
   const {view, setView, pendingEdit, setPendingEdit, showAllComparison, setShowAllComparison, showMenu, setShowMenu} =
     useUI();
 
@@ -1351,22 +1351,6 @@ function App() {
     // We'll populate this in the feed view
     return s;
   });
-  const [showDailyForm, setShowDailyForm] = useState(false);
-  const EMPTY_DAILY = {
-    date: '',
-    teamMember: '',
-    batchId: '',
-    batchLabel: '',
-    pigCount: '',
-    feedLbs: '',
-    groupMoved: true,
-    nippleDrinkerMoved: true,
-    nippleDrinkerWorking: true,
-    troughsMoved: true,
-    fenceWalked: true,
-    fenceVoltage: '',
-    issues: '',
-  };
 
   // ── AUTH LISTENER & DATA LOADING ──
   // Load webform config (anon, no auth needed) — team roster + active groups.
@@ -2243,7 +2227,6 @@ function App() {
         if (store['ppp-feed-orders-v1']) setFeedOrders(store['ppp-feed-orders-v1']);
         if (store['ppp-pig-feed-inventory-v1']) setPigFeedInventory(store['ppp-pig-feed-inventory-v1']);
         if (store['ppp-poultry-feed-inventory-v1']) setPoultryFeedInventory(store['ppp-poultry-feed-inventory-v1']);
-        if (store['ppp-broiler-notes-v1']) setBroilerNotes(store['ppp-broiler-notes-v1'] || '');
         // Load layer batches and housings from dedicated tables, THEN sync webform config
         var lbPromise = sb.from('layer_batches').select('*').order('name');
         var lhPromise = sb.from('layer_housings').select('*').order('start_date');
@@ -3111,7 +3094,6 @@ function App() {
   // extracted view can keep calling <Header/> as a zero-arg prop.
   const Header = () =>
     React.createElement(HeaderBase, {
-      showDailyForm,
       signOut,
       loadUsers,
       DeleteConfirmModal,

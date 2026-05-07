@@ -4,9 +4,8 @@
 // The top nav bar + program sub-nav. Reads view/menu state from UIContext,
 // auth/save-status from AuthContext, form open-state booleans from
 // BatchesContext + PigContext. A handful of App-only things come as props:
-// showDailyForm (App-scope state, not yet in any context), two App helpers
-// (signOut, loadUsers) and the built-up DeleteConfirmModal React element
-// (depends on App's deleteConfirm state).
+// two App helpers (signOut, loadUsers) and the built-up DeleteConfirmModal
+// React element (depends on App's deleteConfirm state).
 //
 // App() wraps this in a local `Header` factory closure so every extracted
 // view can keep receiving `Header` as a zero-arg prop — no ripple changes
@@ -19,7 +18,7 @@ import {useUI} from '../contexts/UIContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 
-export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirmModal}) {
+export default function Header({signOut, loadUsers, DeleteConfirmModal}) {
   const {authState, saveStatus, setShowUsers} = useAuth();
   const {view, setView, showMenu, setShowMenu} = useUI();
   const {showForm, setShowForm} = useBatches();
@@ -37,7 +36,7 @@ export default function Header({showDailyForm, signOut, loadUsers, DeleteConfirm
   ];
   const sheepViews = ['sheepHome', 'sheepflocks', 'sheepdailys', 'sheepweighins', 'sheepbatches'];
   const inPoultry = poultryViews.includes(view) || showForm;
-  const inPigs = pigViews.includes(view) || showBreedForm || showFarrowForm || showDailyForm;
+  const inPigs = pigViews.includes(view) || showBreedForm || showFarrowForm;
   const inLayers = ['layersHome', 'layerbatches', 'layerdailys', 'eggdailys'].includes(view);
   const inCattle = cattleViews.includes(view);
   const inSheep = sheepViews.includes(view);
