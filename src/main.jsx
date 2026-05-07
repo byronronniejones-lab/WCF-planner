@@ -1343,13 +1343,6 @@ function App() {
   // wfForm/wfSubmitting/wfDone/wfErr/wfGroupName moved into
   // src/webforms/PigDailysWebform.jsx as internal state — App no longer
   // needs them; they were only ever read by the extracted webform.
-  const [wfView, setWfView] = useState('list'); // list | edit-webform | edit-field
-  const [editWfId, setEditWfId] = useState(null);
-  const [editFieldId, setEditFieldId] = useState(null);
-  const [wfFieldForm, setWfFieldForm] = useState({label: '', type: 'text', required: false, options: []});
-  const [newTeamMember, setNewTeamMember] = useState('');
-  // Webforms admin state — must live at App top-level (React hooks rules)
-  const [addingTo, setAddingTo] = useState(null);
   const [editFldLbl, setEditFldLbl] = useState(null);
   const [editFldVal, setEditFldVal] = useState('');
   const [editSecIdx, setEditSecIdx] = useState(null);
@@ -3567,18 +3560,6 @@ function App() {
       confirmDelete,
       adminTab,
       setAdminTab,
-      wfView,
-      setWfView,
-      editWfId,
-      setEditWfId,
-      editFieldId,
-      setEditFieldId,
-      wfFieldForm,
-      setWfFieldForm,
-      newTeamMember,
-      setNewTeamMember,
-      addingTo,
-      setAddingTo,
       editFldLbl,
       setEditFldLbl,
       editFldVal,

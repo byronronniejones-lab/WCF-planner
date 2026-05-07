@@ -633,18 +633,6 @@ export default function WebformsAdminView({
   setAdminTab,
   // (5 pig-dailys-webform state props removed — that form now owns its own
   // state in src/webforms/PigDailysWebform.jsx)
-  wfView,
-  setWfView,
-  editWfId,
-  setEditWfId,
-  editFieldId,
-  setEditFieldId,
-  wfFieldForm,
-  setWfFieldForm,
-  newTeamMember,
-  setNewTeamMember,
-  addingTo,
-  setAddingTo,
   editFldLbl,
   setEditFldLbl,
   editFldVal,
@@ -656,6 +644,12 @@ export default function WebformsAdminView({
   newOpt,
   setNewOpt,
 }) {
+  const [wfView, setWfView] = React.useState('list'); // list | edit-webform | edit-field
+  const [editWfId, setEditWfId] = React.useState(null);
+  const [editFieldId, setEditFieldId] = React.useState(null);
+  const [wfFieldForm, setWfFieldForm] = React.useState({label: '', type: 'text', required: false, options: []});
+  const [newTeamMember, setNewTeamMember] = React.useState('');
+  const [addingTo, setAddingTo] = React.useState(null);
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {webformsConfig, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers} = useWebformsConfig();
   const {feedCosts} = useFeedCosts();
