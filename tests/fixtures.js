@@ -15,7 +15,7 @@ import {seedBroilerTimeline} from './scenarios/broiler_timeline_seed.js';
 import {seedPigFCRScenario} from './scenarios/pig_fcr_seed.js';
 import {seedFuelBillScenario} from './scenarios/fuel_bill_seed.js';
 import {seedFuelReconcile} from './scenarios/fuel_reconcile_seed.js';
-import {seedHomeDashboardEquipment} from './scenarios/home_dashboard_equipment_seed.js';
+import {seedHomeDashboardEquipment, seedHomeDashboardEquipmentMix} from './scenarios/home_dashboard_equipment_seed.js';
 import {seedFuelSupplyOffline} from './scenarios/fuel_supply_offline_seed.js';
 import {seedAddFeedOffline} from './scenarios/add_feed_offline_seed.js';
 import {seedPigDailysOffline} from './scenarios/pig_dailys_offline_seed.js';
@@ -161,6 +161,16 @@ export const test = base.extend({
       await resetTestDatabase();
       return seedHomeDashboardEquipment(supabaseAdmin, opts);
     });
+  },
+  // homeDashboardEquipmentMixScenario — sort-order coverage. Seeds three
+  // distinct pieces (overdue + fillup_streak + warranty) so the spec can
+  // assert HomeDashboard renders them in the documented KIND_ORDER. Sibling
+  // to the kind-keyed scenario above; existing 5 single-kind tests are
+  // unaffected.
+  homeDashboardEquipmentMixScenario: async ({supabaseAdmin}, use) => {
+    await resetTestDatabase();
+    const ids = await seedHomeDashboardEquipmentMix(supabaseAdmin);
+    await use(ids);
   },
   // fuelSupplyOfflineScenario — Phase 1B canary setup. Resets DB +
   // seeds the webform_config team_members the FuelSupplyWebform needs

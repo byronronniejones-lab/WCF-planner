@@ -243,3 +243,132 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     `homeDashboardEquipmentSeed: invalid kind "${kind}". Expected one of: overdue, upcoming, missed_fueling, fillup_streak, warranty.`,
   );
 }
+
+// ============================================================================
+// seedHomeDashboardEquipmentMix — sort-order scenario
+// ============================================================================
+// Seeds three pieces of equipment together so the spec can assert the
+// HomeDashboard EQUIPMENT ATTENTION section renders them in the documented
+// priority order (overdue -> fillup_streak -> warranty; see KIND_ORDER in
+// src/dashboard/HomeDashboard.jsx). Each piece is shaped to trigger exactly
+// one attention kind so cross-kind interference cannot mask a sort bug.
+//
+// Distinct slugs ensure data-equipment-slug selectors stay unambiguous and
+// no row swaps with anything from the kind-keyed factory's shared slug.
+// Materials are intentionally empty so the Materials Needed card stays out
+// of this lane.
+//
+//   seedHomeDashboardEquipmentMix(supabaseAdmin)
+//     returns { items: [{slug, kind}, ...] } in expected render order.
+// ============================================================================
+export async function seedHomeDashboardEquipmentMix(supabaseAdmin) {
+  assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
+
+  const adminEmail = process.env.VITE_TEST_ADMIN_EMAIL;
+  if (!adminEmail) {
+    throw new Error('seedHomeDashboardEquipmentMix: VITE_TEST_ADMIN_EMAIL must be set in .env.test.local.');
+  }
+  const usersResult = await supabaseAdmin.auth.admin.listUsers();
+  if (usersResult.error) {
+    throw new Error(`seedHomeDashboardEquipmentMix [auth.listUsers]: ${usersResult.error.message}`);
+  }
+  const adminUser = usersResult.data?.users?.find((u) => u.email === adminEmail);
+  if (!adminUser) {
+    throw new Error(`seedHomeDashboardEquipmentMix: test admin user "${adminEmail}" missing.`);
+  }
+  must(
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({id: adminUser.id, email: adminUser.email, role: 'admin'}, {onConflict: 'id'}),
+    'profiles upsert',
+  );
+
+  const overdueSlug = 'eq-attention-mix-overdue';
+  const streakSlug = 'eq-attention-mix-streak';
+  const warrantySlug = 'eq-attention-mix-warranty';
+
+  // Overdue: current_hours=110, interval=100h, no completions -> 10h overdue.
+  // No every_fillup_items -> no fillup_streak. No warranty_expiration.
+  must(
+    await supabaseAdmin.from('equipment').insert({
+      id: overdueSlug,
+      name: 'Mix Overdue Tractor',
+      slug: overdueSlug,
+      category: 'tractors',
+      tracking_unit: 'hours',
+      status: 'active',
+      current_hours: 110,
+      service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
+    }),
+    'equipment insert (mix overdue)',
+  );
+
+  // Fillup streak: one every_fillup_item ('oil'), two recent fuelings within
+  // the 14-day stale-fueling window with the 'oil' tick missing. No service
+  // intervals -> no overdue. No warranty_expiration.
+  must(
+    await supabaseAdmin.from('equipment').insert({
+      id: streakSlug,
+      name: 'Mix Streak Tractor',
+      slug: streakSlug,
+      category: 'tractors',
+      tracking_unit: 'hours',
+      status: 'active',
+      current_hours: 100,
+      every_fillup_items: [{id: 'oil', label: 'Oil OK'}],
+    }),
+    'equipment insert (mix fillup_streak)',
+  );
+  must(
+    await supabaseAdmin.from('equipment_fuelings').insert([
+      {
+        id: 'ef-mix-streak-1',
+        equipment_id: streakSlug,
+        date: daysAgo(2),
+        fuel_type: 'diesel',
+        gallons: 5,
+        hours_reading: 100,
+        every_fillup_check: [{id: 'tires', ok: true}],
+        suppressed: false,
+        source: 'admin_add',
+      },
+      {
+        id: 'ef-mix-streak-2',
+        equipment_id: streakSlug,
+        date: daysAgo(5),
+        fuel_type: 'diesel',
+        gallons: 5,
+        hours_reading: 95,
+        every_fillup_check: [{id: 'tires', ok: true}],
+        suppressed: false,
+        source: 'admin_add',
+      },
+    ]),
+    'equipment_fuelings insert (mix fillup_streak)',
+  );
+
+  // Warranty: warranty_expiration 30 days from now (within the 60-day
+  // window). No service intervals, no fillup items, no fuelings -> only
+  // the warranty path triggers.
+  must(
+    await supabaseAdmin.from('equipment').insert({
+      id: warrantySlug,
+      name: 'Mix Warranty Tractor',
+      slug: warrantySlug,
+      category: 'tractors',
+      tracking_unit: 'hours',
+      status: 'active',
+      current_hours: 100,
+      warranty_expiration: daysFromNow(30),
+    }),
+    'equipment insert (mix warranty)',
+  );
+
+  return {
+    items: [
+      {slug: overdueSlug, kind: 'overdue'},
+      {slug: streakSlug, kind: 'fillup_streak'},
+      {slug: warrantySlug, kind: 'warranty'},
+    ],
+  };
+}
