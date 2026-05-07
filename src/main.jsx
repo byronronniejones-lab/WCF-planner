@@ -1357,9 +1357,6 @@ function App() {
   const [editSecIdx, setEditSecIdx] = useState(null);
   const [editSecVal, setEditSecVal] = useState('');
   const [newOpt, setNewOpt] = useState('');
-  const [showSubForm, setShowSubForm] = useState(null); // batchId or null
-  const [subForm, setSubForm] = useState({name: '', giltCount: 0, boarCount: 0, originalPigCount: 0, notes: ''});
-  const [editSubId, setEditSubId] = useState(null);
   const [collapsedBatches, setCollapsedBatches] = useState(new Set());
   const [collapsedMonths, setCollapsedMonths] = useState(() => {
     // Auto-collapse past months on init
@@ -3537,12 +3534,6 @@ function App() {
       pigAutoSaveTimer,
       subAutoSaveTimer,
       tripAutoSaveTimer,
-      showSubForm,
-      setShowSubForm,
-      subForm,
-      setSubForm,
-      editSubId,
-      setEditSubId,
       collapsedBatches,
       setCollapsedBatches,
       collapsedMonths,

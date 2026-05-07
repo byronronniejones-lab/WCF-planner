@@ -39,12 +39,6 @@ export default function PigBatchesView({
   pigAutoSaveTimer,
   subAutoSaveTimer,
   tripAutoSaveTimer,
-  showSubForm,
-  setShowSubForm,
-  subForm,
-  setSubForm,
-  editSubId,
-  setEditSubId,
   collapsedBatches,
   setCollapsedBatches,
   collapsedMonths,
@@ -52,6 +46,9 @@ export default function PigBatchesView({
   showArchBatches,
   setShowArchBatches,
 }) {
+  const [showSubForm, setShowSubForm] = React.useState(null); // batchId or null
+  const [subForm, setSubForm] = React.useState({name: '', giltCount: 0, boarCount: 0, originalPigCount: 0, notes: ''});
+  const [editSubId, setEditSubId] = React.useState(null);
   // Tracks whether the parent modal's partition editor has unsaved sub-batch
   // count changes. closeFeederForm reads this so a fast close (<1.5s) still
   // flushes the pending partition write — the shared pigAutoSaveTimer would
