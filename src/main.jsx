@@ -1335,7 +1335,6 @@ function App() {
   const subAutoSaveTimer = React.useRef(null);
   const tripAutoSaveTimer = React.useRef(null);
   const breedAutoSaveTimer = React.useRef(null);
-  const [showArchBatches, setShowArchBatches] = useState(false);
   const [feedOrders, setFeedOrders] = useState({pig: {}, starter: {}, grower: {}, layerfeed: {}});
   const [pigFeedInventory, setPigFeedInventory] = useState(null); // {count, date} or null
   const [poultryFeedInventory, setPoultryFeedInventory] = useState(null); // {starter:{count,date}, grower:{count,date}, layer:{count,date}}
@@ -3520,8 +3519,6 @@ function App() {
       setCollapsedBatches,
       collapsedMonths,
       setCollapsedMonths,
-      showArchBatches,
-      setShowArchBatches,
     });
 
   // ── ADMIN TASKS CENTER (C1) ──
