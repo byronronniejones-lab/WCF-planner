@@ -13,10 +13,58 @@
 // edits stay honest.
 // ============================================================================
 
-import {calcAgeRange} from './pig.js';
+import {calcAgeRange, daysToMWD} from './pig.js';
 
 // Re-export so callers have a single import surface for forecast work.
 export {calcAgeRange};
+
+// ── Display formatters (used by public weigh-in webform + admin view) ───────
+// Pure presentational; never persisted. Keep formatting byte-identical
+// across surfaces by importing these wherever a metric is rendered.
+
+const NO_VALUE = '—';
+
+// "5m 2w – 5m 5w" or "5m 2w – 5m 5w (est.)"; returns '—' when either bound
+// is null. Per Codex: do not infer not-yet-born from null bounds — the RPC
+// owns that decision and surfaces both as null when it does not have
+// enough data; the formatter stays conservative.
+export function formatAgeRange({minDays, maxDays, hasActual} = {}) {
+  if (minDays == null || maxDays == null) return NO_VALUE;
+  const min = parseFloat(minDays);
+  const max = parseFloat(maxDays);
+  if (!isFinite(min) || !isFinite(max)) return NO_VALUE;
+  const minLabel = min <= 0 ? '0m 0w' : daysToMWD(min) || '0m 0w';
+  const maxLabel = max <= 0 ? '0m 0w' : daysToMWD(max) || '0m 0w';
+  return `${minLabel} – ${maxLabel}${hasActual ? '' : ' (est.)'}`;
+}
+
+// "416 lb" or '—'.
+export function formatFeedPerPig(n) {
+  if (n == null) return NO_VALUE;
+  const v = parseFloat(n);
+  if (!isFinite(v)) return NO_VALUE;
+  return `${Math.round(v)} lb`;
+}
+
+// "+1.82 lb/day" / "-0.50 lb/day" / "0.00 lb/day" / "— no prior weigh-in".
+// ASCII hyphen-minus per Codex's W6 correction.
+export function formatGroupAdg(n) {
+  if (n == null) return '— no prior weigh-in';
+  const v = parseFloat(n);
+  if (!isFinite(v)) return '— no prior weigh-in';
+  const rounded = Math.round(v * 100) / 100;
+  if (rounded === 0) return '0.00 lb/day';
+  const sign = rounded > 0 ? '+' : '-';
+  return `${sign}${Math.abs(rounded).toFixed(2)} lb/day`;
+}
+
+// "263 lb" or '—'.
+export function formatAvgWeight(n) {
+  if (n == null) return NO_VALUE;
+  const v = parseFloat(n);
+  if (!isFinite(v)) return NO_VALUE;
+  return `${Math.round(v)} lb`;
+}
 
 // ── Constants ───────────────────────────────────────────────────────────────
 export const PLANNED_TRIP_MIN_SIZE = 5;

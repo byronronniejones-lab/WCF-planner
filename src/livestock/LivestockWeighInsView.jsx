@@ -11,6 +11,7 @@ import UsersModal from '../auth/UsersModal.jsx';
 import {writeBroilerBatchAvg, recomputeBroilerBatchWeekAvg} from '../lib/broiler.js';
 import {loadRoster, activeNames as rosterActiveNames} from '../lib/teamMembers.js';
 import {pigSlug} from '../lib/pig.js';
+import {formatAgeRange, formatFeedPerPig, formatGroupAdg, formatAvgWeight} from '../lib/pigForecast.js';
 import PigSendToTripModal from './PigSendToTripModal.jsx';
 const LivestockWeighInsView = ({
   sb,
@@ -56,6 +57,14 @@ const LivestockWeighInsView = ({
   // setter. Scoped by session id so an error from row A never bleeds
   // onto row B; cleared on the next successful reopen.
   const [actionErr, setActionErr] = useState(null);
+  // Pig session metrics by session id. Populated lazily by an effect that
+  // fans out one pig_session_metrics RPC per pig session in the loaded
+  // list; results cache in this map so re-renders don't re-fetch. Refetched
+  // when the sessions/entries graph changes. Authenticated scope returns
+  // aggregates for any pig session (draft + complete history per the R1
+  // scope rule). N round-trips per visible pig session list — acceptable
+  // for v1 per Codex's W2.
+  const [pigMetricsBySession, setPigMetricsBySession] = useState({});
   // Pig send-to-trip state (no-op for broilers)
   const [feederGroups, setFeederGroups] = useState([]);
   const [selectedEntryIds, setSelectedEntryIds] = useState(new Set());
@@ -139,6 +148,36 @@ const LivestockWeighInsView = ({
   useEffect(() => {
     loadAll();
   }, [species]);
+  // Pig metrics fan-out (mig 049). One RPC per pig session in the visible
+  // list; results cached in pigMetricsBySession so re-renders don't refetch.
+  // Re-runs when the species changes (cattle/sheep/broiler views skip
+  // entirely) or when the sessions/entries graph changes (so adding a
+  // weigh-in to a draft session refreshes that session's metrics).
+  useEffect(() => {
+    if (species !== 'pig' || sessions.length === 0) {
+      setPigMetricsBySession({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      sessions.map((s) =>
+        sb.rpc('pig_session_metrics', {session_id_in: s.id}).then(({data, error}) => ({
+          id: s.id,
+          data: error ? {available: false} : data || {available: false},
+        })),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const next = {};
+      for (const r of results) next[r.id] = r.data;
+      setPigMetricsBySession(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // sb is a stable prop from the parent; established pattern in this file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [species, sessions, entries]);
   // Broilers: load app_store ppp-v4 once so we can resolve schooner per batch.
   useEffect(() => {
     if (species !== 'broiler') return;
@@ -979,7 +1018,10 @@ const LivestockWeighInsView = ({
                   <span style={{fontSize: 11, fontWeight: 600, color: '#1e40af'}}>
                     {sEntries.length} {sEntries.length === 1 ? 'entry' : 'entries'}
                   </span>
-                  {avgWeight > 0 && (
+                  {/* Avg-weight badge: cattle/sheep/broiler only. For pig
+                    tiles the new metrics row below is the single source of
+                    truth (Codex W3). */}
+                  {species !== 'pig' && avgWeight > 0 && (
                     <span
                       style={{
                         fontSize: 12,
@@ -999,6 +1041,56 @@ const LivestockWeighInsView = ({
                     </span>
                   )}
                 </div>
+                {/* Pig metrics row (mig 049 RPC). Sibling under the main
+                  tile row so the metrics don't push the existing fields
+                  to wrap on narrow widths. Hidden when no entries yet
+                  (matches the public form's W1 gate) or when the RPC
+                  said available=false. */}
+                {species === 'pig' &&
+                  sEntries.length > 0 &&
+                  pigMetricsBySession[s.id] &&
+                  pigMetricsBySession[s.id].available && (
+                    <div
+                      data-pig-metrics-row={s.id}
+                      style={{
+                        padding: '8px 16px',
+                        borderTop: '1px solid #f3f4f6',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                        gap: 8,
+                        background: '#fafafa',
+                      }}
+                    >
+                      <div data-pig-metric="age">
+                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Age at weigh-in</div>
+                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                          {formatAgeRange({
+                            minDays: pigMetricsBySession[s.id].age_min_days,
+                            maxDays: pigMetricsBySession[s.id].age_max_days,
+                            hasActual: pigMetricsBySession[s.id].has_actual_farrowing,
+                          })}
+                        </div>
+                      </div>
+                      <div data-pig-metric="feed">
+                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Feed/pig</div>
+                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                          {formatFeedPerPig(pigMetricsBySession[s.id].feed_per_pig_lbs)}
+                        </div>
+                      </div>
+                      <div data-pig-metric="adg">
+                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Group ADG</div>
+                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                          {formatGroupAdg(pigMetricsBySession[s.id].group_adg_lbs_per_day)}
+                        </div>
+                      </div>
+                      <div data-pig-metric="avg">
+                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Avg weight</div>
+                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                          {formatAvgWeight(pigMetricsBySession[s.id].avg_weight_lbs)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 {isExpanded && (
                   <div style={{borderTop: '1px solid #f3f4f6', padding: '12px 16px', background: '#fafafa'}}>
                     {species === 'broiler' &&
@@ -1489,237 +1581,244 @@ const LivestockWeighInsView = ({
                                 No entries in this session yet.
                               </div>
                             )}
-                            {sEntries.map((e) => {
-                              const isSent = !!e.sent_to_trip_id;
-                              // Detect transferred state via either the proper column
-                              // (when migration 014 has been applied) or the legacy
-                              // note-marker fallback that the transfer flow writes
-                              // when the column doesn't exist yet.
-                              const isTransferred =
-                                !!e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || '');
-                              const link = isSent ? lookupTrip(e) : null;
-                              const checked = selectedEntryIds.has(e.id);
-                              const editable = !isSent && !isTransferred && !fieldsLocked;
-                              // Action buttons (Breeding transfer, Delete, etc) stay
-                              // available on completed/locked sessions. Final-trip
-                              // decisions like "this gilt becomes a sow" need to
-                              // happen post-completion without unlocking weights.
-                              const canAct = !isSent && !isTransferred;
-                              return (
-                                <div
-                                  key={e.id}
-                                  style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: '24px 90px 1fr auto',
-                                    gap: 8,
-                                    padding: '6px 0',
-                                    borderBottom: '1px solid #f3f4f6',
-                                    alignItems: 'center',
-                                  }}
-                                >
-                                  {/* Col 1: select-to-trip checkbox (or spacer) */}
-                                  <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                    {editable && (
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={() => toggle(e.id)}
-                                        style={{margin: 0}}
-                                        title="Select to send to trip"
-                                      />
-                                    )}
-                                  </div>
-                                  {/* Col 2: weight (input or read-only) */}
-                                  <div>
-                                    {editable ? (
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        defaultValue={e.weight}
-                                        onBlur={(ev) => {
-                                          const v = parseFloat(ev.target.value);
-                                          if (Number.isFinite(v) && v > 0 && v !== parseFloat(e.weight))
-                                            updatePigEntry(e.id, {weight: v});
-                                        }}
-                                        style={{...rowInpS, width: '100%'}}
-                                      />
-                                    ) : (
-                                      <span
-                                        style={{
-                                          fontWeight: 700,
-                                          color: isSent ? '#047857' : isTransferred ? '#5b21b6' : '#1e40af',
-                                          fontSize: 13,
-                                        }}
-                                      >
-                                        {e.weight} lb
-                                      </span>
-                                    )}
-                                  </div>
-                                  {/* Col 3: note input OR sent/transferred badge */}
+                            {/* Display order: descending by weight. Persisted
+                              order (entered_at) and the load query are
+                              unchanged; this is render-only. Codex W5 lock
+                              covers the no-mutation invariant via static
+                              test. */}
+                            {[...sEntries]
+                              .sort((a, b) => (parseFloat(b.weight) || 0) - (parseFloat(a.weight) || 0))
+                              .map((e) => {
+                                const isSent = !!e.sent_to_trip_id;
+                                // Detect transferred state via either the proper column
+                                // (when migration 014 has been applied) or the legacy
+                                // note-marker fallback that the transfer flow writes
+                                // when the column doesn't exist yet.
+                                const isTransferred =
+                                  !!e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || '');
+                                const link = isSent ? lookupTrip(e) : null;
+                                const checked = selectedEntryIds.has(e.id);
+                                const editable = !isSent && !isTransferred && !fieldsLocked;
+                                // Action buttons (Breeding transfer, Delete, etc) stay
+                                // available on completed/locked sessions. Final-trip
+                                // decisions like "this gilt becomes a sow" need to
+                                // happen post-completion without unlocking weights.
+                                const canAct = !isSent && !isTransferred;
+                                return (
                                   <div
+                                    key={e.id}
                                     style={{
-                                      minWidth: 0,
-                                      display: 'flex',
-                                      alignItems: 'center',
+                                      display: 'grid',
+                                      gridTemplateColumns: '24px 90px 1fr auto',
                                       gap: 8,
-                                      flexWrap: 'wrap',
+                                      padding: '6px 0',
+                                      borderBottom: '1px solid #f3f4f6',
+                                      alignItems: 'center',
                                     }}
                                   >
-                                    {editable && (
-                                      <input
-                                        type="text"
-                                        placeholder="Note (optional)"
-                                        defaultValue={e.note || ''}
-                                        onBlur={(ev) => {
-                                          const v = (ev.target.value || '').trim() || null;
-                                          if (v !== (e.note || null)) updatePigEntry(e.id, {note: v});
-                                        }}
-                                        style={{...rowInpS, flex: 1, minWidth: 120}}
-                                      />
-                                    )}
-                                    {isSent && link && (
-                                      <span
-                                        style={{
-                                          fontSize: 11,
-                                          padding: '2px 8px',
-                                          borderRadius: 4,
-                                          background: '#d1fae5',
-                                          color: '#065f46',
-                                          fontWeight: 600,
-                                          whiteSpace: 'nowrap',
-                                        }}
-                                      >
-                                        {'\u2192 ' + link.group.batchName + ' \u00b7 ' + fmt(link.trip.date)}
-                                      </span>
-                                    )}
-                                    {isSent && !link && (
-                                      <span style={{fontSize: 11, color: '#b91c1c', fontStyle: 'italic'}}>
-                                        (missing trip)
-                                      </span>
-                                    )}
-                                    {isTransferred &&
-                                      (() => {
-                                        let feedLb = parseFloat(e.feed_allocation_lbs);
-                                        if (!Number.isFinite(feedLb) || feedLb <= 0) {
-                                          const m = (e.note || '').match(/feed_alloc=([\d.]+)/);
-                                          if (m) feedLb = parseFloat(m[1]);
-                                        }
-                                        const feedTxt =
-                                          Number.isFinite(feedLb) && feedLb > 0
-                                            ? ' · ~' + Math.round(feedLb) + ' lb feed'
-                                            : '';
-                                        return (
-                                          <span
-                                            style={{
-                                              fontSize: 11,
-                                              padding: '2px 8px',
-                                              borderRadius: 4,
-                                              background: '#ede9fe',
-                                              color: '#5b21b6',
-                                              fontWeight: 600,
-                                              whiteSpace: 'nowrap',
-                                            }}
-                                          >
-                                            {'→ Transferred to Breeding' + feedTxt}
-                                          </span>
-                                        );
-                                      })()}
-                                    {!editable &&
-                                      (() => {
-                                        // Hide the transferred-to-breeding marker from the
-                                        // visible note (it's an internal stamp from the
-                                        // pre-migration fallback path).
-                                        const cleanNote = (e.note || '').replace(
-                                          /^\[transferred_to_breeding[^\]]*\]\s*/,
-                                          '',
-                                        );
-                                        return cleanNote ? (
-                                          <span style={{fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>
-                                            {cleanNote}
-                                          </span>
-                                        ) : null;
-                                      })()}
+                                    {/* Col 1: select-to-trip checkbox (or spacer) */}
+                                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                      {editable && (
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => toggle(e.id)}
+                                          style={{margin: 0}}
+                                          title="Select to send to trip"
+                                        />
+                                      )}
+                                    </div>
+                                    {/* Col 2: weight (input or read-only) */}
+                                    <div>
+                                      {editable ? (
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.1"
+                                          defaultValue={e.weight}
+                                          onBlur={(ev) => {
+                                            const v = parseFloat(ev.target.value);
+                                            if (Number.isFinite(v) && v > 0 && v !== parseFloat(e.weight))
+                                              updatePigEntry(e.id, {weight: v});
+                                          }}
+                                          style={{...rowInpS, width: '100%'}}
+                                        />
+                                      ) : (
+                                        <span
+                                          style={{
+                                            fontWeight: 700,
+                                            color: isSent ? '#047857' : isTransferred ? '#5b21b6' : '#1e40af',
+                                            fontSize: 13,
+                                          }}
+                                        >
+                                          {e.weight} lb
+                                        </span>
+                                      )}
+                                    </div>
+                                    {/* Col 3: note input OR sent/transferred badge */}
+                                    <div
+                                      style={{
+                                        minWidth: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        flexWrap: 'wrap',
+                                      }}
+                                    >
+                                      {editable && (
+                                        <input
+                                          type="text"
+                                          placeholder="Note (optional)"
+                                          defaultValue={e.note || ''}
+                                          onBlur={(ev) => {
+                                            const v = (ev.target.value || '').trim() || null;
+                                            if (v !== (e.note || null)) updatePigEntry(e.id, {note: v});
+                                          }}
+                                          style={{...rowInpS, flex: 1, minWidth: 120}}
+                                        />
+                                      )}
+                                      {isSent && link && (
+                                        <span
+                                          style={{
+                                            fontSize: 11,
+                                            padding: '2px 8px',
+                                            borderRadius: 4,
+                                            background: '#d1fae5',
+                                            color: '#065f46',
+                                            fontWeight: 600,
+                                            whiteSpace: 'nowrap',
+                                          }}
+                                        >
+                                          {'\u2192 ' + link.group.batchName + ' \u00b7 ' + fmt(link.trip.date)}
+                                        </span>
+                                      )}
+                                      {isSent && !link && (
+                                        <span style={{fontSize: 11, color: '#b91c1c', fontStyle: 'italic'}}>
+                                          (missing trip)
+                                        </span>
+                                      )}
+                                      {isTransferred &&
+                                        (() => {
+                                          let feedLb = parseFloat(e.feed_allocation_lbs);
+                                          if (!Number.isFinite(feedLb) || feedLb <= 0) {
+                                            const m = (e.note || '').match(/feed_alloc=([\d.]+)/);
+                                            if (m) feedLb = parseFloat(m[1]);
+                                          }
+                                          const feedTxt =
+                                            Number.isFinite(feedLb) && feedLb > 0
+                                              ? ' · ~' + Math.round(feedLb) + ' lb feed'
+                                              : '';
+                                          return (
+                                            <span
+                                              style={{
+                                                fontSize: 11,
+                                                padding: '2px 8px',
+                                                borderRadius: 4,
+                                                background: '#ede9fe',
+                                                color: '#5b21b6',
+                                                fontWeight: 600,
+                                                whiteSpace: 'nowrap',
+                                              }}
+                                            >
+                                              {'→ Transferred to Breeding' + feedTxt}
+                                            </span>
+                                          );
+                                        })()}
+                                      {!editable &&
+                                        (() => {
+                                          // Hide the transferred-to-breeding marker from the
+                                          // visible note (it's an internal stamp from the
+                                          // pre-migration fallback path).
+                                          const cleanNote = (e.note || '').replace(
+                                            /^\[transferred_to_breeding[^\]]*\]\s*/,
+                                            '',
+                                          );
+                                          return cleanNote ? (
+                                            <span style={{fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>
+                                              {cleanNote}
+                                            </span>
+                                          ) : null;
+                                        })()}
+                                    </div>
+                                    {/* Col 4: action buttons */}
+                                    <div style={{display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0}}>
+                                      {canAct && (
+                                        <button
+                                          onClick={() => openTransferModal(s, e)}
+                                          title="Transfer to breeding pigs"
+                                          style={{
+                                            background: '#f5f3ff',
+                                            border: '1px solid #ddd6fe',
+                                            borderRadius: 5,
+                                            color: '#5b21b6',
+                                            cursor: 'pointer',
+                                            fontSize: 11,
+                                            padding: '3px 8px',
+                                            fontFamily: 'inherit',
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          {'\u2192 Breeding'}
+                                        </button>
+                                      )}
+                                      {isSent && (
+                                        <button
+                                          onClick={() => undoSendToTrip(e)}
+                                          title="Undo send to trip"
+                                          style={{
+                                            background: 'none',
+                                            border: '1px solid #fecaca',
+                                            borderRadius: 5,
+                                            color: '#b91c1c',
+                                            cursor: 'pointer',
+                                            fontSize: 11,
+                                            padding: '2px 8px',
+                                            fontFamily: 'inherit',
+                                          }}
+                                        >
+                                          Undo send
+                                        </button>
+                                      )}
+                                      {isTransferred && (
+                                        <button
+                                          onClick={() => undoTransferToBreeding(s, e)}
+                                          title="Reverse the transfer to breeding (puts pig back in batch + restores feed allocation)"
+                                          style={{
+                                            background: 'none',
+                                            border: '1px solid #ddd6fe',
+                                            borderRadius: 5,
+                                            color: '#5b21b6',
+                                            cursor: 'pointer',
+                                            fontSize: 11,
+                                            padding: '2px 8px',
+                                            fontFamily: 'inherit',
+                                          }}
+                                        >
+                                          Undo transfer
+                                        </button>
+                                      )}
+                                      {editable && (
+                                        <button
+                                          onClick={() => deletePigEntry(e.id)}
+                                          title="Delete entry"
+                                          style={{
+                                            background: 'none',
+                                            border: '1px solid #fecaca',
+                                            borderRadius: 5,
+                                            color: '#b91c1c',
+                                            cursor: 'pointer',
+                                            fontSize: 11,
+                                            padding: '2px 8px',
+                                            fontFamily: 'inherit',
+                                          }}
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
-                                  {/* Col 4: action buttons */}
-                                  <div style={{display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0}}>
-                                    {canAct && (
-                                      <button
-                                        onClick={() => openTransferModal(s, e)}
-                                        title="Transfer to breeding pigs"
-                                        style={{
-                                          background: '#f5f3ff',
-                                          border: '1px solid #ddd6fe',
-                                          borderRadius: 5,
-                                          color: '#5b21b6',
-                                          cursor: 'pointer',
-                                          fontSize: 11,
-                                          padding: '3px 8px',
-                                          fontFamily: 'inherit',
-                                          fontWeight: 600,
-                                        }}
-                                      >
-                                        {'\u2192 Breeding'}
-                                      </button>
-                                    )}
-                                    {isSent && (
-                                      <button
-                                        onClick={() => undoSendToTrip(e)}
-                                        title="Undo send to trip"
-                                        style={{
-                                          background: 'none',
-                                          border: '1px solid #fecaca',
-                                          borderRadius: 5,
-                                          color: '#b91c1c',
-                                          cursor: 'pointer',
-                                          fontSize: 11,
-                                          padding: '2px 8px',
-                                          fontFamily: 'inherit',
-                                        }}
-                                      >
-                                        Undo send
-                                      </button>
-                                    )}
-                                    {isTransferred && (
-                                      <button
-                                        onClick={() => undoTransferToBreeding(s, e)}
-                                        title="Reverse the transfer to breeding (puts pig back in batch + restores feed allocation)"
-                                        style={{
-                                          background: 'none',
-                                          border: '1px solid #ddd6fe',
-                                          borderRadius: 5,
-                                          color: '#5b21b6',
-                                          cursor: 'pointer',
-                                          fontSize: 11,
-                                          padding: '2px 8px',
-                                          fontFamily: 'inherit',
-                                        }}
-                                      >
-                                        Undo transfer
-                                      </button>
-                                    )}
-                                    {editable && (
-                                      <button
-                                        onClick={() => deletePigEntry(e.id)}
-                                        title="Delete entry"
-                                        style={{
-                                          background: 'none',
-                                          border: '1px solid #fecaca',
-                                          borderRadius: 5,
-                                          color: '#b91c1c',
-                                          cursor: 'pointer',
-                                          fontSize: 11,
-                                          padding: '2px 8px',
-                                          fontFamily: 'inherit',
-                                        }}
-                                      >
-                                        Delete
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
 
                             {/* Add entry row */}
                             {!fieldsLocked && (

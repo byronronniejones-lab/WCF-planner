@@ -12,6 +12,10 @@ import {
   allocatePlannedTrips,
   movePigsBetweenTrips,
   recalculateProjections,
+  formatAgeRange,
+  formatFeedPerPig,
+  formatGroupAdg,
+  formatAvgWeight,
 } from './pigForecast.js';
 
 describe('constants', () => {
@@ -20,6 +24,87 @@ describe('constants', () => {
     expect(PLANNED_TRIP_MAX_SIZE).toBe(12);
     expect(PLANNED_TRIP_TARGET_WEIGHT_LBS).toBe(275);
     expect(PLANNED_TRIP_OVER_WEIGHT_WARN_LBS).toBe(325);
+  });
+});
+
+describe('formatAgeRange', () => {
+  it('renders both bounds with daysToMWD when hasActual=true', () => {
+    expect(formatAgeRange({minDays: 60, maxDays: 90, hasActual: true})).toBe('2m 0w – 3m 0w');
+  });
+
+  it('appends "(est.)" when hasActual=false', () => {
+    expect(formatAgeRange({minDays: 60, maxDays: 90, hasActual: false})).toBe('2m 0w – 3m 0w (est.)');
+  });
+
+  it('uses 0m 0w for zero-day bounds (Up-to-oldest case)', () => {
+    expect(formatAgeRange({minDays: 0, maxDays: 14, hasActual: true})).toBe('0m 0w – 0m 2w');
+  });
+
+  it('returns "—" when either bound is null/undefined', () => {
+    expect(formatAgeRange({minDays: null, maxDays: 30, hasActual: true})).toBe('—');
+    expect(formatAgeRange({minDays: 30, maxDays: null, hasActual: true})).toBe('—');
+    expect(formatAgeRange({})).toBe('—');
+    expect(formatAgeRange()).toBe('—');
+  });
+
+  it('returns "—" for non-numeric bounds (defensive)', () => {
+    expect(formatAgeRange({minDays: 'abc', maxDays: 30, hasActual: true})).toBe('—');
+  });
+});
+
+describe('formatFeedPerPig', () => {
+  it('rounds to nearest lb', () => {
+    expect(formatFeedPerPig(416.4)).toBe('416 lb');
+    expect(formatFeedPerPig(416.6)).toBe('417 lb');
+    expect(formatFeedPerPig(0)).toBe('0 lb');
+  });
+
+  it('returns "—" for null / NaN / non-numeric', () => {
+    expect(formatFeedPerPig(null)).toBe('—');
+    expect(formatFeedPerPig(undefined)).toBe('—');
+    expect(formatFeedPerPig(NaN)).toBe('—');
+    expect(formatFeedPerPig('abc')).toBe('—');
+  });
+});
+
+describe('formatGroupAdg', () => {
+  it('shows positive ADG with leading + sign and two decimals', () => {
+    expect(formatGroupAdg(1.82)).toBe('+1.82 lb/day');
+    expect(formatGroupAdg(0.5)).toBe('+0.50 lb/day');
+  });
+
+  it('shows negative ADG with ASCII hyphen-minus and absolute value (Codex W6 lock)', () => {
+    expect(formatGroupAdg(-0.5)).toBe('-0.50 lb/day');
+    expect(formatGroupAdg(-1.82)).toBe('-1.82 lb/day');
+    // Negative lock: never use Unicode minus (U+2212) per Codex's correction.
+    expect(formatGroupAdg(-1)).not.toContain('−');
+  });
+
+  it('shows zero ADG without sign as 0.00 lb/day', () => {
+    expect(formatGroupAdg(0)).toBe('0.00 lb/day');
+    // Sub-rounding values that round to zero stay at 0.00 (no sign).
+    expect(formatGroupAdg(0.001)).toBe('0.00 lb/day');
+    expect(formatGroupAdg(-0.001)).toBe('0.00 lb/day');
+  });
+
+  it('returns "— no prior weigh-in" when ADG is null/missing', () => {
+    expect(formatGroupAdg(null)).toBe('— no prior weigh-in');
+    expect(formatGroupAdg(undefined)).toBe('— no prior weigh-in');
+    expect(formatGroupAdg(NaN)).toBe('— no prior weigh-in');
+  });
+});
+
+describe('formatAvgWeight', () => {
+  it('rounds to nearest lb', () => {
+    expect(formatAvgWeight(263)).toBe('263 lb');
+    expect(formatAvgWeight(262.6)).toBe('263 lb');
+    expect(formatAvgWeight(262.4)).toBe('262 lb');
+  });
+
+  it('returns "—" for null / NaN', () => {
+    expect(formatAvgWeight(null)).toBe('—');
+    expect(formatAvgWeight(undefined)).toBe('—');
+    expect(formatAvgWeight(NaN)).toBe('—');
   });
 });
 

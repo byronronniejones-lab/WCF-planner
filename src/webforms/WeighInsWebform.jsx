@@ -21,6 +21,7 @@ import React from 'react';
 import {writeBroilerBatchAvg} from '../lib/broiler.js';
 import {deriveBroilerColumnLabels} from '../lib/broilerBatchMeta.js';
 import {fmt} from '../lib/dateUtils.js';
+import {formatAgeRange, formatFeedPerPig, formatGroupAdg, formatAvgWeight} from '../lib/pigForecast.js';
 import {loadRoster} from '../lib/teamMembers.js';
 import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
@@ -112,6 +113,13 @@ const WeighInsWebform = ({sb}) => {
   const [lastSubmitOutcome, setLastSubmitOutcome] = React.useState(null);
   // Stuck submission modal state.
   const [stuckOpen, setStuckOpen] = React.useState(false);
+
+  // Pig session metrics from the public-safe pig_session_metrics RPC
+  // (mig 049). Anon scope returns aggregates only for status='draft' pig
+  // sessions; this form is the canonical anon caller. Null until the
+  // first RPC response lands; refreshed when entries change so live
+  // weighed_count + avg + ADG stay accurate.
+  const [pigMetrics, setPigMetrics] = React.useState(null);
 
   // Offline RPC queue hook — pig/broiler fresh draft session creation.
   const {
@@ -328,6 +336,37 @@ const WeighInsWebform = ({sb}) => {
         if (data) setEntries(data);
       });
   }, [session]);
+
+  // Pig metrics RPC (mig 049). Public form's only consumer.
+  //   Gates:
+  //     species === 'pig'                    — pig-only metric block
+  //     session && session.id && !fresh      — DB-backed session exists
+  //     entries.length >= 1                  — Codex W1 lock: no metrics
+  //                                            block before the first
+  //                                            entry exists
+  //   Re-fires when entries.length changes so weighed_count + avg + ADG
+  //   stay live as the operator weighs additional pigs.
+  React.useEffect(() => {
+    if (species !== 'pig' || !session || !session.id || sessionIsFresh || entries.length < 1) {
+      setPigMetrics(null);
+      return;
+    }
+    let cancelled = false;
+    sb.rpc('pig_session_metrics', {session_id_in: session.id}).then(({data, error}) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn('pig_session_metrics rpc error:', error.message || error);
+        setPigMetrics({available: false});
+        return;
+      }
+      setPigMetrics(data || {available: false});
+    });
+    return () => {
+      cancelled = true;
+    };
+    // sb is a stable prop from the parent; established pattern in this file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [species, session, sessionIsFresh, entries.length]);
 
   // Hydrate the broiler grid from saved entries whenever entries OR
   // columnLabels change. Each entry's tag is the schooner name and lands
@@ -2405,22 +2444,81 @@ const WeighInsWebform = ({sb}) => {
             </div>
           )}
 
+          {/* Pig session metrics (mig 049 RPC). Codex W1: only render once
+            entries.length >= 1. Gates inside the effect mirror the same
+            condition; available=false (RPC error or scope-closed) renders
+            a single "Metrics unavailable" line instead of the four-metric
+            grid. */}
+          {species === 'pig' && entries.length >= 1 && pigMetrics && (
+            <div style={cardS}>
+              <div style={{fontSize: 12, fontWeight: 700, color: '#4b5563', marginBottom: 8}}>Session metrics</div>
+              {pigMetrics.available ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 8,
+                  }}
+                >
+                  <div data-pig-metric="age">
+                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Age at weigh-in</div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                      {formatAgeRange({
+                        minDays: pigMetrics.age_min_days,
+                        maxDays: pigMetrics.age_max_days,
+                        hasActual: pigMetrics.has_actual_farrowing,
+                      })}
+                    </div>
+                  </div>
+                  <div data-pig-metric="feed">
+                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Feed/pig</div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                      {formatFeedPerPig(pigMetrics.feed_per_pig_lbs)}
+                    </div>
+                  </div>
+                  <div data-pig-metric="adg">
+                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Group ADG</div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                      {formatGroupAdg(pigMetrics.group_adg_lbs_per_day)}
+                    </div>
+                  </div>
+                  <div data-pig-metric="avg">
+                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Avg weight</div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                      {formatAvgWeight(pigMetrics.avg_weight_lbs)}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{fontSize: 12, color: '#6b7280', fontStyle: 'italic'}}>Metrics unavailable</div>
+              )}
+            </div>
+          )}
+
           {/* Recent entries (pig) — no tag / age / ADG, just numbered weights.
-            Entry # = insertion order. Displayed ascending (oldest #1 at top).
+            Entry # = insertion order (assigned BEFORE the descending-by-weight
+            sort so #1 stays the first-entered pig). Display order is weight
+            descending; ties break by lower #N for stable visual ordering.
             All entries are rendered (no slice cap) — the operator needs the
             full session count visible mid-weigh. Delete/edit pins by id, not
             index, so list-length is purely a render concern. */}
           {species === 'pig' &&
             entries.length > 0 &&
             (() => {
+              const numbered = entries.map((e, i) => ({...e, _entryNum: i + 1}));
+              const displayed = [...numbered].sort((a, b) => {
+                const wa = parseFloat(a.weight) || 0;
+                const wb = parseFloat(b.weight) || 0;
+                if (wa !== wb) return wb - wa;
+                return a._entryNum - b._entryNum;
+              });
               return (
                 <div style={cardS}>
                   <div style={{fontSize: 12, fontWeight: 700, color: '#4b5563', marginBottom: 8}}>
                     {'Recent entries (' + entries.length + ')'}
                   </div>
-                  {entries.map((e, i) => {
-                    // i is 0-based; 1-based session sequence number.
-                    const entryNum = i + 1;
+                  {displayed.map((e) => {
+                    const entryNum = e._entryNum;
                     const isEditing = editingEntryId === e.id;
                     if (isEditing)
                       return (
