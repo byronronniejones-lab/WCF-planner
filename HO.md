@@ -1,6 +1,6 @@
 # HO - static workflow SOP
 
-Last updated: 2026-05-07
+Last updated: 2026-05-08
 
 This file is the static start-of-session operating prompt for Ronnie, CC
 (Claude Code), and Codex. It is not a session log and must not carry current
@@ -36,12 +36,13 @@ handoff text in `PROJECT.md`.
 
 Ronnie is the product owner and final decision-maker.
 
-CC (Claude Code) is the primary builder. CC plans implementation, edits files,
-runs validation, and reports results.
+CC (Claude Code) is the primary builder. CC verifies plans, pushes back on
+risk, edits files, runs validation, applies approved Supabase work, and reports
+results.
 
-Codex is the planner, investigator, reviewer, and path-clearer. Codex stays one
-step ahead of CC, reviews plans and build reports, pushes back when needed, and
-prepares the next CC-ready prompt.
+Codex is the planning lead and reviewer. Codex does the planning legwork before
+CC builds: read the docs/repo, resolve scope from existing decisions, identify
+contracts/files/tests/gates, and produce the next CC-ready prompt.
 
 Everything outside an explicit Codex edit request is Claude-owned by default.
 Codex does not edit implementation/source files unless Ronnie explicitly
@@ -61,6 +62,10 @@ deploy or merge approval. Each gate needs explicit current-turn approval.
 Lane approval can cover SQL writes, Vault provisioning, Supabase function
 deploys, `.env.prod.local`-driven `psql`, and migration applies inside that
 approved lane. Commit, push, deploy, and merge remain separate gates.
+
+Ronnie approves production-impacting work. CC executes approved Supabase work.
+Do not route routine SQL, migration applies, function deploys, Vault checks, or
+PROD verification back to Ronnie when CC has the needed access.
 
 `exec_sql` in PROD is forbidden under every approval shape.
 
@@ -117,13 +122,19 @@ Before any plan or edit, inspect:
 If the task touches a Section 7 contract, call that out in the plan before
 editing.
 
+Codex must identify the current queue before planning: active lane, next
+planned lane, paused work, open gates, hotfixes, and known blockers. Use
+`PROJECT.md` roadmap/current-state sections plus `git log` and `git status`;
+do not rely on chat memory alone.
+
 ---
 
 ## Core Loop
 
 1. Ronnie chooses the lane or question.
-2. Codex investigates, clarifies scope if needed, and prepares a CC-ready plan
-   or review.
+2. Codex investigates, resolves scope from existing docs/repo/chat decisions,
+   asks only necessary product questions, and prepares a CC-ready plan or
+   review.
 3. Ronnie relays the `From Codex:` block to CC.
 4. CC builds, validates, and reports back with a `From CC:` block.
 5. Codex reviews CC's plan or build report and either pushes back or clears the
@@ -133,6 +144,15 @@ editing.
 
 Codex should prepare the next CC prompt immediately after a clean checkpoint,
 commit, or push decision, unless Ronnie redirects.
+
+After every clean checkpoint, Codex must provide the next CC-ready prompt or
+name the exact blocker. If the roadmap already defines the next lane, Codex
+scopes it. Do not ask CC to choose the next scope.
+
+Codex should maintain a working queue during the session: current build, next
+build, paused hotfixes, open approvals, and docs/wrap status. Hotfixes may
+interrupt the queue, but Codex returns to the paused lane afterward and keeps
+the next CC prompt ready.
 
 ---
 
@@ -275,7 +295,9 @@ Then Ronnie decides.
 
 ## Clarifying Questions
 
-Ask only substantive questions.
+Ask only blocking questions. Do not ask questions to transfer planning work. If
+the answer is in `HO.md`, `PROJECT.md`, prior Ronnie decisions, schema, or code,
+use it and state the assumption.
 
 Ask one question at a time when possible. Prefer multiple-choice pop-out
 questions when the interface supports them.
@@ -309,16 +331,19 @@ CC owns implementation by default:
 
 ## Codex Responsibilities
 
-Codex owns planning support and review:
+Codex owns planning and review:
 
-- Review plan packets before code starts.
-- Review build reports before checkpoint, commit, or push decisions.
-- Push back on missed scope, missed contracts, unsafe deploy order, weak tests,
-  permission drift, data-model drift, or unclear product behavior.
-- Stay one step ahead and prepare the next CC-ready prompt.
+- Do the planning legwork before CC starts.
+- Turn roadmap items into CC-ready prompts.
+- Track the outstanding queue from `PROJECT.md` and the repo so CC always has
+  the next planned task after checkpoints.
+- Review CC plans and build reports before gates.
+- Push back on missed scope, unsafe order, weak tests, or contract drift.
+- Keep CC supplied with the next useful task unless Ronnie pauses, redirects,
+  or ends the session.
 - Keep CC-facing instructions concise and copyable.
-- Do not execute implementation/source edits unless Ronnie explicitly
-  authorizes a one-off.
+- Do not edit implementation/source files unless Ronnie explicitly authorizes a
+  one-off.
 
 ---
 
