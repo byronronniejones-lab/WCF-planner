@@ -1,4 +1,4 @@
-// Task Center — System Tasks tab. Read-only admin view in T5 of Tasks v2.
+// Task Center — System Tasks tab. Admin-only. Tasks v2.
 //
 // Lists task_system_rules as collapsible cards. Each card shows the
 // rule id/name, description, generator-kind label, assignee, lead-time
@@ -8,16 +8,19 @@
 // from_system_rule_id IS NOT NULL). Orphan / unknown-rule instances
 // are grouped at the bottom under "Orphaned system tasks".
 //
-// Tab visibility is gated in TaskCenterView (admin only). Reaching
-// this component already implies the caller is admin; we still render
-// no edit/delete/save/generate/assign controls anywhere — Codex T5
-// lock keeps the surface strictly inspect-only until T9 admin CRUD.
+// Tab visibility is gated in TaskCenterView (admin only); inside the
+// tab body, the per-rule Edit Rule button (T9) is also gated by
+// isAdmin as a defensive double-check.
 //
-// Pure read-only: imports only from tasksCenterApi (no admin/user
-// modules), calls no v2 mutation RPCs (system-task generation is
-// owned by the cron Edge Function, never the operator UI), no
-// .insert/.update/.delete on task_* tables, no storage uploads.
-// Static lock asserts each.
+// Editable surface (T9): admin can update assignee_profile_id,
+// lead_time_days, and active via SystemRuleEditModal. id /
+// generator_kind / name / description stay read-only — the Edge
+// Function dispatcher recognizes only the four built-in
+// generator_kinds, so renaming or rekeying would silently break
+// generation. T9 explicitly excludes creating or deleting system
+// rules; only the four built-in rules from mig 052 exist. The
+// frontend never calls the system-rule generator RPC — that path
+// stays owned by the cron Edge Function.
 
 import React from 'react';
 import {
@@ -27,7 +30,9 @@ import {
   groupSystemTasksByRule,
   dueStateFor,
 } from '../lib/tasksCenterApi.js';
+import {TASK_CHANGE_EVENT, fireTaskChangeEvent} from '../lib/tasksCenterMutationsApi.js';
 import {fmt, todayCentralISO} from '../lib/dateUtils.js';
+import SystemRuleEditModal from './SystemRuleEditModal.jsx';
 
 const CARD = {
   background: 'white',
@@ -167,13 +172,16 @@ function SystemInstanceLine({ti, todayStr, profilesById}) {
   );
 }
 
-export default function SystemTasksTab({sb}) {
+export default function SystemTasksTab({sb, authState}) {
+  const isAdmin = authState && authState.role === 'admin';
   const [rules, setRules] = React.useState([]);
   const [openInstances, setOpenInstances] = React.useState([]);
   const [profiles, setProfiles] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
   const [expanded, setExpanded] = React.useState({});
+  const [editRule, setEditRule] = React.useState(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -199,13 +207,30 @@ export default function SystemTasksTab({sb}) {
     return () => {
       cancelled = true;
     };
-  }, [sb]);
+  }, [sb, reloadKey]);
+
+  React.useEffect(() => {
+    function onChange() {
+      setReloadKey((k) => k + 1);
+    }
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener(TASK_CHANGE_EVENT, onChange);
+    }
+    return () => {
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener(TASK_CHANGE_EVENT, onChange);
+      }
+    };
+  }, []);
 
   const todayStr = todayCentralISO();
   const grouped = groupSystemTasksByRule(rules, openInstances);
 
   function toggle(key) {
     setExpanded((prev) => ({...prev, [key]: !prev[key]}));
+  }
+  function startEditRule(r) {
+    setEditRule(r);
   }
 
   return (
@@ -278,6 +303,28 @@ export default function SystemTasksTab({sb}) {
                   </button>
                   {isOpen && (
                     <div data-system-rule-body={key} style={{paddingLeft: 8, marginBottom: 8}}>
+                      {isAdmin && (
+                        <div style={{display: 'flex', gap: 6, padding: '4px 8px 8px'}}>
+                          <button
+                            type="button"
+                            data-system-rule-edit-button={key}
+                            onClick={() => startEditRule(b.rule)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              border: '1px solid #d1d5db',
+                              background: 'white',
+                              color: '#374151',
+                              cursor: 'pointer',
+                              fontSize: 12,
+                              fontWeight: 500,
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Edit Rule
+                          </button>
+                        </div>
+                      )}
                       {b.instances.length === 0 ? (
                         <div style={{...SUB, padding: '4px 8px'}}>No open instances.</div>
                       ) : (
@@ -308,6 +355,19 @@ export default function SystemTasksTab({sb}) {
           )}
         </>
       )}
+
+      {React.createElement(SystemRuleEditModal, {
+        sb,
+        isOpen: !!editRule,
+        rule: editRule,
+        profilesById: profiles,
+        onClose: () => setEditRule(null),
+        onSaved: () => {
+          setEditRule(null);
+          fireTaskChangeEvent();
+          setReloadKey((k) => k + 1);
+        },
+      })}
     </div>
   );
 }

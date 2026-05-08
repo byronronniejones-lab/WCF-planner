@@ -238,6 +238,26 @@ export function groupRecurringByTemplate(templates, openInstances) {
   return {templates: templateBuckets, orphans};
 }
 
+// ── Tasks v2 T8: due-date edit history ─────────────────────────────────
+//
+// Read every task_instance_due_date_edits row for a given instance,
+// newest first. RLS allows authenticated SELECT; the audit table has
+// no INSERT policy — only the v2 SECDEF wrapper in
+// tasksCenterMutationsApi.js writes to it. Surfaces prior_due_date /
+// new_due_date / edited_at / edited_by_role / edited_by_profile_id;
+// component resolves the profile id to a name through the existing
+// list_eligible_assignees map.
+export async function loadDueDateEditHistory(sb, instanceId) {
+  if (!instanceId) return [];
+  const {data, error} = await sb
+    .from('task_instance_due_date_edits')
+    .select('id, instance_id, edited_at, edited_by_profile_id, edited_by_role, prior_due_date, new_due_date')
+    .eq('instance_id', instanceId)
+    .order('edited_at', {ascending: false});
+  if (error) throw new Error(`loadDueDateEditHistory: ${error.message}`);
+  return data || [];
+}
+
 // ── Tasks v2 T6/T7: photo lightbox sidecar reader ──────────────────────
 //
 // Read every task_instance_photos row for a given instance, ordered by

@@ -1,4 +1,4 @@
-// Task Center — Recurring tab. Read-only in T4 of Tasks v2.
+// Task Center — Recurring tab. Tasks v2.
 //
 // Lists recurring task_templates (active first, alphabetical) as
 // collapsible cards. Each card shows recurrence + interval + first
@@ -10,10 +10,18 @@
 // SET NULL FK in mig 050) are grouped at the bottom under
 // "Orphaned recurring tasks".
 //
-// Pure read-only: imports only from tasksCenterApi (no admin/user
-// modules), calls no v2 mutation RPCs, no .insert/.update/.delete
-// on task_* tables, no storage uploads, no edit/delete affordances.
-// Static lock asserts each.
+// Reads stay open to every authenticated user (transparency RLS);
+// admin write controls are gated by isAdmin:
+//   - + New Template button (T9) — admin-only.
+//   - Edit / Delete buttons inside each expanded template card — admin-only.
+//   - Template delete uses an inline typed-confirmation modal (no
+//     window.confirm, per Codex T9 lock). Existing instances stay
+//     alive via mig 050's ON DELETE SET NULL and surface in the
+//     Orphaned recurring tasks group.
+//
+// All DB writes route through tasksCenterMutationsApi wrappers; the
+// component never calls .insert/.update/.delete on task_* tables
+// directly. Static lock asserts admin-gating + wrapper boundary.
 
 import React from 'react';
 import {
@@ -22,7 +30,9 @@ import {
   loadEligibleProfilesById,
   groupRecurringByTemplate,
 } from '../lib/tasksCenterApi.js';
+import {TASK_CHANGE_EVENT, fireTaskChangeEvent, deleteRecurringTaskTemplate} from '../lib/tasksCenterMutationsApi.js';
 import {fmt} from '../lib/dateUtils.js';
+import RecurringTemplateModal from './RecurringTemplateModal.jsx';
 
 const CARD = {
   background: 'white',
@@ -110,13 +120,148 @@ function InstanceLine({ti}) {
   );
 }
 
-export default function RecurringTab({sb}) {
+// T9: typed-confirmation modal for template delete. Inline because the
+// task-instance DeleteTaskModal targets task_instances; templates use a
+// different wrapper. No window.confirm — Codex T9 lock.
+function DeleteTemplateConfirm({sb, template, isOpen, onClose, onDeleted}) {
+  const [typed, setTyped] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  React.useEffect(() => {
+    if (!isOpen) {
+      setTyped('');
+      setSaving(false);
+      setErr('');
+    }
+  }, [isOpen]);
+  if (!isOpen || !template) return null;
+  const confirmed = typed.trim().toUpperCase() === 'DELETE';
+  async function go() {
+    if (saving || !confirmed) return;
+    setSaving(true);
+    try {
+      await deleteRecurringTaskTemplate(sb, template.id);
+      if (onDeleted) onDeleted(template.id);
+      if (onClose) onClose();
+    } catch (e) {
+      setErr(e && e.message ? e.message : String(e));
+      setSaving(false);
+    }
+  }
+  return (
+    <div
+      data-delete-template-modal="1"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,.5)',
+        zIndex: 250,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+      onClick={() => onClose && onClose()}
+    >
+      <div
+        style={{background: 'white', borderRadius: 12, padding: 18, width: 'min(480px, 96vw)', fontFamily: 'inherit'}}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{fontSize: 18, margin: 0, color: '#111827', marginBottom: 8}}>Delete Recurring Template</h2>
+        <div style={{fontSize: 13, color: '#374151', marginBottom: 12}}>
+          This deletes the template <span style={{fontWeight: 600, color: '#111827'}}>{template.title}</span>. Existing
+          instances stay alive — they move to the Orphaned recurring tasks group.
+        </div>
+        <label style={{fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block'}}>
+          Type DELETE to confirm
+        </label>
+        <input
+          data-delete-template-field="confirm"
+          type="text"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          autoComplete="off"
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            border: '1px solid #d1d5db',
+            borderRadius: 8,
+            fontSize: 14,
+            fontFamily: 'inherit',
+            boxSizing: 'border-box',
+          }}
+        />
+        {err && (
+          <div
+            data-delete-template-error="1"
+            style={{
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              color: '#991b1b',
+              padding: '8px 12px',
+              borderRadius: 8,
+              marginTop: 12,
+              fontSize: 13,
+            }}
+          >
+            {err}
+          </div>
+        )}
+        <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14}}>
+          <button
+            type="button"
+            onClick={() => onClose && onClose()}
+            disabled={saving}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#374151',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-delete-template-save="1"
+            onClick={go}
+            disabled={saving || !confirmed}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: '1px solid #b91c1c',
+              background: '#b91c1c',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+            }}
+          >
+            {saving ? 'Deleting…' : 'Delete Permanently'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function RecurringTab({sb, authState}) {
+  const isAdmin = authState && authState.role === 'admin';
   const [templates, setTemplates] = React.useState([]);
   const [openInstances, setOpenInstances] = React.useState([]);
   const [profiles, setProfiles] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
   const [expanded, setExpanded] = React.useState({});
+  const [editTarget, setEditTarget] = React.useState(null); // null | template | 'new'
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -142,12 +287,35 @@ export default function RecurringTab({sb}) {
     return () => {
       cancelled = true;
     };
-  }, [sb]);
+  }, [sb, reloadKey]);
+
+  React.useEffect(() => {
+    function onChange() {
+      setReloadKey((k) => k + 1);
+    }
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener(TASK_CHANGE_EVENT, onChange);
+    }
+    return () => {
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener(TASK_CHANGE_EVENT, onChange);
+      }
+    };
+  }, []);
 
   const grouped = groupRecurringByTemplate(templates, openInstances);
 
   function toggle(key) {
     setExpanded((prev) => ({...prev, [key]: !prev[key]}));
+  }
+  function startNew() {
+    setEditTarget('new');
+  }
+  function startEdit(tpl) {
+    setEditTarget(tpl);
+  }
+  function startDelete(tpl) {
+    setDeleteTarget(tpl);
   }
 
   return (
@@ -168,6 +336,29 @@ export default function RecurringTab({sb}) {
           {err}
         </div>
       )}
+      {isAdmin && (
+        <div style={{display: 'flex', justifyContent: 'flex-end', marginBottom: 6}}>
+          <button
+            type="button"
+            data-recurring-new-button="1"
+            onClick={startNew}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 8,
+              border: '1px solid #085041',
+              background: '#085041',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+            }}
+          >
+            + New Template
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div style={SUB}>Loading…</div>
       ) : (
@@ -215,6 +406,46 @@ export default function RecurringTab({sb}) {
                   </button>
                   {isOpen && (
                     <div data-recurring-template-body={key} style={{paddingLeft: 8, marginBottom: 8}}>
+                      {isAdmin && (
+                        <div style={{display: 'flex', gap: 6, padding: '4px 8px 8px'}}>
+                          <button
+                            type="button"
+                            data-recurring-edit-button={key}
+                            onClick={() => startEdit(b.template)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              border: '1px solid #d1d5db',
+                              background: 'white',
+                              color: '#374151',
+                              cursor: 'pointer',
+                              fontSize: 12,
+                              fontWeight: 500,
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            data-recurring-delete-button={key}
+                            onClick={() => startDelete(b.template)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              border: '1px solid #b91c1c',
+                              background: 'white',
+                              color: '#b91c1c',
+                              cursor: 'pointer',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
                       {b.instances.length === 0 ? (
                         <div style={{...SUB, padding: '4px 8px'}}>No open instances.</div>
                       ) : (
@@ -243,6 +474,31 @@ export default function RecurringTab({sb}) {
           )}
         </>
       )}
+
+      {React.createElement(RecurringTemplateModal, {
+        sb,
+        isOpen: editTarget !== null,
+        template: editTarget && editTarget !== 'new' ? editTarget : null,
+        authState,
+        profilesById: profiles,
+        onClose: () => setEditTarget(null),
+        onSaved: () => {
+          setEditTarget(null);
+          fireTaskChangeEvent();
+          setReloadKey((k) => k + 1);
+        },
+      })}
+      {React.createElement(DeleteTemplateConfirm, {
+        sb,
+        template: deleteTarget,
+        isOpen: !!deleteTarget,
+        onClose: () => setDeleteTarget(null),
+        onDeleted: () => {
+          setDeleteTarget(null);
+          fireTaskChangeEvent();
+          setReloadKey((k) => k + 1);
+        },
+      })}
     </div>
   );
 }

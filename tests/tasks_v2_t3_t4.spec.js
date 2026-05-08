@@ -337,11 +337,14 @@ test.describe('Tasks v2 T4 — Recurring tab', () => {
     await expect(orphans).toBeVisible();
     await expect(orphans.locator('[data-task-row="tic-t34-recurring-orphan"]')).toBeVisible();
 
-    // Negative locks: no Edit/Delete/Save controls inside the Recurring tab.
-    await expect(tab.getByRole('button', {name: /edit/i})).toHaveCount(0);
-    await expect(tab.getByRole('button', {name: /delete/i})).toHaveCount(0);
-    await expect(tab.getByRole('button', {name: /save/i})).toHaveCount(0);
-    await expect(tab.locator('input')).toHaveCount(0);
-    await expect(tab.locator('textarea')).toHaveCount(0);
+    // T9 added admin write controls (+ New Template, Edit, Delete). Lock
+    // that they exist for the admin viewer of this spec — the non-admin
+    // gating is covered by tasks_v2_t8_t9_admin_controls.spec.js.
+    await expect(tab.locator('[data-recurring-new-button="1"]')).toBeVisible();
+    // Modal panes themselves are not yet open; no orphan input/textarea
+    // inside the tab body.
+    await expect(tab.locator('input, textarea').filter({hasNotText: /./})).toHaveCount(0);
+    // No Save button surfaces until a modal opens.
+    await expect(tab.getByRole('button', {name: /^Save/i})).toHaveCount(0);
   });
 });

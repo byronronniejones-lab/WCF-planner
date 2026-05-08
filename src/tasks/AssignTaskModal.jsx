@@ -1,0 +1,169 @@
+// Tasks v2 T9 — Assign Task modal. Admin-only.
+//
+// Wraps assign_task_instance (mig 053). The RPC is admin-only;
+// rejects completed tasks; verifies the new assignee is eligible
+// (role != 'inactive'). The eligible-profiles map already filters
+// inactives, so the dropdown is the canonical source of valid ids.
+
+import React from 'react';
+import {assignTaskInstanceV2} from '../lib/tasksCenterMutationsApi.js';
+
+const OVERLAY = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0,0,0,.5)',
+  zIndex: 250,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 16,
+};
+const PANEL = {
+  background: 'white',
+  borderRadius: 12,
+  padding: 18,
+  width: 'min(480px, 96vw)',
+  fontFamily: 'inherit',
+};
+const FIELD_LABEL = {fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block'};
+const INPUT = {
+  width: '100%',
+  padding: '8px 10px',
+  border: '1px solid #d1d5db',
+  borderRadius: 8,
+  fontSize: 14,
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+};
+const BTN_PRIMARY = {
+  padding: '8px 14px',
+  borderRadius: 8,
+  border: '1px solid #085041',
+  background: '#085041',
+  color: 'white',
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 600,
+  fontFamily: 'inherit',
+};
+const BTN_GHOST = {
+  padding: '8px 14px',
+  borderRadius: 8,
+  border: '1px solid #d1d5db',
+  background: 'white',
+  color: '#374151',
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 500,
+  fontFamily: 'inherit',
+};
+
+export default function AssignTaskModal({sb, task, isOpen, profilesById, onClose, onAssigned}) {
+  const [target, setTarget] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      setTarget('');
+      setSaving(false);
+      setErr('');
+    } else if (task) {
+      setTarget(task.assignee_profile_id || '');
+    }
+  }, [isOpen, task]);
+
+  if (!isOpen || !task) return null;
+
+  const eligibleProfiles = Object.values(profilesById || {})
+    .filter((p) => p && p.id && p.full_name)
+    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+
+  function close() {
+    if (onClose) onClose();
+  }
+
+  async function save() {
+    if (saving) return;
+    setErr('');
+    if (!target) {
+      setErr('Choose a new assignee.');
+      return;
+    }
+    if (target === task.assignee_profile_id) {
+      // No-op; close cleanly so admin doesn't get stuck.
+      if (onClose) onClose();
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await assignTaskInstanceV2(sb, task.id, target);
+      if (onAssigned) onAssigned(task.id, result);
+      if (onClose) onClose();
+    } catch (e) {
+      setErr(e && e.message ? e.message : String(e));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div data-assign-task-modal="1" style={OVERLAY} onClick={close}>
+      <div style={PANEL} onClick={(e) => e.stopPropagation()}>
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8}}>
+          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>Reassign Task</h2>
+          <button type="button" onClick={close} style={BTN_GHOST}>
+            Cancel
+          </button>
+        </div>
+
+        <div style={{fontSize: 13, color: '#374151', marginBottom: 14}}>
+          <div style={{fontWeight: 600, color: '#111827'}}>{task.title}</div>
+        </div>
+
+        <label style={FIELD_LABEL} htmlFor="assign-task-target">
+          New assignee
+        </label>
+        <select
+          id="assign-task-target"
+          data-assign-task-field="target"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          style={INPUT}
+        >
+          <option value="">— Select —</option>
+          {eligibleProfiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.full_name}
+            </option>
+          ))}
+        </select>
+
+        {err && (
+          <div
+            data-assign-task-error="1"
+            style={{
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              color: '#991b1b',
+              padding: '8px 12px',
+              borderRadius: 8,
+              marginTop: 12,
+              fontSize: 13,
+            }}
+          >
+            {err}
+          </div>
+        )}
+
+        <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14}}>
+          <button type="button" onClick={close} disabled={saving} style={BTN_GHOST}>
+            Cancel
+          </button>
+          <button type="button" data-assign-task-save="1" onClick={save} disabled={saving} style={BTN_PRIMARY}>
+            {saving ? 'Reassigning…' : 'Reassign'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

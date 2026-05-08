@@ -1,5 +1,6 @@
-// Task Center — My Tasks tab. Read-only in T2 (Tasks v2). Layout:
+// Task Center — My Tasks tab. Tasks v2.
 //
+// Layout:
 //   Top section: "My open tasks (N)" — tasks where assignee_profile_id
 //   is the caller. Always expanded. Sorted by due_date asc so overdue
 //   rows surface first.
@@ -7,9 +8,15 @@
 //   Below: every other open task grouped by assignee, each group
 //   collapsed by default. Click the group header to expand.
 //
-// No mutations: no complete buttons, no due-date editors, no
-// assign/delete UI, no photo upload. Photo indicator (📎) renders
-// when the row carries request_photo_path or completion_photo_path.
+// Row-level controls (T6-T9):
+//   - Photo affordance (📎) opens TaskPhotoLightbox; visible when the
+//     row carries request_photo_path or completion_photo_path.
+//   - Complete button (T7) — admin OR caller-as-assignee on open rows.
+//   - Edit Due button (T8) — admin OR caller-as-assignee on open rows.
+//     Modal mirrors the regular-user 2/2 cap from the RPC.
+//   - Reassign button (T9) — admin only on open rows.
+//   - Delete button (T9) — admin OR (creator AND assignee both ==
+//     caller) on open rows. Typed-confirmation modal.
 //
 // Designation badges (Recurring / System) come from ti.designation
 // per mig 050. Attribution string ("Submitted by ..." / "Created by
@@ -30,6 +37,9 @@ import {TASK_CHANGE_EVENT, fireTaskChangeEvent} from '../lib/tasksCenterMutation
 import {todayCentralISO} from '../lib/dateUtils.js';
 import CompleteTaskModal from './CompleteTaskModal.jsx';
 import TaskPhotoLightbox from './TaskPhotoLightbox.jsx';
+import EditDueDateModal from './EditDueDateModal.jsx';
+import AssignTaskModal from './AssignTaskModal.jsx';
+import DeleteTaskModal from './DeleteTaskModal.jsx';
 
 const CARD = {
   background: 'white',
@@ -86,6 +96,28 @@ const COMPLETE_BTN = {
   fontWeight: 600,
   fontFamily: 'inherit',
 };
+const ROW_GHOST_BTN = {
+  padding: '4px 10px',
+  borderRadius: 6,
+  border: '1px solid #d1d5db',
+  background: 'white',
+  color: '#374151',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 500,
+  fontFamily: 'inherit',
+};
+const ROW_DANGER_BTN = {
+  padding: '4px 10px',
+  borderRadius: 6,
+  border: '1px solid #b91c1c',
+  background: 'white',
+  color: '#b91c1c',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 600,
+  fontFamily: 'inherit',
+};
 const PHOTO_LINK_BTN = {
   background: 'none',
   border: 'none',
@@ -97,7 +129,19 @@ const PHOTO_LINK_BTN = {
 };
 
 // eslint-disable-next-line no-unused-vars -- referenced via JSX <TaskRow .../> below
-function TaskRow({ti, todayStr, canComplete, onComplete, onOpenPhotos}) {
+function TaskRow({
+  ti,
+  todayStr,
+  canComplete,
+  canEditDue,
+  canAssign,
+  canDelete,
+  onComplete,
+  onOpenPhotos,
+  onEditDue,
+  onAssign,
+  onDelete,
+}) {
   const due = dueStateFor(ti, todayStr);
   const attribution = attributionFor(ti);
   const photo = photoPresenceFor(ti);
@@ -163,6 +207,36 @@ function TaskRow({ti, todayStr, canComplete, onComplete, onOpenPhotos}) {
             Complete
           </button>
         )}
+        {canEditDue && (
+          <button
+            type="button"
+            data-task-edit-due-button="1"
+            onClick={() => onEditDue && onEditDue(ti)}
+            style={ROW_GHOST_BTN}
+          >
+            Edit Due
+          </button>
+        )}
+        {canAssign && (
+          <button
+            type="button"
+            data-task-assign-button="1"
+            onClick={() => onAssign && onAssign(ti)}
+            style={ROW_GHOST_BTN}
+          >
+            Reassign
+          </button>
+        )}
+        {canDelete && (
+          <button
+            type="button"
+            data-task-delete-button="1"
+            onClick={() => onDelete && onDelete(ti)}
+            style={ROW_DANGER_BTN}
+          >
+            Delete
+          </button>
+        )}
       </div>
     </div>
   );
@@ -176,6 +250,9 @@ export default function MyTasksTab({sb, authState}) {
   const [expanded, setExpanded] = React.useState({}); // {assigneeProfileId: bool}
   const [completeTaskTarget, setCompleteTaskTarget] = React.useState(null);
   const [photoTaskTarget, setPhotoTaskTarget] = React.useState(null);
+  const [editDueTarget, setEditDueTarget] = React.useState(null);
+  const [assignTarget, setAssignTarget] = React.useState(null);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
   const [reloadKey, setReloadKey] = React.useState(0);
 
   const callerProfileId = authState && authState.user ? authState.user.id : null;
@@ -226,6 +303,35 @@ export default function MyTasksTab({sb, authState}) {
     return false;
   }
 
+  // T8: due-date edit visibility — admin always; regular user only when
+  // assignee. The RPC also enforces a 2/2 cap for regular users; the
+  // modal mirrors it client-side. We let the modal render even when
+  // the cap is hit so the user can read the history; Save is disabled.
+  function canEditDueRow(ti) {
+    if (!ti || ti.status !== 'open') return false;
+    if (isAdmin) return true;
+    if (callerProfileId && ti.assignee_profile_id === callerProfileId) return true;
+    return false;
+  }
+
+  // T9: assign — admin only (RPC enforces).
+  function canAssignRow(ti) {
+    if (!ti || ti.status !== 'open') return false;
+    return !!isAdmin;
+  }
+
+  // T9: delete — admin can delete any open task; regular user can only
+  // delete tasks where they are BOTH creator and assignee (RPC enforces
+  // the same; we hide the button to keep the row uncluttered).
+  function canDeleteRow(ti) {
+    if (!ti || ti.status !== 'open') return false;
+    if (isAdmin) return true;
+    if (callerProfileId && ti.created_by_profile_id === callerProfileId && ti.assignee_profile_id === callerProfileId) {
+      return true;
+    }
+    return false;
+  }
+
   // todayCentralISO ties due-state comparisons to America/Chicago, so
   // overdue / due-today doesn't drift on a phone set to a different
   // timezone (Ronnie's date-only / Central-time lock for tasks).
@@ -273,8 +379,14 @@ export default function MyTasksTab({sb, authState}) {
                   ti={ti}
                   todayStr={todayStr}
                   canComplete={canCompleteRow(ti)}
+                  canEditDue={canEditDueRow(ti)}
+                  canAssign={canAssignRow(ti)}
+                  canDelete={canDeleteRow(ti)}
                   onComplete={setCompleteTaskTarget}
                   onOpenPhotos={setPhotoTaskTarget}
+                  onEditDue={setEditDueTarget}
+                  onAssign={setAssignTarget}
+                  onDelete={setDeleteTarget}
                 />
               ))
             )}
@@ -313,8 +425,14 @@ export default function MyTasksTab({sb, authState}) {
                             ti={ti}
                             todayStr={todayStr}
                             canComplete={canCompleteRow(ti)}
+                            canEditDue={canEditDueRow(ti)}
+                            canAssign={canAssignRow(ti)}
+                            canDelete={canDeleteRow(ti)}
                             onComplete={setCompleteTaskTarget}
                             onOpenPhotos={setPhotoTaskTarget}
+                            onEditDue={setEditDueTarget}
+                            onAssign={setAssignTarget}
+                            onDelete={setDeleteTarget}
                           />
                         ))}
                       </div>
@@ -343,6 +461,42 @@ export default function MyTasksTab({sb, authState}) {
         task: photoTaskTarget,
         isOpen: !!photoTaskTarget,
         onClose: () => setPhotoTaskTarget(null),
+      })}
+      {React.createElement(EditDueDateModal, {
+        sb,
+        task: editDueTarget,
+        isOpen: !!editDueTarget,
+        isAdmin,
+        profilesById: profiles,
+        onClose: () => setEditDueTarget(null),
+        onUpdated: () => {
+          setEditDueTarget(null);
+          fireTaskChangeEvent();
+          setReloadKey((k) => k + 1);
+        },
+      })}
+      {React.createElement(AssignTaskModal, {
+        sb,
+        task: assignTarget,
+        isOpen: !!assignTarget,
+        profilesById: profiles,
+        onClose: () => setAssignTarget(null),
+        onAssigned: () => {
+          setAssignTarget(null);
+          fireTaskChangeEvent();
+          setReloadKey((k) => k + 1);
+        },
+      })}
+      {React.createElement(DeleteTaskModal, {
+        sb,
+        task: deleteTarget,
+        isOpen: !!deleteTarget,
+        onClose: () => setDeleteTarget(null),
+        onDeleted: () => {
+          setDeleteTarget(null);
+          fireTaskChangeEvent();
+          setReloadKey((k) => k + 1);
+        },
       })}
     </div>
   );

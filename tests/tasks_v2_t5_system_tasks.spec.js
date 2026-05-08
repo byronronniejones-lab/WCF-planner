@@ -238,7 +238,7 @@ test.describe('Tasks v2 T5 — System Tasks tab', () => {
     ).toHaveCount(0);
   });
 
-  test('no edit/delete/save/generate/assign controls or input fields appear in the tab', async ({
+  test('admin sees only the Edit Rule control (no generate/assign/delete/save) inside the tab body', async ({
     page,
     supabaseAdmin,
     resetDb,
@@ -254,11 +254,15 @@ test.describe('Tasks v2 T5 — System Tasks tab', () => {
     // Expand a rule so any per-instance controls would also render.
     await tab.locator('[data-system-rule="broiler-4wk-weighin"] button').first().click();
 
-    await expect(tab.getByRole('button', {name: /edit/i})).toHaveCount(0);
-    await expect(tab.getByRole('button', {name: /delete/i})).toHaveCount(0);
-    await expect(tab.getByRole('button', {name: /save/i})).toHaveCount(0);
-    await expect(tab.getByRole('button', {name: /generate/i})).toHaveCount(0);
-    await expect(tab.getByRole('button', {name: /assign/i})).toHaveCount(0);
+    // T9 added an admin Edit Rule button. The other forbidden controls
+    // (Save/Generate/Delete/Assign) must NOT appear at the tab level —
+    // they only show up inside the rule edit modal once admin clicks
+    // Edit Rule. Until then the tab body stays inspect-only.
+    await expect(tab.locator('[data-system-rule-edit-button="broiler-4wk-weighin"]')).toBeVisible();
+    await expect(tab.getByRole('button', {name: /^delete/i})).toHaveCount(0);
+    await expect(tab.getByRole('button', {name: /^save/i})).toHaveCount(0);
+    await expect(tab.getByRole('button', {name: /^generate/i})).toHaveCount(0);
+    await expect(tab.getByRole('button', {name: /^assign/i})).toHaveCount(0);
     await expect(tab.locator('input')).toHaveCount(0);
     await expect(tab.locator('textarea')).toHaveCount(0);
     await expect(tab.locator('select')).toHaveCount(0);

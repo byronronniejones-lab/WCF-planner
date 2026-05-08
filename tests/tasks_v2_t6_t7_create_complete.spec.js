@@ -16,8 +16,7 @@ import {test, expect} from './fixtures.js';
 // Borrowed verbatim from daily_report_photos.spec.js (the
 // alternate 1x1 used by some other specs decodes inconsistently across
 // Chromium versions and trips compressImage's "image decode failed").
-const TINY_PNG_B64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const TINY_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 function tinyImageFile(name) {
   return {name, mimeType: 'image/png', buffer: Buffer.from(TINY_PNG_B64, 'base64')};

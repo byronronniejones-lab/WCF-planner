@@ -1,4 +1,4 @@
-// Task Center — shell + tab framework. Tasks v2 T2.
+// Task Center — shell + tab framework. Tasks v2.
 //
 // Mounted at /tasks (view='tasks') in main.jsx. Auth-gated via
 // UnauthorizedRedirect with requireAdmin: false — every logged-in
@@ -6,14 +6,25 @@
 // transparent.
 //
 // Tabs:
-//   My Tasks       — default; functional read-only (MyTasksTab).
-//   Recurring      — functional read-only (RecurringTab) — T4.
-//   Completed      — functional read-only (CompletedTab) — T4.
-//   System Tasks   — admin-only; functional read-only (SystemTasksTab) — T5.
+//   My Tasks       — default. Open-task list with row-level Complete
+//                    (T7), Edit Due (T8), Reassign / Delete (T9), and
+//                    a click-to-view photo lightbox (T6/T7).
+//   Recurring      — read-only listing for everyone; admin gains
+//                    + New Template / Edit / Delete via T9.
+//   Completed      — read-only completed-task review with photo
+//                    lightbox (T4 + T6/T7).
+//   System Tasks   — admin-only; read-only listing + admin Edit Rule
+//                    via T9 (assignee / lead time / active only).
 //
-// Mutation surfaces (create / complete / due-date edits / assign /
-// delete / system-rule admin) all land in later T-lane commits.
-// Legacy /my-tasks and /admin/tasks remain live and unchanged.
+// Mutation surfaces:
+//   - + New Task button at the view level mounts NewTaskModal (T6).
+//   - Per-tab modals for complete / edit-due / assign / delete / template
+//     CRUD / system-rule edit. All DB writes flow through
+//     tasksCenterMutationsApi wrappers — components never call
+//     .insert/.update/.delete on task_* tables directly.
+//
+// Outstanding T-lane work: T10 email digest rewrite, T11 retire
+// legacy /my-tasks and /admin/tasks (both still mounted today).
 
 import React from 'react';
 import MyTasksTab from './MyTasksTab.jsx';
@@ -93,9 +104,9 @@ export default function TaskCenterView({Header, sb, authState}) {
   // imports as referenced. Matches main.jsx's view-mounting pattern.
   let body = null;
   if (activeTab === 'mine') body = React.createElement(MyTasksTab, {sb, authState});
-  else if (activeTab === 'recurring') body = React.createElement(RecurringTab, {sb});
+  else if (activeTab === 'recurring') body = React.createElement(RecurringTab, {sb, authState});
   else if (activeTab === 'completed') body = React.createElement(CompletedTab, {sb});
-  else if (activeTab === 'system' && isAdmin) body = React.createElement(SystemTasksTab, {sb});
+  else if (activeTab === 'system' && isAdmin) body = React.createElement(SystemTasksTab, {sb, authState});
   else body = React.createElement(MyTasksTab, {sb, authState});
 
   return (

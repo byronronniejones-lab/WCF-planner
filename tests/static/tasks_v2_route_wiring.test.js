@@ -44,6 +44,11 @@ const tasksCenterMutationsApi = fs.readFileSync(path.join(ROOT, 'src/lib/tasksCe
 const newTaskModal = fs.readFileSync(path.join(ROOT, 'src/tasks/NewTaskModal.jsx'), 'utf8');
 const completeTaskModal = fs.readFileSync(path.join(ROOT, 'src/tasks/CompleteTaskModal.jsx'), 'utf8');
 const taskPhotoLightbox = fs.readFileSync(path.join(ROOT, 'src/tasks/TaskPhotoLightbox.jsx'), 'utf8');
+const editDueDateModal = fs.readFileSync(path.join(ROOT, 'src/tasks/EditDueDateModal.jsx'), 'utf8');
+const assignTaskModal = fs.readFileSync(path.join(ROOT, 'src/tasks/AssignTaskModal.jsx'), 'utf8');
+const deleteTaskModal = fs.readFileSync(path.join(ROOT, 'src/tasks/DeleteTaskModal.jsx'), 'utf8');
+const recurringTemplateModal = fs.readFileSync(path.join(ROOT, 'src/tasks/RecurringTemplateModal.jsx'), 'utf8');
+const systemRuleEditModal = fs.readFileSync(path.join(ROOT, 'src/tasks/SystemRuleEditModal.jsx'), 'utf8');
 
 const T2_FILES = {
   'TaskCenterView.jsx': taskCenterView,
@@ -337,15 +342,14 @@ describe('Tasks v2 T4 — Recurring tab read-only contract', () => {
     expect(recurringTab).not.toMatch(/deleteTaskTemplate/);
   });
 
-  it('RecurringTab buttons are all collapse toggles, never edit/delete/save controls', () => {
-    // The only <button> elements are the per-template collapse toggles
-    // wired to the local toggle() helper. Lock that any button onClick
-    // calls toggle(...) so a future drift can't slip an edit handler in.
-    const buttonOnClicks = Array.from(recurringTab.matchAll(/<button\b[\s\S]*?onClick=\{[\s\S]*?\}/g), (m) => m[0]);
-    expect(buttonOnClicks.length).toBeGreaterThan(0);
-    for (const btn of buttonOnClicks) {
-      expect(btn, 'every Recurring tab button must call toggle(...) only').toMatch(/toggle\(/);
-    }
+  it('RecurringTab admin write controls are gated by isAdmin (T9)', () => {
+    // The + New Template button, per-template Edit, and per-template Delete
+    // buttons all live inside `{isAdmin && (...)}` blocks so a non-admin
+    // never sees the affordance. Lock the gate so a future drift can't
+    // accidentally render the buttons unconditionally.
+    expect(recurringTab).toMatch(/\{isAdmin\s*&&[\s\S]*?data-recurring-new-button="1"/);
+    expect(recurringTab).toMatch(/\{isAdmin\s*&&[\s\S]*?data-recurring-edit-button=/);
+    expect(recurringTab).toMatch(/\{isAdmin\s*&&[\s\S]*?data-recurring-delete-button=/);
   });
 
   it('RecurringTab does not read profiles directly', () => {
@@ -427,15 +431,12 @@ describe('Tasks v2 T5 — System Tasks tab read-only contract', () => {
     expect(systemTasksTab).not.toMatch(/\.storage\.from\([^)]*\)\.upload\s*\(/);
   });
 
-  it('SystemTasksTab buttons are all collapse toggles, never edit/delete/save/generate/assign controls', () => {
-    // The only <button> elements are the per-rule collapse toggles wired
-    // to the local toggle() helper. Lock that any button onClick calls
-    // toggle(...) so a future drift can't slip an edit/generate handler in.
-    const buttonOnClicks = Array.from(systemTasksTab.matchAll(/<button\b[\s\S]*?onClick=\{[\s\S]*?\}/g), (m) => m[0]);
-    expect(buttonOnClicks.length).toBeGreaterThan(0);
-    for (const btn of buttonOnClicks) {
-      expect(btn, 'every System Tasks tab button must call toggle(...) only').toMatch(/toggle\(/);
-    }
+  it('SystemTasksTab admin Edit Rule button is gated by isAdmin (T9)', () => {
+    // T9 added a per-rule Edit Rule button. It must live inside an
+    // `{isAdmin && (...)}` gate so non-admins never see it (the System
+    // Tasks tab itself is already admin-only at the TaskCenterView
+    // level, but the in-tab gate is an extra defense).
+    expect(systemTasksTab).toMatch(/\{isAdmin\s*&&[\s\S]*?data-system-rule-edit-button=/);
   });
 
   it('SystemTasksTab does not read profiles directly', () => {
@@ -652,5 +653,242 @@ describe('Tasks v2 T6 + T7 — TaskCenterView wires NewTaskModal', () => {
 
   it('TaskCenterView fires TASK_CHANGE_EVENT after a successful create', () => {
     expect(taskCenterView).toMatch(/fireTaskChangeEvent\s*\(/);
+  });
+});
+
+// ============================================================================
+// Tasks v2 T8 + T9 — due-date edits, assign/delete, recurring + system admin.
+// ----------------------------------------------------------------------------
+// Locks:
+//   * EditDueDateModal / AssignTaskModal / DeleteTaskModal /
+//     RecurringTemplateModal / SystemRuleEditModal import only from
+//     tasksCenterMutationsApi for mutations.
+//   * Each modal calls the right v2 RPC by name and arg shape.
+//   * No T8/T9 file references generate_system_task_instance.
+//   * No window.confirm / window.alert / window.prompt anywhere in T8/T9.
+//   * SystemRuleEditModal does not write id, generator_kind, name, or
+//     description (server-side guarded too, but a missing client filter
+//     is still a bug).
+//   * RecurringTab admin write buttons are gated by isAdmin (covered above).
+// ============================================================================
+
+const T8_T9_FILES = {
+  'EditDueDateModal.jsx': editDueDateModal,
+  'AssignTaskModal.jsx': assignTaskModal,
+  'DeleteTaskModal.jsx': deleteTaskModal,
+  'RecurringTemplateModal.jsx': recurringTemplateModal,
+  'SystemRuleEditModal.jsx': systemRuleEditModal,
+};
+
+describe('Tasks v2 T8 + T9 — module import boundary', () => {
+  it('Every T8/T9 modal imports from tasksCenterMutationsApi', () => {
+    for (const [name, src] of Object.entries(T8_T9_FILES)) {
+      expect(src, `${name} must import tasksCenterMutationsApi`).toMatch(
+        /from\s+['"]\.\.\/lib\/tasksCenterMutationsApi\.js['"]/,
+      );
+    }
+  });
+
+  it('No T8/T9 file imports legacy tasksAdminApi or tasksUserApi', () => {
+    for (const [name, src] of Object.entries(T8_T9_FILES)) {
+      expect(src, `${name} must not import tasksAdminApi`).not.toMatch(/from\s+['"][^'"]*tasksAdminApi[^'"]*['"]/);
+      expect(src, `${name} must not import tasksUserApi`).not.toMatch(/from\s+['"][^'"]*tasksUserApi[^'"]*['"]/);
+    }
+  });
+
+  it('No T8/T9 file references generate_system_task_instance', () => {
+    for (const [name, src] of Object.entries(T8_T9_FILES)) {
+      expect(src, `${name} must not reference generate_system_task_instance`).not.toMatch(
+        /generate_system_task_instance/,
+      );
+    }
+  });
+
+  it('No T8/T9 file calls window.confirm / window.alert / window.prompt', () => {
+    for (const [name, src] of Object.entries(T8_T9_FILES)) {
+      expect(src, `${name} must not call window.confirm`).not.toMatch(/window\.confirm\s*\(/);
+      expect(src, `${name} must not call window.alert`).not.toMatch(/window\.alert\s*\(/);
+      expect(src, `${name} must not call window.prompt`).not.toMatch(/window\.prompt\s*\(/);
+    }
+  });
+
+  it('RecurringTab does not call window.confirm (typed-confirm modal lock)', () => {
+    expect(recurringTab).not.toMatch(/window\.confirm\s*\(/);
+  });
+});
+
+describe('Tasks v2 T8 — update_task_instance_due_date wrapper contract', () => {
+  it('updateTaskInstanceDueDateV2 calls update_task_instance_due_date with p_instance_id + p_new_due_date', () => {
+    expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+updateTaskInstanceDueDateV2/);
+    const body = tasksCenterMutationsApi.match(/export\s+async\s+function\s+updateTaskInstanceDueDateV2[\s\S]*?\n\}/);
+    expect(body, 'updateTaskInstanceDueDateV2 body must be present').not.toBeNull();
+    expect(body[0]).toMatch(/sb\.rpc\(\s*['"]update_task_instance_due_date['"]/);
+    expect(body[0]).toMatch(/p_instance_id\s*:/);
+    expect(body[0]).toMatch(/p_new_due_date\s*:/);
+  });
+
+  it('EditDueDateModal calls updateTaskInstanceDueDateV2', () => {
+    expect(editDueDateModal).toMatch(/updateTaskInstanceDueDateV2\s*\(/);
+  });
+
+  it('loadDueDateEditHistory reads task_instance_due_date_edits ordered by edited_at desc', () => {
+    expect(tasksCenterApi).toMatch(/export\s+async\s+function\s+loadDueDateEditHistory/);
+    const body = tasksCenterApi.match(/export\s+async\s+function\s+loadDueDateEditHistory[\s\S]*?\n\}/);
+    expect(body[0]).toMatch(/\.from\(\s*['"]task_instance_due_date_edits['"]\s*\)/);
+    expect(body[0]).toMatch(/\.eq\(\s*['"]instance_id['"]/);
+    expect(body[0]).toMatch(/\.order\(\s*['"]edited_at['"]/);
+  });
+});
+
+describe('Tasks v2 T9 — assign / delete instance wrappers', () => {
+  it('assignTaskInstanceV2 calls assign_task_instance with p_instance_id + p_assignee_profile_id', () => {
+    expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+assignTaskInstanceV2/);
+    const body = tasksCenterMutationsApi.match(/export\s+async\s+function\s+assignTaskInstanceV2[\s\S]*?\n\}/);
+    expect(body[0]).toMatch(/sb\.rpc\(\s*['"]assign_task_instance['"]/);
+    expect(body[0]).toMatch(/p_instance_id\s*:/);
+    expect(body[0]).toMatch(/p_assignee_profile_id\s*:/);
+  });
+
+  it('deleteTaskInstanceV2 calls delete_task_instance with p_instance_id', () => {
+    expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+deleteTaskInstanceV2/);
+    const body = tasksCenterMutationsApi.match(/export\s+async\s+function\s+deleteTaskInstanceV2[\s\S]*?\n\}/);
+    expect(body[0]).toMatch(/sb\.rpc\(\s*['"]delete_task_instance['"]/);
+    expect(body[0]).toMatch(/p_instance_id\s*:/);
+  });
+
+  it('AssignTaskModal calls assignTaskInstanceV2; DeleteTaskModal calls deleteTaskInstanceV2', () => {
+    expect(assignTaskModal).toMatch(/assignTaskInstanceV2\s*\(/);
+    expect(deleteTaskModal).toMatch(/deleteTaskInstanceV2\s*\(/);
+  });
+
+  it('DeleteTaskModal uses typed-confirmation, not window.confirm', () => {
+    expect(deleteTaskModal).toMatch(/data-delete-task-field="confirm"/);
+    expect(deleteTaskModal).not.toMatch(/window\.confirm\s*\(/);
+  });
+});
+
+describe('Tasks v2 T9 — recurring template admin CRUD wrappers', () => {
+  it('upsertRecurringTaskTemplate writes to task_templates via .upsert with onConflict id', () => {
+    expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+upsertRecurringTaskTemplate/);
+    const body = tasksCenterMutationsApi.match(/export\s+async\s+function\s+upsertRecurringTaskTemplate[\s\S]*?\n\}/);
+    expect(body[0]).toMatch(/\.from\(\s*['"]task_templates['"]\s*\)\s*\.upsert/);
+    expect(body[0]).toMatch(/onConflict:\s*['"]id['"]/);
+  });
+
+  it('updateRecurringTaskTemplate writes to task_templates via .update + .eq id', () => {
+    expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+updateRecurringTaskTemplate/);
+    const body = tasksCenterMutationsApi.match(/export\s+async\s+function\s+updateRecurringTaskTemplate[\s\S]*?\n\}/);
+    expect(body[0]).toMatch(/\.from\(\s*['"]task_templates['"]\s*\)\s*\.update/);
+    expect(body[0]).toMatch(/\.eq\(\s*['"]id['"]/);
+  });
+
+  it('deleteRecurringTaskTemplate writes to task_templates via .delete + .eq id', () => {
+    expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+deleteRecurringTaskTemplate/);
+    const body = tasksCenterMutationsApi.match(/export\s+async\s+function\s+deleteRecurringTaskTemplate[\s\S]*?\n\}/);
+    expect(body[0]).toMatch(/\.from\(\s*['"]task_templates['"]\s*\)\s*\.delete/);
+    expect(body[0]).toMatch(/\.eq\(\s*['"]id['"]/);
+  });
+
+  it('RecurringTemplateModal calls the upsert/update wrappers (not legacy tasksAdminApi names)', () => {
+    expect(recurringTemplateModal).toMatch(/upsertRecurringTaskTemplate\s*\(/);
+    expect(recurringTemplateModal).toMatch(/updateRecurringTaskTemplate\s*\(/);
+    // Negative locks: legacy names from tasksAdminApi must not appear.
+    expect(recurringTemplateModal).not.toMatch(/upsertTaskTemplate\b/);
+    expect(recurringTemplateModal).not.toMatch(/deleteTaskTemplate\b/);
+  });
+
+  // Codex T9 amendment: the recurrence dropdown must render every value
+  // from RECURRENCE_OPTIONS (src/lib/tasks.js) — once / daily / weekly /
+  // biweekly / monthly / quarterly. A hard-coded subset would prevent
+  // creating quarterly templates and would render once/quarterly rows
+  // with a blank value when editing legacy data. Lock the import + the
+  // derive-from-array shape so the modal can't drift away from the
+  // canonical list.
+  it('RecurringTemplateModal imports RECURRENCE_OPTIONS from tasks.js (no hard-coded recurrence subset)', () => {
+    expect(recurringTemplateModal).toMatch(
+      /import\s*\{\s*RECURRENCE_OPTIONS\s*\}\s*from\s*['"]\.\.\/lib\/tasks\.js['"]/,
+    );
+  });
+
+  it('RecurringTemplateModal derives its dropdown options from RECURRENCE_OPTIONS', () => {
+    // The map() call ties the visible options to the source array. A
+    // future regression that switches back to a hard-coded array literal
+    // would lose this match.
+    expect(recurringTemplateModal).toMatch(/RECURRENCE_OPTIONS\.map\(/);
+  });
+
+  it('RecurringTemplateModal lists labels for every value in the recurrence enum', () => {
+    // The label map sits next to the import. Lock that every value the
+    // task_templates.recurrence CHECK accepts has a non-empty label so
+    // the dropdown never shows a bare value like "once". Match either
+    // quoted-key (`'once': 'One-time'`) or shorthand-key (`once: 'One-time'`)
+    // object literal syntax — both are valid JS.
+    const enumValues = ['once', 'daily', 'weekly', 'biweekly', 'monthly', 'quarterly'];
+    for (const v of enumValues) {
+      expect(recurringTemplateModal, `RECURRENCE_LABELS must include '${v}'`).toMatch(
+        new RegExp(`(?:['"]${v}['"]|\\b${v})\\s*:\\s*['"][^'"]+['"]`),
+      );
+    }
+  });
+
+  it('RecurringTab calls deleteRecurringTaskTemplate (not legacy deleteTaskTemplate)', () => {
+    expect(recurringTab).toMatch(/deleteRecurringTaskTemplate\s*\(/);
+    expect(recurringTab).not.toMatch(/\bdeleteTaskTemplate\b/);
+  });
+});
+
+describe('Tasks v2 T9 — system rule update wrapper contract', () => {
+  it('updateSystemTaskRule writes to task_system_rules via .update + .eq id', () => {
+    expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+updateSystemTaskRule/);
+    const body = tasksCenterMutationsApi.match(/export\s+async\s+function\s+updateSystemTaskRule[\s\S]*?\n\}/);
+    expect(body[0]).toMatch(/\.from\(\s*['"]task_system_rules['"]\s*\)\s*\.update/);
+    expect(body[0]).toMatch(/\.eq\(\s*['"]id['"]/);
+  });
+
+  it('updateSystemTaskRule whitelists only assignee_profile_id, lead_time_days, active (no id/generator_kind/name/description)', () => {
+    // The SYSTEM_RULE_UPDATE_COLUMNS array literal is the gate; lock its
+    // shape so a future drift can't broaden the surface to mutable name
+    // / generator_kind / id (those changes would silently break the
+    // Edge Function dispatcher).
+    expect(tasksCenterMutationsApi).toMatch(/SYSTEM_RULE_UPDATE_COLUMNS\s*=\s*\[\s*['"]assignee_profile_id['"]/);
+    const colsBlock = tasksCenterMutationsApi.match(/SYSTEM_RULE_UPDATE_COLUMNS\s*=\s*\[([\s\S]*?)\]/);
+    expect(colsBlock, 'SYSTEM_RULE_UPDATE_COLUMNS array must be present').not.toBeNull();
+    expect(colsBlock[1]).toMatch(/['"]assignee_profile_id['"]/);
+    expect(colsBlock[1]).toMatch(/['"]lead_time_days['"]/);
+    expect(colsBlock[1]).toMatch(/['"]active['"]/);
+    expect(colsBlock[1]).not.toMatch(/['"]id['"]/);
+    expect(colsBlock[1]).not.toMatch(/['"]generator_kind['"]/);
+    expect(colsBlock[1]).not.toMatch(/['"]name['"]/);
+    expect(colsBlock[1]).not.toMatch(/['"]description['"]/);
+  });
+
+  it('SystemRuleEditModal renders id and generator_kind in a read-only block, never as editable inputs', () => {
+    // The read-only block carries data-system-rule-readonly-id and
+    // data-system-rule-readonly-kind. There must be no editable input
+    // (data-system-rule-field) for those columns.
+    expect(systemRuleEditModal).toMatch(/data-system-rule-readonly-id/);
+    expect(systemRuleEditModal).toMatch(/data-system-rule-readonly-kind/);
+    expect(systemRuleEditModal).not.toMatch(/data-system-rule-field=['"]?id['"]?/);
+    expect(systemRuleEditModal).not.toMatch(/data-system-rule-field=['"]?generator-kind['"]?/);
+    expect(systemRuleEditModal).not.toMatch(/data-system-rule-field=['"]?name['"]?/);
+    expect(systemRuleEditModal).not.toMatch(/data-system-rule-field=['"]?description['"]?/);
+  });
+
+  it('SystemRuleEditModal calls updateSystemTaskRule', () => {
+    expect(systemRuleEditModal).toMatch(/updateSystemTaskRule\s*\(/);
+  });
+});
+
+describe('Tasks v2 T8 + T9 — MyTasksTab row-level capability gating', () => {
+  it('MyTasksTab gates Reassign and Delete buttons by canAssignRow / canDeleteRow', () => {
+    // The TaskRow renders the buttons under canAssign / canDelete props;
+    // those props are populated by canAssignRow / canDeleteRow which
+    // gate on isAdmin (assign) and admin OR creator==assignee==caller
+    // (delete). Lock both helper names so a future drift can't drop the
+    // gate.
+    expect(myTasksTab).toMatch(/function\s+canAssignRow/);
+    expect(myTasksTab).toMatch(/function\s+canDeleteRow/);
+    expect(myTasksTab).toMatch(/canAssignRow\(ti\)/);
+    expect(myTasksTab).toMatch(/canDeleteRow\(ti\)/);
   });
 });

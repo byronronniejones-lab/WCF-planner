@@ -1,22 +1,37 @@
-// v2 mutation wrappers for the Task Center (T6 + T7).
+// v2 mutation wrappers for the Task Center (T6 + T7 + T8 + T9).
 //
 // Strict separation from src/lib/tasksCenterApi.js (read-only helpers)
-// so the static lock for T2-T5 read-only tabs can keep asserting that
-// SystemTasksTab / CompletedTab / RecurringTab / MyTasksTab don't import
-// from any module containing 'tasksAdminApi' or 'tasksUserApi' — the
-// /tasks mutation surfaces import from THIS module instead.
+// so the import-boundary static lock can keep asserting that Task
+// Center tab and modal files only pull mutations from THIS module —
+// never from the legacy tasksAdminApi or tasksUserApi modules.
 //
-// All DB writes flow through the v2 SECURITY DEFINER RPCs from
+// task_instances writes flow through v2 SECURITY DEFINER RPCs from
 // supabase-migrations/053_tasks_v2_rls_and_rpcs.sql:
-//   - create_one_time_task_instance(p_instance jsonb, p_creation_photo_paths text[])
-//   - complete_task_instance(p_instance_id text, p_completion_note text,
-//                            p_completion_photo_paths text[])
+//   - create_one_time_task_instance(p_instance, p_creation_photo_paths)  [T6]
+//   - complete_task_instance(p_instance_id, p_completion_note,
+//                            p_completion_photo_paths)                    [T7]
+//   - update_task_instance_due_date(p_instance_id, p_new_due_date)        [T8]
+//   - assign_task_instance(p_instance_id, p_assignee_profile_id)          [T9]
+//   - delete_task_instance(p_instance_id)                                 [T9]
+// We never write to task_instances, task_instance_photos, or
+// task_instance_due_date_edits directly — those tables either have no
+// INSERT policy (audit, sidecar) or are gated by the SECDEF RPCs.
 //
-// We never write to task_instances, task_instance_photos, or any other
-// task_* table directly, and we never call the v1 complete_task_instance
-// (text, text DEFAULT NULL) overload — PostgREST routes by named-arg
-// match, so passing p_completion_note + p_completion_photo_paths always
-// hits the v2 overload.
+// task_templates and task_system_rules writes are gated at the RLS
+// layer by an admin FOR ALL policy, so the wrappers below
+// (upsert/update/delete recurring template; updateSystemTaskRule)
+// route through plain .from(...).upsert/.update/.delete with column
+// whitelists. The whitelists are intentional: id / generator_kind /
+// name / description on task_system_rules stay out of the update
+// path because the Edge Function dispatcher recognizes only the four
+// built-in generator_kinds, and renaming/rekeying a rule would
+// silently break generation.
+//
+// We never call the v1 complete_task_instance(text, text DEFAULT NULL)
+// overload — PostgREST routes by named-arg match, so the v2 named-arg
+// shape (p_completion_note + p_completion_photo_paths) always hits the
+// v2 RPC. We also never call generate_system_task_instance from the
+// frontend — that stays owned by the cron Edge Function.
 
 import {
   TASK_REQUEST_PHOTOS_BUCKET,
@@ -235,6 +250,176 @@ export async function getCenterCompletionPhotoSignedUrl(sb, dbPath, ttlSeconds =
     throw new Error(`getCenterCompletionPhotoSignedUrl: ${error.message || String(error)}`);
   }
   return data && data.signedUrl ? data.signedUrl : null;
+}
+
+// ── T8: due-date edit ──────────────────────────────────────────────────
+//
+// Wraps update_task_instance_due_date (mig 053). The RPC handles all
+// auth and role logic server-side: admin unlimited; regular user must
+// be the assignee and is capped at 2 edits via due_date_edit_count;
+// completed tasks reject; same-date writes are no-ops; audit row is
+// inserted into task_instance_due_date_edits with a 'tdde-' + uuid id.
+// We never write that audit table directly — there is no INSERT policy.
+export async function updateTaskInstanceDueDateV2(sb, instanceId, newDueDate) {
+  const {data, error} = await sb.rpc('update_task_instance_due_date', {
+    p_instance_id: instanceId,
+    p_new_due_date: newDueDate,
+  });
+  if (error) {
+    throw new Error(`updateTaskInstanceDueDateV2: ${error.message || String(error)}`);
+  }
+  return data;
+}
+
+// ── T9: assign + delete (admin or rule-restricted) ─────────────────────
+//
+// assignTaskInstanceV2: admin-only at the RPC layer; rejects completed
+// tasks and verifies the new assignee is eligible (role != 'inactive').
+export async function assignTaskInstanceV2(sb, instanceId, newAssigneeProfileId) {
+  const {data, error} = await sb.rpc('assign_task_instance', {
+    p_instance_id: instanceId,
+    p_assignee_profile_id: newAssigneeProfileId,
+  });
+  if (error) {
+    throw new Error(`assignTaskInstanceV2: ${error.message || String(error)}`);
+  }
+  return data;
+}
+
+// deleteTaskInstanceV2: admin can delete any open task; regular user
+// can delete only open tasks where created_by_profile_id AND
+// assignee_profile_id both equal the caller (RPC enforces). Completed
+// tasks reject for everyone.
+export async function deleteTaskInstanceV2(sb, instanceId) {
+  const {data, error} = await sb.rpc('delete_task_instance', {
+    p_instance_id: instanceId,
+  });
+  if (error) {
+    throw new Error(`deleteTaskInstanceV2: ${error.message || String(error)}`);
+  }
+  return data;
+}
+
+// ── T9: recurring template admin CRUD ──────────────────────────────────
+//
+// Direct task_templates writes via the existing admin FOR ALL RLS
+// policy from mig 036. We do NOT route these through a SECDEF RPC
+// because the RLS admin gate is sufficient and there's no per-row
+// non-admin write path to model. A non-admin caller's INSERT/UPDATE/
+// DELETE attempt is blocked at the RLS layer.
+//
+// Component callers must pre-validate title/assignee/recurrence/
+// interval/first_due_date; the DB CHECK constraints catch malformed
+// values but the modal should fail fast for UX. The wrapper itself
+// stays thin so test-time behavior matches prod-time behavior.
+
+const TEMPLATE_INSERT_COLUMNS = [
+  'id',
+  'title',
+  'description',
+  'assignee_profile_id',
+  'recurrence',
+  'recurrence_interval',
+  'first_due_date',
+  'notes',
+  'active',
+  'created_by_profile_id',
+];
+
+const TEMPLATE_UPDATE_COLUMNS = [
+  'title',
+  'description',
+  'assignee_profile_id',
+  'recurrence',
+  'recurrence_interval',
+  'first_due_date',
+  'notes',
+  'active',
+];
+
+function pickColumns(payload, allowed) {
+  const out = {};
+  for (const k of allowed) {
+    if (payload && Object.prototype.hasOwnProperty.call(payload, k)) {
+      out[k] = payload[k];
+    }
+  }
+  return out;
+}
+
+/**
+ * Insert or update a recurring task_templates row. Caller mints the id
+ * and passes it on the payload (keeps the modal idempotent across
+ * Save retries — same id means upsert hits the same row).
+ *
+ * Whitelisted columns only: id/title/description/assignee_profile_id/
+ * recurrence/recurrence_interval/first_due_date/notes/active +
+ * created_by_profile_id on insert. This filter prevents a future
+ * accidental field leak (e.g., a stray boolean flag from an admin
+ * editor) from writing a column the contract doesn't cover.
+ */
+export async function upsertRecurringTaskTemplate(sb, payload) {
+  if (!payload || !payload.id) {
+    throw new Error('upsertRecurringTaskTemplate: id required');
+  }
+  const filtered = pickColumns(payload, TEMPLATE_INSERT_COLUMNS);
+  const {data, error} = await sb.from('task_templates').upsert(filtered, {onConflict: 'id'}).select().single();
+  if (error) {
+    throw new Error(`upsertRecurringTaskTemplate: ${error.message || String(error)}`);
+  }
+  return data;
+}
+
+/**
+ * Update specific columns on an existing recurring template. Filter to
+ * the same whitelist as upsert (minus id/created_by). Used by the Edit
+ * modal so we don't accidentally clobber the original creator id.
+ */
+export async function updateRecurringTaskTemplate(sb, id, patch) {
+  if (!id) throw new Error('updateRecurringTaskTemplate: id required');
+  const filtered = pickColumns(patch, TEMPLATE_UPDATE_COLUMNS);
+  const {data, error} = await sb.from('task_templates').update(filtered).eq('id', id).select().single();
+  if (error) {
+    throw new Error(`updateRecurringTaskTemplate: ${error.message || String(error)}`);
+  }
+  return data;
+}
+
+export async function deleteRecurringTaskTemplate(sb, id) {
+  if (!id) throw new Error('deleteRecurringTaskTemplate: id required');
+  const {error} = await sb.from('task_templates').delete().eq('id', id);
+  if (error) {
+    throw new Error(`deleteRecurringTaskTemplate: ${error.message || String(error)}`);
+  }
+  // Existing instances stay alive via mig 050's ON DELETE SET NULL —
+  // they appear in the Recurring tab orphan group thereafter.
+  return {ok: true, id};
+}
+
+// ── T9: system rule admin update (built-in rules only, narrow columns) ─
+//
+// Direct task_system_rules .update via the existing admin FOR ALL RLS
+// policy from mig 052. We expose ONLY the three columns Codex's T9
+// brief permits: assignee_profile_id, lead_time_days, active. id /
+// generator_kind / name / description stay read-only — the Edge
+// Function dispatcher recognizes only the four built-in generator
+// kinds, so renaming or rekeying a rule would silently break
+// generation. No CREATE / DELETE on system rules in this lane.
+const SYSTEM_RULE_UPDATE_COLUMNS = ['assignee_profile_id', 'lead_time_days', 'active'];
+
+export async function updateSystemTaskRule(sb, ruleId, patch) {
+  if (!ruleId) throw new Error('updateSystemTaskRule: ruleId required');
+  const filtered = pickColumns(patch, SYSTEM_RULE_UPDATE_COLUMNS);
+  const {data, error} = await sb
+    .from('task_system_rules')
+    .update({...filtered, updated_at: new Date().toISOString()})
+    .eq('id', ruleId)
+    .select()
+    .single();
+  if (error) {
+    throw new Error(`updateSystemTaskRule: ${error.message || String(error)}`);
+  }
+  return data;
 }
 
 // ── Lightweight cross-component refresh signal ──────────────────────────
