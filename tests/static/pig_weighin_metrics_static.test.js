@@ -94,4 +94,23 @@ describe('Pig weigh-in metrics — admin LivestockWeighInsView (commit 3)', () =
     const pigBranchIdx = adminSrc.indexOf("species === 'pig' &&");
     expect(pigBranchIdx).toBeGreaterThan(0);
   });
+
+  it('keeps Send-to-Processor visible for completed pig sessions without unlocking weight edits', () => {
+    expect(adminSrc).toMatch(/const isTransferredEntry = \(e\) =>/);
+    expect(adminSrc).toMatch(
+      /const unsent = sEntries\.filter\(\(e\) => !e\.sent_to_trip_id && !isTransferredEntry\(e\)\)/,
+    );
+    expect(adminSrc).toMatch(/\{canAct && canManagePigPlannedTrips && \(/);
+
+    const barIdx = adminSrc.indexOf('data-pig-send-bar="1"');
+    const weightsIdx = adminSrc.indexOf('Weights ({sEntries.length})');
+    expect(barIdx).toBeGreaterThan(0);
+    expect(weightsIdx).toBeGreaterThan(barIdx);
+
+    const barWindow = adminSrc.slice(Math.max(0, barIdx - 500), barIdx + 500);
+    expect(barWindow).toMatch(/unsent\.length > 0 && canManagePigPlannedTrips/);
+    expect(barWindow).not.toMatch(/fieldsLocked/);
+    expect(adminSrc).toMatch(/Send to processor:/);
+    expect(adminSrc).toMatch(/Send ' \+ sel\.length \+ ' to Processor/);
+  });
 });

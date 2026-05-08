@@ -83,8 +83,8 @@ test('Send-to-Trip stamps subAttributions, ledger current = 12, lbs/pig honors f
   await expect(selectAllBtn).toBeVisible({timeout: 5_000});
   await selectAllBtn.click();
 
-  // Click "→ Send 5 to Trip" — opens PigSendToTripModal.
-  await page.getByText(/→ Send 5 to Trip/).click();
+  // Click "→ Send 5 to Processor" — opens PigSendToTripModal.
+  await page.getByText(/→ Send 5 to Processor/).click();
 
   // New planned-trip-driven modal: data-pig-send-modal="1". The modal
   // pre-resolves the source sub via pigSlug + the target planned trip

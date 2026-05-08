@@ -1462,7 +1462,9 @@ const LivestockWeighInsView = ({
                             else n.add(id);
                             return n;
                           });
-                        const unsent = sEntries.filter((e) => !e.sent_to_trip_id);
+                        const isTransferredEntry = (e) =>
+                          !!(e && (e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || '')));
+                        const unsent = sEntries.filter((e) => !e.sent_to_trip_id && !isTransferredEntry(e));
                         const sel = unsent.filter((e) => selectedEntryIds.has(e.id));
                         const rowInpS = {
                           fontSize: 12,
@@ -1604,6 +1606,80 @@ const LivestockWeighInsView = ({
                                 </div>
                               );
                             })()}
+                            {/* Send-to-Processor action bar — admin/management only.
+                              Keep this beside the weight checklist so completed
+                              sessions still have an obvious processor workflow
+                              without unlocking weight edits. */}
+                            {unsent.length > 0 && canManagePigPlannedTrips && (
+                              <div
+                                data-pig-send-bar="1"
+                                style={{
+                                  marginBottom: 12,
+                                  padding: '10px 12px',
+                                  border: '1px solid #bfdbfe',
+                                  background: '#eff6ff',
+                                  borderRadius: 8,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 10,
+                                  flexWrap: 'wrap',
+                                }}
+                              >
+                                <span style={{fontSize: 12, fontWeight: 700, color: '#1e40af'}}>
+                                  {'\ud83d\ude9a Send to processor:'}
+                                </span>
+                                <button
+                                  onClick={() => setSelectedEntryIds(new Set(unsent.map((e) => e.id)))}
+                                  style={{
+                                    fontSize: 11,
+                                    color: '#1d4ed8',
+                                    background: 'white',
+                                    border: '1px solid #bfdbfe',
+                                    borderRadius: 5,
+                                    padding: '5px 8px',
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                  }}
+                                >
+                                  Select all unsent ({unsent.length})
+                                </button>
+                                {selectedEntryIds.size > 0 && (
+                                  <button
+                                    onClick={() => setSelectedEntryIds(new Set())}
+                                    style={{
+                                      fontSize: 11,
+                                      color: '#6b7280',
+                                      background: 'white',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: 5,
+                                      padding: '5px 8px',
+                                      cursor: 'pointer',
+                                      fontFamily: 'inherit',
+                                    }}
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                                <button
+                                  disabled={sel.length === 0}
+                                  onClick={() => setTripModal({session: s, entries: sel})}
+                                  style={{
+                                    marginLeft: 'auto',
+                                    padding: '7px 14px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    background: sel.length > 0 ? '#047857' : '#d1d5db',
+                                    color: 'white',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: sel.length > 0 ? 'pointer' : 'not-allowed',
+                                    fontFamily: 'inherit',
+                                  }}
+                                >
+                                  {'\u2192 Send ' + sel.length + ' to Processor'}
+                                </button>
+                              </div>
+                            )}
                             <div style={{fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8}}>
                               Weights ({sEntries.length})
                             </div>
@@ -1625,8 +1701,7 @@ const LivestockWeighInsView = ({
                                 // (when migration 014 has been applied) or the legacy
                                 // note-marker fallback that the transfer flow writes
                                 // when the column doesn't exist yet.
-                                const isTransferred =
-                                  !!e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || '');
+                                const isTransferred = isTransferredEntry(e);
                                 const link = isSent ? lookupTrip(e) : null;
                                 const checked = selectedEntryIds.has(e.id);
                                 const editable = !isSent && !isTransferred && !fieldsLocked;
@@ -1653,7 +1728,7 @@ const LivestockWeighInsView = ({
                                       farm_team is read-only across the entire
                                       pig planned/processing trip surface. */}
                                     <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                      {editable && canManagePigPlannedTrips && (
+                                      {canAct && canManagePigPlannedTrips && (
                                         <input
                                           type="checkbox"
                                           data-pig-send-select="1"
@@ -1949,72 +2024,6 @@ const LivestockWeighInsView = ({
                                 style={{...(fieldsLocked ? inpLockedStyle : inpEditableStyle), resize: 'vertical'}}
                               />
                             </div>
-
-                            {/* Send-to-Trip action bar — admin/management only.
-                              farm_team can view the session and weights but
-                              cannot mutate planned/processing trip state. */}
-                            {unsent.length > 0 && !fieldsLocked && canManagePigPlannedTrips && (
-                              <div
-                                data-pig-send-bar="1"
-                                style={{
-                                  marginTop: 12,
-                                  paddingTop: 10,
-                                  borderTop: '1px dashed #e5e7eb',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 10,
-                                  flexWrap: 'wrap',
-                                }}
-                              >
-                                <span style={{fontSize: 11, color: '#6b7280'}}>{'\ud83d\ude9a Send to trip:'}</span>
-                                <button
-                                  onClick={() => setSelectedEntryIds(new Set(unsent.map((e) => e.id)))}
-                                  style={{
-                                    fontSize: 11,
-                                    color: '#1d4ed8',
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontFamily: 'inherit',
-                                  }}
-                                >
-                                  Select all unsent ({unsent.length})
-                                </button>
-                                {selectedEntryIds.size > 0 && (
-                                  <button
-                                    onClick={() => setSelectedEntryIds(new Set())}
-                                    style={{
-                                      fontSize: 11,
-                                      color: '#6b7280',
-                                      background: 'none',
-                                      border: 'none',
-                                      cursor: 'pointer',
-                                      fontFamily: 'inherit',
-                                    }}
-                                  >
-                                    Clear
-                                  </button>
-                                )}
-                                <button
-                                  disabled={sel.length === 0}
-                                  onClick={() => setTripModal({session: s, entries: sel})}
-                                  style={{
-                                    marginLeft: 'auto',
-                                    padding: '6px 14px',
-                                    borderRadius: 6,
-                                    border: 'none',
-                                    background: sel.length > 0 ? '#047857' : '#d1d5db',
-                                    color: 'white',
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    cursor: sel.length > 0 ? 'pointer' : 'not-allowed',
-                                    fontFamily: 'inherit',
-                                  }}
-                                >
-                                  {'\u2192 Send ' + sel.length + ' to Trip'}
-                                </button>
-                              </div>
-                            )}
                           </div>
                         );
                       })()}

@@ -16,8 +16,6 @@ import {test, expect} from './fixtures.js';
 // helper alone cannot prove.
 // ============================================================================
 
-const TEST_ADMIN_EMAIL = process.env.VITE_TEST_ADMIN_EMAIL;
-
 async function readFeeders(supabaseAdmin) {
   const r = await supabaseAdmin.from('app_store').select('data').eq('key', 'ppp-feeders-v1').single();
   return r.data?.data || [];
@@ -29,37 +27,26 @@ async function seedPlannedTrips(supabaseAdmin, subAId, plannedTrips) {
   await supabaseAdmin.from('app_store').upsert({key: 'ppp-feeders-v1', data: feeders}, {onConflict: 'key'});
 }
 
-async function openSessionAndSelectAll(page) {
+async function openSessionAndSelectAll(page, {status = /draft/i} = {}) {
   await page.goto('/pig/weighins');
   const sessionRow = page
     .locator('.hoverable-tile')
     .filter({hasText: /p-26-01/i})
-    .filter({hasText: /draft/i})
+    .filter({hasText: status})
     .first();
   await expect(sessionRow).toBeVisible({timeout: 15_000});
   await sessionRow.click();
   const selectAllBtn = page.getByText(/Select all unsent \(5\)/);
   await expect(selectAllBtn).toBeVisible({timeout: 5_000});
   await selectAllBtn.click();
-  await page.getByText(/→ Send 5 to Trip/).click();
+  await page.getByText(/→ Send 5 to Processor/).click();
 }
 
-async function signInAsSimon(page) {
-  await page.context().clearCookies();
-  await page.goto('/');
-  await page.evaluate(() => {
-    try {
-      localStorage.clear();
-      sessionStorage.clear();
-    } catch (_e) {
-      /* test cleanup */
-    }
-  });
-  await page.goto('/');
-  await page.getByPlaceholder('your@email.com').first().fill('simon.tasks@wcfplanner.test');
-  await page.getByPlaceholder('••••••••').fill('apply_test_mig_052_placeholder_password');
-  await page.getByRole('button', {name: /^sign in$/i}).click();
-  await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
+async function setRoleOverride(page, role) {
+  await page.addInitScript((r) => {
+    if (r) window.localStorage.setItem('wcf-test-role-override', r);
+    else window.localStorage.removeItem('wcf-test-role-override');
+  }, role);
 }
 
 test.describe('pig planned trips — Send-to-Trip integration', () => {
@@ -98,6 +85,44 @@ test.describe('pig planned trips — Send-to-Trip integration', () => {
     const residual = batch.plannedProcessingTrips.find((t) => t.id === 'pt-resi-1');
     expect(residual).toBeDefined();
     expect(residual.plannedCount).toBe(3);
+  });
+
+  test('completed pig weigh-in still exposes the send-to-processor action bar', async ({
+    page,
+    p2601Scenario,
+    supabaseAdmin,
+  }) => {
+    const {subAId, sessionId, entryIds} = p2601Scenario;
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    await seedPlannedTrips(supabaseAdmin, subAId, [
+      {id: 'pt-complete-1', date: tomorrow, sex: 'gilt', subBatchId: subAId, plannedCount: 5, order: 0},
+    ]);
+    await supabaseAdmin
+      .from('weigh_in_sessions')
+      .update({status: 'complete', completed_at: new Date().toISOString()})
+      .eq('id', sessionId);
+
+    await openSessionAndSelectAll(page, {status: /complete/i});
+    const modal = page.locator('[data-pig-send-modal="1"]');
+    await expect(modal).toBeVisible({timeout: 5_000});
+    await expect(modal.locator('[data-pig-send-summary="1"]')).toContainText(/fulfill the planned trip exactly/);
+    await modal.locator('[data-pig-send-confirm="1"]').click();
+    await expect(modal).toHaveCount(0, {timeout: 10_000});
+
+    const feeders = await readFeeders(supabaseAdmin);
+    const batch = feeders[0];
+    expect(batch.processingTrips).toHaveLength(1);
+    expect(batch.processingTrips[0].pigCount).toBe(5);
+    expect(batch.plannedProcessingTrips.find((t) => t.id === 'pt-complete-1')).toBeUndefined();
+
+    const {data: stamped} = await supabaseAdmin
+      .from('weigh_ins')
+      .select('id, sent_to_trip_id, sent_to_group_id')
+      .in('id', entryIds);
+    for (const row of stamped) {
+      expect(row.sent_to_trip_id).toBe(batch.processingTrips[0].id);
+      expect(row.sent_to_group_id).toBe(batch.id);
+    }
   });
 
   test('over-pull cascades through later planned trips and stamps weigh_ins', async ({
@@ -205,12 +230,13 @@ test.describe('pig planned trips — Send-to-Trip integration', () => {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
     // Seed a valid planned trip — even with the chain present, the
     // farm_team viewer must not see the action bar / checkboxes / send
-    // trigger. Use Simon (farm_team profile in TEST DB).
+    // trigger. Use the DEV-only role override so the page still has the
+    // admin storage-state visibility needed to inspect the seeded session.
     await seedPlannedTrips(supabaseAdmin, subAId, [
       {id: 'pt-ft-1', date: tomorrow, sex: 'gilt', subBatchId: subAId, plannedCount: 5, order: 0},
     ]);
 
-    await signInAsSimon(page);
+    await setRoleOverride(page, 'farm_team');
     await page.goto('/pig/weighins');
     const sessionRow = page
       .locator('.hoverable-tile')
@@ -226,22 +252,5 @@ test.describe('pig planned trips — Send-to-Trip integration', () => {
     await expect(page.locator('[data-pig-send-select="1"]')).toHaveCount(0);
     // Sanity: the static "Select all unsent" affordance is gone.
     await expect(page.getByText(/Select all unsent/)).toHaveCount(0);
-
-    // Sign back in as admin so subsequent specs running in the same
-    // worker see the admin storage state again.
-    await page.context().clearCookies();
-    await page.evaluate(() => {
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch (_e) {
-        /* test cleanup */
-      }
-    });
-    await page.goto('/');
-    await page.getByPlaceholder('your@email.com').first().fill(TEST_ADMIN_EMAIL);
-    await page.getByPlaceholder('••••••••').fill(process.env.VITE_TEST_ADMIN_PASSWORD || 'admin_password_unset_in_env');
-    await page.getByRole('button', {name: /^sign in$/i}).click();
-    await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
   });
 });
