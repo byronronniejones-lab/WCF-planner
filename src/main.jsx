@@ -198,6 +198,7 @@ import AdminTasksView from './admin/AdminTasksView.jsx';
 import UnauthorizedRedirect from './shared/UnauthorizedRedirect.jsx';
 import TasksWebform from './webforms/TasksWebform.jsx';
 import MyTasksView from './auth/MyTasksView.jsx';
+import TaskCenterView from './tasks/TaskCenterView.jsx';
 
 // Phase 2 Round 8: equipment placeholder.
 import EquipmentHome from './equipment/EquipmentHome.jsx';
@@ -1566,6 +1567,7 @@ function App() {
     'webforms',
     'adminTasks',
     'myTasks',
+    'tasks',
     'webformhub',
     'tasksWebform',
     'webform',
@@ -3496,6 +3498,17 @@ function App() {
       UnauthorizedRedirect,
       {authState, setView, requireAdmin: false, fallbackView: 'home'},
       React.createElement(MyTasksView, {Header, sb, authState}),
+    );
+
+  // ── TASK CENTER (Tasks v2 T2) ──
+  // /tasks. Auth-gated (any role); requireAdmin: false. The System
+  // Tasks tab inside the view self-gates to admins. Legacy /my-tasks
+  // and /admin/tasks both stay live; T2 ships no redirects.
+  if (view === 'tasks')
+    return React.createElement(
+      UnauthorizedRedirect,
+      {authState, setView, requireAdmin: false, fallbackView: 'home'},
+      React.createElement(TaskCenterView, {Header, sb, authState}),
     );
 
   // ── WEBFORMS ADMIN VIEW ──

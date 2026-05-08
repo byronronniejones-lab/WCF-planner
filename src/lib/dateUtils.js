@@ -36,4 +36,30 @@ export function todayISO() {
   return toISO(new Date());
 }
 
+// "Today" as a YYYY-MM-DD string in America/Chicago (Central Time).
+//
+// Tasks are date-only / Central time per Ronnie's lock — overdue and
+// due-today comparisons must not flip just because a user opens the
+// app on a phone whose timezone is set to UTC, Mountain, or anywhere
+// else. Implementation uses Intl.formatToParts so we never construct
+// an intermediate Date in the browser's local zone (which would
+// reintroduce the same drift this helper exists to prevent).
+//
+// Caller passes an optional Date (or epoch ms) for testability;
+// production callers can omit and get new Date().
+export function todayCentralISO(now = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = fmt.formatToParts(now instanceof Date ? now : new Date(now));
+  const get = (type) => {
+    const p = parts.find((x) => x.type === type);
+    return p ? p.value : '';
+  };
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 // ── HOLIDAY LOGIC ──────────────────────────────────────────────────────────

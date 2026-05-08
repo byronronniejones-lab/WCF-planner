@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {addDays, toISO, fmt, fmtS, todayISO} from './dateUtils.js';
+import {addDays, toISO, fmt, fmtS, todayISO, todayCentralISO} from './dateUtils.js';
 
 describe('addDays', () => {
   it('adds days to an ISO date string and returns a Date object', () => {
@@ -89,5 +89,35 @@ describe('todayISO', () => {
 
   it('matches toISO(new Date()) at the same instant', () => {
     expect(todayISO()).toBe(toISO(new Date()));
+  });
+});
+
+describe('todayCentralISO', () => {
+  it('returns a YYYY-MM-DD formatted string', () => {
+    expect(todayCentralISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('returns the Central-time date (CST: UTC-6) for a midnight-UTC instant before CST midnight rolls', () => {
+    // 2026-05-08 04:00:00 UTC = 2026-05-07 23:00:00 CST. Central
+    // calendar date is still May 7th.
+    expect(todayCentralISO(new Date('2026-05-08T04:00:00Z'))).toBe('2026-05-07');
+  });
+
+  it('returns the Central-time date (CST: UTC-6) for a UTC instant just after CST midnight rolls', () => {
+    // 2026-05-08 06:30:00 UTC = 2026-05-08 00:30:00 CST. Central
+    // calendar date has flipped to May 8th.
+    expect(todayCentralISO(new Date('2026-05-08T06:30:00Z'))).toBe('2026-05-08');
+  });
+
+  it('returns the Central-time date (CDT: UTC-5) for a UTC instant during DST', () => {
+    // 2026-07-04 04:30:00 UTC = 2026-07-03 23:30:00 CDT. Central
+    // calendar date is still July 3rd because daylight time keeps
+    // the offset at -5 (which the formatter computes for us).
+    expect(todayCentralISO(new Date('2026-07-04T04:30:00Z'))).toBe('2026-07-03');
+  });
+
+  it('accepts a timestamp number as well as a Date instance', () => {
+    const ts = Date.parse('2026-05-08T18:00:00Z'); // mid-afternoon Central
+    expect(todayCentralISO(ts)).toBe('2026-05-08');
   });
 });

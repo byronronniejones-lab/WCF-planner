@@ -86,6 +86,11 @@ export const VIEW_TO_PATH = {
 
   // Logged-in (any role)
   myTasks: '/my-tasks',
+  // Task Center (Tasks v2 T2). Auth-gated, requireAdmin:false. Every
+  // logged-in user can reach this; the System Tasks tab self-gates
+  // to admins inside the view. Legacy /my-tasks stays live until a
+  // later commit retires it.
+  tasks: '/tasks',
 
   // Public (no-auth) — these also have legacy aliases handled below.
   webformhub: '/dailys',
