@@ -158,21 +158,27 @@ async function writeAuditRow(serviceClient: ReturnType<typeof createClient>, row
 }
 
 // ─── rapid-processor invocation ─────────────────────────────────────────
-// Direct fetch to the rapid-processor Edge Function. Sends ONLY the
-// service-role Authorization bearer — rapid-processor's tasks_weekly_summary
-// branch reads the bearer from the Authorization header and ignores apikey.
+// Internal function-to-function call for the digest send. We don't use
+// the project's Authorization: Bearer SUPABASE_SERVICE_ROLE_KEY pattern
+// here — that path turned out to be brittle on the current Supabase
+// platform key/env setup (envTrim alignment didn't resolve a persistent
+// rapid-processor 401 in PROD). Instead, both functions share the
+// already-Vault-stored TASKS_CRON_SECRET via a custom header. The cron
+// secret is the same one tasks-cron / invoke_tasks_summary already use
+// for their auth boundary, and both functions read it the same way
+// (envTrim normalization).
 //
-// The Supabase platform gateway now rejects any request that carries BOTH
-// a project apikey AND a project Authorization bearer with the error
-// "Conflicting API keys. Send the intended sb_ key only in the `apikey`
-// header." Sending only Authorization (with the service-role JWT) keeps
-// rapid-processor's gate intact and avoids the gateway-level rejection.
+// Headers sent (note: NO apikey, NO Authorization — the gateway accepts
+// both being absent for this --no-verify-jwt function, and the custom
+// header avoids any platform-level project-key conflict):
+//   x-tasks-summary-secret: TASKS_CRON_SECRET
+//   Content-Type: application/json
 async function invokeRapidProcessor(payload: object): Promise<{ok: boolean; status: number; body: string}> {
   const url = `${SUPABASE_URL}/functions/v1/rapid-processor`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'x-tasks-summary-secret': TASKS_CRON_SECRET,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),

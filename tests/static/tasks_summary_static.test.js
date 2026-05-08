@@ -274,9 +274,8 @@ describe('Edge Function — per-assignee accounting (Codex C4 re-review BLOCKER 
 });
 
 describe('Edge Function — rapid-processor invocation', () => {
-  it('invokes the rapid-processor function URL with service-role bearer', () => {
+  it('invokes the rapid-processor function URL', () => {
     expect(fnCode).toMatch(/\/functions\/v1\/rapid-processor/);
-    expect(fnCode).toMatch(/Authorization:\s*`Bearer\s*\$\{SUPABASE_SERVICE_ROLE_KEY\}/);
   });
 
   it("posts type:'tasks_weekly_summary' with {email, full_name, tasks, count}", () => {
@@ -287,24 +286,23 @@ describe('Edge Function — rapid-processor invocation', () => {
     expect(fnCode).toMatch(/count:\s*bucket\.tasks\.length/);
   });
 
-  // Hotfix lock: the Supabase platform gateway rejects any request that
-  // carries BOTH a project apikey AND a project Authorization bearer with
-  // a "Conflicting API keys" 401. invokeRapidProcessor previously sent
-  // both (apikey: SUPABASE_ANON_KEY + Authorization: Bearer service-role)
-  // and was silently breaking every digest send. Lock that the apikey
-  // header is gone from the invocation block.
-  it('invokeRapidProcessor does NOT send a project apikey alongside the service-role Authorization', () => {
+  // Digest-auth lock: tasks-summary authenticates the rapid-processor
+  // call with a custom shared-secret header (x-tasks-summary-secret =
+  // TASKS_CRON_SECRET). The previous SUPABASE_SERVICE_ROLE_KEY-as-bearer
+  // pattern proved brittle on Supabase's current platform key/env
+  // injection rules; the custom header bypasses gateway project-key
+  // logic entirely and aligns with the same Vault secret tasks-cron
+  // already uses (both functions envTrim it).
+  it('invokeRapidProcessor sends x-tasks-summary-secret: TASKS_CRON_SECRET (not Authorization, not apikey)', () => {
     const block = fnCode.match(/async\s+function\s+invokeRapidProcessor\([\s\S]*?\n\}/);
     expect(block, 'invokeRapidProcessor body must be present').not.toBeNull();
-    // No apikey header in the rapid-processor fetch call.
+    // Positive: the shared-secret header is present.
+    expect(block[0]).toMatch(/'x-tasks-summary-secret':\s*TASKS_CRON_SECRET/);
+    // Negative: NO project apikey header.
     expect(block[0]).not.toMatch(/apikey\s*:/);
-    // Specifically, no apikey: SUPABASE_ANON_KEY pairing — that's the
-    // exact shape that triggered the gateway-level "Conflicting API keys"
-    // rejection.
-    expect(block[0]).not.toMatch(/apikey\s*:\s*SUPABASE_ANON_KEY/);
-    // Positive lock: the Authorization bearer is still the service-role
-    // JWT (rapid-processor's tasks_weekly_summary gate compares against
-    // SUPABASE_SERVICE_ROLE_KEY).
-    expect(block[0]).toMatch(/Authorization:\s*`Bearer\s*\$\{SUPABASE_SERVICE_ROLE_KEY\}/);
+    // Negative: NO Authorization Bearer SUPABASE_SERVICE_ROLE_KEY shape —
+    // that path was retired because it failed at rapid-processor's
+    // bearer compare even after envTrim alignment.
+    expect(block[0]).not.toMatch(/Authorization:\s*`Bearer\s*\$\{SUPABASE_SERVICE_ROLE_KEY\}/);
   });
 });

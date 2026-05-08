@@ -171,36 +171,46 @@ describe('rapid-processor.ts — tasks_weekly_summary handler shape (C4)', () =>
   });
 });
 
-describe('rapid-processor.ts — tasks_weekly_summary service-role gate (Codex C4 re-review BLOCKER 5)', () => {
+describe('rapid-processor.ts — tasks_weekly_summary shared-secret gate', () => {
   // rapid-processor is deployed with --no-verify-jwt. tasks_weekly_summary
   // accepts data.email + top-level test_to and would otherwise let any
-  // anonymous caller send arbitrary WCF-branded mail. Require caller's
-  // bearer to byte-equal SUPABASE_SERVICE_ROLE_KEY (only tasks-summary
-  // sends that within this project) before any send work.
+  // anonymous caller send arbitrary WCF-branded mail. Require the caller's
+  // x-tasks-summary-secret header to byte-equal TASKS_CRON_SECRET (only
+  // tasks-summary running in this same project sends that header) before
+  // any send work.
+  //
+  // The earlier SUPABASE_SERVICE_ROLE_KEY-as-bearer gate proved brittle on
+  // Supabase's current platform key/env injection rules — even with both
+  // functions envTrim-aligned on the same secret name, the byte-equal
+  // compare kept rejecting in PROD. The custom header is independent of
+  // project key shapes and apikey/Authorization gateway rules.
   const branchIdx = code.indexOf("if (type === 'tasks_weekly_summary')");
   const branchSlice = branchIdx >= 0 ? code.slice(branchIdx, branchIdx + 3500) : '';
 
-  it('reads the Authorization header at branch entry', () => {
+  it('reads the x-tasks-summary-secret header at branch entry', () => {
     expect(branchIdx).toBeGreaterThan(-1);
-    expect(branchSlice).toMatch(/req\.headers\.get\(\s*'authorization'\s*\)/);
+    expect(branchSlice).toMatch(/req\.headers\.get\(\s*'x-tasks-summary-secret'\s*\)/);
   });
 
-  it('compares bearer to SUPABASE_SERVICE_ROLE_KEY via safeEqual', () => {
-    expect(branchSlice).toMatch(/extractBearer\(\s*req\.headers\.get\(\s*'authorization'\s*\)\s*\)/);
-    expect(branchSlice).toMatch(/safeEqual\(\s*bearer\s*,\s*SUPABASE_SERVICE_ROLE_KEY\s*\)/);
+  it('compares the header to TASKS_CRON_SECRET via safeEqual', () => {
+    expect(branchSlice).toMatch(/safeEqual\(\s*summarySecret\s*,\s*TASKS_CRON_SECRET\s*\)/);
   });
 
-  it('returns 401 / unauthorized when bearer does not match', () => {
+  it('returns 401 / unauthorized when the header is missing or wrong', () => {
     expect(branchSlice).toMatch(/status:\s*401/);
     expect(branchSlice).toMatch(/'unauthorized'/);
   });
 
   it('auth check runs BEFORE any sendEmail() call (no leak path)', () => {
-    const safeEqualIdx = branchSlice.indexOf('safeEqual(bearer');
+    const safeEqualIdx = branchSlice.indexOf('safeEqual(summarySecret');
     const sendEmailIdx = branchSlice.indexOf('sendEmail(');
     expect(safeEqualIdx).toBeGreaterThan(-1);
     expect(sendEmailIdx).toBeGreaterThan(-1);
     expect(safeEqualIdx).toBeLessThan(sendEmailIdx);
+  });
+
+  it('does NOT gate on Authorization Bearer SUPABASE_SERVICE_ROLE_KEY (retired path)', () => {
+    expect(branchSlice).not.toMatch(/safeEqual\(\s*bearer\s*,\s*SUPABASE_SERVICE_ROLE_KEY\s*\)/);
   });
 });
 
@@ -227,6 +237,10 @@ describe('rapid-processor.ts — env secrets are envTrim-normalized (digest gate
     expect(code).toMatch(/SUPABASE_URL\s*=\s*envTrim\(\s*'SUPABASE_URL'\s*\)/);
     expect(code).toMatch(/SUPABASE_ANON_KEY\s*=\s*envTrim\(\s*'SUPABASE_ANON_KEY'\s*\)/);
     expect(code).toMatch(/RESEND_API_KEY\s*=\s*envTrim\(\s*'RESEND_API_KEY'\s*\)/);
+  });
+
+  it('TASKS_CRON_SECRET is read via envTrim (used by tasks_weekly_summary digest gate)', () => {
+    expect(code).toMatch(/TASKS_CRON_SECRET\s*=\s*envTrim\(\s*'TASKS_CRON_SECRET'\s*\)/);
   });
 });
 

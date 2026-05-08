@@ -15,11 +15,16 @@ const RESEND_API_KEY = envTrim('RESEND_API_KEY');
 const SUPABASE_URL = envTrim('SUPABASE_URL');
 const SUPABASE_ANON_KEY = envTrim('SUPABASE_ANON_KEY');
 const SUPABASE_SERVICE_ROLE_KEY = envTrim('SUPABASE_SERVICE_ROLE_KEY');
+// Shared digest secret. tasks-summary's invokeRapidProcessor sends this
+// in an x-tasks-summary-secret header; the tasks_weekly_summary branch
+// below verifies it via safeEqual. Same Vault entry used by tasks-cron
+// auth, both functions read it via envTrim so byte-equal compare aligns.
+const TASKS_CRON_SECRET = envTrim('TASKS_CRON_SECRET');
 const FROM = 'WCF Planner <reports@wcfplanner.com>';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-tasks-summary-secret',
 };
 
 async function sendEmail(payload: object): Promise<Response> {
@@ -505,17 +510,21 @@ serve(async (req) => {
     // amendment 5; the calling Edge Function gates cron-mode test_to
     // before this is reached.
     //
-    // Codex C4 re-review BLOCKER 5: rapid-processor is deployed with
-    // --no-verify-jwt so the platform does not enforce auth. Without
-    // an in-function gate, anyone reaching this endpoint could trigger
-    // arbitrary WCF-branded emails to attacker-controlled addresses.
-    // Require the caller's bearer to byte-equal SUPABASE_SERVICE_ROLE_KEY
-    // — only tasks-summary (running in this same project) sends that.
-    // Constant-time-ish compare via safeEqual mirrors the tasks-cron
-    // auth pattern.
+    // rapid-processor is deployed with --no-verify-jwt so the platform
+    // does not enforce auth. Without an in-function gate, anyone reaching
+    // this endpoint could trigger arbitrary WCF-branded emails to
+    // attacker-controlled addresses. We gate on a custom shared-secret
+    // header — both functions read TASKS_CRON_SECRET via envTrim from
+    // the same Vault entry (the same one tasks-cron auth uses), so the
+    // safeEqual byte-compare aligns reliably across the platform's
+    // current key/env injection rules. Earlier iterations attempted to
+    // gate via SUPABASE_SERVICE_ROLE_KEY in the Authorization header,
+    // but that path proved brittle on Supabase's current platform
+    // configuration; the custom header is independent of project key
+    // shapes and apikey/Authorization gateway rules.
     if (type === 'tasks_weekly_summary') {
-      const bearer = extractBearer(req.headers.get('authorization'));
-      if (!safeEqual(bearer, SUPABASE_SERVICE_ROLE_KEY)) {
+      const summarySecret = (req.headers.get('x-tasks-summary-secret') ?? '').trim();
+      if (!safeEqual(summarySecret, TASKS_CRON_SECRET)) {
         return new Response(JSON.stringify({error: 'unauthorized'}), {
           status: 401,
           headers: {...corsHeaders, 'Content-Type': 'application/json'},

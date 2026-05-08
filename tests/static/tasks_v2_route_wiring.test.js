@@ -962,13 +962,22 @@ describe('Tasks v2 T10 — weekly digest link target (/tasks)', () => {
     expect(tasksSummaryFn).toMatch(/from\('task_summary_runs'\)\s*\.insert/);
   });
 
-  it('rapid-processor still requires service-role bearer for tasks_weekly_summary (no auth weakening)', () => {
-    // The handler must still byte-compare the caller bearer against
-    // SUPABASE_SERVICE_ROLE_KEY so only tasks-summary can trigger the
-    // branded send. Mirrors mig 053 BLOCKER-5 fix.
+  it('rapid-processor still gates tasks_weekly_summary in-function (no auth weakening)', () => {
+    // The handler must still byte-compare a caller-supplied secret
+    // before any send work, so an anonymous caller can't trigger
+    // branded mail. The earlier service-role-bearer compare was retired
+    // in favor of a custom shared-secret header (x-tasks-summary-secret
+    // == TASKS_CRON_SECRET) — same Vault entry tasks-cron uses, both
+    // functions read it via envTrim. Lock the new gate shape.
     expect(rapidProcessorFn).toMatch(
-      /type === 'tasks_weekly_summary'[\s\S]*?safeEqual\(bearer,\s*SUPABASE_SERVICE_ROLE_KEY\)/,
+      /type === 'tasks_weekly_summary'[\s\S]*?safeEqual\(\s*summarySecret\s*,\s*TASKS_CRON_SECRET\s*\)/,
     );
+    // Negative lock: the retired service-role-bearer compare must NOT
+    // be back inside the tasks_weekly_summary branch.
+    const branch = rapidProcessorFn.match(/type === 'tasks_weekly_summary'[\s\S]*?\n\s{4}\}/);
+    if (branch) {
+      expect(branch[0]).not.toMatch(/safeEqual\(\s*bearer\s*,\s*SUPABASE_SERVICE_ROLE_KEY\s*\)/);
+    }
   });
 });
 
