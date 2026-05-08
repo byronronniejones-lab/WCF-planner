@@ -299,8 +299,16 @@ Ask only blocking questions. Do not ask questions to transfer planning work. If
 the answer is in `HO.md`, `PROJECT.md`, prior Ronnie decisions, schema, or code,
 use it and state the assumption.
 
-Ask one question at a time when possible. Prefer multiple-choice pop-out
-questions when the interface supports them.
+Questions are a cost. Ask them only when they reduce rework, risk, or ambiguity.
+Do not ask confirmation questions for choices Codex can safely recommend.
+
+If more than a few product questions are needed, Codex should stop the drip
+feed and send a compact decision packet: recommended defaults, true blockers,
+and what will happen if Ronnie says "use your recommendations."
+
+Ask one question at a time for urgent blockers. Batch related non-urgent
+questions only when the batch is shorter than repeated back-and-forth. Prefer
+multiple-choice pop-out questions when the interface supports them.
 
 Product, UX, permission, data-model, workflow, and customer-facing behavior
 questions go through Codex. Narrow implementation questions inside an
