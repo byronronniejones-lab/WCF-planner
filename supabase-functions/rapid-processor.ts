@@ -254,36 +254,59 @@ function passwordResetHtml(name: string, resetLink: string, isTest: boolean) {
   return brandedEmail({title: '🔑 Password Reset', subtitle: 'WCF Planner', bodyHtml, isTest});
 }
 
-// ─── Tasks weekly summary table — used by tasks_weekly_summary branch (C4) ───
-// Simple due-date / title rows, with optional submitted-by + source
-// subtext. Does NOT inline thumbnails or signed URLs (Codex Q4).
-// `tasks` shape per row: {id, due_date, title, submission_source?,
-// submitted_by_team_member?}.
+// ─── Tasks weekly summary table — Tasks v2 (T10) ─────────────────────────
+// Due-date / title rows with v2 context: designation badge (Recurring /
+// System), optional description, attribution (submitted-by for
+// public-webform rows; created-by for logged-in admin-created rows),
+// and a paperclip when the row carries any photo path. Does NOT inline
+// thumbnails or signed URLs — operators open /tasks to view.
 //
-// All user-controlled strings (title / submitted_by_team_member /
-// submission_source / due_date) are HTML-escaped before interpolation
-// (Codex C4 re-review BLOCKER 2). Title in particular can come from
+// All user-controlled strings (title / description / submitted_by /
+// created_by_display_name / due_date) are HTML-escaped before
+// interpolation. Title and description in particular can come from
 // public webform submitters or admin-typed input.
+//
+// `tasks` shape per row: {
+//   id, due_date, title,
+//   description?, submission_source?, submitted_by_team_member?,
+//   designation? ('recurring'|'system'|null), created_by_display_name?,
+//   has_photo?
+// }.
 function tasksWeeklyHtml(tasks: Array<Record<string, any>>): string {
   const rows = tasks
     .map((t) => {
       const due = escapeHtml(t.due_date || '');
       const title = escapeHtml(t.title || '(untitled)');
-      const ctxParts: string[] = [];
-      if (t.submission_source && t.submission_source !== 'generated') {
-        ctxParts.push(`source: ${escapeHtml(t.submission_source)}`);
+      const description = t.description ? escapeHtml(t.description) : '';
+      let badge = '';
+      if (t.designation === 'recurring') {
+        badge = `<span style="display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-family:Arial,sans-serif;font-size:11px;font-weight:600;">Recurring</span>`;
+      } else if (t.designation === 'system') {
+        badge = `<span style="display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:#ecfdf5;color:#047857;font-family:Arial,sans-serif;font-size:11px;font-weight:600;">System</span>`;
       }
-      if (t.submitted_by_team_member) {
-        ctxParts.push(`from ${escapeHtml(t.submitted_by_team_member)}`);
+      const photoMark = t.has_photo
+        ? `<span title="Has photo" style="margin-left:6px;color:#888;font-size:12px;">📎</span>`
+        : '';
+      const ctxParts: string[] = [];
+      if (t.submission_source === 'public_webform' && t.submitted_by_team_member) {
+        ctxParts.push(`Submitted by ${escapeHtml(t.submitted_by_team_member)}`);
+      } else if (t.created_by_display_name) {
+        ctxParts.push(`Created by ${escapeHtml(t.created_by_display_name)}`);
+      } else if (t.submission_source && t.submission_source !== 'generated') {
+        ctxParts.push(`source: ${escapeHtml(t.submission_source)}`);
       }
       const ctx = ctxParts.length
         ? `<div style="color:#888;font-size:12px;font-family:Arial,sans-serif;margin-top:4px;">${ctxParts.join(' · ')}</div>`
+        : '';
+      const desc = description
+        ? `<div style="color:#444;font-size:13px;font-family:Georgia,serif;margin-top:4px;white-space:pre-wrap;">${description}</div>`
         : '';
       return `
         <tr>
           <td style="padding:10px 12px;border-bottom:1px solid #efeae0;font-family:Arial,sans-serif;font-size:13px;color:#566542;font-weight:700;white-space:nowrap;vertical-align:top;">${due}</td>
           <td style="padding:10px 12px;border-bottom:1px solid #efeae0;font-family:Georgia,serif;font-size:14px;color:#232323;vertical-align:top;">
-            ${title}
+            ${title}${badge}${photoMark}
+            ${desc}
             ${ctx}
           </td>
         </tr>`;
@@ -303,7 +326,7 @@ function tasksWeeklyHtml(tasks: Array<Record<string, any>>): string {
       <tbody>${rows}</tbody>
     </table>
     <p style="font-family:Georgia,serif;font-size:13px;color:#888;line-height:1.6;margin:0;">
-      Open the planner to mark tasks complete: <a href="https://wcfplanner.com/my-tasks" style="color:#566542;text-decoration:underline;">wcfplanner.com/my-tasks</a>
+      Open the Task Center to mark tasks complete: <a href="https://wcfplanner.com/tasks" style="color:#566542;text-decoration:underline;">wcfplanner.com/tasks</a>
     </p>
   `;
 }

@@ -356,10 +356,10 @@ function TeamAvailabilityEditor({loadUsers}) {
   const {allUsers} = useAuth();
 
   // Hydrate allUsers when this editor mounts and the auth context's list
-  // is empty. Mirrors AdminTasksView's hydration path for direct admin
-  // /webforms loads (URL bar / bookmark / page reload bypasses the Header
-  // → Users modal click that would otherwise populate allUsers). The
-  // 'tasks-public' assignee section depends on allUsers being non-empty
+  // is empty. Direct admin /webforms loads (URL bar / bookmark / page
+  // reload) bypass the Header → Users modal click that would otherwise
+  // populate allUsers. The 'tasks-public' assignee section depends on
+  // allUsers being non-empty
   // to render any checkboxes; without this, a fresh /admin/Webforms hit
   // would show "No eligible planner users yet" until the admin clicks
   // the Header → Users option.

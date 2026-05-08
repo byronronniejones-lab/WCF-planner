@@ -216,10 +216,12 @@ describe('rapid-processor.ts — tasksWeeklyHtml helper', () => {
     expect(code).toMatch(/function\s+tasksWeeklyHtml\(\s*tasks/);
   });
 
-  it('points users to /my-tasks for completion', () => {
-    // Footer link in the email body — keeps the assignee on the
-    // completion-flow page, not the public webform.
-    expect(code).toMatch(/wcfplanner\.com\/my-tasks/);
+  it('points users to /tasks for completion (T10/T11 — /my-tasks retired)', () => {
+    // Footer link in the email body — Tasks v2 canonical destination.
+    // /my-tasks redirects to /tasks via the URL adapter aliases, but
+    // the email itself must show the canonical URL.
+    expect(code).toMatch(/wcfplanner\.com\/tasks/);
+    expect(code).not.toMatch(/wcfplanner\.com\/my-tasks/);
   });
 
   it('renders one table row per task with due_date + title columns', () => {

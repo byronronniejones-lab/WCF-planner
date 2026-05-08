@@ -49,6 +49,9 @@ const assignTaskModal = fs.readFileSync(path.join(ROOT, 'src/tasks/AssignTaskMod
 const deleteTaskModal = fs.readFileSync(path.join(ROOT, 'src/tasks/DeleteTaskModal.jsx'), 'utf8');
 const recurringTemplateModal = fs.readFileSync(path.join(ROOT, 'src/tasks/RecurringTemplateModal.jsx'), 'utf8');
 const systemRuleEditModal = fs.readFileSync(path.join(ROOT, 'src/tasks/SystemRuleEditModal.jsx'), 'utf8');
+const tasksSummaryFn = fs.readFileSync(path.join(ROOT, 'supabase/functions/tasks-summary/index.ts'), 'utf8');
+const rapidProcessorFn = fs.readFileSync(path.join(ROOT, 'supabase-functions/rapid-processor.ts'), 'utf8');
+const headerJsxFull = headerJsx;
 
 const T2_FILES = {
   'TaskCenterView.jsx': taskCenterView,
@@ -94,14 +97,16 @@ describe('Tasks v2 T2 — /tasks route wiring', () => {
     );
   });
 
-  it('main.jsx does NOT remove the legacy myTasks mount (legacy /my-tasks stays live)', () => {
-    expect(mainJsx).toMatch(/if\s*\(view\s*===\s*'myTasks'\)/);
-    expect(mainJsx).toMatch(/MyTasksView/);
+  // T11 inversion: the legacy view mounts are gone; /my-tasks and
+  // /admin/tasks now redirect to /tasks via ALIASES_EXACT.
+  it('main.jsx no longer mounts the legacy myTasks view (T11 retired)', () => {
+    expect(mainJsx).not.toMatch(/if\s*\(view\s*===\s*'myTasks'\)/);
+    expect(mainJsx).not.toMatch(/MyTasksView/);
   });
 
-  it('main.jsx does NOT remove the legacy adminTasks mount (legacy /admin/tasks stays live)', () => {
-    expect(mainJsx).toMatch(/if\s*\(view\s*===\s*'adminTasks'\)/);
-    expect(mainJsx).toMatch(/AdminTasksView/);
+  it('main.jsx no longer mounts the legacy adminTasks view (T11 retired)', () => {
+    expect(mainJsx).not.toMatch(/if\s*\(view\s*===\s*'adminTasks'\)/);
+    expect(mainJsx).not.toMatch(/AdminTasksView/);
   });
 });
 
@@ -890,5 +895,130 @@ describe('Tasks v2 T8 + T9 — MyTasksTab row-level capability gating', () => {
     expect(myTasksTab).toMatch(/function\s+canDeleteRow/);
     expect(myTasksTab).toMatch(/canAssignRow\(ti\)/);
     expect(myTasksTab).toMatch(/canDeleteRow\(ti\)/);
+  });
+});
+
+// ============================================================================
+// Tasks v2 T10 — weekly digest links to /tasks (not /my-tasks).
+// ----------------------------------------------------------------------------
+// The digest is now Tasks v2 — every link in the email body must point at
+// /tasks, the canonical Task Center. A regression that brought back
+// /my-tasks would land users on a route that has been retired (T11) and
+// now just redirects, but a dead-named link in branded mail looks broken.
+// Lock the link target string + the absence of /my-tasks anywhere in the
+// digest plumbing.
+// ============================================================================
+
+describe('Tasks v2 T10 — weekly digest link target (/tasks)', () => {
+  it('rapid-processor tasks_weekly_summary template links to wcfplanner.com/tasks', () => {
+    expect(rapidProcessorFn).toMatch(/href="https:\/\/wcfplanner\.com\/tasks"/);
+  });
+
+  it('rapid-processor tasks_weekly_summary template never links to /my-tasks', () => {
+    expect(rapidProcessorFn).not.toMatch(/wcfplanner\.com\/my-tasks/);
+    expect(rapidProcessorFn).not.toMatch(/href="[^"]*\/my-tasks/);
+  });
+
+  it('tasks-summary Edge Function never references /my-tasks', () => {
+    // The function generates JSON payloads, not HTML, but a regression
+    // that pasted a legacy URL into a debug log or comment would still
+    // be misleading. Belt-and-suspenders.
+    expect(tasksSummaryFn).not.toMatch(/\/my-tasks/);
+  });
+
+  it('tasks-summary Edge Function selects the v2 context columns the email template surfaces', () => {
+    // The new template renders designation badge, created-by attribution,
+    // photo presence, and description. The select() must include each of
+    // those columns or the digest renders empty fields.
+    const selectMatch = tasksSummaryFn.match(/\.from\('task_instances'\)\s*\.select\(\s*['"]([^'"]+)['"]/);
+    expect(selectMatch, 'task_instances .select(...) must be present').not.toBeNull();
+    const selected = selectMatch[1];
+    for (const col of [
+      'designation',
+      'created_by_display_name',
+      'request_photo_path',
+      'completion_photo_path',
+      'description',
+    ]) {
+      expect(selected, `tasks-summary select must include ${col}`).toContain(col);
+    }
+  });
+
+  it('tasks-summary preserves cron auth contract (TASKS_CRON_SECRET + service-role bearer)', () => {
+    // T10 must not weaken the auth boundary. The function still reads
+    // both Vault secrets and authenticateCron still byte-compares both.
+    expect(tasksSummaryFn).toMatch(/TASKS_CRON_SECRET/);
+    expect(tasksSummaryFn).toMatch(/TASKS_CRON_SERVICE_ROLE_KEY/);
+    expect(tasksSummaryFn).toMatch(/safeEqual\(bearer,\s*TASKS_CRON_SERVICE_ROLE_KEY\)/);
+  });
+
+  it('tasks-summary preserves probe + audit + cron-test_to-rejection contracts', () => {
+    // probe path writes a tsr-probe-* row and returns early.
+    expect(tasksSummaryFn).toMatch(/'tsr-probe-'/);
+    expect(tasksSummaryFn).toMatch(/probe-only invocation/);
+    // cron mode rejects test_to post-auth.
+    expect(tasksSummaryFn).toMatch(/test_to is not allowed in cron mode/);
+    // audit row writer still hits task_summary_runs.
+    expect(tasksSummaryFn).toMatch(/from\('task_summary_runs'\)\s*\.insert/);
+  });
+
+  it('rapid-processor still requires service-role bearer for tasks_weekly_summary (no auth weakening)', () => {
+    // The handler must still byte-compare the caller bearer against
+    // SUPABASE_SERVICE_ROLE_KEY so only tasks-summary can trigger the
+    // branded send. Mirrors mig 053 BLOCKER-5 fix.
+    expect(rapidProcessorFn).toMatch(
+      /type === 'tasks_weekly_summary'[\s\S]*?safeEqual\(bearer,\s*SUPABASE_SERVICE_ROLE_KEY\)/,
+    );
+  });
+});
+
+// ============================================================================
+// Tasks v2 T11 — legacy /my-tasks + /admin/tasks routes retired.
+// ----------------------------------------------------------------------------
+// /tasks is the only canonical Task Center surface. Both legacy paths
+// redirect to /tasks via the URL adapter's ALIASES_EXACT map. Frontend
+// imports of MyTasksView / AdminTasksView are gone; VALID_VIEWS no
+// longer carries the legacy view names; the burger menu's My Tasks +
+// Tasks Center entries are gone (the dark-bar Tasks button is the
+// canonical destination).
+// ============================================================================
+
+describe('Tasks v2 T11 — legacy route retirement', () => {
+  it('routes.js ALIASES_EXACT redirects /my-tasks and /admin/tasks to /tasks', () => {
+    expect(routesJs).toMatch(/['"]\/my-tasks['"]\s*:\s*['"]\/tasks['"]/);
+    expect(routesJs).toMatch(/['"]\/admin\/tasks['"]\s*:\s*['"]\/tasks['"]/);
+  });
+
+  it('routes.js VIEW_TO_PATH no longer maps myTasks or adminTasks to legacy paths', () => {
+    // Their VIEW_TO_PATH entries are gone — the only way to reach
+    // /tasks is through view='tasks'. Visitors hitting /my-tasks or
+    // /admin/tasks land via the alias replace-navigate.
+    expect(routesJs).not.toMatch(/myTasks\s*:\s*['"]\/my-tasks['"]/);
+    expect(routesJs).not.toMatch(/adminTasks\s*:\s*['"]\/admin\/tasks['"]/);
+  });
+
+  it('main.jsx does not import MyTasksView or AdminTasksView (legacy components unmounted)', () => {
+    expect(mainJsx).not.toMatch(/import\s+MyTasksView\s+from/);
+    expect(mainJsx).not.toMatch(/import\s+AdminTasksView\s+from/);
+  });
+
+  it('main.jsx VALID_VIEWS no longer contains myTasks or adminTasks', () => {
+    const validBlock = mainJsx.match(/VALID_VIEWS\s*=\s*\[([\s\S]*?)\]/);
+    expect(validBlock, 'VALID_VIEWS array must be present').not.toBeNull();
+    expect(validBlock[1]).not.toMatch(/'myTasks'/);
+    expect(validBlock[1]).not.toMatch(/'adminTasks'/);
+    // /tasks must still be a valid view.
+    expect(validBlock[1]).toMatch(/'tasks'/);
+  });
+
+  it('Header.jsx burger menu drops the legacy My Tasks and Tasks Center entries', () => {
+    // The dark-bar ✅ Tasks button (data-tasks-header-link) is the
+    // single canonical destination. The burger entries that called
+    // setView('myTasks') and setView('adminTasks') are gone; the only
+    // remaining admin burger entry is 👥 Users (user management).
+    expect(headerJsxFull).not.toMatch(/setView\(\s*['"]myTasks['"]\s*\)/);
+    expect(headerJsxFull).not.toMatch(/setView\(\s*['"]adminTasks['"]\s*\)/);
+    // Sanity: the dark-bar link still exists.
+    expect(headerJsxFull).toMatch(/data-tasks-header-link="1"/);
   });
 });

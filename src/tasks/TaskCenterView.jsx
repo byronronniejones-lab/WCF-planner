@@ -23,8 +23,9 @@
 //     tasksCenterMutationsApi wrappers — components never call
 //     .insert/.update/.delete on task_* tables directly.
 //
-// Outstanding T-lane work: T10 email digest rewrite, T11 retire
-// legacy /my-tasks and /admin/tasks (both still mounted today).
+// Tasks v2 cutover is complete. The legacy /my-tasks and /admin/tasks
+// paths redirect here via the URL adapter's ALIASES_EXACT map (T11);
+// the weekly digest links and template are Tasks v2 (T10).
 
 import React from 'react';
 import MyTasksTab from './MyTasksTab.jsx';

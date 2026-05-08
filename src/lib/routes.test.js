@@ -86,19 +86,21 @@ describe('canonical anchors (paths printed on field materials per §7)', () => {
     expect(VIEW_TO_PATH.weighins).toBe('/weighins');
   });
 
-  it('admin tasks center mounts at /admin/tasks', () => {
-    expect(VIEW_TO_PATH.adminTasks).toBe('/admin/tasks');
-    expect(PATH_TO_VIEW['/admin/tasks']).toBe('adminTasks');
+  it('Task Center is the canonical /tasks; legacy myTasks/adminTasks views are retired (T11)', () => {
+    expect(VIEW_TO_PATH.tasks).toBe('/tasks');
+    expect(PATH_TO_VIEW['/tasks']).toBe('tasks');
+    // The legacy view names no longer have VIEW_TO_PATH entries.
+    expect(VIEW_TO_PATH.adminTasks).toBeUndefined();
+    expect(VIEW_TO_PATH.myTasks).toBeUndefined();
+    // Legacy paths now resolve via ALIASES_EXACT — they must NOT appear
+    // in PATH_TO_VIEW (which is built from VIEW_TO_PATH).
+    expect(PATH_TO_VIEW['/admin/tasks']).toBeUndefined();
+    expect(PATH_TO_VIEW['/my-tasks']).toBeUndefined();
   });
 
   it('public tasks webform mounts at /dailys/tasks (post 2026-05-06 rename)', () => {
     expect(VIEW_TO_PATH.tasksWebform).toBe('/dailys/tasks');
     expect(PATH_TO_VIEW['/dailys/tasks']).toBe('tasksWebform');
-  });
-
-  it('logged-in my-tasks mounts at /my-tasks', () => {
-    expect(VIEW_TO_PATH.myTasks).toBe('/my-tasks');
-    expect(PATH_TO_VIEW['/my-tasks']).toBe('myTasks');
   });
 });
 
@@ -113,6 +115,11 @@ describe('aliases (legacy paths preserved as redirects post 2026-05-06 rename)',
   it('exact aliases redirect legacy logged-in equipment utility paths to /fleet', () => {
     expect(ALIASES_EXACT['/equipment/fleet']).toBe('/fleet');
     expect(ALIASES_EXACT['/equipment/fuel-log']).toBe('/fleet/fuel-log');
+  });
+
+  it('exact aliases redirect legacy task routes to /tasks (T11)', () => {
+    expect(ALIASES_EXACT['/my-tasks']).toBe('/tasks');
+    expect(ALIASES_EXACT['/admin/tasks']).toBe('/tasks');
   });
 
   it('does NOT alias /equipment/<slug> — that path is the new public checklist surface', () => {

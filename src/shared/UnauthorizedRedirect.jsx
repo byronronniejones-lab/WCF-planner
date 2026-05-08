@@ -1,9 +1,11 @@
 import React from 'react';
 
 // Component-level guard that redirects non-admin (or non-authenticated) users
-// off a sensitive route to a fallback view. Used by AdminTasksView so that a
-// non-admin who pastes /admin/tasks into the URL bar doesn't see admin UI
-// even momentarily — the Header dropdown gating alone is not enough.
+// off a sensitive route to a fallback view. Used by /tasks auth gating
+// (TaskCenterView mounts under requireAdmin:false; the System Tasks tab
+// inside self-gates to admins) and any other admin-only surfaces, so that
+// a non-admin who types a sensitive URL doesn't see admin UI even
+// momentarily — Header gating alone is not enough.
 //
 // authState shape (from AuthContext):
 //   null             — still loading; render nothing, do not redirect.

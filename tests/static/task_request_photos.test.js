@@ -34,7 +34,8 @@ const tasksSrc = fs.readFileSync(path.join(ROOT, 'src/lib/tasks.js'), 'utf8');
 const rpcSrc = fs.readFileSync(path.join(ROOT, 'src/lib/offlineRpcForms.js'), 'utf8');
 const hookSrc = fs.readFileSync(path.join(ROOT, 'src/lib/useOfflineRpcSubmit.js'), 'utf8');
 const adminApiSrc = fs.readFileSync(path.join(ROOT, 'src/lib/tasksAdminApi.js'), 'utf8');
-const adminViewSrc = fs.readFileSync(path.join(ROOT, 'src/admin/AdminTasksView.jsx'), 'utf8');
+// Legacy AdminTasksView source removed by T11 — its photo-wiring
+// describe block was dropped alongside the source file.
 const webformSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/TasksWebform.jsx'), 'utf8');
 const dailyPhotoCaptureSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/DailyPhotoCapture.jsx'), 'utf8');
 
@@ -200,58 +201,6 @@ describe('Public TasksWebform photo wiring', () => {
 
   it('clears photoFile in resetForm (and on Remove)', () => {
     expect(webformSrc).toMatch(/setPhotoFile\(null\)/);
-  });
-});
-
-describe('AdminTasksView photo wiring (one-time only)', () => {
-  it('imports uploadTaskRequestPhoto from tasksAdminApi.js', () => {
-    expect(adminViewSrc).toMatch(
-      /import\s*\{[^}]*\buploadTaskRequestPhoto\b[^}]*\}\s*from\s*'\.\.\/lib\/tasksAdminApi\.js'/,
-    );
-  });
-
-  it('imports getRequestPhotoSignedUrl from tasksUserApi.js (relocated per Codex C2 amendment 3)', () => {
-    expect(adminViewSrc).toMatch(
-      /import\s*\{[^}]*\bgetRequestPhotoSignedUrl\b[^}]*\}\s*from\s*'\.\.\/lib\/tasksUserApi\.js'/,
-    );
-  });
-
-  it('emptyTaskForm declares photoFile: null', () => {
-    expect(adminViewSrc).toMatch(/function emptyTaskForm\(\)\s*\{[\s\S]*?photoFile:\s*null/);
-  });
-
-  it('photo input renders only when NOT recurring', () => {
-    expect(adminViewSrc).toMatch(/\{!editForm\.recurring\s*&&\s*\([\s\S]{0,800}?Photo \(optional\)/);
-  });
-
-  it('the Repeat-this-task toggle clears photoFile when switched ON', () => {
-    expect(adminViewSrc).toMatch(/photoFile:\s*recurring\s*\?\s*null\s*:\s*editForm\.photoFile/);
-  });
-
-  it('saveTask one-time branch awaits uploadTaskRequestPhoto BEFORE the row insert', () => {
-    // Anchor on the saveTask function body so we don't false-match the
-    // modal JSX's photo input. The branch sequence: photoFile present
-    // -> upload -> include request_photo_path in the INSERT payload.
-    const fnMatch = adminViewSrc.match(/async function saveTask\(\)\s*\{[\s\S]*?\n {2}\}\s*\n/);
-    expect(fnMatch, 'expected saveTask function body').not.toBeNull();
-    const body = fnMatch[0];
-    expect(body).toMatch(/uploadTaskRequestPhoto\(sb,\s*editForm\.oneTimeInstanceId,\s*editForm\.photoFile\)/);
-    expect(body).toMatch(/createOneTimeTaskInstance/);
-    // upload call appears before createOneTimeTaskInstance
-    const uploadIdx = body.search(/uploadTaskRequestPhoto/);
-    const insertIdx = body.search(/createOneTimeTaskInstance/);
-    expect(uploadIdx).toBeGreaterThan(-1);
-    expect(insertIdx).toBeGreaterThan(uploadIdx);
-  });
-
-  it('one-time INSERT payload carries request_photo_path', () => {
-    expect(adminViewSrc).toMatch(/request_photo_path:\s*requestPhotoDbPath/);
-  });
-
-  it('Open Tasks list renders lazy 📎 Photo link when ti.request_photo_path is set', () => {
-    expect(adminViewSrc).toMatch(/data-task-photo-link=\{ti\.id\}/);
-    expect(adminViewSrc).toMatch(/openRequestPhoto\(ti\.request_photo_path\)/);
-    expect(adminViewSrc).toMatch(/getRequestPhotoSignedUrl/);
   });
 });
 

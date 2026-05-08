@@ -1,5 +1,5 @@
 // ============================================================================
-// supabase/functions/tasks-summary — Tasks Module v1 Phase F (C4) weekly digest.
+// supabase/functions/tasks-summary — Tasks v2 weekly digest (T10).
 // ----------------------------------------------------------------------------
 // Deploy:
 //   supabase functions deploy tasks-summary --project-ref <project-ref>
@@ -185,6 +185,10 @@ interface OpenTaskRow {
   description: string | null;
   submission_source: string;
   submitted_by_team_member: string | null;
+  designation: string | null;
+  created_by_display_name: string | null;
+  request_photo_path: string | null;
+  completion_photo_path: string | null;
   assignee_profile_id: string;
   profiles: {email: string | null; full_name: string | null; role: string | null} | null;
 }
@@ -198,8 +202,12 @@ interface AssigneeBucket {
     id: string;
     due_date: string;
     title: string;
+    description: string | null;
     submission_source: string;
     submitted_by_team_member: string | null;
+    designation: string | null;
+    created_by_display_name: string | null;
+    has_photo: boolean;
   }>;
 }
 
@@ -216,7 +224,7 @@ async function fetchOpenTasksGrouped(
   const {data, error} = await svc
     .from('task_instances')
     .select(
-      'id, due_date, title, description, submission_source, submitted_by_team_member, assignee_profile_id, profiles!task_instances_assignee_profile_id_fkey(email, full_name, role)',
+      'id, due_date, title, description, submission_source, submitted_by_team_member, designation, created_by_display_name, request_photo_path, completion_photo_path, assignee_profile_id, profiles!task_instances_assignee_profile_id_fkey(email, full_name, role)',
     )
     .eq('status', 'open');
   if (error) throw new Error(`select task_instances: ${error.message}`);
@@ -242,8 +250,12 @@ async function fetchOpenTasksGrouped(
       id: r.id,
       due_date: r.due_date,
       title: r.title,
+      description: r.description || null,
       submission_source: r.submission_source,
       submitted_by_team_member: r.submitted_by_team_member,
+      designation: r.designation || null,
+      created_by_display_name: r.created_by_display_name || null,
+      has_photo: !!(r.request_photo_path || r.completion_photo_path),
     });
   }
   for (const b of groups.values()) {

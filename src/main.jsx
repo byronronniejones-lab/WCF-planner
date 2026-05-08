@@ -194,10 +194,8 @@ import FuelingHub from './webforms/FuelingHub.jsx';
 import FuelSupplyWebform from './webforms/FuelSupplyWebform.jsx';
 import WebformsAdminView from './webforms/WebformsAdminView.jsx';
 import PigDailysWebform from './webforms/PigDailysWebform.jsx';
-import AdminTasksView from './admin/AdminTasksView.jsx';
 import UnauthorizedRedirect from './shared/UnauthorizedRedirect.jsx';
 import TasksWebform from './webforms/TasksWebform.jsx';
-import MyTasksView from './auth/MyTasksView.jsx';
 import TaskCenterView from './tasks/TaskCenterView.jsx';
 
 // Phase 2 Round 8: equipment placeholder.
@@ -1565,8 +1563,6 @@ function App() {
     'farrowing',
     'sows',
     'webforms',
-    'adminTasks',
-    'myTasks',
     'tasks',
     'webformhub',
     'tasksWebform',
@@ -3480,31 +3476,12 @@ function App() {
       setCollapsedMonths,
     });
 
-  // ── ADMIN TASKS CENTER (C1) ──
-  // Component-level guard: non-admin → setView('home') in UnauthorizedRedirect.
-  // Header dropdown gating alone is not enough; a non-admin pasting
-  // /admin/tasks into the URL bar must not see admin UI even momentarily.
-  if (view === 'adminTasks')
-    return React.createElement(
-      UnauthorizedRedirect,
-      {authState, setView, requireAdmin: true, fallbackView: 'home'},
-      React.createElement(AdminTasksView, {Header, sb, allUsers, loadUsers, setView}),
-    );
-
-  // ── MY TASKS (C2) ──
-  // Auth-gated (any role); requireAdmin: false. Unauthenticated users
-  // get redirected home where LoginScreen renders.
-  if (view === 'myTasks')
-    return React.createElement(
-      UnauthorizedRedirect,
-      {authState, setView, requireAdmin: false, fallbackView: 'home'},
-      React.createElement(MyTasksView, {Header, sb, authState}),
-    );
-
-  // ── TASK CENTER (Tasks v2 T2) ──
-  // /tasks. Auth-gated (any role); requireAdmin: false. The System
-  // Tasks tab inside the view self-gates to admins. Legacy /my-tasks
-  // and /admin/tasks both stay live; T2 ships no redirects.
+  // ── TASK CENTER (Tasks v2) ──
+  // /tasks is the canonical Task Center for every authenticated user.
+  // Legacy /my-tasks and /admin/tasks paths redirect here via the URL
+  // adapter's ALIASES_EXACT map (T11) — the legacy view mounts and
+  // their imports have been removed. The System Tasks tab inside the
+  // view self-gates to admins.
   if (view === 'tasks')
     return React.createElement(
       UnauthorizedRedirect,

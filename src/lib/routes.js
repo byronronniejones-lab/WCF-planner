@@ -82,14 +82,10 @@ export const VIEW_TO_PATH = {
 
   // Admin (logged-in only)
   webforms: '/admin',
-  adminTasks: '/admin/tasks',
-
-  // Logged-in (any role)
-  myTasks: '/my-tasks',
-  // Task Center (Tasks v2 T2). Auth-gated, requireAdmin:false. Every
+  // Task Center (Tasks v2). Auth-gated, requireAdmin:false. Every
   // logged-in user can reach this; the System Tasks tab self-gates
-  // to admins inside the view. Legacy /my-tasks stays live until a
-  // later commit retires it.
+  // to admins inside the view. Legacy /my-tasks and /admin/tasks
+  // are aliases that redirect here (T11) — see ALIASES_EXACT.
   tasks: '/tasks',
 
   // Public (no-auth) — these also have legacy aliases handled below.
@@ -135,6 +131,13 @@ export const ALIASES_EXACT = {
   '/fueling/supply': '/equipment/supply',
   '/equipment/fleet': '/fleet',
   '/equipment/fuel-log': '/fleet/fuel-log',
+  // T11: retire legacy Tasks routes. Both legacy paths redirect to
+  // /tasks so old bookmarks, the dark-bar burger menu's prior entries,
+  // and any external links (digest emails, Slack pastes) land on the
+  // canonical Task Center. The legacy MyTasksView / AdminTasksView
+  // mounts are removed from main.jsx; the alias is the only path.
+  '/my-tasks': '/tasks',
+  '/admin/tasks': '/tasks',
 };
 
 // Prefix aliases. The matched prefix is replaced with the canonical prefix

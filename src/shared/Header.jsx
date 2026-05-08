@@ -28,10 +28,10 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal}) {
   const {showBreedForm, setShowBreedForm, showFarrowForm, setShowFarrowForm} = usePig();
   // Tasks v2 T3: own due/past-due count for the Header badge. Soft-fails
   // to 0 on any error so a transient DB hiccup never crashes Header.
-  // Re-runs on auth user change AND on view change so the badge catches
-  // up after a completion through the legacy /my-tasks surface or a
-  // return from any other task surface. A lightweight window-focus
-  // listener also nudges a refresh when the user tabs back in.
+  // Re-runs on auth user change, view change, and TASK_CHANGE_EVENT so
+  // the badge catches up immediately after a completion or any other
+  // /tasks mutation. A lightweight window-focus listener also nudges a
+  // refresh when the user tabs back in.
   const callerProfileId = authState && authState.user ? authState.user.id : null;
   const [myDueCount, setMyDueCount] = React.useState(0);
   React.useEffect(() => {
@@ -382,74 +382,32 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal}) {
                     overflow: 'hidden',
                   }}
                 >
-                  {/* My Tasks is visible to ANY authenticated user
-                      (Codex C2 amendment, Q3) — outside the admin gate. */}
-                  <button
-                    onClick={() => {
-                      setView('myTasks');
-                      setShowMenu(false);
-                    }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      padding: '10px 16px',
-                      border: 'none',
-                      background: 'none',
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      textAlign: 'left',
-                      color: '#111827',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    📋 My Tasks
-                  </button>
+                  {/* T11 retired the legacy My Tasks / Tasks Center
+                      burger entries — the dark-bar ✅ Tasks button is
+                      the single canonical destination. The Users entry
+                      stays for admin user management. */}
                   {authState?.role === 'admin' && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setShowUsers(true);
-                          loadUsers();
-                          setShowMenu(false);
-                        }}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: '10px 16px',
-                          border: 'none',
-                          borderTop: '1px solid #f3f4f6',
-                          background: 'none',
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          textAlign: 'left',
-                          color: '#111827',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        👥 Users
-                      </button>
-                      <button
-                        onClick={() => {
-                          setView('adminTasks');
-                          setShowMenu(false);
-                        }}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: '10px 16px',
-                          border: 'none',
-                          borderTop: '1px solid #f3f4f6',
-                          background: 'none',
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          textAlign: 'left',
-                          color: '#111827',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        ✅ Tasks Center
-                      </button>
-                    </>
+                    <button
+                      onClick={() => {
+                        setShowUsers(true);
+                        loadUsers();
+                        setShowMenu(false);
+                      }}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        padding: '10px 16px',
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        textAlign: 'left',
+                        color: '#111827',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      👥 Users
+                    </button>
                   )}
                 </div>
               )}
