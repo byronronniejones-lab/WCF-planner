@@ -16,6 +16,9 @@ import UsersModal from '../auth/UsersModal.jsx';
 import SheepBulkImport from './SheepBulkImport.jsx';
 import SheepDetail from './SheepDetail.jsx';
 import SheepCollapsibleOutcomeSections from './SheepCollapsibleOutcomeSections.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 
 const SheepFlocksView = ({
   sb,
@@ -746,7 +749,19 @@ const SheepFlocksView = ({
                     }}
                   >
                     <span style={{fontSize: 12, color: fc.tx}}>{open ? '▼' : '▶'}</span>
-                    <span style={{fontSize: 15, fontWeight: 700, color: fc.tx}}>🐑 {FLOCK_LABELS[f]}</span>
+                    <span
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        color: fc.tx,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <PlannerIcon iconKey={ANIMAL_ICON_KEYS.sheep} size={18} />
+                      <span>{FLOCK_LABELS[f]}</span>
+                    </span>
                     <span style={{fontSize: 12, color: fc.tx, opacity: 0.8}}>
                       {flockSheep.length} {flockSheep.length === 1 ? 'sheep' : 'sheep'}
                     </span>

@@ -18,6 +18,8 @@ import EquipmentFleetView from './EquipmentFleetView.jsx';
 import EquipmentFuelLogView from './EquipmentFuelLogView.jsx';
 import EquipmentDetail from './EquipmentDetail.jsx';
 import EquipmentMaterialListView from './EquipmentMaterialListView.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
 
 export default function EquipmentHome({
   sb,
@@ -123,11 +125,19 @@ export default function EquipmentHome({
       >
         {!isEquipmentTech && (
           <>
-            <button onClick={() => navigate('/fleet')} style={subNavBtn(subView === 'fleet')}>
-              🚜 Fleet
+            <button
+              onClick={() => navigate('/fleet')}
+              style={{...subNavBtn(subView === 'fleet'), display: 'inline-flex', alignItems: 'center', gap: 6}}
+            >
+              <PlannerIcon iconKey="tractor" size={16} />
+              Fleet
             </button>
-            <button onClick={() => navigate('/fleet/fuel-log')} style={subNavBtn(subView === 'fuel-log')}>
-              ⛽ Fuel Log
+            <button
+              onClick={() => navigate('/fleet/fuel-log')}
+              style={{...subNavBtn(subView === 'fuel-log'), display: 'inline-flex', alignItems: 'center', gap: 6}}
+            >
+              <PlannerIcon iconKey="fueling" size={16} />
+              Fuel Log
             </button>
             <button onClick={() => navigate('/fleet/materials')} style={subNavBtn(subView === 'materials')}>
               📋 Materials

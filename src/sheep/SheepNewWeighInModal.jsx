@@ -6,6 +6,9 @@
 // 2026-04-29 — every active master roster member appears.
 import React from 'react';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 
 const SheepNewWeighInModal = ({sb, onClose, onCreate}) => {
   const {useState, useEffect} = React;
@@ -84,7 +87,20 @@ const SheepNewWeighInModal = ({sb, onClose, onCreate}) => {
           boxShadow: '0 12px 40px rgba(0,0,0,.25)',
         }}
       >
-        <div style={{fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 14}}>{'🐑 New Sheep Weigh-In'}</div>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: '#111827',
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <PlannerIcon iconKey={ANIMAL_ICON_KEYS.sheep} size={20} />
+          <span>New Sheep Weigh-In</span>
+        </div>
         <div style={{marginBottom: 10}}>
           <label style={lblS}>Team member *</label>
           <select value={team} onChange={(e) => setTeam(e.target.value)} style={inpS}>

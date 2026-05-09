@@ -39,6 +39,9 @@ import {
   deletePlannedTripWithReconciliation,
 } from '../lib/pigForecast.js';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
@@ -2524,7 +2527,18 @@ export default function PigBatchesView({
                               (−{Math.round(sft.transferFeedCredit).toLocaleString()} → breeding)
                             </span>
                           )}
-                          <span style={{fontSize: 11, color: '#111827'}}>🐷 {sft.currentCount} current</span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: '#111827',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <PlannerIcon iconKey={ANIMAL_ICON_KEYS.pig} size={14} />
+                            {sft.currentCount} current
+                          </span>
                           {dailyVsLedger && (
                             <span
                               style={{

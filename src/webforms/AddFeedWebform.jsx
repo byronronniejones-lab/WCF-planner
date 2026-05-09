@@ -23,7 +23,9 @@ import React from 'react';
 import {loadRoster} from '../lib/teamMembers.js';
 import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
-import {renderCattleIcon} from '../components/CattleIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
 const AddFeedWebform = ({sb}) => {
@@ -453,8 +455,19 @@ const AddFeedWebform = ({sb}) => {
   var lblS = {display: 'block', fontSize: 13, color: '#374151', marginBottom: 5, fontWeight: 500};
   var logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
-      <div style={{fontSize: 18, fontWeight: 800, color: '#085041', letterSpacing: -0.3}}>
-        {'\ud83c\udf3e WCF Planner'}
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 800,
+          color: '#085041',
+          letterSpacing: -0.3,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <PlannerIcon iconKey="feed" size={22} />
+        <span>WCF Planner</span>
       </div>
       <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Quick Feed Log</div>
     </div>
@@ -814,11 +827,11 @@ const AddFeedWebform = ({sb}) => {
           <label style={lblS}>Program</label>
           <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 6}}>
             {[
-              {key: 'pig', icon: '\ud83d\udc37', label: 'Pig', color: '#1e40af', bg: '#eff6ff'},
-              {key: 'broiler', icon: '\ud83d\udc14', label: 'Broiler', color: '#a16207', bg: '#fef9c3'},
-              {key: 'layer', icon: '\ud83d\udc13', label: 'Layer', color: '#78350f', bg: '#fffbeb'},
-              {key: 'cattle', icon: renderCattleIcon(24), label: 'Cattle', color: '#991b1b', bg: '#fef2f2'},
-              {key: 'sheep', icon: '\ud83d\udc11', label: 'Sheep', color: '#0f766e', bg: '#f0fdfa'},
+              {key: 'pig', iconKey: ANIMAL_ICON_KEYS.pig, label: 'Pig', color: '#1e40af', bg: '#eff6ff'},
+              {key: 'broiler', iconKey: ANIMAL_ICON_KEYS.broiler, label: 'Broiler', color: '#a16207', bg: '#fef9c3'},
+              {key: 'layer', iconKey: ANIMAL_ICON_KEYS.layer, label: 'Layer', color: '#78350f', bg: '#fffbeb'},
+              {key: 'cattle', iconKey: ANIMAL_ICON_KEYS.cattle, label: 'Cattle', color: '#991b1b', bg: '#fef2f2'},
+              {key: 'sheep', iconKey: ANIMAL_ICON_KEYS.sheep, label: 'Sheep', color: '#0f766e', bg: '#f0fdfa'},
             ].map(function (p) {
               return (
                 <button
@@ -846,7 +859,7 @@ const AddFeedWebform = ({sb}) => {
                     gap: 4,
                   }}
                 >
-                  <span style={{fontSize: 22}}>{p.icon}</span>
+                  <PlannerIcon iconKey={p.iconKey} size={24} />
                   <span style={{fontSize: 11, fontWeight: 600, color: p.color}}>{p.label}</span>
                 </button>
               );

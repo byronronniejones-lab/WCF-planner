@@ -18,6 +18,8 @@ import {
   PIG_GROUPS,
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
@@ -493,7 +495,7 @@ export default function PigsHomeView({Header, loadUsers}) {
                   React.createElement(
                     'div',
                     {style: {background: bgColor, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8}},
-                    React.createElement('span', {style: {fontSize: 14}}, '\ud83d\udc37'),
+                    React.createElement(PlannerIcon, {iconKey: ANIMAL_ICON_KEYS.pig, size: 16}),
                     React.createElement(
                       'span',
                       {style: {fontSize: 13, fontWeight: 700, color: textColor}},

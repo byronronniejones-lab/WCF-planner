@@ -7,7 +7,10 @@
 import React from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {EQUIPMENT_CATEGORIES, CATEGORY_BY_KEY} from '../lib/equipment.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import EquipmentCategoryIcon from '../components/EquipmentCategoryIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
 import EquipmentFuelingWebform from './EquipmentFuelingWebform.jsx';
 import FuelSupplyWebform from './FuelSupplyWebform.jsx';
 import AppSetupModal from './AppSetupModal.jsx';
@@ -56,7 +59,20 @@ export default function FuelingHub({sb}) {
   };
   const logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
-      <div style={{fontSize: 18, fontWeight: 800, color: '#57534e', letterSpacing: -0.3}}>⛽ WCF Planner</div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 800,
+          color: '#57534e',
+          letterSpacing: -0.3,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <PlannerIcon iconKey="fueling" size={22} />
+        <span>WCF Planner</span>
+      </div>
       <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Fueling Log</div>
     </div>
   );
@@ -210,7 +226,7 @@ export default function FuelingHub({sb}) {
 
         <div style={{marginTop: 20, marginBottom: 12}}>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingLeft: 4}}>
-            <span style={{fontSize: 20}}>⛽</span>
+            <PlannerIcon iconKey="fueling" size={20} />
             <span
               style={{fontSize: 13, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.4}}
             >
@@ -230,7 +246,19 @@ export default function FuelingHub({sb}) {
                 fontFamily: 'inherit',
               }}
             >
-              <div style={{fontSize: 14, fontWeight: 700, color: '#92400e'}}>⛽ Fuel Supply Log</div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: '#92400e',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <PlannerIcon iconKey="fueling" size={18} />
+                <span>Fuel Supply Log</span>
+              </div>
               <div style={{fontSize: 11, color: '#92400e', opacity: 0.8}}>
                 Mobile fuel cell, gas cans, off-checklist trucks
               </div>

@@ -1,4 +1,8 @@
-export const CATTLE_ICON_SRC = '/icons/black_angus_face.svg';
+// Cow PNG from the planner icon set (resized + palette-quantized; see
+// scripts/optimize_planner_icons.cjs and src/lib/plannerIcons.js). The
+// existing CattleIcon API stays intact so the ~50 call sites don't have
+// to migrate to PlannerIcon individually.
+export const CATTLE_ICON_SRC = '/icons/planner/cow.png';
 
 export default function CattleIcon({size = 18, style, ...props}) {
   return (

@@ -69,7 +69,9 @@ test.describe('Header — Webforms grouping + Equipment rename + Tasks divider',
     await expect(group.getByText('📝 Dailys')).toBeVisible();
     const equipmentBtn = page.locator('[data-header-webforms-equipment="1"]');
     await expect(equipmentBtn).toBeVisible();
-    await expect(equipmentBtn).toHaveText(/🚜\s*Equipment/);
+    // Equipment button now uses an inline PlannerIcon PNG instead of the
+    // 🚜 tractor emoji. The accessible text content is just "Equipment".
+    await expect(equipmentBtn).toHaveText(/^\s*Equipment\s*$/);
 
     // Equipment routes to fuelingHub (i.e. /equipment) after the label change.
     await equipmentBtn.click();

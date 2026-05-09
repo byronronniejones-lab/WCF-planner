@@ -1055,7 +1055,11 @@ describe('Header — Webforms grouping + Equipment rename + Tasks divider', () =
 
   it('Header renames Fueling to Equipment but keeps fuelingHub routing', () => {
     expect(headerJsx).toMatch(/data-header-webforms-equipment="1"/);
-    expect(headerJsx).toMatch(/🚜 Equipment/);
+    // The label text is "Equipment". The leading 🚜 emoji was replaced by
+    // the PlannerIcon tractor PNG when the planner-wide icon set landed,
+    // so we lock the label as literal "Equipment" rather than the old
+    // "🚜 Equipment" string.
+    expect(headerJsx).toMatch(/data-header-webforms-equipment="1"[\s\S]*?>\s*Equipment\s*</);
     // setView('fuelingHub') is still the click target so the underlying
     // view + URL doesn't shift just because the label changed.
     expect(headerJsx).toMatch(/data-header-webforms-equipment="1"[\s\S]*?setView\(\s*['"]fuelingHub['"]\s*\)/);

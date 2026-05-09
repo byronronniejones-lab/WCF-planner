@@ -20,6 +20,8 @@ import {usePig} from '../contexts/PigContext.jsx';
 import {countMyOpenDueOrPastTasks} from '../lib/tasksCenterApi.js';
 import {TASK_CHANGE_EVENT} from '../lib/tasksCenterMutationsApi.js';
 import {todayCentralISO} from '../lib/dateUtils.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
 
 export default function Header({sb, signOut, loadUsers, DeleteConfirmModal}) {
   const {authState, saveStatus, setShowUsers} = useAuth();
@@ -295,9 +297,13 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal}) {
               color: 'white',
               fontFamily: 'inherit',
               whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
             }}
           >
-            🚜 Equipment
+            <PlannerIcon iconKey="tractor" size={16} />
+            Equipment
           </button>
         </div>
         {/* Visual divider: separates the Webforms group from the Tasks
@@ -337,7 +343,8 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal}) {
                 gap: 6,
               }}
             >
-              ✅ Tasks
+              <PlannerIcon iconKey="checkmark" size={16} />
+              Tasks
               {myDueCount > 0 && (
                 <span
                   data-tasks-header-badge={myDueCount}

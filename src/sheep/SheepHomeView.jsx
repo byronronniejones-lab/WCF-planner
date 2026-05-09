@@ -2,6 +2,9 @@
 import React from 'react';
 import UsersModal from '../auth/UsersModal.jsx';
 import {toISO} from '../lib/dateUtils.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 const SheepHomeView = ({
   sb,
   fmt,
@@ -333,7 +336,19 @@ const SheepHomeView = ({
                   flexWrap: 'wrap',
                 }}
               >
-                <span style={{fontSize: 16, fontWeight: 700, color: '#0f766e'}}>{'\ud83d\udc11 All Flocks'}</span>
+                <span
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 700,
+                    color: '#0f766e',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <PlannerIcon iconKey={ANIMAL_ICON_KEYS.sheep} size={20} />
+                  <span>All Flocks</span>
+                </span>
                 <span style={{fontSize: 11, color: '#6b7280'}}>
                   {cur.reportDays} of {cur.days} days reported
                 </span>

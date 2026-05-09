@@ -13,6 +13,9 @@ import DailyPhotoCapture from './DailyPhotoCapture.jsx';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 import AppSetupModal from './AppSetupModal.jsx';
 import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon, {PlannerIconLabel} from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 const WebformHub = ({
   sb,
   wfGroups,
@@ -1406,7 +1409,7 @@ const WebformHub = ({
               border: '1px solid #fde68a',
             }}
           >
-            <div style={{fontSize: 32}}>{'\ud83c\udf3e'}</div>
+            <PlannerIcon iconKey="feed" size={32} />
             <div style={{flex: 1}}>
               <div style={{fontSize: 16, fontWeight: 700, color: '#92400e'}}>Add Feed</div>
               <div style={{fontSize: 12, color: '#92400e', opacity: 0.8}}>Quick log feed added in the field</div>
@@ -1434,7 +1437,7 @@ const WebformHub = ({
               border: '1px solid #bfdbfe',
             }}
           >
-            <div style={{fontSize: 32}}>{'\u2696\ufe0f'}</div>
+            <PlannerIcon iconKey="weighins" size={32} />
             <div style={{flex: 1}}>
               <div style={{fontSize: 16, fontWeight: 700, color: '#1e40af'}}>Weigh-Ins</div>
               <div style={{fontSize: 12, color: '#1e40af', opacity: 0.8}}>
@@ -1462,7 +1465,7 @@ const WebformHub = ({
               border: '1px solid #99f6e4',
             }}
           >
-            <div style={{fontSize: 32}}>{'\u2705'}</div>
+            <PlannerIcon iconKey="checkmark" size={32} />
             <div style={{flex: 1}}>
               <div style={{fontSize: 16, fontWeight: 700, color: '#0f766e'}}>Submit a Task</div>
               <div style={{fontSize: 12, lineHeight: 1.35, color: '#0f766e', opacity: 0.8}}>
@@ -1473,12 +1476,12 @@ const WebformHub = ({
             <div style={{color: '#0f766e', fontSize: 18}}>{'\u203a'}</div>
           </div>
           {[
-            {id: 'broiler', label: '🐔 Broiler Daily Report'},
-            {id: 'layer', label: '🐓 Layer Daily Report'},
-            {id: 'egg', label: '🥚 Egg Collection Report'},
-            {id: 'pig', label: '🐷 Pig Daily Report'},
-            {id: 'cattle', label: renderCattleIconLabel('Cattle Daily Report', {size: 22})},
-            {id: 'sheep', label: '🐑 Sheep Daily Report'},
+            {id: 'broiler', iconKey: ANIMAL_ICON_KEYS.broiler, label: 'Broiler Daily Report'},
+            {id: 'layer', iconKey: ANIMAL_ICON_KEYS.layer, label: 'Layer Daily Report'},
+            {id: 'egg', iconKey: ANIMAL_ICON_KEYS.egg, label: 'Egg Collection Report'},
+            {id: 'pig', iconKey: ANIMAL_ICON_KEYS.pig, label: 'Pig Daily Report'},
+            {id: 'cattle', iconKey: ANIMAL_ICON_KEYS.cattle, label: 'Cattle Daily Report'},
+            {id: 'sheep', iconKey: ANIMAL_ICON_KEYS.sheep, label: 'Sheep Daily Report'},
           ].map((f) => (
             <div
               key={f.id}
@@ -1496,6 +1499,7 @@ const WebformHub = ({
                 border: '1px solid #e5e7eb',
               }}
             >
+              <PlannerIcon iconKey={f.iconKey} size={22} />
               <div style={{flex: 1, fontSize: 15, fontWeight: 600, color: '#111827'}}>{f.label}</div>
               <div style={{color: '#9ca3af', fontSize: 18}}>›</div>
             </div>
@@ -1526,7 +1530,14 @@ const WebformHub = ({
           >
             ‹ Back
           </button>
-          <div style={{fontSize: 17, fontWeight: 700, color: '#085041', marginBottom: 16}}>🐔 Broiler Daily Report</div>
+          <PlannerIconLabel
+            iconKey={ANIMAL_ICON_KEYS.broiler}
+            size={22}
+            gap={8}
+            style={{fontSize: 17, fontWeight: 700, color: '#085041', marginBottom: 16}}
+          >
+            Broiler Daily Report
+          </PlannerIconLabel>
           <div style={sectionStyle}>
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
               <div style={{gridColumn: '1/-1'}}>
@@ -1898,7 +1909,14 @@ const WebformHub = ({
           >
             ‹ Back
           </button>
-          <div style={{fontSize: 17, fontWeight: 700, color: '#78350f', marginBottom: 16}}>🐓 Layer Daily Report</div>
+          <PlannerIconLabel
+            iconKey={ANIMAL_ICON_KEYS.layer}
+            size={22}
+            gap={8}
+            style={{fontSize: 17, fontWeight: 700, color: '#78350f', marginBottom: 16}}
+          >
+            Layer Daily Report
+          </PlannerIconLabel>
           <div style={sectionStyle}>
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
               <div style={{gridColumn: '1/-1'}}>
@@ -2287,7 +2305,14 @@ const WebformHub = ({
           >
             ‹ Back
           </button>
-          <div style={{fontSize: 17, fontWeight: 700, color: '#1e40af', marginBottom: 16}}>🐷 Pig Daily Report</div>
+          <PlannerIconLabel
+            iconKey={ANIMAL_ICON_KEYS.pig}
+            size={22}
+            gap={8}
+            style={{fontSize: 17, fontWeight: 700, color: '#1e40af', marginBottom: 16}}
+          >
+            Pig Daily Report
+          </PlannerIconLabel>
           <div style={sectionStyle}>
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
               <div style={{gridColumn: '1/-1'}}>
@@ -3070,9 +3095,14 @@ const WebformHub = ({
           >
             ‹ Back
           </button>
-          <div style={{fontSize: 17, fontWeight: 700, color: '#78350f', marginBottom: 16}}>
-            🥚 Egg Collection Report
-          </div>
+          <PlannerIconLabel
+            iconKey={ANIMAL_ICON_KEYS.egg}
+            size={22}
+            gap={8}
+            style={{fontSize: 17, fontWeight: 700, color: '#78350f', marginBottom: 16}}
+          >
+            Egg Collection Report
+          </PlannerIconLabel>
           <div style={sectionStyle}>
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
               <div style={{gridColumn: '1/-1'}}>
@@ -3223,7 +3253,14 @@ const WebformHub = ({
           >
             ‹ Back
           </button>
-          <div style={{fontSize: 17, fontWeight: 700, color: '#0f766e', marginBottom: 16}}>🐑 Sheep Daily Report</div>
+          <PlannerIconLabel
+            iconKey={ANIMAL_ICON_KEYS.sheep}
+            size={22}
+            gap={8}
+            style={{fontSize: 17, fontWeight: 700, color: '#0f766e', marginBottom: 16}}
+          >
+            Sheep Daily Report
+          </PlannerIconLabel>
           <div style={sectionStyle}>
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
               <div style={{gridColumn: '1/-1'}}>

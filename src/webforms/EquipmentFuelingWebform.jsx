@@ -11,6 +11,8 @@ import {computeDueIntervals} from '../lib/equipment.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 import ManualsCard from '../equipment/ManualsCard.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
 
 export default function EquipmentFuelingWebform({sb, equipment, equipmentList, onBack}) {
   const isQuick = !equipment;
@@ -418,7 +420,20 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   };
   const logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
-      <div style={{fontSize: 18, fontWeight: 800, color: '#57534e', letterSpacing: -0.3}}>⛽ WCF Planner</div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 800,
+          color: '#57534e',
+          letterSpacing: -0.3,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <PlannerIcon iconKey="fueling" size={22} />
+        <span>WCF Planner</span>
+      </div>
       <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Fueling Log</div>
     </div>
   );

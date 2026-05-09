@@ -17,8 +17,10 @@ import {calcPoultryStatus, calcBroilerStatsFromDailys, calcTimeline} from '../li
 import {calcBreedingTimeline, buildCycleSeqMap, cycleLabel, calcCycleStatus} from '../lib/pig.js';
 import {computeIntervalStatus, daysSince, latestSaneReading, WARRANTY_WINDOW_DAYS} from '../lib/equipment.js';
 import {buildMaterialChecklist} from '../lib/equipmentMaterials.js';
-import EquipmentCategoryIcon from '../components/EquipmentCategoryIcon.jsx';
-import {renderCattleIcon, renderCattleIconLabel} from '../components/CattleIcon.jsx';
+import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS, PLANNER_ICON_KEYS} from '../lib/plannerIcons.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
@@ -329,7 +331,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
         if (b.processingDate && checkDate > b.processingDate) return;
         const key = `${b.id}|${checkDate}`;
         if (!broilerCheck.has(b.name.toLowerCase().trim()) && !missedCleared.has(key))
-          allMissed.push({key, label: b.name, icon: '🐔', type: 'Broiler', date: checkDate});
+          allMissed.push({key, label: b.name, iconKey: ANIMAL_ICON_KEYS.broiler, type: 'Broiler', date: checkDate});
       });
     // Pigs — sub-batches if present, main batch otherwise.
     // If the batch HAS sub-batches but none are active (all marked processed),
@@ -343,12 +345,24 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
           activeSubs.forEach((s) => {
             const key = `${s.id}|${checkDate}`;
             if (!pigCheck.has((s.name || '').toLowerCase().trim()) && !missedCleared.has(key))
-              allMissed.push({key, label: s.name, icon: '🐷', type: `Pig · ${g.batchName}`, date: checkDate});
+              allMissed.push({
+                key,
+                label: s.name,
+                iconKey: ANIMAL_ICON_KEYS.pig,
+                type: `Pig · ${g.batchName}`,
+                date: checkDate,
+              });
           });
         } else if (subs.length === 0) {
           const key = `${g.id}|${checkDate}`;
           if (!pigCheck.has((g.batchName || '').toLowerCase().trim()) && !missedCleared.has(key))
-            allMissed.push({key, label: g.batchName, icon: '🐷', type: 'Pig', date: checkDate});
+            allMissed.push({
+              key,
+              label: g.batchName,
+              iconKey: ANIMAL_ICON_KEYS.pig,
+              type: 'Pig',
+              date: checkDate,
+            });
         }
       });
     // Layers
@@ -357,7 +371,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
       .forEach((g) => {
         const key = `${g.id}|${checkDate}`;
         if (!layerCheck.has((g.name || '').toLowerCase().trim()) && !missedCleared.has(key))
-          allMissed.push({key, label: g.name, icon: '🥚', type: 'Layer', date: checkDate});
+          allMissed.push({key, label: g.name, iconKey: ANIMAL_ICON_KEYS.layer, type: 'Layer', date: checkDate});
       });
     // Cattle — flag any active herd that has cattle but no daily report on this date
     const cattleCheck = new Set(cattleDailysRecent.filter((d) => d.date === checkDate).map((d) => d.herd));
@@ -368,7 +382,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
         allMissed.push({
           key,
           label: h.charAt(0).toUpperCase() + h.slice(1),
-          icon: renderCattleIcon(22),
+          iconKey: ANIMAL_ICON_KEYS.cattle,
           type: 'Cattle',
           date: checkDate,
         });
@@ -382,7 +396,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
         allMissed.push({
           key,
           label: f.charAt(0).toUpperCase() + f.slice(1),
-          icon: '🐑',
+          iconKey: ANIMAL_ICON_KEYS.sheep,
           type: 'Sheep',
           date: checkDate,
         });
@@ -549,26 +563,30 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   // ── Admin weekly table data ──
   const fiveDaysAgo = toISO(addDays(new Date(), -5));
   const weekAgo = fiveDaysAgo; // used for admin daily tiles (5 days)
+  // Stable kind keys (broiler/pig/layer/egg/cattle/sheep) drive sort order
+  // and styling; emoji + label stay separate from the kind so the display
+  // layer can swap to PNG icons without touching the data shape. Codex
+  // amendment: "🐔 Broiler"-string-keyed lookups were refactored away.
   const allRecentReports = [
     ...broilerDailys
       .filter((d) => d.date >= weekAgo)
-      .map((d) => ({id: d.id, view: 'broilerdailys', date: d.date, type: '🐔 Broiler', raw: d})),
+      .map((d) => ({id: d.id, view: 'broilerdailys', date: d.date, kind: 'broiler', label: 'Broiler', raw: d})),
     ...pigDailys
       .filter((d) => d.date >= weekAgo)
-      .map((d) => ({id: d.id, view: 'pigdailys', date: d.date, type: '🐷 Pig', raw: d})),
+      .map((d) => ({id: d.id, view: 'pigdailys', date: d.date, kind: 'pig', label: 'Pig', raw: d})),
     ...layerDailysRecent
       .filter((d) => d.date >= weekAgo)
-      .map((d) => ({id: d.id, view: 'layerdailys', date: d.date, type: '🐓 Layer', raw: d})),
+      .map((d) => ({id: d.id, view: 'layerdailys', date: d.date, kind: 'layer', label: 'Layer', raw: d})),
     ...eggDailysRecent
       .filter((d) => d.date >= weekAgo)
-      .map((d) => ({id: d.id, view: 'eggdailys', date: d.date, type: '🥚 Egg', raw: d})),
+      .map((d) => ({id: d.id, view: 'eggdailys', date: d.date, kind: 'egg', label: 'Egg', raw: d})),
     ...cattleDailysRecent
       .filter((d) => d.date >= weekAgo)
-      .map((d) => ({id: d.id, view: 'cattledailys', date: d.date, type: 'Cattle', raw: d})),
+      .map((d) => ({id: d.id, view: 'cattledailys', date: d.date, kind: 'cattle', label: 'Cattle', raw: d})),
     ...sheepDailysRecent
       .filter((d) => d.date >= weekAgo)
-      .map((d) => ({id: d.id, view: 'sheepdailys', date: d.date, type: '🐑 Sheep', raw: d})),
-  ].sort((a, b) => b.date.localeCompare(a.date) || a.type.localeCompare(b.type));
+      .map((d) => ({id: d.id, view: 'sheepdailys', date: d.date, kind: 'sheep', label: 'Sheep', raw: d})),
+  ].sort((a, b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind));
 
   // Active pig breeding cycles
   const activeCycles = breedingCycles.filter((c) => calcCycleStatus(c) === 'active');
@@ -674,7 +692,8 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
           {[
             {
               label: 'Broilers',
-              icon: '🐔',
+              iconKey: ANIMAL_ICON_KEYS.broiler,
+              iconText: '🐔',
               desc: `${activeBatches.length} active \u00b7 ${birdsOnFarm.toLocaleString()} on farm`,
               view: 'broilerHome',
               color: '#a16207',
@@ -682,7 +701,8 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             },
             {
               label: 'Layers',
-              icon: '🥚',
+              iconKey: ANIMAL_ICON_KEYS.layer,
+              iconText: '🥚',
               desc: `${(layerGroups || []).filter((g) => g.status === 'active').length} active groups \u00b7 ${(layerGroups || []).filter((g) => g.status === 'active').reduce((s, g) => s + (g.currentCount || 0), 0)} hens`,
               view: 'layersHome',
               color: '#78350f',
@@ -690,7 +710,8 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             },
             {
               label: 'Pigs',
-              icon: '🐷',
+              iconKey: ANIMAL_ICON_KEYS.pig,
+              iconText: '🐷',
               desc: `${activeCycles.length} cycles \u00b7 ${totalSows} sows \u00b7 ${feederGroups.filter((g) => g.status === 'active').length} batches`,
               view: 'pigsHome',
               color: '#1e40af',
@@ -698,7 +719,8 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             },
             {
               label: 'Cattle',
-              icon: null,
+              iconKey: ANIMAL_ICON_KEYS.cattle,
+              iconText: null,
               desc: `Mommas \u00b7 backgrounders \u00b7 finishers \u00b7 bulls`,
               view: 'cattleHome',
               color: '#991b1b',
@@ -706,7 +728,8 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             },
             {
               label: 'Sheep',
-              icon: '🐑',
+              iconKey: ANIMAL_ICON_KEYS.sheep,
+              iconText: '🐑',
               desc: `Hair sheep for meat \u00b7 rams + ewes + feeders`,
               view: 'sheepHome',
               color: '#0f766e',
@@ -714,7 +737,8 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             },
             {
               label: 'Equipment',
-              icon: '🚜',
+              iconKey: PLANNER_ICON_KEYS.tractor,
+              iconText: '🚜',
               desc: `Tractors \u00b7 implements \u00b7 maintenance (coming soon)`,
               view: 'equipmentHome',
               color: '#57534e',
@@ -741,7 +765,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                 }}
               >
                 <div style={{flexShrink: 0, lineHeight: 1}}>
-                  {c.view === 'cattleHome' ? renderCattleIcon(42) : <EquipmentCategoryIcon category={c} size={36} />}
+                  <PlannerIcon iconKey={c.iconKey} text={c.iconText} size={36} />
                 </div>
                 <div style={{minWidth: 0, flex: 1}}>
                   <div style={{fontSize: 18, fontWeight: 700, color: c.color}}>{c.label}</div>
@@ -878,7 +902,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                     gap: 12,
                   }}
                 >
-                  <span style={{fontSize: 18}}>{m.icon}</span>
+                  <PlannerIcon iconKey={m.iconKey} size={22} />
                   <div style={{flex: 1}}>
                     <div style={{fontSize: 13, fontWeight: 600, color: '#b91c1c'}}>{m.label}</div>
                     <div style={{fontSize: 11, color: '#9ca3af'}}>
@@ -919,7 +943,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                 gap: 10,
               }}
             >
-              <span style={{fontSize: 16}}>✅</span>
+              <PlannerIcon iconKey="checkmark" size={16} />
               <div style={{fontSize: 12, color: '#065f46', fontWeight: 500}}>
                 All active batches had daily reports entered for the past 7 days
               </div>
@@ -1216,40 +1240,41 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
               LAST 5 DAYS — ALL DAILY REPORTS
             </div>
             {(() => {
-              // Group by date, then within each date group by animal type
+              // Group by date, then within each date group by animal kind.
+              // Lookups (order/colors/bg) key off the stable `kind` string,
+              // not an emoji-prefixed display label, so the heading icon
+              // can swap to PNG without churning the lookup map.
               const dates = [...new Set(allRecentReports.map((r) => r.date))].sort().reverse();
-              const typeOrder = {
-                '🐔 Broiler': 0,
-                '🐷 Pig': 1,
-                '🐓 Layer': 2,
-                '🥚 Layer': 2,
-                '🥚 Egg': 3,
-                Cattle: 4,
-                '🐑 Sheep': 5,
+              const kindOrder = {broiler: 0, pig: 1, layer: 2, egg: 3, cattle: 4, sheep: 5};
+              const kindColors = {
+                broiler: '#a16207',
+                pig: '#1e3a8a',
+                layer: '#92400e',
+                egg: '#78350f',
+                cattle: '#991b1b',
+                sheep: '#0f766e',
               };
-              const typeColors = {
-                '🐔 Broiler': '#a16207',
-                '🐷 Pig': '#1e3a8a',
-                '🐓 Layer': '#92400e',
-                '🥚 Layer': '#92400e',
-                '🥚 Egg': '#78350f',
-                Cattle: '#991b1b',
-                '🐑 Sheep': '#0f766e',
+              const kindBg = {
+                broiler: '#fef9c3',
+                pig: '#eff6ff',
+                layer: '#fffbeb',
+                egg: '#fefce8',
+                cattle: '#fef2f2',
+                sheep: '#f0fdfa',
               };
-              const typeBg = {
-                '🐔 Broiler': '#fef9c3',
-                '🐷 Pig': '#eff6ff',
-                '🐓 Layer': '#fffbeb',
-                '🥚 Layer': '#fffbeb',
-                '🥚 Egg': '#fefce8',
-                Cattle: '#fef2f2',
-                '🐑 Sheep': '#f0fdfa',
+              const kindIconKey = {
+                broiler: ANIMAL_ICON_KEYS.broiler,
+                pig: ANIMAL_ICON_KEYS.pig,
+                layer: ANIMAL_ICON_KEYS.layer,
+                egg: ANIMAL_ICON_KEYS.egg,
+                cattle: ANIMAL_ICON_KEYS.cattle,
+                sheep: ANIMAL_ICON_KEYS.sheep,
               };
               return dates.map((date, di) => {
                 const dayRecs = allRecentReports
                   .filter((r) => r.date === date)
-                  .sort((a, b) => (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9));
-                const types = [...new Set(dayRecs.map((r) => r.type))];
+                  .sort((a, b) => (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9));
+                const kinds = [...new Set(dayRecs.map((r) => r.kind))];
                 return (
                   <div key={date}>
                     {di > 0 && <div style={{height: 3, background: '#9ca3af', borderRadius: 2, margin: '8px 0'}} />}
@@ -1269,12 +1294,13 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                         {dayRecs.length} report{dayRecs.length !== 1 ? 's' : ''}
                       </span>
                     </div>
-                    {types.map((type) => {
-                      const typeRecs = dayRecs.filter((r) => r.type === type);
-                      const color = typeColors[type] || '#374151';
-                      const bg = typeBg[type] || '#f9fafb';
+                    {kinds.map((kind) => {
+                      const typeRecs = dayRecs.filter((r) => r.kind === kind);
+                      const color = kindColors[kind] || '#374151';
+                      const bg = kindBg[kind] || '#f9fafb';
+                      const heading = (typeRecs[0] && typeRecs[0].label) || kind;
                       return (
-                        <div key={type} style={{marginBottom: 10}}>
+                        <div key={kind} style={{marginBottom: 10}}>
                           <div
                             style={{
                               fontSize: 13,
@@ -1283,9 +1309,13 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                               letterSpacing: 0.5,
                               marginBottom: 6,
                               paddingLeft: 2,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
                             }}
                           >
-                            {type === 'Cattle' ? renderCattleIconLabel('CATTLE', {size: 18}) : type.toUpperCase()}
+                            <PlannerIcon iconKey={kindIconKey[kind]} size={18} />
+                            <span>{heading.toUpperCase()}</span>
                           </div>
                           <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
                             {typeRecs.map((r, i) => {
@@ -1390,7 +1420,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                       </span>
                                     );
 
-                                    if (r.type === '🐔 Broiler') {
+                                    if (r.kind === 'broiler') {
                                       const hasFeed = parseFloat(d.feed_lbs) > 0,
                                         hasGrit = parseFloat(d.grit_lbs) > 0,
                                         hasMort = parseInt(d.mortality_count) > 0;
@@ -1487,7 +1517,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                         </>
                                       );
                                     }
-                                    if (r.type === '🐓 Layer') {
+                                    if (r.kind === 'layer') {
                                       const hasFeed = parseFloat(d.feed_lbs) > 0,
                                         hasGrit = parseFloat(d.grit_lbs) > 0,
                                         hasCount = parseInt(d.layer_count) > 0,
@@ -1590,7 +1620,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                         </>
                                       );
                                     }
-                                    if (r.type === '🐷 Pig') {
+                                    if (r.kind === 'pig') {
                                       const hasFeed = parseFloat(d.feed_lbs) > 0,
                                         hasCount = parseInt(d.pig_count) > 0;
                                       const hasVolt = d.fence_voltage != null && String(d.fence_voltage).trim() !== '';
@@ -1671,7 +1701,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                         </>
                                       );
                                     }
-                                    if (r.type === '🥚 Egg') {
+                                    if (r.kind === 'egg') {
                                       const total =
                                         (parseInt(d.group1_count) || 0) +
                                         (parseInt(d.group2_count) || 0) +
@@ -1717,7 +1747,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                         </>
                                       );
                                     }
-                                    if (r.type === 'Cattle') {
+                                    if (r.kind === 'cattle') {
                                       const HERD_LBL = {
                                         mommas: 'Mommas',
                                         backgrounders: 'Backgrounders',
@@ -1834,7 +1864,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                         </>
                                       );
                                     }
-                                    if (r.type === '🐑 Sheep') {
+                                    if (r.kind === 'sheep') {
                                       const FLOCK_LBL = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
                                       const FLOCK_C = {
                                         rams: {bg: '#f0fdfa', tx: '#0f766e', bd: '#5eead4'},

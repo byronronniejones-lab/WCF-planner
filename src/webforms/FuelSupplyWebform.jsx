@@ -23,6 +23,8 @@ import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
 import {loadRoster} from '../lib/teamMembers.js';
 import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
 
 // destination drives whether this row counts as CONSUMPTION in the admin
 // reconciliation view. cell-refill rows are inventory movement (the cell
@@ -194,7 +196,10 @@ export default function FuelSupplyWebform({sb, onBack}) {
           gap: 12,
         }}
       >
-        <div style={{fontSize: 18, fontWeight: 700}}>⛽ Fuel Supply Log</div>
+        <div style={{fontSize: 18, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 8}}>
+          <PlannerIcon iconKey="fueling" size={20} />
+          <span>Fuel Supply Log</span>
+        </div>
         <div style={{fontSize: 11, opacity: 0.85}}>WCF Planner</div>
         {stuckRows.length > 0 && (
           <button

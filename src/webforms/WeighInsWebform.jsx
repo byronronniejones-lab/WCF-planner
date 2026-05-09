@@ -29,7 +29,9 @@ import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx
 import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
 import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
-import {renderCattleIcon, renderCattleIconLabel} from '../components/CattleIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon, {PlannerIconLabel} from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 
 const WeighInsWebform = ({sb}) => {
@@ -1210,8 +1212,19 @@ const WeighInsWebform = ({sb}) => {
   const lblS = {display: 'block', fontSize: 13, color: '#374151', marginBottom: 5, fontWeight: 500};
   const logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
-      <div style={{fontSize: 18, fontWeight: 800, color: '#1e40af', letterSpacing: -0.3}}>
-        {'\u2696\ufe0f WCF Planner'}
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 800,
+          color: '#1e40af',
+          letterSpacing: -0.3,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <PlannerIcon iconKey="weighins" size={22} />
+        <span>WCF Planner</span>
       </div>
       <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Weigh-Ins</div>
     </div>
@@ -1417,7 +1430,7 @@ const WeighInsWebform = ({sb}) => {
           {[
             {
               key: 'cattle',
-              icon: renderCattleIcon(36),
+              iconKey: ANIMAL_ICON_KEYS.cattle,
               color: '#991b1b',
               bg: '#fef2f2',
               label: 'Cattle',
@@ -1425,7 +1438,7 @@ const WeighInsWebform = ({sb}) => {
             },
             {
               key: 'sheep',
-              icon: '\ud83d\udc11',
+              iconKey: ANIMAL_ICON_KEYS.sheep,
               color: '#0f766e',
               bg: '#f0fdfa',
               label: 'Sheep',
@@ -1433,7 +1446,7 @@ const WeighInsWebform = ({sb}) => {
             },
             {
               key: 'pig',
-              icon: '\ud83d\udc37',
+              iconKey: ANIMAL_ICON_KEYS.pig,
               color: '#1e40af',
               bg: '#eff6ff',
               label: 'Pig',
@@ -1441,7 +1454,7 @@ const WeighInsWebform = ({sb}) => {
             },
             {
               key: 'broiler',
-              icon: '\ud83d\udc14',
+              iconKey: ANIMAL_ICON_KEYS.broiler,
               color: '#a16207',
               bg: '#fef9c3',
               label: 'Broiler',
@@ -1467,7 +1480,7 @@ const WeighInsWebform = ({sb}) => {
                 border: '1px solid ' + s.color + '33',
               }}
             >
-              <div style={{fontSize: 32}}>{s.icon}</div>
+              <PlannerIcon iconKey={s.iconKey} size={32} />
               <div style={{flex: 1}}>
                 <div style={{fontSize: 16, fontWeight: 700, color: s.color}}>{s.label}</div>
                 <div style={{fontSize: 12, color: s.color, opacity: 0.8}}>{s.desc}</div>
@@ -1523,16 +1536,23 @@ const WeighInsWebform = ({sb}) => {
           >
             {'\u2039 Back'}
           </button>
-          <div style={{fontSize: 17, fontWeight: 700, color: '#1e40af', marginBottom: 16}}>
-            {species === 'cattle'
-              ? renderCattleIconLabel('Cattle', {size: 20})
-              : species === 'sheep'
-                ? '\ud83d\udc11 Sheep'
-                : species === 'pig'
-                  ? '\ud83d\udc37 Pig'
-                  : '\ud83d\udc14 Broiler'}{' '}
+          <PlannerIconLabel
+            iconKey={
+              species === 'cattle'
+                ? ANIMAL_ICON_KEYS.cattle
+                : species === 'sheep'
+                  ? ANIMAL_ICON_KEYS.sheep
+                  : species === 'pig'
+                    ? ANIMAL_ICON_KEYS.pig
+                    : ANIMAL_ICON_KEYS.broiler
+            }
+            size={20}
+            gap={8}
+            style={{fontSize: 17, fontWeight: 700, color: '#1e40af', marginBottom: 16}}
+          >
+            {species === 'cattle' ? 'Cattle' : species === 'sheep' ? 'Sheep' : species === 'pig' ? 'Pig' : 'Broiler'}{' '}
             Weigh-In
-          </div>
+          </PlannerIconLabel>
 
           {drafts.length > 0 && (
             <div style={cardS}>

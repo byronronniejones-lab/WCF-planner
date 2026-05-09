@@ -7,6 +7,9 @@
 // ============================================================================
 import React from 'react';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
+import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
   const {useState, useEffect} = React;
   const todayStr = (() => {
@@ -116,8 +119,19 @@ const AdminNewWeighInModal = ({sb, species, onClose, onCreated}) => {
           boxShadow: '0 12px 40px rgba(0,0,0,.25)',
         }}
       >
-        <div style={{fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 14}}>
-          New {species === 'broiler' ? 'Broiler' : 'Pig'} Weigh-In
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: '#111827',
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <PlannerIcon iconKey={species === 'broiler' ? ANIMAL_ICON_KEYS.broiler : ANIMAL_ICON_KEYS.pig} size={20} />
+          <span>New {species === 'broiler' ? 'Broiler' : 'Pig'} Weigh-In</span>
         </div>
         <div style={{marginBottom: 10}}>
           <label style={lblS}>Team member *</label>

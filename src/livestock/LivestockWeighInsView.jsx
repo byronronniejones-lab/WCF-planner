@@ -8,6 +8,8 @@
 import React from 'react';
 import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import PlannerIcon from '../components/PlannerIcon.jsx';
 import {writeBroilerBatchAvg, recomputeBroilerBatchWeekAvg} from '../lib/broiler.js';
 import {loadRoster, activeNames as rosterActiveNames} from '../lib/teamMembers.js';
 import {pigSlug} from '../lib/pig.js';
@@ -934,9 +936,13 @@ const LivestockWeighInsView = ({
                 fontSize: 12,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
               }}
             >
-              {'\u2696\ufe0f New Weigh-In'}
+              <PlannerIcon iconKey="weighins" size={16} />
+              <span>New Weigh-In</span>
             </button>
           </div>
         </div>
@@ -964,7 +970,7 @@ const LivestockWeighInsView = ({
               fontSize: 13,
             }}
           >
-            No weigh-in sessions yet. Click <strong>{'\u2696\ufe0f New Weigh-In'}</strong> to start one.
+            No weigh-in sessions yet. Click <strong>New Weigh-In</strong> to start one.
           </div>
         )}
 
