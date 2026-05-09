@@ -1,7 +1,7 @@
 ﻿// ============================================================================
 // src/layer/LayersHomeView.jsx  —  Phase 2 Round 6
 // ----------------------------------------------------------------------------
-// Layers home dashboard — per-batch feed/egg/cost stats over a rolling window.
+// Layers home dashboard — per-batch lifetime feed/egg/cost stats for active batches.
 // Consumes useLayer for all layer-scope data, useFeedCosts for fallback
 // feed rates when a batch has no per-batch cost overrides, plus the usual
 // Auth/Batches/UI.
@@ -21,22 +21,15 @@ import {useUI} from '../contexts/UIContext.jsx';
 export default function LayersHomeView({Header, loadUsers}) {
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {batches} = useBatches();
-  const {
-    layerBatches,
-    layerHousings,
-    allLayerDailys,
-    allEggDailys,
-    layerDashPeriod,
-    setLayerDashPeriod,
-    retHomeDashPeriod,
-    setRetHomeDashPeriod,
-  } = useLayer();
+  const {layerBatches, layerHousings, allLayerDailys, allEggDailys, retHomeDashPeriod, setRetHomeDashPeriod} =
+    useLayer();
   const {feedCosts} = useFeedCosts();
   const {setView} = useUI();
   const fmt$ = (v) =>
     v == null ? '\u2014' : '$' + v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const fmt$0 = (v) =>
     v == null ? '\u2014' : '$' + v.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
+  const lifetimeFromForBatch = (batch) => batch.brooder_entry_date || batch.arrival_date || '1900-01-01';
 
   // Compute stats for a given batch over an arbitrary date window.
   // Attribution rule: a report belongs to this batch if
@@ -135,7 +128,6 @@ export default function LayersHomeView({Header, loadUsers}) {
       Math.round((new Date(toISO + 'T12:00:00') - new Date(fromISO + 'T12:00:00')) / 86400000) + 1,
     );
     const epd = hens > 0 && totalEggs > 0 ? totalEggs / (hens * days) : null;
-    const feedPerDoz = dozens > 0 && totalFeed > 0 ? totalFeed / dozens : null;
     const costPerDoz = dozens > 0 && cost != null ? cost / dozens : null;
     return {
       totalFeed,
@@ -148,7 +140,6 @@ export default function LayersHomeView({Header, loadUsers}) {
       cost,
       hens,
       epd,
-      feedPerDoz,
       costPerDoz,
       reportDays: reportDates.size,
       days,
@@ -234,7 +225,6 @@ export default function LayersHomeView({Header, loadUsers}) {
       Math.round((new Date(toISO + 'T12:00:00') - new Date(fromISO + 'T12:00:00')) / 86400000) + 1,
     );
     const epd = hens > 0 && totalEggs > 0 ? totalEggs / (hens * days) : null;
-    const feedPerDoz = dozens > 0 && totalFeed > 0 ? totalFeed / dozens : null;
     const costPerDoz = dozens > 0 && cost != null ? cost / dozens : null;
     return {
       totalFeed,
@@ -247,7 +237,6 @@ export default function LayersHomeView({Header, loadUsers}) {
       cost,
       hens,
       epd,
-      feedPerDoz,
       costPerDoz,
       reportDays: reportDates.size,
     };
@@ -255,9 +244,6 @@ export default function LayersHomeView({Header, loadUsers}) {
 
   // Period dates
   const today = todayISO();
-  const periodFrom = toISO(addDays(new Date(), -(layerDashPeriod - 1)));
-  const prevTo = toISO(addDays(new Date(), -layerDashPeriod));
-  const prevFrom = toISO(addDays(new Date(), -(layerDashPeriod * 2 - 1)));
 
   // Retirement Home period
   const retFrom = toISO(addDays(new Date(), -(retHomeDashPeriod - 1)));
@@ -313,7 +299,7 @@ export default function LayersHomeView({Header, loadUsers}) {
   );
 
   // Render a metrics row
-  const MetricsGrid = ({s, prev, hideHens, hidePhases}) => {
+  const MetricsGrid = ({s, prev, hideHens, hidePhases, showDaysDenominator = false}) => {
     const hasFeed = s.totalFeed > 0;
     const items = [
       {l: 'Total feed', v: s.totalFeed > 0 ? Math.round(s.totalFeed).toLocaleString() + ' lbs' : '\u2014'},
@@ -340,15 +326,13 @@ export default function LayersHomeView({Header, loadUsers}) {
         good: s.epd >= 0.7,
         trend: prev ? trendArrow(s.epd, prev.epd, true) : null,
       },
-      {
-        l: 'Lbs/dozen',
-        v: s.feedPerDoz != null ? s.feedPerDoz.toFixed(2) : '\u2014',
-        trend: prev ? trendArrow(s.feedPerDoz, prev.feedPerDoz, false) : null,
-      },
       {l: '$/dozen', v: hasFeed ? fmt$(s.costPerDoz) : '\u2014', color: '#065f46'},
       {l: 'Mortality', v: s.totalMort || '0', warn: s.totalMort > 10},
       ...(hideHens ? [] : [{l: 'Hens', v: s.hens > 0 ? s.hens.toLocaleString() : '\u2014'}]),
-      {l: 'Report days', v: s.reportDays + ' of ' + (s.days || layerDashPeriod)},
+      {
+        l: 'Report days',
+        v: showDaysDenominator && s.days ? s.reportDays + ' of ' + s.days : String(s.reportDays || 0),
+      },
     ];
     return (
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 8, minWidth: 0}}>
@@ -449,28 +433,19 @@ export default function LayersHomeView({Header, loadUsers}) {
           />
         </div>
 
-        {/* Period toggle for active batches */}
+        {/* Lifetime stats for active batches */}
         <div style={{display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}>
           <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', letterSpacing: 0.3}}>
-            ACTIVE BATCHES {'\u2014'} ROLLING WINDOW
+            ACTIVE BATCHES {'\u2014'} LIFETIME
           </div>
-          <PeriodToggle
-            val={layerDashPeriod}
-            setVal={setLayerDashPeriod}
-            opts={[
-              {v: 30, l: '30 Days'},
-              {v: 90, l: '90 Days'},
-              {v: 120, l: '120 Days'},
-            ]}
-          />
         </div>
 
         {/* Active batch cards */}
         <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
           {dashBatches.map(function (batch, bi) {
             const myHousings = (layerHousings || []).filter((h) => h.batch_id === batch.id);
-            const cur = computeBatchWindow(batch, periodFrom, today);
-            const prev = computeBatchWindow(batch, prevFrom, prevTo);
+            const lifetimeFrom = lifetimeFromForBatch(batch);
+            const cur = computeBatchWindow(batch, lifetimeFrom, today);
             const anchor = batch.brooder_entry_date || batch.arrival_date;
             const ageMonths = anchor
               ? +((new Date(today + 'T12:00:00') - new Date(anchor + 'T12:00:00')) / 86400000 / 30.44).toFixed(1)
@@ -525,8 +500,8 @@ export default function LayersHomeView({Header, loadUsers}) {
                   )}
                 </div>
                 <div style={{padding: '14px 20px'}}>
-                  <MetricsGrid s={cur} prev={prev} hidePhases={myHousings.length > 0} />
-                  {myHousings.length > 0 && (
+                  <MetricsGrid s={cur} hidePhases={myHousings.length > 0} />
+                  {myHousings.length > 1 && (
                     <div style={{marginTop: 14, paddingTop: 12, borderTop: '1px dashed #e5e7eb'}}>
                       <div
                         style={{
@@ -550,8 +525,7 @@ export default function LayersHomeView({Header, loadUsers}) {
                           ];
                           var bc = batchColors[bi % batchColors.length];
                           return myHousings.map((h) => {
-                            const hCur = computeHousingWindow(h, batch, periodFrom, today);
-                            const hPrev = computeHousingWindow(h, batch, prevFrom, prevTo);
+                            const hCur = computeHousingWindow(h, batch, lifetimeFrom, today);
                             return (
                               <div
                                 key={h.id}
@@ -593,12 +567,7 @@ export default function LayersHomeView({Header, loadUsers}) {
                                     </span>
                                   )}
                                 </div>
-                                <MetricsGrid
-                                  s={{...hCur, days: layerDashPeriod}}
-                                  prev={hPrev}
-                                  hideHens={true}
-                                  hidePhases={true}
-                                />
+                                <MetricsGrid s={hCur} hideHens={true} hidePhases={true} />
                               </div>
                             );
                           });
@@ -664,7 +633,7 @@ export default function LayersHomeView({Header, loadUsers}) {
                       {cur.hens.toLocaleString()} hens
                     </span>
                   </div>
-                  <MetricsGrid s={cur} hidePhases={true} />
+                  <MetricsGrid s={cur} hidePhases={true} showDaysDenominator={true} />
                 </div>
               </div>
             );

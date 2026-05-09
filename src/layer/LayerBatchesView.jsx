@@ -1085,10 +1085,7 @@ const LayerBatchesView = ({
                 const eggsPerHenPerDay =
                   currentHens > 0 && daysInHousing > 0 ? s.totalEggs / (currentHens * daysInHousing) : null;
                 const feedPerHen = orig > 0 ? s.totalFeed / orig : null;
-                const totalDozens = (s.totalEggs || 0) / 12;
-                const feedPerDozen = totalDozens > 0 ? s.totalFeed / totalDozens : null;
                 const feedCost = computeLayerFeedCost(s.starterFeed, s.growerFeed, s.layerFeed, selectedBatch);
-                const costPerDoz = totalDozens > 0 && feedCost != null ? feedCost / totalDozens : null;
                 const costPerHen = feedCost != null && orig > 0 ? feedCost / orig : null;
                 const fmt$ = (v) =>
                   '$' + v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1115,12 +1112,6 @@ const LayerBatchesView = ({
                     v: feedPerHen != null ? feedPerHen.toFixed(1) + ' lbs' : '\u2014',
                     c: '#92400e',
                   },
-                  {
-                    l: 'Feed / Dozen (lifetime)',
-                    v: feedPerDozen != null ? feedPerDozen.toFixed(2) + ' lbs' : '\u2014',
-                    c: '#92400e',
-                  },
-                  {l: 'Cost / Dozen (lifetime)', v: costPerDoz != null ? fmt$(costPerDoz) : '\u2014', c: '#065f46'},
                   {l: 'Cost / Hen (lifetime)', v: costPerHen != null ? fmt$(costPerHen) : '\u2014', c: '#065f46'},
                 ];
                 return (
@@ -1392,42 +1383,44 @@ const LayerBatchesView = ({
                           )}
                         </div>
                       </div>
-                      <div style={{display: 'flex', gap: 16, flexShrink: 0}}>
-                        <StatPill
-                          label="Total Feed"
-                          val={hs.totalFeed > 0 ? Math.round(hs.totalFeed) + ' lbs' : '\u2014'}
-                          color="#92400e"
-                        />
-                        {selectedBatch && selectedBatch.name !== 'Retirement Home' && (
+                      {batchHousings.length > 1 && (
+                        <div style={{display: 'flex', gap: 16, flexShrink: 0}}>
                           <StatPill
-                            label="Starter"
-                            val={hs.starterFeed > 0 ? Math.round(hs.starterFeed) + ' lbs' : '\u2014'}
-                            color="#1e40af"
+                            label="Total Feed"
+                            val={hs.totalFeed > 0 ? Math.round(hs.totalFeed) + ' lbs' : '\u2014'}
+                            color="#92400e"
                           />
-                        )}
-                        {selectedBatch && selectedBatch.name !== 'Retirement Home' && (
+                          {selectedBatch && selectedBatch.name !== 'Retirement Home' && (
+                            <StatPill
+                              label="Starter"
+                              val={hs.starterFeed > 0 ? Math.round(hs.starterFeed) + ' lbs' : '\u2014'}
+                              color="#1e40af"
+                            />
+                          )}
+                          {selectedBatch && selectedBatch.name !== 'Retirement Home' && (
+                            <StatPill
+                              label="Grower"
+                              val={hs.growerFeed > 0 ? Math.round(hs.growerFeed) + ' lbs' : '\u2014'}
+                              color="#065f46"
+                            />
+                          )}
                           <StatPill
-                            label="Grower"
-                            val={hs.growerFeed > 0 ? Math.round(hs.growerFeed) + ' lbs' : '\u2014'}
-                            color="#065f46"
+                            label="Layer"
+                            val={hs.layerFeed > 0 ? Math.round(hs.layerFeed) + ' lbs' : '\u2014'}
+                            color="#78350f"
                           />
-                        )}
-                        <StatPill
-                          label="Layer"
-                          val={hs.layerFeed > 0 ? Math.round(hs.layerFeed) + ' lbs' : '\u2014'}
-                          color="#78350f"
-                        />
-                        <StatPill
-                          label="Mort."
-                          val={hs.totalMort || '0'}
-                          color={hs.totalMort > 5 ? '#b91c1c' : '#374151'}
-                        />
-                        <StatPill
-                          label="Eggs"
-                          val={hs.totalEggs > 0 ? hs.totalEggs.toLocaleString() : '\u2014'}
-                          color="#78350f"
-                        />
-                      </div>
+                          <StatPill
+                            label="Mort."
+                            val={hs.totalMort || '0'}
+                            color={hs.totalMort > 5 ? '#b91c1c' : '#374151'}
+                          />
+                          <StatPill
+                            label="Eggs"
+                            val={hs.totalEggs > 0 ? hs.totalEggs.toLocaleString() : '\u2014'}
+                            color="#78350f"
+                          />
+                        </div>
+                      )}
                       <div style={{display: 'flex', gap: 6, flexShrink: 0}}>
                         <button
                           onClick={() => {
