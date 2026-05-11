@@ -11,6 +11,15 @@ import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, todayISO, addDays} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
 import {calcBreedingTimeline} from '../lib/pig.js';
+import {
+  pigDailyBurnLbs,
+  onHandFromSnapshot,
+  isSnapshotStale,
+  suggestOrder,
+  STALE_SNAPSHOT_DAYS,
+  LEAD_TIME_DAYS,
+  RESERVE_DAYS,
+} from '../lib/feedPlanner.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
@@ -28,6 +37,8 @@ export default function PigFeedView({
   sbSave,
 }) {
   const [pigFeedExpandedMonths, setPigFeedExpandedMonths] = React.useState(new Set());
+  const [showPigLegacyLedger, setShowPigLegacyLedger] = React.useState(false);
+  const [confirmPigSuggested, setConfirmPigSuggested] = React.useState(false);
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {breeders, feederGroups, farrowingRecs, breedingCycles} = usePig();
   const {pigDailys} = useDailysRecent();
@@ -356,6 +367,52 @@ export default function PigFeedView({
     });
   }
 
+  // ── Snapshot-anchored order board (feedPlanner.js) ──
+  // First-screen answer to "How much feed do I need to order?". Burn rate
+  // comes from pigDailyBurnLbs (ledger-derived feeder counts + sows/boars).
+  // On-hand is snapshot − consumed-since-snapshot via pig_dailys actuals.
+  const pigBurnFn = function pigBurnFn(dateISO) {
+    return pigDailyBurnLbs(dateISO, {feederGroups, breedingCycles, breeders, farrowingRecs}).totalLbs;
+  };
+  const pigConsumedFn = function pigConsumedFn(fromISO, toISO_) {
+    return pigDailys
+      .filter((d) => d.date && d.date > fromISO && d.date <= toISO_)
+      .reduce((s, d) => s + (parseFloat(d.feed_lbs) || 0), 0);
+  };
+  const hasPigSnapshot = !!(pigFeedInventory && pigFeedInventory.date);
+  const pigOnHand = hasPigSnapshot
+    ? onHandFromSnapshot({
+        snapshotLbs: parseFloat(pigFeedInventory.count) || 0,
+        snapshotDateISO: pigFeedInventory.date,
+        todayISO: todayDate,
+        consumedLbsFn: pigConsumedFn,
+        burnRateFn: pigBurnFn,
+      })
+    : null;
+  const pigSnapshotStale = hasPigSnapshot
+    ? isSnapshotStale({snapshotDateISO: pigFeedInventory.date, todayISO: todayDate})
+    : false;
+  const pigSuggestion = suggestOrder({
+    onHandLbs: pigOnHand == null ? 0 : pigOnHand,
+    todayISO: todayDate,
+    burnRateFn: pigBurnFn,
+  });
+  const pigCurrentMonthOrder = (feedOrders.pig || {})[thisYM];
+  const pigCurrentMonthHasOrder = pigCurrentMonthOrder != null && pigCurrentMonthOrder !== '';
+  function applyPigSuggestion() {
+    if (!pigSuggestion || pigSuggestion.suggestedOrderLbs <= 0) return;
+    if (pigCurrentMonthHasOrder && !confirmPigSuggested) {
+      setConfirmPigSuggested(true);
+      return;
+    }
+    savePigOrder(thisYM, String(pigSuggestion.suggestedOrderLbs));
+    setConfirmPigSuggested(false);
+  }
+  const thisMonthLabel = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+  });
+
   return (
     <div>
       <Header />
@@ -369,120 +426,361 @@ export default function PigFeedView({
           gap: '1.25rem',
         }}
       >
-        {/* 4 top tiles — big numbers */}
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10}}>
-          {/* Actual On Hand */}
-          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px'}}>
-            <div
-              style={{fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4}}
-            >
-              Actual On Hand
-            </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: feedOnHand != null ? (feedOnHand > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                lineHeight: 1,
-              }}
-            >
-              {feedOnHand != null ? feedOnHand.toLocaleString() + ' lbs' : '\u2014'}
-            </div>
-            {inv && <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>{'Count: ' + fmt(inv.date)}</div>}
-            {inv && physCountAdjustment != null && physCountAdjustment !== 0 && (
-              <div style={{fontSize: 10, color: physCountAdjustment > 0 ? '#065f46' : '#b91c1c', marginTop: 2}}>
-                {'Adj ' + (physCountAdjustment > 0 ? '+' : '') + physCountAdjustment.toLocaleString() + ' vs system'}
-              </div>
-            )}
-            {!inv && feedOnHand != null && curProj.total > 0 && (
-              <div style={{fontSize: 11, color: '#065f46', fontWeight: 600, marginTop: 4}}>
-                {'~' + Math.max(0, Math.round(feedOnHand / curProj.total)) + ' days remaining'}
-              </div>
-            )}
-          </div>
-          {/* End of Month Est */}
-          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px'}}>
-            <div
-              style={{fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4}}
-            >
-              End of Month Est.
-            </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: endOfMonthEst != null ? (endOfMonthEst > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                lineHeight: 1,
-              }}
-            >
-              {endOfMonthEst != null ? endOfMonthEst.toLocaleString() + ' lbs' : '\u2014'}
-            </div>
-            <div style={{fontSize: 11, color: '#6b7280', marginTop: 6}}>
-              {inv && inv.includesCurrentMonthDelivery && inv.date && inv.date.substring(0, 7) === thisYM
-                ? 'Delivery included in count'
-                : 'Incl. ' + ((feedOrders.pig || {})[thisYM] || 0).toLocaleString() + ' arriving'}
-            </div>
-          </div>
-          {/* Suggested Order */}
+        {/* Snapshot-anchored order board — first-screen "How much feed do I need to order?" */}
+        <div
+          style={{
+            background: 'white',
+            border: '2px solid #085041',
+            borderRadius: 12,
+            padding: '14px 18px',
+          }}
+        >
           <div
             style={{
-              background: suggestedOrder > 0 ? '#fffbeb' : 'white',
-              border: suggestedOrder > 0 ? '2px solid #fde68a' : '1px solid #e5e7eb',
-              borderRadius: 12,
-              padding: '14px 16px',
+              fontSize: 11,
+              color: '#085041',
+              textTransform: 'uppercase',
+              letterSpacing: 0.8,
+              fontWeight: 700,
+              marginBottom: 12,
             }}
           >
-            <div
-              style={{
-                fontSize: 11,
-                color: suggestedOrder > 0 ? '#92400e' : '#6b7280',
-                textTransform: 'uppercase',
-                letterSpacing: 0.8,
-                marginBottom: 4,
-              }}
-            >
-              {'Order for ' + orderTargetLabel}
+            Feed order
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1.1fr 0.9fr 1fr 1.2fr 1.4fr',
+              gap: 14,
+              alignItems: 'center',
+            }}
+          >
+            {/* Est on hand */}
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  marginBottom: 3,
+                }}
+              >
+                Est on hand
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 700,
+                  color: hasPigSnapshot ? '#111827' : '#9ca3af',
+                  fontStyle: hasPigSnapshot ? 'normal' : 'italic',
+                  lineHeight: 1,
+                }}
+              >
+                {pigOnHand != null ? Math.round(pigOnHand).toLocaleString() + ' lbs' : 'No count'}
+              </div>
+              <div style={{fontSize: 10, color: '#9ca3af', marginTop: 3}}>
+                {hasPigSnapshot ? 'Counted ' + fmt(pigFeedInventory.date) : 'estimated'}
+              </div>
             </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: suggestedOrder != null ? (suggestedOrder > 0 ? '#92400e' : '#065f46') : '#9ca3af',
-                lineHeight: 1,
-              }}
-            >
-              {suggestedOrder != null
-                ? suggestedOrder > 0
-                  ? suggestedOrder.toLocaleString() + ' lbs'
-                  : 'Surplus'
-                : '\u2014'}
+            {/* Days runway */}
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  marginBottom: 3,
+                }}
+              >
+                Days runway
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 700,
+                  color: pigSuggestion && pigSuggestion.orderIsLate ? '#b91c1c' : '#111827',
+                  lineHeight: 1,
+                }}
+              >
+                {pigSuggestion ? pigSuggestion.daysOfRunway : '—'}
+              </div>
+              <div style={{fontSize: 10, color: '#9ca3af', marginTop: 3}}>
+                {LEAD_TIME_DAYS + 'd lead + ' + RESERVE_DAYS.default + 'd reserve'}
+              </div>
             </div>
-            <div style={{fontSize: 11, color: '#6b7280', marginTop: 6}}>
-              {'Carryover: ' + (orderBaseEst != null ? orderBaseEst.toLocaleString() : '\u2014') + ' lbs'}
+            {/* Order by */}
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  marginBottom: 3,
+                }}
+              >
+                Order by
+              </div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 700,
+                  color: pigSuggestion && pigSuggestion.orderIsLate ? '#b91c1c' : '#111827',
+                  lineHeight: 1.1,
+                }}
+              >
+                {pigSuggestion ? fmt(pigSuggestion.orderByDateISO) : '—'}
+              </div>
+              {pigSuggestion && pigSuggestion.orderIsLate && (
+                <div style={{fontSize: 10, color: '#b91c1c', fontWeight: 600, marginTop: 3}}>Late — order now</div>
+              )}
+            </div>
+            {/* Suggested */}
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  marginBottom: 3,
+                }}
+              >
+                Suggested
+              </div>
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 700,
+                  color: pigSuggestion && pigSuggestion.suggestedOrderLbs > 0 ? '#92400e' : '#065f46',
+                  fontStyle: hasPigSnapshot ? 'normal' : 'italic',
+                  lineHeight: 1,
+                }}
+              >
+                {pigSuggestion
+                  ? pigSuggestion.suggestedOrderLbs > 0
+                    ? pigSuggestion.suggestedOrderLbs.toLocaleString() + ' lbs'
+                    : 'Surplus'
+                  : '—'}
+              </div>
+              <div style={{fontSize: 10, color: '#9ca3af', marginTop: 3}}>
+                {hasPigSnapshot
+                  ? pigSnapshotStale
+                    ? 'Recount soon (>' + STALE_SNAPSHOT_DAYS + 'd)'
+                    : 'rounded to 50 lbs'
+                  : 'estimated — enter count'}
+              </div>
+            </div>
+            {/* Use suggested action */}
+            <div>
+              <button
+                type="button"
+                onClick={applyPigSuggestion}
+                disabled={!pigSuggestion || pigSuggestion.suggestedOrderLbs <= 0}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: confirmPigSuggested ? '#b91c1c' : '#085041',
+                  color: 'white',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: pigSuggestion && pigSuggestion.suggestedOrderLbs > 0 ? 'pointer' : 'not-allowed',
+                  opacity: pigSuggestion && pigSuggestion.suggestedOrderLbs > 0 ? 1 : 0.5,
+                  fontFamily: 'inherit',
+                }}
+              >
+                {!pigSuggestion || pigSuggestion.suggestedOrderLbs <= 0
+                  ? 'No order needed'
+                  : confirmPigSuggested
+                    ? 'Confirm: replace ' +
+                      (parseFloat(pigCurrentMonthOrder) || 0).toLocaleString() +
+                      ' → ' +
+                      pigSuggestion.suggestedOrderLbs.toLocaleString()
+                    : pigCurrentMonthHasOrder
+                      ? 'Use suggested (replace ' + (parseFloat(pigCurrentMonthOrder) || 0).toLocaleString() + ')'
+                      : 'Use suggested'}
+              </button>
+              <div style={{fontSize: 10, color: '#9ca3af', marginTop: 5, textAlign: 'center'}}>
+                {'Writes to ' + thisMonthLabel + ' order'}
+              </div>
             </div>
           </div>
-          {/* Need thru */}
-          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px'}}>
+          {(pigSnapshotStale || !hasPigSnapshot) && (
             <div
-              style={{fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4}}
+              style={{
+                marginTop: 12,
+                padding: '8px 12px',
+                background: hasPigSnapshot ? '#fef3c7' : '#f3f4f6',
+                border: hasPigSnapshot ? '1px solid #fde68a' : '1px dashed #d1d5db',
+                borderRadius: 8,
+                fontSize: 12,
+                color: hasPigSnapshot ? '#92400e' : '#4b5563',
+              }}
             >
-              {'Need thru ' + monthAfterNext0.toLocaleDateString('en-US', {month: 'short'})}
+              {hasPigSnapshot
+                ? 'Snapshot is more than ' + STALE_SNAPSHOT_DAYS + ' days old — recount recommended for accuracy.'
+                : 'No physical count on file — the suggestion above is estimated. Enter the lbs on hand below for a precise order.'}
             </div>
-            <div style={{fontSize: 28, fontWeight: 700, color: '#111827', lineHeight: 1}}>
-              {twoMonthNeed0.toLocaleString() + ' lbs'}
-            </div>
-            <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>
-              {(orderTargetData ? orderTargetData.projTotal.toLocaleString() : '0') +
-                ' (' +
-                orderTargetLabel +
-                ') + ' +
-                (monthAfterNextData0 ? monthAfterNextData0.projTotal.toLocaleString() : '0') +
-                ' (' +
-                monthAfterNext0.toLocaleDateString('en-US', {month: 'short'}) +
-                ')'}
-            </div>
-          </div>
+          )}
         </div>
+
+        {/* Show/hide legacy monthly ledger */}
+        <button
+          type="button"
+          onClick={() => setShowPigLegacyLedger((s) => !s)}
+          style={{
+            alignSelf: 'flex-start',
+            padding: '6px 12px',
+            background: 'transparent',
+            border: '1px solid #d1d5db',
+            borderRadius: 6,
+            fontSize: 12,
+            color: '#4b5563',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {showPigLegacyLedger ? '▼ Hide monthly ledger' : '▶ Show monthly ledger'}
+        </button>
+
+        {/* 4 top tiles — big numbers (legacy ledger) */}
+        {showPigLegacyLedger && (
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10}}>
+            {/* Actual On Hand */}
+            <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px'}}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.8,
+                  marginBottom: 4,
+                }}
+              >
+                Actual On Hand
+              </div>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  color: feedOnHand != null ? (feedOnHand > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                  lineHeight: 1,
+                }}
+              >
+                {feedOnHand != null ? feedOnHand.toLocaleString() + ' lbs' : '\u2014'}
+              </div>
+              {inv && <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>{'Count: ' + fmt(inv.date)}</div>}
+              {inv && physCountAdjustment != null && physCountAdjustment !== 0 && (
+                <div style={{fontSize: 10, color: physCountAdjustment > 0 ? '#065f46' : '#b91c1c', marginTop: 2}}>
+                  {'Adj ' + (physCountAdjustment > 0 ? '+' : '') + physCountAdjustment.toLocaleString() + ' vs system'}
+                </div>
+              )}
+              {!inv && feedOnHand != null && curProj.total > 0 && (
+                <div style={{fontSize: 11, color: '#065f46', fontWeight: 600, marginTop: 4}}>
+                  {'~' + Math.max(0, Math.round(feedOnHand / curProj.total)) + ' days remaining'}
+                </div>
+              )}
+            </div>
+            {/* End of Month Est */}
+            <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px'}}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.8,
+                  marginBottom: 4,
+                }}
+              >
+                End of Month Est.
+              </div>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  color: endOfMonthEst != null ? (endOfMonthEst > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                  lineHeight: 1,
+                }}
+              >
+                {endOfMonthEst != null ? endOfMonthEst.toLocaleString() + ' lbs' : '\u2014'}
+              </div>
+              <div style={{fontSize: 11, color: '#6b7280', marginTop: 6}}>
+                {inv && inv.includesCurrentMonthDelivery && inv.date && inv.date.substring(0, 7) === thisYM
+                  ? 'Delivery included in count'
+                  : 'Incl. ' + ((feedOrders.pig || {})[thisYM] || 0).toLocaleString() + ' arriving'}
+              </div>
+            </div>
+            {/* Suggested Order */}
+            <div
+              style={{
+                background: suggestedOrder > 0 ? '#fffbeb' : 'white',
+                border: suggestedOrder > 0 ? '2px solid #fde68a' : '1px solid #e5e7eb',
+                borderRadius: 12,
+                padding: '14px 16px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: suggestedOrder > 0 ? '#92400e' : '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.8,
+                  marginBottom: 4,
+                }}
+              >
+                {'Order for ' + orderTargetLabel}
+              </div>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  color: suggestedOrder != null ? (suggestedOrder > 0 ? '#92400e' : '#065f46') : '#9ca3af',
+                  lineHeight: 1,
+                }}
+              >
+                {suggestedOrder != null
+                  ? suggestedOrder > 0
+                    ? suggestedOrder.toLocaleString() + ' lbs'
+                    : 'Surplus'
+                  : '\u2014'}
+              </div>
+              <div style={{fontSize: 11, color: '#6b7280', marginTop: 6}}>
+                {'Carryover: ' + (orderBaseEst != null ? orderBaseEst.toLocaleString() : '\u2014') + ' lbs'}
+              </div>
+            </div>
+            {/* Need thru */}
+            <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px'}}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.8,
+                  marginBottom: 4,
+                }}
+              >
+                {'Need thru ' + monthAfterNext0.toLocaleDateString('en-US', {month: 'short'})}
+              </div>
+              <div style={{fontSize: 28, fontWeight: 700, color: '#111827', lineHeight: 1}}>
+                {twoMonthNeed0.toLocaleString() + ' lbs'}
+              </div>
+              <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>
+                {(orderTargetData ? orderTargetData.projTotal.toLocaleString() : '0') +
+                  ' (' +
+                  orderTargetLabel +
+                  ') + ' +
+                  (monthAfterNextData0 ? monthAfterNextData0.projTotal.toLocaleString() : '0') +
+                  ' (' +
+                  monthAfterNext0.toLocaleDateString('en-US', {month: 'short'}) +
+                  ')'}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Physical count input */}
         <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 20px'}}>
@@ -524,41 +822,15 @@ export default function PigFeedView({
                 }}
               />
             </div>
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '7px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: 6,
-                background: '#f9fafb',
-                fontSize: 12,
-                color: '#000',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-                lineHeight: 1.2,
-              }}
-            >
-              <input
-                id="pig-feed-count-includes-delivery"
-                type="checkbox"
-                defaultChecked={!!(inv && inv.includesCurrentMonthDelivery)}
-                style={{cursor: 'pointer', margin: 0, accentColor: '#000'}}
-              />
-              Includes this month's feed delivery
-            </label>
             <button
               onClick={() => {
                 const el = document.getElementById('pig-feed-count-input');
                 const dl = document.getElementById('pig-feed-count-date');
-                const cb = document.getElementById('pig-feed-count-includes-delivery');
                 if (!el || !el.value) {
                   alert('Enter the lbs on hand.');
                   return;
                 }
-                savePigFeedCount(el.value, dl ? dl.value : todayDate, cb ? cb.checked : false);
+                savePigFeedCount(el.value, dl ? dl.value : todayDate, false);
               }}
               style={{
                 padding: '7px 16px',
@@ -579,619 +851,635 @@ export default function PigFeedView({
           </div>
         </div>
 
-        {/* Monthly summary — card per month, current first, collapsible past/future */}
-        {(function () {
-          function fmtMonth2(ym) {
-            var p = ym.split('-').map(Number);
-            return new Date(p[0], p[1] - 1, 1).toLocaleDateString('en-US', {month: 'short', year: 'numeric'});
-          }
-
-          // ── Build running inventory ledger ──
-          // START → CONSUMED → ORDERED (arrives end of month) → END
-          var pigLedger = {};
-          var runBal = 0;
-          var allMonthsSorted = monthlyData.slice().sort(function (a, b) {
-            return a.ym.localeCompare(b.ym);
-          });
-          var countApplied = false;
-          for (var mi3 = 0; mi3 < allMonthsSorted.length; mi3++) {
-            var md3 = allMonthsSorted[mi3];
-            if (md3.ym < firstPigOrderYM) {
-              pigLedger[md3.ym] = null;
-              continue;
+        {/* Monthly summary — card per month, current first, collapsible past/future (legacy ledger) */}
+        {showPigLegacyLedger &&
+          (function () {
+            function fmtMonth2(ym) {
+              var p = ym.split('-').map(Number);
+              return new Date(p[0], p[1] - 1, 1).toLocaleDateString('en-US', {month: 'short', year: 'numeric'});
             }
-            var lgStart = runBal;
-            var lgCountMonth = false;
-            var lgCountAdj = null;
-            // Physical count override
-            if (inv && !countApplied) {
-              var invYM3 = inv.date.substring(0, 7);
-              if (invYM3 === md3.ym) {
-                // When count includes this month's delivery, the system-side comparison must
-                // include that order too (else a perfect count shows a phantom adjustment).
-                var thisMonthOrderForAdj = parseFloat(md3.ordered) || 0;
-                var systemEstThisMonth = runBal + (inv.includesCurrentMonthDelivery ? thisMonthOrderForAdj : 0);
-                lgCountAdj = Math.round(inv.count - systemEstThisMonth);
-                lgStart = inv.count;
-                lgCountMonth = true;
-                countApplied = true;
-                var cAfter = pigDailys
-                  .filter(function (d) {
-                    return d.date && d.date > inv.date && d.date.startsWith(md3.ym);
-                  })
-                  .reduce(function (s, d) {
-                    return s + (parseFloat(d.feed_lbs) || 0);
-                  }, 0);
-                var pRem = 0;
-                if (md3.isCurrent) {
-                  var dl4 = md3.daysInMonth - now.getDate();
-                  if (dl4 > 0) pRem = Math.round(curProj.total * dl4);
-                }
-                var lgCons = Math.round(cAfter + pRem);
-                // When delivery is already absorbed into the count value, don't add this month's order again.
-                var lgOrd = inv.includesCurrentMonthDelivery ? 0 : parseFloat(md3.ordered) || 0;
-                var lgEnd = Math.round(lgStart - lgCons + lgOrd);
-                pigLedger[md3.ym] = {
-                  start: lgStart,
-                  consumed: lgCons,
-                  actualCons: Math.round(cAfter),
-                  projCons: Math.round(pRem),
-                  ordered: lgOrd,
-                  rawOrdered: parseFloat(md3.ordered) || 0,
-                  end: lgEnd,
-                  countMonth: true,
-                  countAdj: lgCountAdj,
-                  deliveryInCount: !!inv.includesCurrentMonthDelivery,
-                };
-                runBal = lgEnd;
+
+            // ── Build running inventory ledger ──
+            // START → CONSUMED → ORDERED (arrives end of month) → END
+            var pigLedger = {};
+            var runBal = 0;
+            var allMonthsSorted = monthlyData.slice().sort(function (a, b) {
+              return a.ym.localeCompare(b.ym);
+            });
+            var countApplied = false;
+            for (var mi3 = 0; mi3 < allMonthsSorted.length; mi3++) {
+              var md3 = allMonthsSorted[mi3];
+              if (md3.ym < firstPigOrderYM) {
+                pigLedger[md3.ym] = null;
                 continue;
-              } else if (invYM3 < md3.ym) {
-                lgStart = inv.count;
-                countApplied = true;
               }
+              var lgStart = runBal;
+              var lgCountMonth = false;
+              var lgCountAdj = null;
+              // Physical count override
+              if (inv && !countApplied) {
+                var invYM3 = inv.date.substring(0, 7);
+                if (invYM3 === md3.ym) {
+                  // When count includes this month's delivery, the system-side comparison must
+                  // include that order too (else a perfect count shows a phantom adjustment).
+                  var thisMonthOrderForAdj = parseFloat(md3.ordered) || 0;
+                  var systemEstThisMonth = runBal + (inv.includesCurrentMonthDelivery ? thisMonthOrderForAdj : 0);
+                  lgCountAdj = Math.round(inv.count - systemEstThisMonth);
+                  lgStart = inv.count;
+                  lgCountMonth = true;
+                  countApplied = true;
+                  var cAfter = pigDailys
+                    .filter(function (d) {
+                      return d.date && d.date > inv.date && d.date.startsWith(md3.ym);
+                    })
+                    .reduce(function (s, d) {
+                      return s + (parseFloat(d.feed_lbs) || 0);
+                    }, 0);
+                  var pRem = 0;
+                  if (md3.isCurrent) {
+                    var dl4 = md3.daysInMonth - now.getDate();
+                    if (dl4 > 0) pRem = Math.round(curProj.total * dl4);
+                  }
+                  var lgCons = Math.round(cAfter + pRem);
+                  // When delivery is already absorbed into the count value, don't add this month's order again.
+                  var lgOrd = inv.includesCurrentMonthDelivery ? 0 : parseFloat(md3.ordered) || 0;
+                  var lgEnd = Math.round(lgStart - lgCons + lgOrd);
+                  pigLedger[md3.ym] = {
+                    start: lgStart,
+                    consumed: lgCons,
+                    actualCons: Math.round(cAfter),
+                    projCons: Math.round(pRem),
+                    ordered: lgOrd,
+                    rawOrdered: parseFloat(md3.ordered) || 0,
+                    end: lgEnd,
+                    countMonth: true,
+                    countAdj: lgCountAdj,
+                    deliveryInCount: !!inv.includesCurrentMonthDelivery,
+                  };
+                  runBal = lgEnd;
+                  continue;
+                } else if (invYM3 < md3.ym) {
+                  lgStart = inv.count;
+                  countApplied = true;
+                }
+              }
+              var lgActual = md3.actual;
+              var lgProj = 0;
+              if (md3.isCurrent) {
+                var dl5 = md3.daysInMonth - now.getDate();
+                if (dl5 > 0) lgProj = Math.round(curProj.total * dl5);
+              } else if (md3.isFuture) {
+                lgProj = md3.projTotal;
+                lgActual = 0;
+              }
+              var lgCons2 = Math.round(lgActual + lgProj);
+              var lgOrd2 = parseFloat(md3.ordered) || 0;
+              var lgEnd2 = Math.round(lgStart - lgCons2 + lgOrd2);
+              pigLedger[md3.ym] = {
+                start: Math.round(lgStart),
+                consumed: lgCons2,
+                actualCons: Math.round(lgActual),
+                projCons: Math.round(lgProj),
+                ordered: lgOrd2,
+                end: lgEnd2,
+                countMonth: lgCountMonth,
+                countAdj: lgCountAdj,
+              };
+              runBal = lgEnd2;
             }
-            var lgActual = md3.actual;
-            var lgProj = 0;
-            if (md3.isCurrent) {
-              var dl5 = md3.daysInMonth - now.getDate();
-              if (dl5 > 0) lgProj = Math.round(curProj.total * dl5);
-            } else if (md3.isFuture) {
-              lgProj = md3.projTotal;
-              lgActual = 0;
-            }
-            var lgCons2 = Math.round(lgActual + lgProj);
-            var lgOrd2 = parseFloat(md3.ordered) || 0;
-            var lgEnd2 = Math.round(lgStart - lgCons2 + lgOrd2);
-            pigLedger[md3.ym] = {
-              start: Math.round(lgStart),
-              consumed: lgCons2,
-              actualCons: Math.round(lgActual),
-              projCons: Math.round(lgProj),
-              ordered: lgOrd2,
-              end: lgEnd2,
-              countMonth: lgCountMonth,
-              countAdj: lgCountAdj,
-            };
-            runBal = lgEnd2;
-          }
 
-          function renderPigMonthCard(md2) {
-            var lg = pigLedger[md2.ym];
-            if (!lg) return null;
-            var projGroups = projectedFeedByGroup(md2.ym);
-            var actualGroups = actualFeedByGroup(md2.ym);
-            var variance = !md2.isFuture && md2.actual > 0 ? md2.actual - md2.projTotal : null;
-            return React.createElement(
-              'div',
-              {
-                key: md2.ym,
-                style: {
-                  background: 'white',
-                  border: md2.isCurrent ? '2px solid #085041' : '1px solid #e5e7eb',
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                },
-              },
-              // Header
-              React.createElement(
+            function renderPigMonthCard(md2) {
+              var lg = pigLedger[md2.ym];
+              if (!lg) return null;
+              var projGroups = projectedFeedByGroup(md2.ym);
+              var actualGroups = actualFeedByGroup(md2.ym);
+              var variance = !md2.isFuture && md2.actual > 0 ? md2.actual - md2.projTotal : null;
+              return React.createElement(
                 'div',
                 {
+                  key: md2.ym,
                   style: {
-                    padding: '10px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    background: md2.isCurrent ? '#ecfdf5' : md2.isFuture ? '#f8fafc' : 'white',
+                    background: 'white',
+                    border: md2.isCurrent ? '2px solid #085041' : '1px solid #e5e7eb',
+                    borderRadius: 12,
+                    overflow: 'hidden',
                   },
                 },
-                React.createElement(
-                  'span',
-                  {style: {fontSize: 14, fontWeight: 700, color: '#111827'}},
-                  fmtMonth2(md2.ym),
-                ),
-                md2.isCurrent &&
-                  React.createElement(
-                    'span',
-                    {
-                      style: {
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: '#065f46',
-                        background: '#d1fae5',
-                        padding: '1px 8px',
-                        borderRadius: 10,
-                      },
-                    },
-                    'NOW',
-                  ),
-                md2.isFuture && React.createElement('span', {style: {fontSize: 10, color: '#9ca3af'}}, 'projected'),
-                lg.countMonth &&
-                  lg.countAdj != null &&
-                  lg.countAdj !== 0 &&
-                  React.createElement(
-                    'span',
-                    {
-                      style: {
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: lg.countAdj > 0 ? '#065f46' : '#b91c1c',
-                        background: lg.countAdj > 0 ? '#ecfdf5' : '#fef2f2',
-                        padding: '1px 8px',
-                        borderRadius: 10,
-                      },
-                    },
-                    'Count adj ' + (lg.countAdj > 0 ? '+' : '') + lg.countAdj.toLocaleString(),
-                  ),
-              ),
-              // Ledger row — START / CONSUMED / ORDERED / END
-              React.createElement(
-                'div',
-                {style: {padding: '8px 16px 6px', display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr 1fr', gap: 10}},
-                // START
+                // Header
                 React.createElement(
                   'div',
-                  null,
-                  React.createElement(
-                    'div',
-                    {
-                      style: {
-                        fontSize: 10,
-                        color: '#6b7280',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.5,
-                        marginBottom: 2,
-                      },
-                    },
-                    'Start of Month',
-                  ),
-                  React.createElement(
-                    'div',
-                    {style: {fontSize: 16, fontWeight: 600, color: lg.start >= 0 ? '#374151' : '#b91c1c'}},
-                    lg.start.toLocaleString(),
-                  ),
-                ),
-                // CONSUMED
-                React.createElement(
-                  'div',
-                  null,
-                  React.createElement(
-                    'div',
-                    {
-                      style: {
-                        fontSize: 10,
-                        color: '#6b7280',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.5,
-                        marginBottom: 2,
-                      },
-                    },
-                    'Consumed',
-                  ),
-                  React.createElement(
-                    'div',
-                    {style: {fontSize: 16, fontWeight: 600, color: '#111827'}},
-                    lg.consumed.toLocaleString(),
-                  ),
-                  md2.isCurrent && lg.projCons > 0
-                    ? React.createElement(
-                        'div',
-                        {style: {fontSize: 10, color: '#9ca3af', marginTop: 1}},
-                        lg.actualCons.toLocaleString() + ' actual + ' + lg.projCons.toLocaleString() + ' proj',
-                      )
-                    : null,
-                  md2.isFuture
-                    ? React.createElement('div', {style: {fontSize: 10, color: '#9ca3af', marginTop: 1}}, 'projected')
-                    : null,
-                ),
-                // ORDERED (input)
-                React.createElement(
-                  'div',
-                  null,
-                  React.createElement(
-                    'div',
-                    {
-                      style: {
-                        fontSize: 10,
-                        color: '#6b7280',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.5,
-                        marginBottom: 2,
-                      },
-                    },
-                    'Ordered',
-                  ),
-                  React.createElement('input', {
-                    type: 'number',
-                    min: '0',
-                    step: '100',
-                    value: md2.ordered != null && md2.ordered !== '' ? md2.ordered : '',
-                    onChange: function (e) {
-                      savePigOrder(md2.ym, e.target.value);
-                    },
-                    onClick: function (e) {
-                      e.stopPropagation();
-                    },
-                    placeholder: '0',
+                  {
                     style: {
-                      width: '100%',
-                      fontSize: 14,
-                      padding: '4px 8px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: 6,
-                      textAlign: 'right',
-                      fontFamily: 'inherit',
-                      fontWeight: 600,
-                      boxSizing: 'border-box',
+                      padding: '10px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      background: md2.isCurrent ? '#ecfdf5' : md2.isFuture ? '#f8fafc' : 'white',
                     },
-                  }),
-                  React.createElement(
-                    'div',
-                    {
-                      style: {
-                        fontSize: 10,
-                        color: lg.deliveryInCount ? '#065f46' : '#9ca3af',
-                        marginTop: 1,
-                        fontStyle: lg.deliveryInCount ? 'italic' : 'normal',
-                      },
-                    },
-                    lg.deliveryInCount ? '(in count)' : 'arrives end of mo.',
-                  ),
-                ),
-                // END OF MONTH
-                React.createElement(
-                  'div',
-                  null,
-                  React.createElement(
-                    'div',
-                    {
-                      style: {
-                        fontSize: 10,
-                        color: '#6b7280',
-                        textTransform: 'uppercase',
-                        letterSpacing: 0.5,
-                        marginBottom: 2,
-                      },
-                    },
-                    'End of Month',
-                  ),
-                  React.createElement(
-                    'div',
-                    {style: {fontSize: 16, fontWeight: 700, color: lg.end > 0 ? '#065f46' : '#b91c1c'}},
-                    lg.end.toLocaleString(),
-                  ),
-                ),
-              ),
-              // Projected vs Actual — daily rates + extrapolated monthly variance
-              (function () {
-                var projDaily = Math.round(md2.projTotal / md2.daysInMonth);
-                var daysElapsed = md2.isFuture ? 0 : md2.isCurrent ? now.getDate() : md2.daysInMonth;
-                var actualDaily = daysElapsed > 0 ? Math.round(md2.actual / daysElapsed) : 0;
-                var dailyVar = daysElapsed > 0 ? actualDaily - projDaily : null;
-                // Monthly variance: for completed months use actual totals, for current month extrapolate daily rate to full month
-                var moVar = null;
-                if (!md2.isFuture && daysElapsed > 0) {
-                  if (md2.isCurrent) moVar = Math.round(actualDaily * md2.daysInMonth) - md2.projTotal;
-                  else moVar = md2.actual - md2.projTotal;
-                }
-                return React.createElement(
-                  'div',
-                  {style: {padding: '2px 16px 8px', display: 'flex', gap: 16, fontSize: 11, color: '#6b7280'}},
+                  },
                   React.createElement(
                     'span',
-                    null,
-                    'Proj: ' + projDaily.toLocaleString() + '/day (' + md2.projTotal.toLocaleString() + ' mo)',
+                    {style: {fontSize: 14, fontWeight: 700, color: '#111827'}},
+                    fmtMonth2(md2.ym),
                   ),
-                  !md2.isFuture &&
+                  md2.isCurrent &&
+                    React.createElement(
+                      'span',
+                      {
+                        style: {
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: '#065f46',
+                          background: '#d1fae5',
+                          padding: '1px 8px',
+                          borderRadius: 10,
+                        },
+                      },
+                      'NOW',
+                    ),
+                  md2.isFuture && React.createElement('span', {style: {fontSize: 10, color: '#9ca3af'}}, 'projected'),
+                  lg.countMonth &&
+                    lg.countAdj != null &&
+                    lg.countAdj !== 0 &&
+                    React.createElement(
+                      'span',
+                      {
+                        style: {
+                          fontSize: 10,
+                          fontWeight: 600,
+                          color: lg.countAdj > 0 ? '#065f46' : '#b91c1c',
+                          background: lg.countAdj > 0 ? '#ecfdf5' : '#fef2f2',
+                          padding: '1px 8px',
+                          borderRadius: 10,
+                        },
+                      },
+                      'Count adj ' + (lg.countAdj > 0 ? '+' : '') + lg.countAdj.toLocaleString(),
+                    ),
+                ),
+                // Ledger row — START / CONSUMED / ORDERED / END
+                React.createElement(
+                  'div',
+                  {
+                    style: {
+                      padding: '8px 16px 6px',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1.2fr 1fr 1fr',
+                      gap: 10,
+                    },
+                  },
+                  // START
+                  React.createElement(
+                    'div',
+                    null,
+                    React.createElement(
+                      'div',
+                      {
+                        style: {
+                          fontSize: 10,
+                          color: '#6b7280',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          marginBottom: 2,
+                        },
+                      },
+                      'Start of Month',
+                    ),
+                    React.createElement(
+                      'div',
+                      {style: {fontSize: 16, fontWeight: 600, color: lg.start >= 0 ? '#374151' : '#b91c1c'}},
+                      lg.start.toLocaleString(),
+                    ),
+                  ),
+                  // CONSUMED
+                  React.createElement(
+                    'div',
+                    null,
+                    React.createElement(
+                      'div',
+                      {
+                        style: {
+                          fontSize: 10,
+                          color: '#6b7280',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          marginBottom: 2,
+                        },
+                      },
+                      'Consumed',
+                    ),
+                    React.createElement(
+                      'div',
+                      {style: {fontSize: 16, fontWeight: 600, color: '#111827'}},
+                      lg.consumed.toLocaleString(),
+                    ),
+                    md2.isCurrent && lg.projCons > 0
+                      ? React.createElement(
+                          'div',
+                          {style: {fontSize: 10, color: '#9ca3af', marginTop: 1}},
+                          lg.actualCons.toLocaleString() + ' actual + ' + lg.projCons.toLocaleString() + ' proj',
+                        )
+                      : null,
+                    md2.isFuture
+                      ? React.createElement('div', {style: {fontSize: 10, color: '#9ca3af', marginTop: 1}}, 'projected')
+                      : null,
+                  ),
+                  // ORDERED (input)
+                  React.createElement(
+                    'div',
+                    null,
+                    React.createElement(
+                      'div',
+                      {
+                        style: {
+                          fontSize: 10,
+                          color: '#6b7280',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          marginBottom: 2,
+                        },
+                      },
+                      'Ordered',
+                    ),
+                    React.createElement('input', {
+                      type: 'number',
+                      min: '0',
+                      step: '100',
+                      value: md2.ordered != null && md2.ordered !== '' ? md2.ordered : '',
+                      onChange: function (e) {
+                        savePigOrder(md2.ym, e.target.value);
+                      },
+                      onClick: function (e) {
+                        e.stopPropagation();
+                      },
+                      placeholder: '0',
+                      style: {
+                        width: '100%',
+                        fontSize: 14,
+                        padding: '4px 8px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: 6,
+                        textAlign: 'right',
+                        fontFamily: 'inherit',
+                        fontWeight: 600,
+                        boxSizing: 'border-box',
+                      },
+                    }),
+                    React.createElement(
+                      'div',
+                      {
+                        style: {
+                          fontSize: 10,
+                          color: lg.deliveryInCount ? '#065f46' : '#9ca3af',
+                          marginTop: 1,
+                          fontStyle: lg.deliveryInCount ? 'italic' : 'normal',
+                        },
+                      },
+                      lg.deliveryInCount ? '(in count)' : 'arrives end of mo.',
+                    ),
+                  ),
+                  // END OF MONTH
+                  React.createElement(
+                    'div',
+                    null,
+                    React.createElement(
+                      'div',
+                      {
+                        style: {
+                          fontSize: 10,
+                          color: '#6b7280',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          marginBottom: 2,
+                        },
+                      },
+                      'End of Month',
+                    ),
+                    React.createElement(
+                      'div',
+                      {style: {fontSize: 16, fontWeight: 700, color: lg.end > 0 ? '#065f46' : '#b91c1c'}},
+                      lg.end.toLocaleString(),
+                    ),
+                  ),
+                ),
+                // Projected vs Actual — daily rates + extrapolated monthly variance
+                (function () {
+                  var projDaily = Math.round(md2.projTotal / md2.daysInMonth);
+                  var daysElapsed = md2.isFuture ? 0 : md2.isCurrent ? now.getDate() : md2.daysInMonth;
+                  var actualDaily = daysElapsed > 0 ? Math.round(md2.actual / daysElapsed) : 0;
+                  var dailyVar = daysElapsed > 0 ? actualDaily - projDaily : null;
+                  // Monthly variance: for completed months use actual totals, for current month extrapolate daily rate to full month
+                  var moVar = null;
+                  if (!md2.isFuture && daysElapsed > 0) {
+                    if (md2.isCurrent) moVar = Math.round(actualDaily * md2.daysInMonth) - md2.projTotal;
+                    else moVar = md2.actual - md2.projTotal;
+                  }
+                  return React.createElement(
+                    'div',
+                    {style: {padding: '2px 16px 8px', display: 'flex', gap: 16, fontSize: 11, color: '#6b7280'}},
                     React.createElement(
                       'span',
                       null,
-                      'Actual: ' +
-                        actualDaily.toLocaleString() +
-                        '/day' +
-                        (md2.isCurrent
-                          ? ' (' + md2.actual.toLocaleString() + ' so far)'
-                          : ' (' + md2.actual.toLocaleString() + ' mo)'),
+                      'Proj: ' + projDaily.toLocaleString() + '/day (' + md2.projTotal.toLocaleString() + ' mo)',
                     ),
-                  dailyVar != null &&
-                    dailyVar !== 0 &&
-                    React.createElement(
-                      'span',
-                      {style: {fontWeight: 600, color: dailyVar > 0 ? '#b91c1c' : '#065f46'}},
-                      (dailyVar > 0 ? '+' : '') + dailyVar.toLocaleString() + '/day',
-                    ),
-                  moVar != null &&
-                    moVar !== 0 &&
-                    React.createElement(
-                      'span',
-                      {style: {fontWeight: 600, color: moVar > 0 ? '#b91c1c' : '#065f46'}},
-                      (moVar > 0 ? '+' : '') + moVar.toLocaleString() + ' mo' + (md2.isCurrent ? ' est.' : ''),
-                    ),
-                );
-              })(),
-              // Per-group breakdown
-              React.createElement(
-                'div',
-                {style: {borderTop: '1px solid #f3f4f6', padding: '8px 16px 10px'}},
+                    !md2.isFuture &&
+                      React.createElement(
+                        'span',
+                        null,
+                        'Actual: ' +
+                          actualDaily.toLocaleString() +
+                          '/day' +
+                          (md2.isCurrent
+                            ? ' (' + md2.actual.toLocaleString() + ' so far)'
+                            : ' (' + md2.actual.toLocaleString() + ' mo)'),
+                      ),
+                    dailyVar != null &&
+                      dailyVar !== 0 &&
+                      React.createElement(
+                        'span',
+                        {style: {fontWeight: 600, color: dailyVar > 0 ? '#b91c1c' : '#065f46'}},
+                        (dailyVar > 0 ? '+' : '') + dailyVar.toLocaleString() + '/day',
+                      ),
+                    moVar != null &&
+                      moVar !== 0 &&
+                      React.createElement(
+                        'span',
+                        {style: {fontWeight: 600, color: moVar > 0 ? '#b91c1c' : '#065f46'}},
+                        (moVar > 0 ? '+' : '') + moVar.toLocaleString() + ' mo' + (md2.isCurrent ? ' est.' : ''),
+                      ),
+                  );
+                })(),
+                // Per-group breakdown
                 React.createElement(
-                  'table',
-                  {style: {width: '100%', borderCollapse: 'collapse', fontSize: 11}},
+                  'div',
+                  {style: {borderTop: '1px solid #f3f4f6', padding: '8px 16px 10px'}},
                   React.createElement(
-                    'thead',
-                    null,
+                    'table',
+                    {style: {width: '100%', borderCollapse: 'collapse', fontSize: 11}},
                     React.createElement(
-                      'tr',
-                      {style: {borderBottom: '1px solid #e5e7eb'}},
+                      'thead',
+                      null,
                       React.createElement(
-                        'th',
-                        {style: {padding: '4px 10px', textAlign: 'left', fontWeight: 600, color: '#6b7280'}},
-                        'Group',
-                      ),
-                      React.createElement(
-                        'th',
-                        {style: {padding: '4px 10px', textAlign: 'right', fontWeight: 600, color: '#6b7280'}},
-                        'Proj/day',
-                      ),
-                      React.createElement(
-                        'th',
-                        {style: {padding: '4px 10px', textAlign: 'right', fontWeight: 600, color: '#6b7280'}},
-                        'Actual/day',
-                      ),
-                      React.createElement(
-                        'th',
-                        {style: {padding: '4px 10px', textAlign: 'right', fontWeight: 600, color: '#6b7280'}},
-                        'Variance/day',
+                        'tr',
+                        {style: {borderBottom: '1px solid #e5e7eb'}},
+                        React.createElement(
+                          'th',
+                          {style: {padding: '4px 10px', textAlign: 'left', fontWeight: 600, color: '#6b7280'}},
+                          'Group',
+                        ),
+                        React.createElement(
+                          'th',
+                          {style: {padding: '4px 10px', textAlign: 'right', fontWeight: 600, color: '#6b7280'}},
+                          'Proj/day',
+                        ),
+                        React.createElement(
+                          'th',
+                          {style: {padding: '4px 10px', textAlign: 'right', fontWeight: 600, color: '#6b7280'}},
+                          'Actual/day',
+                        ),
+                        React.createElement(
+                          'th',
+                          {style: {padding: '4px 10px', textAlign: 'right', fontWeight: 600, color: '#6b7280'}},
+                          'Variance/day',
+                        ),
                       ),
                     ),
-                  ),
-                  React.createElement(
-                    'tbody',
-                    null,
-                    (function () {
-                      var gDaysElapsed = md2.isFuture ? 0 : md2.isCurrent ? now.getDate() : md2.daysInMonth;
-                      return projGroups.map(function (pg, gi) {
-                        var actualLbs = 0;
-                        if (pg.label === 'SOWS') actualLbs = actualGroups['SOWS'] || 0;
-                        else if (pg.label === 'BOARS') actualLbs = actualGroups['BOARS'] || 0;
-                        else {
-                          Object.entries(actualGroups).forEach(function (e2) {
-                            var low = e2[0].toLowerCase().trim();
-                            if (pg.subNames && pg.subNames.length > 0) {
-                              if (pg.subNames.includes(low)) actualLbs += e2[1];
-                            } else if (pg.mainName && low === pg.mainName) {
-                              actualLbs += e2[1];
-                            }
-                          });
-                        }
-                        actualLbs = Math.round(actualLbs);
-                        var projDay = Math.round(pg.projected / md2.daysInMonth);
-                        var actualDay = gDaysElapsed > 0 ? Math.round(actualLbs / gDaysElapsed) : 0;
-                        var gVar = md2.isFuture ? null : gDaysElapsed > 0 ? actualDay - projDay : null;
-                        return React.createElement(
-                          'tr',
-                          {key: gi, style: {borderBottom: '1px solid #f0f0f0'}},
-                          React.createElement(
-                            'td',
-                            {style: {padding: '4px 10px', fontWeight: 500, color: '#374151'}},
-                            pg.label,
-                          ),
-                          React.createElement(
-                            'td',
-                            {style: {padding: '4px 10px', textAlign: 'right', color: '#6b7280'}},
-                            projDay.toLocaleString(),
-                          ),
-                          React.createElement(
-                            'td',
-                            {
-                              style: {
-                                padding: '4px 10px',
-                                textAlign: 'right',
-                                fontWeight: 600,
-                                color: md2.isFuture ? '#9ca3af' : '#111827',
+                    React.createElement(
+                      'tbody',
+                      null,
+                      (function () {
+                        var gDaysElapsed = md2.isFuture ? 0 : md2.isCurrent ? now.getDate() : md2.daysInMonth;
+                        return projGroups.map(function (pg, gi) {
+                          var actualLbs = 0;
+                          if (pg.label === 'SOWS') actualLbs = actualGroups['SOWS'] || 0;
+                          else if (pg.label === 'BOARS') actualLbs = actualGroups['BOARS'] || 0;
+                          else {
+                            Object.entries(actualGroups).forEach(function (e2) {
+                              var low = e2[0].toLowerCase().trim();
+                              if (pg.subNames && pg.subNames.length > 0) {
+                                if (pg.subNames.includes(low)) actualLbs += e2[1];
+                              } else if (pg.mainName && low === pg.mainName) {
+                                actualLbs += e2[1];
+                              }
+                            });
+                          }
+                          actualLbs = Math.round(actualLbs);
+                          var projDay = Math.round(pg.projected / md2.daysInMonth);
+                          var actualDay = gDaysElapsed > 0 ? Math.round(actualLbs / gDaysElapsed) : 0;
+                          var gVar = md2.isFuture ? null : gDaysElapsed > 0 ? actualDay - projDay : null;
+                          return React.createElement(
+                            'tr',
+                            {key: gi, style: {borderBottom: '1px solid #f0f0f0'}},
+                            React.createElement(
+                              'td',
+                              {style: {padding: '4px 10px', fontWeight: 500, color: '#374151'}},
+                              pg.label,
+                            ),
+                            React.createElement(
+                              'td',
+                              {style: {padding: '4px 10px', textAlign: 'right', color: '#6b7280'}},
+                              projDay.toLocaleString(),
+                            ),
+                            React.createElement(
+                              'td',
+                              {
+                                style: {
+                                  padding: '4px 10px',
+                                  textAlign: 'right',
+                                  fontWeight: 600,
+                                  color: md2.isFuture ? '#9ca3af' : '#111827',
+                                },
                               },
-                            },
-                            md2.isFuture ? '\u2014' : actualDay.toLocaleString(),
-                          ),
-                          React.createElement(
-                            'td',
-                            {
-                              style: {
-                                padding: '4px 10px',
-                                textAlign: 'right',
-                                fontWeight: 600,
-                                color: gVar == null ? '#9ca3af' : gVar > 0 ? '#b91c1c' : '#065f46',
+                              md2.isFuture ? '\u2014' : actualDay.toLocaleString(),
+                            ),
+                            React.createElement(
+                              'td',
+                              {
+                                style: {
+                                  padding: '4px 10px',
+                                  textAlign: 'right',
+                                  fontWeight: 600,
+                                  color: gVar == null ? '#9ca3af' : gVar > 0 ? '#b91c1c' : '#065f46',
+                                },
                               },
-                            },
-                            gVar == null ? '\u2014' : (gVar > 0 ? '+' : '') + gVar.toLocaleString(),
-                          ),
-                        );
-                      });
-                    })(),
+                              gVar == null ? '\u2014' : (gVar > 0 ? '+' : '') + gVar.toLocaleString(),
+                            ),
+                          );
+                        });
+                      })(),
+                    ),
                   ),
                 ),
-              ),
-            );
-          }
+              );
+            }
 
-          var currentMonth = monthlyData.filter(function (m) {
-            return m.isCurrent;
-          });
-          var futureMonths = monthlyData.filter(function (m) {
-            return m.isFuture;
-          });
-          var pastMonths = monthlyData
-            .filter(function (m) {
-              return !m.isCurrent && !m.isFuture;
-            })
-            .reverse();
-          var pastByYear = {};
-          pastMonths.forEach(function (m) {
-            var yr = m.ym.substring(0, 4);
-            if (!pastByYear[yr]) pastByYear[yr] = [];
-            pastByYear[yr].push(m);
-          });
-          var pastYears = Object.keys(pastByYear).sort().reverse();
-
-          var secToggle = pigFeedExpandedMonths;
-          function togSec(key) {
-            setPigFeedExpandedMonths(function (s) {
-              var n = new Set(s);
-              n.has(key) ? n.delete(key) : n.add(key);
-              return n;
+            var currentMonth = monthlyData.filter(function (m) {
+              return m.isCurrent;
             });
-          }
+            var futureMonths = monthlyData.filter(function (m) {
+              return m.isFuture;
+            });
+            var pastMonths = monthlyData
+              .filter(function (m) {
+                return !m.isCurrent && !m.isFuture;
+              })
+              .reverse();
+            var pastByYear = {};
+            pastMonths.forEach(function (m) {
+              var yr = m.ym.substring(0, 4);
+              if (!pastByYear[yr]) pastByYear[yr] = [];
+              pastByYear[yr].push(m);
+            });
+            var pastYears = Object.keys(pastByYear).sort().reverse();
 
-          return React.createElement(
-            'div',
-            {style: {display: 'flex', flexDirection: 'column', gap: '1.25rem'}},
-            React.createElement(
+            var secToggle = pigFeedExpandedMonths;
+            function togSec(key) {
+              setPigFeedExpandedMonths(function (s) {
+                var n = new Set(s);
+                n.has(key) ? n.delete(key) : n.add(key);
+                return n;
+              });
+            }
+
+            return React.createElement(
               'div',
-              {style: {fontSize: 14, fontWeight: 700, color: '#085041'}},
-              'Monthly Pig Feed Summary',
-            ),
-            currentMonth.length > 0 && React.createElement('div', null, currentMonth.map(renderPigMonthCard)),
-            futureMonths.length > 0 &&
+              {style: {display: 'flex', flexDirection: 'column', gap: '1.25rem'}},
               React.createElement(
                 'div',
-                null,
+                {style: {fontSize: 14, fontWeight: 700, color: '#085041'}},
+                'Monthly Pig Feed Summary',
+              ),
+              currentMonth.length > 0 && React.createElement('div', null, currentMonth.map(renderPigMonthCard)),
+              futureMonths.length > 0 &&
                 React.createElement(
                   'div',
-                  {
-                    onClick: function () {
-                      togSec('future');
-                    },
-                    style: {
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                      padding: '8px 0',
-                      marginBottom: 6,
-                    },
-                  },
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 10, color: '#9ca3af'}},
-                    secToggle.has('future') ? '\u25bc' : '\u25b6',
-                  ),
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
-                    'UPCOMING MONTHS',
-                  ),
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 11, color: '#9ca3af'}},
-                    '(' + futureMonths.length + ')',
-                  ),
-                ),
-                secToggle.has('future') &&
+                  null,
                   React.createElement(
                     'div',
-                    {style: {display: 'flex', flexDirection: 'column', gap: 10}},
-                    futureMonths.map(renderPigMonthCard),
+                    {
+                      onClick: function () {
+                        togSec('future');
+                      },
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        padding: '8px 0',
+                        marginBottom: 6,
+                      },
+                    },
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 10, color: '#9ca3af'}},
+                      secToggle.has('future') ? '\u25bc' : '\u25b6',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
+                      'UPCOMING MONTHS',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 11, color: '#9ca3af'}},
+                      '(' + futureMonths.length + ')',
+                    ),
                   ),
-              ),
-            pastYears.length > 0 &&
-              React.createElement(
-                'div',
-                null,
+                  secToggle.has('future') &&
+                    React.createElement(
+                      'div',
+                      {style: {display: 'flex', flexDirection: 'column', gap: 10}},
+                      futureMonths.map(renderPigMonthCard),
+                    ),
+                ),
+              pastYears.length > 0 &&
                 React.createElement(
                   'div',
-                  {
-                    onClick: function () {
-                      togSec('past');
-                    },
-                    style: {
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                      padding: '8px 0',
-                      marginBottom: 6,
-                    },
-                  },
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 10, color: '#9ca3af'}},
-                    secToggle.has('past') ? '\u25bc' : '\u25b6',
-                  ),
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
-                    'PAST MONTHS',
-                  ),
-                  React.createElement('span', {style: {fontSize: 11, color: '#9ca3af'}}, '(' + pastMonths.length + ')'),
-                ),
-                secToggle.has('past') &&
+                  null,
                   React.createElement(
                     'div',
-                    {style: {display: 'flex', flexDirection: 'column', gap: 14}},
-                    pastYears.map(function (yr) {
-                      var yearMonths = pastByYear[yr];
-                      var yearKey = 'past-' + yr;
-                      return React.createElement(
-                        'div',
-                        {key: yr},
-                        pastYears.length > 1 &&
-                          React.createElement(
-                            'div',
-                            {
-                              onClick: function () {
-                                togSec(yearKey);
-                              },
-                              style: {
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                cursor: 'pointer',
-                                padding: '4px 0',
-                                marginBottom: 6,
-                              },
-                            },
-                            React.createElement(
-                              'span',
-                              {style: {fontSize: 10, color: '#9ca3af'}},
-                              secToggle.has(yearKey) ? '\u25bc' : '\u25b6',
-                            ),
-                            React.createElement('span', {style: {fontSize: 12, fontWeight: 600, color: '#6b7280'}}, yr),
-                            React.createElement(
-                              'span',
-                              {style: {fontSize: 11, color: '#9ca3af'}},
-                              '(' + yearMonths.length + ' months)',
-                            ),
-                          ),
-                        (pastYears.length === 1 || secToggle.has(yearKey)) &&
-                          React.createElement(
-                            'div',
-                            {style: {display: 'flex', flexDirection: 'column', gap: 10}},
-                            yearMonths.map(renderPigMonthCard),
-                          ),
-                      );
-                    }),
+                    {
+                      onClick: function () {
+                        togSec('past');
+                      },
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        padding: '8px 0',
+                        marginBottom: 6,
+                      },
+                    },
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 10, color: '#9ca3af'}},
+                      secToggle.has('past') ? '\u25bc' : '\u25b6',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
+                      'PAST MONTHS',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 11, color: '#9ca3af'}},
+                      '(' + pastMonths.length + ')',
+                    ),
                   ),
-              ),
-          );
-        })()}
+                  secToggle.has('past') &&
+                    React.createElement(
+                      'div',
+                      {style: {display: 'flex', flexDirection: 'column', gap: 14}},
+                      pastYears.map(function (yr) {
+                        var yearMonths = pastByYear[yr];
+                        var yearKey = 'past-' + yr;
+                        return React.createElement(
+                          'div',
+                          {key: yr},
+                          pastYears.length > 1 &&
+                            React.createElement(
+                              'div',
+                              {
+                                onClick: function () {
+                                  togSec(yearKey);
+                                },
+                                style: {
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  cursor: 'pointer',
+                                  padding: '4px 0',
+                                  marginBottom: 6,
+                                },
+                              },
+                              React.createElement(
+                                'span',
+                                {style: {fontSize: 10, color: '#9ca3af'}},
+                                secToggle.has(yearKey) ? '\u25bc' : '\u25b6',
+                              ),
+                              React.createElement(
+                                'span',
+                                {style: {fontSize: 12, fontWeight: 600, color: '#6b7280'}},
+                                yr,
+                              ),
+                              React.createElement(
+                                'span',
+                                {style: {fontSize: 11, color: '#9ca3af'}},
+                                '(' + yearMonths.length + ' months)',
+                              ),
+                            ),
+                          (pastYears.length === 1 || secToggle.has(yearKey)) &&
+                            React.createElement(
+                              'div',
+                              {style: {display: 'flex', flexDirection: 'column', gap: 10}},
+                              yearMonths.map(renderPigMonthCard),
+                            ),
+                        );
+                      }),
+                    ),
+                ),
+            );
+          })()}
 
         {/* Feed rates reference */}
         <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}>

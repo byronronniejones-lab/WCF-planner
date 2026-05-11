@@ -23,6 +23,15 @@ import {
   LAYER_FEED_PER_DAY,
 } from '../lib/broiler.js';
 import {computeProjectedCount} from '../lib/layerHousing.js';
+import {
+  poultryDailyBurnLbs,
+  onHandFromSnapshot,
+  isSnapshotStale,
+  suggestOrder,
+  STALE_SNAPSHOT_DAYS,
+  LEAD_TIME_DAYS,
+  RESERVE_DAYS,
+} from '../lib/feedPlanner.js';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {useLayer} from '../contexts/LayerContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
@@ -38,6 +47,8 @@ export default function BroilerFeedView({
   sbSave,
 }) {
   const [poultryFeedExpandedMonths, setPoultryFeedExpandedMonths] = useState(new Set());
+  const [showPoultryLegacyLedger, setShowPoultryLegacyLedger] = useState(false);
+  const [confirmPoultrySuggested, setConfirmPoultrySuggested] = useState(null);
   const {batches} = useBatches();
   const {layerBatches, layerHousings, allLayerDailys} = useLayer();
   const {broilerDailys} = useDailysRecent();
@@ -351,6 +362,96 @@ export default function BroilerFeedView({
     });
   }
 
+  // ── Snapshot-anchored order board (feedPlanner.js) ──
+  // First-screen answer to "How much feed do I need to order?" for each
+  // poultry feed type. Burn is per-type from poultryDailyBurnLbs, which
+  // uses the same broiler/layer schedule helpers as the legacy monthly
+  // projection (no rate-formula change). On-hand is snapshot − consumed-
+  // since-snapshot from broiler_dailys + layer_dailys filtered by feed_type.
+  function poultryBurnFnFor(type) {
+    return function (dateISO) {
+      var out = poultryDailyBurnLbs(dateISO, {
+        batches: activeBroilers,
+        layerBatches: activeLayerBatchesForFeed,
+        layerHousings: layerHousings || [],
+        layerDailys: allLayerDailys || [],
+      });
+      if (type === 'starter') return out.starterLbs;
+      if (type === 'grower') return out.growerLbs;
+      return out.layerLbs;
+    };
+  }
+  function poultryConsumedFnFor(type) {
+    var match = type === 'starter' ? 'STARTER' : type === 'grower' ? 'GROWER' : 'LAYER';
+    return function (fromISO, toISO_) {
+      var sum = 0;
+      var src = (broilerDailys || []).concat(allLayerDailys || []);
+      for (var i = 0; i < src.length; i++) {
+        var d = src[i];
+        if (!d.date || d.date <= fromISO || d.date > toISO_) continue;
+        if (d.feed_type !== match) continue;
+        sum += parseFloat(d.feed_lbs) || 0;
+      }
+      return sum;
+    };
+  }
+  var orderBoardRowDefs = [
+    {key: 'starter', label: 'Starter', invKey: 'starter', ordKey: 'starter', color: '#1d4ed8'},
+    {key: 'grower', label: 'Grower', invKey: 'grower', ordKey: 'grower', color: '#085041'},
+    {key: 'layer', label: 'Layer Feed', invKey: 'layer', ordKey: 'layerfeed', color: '#78350f'},
+  ];
+  var orderBoardRows = orderBoardRowDefs.map(function (row) {
+    var inv = poultryFeedInventory && poultryFeedInventory[row.invKey];
+    var hasSnapshot = !!(inv && inv.date);
+    var burnFn = poultryBurnFnFor(row.key);
+    var consumedFn = poultryConsumedFnFor(row.key);
+    var onHand = hasSnapshot
+      ? onHandFromSnapshot({
+          snapshotLbs: parseFloat(inv.count) || 0,
+          snapshotDateISO: inv.date,
+          todayISO: todayDate,
+          consumedLbsFn: consumedFn,
+          burnRateFn: burnFn,
+        })
+      : null;
+    var stale = hasSnapshot ? isSnapshotStale({snapshotDateISO: inv.date, todayISO: todayDate}) : false;
+    var suggestion = suggestOrder({
+      onHandLbs: onHand == null ? 0 : onHand,
+      todayISO: todayDate,
+      burnRateFn: burnFn,
+    });
+    var curOrder = (feedOrders[row.ordKey] || {})[thisYM];
+    var curHasOrder = curOrder != null && curOrder !== '';
+    return Object.assign({}, row, {
+      inv: inv,
+      hasSnapshot: hasSnapshot,
+      onHand: onHand,
+      stale: stale,
+      suggestion: suggestion,
+      curOrder: curOrder,
+      curHasOrder: curHasOrder,
+    });
+  });
+  function applyPoultrySuggestion(row) {
+    if (!row.suggestion || row.suggestion.suggestedOrderLbs <= 0) return;
+    if (row.curHasOrder && confirmPoultrySuggested !== row.key) {
+      setConfirmPoultrySuggested(row.key);
+      return;
+    }
+    savePoultryOrder(row.ordKey, thisYM, String(row.suggestion.suggestedOrderLbs));
+    setConfirmPoultrySuggested(null);
+  }
+  var thisMonthLabel = new Date(today.getFullYear(), today.getMonth(), 1).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+  });
+  var anyPoultryStale = orderBoardRows.some(function (r) {
+    return r.stale;
+  });
+  var anyPoultryMissingSnapshot = orderBoardRows.some(function (r) {
+    return !r.hasSnapshot;
+  });
+
   return (
     <div>
       <Header />
@@ -364,14 +465,26 @@ export default function BroilerFeedView({
           gap: '1.25rem',
         }}
       >
-        {/* Compact feed summary table — one row per type */}
-        <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}>
+        {/* Snapshot-anchored order board — first-screen "How much feed do I need to order?" */}
+        <div style={{background: 'white', border: '2px solid #085041', borderRadius: 12, padding: '14px 18px'}}>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#085041',
+              textTransform: 'uppercase',
+              letterSpacing: 0.8,
+              fontWeight: 700,
+              marginBottom: 12,
+            }}
+          >
+            Feed order
+          </div>
           <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 13}}>
             <thead>
-              <tr style={{borderBottom: '1px solid #e5e7eb', background: '#f9fafb'}}>
+              <tr style={{borderBottom: '1px solid #e5e7eb'}}>
                 <th
                   style={{
-                    padding: '8px 16px',
+                    padding: '6px 8px',
                     textAlign: 'left',
                     fontWeight: 600,
                     color: '#6b7280',
@@ -380,11 +493,11 @@ export default function BroilerFeedView({
                     letterSpacing: 0.5,
                   }}
                 >
-                  Feed Type
+                  Type
                 </th>
                 <th
                   style={{
-                    padding: '8px 12px',
+                    padding: '6px 8px',
                     textAlign: 'right',
                     fontWeight: 600,
                     color: '#6b7280',
@@ -393,11 +506,11 @@ export default function BroilerFeedView({
                     letterSpacing: 0.5,
                   }}
                 >
-                  On Hand
+                  Est on hand
                 </th>
                 <th
                   style={{
-                    padding: '8px 12px',
+                    padding: '6px 8px',
                     textAlign: 'right',
                     fontWeight: 600,
                     color: '#6b7280',
@@ -406,24 +519,11 @@ export default function BroilerFeedView({
                     letterSpacing: 0.5,
                   }}
                 >
-                  End of Mo Est.
+                  Runway
                 </th>
                 <th
                   style={{
-                    padding: '8px 12px',
-                    textAlign: 'right',
-                    fontWeight: 600,
-                    color: pSugOrder && pSugOrder.total > 0 ? '#92400e' : '#6b7280',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  {'Order for ' + pOrderTargetLabel}
-                </th>
-                <th
-                  style={{
-                    padding: '8px 12px',
+                    padding: '6px 8px',
                     textAlign: 'right',
                     fontWeight: 600,
                     color: '#6b7280',
@@ -432,151 +532,398 @@ export default function BroilerFeedView({
                     letterSpacing: 0.5,
                   }}
                 >
-                  {'Need thru ' + pMonthAfter.toLocaleDateString('en-US', {month: 'short'})}
+                  Order by
+                </th>
+                <th
+                  style={{
+                    padding: '6px 8px',
+                    textAlign: 'right',
+                    fontWeight: 600,
+                    color: '#6b7280',
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Suggested
+                </th>
+                <th
+                  style={{
+                    padding: '6px 8px',
+                    textAlign: 'right',
+                    fontWeight: 600,
+                    color: '#6b7280',
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Action
                 </th>
               </tr>
             </thead>
             <tbody>
-              {[
-                {
-                  label: 'Starter',
-                  key: 'starter',
-                  color: '#1d4ed8',
-                  aoh: pActualOnHand ? pActualOnHand.starter : null,
-                  eom: pEndOfMonth ? pEndOfMonth.starter : null,
-                  sug: pSugOrder ? pSugOrder.starter : null,
-                  need: pSugOrder ? pSugOrder.sNeed : null,
-                  m1: pOrderTargetMD ? pOrderTargetMD.starter : 0,
-                  m2: pMonthAfterMD ? pMonthAfterMD.starter : 0,
-                  countAdj: curLgS && curLgS.countMonth ? curLgS.countAdj : null,
-                  countDate: pInv && pInv.starter ? pInv.starter.date : null,
-                },
-                {
-                  label: 'Grower',
-                  key: 'grower',
-                  color: '#085041',
-                  aoh: pActualOnHand ? pActualOnHand.grower : null,
-                  eom: pEndOfMonth ? pEndOfMonth.grower : null,
-                  sug: pSugOrder ? pSugOrder.grower : null,
-                  need: pSugOrder ? pSugOrder.gNeed : null,
-                  m1: pOrderTargetMD ? pOrderTargetMD.grower : 0,
-                  m2: pMonthAfterMD ? pMonthAfterMD.grower : 0,
-                  countAdj: curLgG && curLgG.countMonth ? curLgG.countAdj : null,
-                  countDate: pInv && pInv.grower ? pInv.grower.date : null,
-                },
-                {
-                  label: 'Layer Feed',
-                  key: 'layer',
-                  color: '#78350f',
-                  aoh: pActualOnHand ? pActualOnHand.layer : null,
-                  eom: pEndOfMonth ? pEndOfMonth.layer : null,
-                  sug: pSugOrder ? pSugOrder.layer : null,
-                  need: pSugOrder ? pSugOrder.lNeed : null,
-                  m1: pOrderTargetMD ? pOrderTargetMD.layerFeed : 0,
-                  m2: pMonthAfterMD ? pMonthAfterMD.layerFeed : 0,
-                  countAdj: curLgL && curLgL.countMonth ? curLgL.countAdj : null,
-                  countDate: pInv && pInv.layer ? pInv.layer.date : null,
-                },
-              ].map(function (ft) {
-                return React.createElement(
-                  'tr',
-                  {key: ft.label, style: {borderBottom: '1px solid #f3f4f6'}},
-                  React.createElement(
-                    'td',
-                    {style: {padding: '10px 16px', fontWeight: 700, color: ft.color, fontSize: 13}},
-                    React.createElement('span', {
-                      style: {
-                        display: 'inline-block',
-                        width: 8,
-                        height: 8,
-                        borderRadius: 2,
-                        background: ft.color,
-                        marginRight: 8,
-                      },
-                    }),
-                    ft.label,
-                  ),
-                  React.createElement(
-                    'td',
-                    {style: {padding: '10px 12px', textAlign: 'right'}},
-                    React.createElement(
-                      'div',
-                      {
-                        style: {
+              {orderBoardRows.map(function (r) {
+                var sug = r.suggestion;
+                var late = sug && sug.orderIsLate;
+                var sugLbs = sug ? sug.suggestedOrderLbs : 0;
+                var confirmThis = confirmPoultrySuggested === r.key;
+                return (
+                  <tr key={r.key} style={{borderBottom: '1px solid #f3f4f6'}}>
+                    <td style={{padding: '10px 8px', fontWeight: 700, color: r.color}}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: 8,
+                          height: 8,
+                          borderRadius: 2,
+                          background: r.color,
+                          marginRight: 8,
+                        }}
+                      />
+                      {r.label}
+                    </td>
+                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
+                      <div
+                        style={{
                           fontSize: 15,
                           fontWeight: 700,
-                          color: ft.aoh != null ? (ft.aoh > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                        },
-                      },
-                      ft.aoh != null ? ft.aoh.toLocaleString() : '\u2014',
-                    ),
-                    ft.countDate &&
-                      React.createElement(
-                        'div',
-                        {style: {fontSize: 9, color: '#9ca3af'}},
-                        'Count: ' + fmt(ft.countDate),
-                      ),
-                    ft.countAdj != null &&
-                      ft.countAdj !== 0 &&
-                      React.createElement(
-                        'div',
-                        {style: {fontSize: 9, color: ft.countAdj > 0 ? '#065f46' : '#b91c1c'}},
-                        'Adj ' + (ft.countAdj > 0 ? '+' : '') + ft.countAdj.toLocaleString(),
-                      ),
-                  ),
-                  React.createElement(
-                    'td',
-                    {
-                      style: {
-                        padding: '10px 12px',
-                        textAlign: 'right',
-                        fontSize: 15,
-                        fontWeight: 700,
-                        color: ft.eom != null ? (ft.eom > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                      },
-                    },
-                    ft.eom != null ? ft.eom.toLocaleString() : '\u2014',
-                  ),
-                  React.createElement(
-                    'td',
-                    {
-                      style: {
-                        padding: '10px 12px',
-                        textAlign: 'right',
-                        fontSize: 15,
-                        fontWeight: 700,
-                        color: ft.sug > 0 ? '#92400e' : '#065f46',
-                        background: ft.sug > 0 ? '#fffbeb' : 'transparent',
-                      },
-                    },
-                    ft.sug != null ? (ft.sug > 0 ? ft.sug.toLocaleString() : '\u2713 Surplus') : '\u2014',
-                  ),
-                  React.createElement(
-                    'td',
-                    {style: {padding: '10px 12px', textAlign: 'right'}},
-                    React.createElement(
-                      'div',
-                      {style: {fontSize: 12, color: '#6b7280', fontWeight: 600}},
-                      ft.need != null ? ft.need.toLocaleString() : '\u2014',
-                    ),
-                    React.createElement(
-                      'div',
-                      {style: {fontSize: 10, color: '#9ca3af'}},
-                      ft.m1.toLocaleString() +
-                        ' (' +
-                        pOrderTargetLabel +
-                        ') + ' +
-                        ft.m2.toLocaleString() +
-                        ' (' +
-                        pMonthAfter.toLocaleDateString('en-US', {month: 'short'}) +
-                        ')',
-                    ),
-                  ),
+                          color: r.hasSnapshot ? '#111827' : '#9ca3af',
+                          fontStyle: r.hasSnapshot ? 'normal' : 'italic',
+                        }}
+                      >
+                        {r.onHand != null ? Math.round(r.onHand).toLocaleString() + ' lbs' : 'No count'}
+                      </div>
+                      <div style={{fontSize: 9, color: '#9ca3af'}}>
+                        {r.hasSnapshot ? 'Counted ' + fmt(r.inv.date) : 'estimated'}
+                      </div>
+                    </td>
+                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
+                      <div style={{fontSize: 15, fontWeight: 700, color: late ? '#b91c1c' : '#111827'}}>
+                        {sug ? sug.daysOfRunway + 'd' : '—'}
+                      </div>
+                    </td>
+                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
+                      <div style={{fontSize: 13, fontWeight: 600, color: late ? '#b91c1c' : '#111827'}}>
+                        {sug ? fmt(sug.orderByDateISO) : '—'}
+                      </div>
+                      {late && <div style={{fontSize: 9, color: '#b91c1c', fontWeight: 600}}>Late</div>}
+                    </td>
+                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 700,
+                          color: sugLbs > 0 ? '#92400e' : '#065f46',
+                          fontStyle: r.hasSnapshot ? 'normal' : 'italic',
+                        }}
+                      >
+                        {sug ? (sugLbs > 0 ? sugLbs.toLocaleString() : 'Surplus') : '—'}
+                      </div>
+                      <div style={{fontSize: 9, color: '#9ca3af'}}>
+                        {r.hasSnapshot
+                          ? r.stale
+                            ? 'Recount soon (>' + STALE_SNAPSHOT_DAYS + 'd)'
+                            : LEAD_TIME_DAYS + 'd + ' + RESERVE_DAYS.default + 'd horizon'
+                          : 'enter count'}
+                      </div>
+                    </td>
+                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
+                      <button
+                        type="button"
+                        onClick={function () {
+                          applyPoultrySuggestion(r);
+                        }}
+                        disabled={!sug || sugLbs <= 0}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: 7,
+                          border: 'none',
+                          background: confirmThis ? '#b91c1c' : '#085041',
+                          color: 'white',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: sug && sugLbs > 0 ? 'pointer' : 'not-allowed',
+                          opacity: sug && sugLbs > 0 ? 1 : 0.5,
+                          fontFamily: 'inherit',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {!sug || sugLbs <= 0
+                          ? 'None'
+                          : confirmThis
+                            ? 'Confirm: ' +
+                              (parseFloat(r.curOrder) || 0).toLocaleString() +
+                              ' → ' +
+                              sugLbs.toLocaleString()
+                            : r.curHasOrder
+                              ? 'Use (replace ' + (parseFloat(r.curOrder) || 0).toLocaleString() + ')'
+                              : 'Use suggested'}
+                      </button>
+                      <div style={{fontSize: 9, color: '#9ca3af', marginTop: 3}}>{'→ ' + thisMonthLabel}</div>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
           </table>
+          {(anyPoultryStale || anyPoultryMissingSnapshot) && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: '8px 12px',
+                background: anyPoultryMissingSnapshot ? '#f3f4f6' : '#fef3c7',
+                border: anyPoultryMissingSnapshot ? '1px dashed #d1d5db' : '1px solid #fde68a',
+                borderRadius: 8,
+                fontSize: 12,
+                color: anyPoultryMissingSnapshot ? '#4b5563' : '#92400e',
+              }}
+            >
+              {anyPoultryMissingSnapshot
+                ? 'One or more feed types have no physical count — those suggestions are estimated. Enter the lbs on hand below for precise orders.'
+                : 'A snapshot is more than ' + STALE_SNAPSHOT_DAYS + ' days old — recount recommended for accuracy.'}
+            </div>
+          )}
         </div>
+
+        {/* Show/hide legacy monthly ledger */}
+        <button
+          type="button"
+          onClick={function () {
+            setShowPoultryLegacyLedger(function (s) {
+              return !s;
+            });
+          }}
+          style={{
+            alignSelf: 'flex-start',
+            padding: '6px 12px',
+            background: 'transparent',
+            border: '1px solid #d1d5db',
+            borderRadius: 6,
+            fontSize: 12,
+            color: '#4b5563',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {showPoultryLegacyLedger ? '▼ Hide monthly ledger' : '▶ Show monthly ledger'}
+        </button>
+
+        {/* Compact feed summary table — one row per type (legacy ledger) */}
+        {showPoultryLegacyLedger && (
+          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}>
+            <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 13}}>
+              <thead>
+                <tr style={{borderBottom: '1px solid #e5e7eb', background: '#f9fafb'}}>
+                  <th
+                    style={{
+                      padding: '8px 16px',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Feed Type
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 12px',
+                      textAlign: 'right',
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    On Hand
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 12px',
+                      textAlign: 'right',
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    End of Mo Est.
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 12px',
+                      textAlign: 'right',
+                      fontWeight: 600,
+                      color: pSugOrder && pSugOrder.total > 0 ? '#92400e' : '#6b7280',
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {'Order for ' + pOrderTargetLabel}
+                  </th>
+                  <th
+                    style={{
+                      padding: '8px 12px',
+                      textAlign: 'right',
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {'Need thru ' + pMonthAfter.toLocaleDateString('en-US', {month: 'short'})}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    label: 'Starter',
+                    key: 'starter',
+                    color: '#1d4ed8',
+                    aoh: pActualOnHand ? pActualOnHand.starter : null,
+                    eom: pEndOfMonth ? pEndOfMonth.starter : null,
+                    sug: pSugOrder ? pSugOrder.starter : null,
+                    need: pSugOrder ? pSugOrder.sNeed : null,
+                    m1: pOrderTargetMD ? pOrderTargetMD.starter : 0,
+                    m2: pMonthAfterMD ? pMonthAfterMD.starter : 0,
+                    countAdj: curLgS && curLgS.countMonth ? curLgS.countAdj : null,
+                    countDate: pInv && pInv.starter ? pInv.starter.date : null,
+                  },
+                  {
+                    label: 'Grower',
+                    key: 'grower',
+                    color: '#085041',
+                    aoh: pActualOnHand ? pActualOnHand.grower : null,
+                    eom: pEndOfMonth ? pEndOfMonth.grower : null,
+                    sug: pSugOrder ? pSugOrder.grower : null,
+                    need: pSugOrder ? pSugOrder.gNeed : null,
+                    m1: pOrderTargetMD ? pOrderTargetMD.grower : 0,
+                    m2: pMonthAfterMD ? pMonthAfterMD.grower : 0,
+                    countAdj: curLgG && curLgG.countMonth ? curLgG.countAdj : null,
+                    countDate: pInv && pInv.grower ? pInv.grower.date : null,
+                  },
+                  {
+                    label: 'Layer Feed',
+                    key: 'layer',
+                    color: '#78350f',
+                    aoh: pActualOnHand ? pActualOnHand.layer : null,
+                    eom: pEndOfMonth ? pEndOfMonth.layer : null,
+                    sug: pSugOrder ? pSugOrder.layer : null,
+                    need: pSugOrder ? pSugOrder.lNeed : null,
+                    m1: pOrderTargetMD ? pOrderTargetMD.layerFeed : 0,
+                    m2: pMonthAfterMD ? pMonthAfterMD.layerFeed : 0,
+                    countAdj: curLgL && curLgL.countMonth ? curLgL.countAdj : null,
+                    countDate: pInv && pInv.layer ? pInv.layer.date : null,
+                  },
+                ].map(function (ft) {
+                  return React.createElement(
+                    'tr',
+                    {key: ft.label, style: {borderBottom: '1px solid #f3f4f6'}},
+                    React.createElement(
+                      'td',
+                      {style: {padding: '10px 16px', fontWeight: 700, color: ft.color, fontSize: 13}},
+                      React.createElement('span', {
+                        style: {
+                          display: 'inline-block',
+                          width: 8,
+                          height: 8,
+                          borderRadius: 2,
+                          background: ft.color,
+                          marginRight: 8,
+                        },
+                      }),
+                      ft.label,
+                    ),
+                    React.createElement(
+                      'td',
+                      {style: {padding: '10px 12px', textAlign: 'right'}},
+                      React.createElement(
+                        'div',
+                        {
+                          style: {
+                            fontSize: 15,
+                            fontWeight: 700,
+                            color: ft.aoh != null ? (ft.aoh > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                          },
+                        },
+                        ft.aoh != null ? ft.aoh.toLocaleString() : '\u2014',
+                      ),
+                      ft.countDate &&
+                        React.createElement(
+                          'div',
+                          {style: {fontSize: 9, color: '#9ca3af'}},
+                          'Count: ' + fmt(ft.countDate),
+                        ),
+                      ft.countAdj != null &&
+                        ft.countAdj !== 0 &&
+                        React.createElement(
+                          'div',
+                          {style: {fontSize: 9, color: ft.countAdj > 0 ? '#065f46' : '#b91c1c'}},
+                          'Adj ' + (ft.countAdj > 0 ? '+' : '') + ft.countAdj.toLocaleString(),
+                        ),
+                    ),
+                    React.createElement(
+                      'td',
+                      {
+                        style: {
+                          padding: '10px 12px',
+                          textAlign: 'right',
+                          fontSize: 15,
+                          fontWeight: 700,
+                          color: ft.eom != null ? (ft.eom > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                        },
+                      },
+                      ft.eom != null ? ft.eom.toLocaleString() : '\u2014',
+                    ),
+                    React.createElement(
+                      'td',
+                      {
+                        style: {
+                          padding: '10px 12px',
+                          textAlign: 'right',
+                          fontSize: 15,
+                          fontWeight: 700,
+                          color: ft.sug > 0 ? '#92400e' : '#065f46',
+                          background: ft.sug > 0 ? '#fffbeb' : 'transparent',
+                        },
+                      },
+                      ft.sug != null ? (ft.sug > 0 ? ft.sug.toLocaleString() : '\u2713 Surplus') : '\u2014',
+                    ),
+                    React.createElement(
+                      'td',
+                      {style: {padding: '10px 12px', textAlign: 'right'}},
+                      React.createElement(
+                        'div',
+                        {style: {fontSize: 12, color: '#6b7280', fontWeight: 600}},
+                        ft.need != null ? ft.need.toLocaleString() : '\u2014',
+                      ),
+                      React.createElement(
+                        'div',
+                        {style: {fontSize: 10, color: '#9ca3af'}},
+                        ft.m1.toLocaleString() +
+                          ' (' +
+                          pOrderTargetLabel +
+                          ') + ' +
+                          ft.m2.toLocaleString() +
+                          ' (' +
+                          pMonthAfter.toLocaleDateString('en-US', {month: 'short'}) +
+                          ')',
+                      ),
+                    ),
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Physical count input */}
         <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 20px'}}>
@@ -636,42 +983,15 @@ export default function BroilerFeedView({
                 }}
               />
             </div>
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '7px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: 6,
-                background: '#f9fafb',
-                fontSize: 12,
-                color: '#000',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-                lineHeight: 1.2,
-              }}
-            >
-              <input
-                id="poultry-feed-count-includes-delivery"
-                type="checkbox"
-                key={countType}
-                defaultChecked={!!(pInv && pInv[countType] && pInv[countType].includesCurrentMonthDelivery)}
-                style={{cursor: 'pointer', margin: 0, accentColor: '#000'}}
-              />
-              Includes this month's feed delivery
-            </label>
             <button
               onClick={function () {
                 var el = document.getElementById('poultry-feed-count-input');
                 var dl = document.getElementById('poultry-feed-count-date');
-                var cb = document.getElementById('poultry-feed-count-includes-delivery');
                 if (!el || !el.value) {
                   alert('Enter the lbs on hand.');
                   return;
                 }
-                savePoultryFeedCount(countType, el.value, dl ? dl.value : todayDate, cb ? cb.checked : false);
+                savePoultryFeedCount(countType, el.value, dl ? dl.value : todayDate, false);
                 el.value = '';
               }}
               style={{
@@ -692,443 +1012,456 @@ export default function BroilerFeedView({
           </div>
         </div>
 
-        {/* Monthly summary — current first, then future, then past by year */}
-        {(function () {
-          // Render a single month card — ledger format
-          function renderMonthCard(md) {
-            var lgS = pLedger.starter[md.ym];
-            var lgG = pLedger.grower[md.ym];
-            var lgL = pLedger.layer[md.ym];
-            var types = [
-              {
-                key: 'starter',
-                label: 'Starter',
-                color: '#1d4ed8',
-                ordKey: 'starter',
-                lg: lgS,
-                proj: md.starter,
-                actual: md.actualStarter,
-              },
-              {
-                key: 'grower',
-                label: 'Grower',
-                color: '#085041',
-                ordKey: 'grower',
-                lg: lgG,
-                proj: md.grower,
-                actual: md.actualGrover,
-              },
-              {
-                key: 'layer',
-                label: 'Layer Feed',
-                color: '#78350f',
-                ordKey: 'layerfeed',
-                lg: lgL,
-                proj: md.layerFeed,
-                actual: md.actualLayer,
-              },
-            ];
-            var daysElapsed = md.isFuture ? 0 : md.isCurrent ? today.getDate() : md.daysInMonth;
-            return React.createElement(
-              'div',
-              {
-                key: md.ym,
-                style: {
-                  background: 'white',
-                  border: md.isCurrent ? '2px solid #085041' : '1px solid #e5e7eb',
-                  borderRadius: 12,
-                  overflow: 'hidden',
+        {/* Monthly summary — current first, then future, then past by year (legacy ledger) */}
+        {showPoultryLegacyLedger &&
+          (function () {
+            // Render a single month card — ledger format
+            function renderMonthCard(md) {
+              var lgS = pLedger.starter[md.ym];
+              var lgG = pLedger.grower[md.ym];
+              var lgL = pLedger.layer[md.ym];
+              var types = [
+                {
+                  key: 'starter',
+                  label: 'Starter',
+                  color: '#1d4ed8',
+                  ordKey: 'starter',
+                  lg: lgS,
+                  proj: md.starter,
+                  actual: md.actualStarter,
                 },
-              },
-              React.createElement(
+                {
+                  key: 'grower',
+                  label: 'Grower',
+                  color: '#085041',
+                  ordKey: 'grower',
+                  lg: lgG,
+                  proj: md.grower,
+                  actual: md.actualGrover,
+                },
+                {
+                  key: 'layer',
+                  label: 'Layer Feed',
+                  color: '#78350f',
+                  ordKey: 'layerfeed',
+                  lg: lgL,
+                  proj: md.layerFeed,
+                  actual: md.actualLayer,
+                },
+              ];
+              var daysElapsed = md.isFuture ? 0 : md.isCurrent ? today.getDate() : md.daysInMonth;
+              return React.createElement(
                 'div',
                 {
+                  key: md.ym,
                   style: {
-                    padding: '10px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    background: md.isCurrent ? '#ecfdf5' : md.isFuture ? '#f8fafc' : 'white',
+                    background: 'white',
+                    border: md.isCurrent ? '2px solid #085041' : '1px solid #e5e7eb',
+                    borderRadius: 12,
+                    overflow: 'hidden',
                   },
                 },
                 React.createElement(
-                  'span',
-                  {style: {fontSize: 14, fontWeight: 700, color: '#111827'}},
-                  fmtMonth(md.ym),
-                ),
-                md.isCurrent &&
+                  'div',
+                  {
+                    style: {
+                      padding: '10px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      background: md.isCurrent ? '#ecfdf5' : md.isFuture ? '#f8fafc' : 'white',
+                    },
+                  },
                   React.createElement(
                     'span',
-                    {
-                      style: {
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: '#065f46',
-                        background: '#d1fae5',
-                        padding: '1px 8px',
-                        borderRadius: 10,
-                      },
-                    },
-                    'NOW',
+                    {style: {fontSize: 14, fontWeight: 700, color: '#111827'}},
+                    fmtMonth(md.ym),
                   ),
-                md.isFuture && React.createElement('span', {style: {fontSize: 10, color: '#9ca3af'}}, 'projected'),
-              ),
-              // Ledger table per feed type
-              React.createElement(
-                'div',
-                {style: {padding: '0 16px 8px'}},
-                React.createElement(
-                  'table',
-                  {style: {width: '100%', borderCollapse: 'collapse', fontSize: 12}},
-                  React.createElement(
-                    'thead',
-                    null,
+                  md.isCurrent &&
                     React.createElement(
-                      'tr',
-                      {style: {borderBottom: '1px solid #e5e7eb'}},
-                      React.createElement(
-                        'th',
-                        {
-                          style: {
-                            padding: '6px 0',
-                            textAlign: 'left',
-                            fontWeight: 600,
-                            color: '#6b7280',
-                            fontSize: 10,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            width: 90,
-                          },
+                      'span',
+                      {
+                        style: {
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: '#065f46',
+                          background: '#d1fae5',
+                          padding: '1px 8px',
+                          borderRadius: 10,
                         },
-                        'Feed Type',
-                      ),
+                      },
+                      'NOW',
+                    ),
+                  md.isFuture && React.createElement('span', {style: {fontSize: 10, color: '#9ca3af'}}, 'projected'),
+                ),
+                // Ledger table per feed type
+                React.createElement(
+                  'div',
+                  {style: {padding: '0 16px 8px'}},
+                  React.createElement(
+                    'table',
+                    {style: {width: '100%', borderCollapse: 'collapse', fontSize: 12}},
+                    React.createElement(
+                      'thead',
+                      null,
                       React.createElement(
-                        'th',
-                        {
-                          style: {
-                            padding: '6px 8px',
-                            textAlign: 'right',
-                            fontWeight: 600,
-                            color: '#6b7280',
-                            fontSize: 10,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
+                        'tr',
+                        {style: {borderBottom: '1px solid #e5e7eb'}},
+                        React.createElement(
+                          'th',
+                          {
+                            style: {
+                              padding: '6px 0',
+                              textAlign: 'left',
+                              fontWeight: 600,
+                              color: '#6b7280',
+                              fontSize: 10,
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.5,
+                              width: 90,
+                            },
                           },
-                        },
-                        'Start',
-                      ),
-                      React.createElement(
-                        'th',
-                        {
-                          style: {
-                            padding: '6px 8px',
-                            textAlign: 'right',
-                            fontWeight: 600,
-                            color: '#6b7280',
-                            fontSize: 10,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
+                          'Feed Type',
+                        ),
+                        React.createElement(
+                          'th',
+                          {
+                            style: {
+                              padding: '6px 8px',
+                              textAlign: 'right',
+                              fontWeight: 600,
+                              color: '#6b7280',
+                              fontSize: 10,
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.5,
+                            },
                           },
-                        },
-                        'Consumed',
-                      ),
-                      React.createElement(
-                        'th',
-                        {
-                          style: {
-                            padding: '6px 8px',
-                            textAlign: 'right',
-                            fontWeight: 600,
-                            color: '#6b7280',
-                            fontSize: 10,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            width: 90,
+                          'Start',
+                        ),
+                        React.createElement(
+                          'th',
+                          {
+                            style: {
+                              padding: '6px 8px',
+                              textAlign: 'right',
+                              fontWeight: 600,
+                              color: '#6b7280',
+                              fontSize: 10,
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.5,
+                            },
                           },
-                        },
-                        'Ordered',
-                      ),
-                      React.createElement(
-                        'th',
-                        {
-                          style: {
-                            padding: '6px 8px',
-                            textAlign: 'right',
-                            fontWeight: 600,
-                            color: '#6b7280',
-                            fontSize: 10,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
+                          'Consumed',
+                        ),
+                        React.createElement(
+                          'th',
+                          {
+                            style: {
+                              padding: '6px 8px',
+                              textAlign: 'right',
+                              fontWeight: 600,
+                              color: '#6b7280',
+                              fontSize: 10,
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.5,
+                              width: 90,
+                            },
                           },
-                        },
-                        'End of Mo',
+                          'Ordered',
+                        ),
+                        React.createElement(
+                          'th',
+                          {
+                            style: {
+                              padding: '6px 8px',
+                              textAlign: 'right',
+                              fontWeight: 600,
+                              color: '#6b7280',
+                              fontSize: 10,
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.5,
+                            },
+                          },
+                          'End of Mo',
+                        ),
                       ),
                     ),
-                  ),
-                  React.createElement(
-                    'tbody',
-                    null,
-                    types.map(function (t) {
-                      var lg = t.lg;
-                      var ordRaw = (feedOrders[t.ordKey] || {})[md.ym];
-                      var ordVal = ordRaw != null && ordRaw !== '' ? ordRaw : '';
-                      return React.createElement(
-                        'tr',
-                        {key: t.key, style: {borderBottom: '1px solid #f3f4f6'}},
-                        React.createElement(
-                          'td',
-                          {style: {padding: '7px 0', fontWeight: 600, color: t.color, fontSize: 12}},
-                          t.label,
-                        ),
-                        React.createElement(
-                          'td',
-                          {style: {padding: '7px 8px', textAlign: 'right', color: lg ? '#374151' : '#9ca3af'}},
-                          lg ? lg.start.toLocaleString() : '\u2014',
-                        ),
-                        React.createElement(
-                          'td',
-                          {style: {padding: '7px 8px', textAlign: 'right', color: '#111827'}},
-                          lg
-                            ? React.createElement(
-                                'span',
-                                null,
-                                lg.consumed.toLocaleString(),
-                                md.isCurrent && lg.projCons > 0
-                                  ? React.createElement(
-                                      'span',
-                                      {style: {fontSize: 10, color: '#9ca3af', marginLeft: 4}},
-                                      '(' + lg.actualCons.toLocaleString() + '+' + lg.projCons.toLocaleString() + 'p)',
-                                    )
-                                  : null,
-                              )
-                            : '\u2014',
-                        ),
-                        React.createElement(
-                          'td',
-                          {
-                            style: {padding: '7px 8px', textAlign: 'right'},
-                            onClick: function (e) {
-                              e.stopPropagation();
-                            },
-                          },
-                          React.createElement('input', {
-                            type: 'number',
-                            min: '0',
-                            step: '100',
-                            value: ordVal,
-                            onChange: function (e) {
-                              savePoultryOrder(t.ordKey, md.ym, e.target.value);
-                            },
-                            placeholder: '0',
-                            style: {
-                              width: 80,
-                              fontSize: 12,
-                              padding: '4px 8px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 6,
-                              textAlign: 'right',
-                              fontFamily: 'inherit',
-                            },
-                          }),
-                          lg && lg.deliveryInCount
-                            ? React.createElement(
-                                'div',
-                                {style: {fontSize: 9, color: '#065f46', fontStyle: 'italic', marginTop: 1}},
-                                '(in count)',
-                              )
-                            : null,
-                        ),
-                        React.createElement(
-                          'td',
-                          {
-                            style: {
-                              padding: '7px 8px',
-                              textAlign: 'right',
-                              fontWeight: 700,
-                              color: lg ? (lg.end > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                            },
-                          },
-                          lg ? lg.end.toLocaleString() : '\u2014',
-                        ),
-                      );
-                    }),
-                  ),
-                ),
-              ),
-              null,
-            );
-          }
-
-          // Split months into current, future, past
-          var currentMonth = monthlyData.filter(function (m) {
-            return m.isCurrent;
-          });
-          var futureMonths = monthlyData.filter(function (m) {
-            return m.isFuture;
-          });
-          var pastMonths = monthlyData
-            .filter(function (m) {
-              return !m.isCurrent && !m.isFuture;
-            })
-            .reverse(); // newest first
-
-          // Group past months by year
-          var pastByYear = {};
-          pastMonths.forEach(function (m) {
-            var yr = m.ym.substring(0, 4);
-            if (!pastByYear[yr]) pastByYear[yr] = [];
-            pastByYear[yr].push(m);
-          });
-          var pastYears = Object.keys(pastByYear).sort().reverse(); // newest year first
-
-          var secToggle = poultryFeedExpandedMonths;
-          function togSec(key) {
-            setPoultryFeedExpandedMonths(function (s) {
-              var n = new Set(s);
-              n.has(key) ? n.delete(key) : n.add(key);
-              return n;
-            });
-          }
-
-          return React.createElement(
-            'div',
-            {style: {display: 'flex', flexDirection: 'column', gap: '1.25rem'}},
-            // Section header
-            React.createElement(
-              'div',
-              {style: {fontSize: 14, fontWeight: 700, color: '#085041'}},
-              'Monthly Poultry Feed Summary',
-            ),
-
-            // Current month — always visible
-            currentMonth.length > 0 && React.createElement('div', null, currentMonth.map(renderMonthCard)),
-
-            // Future months — collapsible
-            futureMonths.length > 0 &&
-              React.createElement(
-                'div',
-                null,
-                React.createElement(
-                  'div',
-                  {
-                    onClick: function () {
-                      togSec('future');
-                    },
-                    style: {
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                      padding: '8px 0',
-                      marginBottom: 6,
-                    },
-                  },
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 10, color: '#9ca3af'}},
-                    secToggle.has('future') ? '\u25bc' : '\u25b6',
-                  ),
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
-                    'UPCOMING MONTHS',
-                  ),
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 11, color: '#9ca3af'}},
-                    '(' + futureMonths.length + ')',
-                  ),
-                ),
-                secToggle.has('future') &&
-                  React.createElement(
-                    'div',
-                    {style: {display: 'flex', flexDirection: 'column', gap: 10}},
-                    futureMonths.map(renderMonthCard),
-                  ),
-              ),
-
-            // Past months — collapsible, grouped by year
-            pastYears.length > 0 &&
-              React.createElement(
-                'div',
-                null,
-                React.createElement(
-                  'div',
-                  {
-                    onClick: function () {
-                      togSec('past');
-                    },
-                    style: {
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                      padding: '8px 0',
-                      marginBottom: 6,
-                    },
-                  },
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 10, color: '#9ca3af'}},
-                    secToggle.has('past') ? '\u25bc' : '\u25b6',
-                  ),
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
-                    'PAST MONTHS',
-                  ),
-                  React.createElement('span', {style: {fontSize: 11, color: '#9ca3af'}}, '(' + pastMonths.length + ')'),
-                ),
-                secToggle.has('past') &&
-                  React.createElement(
-                    'div',
-                    {style: {display: 'flex', flexDirection: 'column', gap: 14}},
-                    pastYears.map(function (yr) {
-                      var yearMonths = pastByYear[yr];
-                      var yearKey = 'past-' + yr;
-                      return React.createElement(
-                        'div',
-                        {key: yr},
-                        pastYears.length > 1 &&
+                    React.createElement(
+                      'tbody',
+                      null,
+                      types.map(function (t) {
+                        var lg = t.lg;
+                        var ordRaw = (feedOrders[t.ordKey] || {})[md.ym];
+                        var ordVal = ordRaw != null && ordRaw !== '' ? ordRaw : '';
+                        return React.createElement(
+                          'tr',
+                          {key: t.key, style: {borderBottom: '1px solid #f3f4f6'}},
                           React.createElement(
-                            'div',
+                            'td',
+                            {style: {padding: '7px 0', fontWeight: 600, color: t.color, fontSize: 12}},
+                            t.label,
+                          ),
+                          React.createElement(
+                            'td',
+                            {style: {padding: '7px 8px', textAlign: 'right', color: lg ? '#374151' : '#9ca3af'}},
+                            lg ? lg.start.toLocaleString() : '\u2014',
+                          ),
+                          React.createElement(
+                            'td',
+                            {style: {padding: '7px 8px', textAlign: 'right', color: '#111827'}},
+                            lg
+                              ? React.createElement(
+                                  'span',
+                                  null,
+                                  lg.consumed.toLocaleString(),
+                                  md.isCurrent && lg.projCons > 0
+                                    ? React.createElement(
+                                        'span',
+                                        {style: {fontSize: 10, color: '#9ca3af', marginLeft: 4}},
+                                        '(' +
+                                          lg.actualCons.toLocaleString() +
+                                          '+' +
+                                          lg.projCons.toLocaleString() +
+                                          'p)',
+                                      )
+                                    : null,
+                                )
+                              : '\u2014',
+                          ),
+                          React.createElement(
+                            'td',
                             {
-                              onClick: function () {
-                                togSec(yearKey);
-                              },
-                              style: {
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                cursor: 'pointer',
-                                padding: '4px 0',
-                                marginBottom: 6,
+                              style: {padding: '7px 8px', textAlign: 'right'},
+                              onClick: function (e) {
+                                e.stopPropagation();
                               },
                             },
-                            React.createElement(
-                              'span',
-                              {style: {fontSize: 10, color: '#9ca3af'}},
-                              secToggle.has(yearKey) ? '\u25bc' : '\u25b6',
-                            ),
-                            React.createElement('span', {style: {fontSize: 12, fontWeight: 600, color: '#6b7280'}}, yr),
-                            React.createElement(
-                              'span',
-                              {style: {fontSize: 11, color: '#9ca3af'}},
-                              '(' + yearMonths.length + ' months)',
-                            ),
+                            React.createElement('input', {
+                              type: 'number',
+                              min: '0',
+                              step: '100',
+                              value: ordVal,
+                              onChange: function (e) {
+                                savePoultryOrder(t.ordKey, md.ym, e.target.value);
+                              },
+                              placeholder: '0',
+                              style: {
+                                width: 80,
+                                fontSize: 12,
+                                padding: '4px 8px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: 6,
+                                textAlign: 'right',
+                                fontFamily: 'inherit',
+                              },
+                            }),
+                            lg && lg.deliveryInCount
+                              ? React.createElement(
+                                  'div',
+                                  {style: {fontSize: 9, color: '#065f46', fontStyle: 'italic', marginTop: 1}},
+                                  '(in count)',
+                                )
+                              : null,
                           ),
-                        (pastYears.length === 1 || secToggle.has(yearKey)) &&
                           React.createElement(
-                            'div',
-                            {style: {display: 'flex', flexDirection: 'column', gap: 10}},
-                            yearMonths.map(renderMonthCard),
+                            'td',
+                            {
+                              style: {
+                                padding: '7px 8px',
+                                textAlign: 'right',
+                                fontWeight: 700,
+                                color: lg ? (lg.end > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                              },
+                            },
+                            lg ? lg.end.toLocaleString() : '\u2014',
                           ),
-                      );
-                    }),
+                        );
+                      }),
+                    ),
                   ),
+                ),
+                null,
+              );
+            }
+
+            // Split months into current, future, past
+            var currentMonth = monthlyData.filter(function (m) {
+              return m.isCurrent;
+            });
+            var futureMonths = monthlyData.filter(function (m) {
+              return m.isFuture;
+            });
+            var pastMonths = monthlyData
+              .filter(function (m) {
+                return !m.isCurrent && !m.isFuture;
+              })
+              .reverse(); // newest first
+
+            // Group past months by year
+            var pastByYear = {};
+            pastMonths.forEach(function (m) {
+              var yr = m.ym.substring(0, 4);
+              if (!pastByYear[yr]) pastByYear[yr] = [];
+              pastByYear[yr].push(m);
+            });
+            var pastYears = Object.keys(pastByYear).sort().reverse(); // newest year first
+
+            var secToggle = poultryFeedExpandedMonths;
+            function togSec(key) {
+              setPoultryFeedExpandedMonths(function (s) {
+                var n = new Set(s);
+                n.has(key) ? n.delete(key) : n.add(key);
+                return n;
+              });
+            }
+
+            return React.createElement(
+              'div',
+              {style: {display: 'flex', flexDirection: 'column', gap: '1.25rem'}},
+              // Section header
+              React.createElement(
+                'div',
+                {style: {fontSize: 14, fontWeight: 700, color: '#085041'}},
+                'Monthly Poultry Feed Summary',
               ),
-          );
-        })()}
+
+              // Current month — always visible
+              currentMonth.length > 0 && React.createElement('div', null, currentMonth.map(renderMonthCard)),
+
+              // Future months — collapsible
+              futureMonths.length > 0 &&
+                React.createElement(
+                  'div',
+                  null,
+                  React.createElement(
+                    'div',
+                    {
+                      onClick: function () {
+                        togSec('future');
+                      },
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        padding: '8px 0',
+                        marginBottom: 6,
+                      },
+                    },
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 10, color: '#9ca3af'}},
+                      secToggle.has('future') ? '\u25bc' : '\u25b6',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
+                      'UPCOMING MONTHS',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 11, color: '#9ca3af'}},
+                      '(' + futureMonths.length + ')',
+                    ),
+                  ),
+                  secToggle.has('future') &&
+                    React.createElement(
+                      'div',
+                      {style: {display: 'flex', flexDirection: 'column', gap: 10}},
+                      futureMonths.map(renderMonthCard),
+                    ),
+                ),
+
+              // Past months — collapsible, grouped by year
+              pastYears.length > 0 &&
+                React.createElement(
+                  'div',
+                  null,
+                  React.createElement(
+                    'div',
+                    {
+                      onClick: function () {
+                        togSec('past');
+                      },
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        padding: '8px 0',
+                        marginBottom: 6,
+                      },
+                    },
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 10, color: '#9ca3af'}},
+                      secToggle.has('past') ? '\u25bc' : '\u25b6',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
+                      'PAST MONTHS',
+                    ),
+                    React.createElement(
+                      'span',
+                      {style: {fontSize: 11, color: '#9ca3af'}},
+                      '(' + pastMonths.length + ')',
+                    ),
+                  ),
+                  secToggle.has('past') &&
+                    React.createElement(
+                      'div',
+                      {style: {display: 'flex', flexDirection: 'column', gap: 14}},
+                      pastYears.map(function (yr) {
+                        var yearMonths = pastByYear[yr];
+                        var yearKey = 'past-' + yr;
+                        return React.createElement(
+                          'div',
+                          {key: yr},
+                          pastYears.length > 1 &&
+                            React.createElement(
+                              'div',
+                              {
+                                onClick: function () {
+                                  togSec(yearKey);
+                                },
+                                style: {
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  cursor: 'pointer',
+                                  padding: '4px 0',
+                                  marginBottom: 6,
+                                },
+                              },
+                              React.createElement(
+                                'span',
+                                {style: {fontSize: 10, color: '#9ca3af'}},
+                                secToggle.has(yearKey) ? '\u25bc' : '\u25b6',
+                              ),
+                              React.createElement(
+                                'span',
+                                {style: {fontSize: 12, fontWeight: 600, color: '#6b7280'}},
+                                yr,
+                              ),
+                              React.createElement(
+                                'span',
+                                {style: {fontSize: 11, color: '#9ca3af'}},
+                                '(' + yearMonths.length + ' months)',
+                              ),
+                            ),
+                          (pastYears.length === 1 || secToggle.has(yearKey)) &&
+                            React.createElement(
+                              'div',
+                              {style: {display: 'flex', flexDirection: 'column', gap: 10}},
+                              yearMonths.map(renderMonthCard),
+                            ),
+                        );
+                      }),
+                    ),
+                ),
+            );
+          })()}
 
         {/* Per-batch breakdown - Broiler: Active expanded, Processed collapsible, Planned collapsible */}
         {(function () {
