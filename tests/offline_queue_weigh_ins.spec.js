@@ -531,17 +531,20 @@ test('pig fresh: local edit + delete pre-Save-Draft → only final state lands i
   await page.goto('/weighins');
   await pigStartFreshSession(page);
 
-  await pigAddEntry(page, 240); // #1 — keep
-  await pigAddEntry(page, 999); // #2 — will be edited to 245
-  await pigAddEntry(page, 250); // #3 — keep
-  await pigAddEntry(page, 555); // #4 — will be deleted
+  await pigAddEntry(page, 240); // keep
+  await pigAddEntry(page, 999); // will be edited to 245
+  await pigAddEntry(page, 250); // keep
+  await pigAddEntry(page, 555); // will be deleted
 
-  // Edit row 2 (the 999 entry). Recent-entries list renders rows in
-  // insertion order; the 2nd Edit button (0-indexed nth(1)) belongs to
-  // row #2.
+  // Target rows by weight content rather than display position. The pig
+  // "Recent entries" panel renders weight-descending (78d881e), so nth()
+  // targeting would break on any future sort tweak. Each row contains
+  // exactly one "<weight> lb" span; scoping the Edit/Delete lookup to that
+  // row's parent div keeps the test robust.
   await page
+    .getByText('999 lb', {exact: true})
+    .locator('xpath=parent::div')
     .getByRole('button', {name: /^Edit$/})
-    .nth(1)
     .click();
 
   // While in edit mode there are exactly 2 number inputs on screen:
@@ -552,13 +555,13 @@ test('pig fresh: local edit + delete pre-Save-Draft → only final state lands i
   // labeled "Save Draft (N entries)" so an exact match disambiguates.
   await page.getByRole('button', {name: 'Save', exact: true}).click();
 
-  // After the edit lands in local state, 4 rows display again with 4
-  // Edit + 4 Delete buttons. Auto-accept the window.confirm() dialog
-  // before clicking Delete.
+  // After the edit lands in local state, the 555 row's weight badge still
+  // says "555 lb". Auto-accept the window.confirm() dialog first.
   page.once('dialog', (d) => d.accept());
   await page
+    .getByText('555 lb', {exact: true})
+    .locator('xpath=parent::div')
     .getByRole('button', {name: /^Delete$/})
-    .nth(3)
     .click();
 
   // Now Save Draft. Final entries[] should be [240, 245, 250].
