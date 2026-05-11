@@ -1,14 +1,49 @@
-﻿// ============================================================================
-// src/broiler/BroilerFeedView.jsx  —  Phase 2 Round 6
+// ============================================================================
+// src/broiler/BroilerFeedView.jsx
 // ----------------------------------------------------------------------------
-// Poultry feed planning view. Mixes broiler + layer data to project feed
-// needs per month and compare against actuals + orders. feedOrders /
-// poultryFeedInventory and sbSave still live in App (Round 0 left them
-// out of contexts) and come in as props.
+// Minimal poultry feed ledger — same shape as PigFeedView, three feed types.
+//
+// Top of screen:
+//   • Four tiles: Actual On Hand · End of [prev] Est. · Order for [active] ·
+//     Need Thru [active+1]. Big number = total lbs; small subtext shows the
+//     per-type split (Starter · Grower · Layer).
+//   • Physical-count row right below. Feed-type selector + lbs input + a
+//     "Count includes [today's month] order" checkbox. No editable date —
+//     count saves stamp today.
+//   • Monthly cards: active editable first, most-recent fully-saved second,
+//     older fully-saved months behind a "Show older months (N)" collapse.
+//     Each active row reads as Start − Consumed + Ordered = End per feed
+//     type. Saved cards render plain text values; only the most-recent
+//     saved one has Edit.
+//   • Existing per-batch broiler + layer reference sections kept at the
+//     bottom.
+//
+// Saved-vs-active rule:
+//   A month is "fully saved" only when starter, grower, AND layerfeed
+//   orders are all present (including explicit 0). Active month = the
+//   first month at or after today's month that is NOT fully saved.
+//
+// Save behavior (single month-level button):
+//   • For each feed type, either the operator typed a value OR the
+//     recommendation for that type is exactly 0 (a "Save 0 row").
+//   • Save Order writes all three feedOrders.{starter|grower|layerfeed}
+//     [activeYM] in one sbSave call; the active month advances naturally
+//     since it now reads as fully saved.
+//   • Button reads "Save 0" only when all three drafts are blank AND all
+//     three recommendations are 0. Otherwise reads "Save Order" and is
+//     disabled if any blank type still has a non-zero recommendation.
+//
+// Math source-of-truth:
+//   Poultry burn flows through poultryDailyBurnLbs (which internally
+//   uses getFeedSchedule + LAYER_FEED_SCHEDULE + LAYER_FEED_PER_DAY +
+//   computeProjectedCount) and the existing monthly helpers
+//   calcBatchFeedForMonth + calcLayerFeedForMonth. No duplicated feed-rate
+//   constants. Physical count is ground truth per feed type and avoids
+//   double-counting the count-month order when the operator's checkbox
+//   says the count already absorbed it.
 // ============================================================================
 import React, {useState} from 'react';
-import {sb} from '../lib/supabase.js';
-import {fmt, fmtS, todayISO, addDays} from '../lib/dateUtils.js';
+import {fmt, todayISO} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
 import {
   calcBatchFeedForMonth,
@@ -23,15 +58,7 @@ import {
   LAYER_FEED_PER_DAY,
 } from '../lib/broiler.js';
 import {computeProjectedCount} from '../lib/layerHousing.js';
-import {
-  poultryDailyBurnLbs,
-  onHandFromSnapshot,
-  isSnapshotStale,
-  suggestOrder,
-  STALE_SNAPSHOT_DAYS,
-  LEAD_TIME_DAYS,
-  RESERVE_DAYS,
-} from '../lib/feedPlanner.js';
+import {poultryDailyBurnLbs} from '../lib/feedPlanner.js';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {useLayer} from '../contexts/LayerContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
@@ -46,412 +73,737 @@ export default function BroilerFeedView({
   setCollapsedBatches,
   sbSave,
 }) {
-  const [poultryFeedExpandedMonths, setPoultryFeedExpandedMonths] = useState(new Set());
-  const [showPoultryLegacyLedger, setShowPoultryLegacyLedger] = useState(false);
-  const [confirmPoultrySuggested, setConfirmPoultrySuggested] = useState(null);
   const {batches} = useBatches();
   const {layerBatches, layerHousings, allLayerDailys} = useLayer();
   const {broilerDailys} = useDailysRecent();
   const [countType, setCountType] = useState('starter');
+  const [editingMonthYM, setEditingMonthYM] = useState(null);
+  const [activeOrderDrafts, setActiveOrderDrafts] = useState({starter: '', grower: '', layerfeed: ''});
+  const [showOlderMonths, setShowOlderMonths] = useState(false);
+
   const today = new Date();
   const todayDate = todayISO();
+
+  function addMonthsYM(ym, delta) {
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  function ymLabel(ym) {
+    const [y, m] = ym.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', {month: 'short', year: 'numeric'});
+  }
+  function ymShort(ym) {
+    const [y, m] = ym.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', {month: 'short'});
+  }
+
+  // ── Calendar window ──────────────────────────────────────────────────────
   const months = [];
-  for (var mi2 = -6; mi2 <= 6; mi2++) {
-    var d2 = new Date(today.getFullYear(), today.getMonth() + mi2, 1);
-    months.push(d2.getFullYear() + '-' + String(d2.getMonth() + 1).padStart(2, '0'));
+  for (let i = -12; i <= 6; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
   }
-  var thisYM = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
-  function fmtMonth(ym) {
-    var p = ym.split('-').map(Number);
-    return new Date(p[0], p[1] - 1, 1).toLocaleDateString('en-US', {month: 'short', year: 'numeric'});
-  }
+  const thisYM = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
 
-  var activeBroilers = batches.filter(function (b) {
-    return b.hatchDate;
-  });
-  var activeLayerBatchesForFeed = (layerBatches || []).filter(function (b) {
-    return b.status === 'active' && b.name !== 'Retirement Home';
-  });
-  var activeHousings = (layerHousings || []).filter(function (h) {
-    return h.status === 'active';
-  });
+  const activeBroilers = batches.filter((b) => b.hatchDate);
+  const activeLayerBatchesForFeed = (layerBatches || []).filter(
+    (b) => b.status === 'active' && b.name !== 'Retirement Home',
+  );
+  const activeHousings = (layerHousings || []).filter((h) => h.status === 'active');
 
-  // Pre-compute actual consumption by month and feed type
-  var actualByMonth = {};
-  months.forEach(function (ym) {
+  // ── Actual consumption by month + feed type ───────────────────────────────
+  const actualByMonth = {};
+  months.forEach((ym) => {
     actualByMonth[ym] = {starter: 0, grower: 0, layer: 0};
   });
-  (broilerDailys || []).forEach(function (d) {
+  (broilerDailys || []).forEach((d) => {
     if (!d.date) return;
-    var ym = d.date.substring(0, 7);
+    const ym = d.date.substring(0, 7);
     if (!actualByMonth[ym]) return;
-    var lbs = parseFloat(d.feed_lbs) || 0;
+    const lbs = parseFloat(d.feed_lbs) || 0;
     if (d.feed_type === 'STARTER') actualByMonth[ym].starter += lbs;
     else if (d.feed_type === 'GROWER') actualByMonth[ym].grower += lbs;
   });
-  (allLayerDailys || []).forEach(function (d) {
+  (allLayerDailys || []).forEach((d) => {
     if (!d.date) return;
-    var ym = d.date.substring(0, 7);
+    const ym = d.date.substring(0, 7);
     if (!actualByMonth[ym]) return;
-    var lbs = parseFloat(d.feed_lbs) || 0;
+    const lbs = parseFloat(d.feed_lbs) || 0;
     if (d.feed_type === 'STARTER') actualByMonth[ym].starter += lbs;
     else if (d.feed_type === 'GROWER') actualByMonth[ym].grower += lbs;
     else if (d.feed_type === 'LAYER') actualByMonth[ym].layer += lbs;
   });
 
-  var monthlyData = months
-    .map(function (ym) {
-      var p = ym.split('-').map(Number);
-      var daysInMonth = new Date(p[0], p[1], 0).getDate();
-      var isFuture = ym > thisYM;
-      var isCurrent = ym === thisYM;
-      // Broiler projected
-      var bStarter = 0,
-        bGrover = 0;
-      activeBroilers.forEach(function (b) {
-        var f = calcBatchFeedForMonth(b, ym);
-        bStarter += f.starter;
-        bGrover += f.grower;
-      });
-      // Layer projected
-      var lStarter = 0,
-        lGrover = 0,
-        lLayer = 0;
-      activeLayerBatchesForFeed.forEach(function (b) {
-        var f = calcLayerFeedForMonth(b, layerHousings || [], allLayerDailys || [], ym);
-        lStarter += f.starter;
-        lGrover += f.grower;
-        lLayer += f.layer;
-      });
-      var starter = Math.round(bStarter + lStarter);
-      var grower = Math.round(bGrover + lGrover);
-      var layerFeed = Math.round(lLayer);
-      var total = starter + grower + layerFeed;
-      var act = actualByMonth[ym] || {starter: 0, grower: 0, layer: 0};
-      var actualTotal = Math.round(act.starter + act.grower + act.layer);
-      var ordS = (feedOrders.starter || {})[ym] || 0;
-      var ordG = (feedOrders.grower || {})[ym] || 0;
-      var ordL = (feedOrders.layerfeed || {})[ym] || 0;
-      var ordered = Math.round((parseFloat(ordS) || 0) + (parseFloat(ordG) || 0) + (parseFloat(ordL) || 0));
-      return {
-        ym: ym,
-        daysInMonth: daysInMonth,
-        starter: starter,
-        grower: grower,
-        layerFeed: layerFeed,
-        total: total,
-        actualStarter: Math.round(act.starter),
-        actualGrover: Math.round(act.grower),
-        actualLayer: Math.round(act.layer),
-        actualTotal: actualTotal,
-        ordS: ordS,
-        ordG: ordG,
-        ordL: ordL,
-        ordered: ordered,
-        isFuture: isFuture,
-        isCurrent: isCurrent,
-        bStarter: Math.round(bStarter),
-        bGrover: Math.round(bGrover),
-        lStarter: Math.round(lStarter),
-        lGrover: Math.round(lGrover),
-        lLayer: Math.round(lLayer),
-      };
-    })
-    .filter(function (m) {
-      return m.total > 0 || m.actualTotal > 0 || m.ordered > 0 || m.isCurrent;
+  // Per-month per-type projected totals via existing schedule helpers.
+  const monthlyData = months.map((ym) => {
+    const p = ym.split('-').map(Number);
+    const daysInMonth = new Date(p[0], p[1], 0).getDate();
+    const isFuture = ym > thisYM;
+    const isCurrent = ym === thisYM;
+    let bStarter = 0;
+    let bGrover = 0;
+    activeBroilers.forEach((b) => {
+      const f = calcBatchFeedForMonth(b, ym);
+      bStarter += f.starter;
+      bGrover += f.grower;
     });
+    let lStarter = 0;
+    let lGrover = 0;
+    let lLayer = 0;
+    activeLayerBatchesForFeed.forEach((b) => {
+      const f = calcLayerFeedForMonth(b, layerHousings || [], allLayerDailys || [], ym);
+      lStarter += f.starter;
+      lGrover += f.grower;
+      lLayer += f.layer;
+    });
+    const starter = Math.round(bStarter + lStarter);
+    const grower = Math.round(bGrover + lGrover);
+    const layerFeed = Math.round(lLayer);
+    const act = actualByMonth[ym] || {starter: 0, grower: 0, layer: 0};
+    const ordS = (feedOrders.starter || {})[ym];
+    const ordG = (feedOrders.grower || {})[ym];
+    const ordL = (feedOrders.layerfeed || {})[ym];
+    return {
+      ym,
+      daysInMonth,
+      isFuture,
+      isCurrent,
+      starter,
+      grower,
+      layerFeed,
+      actualStarter: Math.round(act.starter),
+      actualGrover: Math.round(act.grower),
+      actualLayer: Math.round(act.layer),
+      ordS: ordS != null ? ordS : null,
+      ordG: ordG != null ? ordG : null,
+      ordL: ordL != null ? ordL : null,
+    };
+  });
 
-  // Save helpers
-  function savePoultryOrder(type, ym, val) {
-    // Empty string = clear the order (delete key). Any number (including 0) = save as decision made.
-    var typeOrders = {...(feedOrders[type] || {})};
-    if (val === '' || val == null) {
-      delete typeOrders[ym];
-    } else {
-      typeOrders[ym] = parseFloat(val) || 0;
-    }
-    var next = {...feedOrders, [type]: typeOrders};
-    setFeedOrders(next);
-    sbSave('ppp-feed-orders-v1', next);
-  }
-  function savePoultryFeedCount(type, count, date) {
-    // New count writes are flat {count, date} per feed type. The legacy
-    // includesCurrentMonthDelivery flag is no longer operator-facing;
-    // helpers below still tolerate it on old persisted rows.
-    var inv = {...(poultryFeedInventory || {})};
+  // ── Persistence wrappers ─────────────────────────────────────────────────
+  function savePoultryFeedCount(type, count, date, includesCurrentMonthDelivery) {
+    // Physical count is "what is on site now." The save call below
+    // stamps today; this signature retains the date param so we never
+    // silently lose the operator's intent if a future caller passes one
+    // (the UI itself no longer offers a date input).
+    const inv = {...(poultryFeedInventory || {})};
     inv[type] = {
       count: parseFloat(count) || 0,
       date: date || todayDate,
+      includesCurrentMonthDelivery: !!includesCurrentMonthDelivery,
     };
     setPoultryFeedInventory(inv);
     sbSave('ppp-poultry-feed-inventory-v1', inv);
   }
 
-  // Find earliest month with ANY poultry feed order — this is when tracking starts
-  var allPoultryOrderMonths = []
-    .concat(
-      Object.keys(feedOrders.starter || {}).filter(function (k) {
-        return (parseFloat((feedOrders.starter || {})[k]) || 0) > 0;
-      }),
-      Object.keys(feedOrders.grower || {}).filter(function (k) {
-        return (parseFloat((feedOrders.grower || {})[k]) || 0) > 0;
-      }),
-      Object.keys(feedOrders.layerfeed || {}).filter(function (k) {
-        return (parseFloat((feedOrders.layerfeed || {})[k]) || 0) > 0;
-      }),
-    )
-    .sort();
-  var firstPoultryOrderYM = allPoultryOrderMonths.length > 0 ? allPoultryOrderMonths[0] : '9999-99';
-
-  // ── Build poultry running ledger per feed type ──
-  var pAllDailys = (broilerDailys || []).concat(allLayerDailys || []);
-  var pLedger = {starter: {}, grower: {}, layer: {}};
-  var pDaysLeft = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate();
-  ['starter', 'grower', 'layer'].forEach(function (type) {
-    var orderKey = type === 'layer' ? 'layerfeed' : type;
-    var ftKey = type === 'starter' ? 'STARTER' : type === 'grower' ? 'GROWER' : 'LAYER';
-    var projKey = type === 'starter' ? 'starter' : type === 'grower' ? 'grower' : 'layerFeed';
-    var actualKey = type === 'starter' ? 'actualStarter' : type === 'grower' ? 'actualGrover' : 'actualLayer';
-    var runBal2 = 0;
-    var pInv2 = poultryFeedInventory && poultryFeedInventory[type];
-    var countApplied2 = false;
-    var allSorted = monthlyData.slice().sort(function (a, b) {
-      return a.ym.localeCompare(b.ym);
-    });
-    for (var mi4 = 0; mi4 < allSorted.length; mi4++) {
-      var md4 = allSorted[mi4];
-      if (md4.ym < firstPoultryOrderYM) {
-        pLedger[type][md4.ym] = null;
-        continue;
-      }
-      var st = runBal2;
-      var isCM = false;
-      var cAdj = null;
-      if (pInv2 && !countApplied2) {
-        var iYM = pInv2.date.substring(0, 7);
-        if (iYM === md4.ym) {
-          // Type's current-month order. When count says delivery is included, the system-side
-          // estimate must include that order too (else a perfect count shows a phantom Adj).
-          var thisMonthOrderForAdj = parseFloat((feedOrders[orderKey] || {})[md4.ym]) || 0;
-          var systemEstThisMonth = runBal2 + (pInv2.includesCurrentMonthDelivery ? thisMonthOrderForAdj : 0);
-          cAdj = Math.round(pInv2.count - systemEstThisMonth);
-          st = pInv2.count;
-          isCM = true;
-          countApplied2 = true;
-          var cA = 0;
-          pAllDailys.forEach(function (d) {
-            if (d.date && d.date > pInv2.date && d.date.startsWith(md4.ym) && d.feed_type === ftKey)
-              cA += parseFloat(d.feed_lbs) || 0;
-          });
-          var pR = 0;
-          if (md4.isCurrent && pDaysLeft > 0) pR = Math.round(md4[projKey] * (pDaysLeft / md4.daysInMonth));
-          // When delivery is already absorbed into the count value, don't add this month's order again.
-          var cons = Math.round(cA + pR);
-          var ord = pInv2.includesCurrentMonthDelivery ? 0 : thisMonthOrderForAdj;
-          var en = Math.round(st - cons + ord);
-          pLedger[type][md4.ym] = {
-            start: st,
-            consumed: cons,
-            actualCons: Math.round(cA),
-            projCons: Math.round(pR),
-            ordered: ord,
-            rawOrdered: thisMonthOrderForAdj,
-            end: en,
-            countMonth: true,
-            countAdj: cAdj,
-            proj: md4[projKey],
-            actual: md4[actualKey],
-          };
-          runBal2 = en;
-          continue;
-        } else if (iYM < md4.ym) {
-          st = pInv2.count;
-          countApplied2 = true;
-        }
-      }
-      var aCtual = md4[actualKey];
-      var pRoj = 0;
-      if (md4.isCurrent && pDaysLeft > 0) pRoj = Math.round(md4[projKey] * (pDaysLeft / md4.daysInMonth));
-      else if (md4.isFuture) {
-        pRoj = md4[projKey];
-        aCtual = 0;
-      }
-      var cons2 = Math.round(aCtual + pRoj);
-      var ord2 = parseFloat((feedOrders[orderKey] || {})[md4.ym]) || 0;
-      var en2 = Math.round(st - cons2 + ord2);
-      pLedger[type][md4.ym] = {
-        start: Math.round(st),
-        consumed: cons2,
-        actualCons: Math.round(aCtual),
-        projCons: Math.round(pRoj),
-        ordered: ord2,
-        end: en2,
-        countMonth: isCM,
-        countAdj: cAdj,
-        proj: md4[projKey],
-        actual: md4[actualKey],
-      };
-      runBal2 = en2;
-    }
-  });
-
-  // Top-level aggregates for cards
-  var pInv = poultryFeedInventory;
-  var curLgS = pLedger.starter[thisYM];
-  var curLgG = pLedger.grower[thisYM];
-  var curLgL = pLedger.layer[thisYM];
-  var pActualOnHand = null;
-  var pEndOfMonth = null;
-  if (curLgS || curLgG || curLgL) {
-    // Actual on hand = start of month - actual consumed so far (no projected, no current month order)
-    var aohS = curLgS ? Math.round(curLgS.start - curLgS.actualCons) : null;
-    var aohG = curLgG ? Math.round(curLgG.start - curLgG.actualCons) : null;
-    var aohL = curLgL ? Math.round(curLgL.start - curLgL.actualCons) : null;
-    pActualOnHand = {starter: aohS, grower: aohG, layer: aohL, total: (aohS || 0) + (aohG || 0) + (aohL || 0)};
-    pEndOfMonth = {
-      starter: curLgS ? curLgS.end : null,
-      grower: curLgG ? curLgG.end : null,
-      layer: curLgL ? curLgL.end : null,
-      total: (curLgS ? curLgS.end : 0) + (curLgG ? curLgG.end : 0) + (curLgL ? curLgL.end : 0),
-    };
+  // ── Active-month resolution ──────────────────────────────────────────────
+  // A month is "fully saved" only when all three feed-type orders are
+  // present (including explicit 0). Active month = the first month at or
+  // after today's month that is NOT fully saved.
+  function isMonthFullySaved(ym) {
+    return (
+      (feedOrders.starter || {})[ym] != null &&
+      (feedOrders.grower || {})[ym] != null &&
+      (feedOrders.layerfeed || {})[ym] != null
+    );
   }
-  // Suggested order — auto-detect: all 3 types must have current month order before cycling to next
-  var pCurHasAllOrders =
-    (feedOrders.starter || {})[thisYM] != null &&
-    (feedOrders.grower || {})[thisYM] != null &&
-    (feedOrders.layerfeed || {})[thisYM] != null;
-  var pOrderOffset = pCurHasAllOrders ? 1 : 0;
-  var pOrderTarget = new Date(today.getFullYear(), today.getMonth() + pOrderOffset, 1);
-  var pOrderTargetYM = pOrderTarget.getFullYear() + '-' + String(pOrderTarget.getMonth() + 1).padStart(2, '0');
-  var pOrderTargetLabel = pOrderTarget.toLocaleDateString('en-US', {month: 'short'});
-  var pOrderTargetMD = monthlyData.find(function (m) {
-    return m.ym === pOrderTargetYM;
-  });
-  var pNextMonth = new Date(today.getFullYear(), today.getMonth() + pOrderOffset, 1);
-  var pMonthAfter = new Date(today.getFullYear(), today.getMonth() + pOrderOffset + 1, 1);
-  var pMonthAfterYM = pMonthAfter.getFullYear() + '-' + String(pMonthAfter.getMonth() + 1).padStart(2, '0');
-  var pMonthAfterMD = monthlyData.find(function (m) {
-    return m.ym === pMonthAfterYM;
-  });
-  var pSugOrder = null;
-  if (pEndOfMonth || !pCurHasAllOrders) {
-    var pBase = pEndOfMonth || {starter: 0, grower: 0, layer: 0};
-    // If ordering for current month, base is previous month end (start of current month)
-    if (!pCurHasAllOrders && curLgS) {
-      pBase = {starter: curLgS ? curLgS.start : 0, grower: curLgG ? curLgG.start : 0, layer: curLgL ? curLgL.start : 0};
-    }
-    var sNeed = (pOrderTargetMD ? pOrderTargetMD.starter : 0) + (pMonthAfterMD ? pMonthAfterMD.starter : 0);
-    var gNeed = (pOrderTargetMD ? pOrderTargetMD.grower : 0) + (pMonthAfterMD ? pMonthAfterMD.grower : 0);
-    var lNeed = (pOrderTargetMD ? pOrderTargetMD.layerFeed : 0) + (pMonthAfterMD ? pMonthAfterMD.layerFeed : 0);
-    pSugOrder = {
-      starter: Math.max(0, sNeed - (pBase.starter || 0)),
-      grower: Math.max(0, gNeed - (pBase.grower || 0)),
-      layer: Math.max(0, lNeed - (pBase.layer || 0)),
-      sNeed: sNeed,
-      gNeed: gNeed,
-      lNeed: lNeed,
-    };
-    pSugOrder.total = pSugOrder.starter + pSugOrder.grower + pSugOrder.layer;
+  const allOrderYMs = new Set();
+  Object.keys(feedOrders.starter || {}).forEach((k) => allOrderYMs.add(k));
+  Object.keys(feedOrders.grower || {}).forEach((k) => allOrderYMs.add(k));
+  Object.keys(feedOrders.layerfeed || {}).forEach((k) => allOrderYMs.add(k));
+  const savedOrderYMs = [...allOrderYMs].filter(isMonthFullySaved).sort();
+  function firstUnsavedFrom(ym) {
+    let cur = ym;
+    while (isMonthFullySaved(cur)) cur = addMonthsYM(cur, 1);
+    return cur;
   }
+  const autoActiveYM = firstUnsavedFrom(thisYM);
+  const activeYM = editingMonthYM != null ? editingMonthYM : autoActiveYM;
+  const isActiveEditMode = editingMonthYM != null;
+  const prevYM = addMonthsYM(activeYM, -1);
+  const nextYM = addMonthsYM(activeYM, 1);
+  const prevLabel = ymShort(prevYM);
+  const activeLabel = ymShort(activeYM);
+  const nextLabel = ymShort(nextYM);
 
-  var expandedMonths2 = poultryFeedExpandedMonths;
-  function toggleMonth2(ym) {
-    setPoultryFeedExpandedMonths(function (s) {
-      var n = new Set(s);
-      n.has(ym) ? n.delete(ym) : n.add(ym);
-      return n;
-    });
-  }
+  // "Once a later month is saved, older months can no longer be edited."
+  // In edit mode the operator rewound to the most-recently-saved month;
+  // every other saved month sits strictly before that one, so none of
+  // them can be the LAST SAVED affordance. They all go behind the Show
+  // older months collapse with plain-text Ordered values and no Edit.
+  const savedExcludingActive = savedOrderYMs.filter((ym) => ym !== activeYM);
+  const mostRecentSavedNonActiveYM =
+    !isActiveEditMode && savedExcludingActive.length ? savedExcludingActive[savedExcludingActive.length - 1] : null;
+  const olderSavedYMs = isActiveEditMode
+    ? savedExcludingActive.slice(-5).reverse()
+    : savedExcludingActive.slice(0, -1).slice(-5).reverse();
 
-  // ── Snapshot-anchored order board (feedPlanner.js) ──
-  // First-screen answer to "How much feed do I need to order?" for each
-  // poultry feed type. Burn is per-type from poultryDailyBurnLbs, which
-  // uses the same broiler/layer schedule helpers as the legacy monthly
-  // projection (no rate-formula change). On-hand is snapshot − consumed-
-  // since-snapshot from broiler_dailys + layer_dailys filtered by feed_type.
-  function poultryBurnFnFor(type) {
-    return function (dateISO) {
-      var out = poultryDailyBurnLbs(dateISO, {
+  // ── Running ledger per feed type ─────────────────────────────────────────
+  // Anchored by the per-type physical count when present; otherwise by
+  // the first month where that type has a saved order. Walks forward
+  // through all months in the window so prev/active/next all have a
+  // valid Start/Consumed/Ordered/End triple.
+  const allDailys = (broilerDailys || []).concat(allLayerDailys || []);
+  const pDaysLeft = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate();
+
+  // Rest-of-current-month burn per feed type via feedPlanner. Sums daily
+  // burn for every remaining day in the current month so the ledger's
+  // pRem/pRoj values respect each batch's age-by-day instead of a flat
+  // proportional split.
+  const currentMonthRemainingBurnByType = (() => {
+    if (pDaysLeft <= 0) return {starter: 0, grower: 0, layer: 0};
+    let starter = 0;
+    let grower = 0;
+    let layer = 0;
+    for (let i = 1; i <= pDaysLeft; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const iso =
+        d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const out = poultryDailyBurnLbs(iso, {
         batches: activeBroilers,
         layerBatches: activeLayerBatchesForFeed,
         layerHousings: layerHousings || [],
         layerDailys: allLayerDailys || [],
       });
-      if (type === 'starter') return out.starterLbs;
-      if (type === 'grower') return out.growerLbs;
-      return out.layerLbs;
-    };
-  }
-  function poultryConsumedFnFor(type) {
-    var match = type === 'starter' ? 'STARTER' : type === 'grower' ? 'GROWER' : 'LAYER';
-    return function (fromISO, toISO_) {
-      var sum = 0;
-      var src = (broilerDailys || []).concat(allLayerDailys || []);
-      for (var i = 0; i < src.length; i++) {
-        var d = src[i];
-        if (!d.date || d.date <= fromISO || d.date > toISO_) continue;
-        if (d.feed_type !== match) continue;
-        sum += parseFloat(d.feed_lbs) || 0;
+      starter += out.starterLbs;
+      grower += out.growerLbs;
+      layer += out.layerLbs;
+    }
+    return {starter: Math.round(starter), grower: Math.round(grower), layer: Math.round(layer)};
+  })();
+
+  const pLedger = {starter: {}, grower: {}, layer: {}};
+  ['starter', 'grower', 'layer'].forEach((type) => {
+    const orderKey = type === 'layer' ? 'layerfeed' : type;
+    const ftKey = type === 'starter' ? 'STARTER' : type === 'grower' ? 'GROWER' : 'LAYER';
+    const projKey = type === 'starter' ? 'starter' : type === 'grower' ? 'grower' : 'layerFeed';
+    const actualKey = type === 'starter' ? 'actualStarter' : type === 'grower' ? 'actualGrover' : 'actualLayer';
+    const orderedKey = type === 'starter' ? 'ordS' : type === 'grower' ? 'ordG' : 'ordL';
+    const typeOrderMonths = Object.keys(feedOrders[orderKey] || {})
+      .filter((k) => (parseFloat((feedOrders[orderKey] || {})[k]) || 0) > 0)
+      .sort();
+    const firstOrderYM = typeOrderMonths.length > 0 ? typeOrderMonths[0] : '9999-99';
+    const inv = poultryFeedInventory && poultryFeedInventory[type];
+    const invYM = inv && inv.date ? inv.date.substring(0, 7) : null;
+    let runBal = 0;
+    let countApplied = false;
+    const sorted = monthlyData.slice().sort((a, b) => a.ym.localeCompare(b.ym));
+    for (let i = 0; i < sorted.length; i++) {
+      const md = sorted[i];
+      if (md.ym < firstOrderYM && (!invYM || md.ym < invYM)) {
+        pLedger[type][md.ym] = null;
+        continue;
       }
-      return sum;
-    };
-  }
-  var orderBoardRowDefs = [
-    {key: 'starter', label: 'Starter', invKey: 'starter', ordKey: 'starter', color: '#1d4ed8'},
-    {key: 'grower', label: 'Grower', invKey: 'grower', ordKey: 'grower', color: '#085041'},
-    {key: 'layer', label: 'Layer Feed', invKey: 'layer', ordKey: 'layerfeed', color: '#78350f'},
-  ];
-  var orderBoardRows = orderBoardRowDefs.map(function (row) {
-    var inv = poultryFeedInventory && poultryFeedInventory[row.invKey];
-    var hasSnapshot = !!(inv && inv.date);
-    var burnFn = poultryBurnFnFor(row.key);
-    var consumedFn = poultryConsumedFnFor(row.key);
-    var onHand = hasSnapshot
-      ? onHandFromSnapshot({
-          snapshotLbs: parseFloat(inv.count) || 0,
-          snapshotDateISO: inv.date,
-          todayISO: todayDate,
-          consumedLbsFn: consumedFn,
-          burnRateFn: burnFn,
-        })
-      : null;
-    var stale = hasSnapshot ? isSnapshotStale({snapshotDateISO: inv.date, todayISO: todayDate}) : false;
-    var suggestion = suggestOrder({
-      onHandLbs: onHand == null ? 0 : onHand,
-      todayISO: todayDate,
-      burnRateFn: burnFn,
-    });
-    var curOrder = (feedOrders[row.ordKey] || {})[thisYM];
-    var curHasOrder = curOrder != null && curOrder !== '';
-    return Object.assign({}, row, {
-      inv: inv,
-      hasSnapshot: hasSnapshot,
-      onHand: onHand,
-      stale: stale,
-      suggestion: suggestion,
-      curOrder: curOrder,
-      curHasOrder: curHasOrder,
-    });
+      let lgStart = runBal;
+      let isCountMonth = false;
+      let countAdj = null;
+      if (inv && invYM && !countApplied) {
+        if (invYM === md.ym) {
+          const thisMonthOrderForAdj = parseFloat(md[orderedKey]) || 0;
+          const systemEstThisMonth = runBal + (inv.includesCurrentMonthDelivery ? thisMonthOrderForAdj : 0);
+          countAdj = Math.round(inv.count - systemEstThisMonth);
+          lgStart = inv.count;
+          isCountMonth = true;
+          countApplied = true;
+          let cAfter = 0;
+          allDailys.forEach((d) => {
+            if (d.date && d.date > inv.date && d.date.startsWith(md.ym) && d.feed_type === ftKey)
+              cAfter += parseFloat(d.feed_lbs) || 0;
+          });
+          let pRem = 0;
+          if (md.isCurrent && pDaysLeft > 0) pRem = currentMonthRemainingBurnByType[type];
+          const cons = Math.round(cAfter + pRem);
+          const ord = inv.includesCurrentMonthDelivery ? 0 : thisMonthOrderForAdj;
+          const en = Math.round(lgStart - cons + ord);
+          pLedger[type][md.ym] = {
+            start: lgStart,
+            consumed: cons,
+            actualCons: Math.round(cAfter),
+            projCons: Math.round(pRem),
+            ordered: ord,
+            rawOrdered: thisMonthOrderForAdj,
+            end: en,
+            countMonth: true,
+            countAdj,
+          };
+          runBal = en;
+          continue;
+        } else if (invYM < md.ym) {
+          lgStart = inv.count;
+          countApplied = true;
+        }
+      }
+      let aCtual = md[actualKey];
+      let pRoj = 0;
+      if (md.isCurrent && pDaysLeft > 0) pRoj = currentMonthRemainingBurnByType[type];
+      else if (md.isFuture) {
+        pRoj = md[projKey];
+        aCtual = 0;
+      }
+      const cons2 = Math.round(aCtual + pRoj);
+      const ord2 = parseFloat(md[orderedKey]) || 0;
+      const en2 = Math.round(lgStart - cons2 + ord2);
+      pLedger[type][md.ym] = {
+        start: Math.round(lgStart),
+        consumed: cons2,
+        actualCons: Math.round(aCtual),
+        projCons: Math.round(pRoj),
+        ordered: ord2,
+        end: en2,
+        countMonth: isCountMonth,
+        countAdj,
+      };
+      runBal = en2;
+    }
   });
-  function applyPoultrySuggestion(row) {
-    if (!row.suggestion || row.suggestion.suggestedOrderLbs <= 0) return;
-    if (row.curHasOrder && confirmPoultrySuggested !== row.key) {
-      setConfirmPoultrySuggested(row.key);
+
+  // ── Top-tile derived numbers ─────────────────────────────────────────────
+  const TYPE_KEYS = ['starter', 'grower', 'layer'];
+  // Actual On Hand per type — count + arrived-after-count − consumed-since-count.
+  const actualOnHand = {};
+  let actualOnHandTotal = 0;
+  let actualOnHandHasAny = false;
+  TYPE_KEYS.forEach((type) => {
+    const orderKey = type === 'layer' ? 'layerfeed' : type;
+    const inv = poultryFeedInventory && poultryFeedInventory[type];
+    if (!inv || !inv.date) {
+      actualOnHand[type] = null;
       return;
     }
-    savePoultryOrder(row.ordKey, thisYM, String(row.suggestion.suggestedOrderLbs));
-    setConfirmPoultrySuggested(null);
+    actualOnHandHasAny = true;
+    const invYM = inv.date.substring(0, 7);
+    const ftKey = type === 'starter' ? 'STARTER' : type === 'grower' ? 'GROWER' : 'LAYER';
+    const ordersArrivedAfterCount = Object.entries(feedOrders[orderKey] || {}).reduce((s, e) => {
+      const ym = e[0];
+      const v = parseFloat(e[1]) || 0;
+      if (ym > invYM && ym < thisYM) return s + v;
+      if (ym === invYM && !inv.includesCurrentMonthDelivery && ym < thisYM) return s + v;
+      return s;
+    }, 0);
+    const consumedSinceCount = allDailys
+      .filter((d) => d.date && d.date > inv.date && d.feed_type === ftKey)
+      .reduce((s, d) => s + (parseFloat(d.feed_lbs) || 0), 0);
+    actualOnHand[type] = Math.round(inv.count + ordersArrivedAfterCount - consumedSinceCount);
+    actualOnHandTotal += actualOnHand[type];
+  });
+  const endOfPrev = {};
+  let endOfPrevTotal = 0;
+  let endOfPrevHasAny = false;
+  TYPE_KEYS.forEach((type) => {
+    const lg = pLedger[type][prevYM];
+    endOfPrev[type] = lg ? lg.end : null;
+    if (lg) {
+      endOfPrevTotal += lg.end;
+      endOfPrevHasAny = true;
+    }
+  });
+  const needThruNext = {};
+  let needThruNextTotal = 0;
+  TYPE_KEYS.forEach((type) => {
+    const projKey = type === 'starter' ? 'starter' : type === 'grower' ? 'grower' : 'layerFeed';
+    const a = monthlyData.find((m) => m.ym === activeYM);
+    const n = monthlyData.find((m) => m.ym === nextYM);
+    needThruNext[type] = (a ? a[projKey] : 0) + (n ? n[projKey] : 0);
+    needThruNextTotal += needThruNext[type];
+  });
+  const recommendedOrder = {};
+  let recommendedOrderTotal = 0;
+  let recommendedOrderHasAny = false;
+  TYPE_KEYS.forEach((type) => {
+    if (endOfPrev[type] == null) {
+      recommendedOrder[type] = null;
+      return;
+    }
+    const r = Math.max(0, needThruNext[type] - endOfPrev[type]);
+    recommendedOrder[type] = r;
+    recommendedOrderTotal += r;
+    recommendedOrderHasAny = true;
+  });
+
+  function fmtSplit(per) {
+    return (
+      'Starter ' +
+      (per.starter != null ? per.starter.toLocaleString() : '—') +
+      ' · Grower ' +
+      (per.grower != null ? per.grower.toLocaleString() : '—') +
+      ' · Layer ' +
+      (per.layer != null ? per.layer.toLocaleString() : '—')
+    );
   }
-  var thisMonthLabel = new Date(today.getFullYear(), today.getMonth(), 1).toLocaleDateString('en-US', {
-    month: 'short',
-    year: 'numeric',
-  });
-  var anyPoultryStale = orderBoardRows.some(function (r) {
-    return r.stale;
-  });
-  var anyPoultryMissingSnapshot = orderBoardRows.some(function (r) {
-    return !r.hasSnapshot;
-  });
+
+  // ── Active-card live overrides for End-of-Month while typing ────────────
+  // For each feed type, splice the operator's typed draft (or the
+  // recommendation-zero implicit save) into the active ledger entry so
+  // the equation's End updates as they type. Top tiles still derive from
+  // the persisted-only ledger.
+  function activeDraftEnd(type) {
+    const orderKey = type === 'layer' ? 'layerfeed' : type;
+    const lg = pLedger[type][activeYM];
+    if (!lg) return null;
+    const draftKey = orderKey;
+    const draft = (activeOrderDrafts[draftKey] || '').trim();
+    let val = parseFloat(draft);
+    if (!Number.isFinite(val)) val = lg.ordered;
+    return Math.round(lg.start - lg.consumed + val);
+  }
+
+  // ── Partial-month awareness ──────────────────────────────────────────────
+  // A YM can be partially saved (e.g., starter saved but grower / layerfeed
+  // missing). The active card must NOT overwrite the persisted value or
+  // force the operator to retype it.
+  //   • In auto-active mode (editingMonthYM == null), rows whose persisted
+  //     value exists for activeYM render as plain text and pass through
+  //     unchanged on save. Only the missing rows accept input.
+  //   • In edit mode (operator clicked Edit on the most-recent fully-saved
+  //     month), all three rows become editable so the operator can change
+  //     any of them. Drafts are pre-loaded with the persisted values.
+  //   (isActiveEditMode is declared earlier so the saved-months selection
+  //   can also gate the LAST SAVED affordance against edit mode.)
+  function persistedValueForActive(orderKey) {
+    return (feedOrders[orderKey] || {})[activeYM];
+  }
+  function isRowPersistedForActive(orderKey) {
+    return persistedValueForActive(orderKey) != null;
+  }
+  // Treat persisted-for-active as locked plain text ONLY when not in edit mode.
+  function rowLocksToPersisted(orderKey) {
+    return !isActiveEditMode && isRowPersistedForActive(orderKey);
+  }
+
+  // ── Save handler ─────────────────────────────────────────────────────────
+  function commitActiveOrder() {
+    function decideFromDraft(raw, rec) {
+      if (raw === '') {
+        if (rec !== 0) return null;
+        return 0;
+      }
+      const n = parseFloat(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return n;
+    }
+    function decideRow(orderKey, draftKey, rec) {
+      // Persisted rows in non-edit mode pass through unchanged so we never
+      // overwrite an existing saved value.
+      if (rowLocksToPersisted(orderKey)) {
+        return parseFloat(persistedValueForActive(orderKey)) || 0;
+      }
+      const raw = (activeOrderDrafts[draftKey] || '').trim();
+      return decideFromDraft(raw, rec);
+    }
+    const sVal = decideRow('starter', 'starter', recommendedOrder.starter);
+    const gVal = decideRow('grower', 'grower', recommendedOrder.grower);
+    const lVal = decideRow('layerfeed', 'layerfeed', recommendedOrder.layer);
+    if (sVal == null || gVal == null || lVal == null) return;
+    // Single sbSave covering all three feed-type maps. Persisted rows
+    // re-write their existing value verbatim so the persisted shape is
+    // preserved exactly.
+    const next = {
+      ...feedOrders,
+      starter: {...(feedOrders.starter || {}), [activeYM]: sVal},
+      grower: {...(feedOrders.grower || {}), [activeYM]: gVal},
+      layerfeed: {...(feedOrders.layerfeed || {}), [activeYM]: lVal},
+    };
+    setFeedOrders(next);
+    sbSave('ppp-feed-orders-v1', next);
+    setEditingMonthYM(null);
+    setActiveOrderDrafts({starter: '', grower: '', layerfeed: ''});
+  }
+  function editMonth(ym) {
+    setEditingMonthYM(ym);
+    setActiveOrderDrafts({
+      starter: (feedOrders.starter || {})[ym] != null ? String((feedOrders.starter || {})[ym]) : '',
+      grower: (feedOrders.grower || {})[ym] != null ? String((feedOrders.grower || {})[ym]) : '',
+      layerfeed: (feedOrders.layerfeed || {})[ym] != null ? String((feedOrders.layerfeed || {})[ym]) : '',
+    });
+  }
+
+  // Save-button state derived from drafts + recommendations + persistence.
+  const drafts = activeOrderDrafts;
+  const hasDraftStarter = (drafts.starter || '').trim() !== '';
+  const hasDraftGrower = (drafts.grower || '').trim() !== '';
+  const hasDraftLayer = (drafts.layerfeed || '').trim() !== '';
+  const anyDraftHasValue = hasDraftStarter || hasDraftGrower || hasDraftLayer;
+  const anyTypePersistedForActive =
+    isRowPersistedForActive('starter') || isRowPersistedForActive('grower') || isRowPersistedForActive('layerfeed');
+  function rowSaveValid(type, orderKey, hasDraft) {
+    // Persisted rows are auto-valid in non-edit mode (they pass through).
+    if (rowLocksToPersisted(orderKey)) return true;
+    if (hasDraft) return true;
+    return recommendedOrder[type] === 0;
+  }
+  const saveEnabled =
+    rowSaveValid('starter', 'starter', hasDraftStarter) &&
+    rowSaveValid('grower', 'grower', hasDraftGrower) &&
+    rowSaveValid('layer', 'layerfeed', hasDraftLayer);
+  // "Save 0" only when committing a wholly fresh all-zero month. Any
+  // persisted row in non-edit mode disqualifies the label.
+  const allZeroPath =
+    !anyDraftHasValue &&
+    !anyTypePersistedForActive &&
+    recommendedOrder.starter === 0 &&
+    recommendedOrder.grower === 0 &&
+    recommendedOrder.layer === 0;
+  const saveButtonLabel = allZeroPath ? 'Save 0' : 'Save Order';
+
+  // ── Count-includes-month checkbox ────────────────────────────────────────
+  // Always reads from today's month — no editable date input.
+  const countLbsState = useState('');
+  const countLbsInput = countLbsState[0];
+  const setCountLbsInput = countLbsState[1];
+  const countIncludesState = useState(false);
+  const countIncludesInput = countIncludesState[0];
+  const setCountIncludesInput = countIncludesState[1];
+  const countMonthShort = (() => {
+    const [y, m] = todayDate.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', {month: 'short'});
+  })();
+
+  // Reset the count-input checkbox when the operator switches feed type so
+  // the visible state matches the per-type persisted flag.
+  React.useEffect(() => {
+    const inv = poultryFeedInventory && poultryFeedInventory[countType];
+    setCountIncludesInput(!!(inv && inv.includesCurrentMonthDelivery));
+  }, [countType, poultryFeedInventory, setCountIncludesInput]);
+
+  const tileShellS = {
+    background: 'white',
+    border: '1px solid #e5e7eb',
+    borderRadius: 12,
+    padding: '14px 16px',
+  };
+  const tileLabelS = {
+    fontSize: 11,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  };
+
+  // ── Monthly card renderer ────────────────────────────────────────────────
+  function renderMonthCard(ym) {
+    const md = monthlyData.find((m) => m.ym === ym);
+    if (!md) return null;
+    const isActive = ym === activeYM;
+    const isMostRecentSavedCard = !isActive && ym === mostRecentSavedNonActiveYM;
+    const cardBorder = isActive
+      ? '2px solid #085041'
+      : isMostRecentSavedCard
+        ? '2px solid #a7f3d0'
+        : '1px solid #e5e7eb';
+    const cardHeaderBg = isActive ? '#ecfdf5' : isMostRecentSavedCard ? '#f0fdf4' : 'white';
+
+    const rowDefs = [
+      {key: 'starter', label: 'Starter', orderKey: 'starter', draftKey: 'starter', color: '#1d4ed8'},
+      {key: 'grower', label: 'Grower', orderKey: 'grower', draftKey: 'grower', color: '#085041'},
+      {key: 'layer', label: 'Layer Feed', orderKey: 'layerfeed', draftKey: 'layerfeed', color: '#78350f'},
+    ];
+
+    return (
+      <div
+        key={ym}
+        style={{
+          background: 'white',
+          border: cardBorder,
+          borderRadius: 12,
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: cardHeaderBg,
+          }}
+        >
+          <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{ymLabel(ym)}</span>
+          {isActive && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: '#065f46',
+                background: '#d1fae5',
+                padding: '1px 8px',
+                borderRadius: 10,
+              }}
+            >
+              ACTIVE
+            </span>
+          )}
+          {isMostRecentSavedCard && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: '#065f46',
+                background: '#d1fae5',
+                padding: '1px 8px',
+                borderRadius: 10,
+              }}
+            >
+              LAST SAVED
+            </span>
+          )}
+        </div>
+
+        {/* Per-type equation rows */}
+        <div style={{padding: '4px 16px 8px'}}>
+          {rowDefs.map((row) => {
+            const lg = pLedger[row.key][ym];
+            const savedVal = (feedOrders[row.orderKey] || {})[ym];
+            const isSaved = savedVal != null && savedVal !== '';
+            const draft = activeOrderDrafts[row.draftKey];
+            // In auto-active mode, a row whose value is already persisted
+            // renders as plain text (no input) and the operator's save
+            // carries it through unchanged. In edit mode (operator clicked
+            // Edit on a fully-saved month) all three rows are editable.
+            const rowShowsInput = isActive && (isActiveEditMode || !isSaved);
+            const liveEnd = isActive && lg ? activeDraftEnd(row.key) : lg ? lg.end : null;
+            return (
+              <div
+                key={row.key}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '90px 1fr 14px 1fr 14px 1.4fr 14px 1fr',
+                  gap: 8,
+                  alignItems: 'center',
+                  padding: '6px 0',
+                  borderTop: '1px solid #f3f4f6',
+                }}
+              >
+                <div style={{fontSize: 12, fontWeight: 700, color: row.color}}>{row.label}</div>
+                <div style={{textAlign: 'right'}}>
+                  <div style={{fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5}}>
+                    Start
+                  </div>
+                  <div style={{fontSize: 13, fontWeight: 600, color: lg && lg.start >= 0 ? '#374151' : '#b91c1c'}}>
+                    {lg ? lg.start.toLocaleString() : '—'}
+                  </div>
+                </div>
+                <div style={{fontSize: 14, fontWeight: 700, color: '#9ca3af', textAlign: 'center'}}>{'−'}</div>
+                <div style={{textAlign: 'right'}}>
+                  <div style={{fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5}}>
+                    Consumed
+                  </div>
+                  <div style={{fontSize: 13, fontWeight: 600, color: '#111827'}}>
+                    {lg ? lg.consumed.toLocaleString() : '—'}
+                  </div>
+                </div>
+                <div style={{fontSize: 14, fontWeight: 700, color: '#9ca3af', textAlign: 'center'}}>{'+'}</div>
+                <div>
+                  <div style={{fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5}}>
+                    Ordered
+                  </div>
+                  {rowShowsInput ? (
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={draft}
+                      onChange={(e) => setActiveOrderDrafts((d) => ({...d, [row.draftKey]: e.target.value}))}
+                      style={{
+                        width: '100%',
+                        fontSize: 13,
+                        padding: '4px 8px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: 6,
+                        textAlign: 'right',
+                        fontFamily: 'inherit',
+                        fontWeight: 600,
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  ) : (
+                    <div style={{fontSize: 13, fontWeight: 600, color: '#111827', textAlign: 'right'}}>
+                      {isSaved ? Number(savedVal).toLocaleString() : '—'}
+                    </div>
+                  )}
+                </div>
+                <div style={{fontSize: 14, fontWeight: 700, color: '#9ca3af', textAlign: 'center'}}>{'='}</div>
+                <div style={{textAlign: 'right'}}>
+                  <div style={{fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5}}>End</div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: liveEnd != null ? (liveEnd > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                    }}
+                  >
+                    {liveEnd != null ? liveEnd.toLocaleString() : '—'}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Active-card save row; Edit affordance on the most-recent-saved card */}
+        {isActive ? (
+          <div
+            style={{
+              padding: '8px 16px 12px',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              borderTop: '1px solid #f3f4f6',
+            }}
+          >
+            <button
+              type="button"
+              onClick={commitActiveOrder}
+              disabled={!saveEnabled}
+              style={{
+                padding: '8px 18px',
+                borderRadius: 7,
+                border: 'none',
+                background: saveEnabled ? '#085041' : '#9ca3af',
+                color: 'white',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: saveEnabled ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {saveButtonLabel}
+            </button>
+          </div>
+        ) : (
+          isMostRecentSavedCard && (
+            <div
+              style={{
+                padding: '8px 16px 12px',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                borderTop: '1px solid #f3f4f6',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => editMonth(ym)}
+                style={{
+                  fontSize: 11,
+                  padding: '4px 10px',
+                  borderRadius: 5,
+                  border: '1px solid #d1d5db',
+                  background: 'white',
+                  color: '#4b5563',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Edit
+              </button>
+            </div>
+          )
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -466,471 +818,73 @@ export default function BroilerFeedView({
           gap: '1.25rem',
         }}
       >
-        {/* Snapshot-anchored order board — first-screen "How much feed do I need to order?" */}
-        <div style={{background: 'white', border: '2px solid #085041', borderRadius: 12, padding: '14px 18px'}}>
-          <div
-            style={{
-              fontSize: 11,
-              color: '#085041',
-              textTransform: 'uppercase',
-              letterSpacing: 0.8,
-              fontWeight: 700,
-              marginBottom: 12,
-            }}
-          >
-            Feed order
-          </div>
-          <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 13}}>
-            <thead>
-              <tr style={{borderBottom: '1px solid #e5e7eb'}}>
-                <th
-                  style={{
-                    padding: '6px 8px',
-                    textAlign: 'left',
-                    fontWeight: 600,
-                    color: '#6b7280',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Type
-                </th>
-                <th
-                  style={{
-                    padding: '6px 8px',
-                    textAlign: 'right',
-                    fontWeight: 600,
-                    color: '#6b7280',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Est on hand
-                </th>
-                <th
-                  style={{
-                    padding: '6px 8px',
-                    textAlign: 'right',
-                    fontWeight: 600,
-                    color: '#6b7280',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Runway
-                </th>
-                <th
-                  style={{
-                    padding: '6px 8px',
-                    textAlign: 'right',
-                    fontWeight: 600,
-                    color: '#6b7280',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Order by
-                </th>
-                <th
-                  style={{
-                    padding: '6px 8px',
-                    textAlign: 'right',
-                    fontWeight: 600,
-                    color: '#6b7280',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Suggested
-                </th>
-                <th
-                  style={{
-                    padding: '6px 8px',
-                    textAlign: 'right',
-                    fontWeight: 600,
-                    color: '#6b7280',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {orderBoardRows.map(function (r) {
-                var sug = r.suggestion;
-                var late = sug && sug.orderIsLate;
-                var sugLbs = sug ? sug.suggestedOrderLbs : 0;
-                var confirmThis = confirmPoultrySuggested === r.key;
-                return (
-                  <tr key={r.key} style={{borderBottom: '1px solid #f3f4f6'}}>
-                    <td style={{padding: '10px 8px', fontWeight: 700, color: r.color}}>
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          width: 8,
-                          height: 8,
-                          borderRadius: 2,
-                          background: r.color,
-                          marginRight: 8,
-                        }}
-                      />
-                      {r.label}
-                    </td>
-                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 700,
-                          color: r.hasSnapshot ? '#111827' : '#9ca3af',
-                          fontStyle: r.hasSnapshot ? 'normal' : 'italic',
-                        }}
-                      >
-                        {r.onHand != null ? Math.round(r.onHand).toLocaleString() + ' lbs' : 'No count'}
-                      </div>
-                      <div style={{fontSize: 9, color: '#9ca3af'}}>
-                        {r.hasSnapshot ? 'Counted ' + fmt(r.inv.date) : 'estimated'}
-                      </div>
-                    </td>
-                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
-                      <div style={{fontSize: 15, fontWeight: 700, color: late ? '#b91c1c' : '#111827'}}>
-                        {sug ? sug.daysOfRunway + 'd' : '—'}
-                      </div>
-                    </td>
-                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
-                      <div style={{fontSize: 13, fontWeight: 600, color: late ? '#b91c1c' : '#111827'}}>
-                        {sug ? fmt(sug.orderByDateISO) : '—'}
-                      </div>
-                      {late && <div style={{fontSize: 9, color: '#b91c1c', fontWeight: 600}}>Late</div>}
-                    </td>
-                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
-                      <div
-                        style={{
-                          fontSize: 18,
-                          fontWeight: 700,
-                          color: sugLbs > 0 ? '#92400e' : '#065f46',
-                          fontStyle: r.hasSnapshot ? 'normal' : 'italic',
-                        }}
-                      >
-                        {sug ? (sugLbs > 0 ? sugLbs.toLocaleString() : 'Surplus') : '—'}
-                      </div>
-                      <div style={{fontSize: 9, color: '#9ca3af'}}>
-                        {r.hasSnapshot
-                          ? r.stale
-                            ? 'Recount soon (>' + STALE_SNAPSHOT_DAYS + 'd)'
-                            : LEAD_TIME_DAYS + 'd + ' + RESERVE_DAYS.default + 'd horizon'
-                          : 'enter count'}
-                      </div>
-                    </td>
-                    <td style={{padding: '10px 8px', textAlign: 'right'}}>
-                      <button
-                        type="button"
-                        onClick={function () {
-                          applyPoultrySuggestion(r);
-                        }}
-                        disabled={!sug || sugLbs <= 0}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 7,
-                          border: 'none',
-                          background: confirmThis ? '#b91c1c' : '#085041',
-                          color: 'white',
-                          fontWeight: 700,
-                          fontSize: 12,
-                          cursor: sug && sugLbs > 0 ? 'pointer' : 'not-allowed',
-                          opacity: sug && sugLbs > 0 ? 1 : 0.5,
-                          fontFamily: 'inherit',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {!sug || sugLbs <= 0
-                          ? 'None'
-                          : confirmThis
-                            ? 'Confirm: ' +
-                              (parseFloat(r.curOrder) || 0).toLocaleString() +
-                              ' → ' +
-                              sugLbs.toLocaleString()
-                            : r.curHasOrder
-                              ? 'Use (replace ' + (parseFloat(r.curOrder) || 0).toLocaleString() + ')'
-                              : 'Use suggested'}
-                      </button>
-                      <div style={{fontSize: 9, color: '#9ca3af', marginTop: 3}}>{'→ ' + thisMonthLabel}</div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {(anyPoultryStale || anyPoultryMissingSnapshot) && (
+        {/* 4 top tiles */}
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10}}>
+          {/* Actual On Hand */}
+          <div style={tileShellS}>
+            <div style={tileLabelS}>Actual On Hand</div>
             <div
               style={{
-                marginTop: 10,
-                padding: '8px 12px',
-                background: anyPoultryMissingSnapshot ? '#f3f4f6' : '#fef3c7',
-                border: anyPoultryMissingSnapshot ? '1px dashed #d1d5db' : '1px solid #fde68a',
-                borderRadius: 8,
-                fontSize: 12,
-                color: anyPoultryMissingSnapshot ? '#4b5563' : '#92400e',
+                fontSize: 26,
+                fontWeight: 700,
+                color: actualOnHandHasAny ? (actualOnHandTotal > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                lineHeight: 1,
               }}
             >
-              {anyPoultryMissingSnapshot
-                ? 'One or more feed types have no physical count — those suggestions are estimated. Enter the lbs on hand below for precise orders.'
-                : 'A snapshot is more than ' + STALE_SNAPSHOT_DAYS + ' days old — recount recommended for accuracy.'}
+              {actualOnHandHasAny ? actualOnHandTotal.toLocaleString() + ' lbs' : '—'}
             </div>
-          )}
+            <div style={{fontSize: 10, color: '#9ca3af', marginTop: 6}}>{fmtSplit(actualOnHand)}</div>
+          </div>
+
+          {/* End of [prev] Est */}
+          <div style={tileShellS}>
+            <div style={tileLabelS}>{'End of ' + prevLabel + ' Est.'}</div>
+            <div
+              style={{
+                fontSize: 26,
+                fontWeight: 700,
+                color: endOfPrevHasAny ? (endOfPrevTotal > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                lineHeight: 1,
+              }}
+            >
+              {endOfPrevHasAny ? endOfPrevTotal.toLocaleString() + ' lbs' : '—'}
+            </div>
+            <div style={{fontSize: 10, color: '#9ca3af', marginTop: 6}}>{fmtSplit(endOfPrev)}</div>
+          </div>
+
+          {/* Order for [active] — amber regardless of value */}
+          <div style={{...tileShellS, background: '#fffbeb', border: '2px solid #fde68a'}}>
+            <div style={{...tileLabelS, color: '#92400e'}}>{'Order for ' + activeLabel}</div>
+            <div
+              style={{
+                fontSize: 26,
+                fontWeight: 700,
+                color: recommendedOrderHasAny ? '#92400e' : '#9ca3af',
+                lineHeight: 1,
+              }}
+            >
+              {recommendedOrderHasAny ? recommendedOrderTotal.toLocaleString() + ' lbs' : '—'}
+            </div>
+            <div style={{fontSize: 10, color: '#92400e', marginTop: 6}}>{fmtSplit(recommendedOrder)}</div>
+          </div>
+
+          {/* Need Thru [next] */}
+          <div style={tileShellS}>
+            <div style={tileLabelS}>{'Need Thru ' + nextLabel}</div>
+            <div style={{fontSize: 26, fontWeight: 700, color: '#111827', lineHeight: 1}}>
+              {needThruNextTotal.toLocaleString() + ' lbs'}
+            </div>
+            <div style={{fontSize: 10, color: '#9ca3af', marginTop: 6}}>{fmtSplit(needThruNext)}</div>
+          </div>
         </div>
 
-        {/* Show/hide legacy monthly ledger */}
-        <button
-          type="button"
-          onClick={function () {
-            setShowPoultryLegacyLedger(function (s) {
-              return !s;
-            });
-          }}
-          style={{
-            alignSelf: 'flex-start',
-            padding: '6px 12px',
-            background: 'transparent',
-            border: '1px solid #d1d5db',
-            borderRadius: 6,
-            fontSize: 12,
-            color: '#4b5563',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          {showPoultryLegacyLedger ? '▼ Hide monthly ledger' : '▶ Show monthly ledger'}
-        </button>
-
-        {/* Compact feed summary table — one row per type (legacy ledger) */}
-        {showPoultryLegacyLedger && (
-          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}>
-            <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 13}}>
-              <thead>
-                <tr style={{borderBottom: '1px solid #e5e7eb', background: '#f9fafb'}}>
-                  <th
-                    style={{
-                      padding: '8px 16px',
-                      textAlign: 'left',
-                      fontWeight: 600,
-                      color: '#6b7280',
-                      fontSize: 10,
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    Feed Type
-                  </th>
-                  <th
-                    style={{
-                      padding: '8px 12px',
-                      textAlign: 'right',
-                      fontWeight: 600,
-                      color: '#6b7280',
-                      fontSize: 10,
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    On Hand
-                  </th>
-                  <th
-                    style={{
-                      padding: '8px 12px',
-                      textAlign: 'right',
-                      fontWeight: 600,
-                      color: '#6b7280',
-                      fontSize: 10,
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    End of Mo Est.
-                  </th>
-                  <th
-                    style={{
-                      padding: '8px 12px',
-                      textAlign: 'right',
-                      fontWeight: 600,
-                      color: pSugOrder && pSugOrder.total > 0 ? '#92400e' : '#6b7280',
-                      fontSize: 10,
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    {'Order for ' + pOrderTargetLabel}
-                  </th>
-                  <th
-                    style={{
-                      padding: '8px 12px',
-                      textAlign: 'right',
-                      fontWeight: 600,
-                      color: '#6b7280',
-                      fontSize: 10,
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    {'Need thru ' + pMonthAfter.toLocaleDateString('en-US', {month: 'short'})}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  {
-                    label: 'Starter',
-                    key: 'starter',
-                    color: '#1d4ed8',
-                    aoh: pActualOnHand ? pActualOnHand.starter : null,
-                    eom: pEndOfMonth ? pEndOfMonth.starter : null,
-                    sug: pSugOrder ? pSugOrder.starter : null,
-                    need: pSugOrder ? pSugOrder.sNeed : null,
-                    m1: pOrderTargetMD ? pOrderTargetMD.starter : 0,
-                    m2: pMonthAfterMD ? pMonthAfterMD.starter : 0,
-                    countAdj: curLgS && curLgS.countMonth ? curLgS.countAdj : null,
-                    countDate: pInv && pInv.starter ? pInv.starter.date : null,
-                  },
-                  {
-                    label: 'Grower',
-                    key: 'grower',
-                    color: '#085041',
-                    aoh: pActualOnHand ? pActualOnHand.grower : null,
-                    eom: pEndOfMonth ? pEndOfMonth.grower : null,
-                    sug: pSugOrder ? pSugOrder.grower : null,
-                    need: pSugOrder ? pSugOrder.gNeed : null,
-                    m1: pOrderTargetMD ? pOrderTargetMD.grower : 0,
-                    m2: pMonthAfterMD ? pMonthAfterMD.grower : 0,
-                    countAdj: curLgG && curLgG.countMonth ? curLgG.countAdj : null,
-                    countDate: pInv && pInv.grower ? pInv.grower.date : null,
-                  },
-                  {
-                    label: 'Layer Feed',
-                    key: 'layer',
-                    color: '#78350f',
-                    aoh: pActualOnHand ? pActualOnHand.layer : null,
-                    eom: pEndOfMonth ? pEndOfMonth.layer : null,
-                    sug: pSugOrder ? pSugOrder.layer : null,
-                    need: pSugOrder ? pSugOrder.lNeed : null,
-                    m1: pOrderTargetMD ? pOrderTargetMD.layerFeed : 0,
-                    m2: pMonthAfterMD ? pMonthAfterMD.layerFeed : 0,
-                    countAdj: curLgL && curLgL.countMonth ? curLgL.countAdj : null,
-                    countDate: pInv && pInv.layer ? pInv.layer.date : null,
-                  },
-                ].map(function (ft) {
-                  return React.createElement(
-                    'tr',
-                    {key: ft.label, style: {borderBottom: '1px solid #f3f4f6'}},
-                    React.createElement(
-                      'td',
-                      {style: {padding: '10px 16px', fontWeight: 700, color: ft.color, fontSize: 13}},
-                      React.createElement('span', {
-                        style: {
-                          display: 'inline-block',
-                          width: 8,
-                          height: 8,
-                          borderRadius: 2,
-                          background: ft.color,
-                          marginRight: 8,
-                        },
-                      }),
-                      ft.label,
-                    ),
-                    React.createElement(
-                      'td',
-                      {style: {padding: '10px 12px', textAlign: 'right'}},
-                      React.createElement(
-                        'div',
-                        {
-                          style: {
-                            fontSize: 15,
-                            fontWeight: 700,
-                            color: ft.aoh != null ? (ft.aoh > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                          },
-                        },
-                        ft.aoh != null ? ft.aoh.toLocaleString() : '\u2014',
-                      ),
-                      ft.countDate &&
-                        React.createElement(
-                          'div',
-                          {style: {fontSize: 9, color: '#9ca3af'}},
-                          'Count: ' + fmt(ft.countDate),
-                        ),
-                      ft.countAdj != null &&
-                        ft.countAdj !== 0 &&
-                        React.createElement(
-                          'div',
-                          {style: {fontSize: 9, color: ft.countAdj > 0 ? '#065f46' : '#b91c1c'}},
-                          'Adj ' + (ft.countAdj > 0 ? '+' : '') + ft.countAdj.toLocaleString(),
-                        ),
-                    ),
-                    React.createElement(
-                      'td',
-                      {
-                        style: {
-                          padding: '10px 12px',
-                          textAlign: 'right',
-                          fontSize: 15,
-                          fontWeight: 700,
-                          color: ft.eom != null ? (ft.eom > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                        },
-                      },
-                      ft.eom != null ? ft.eom.toLocaleString() : '\u2014',
-                    ),
-                    React.createElement(
-                      'td',
-                      {
-                        style: {
-                          padding: '10px 12px',
-                          textAlign: 'right',
-                          fontSize: 15,
-                          fontWeight: 700,
-                          color: ft.sug > 0 ? '#92400e' : '#065f46',
-                          background: ft.sug > 0 ? '#fffbeb' : 'transparent',
-                        },
-                      },
-                      ft.sug != null ? (ft.sug > 0 ? ft.sug.toLocaleString() : '\u2713 Surplus') : '\u2014',
-                    ),
-                    React.createElement(
-                      'td',
-                      {style: {padding: '10px 12px', textAlign: 'right'}},
-                      React.createElement(
-                        'div',
-                        {style: {fontSize: 12, color: '#6b7280', fontWeight: 600}},
-                        ft.need != null ? ft.need.toLocaleString() : '\u2014',
-                      ),
-                      React.createElement(
-                        'div',
-                        {style: {fontSize: 10, color: '#9ca3af'}},
-                        ft.m1.toLocaleString() +
-                          ' (' +
-                          pOrderTargetLabel +
-                          ') + ' +
-                          ft.m2.toLocaleString() +
-                          ' (' +
-                          pMonthAfter.toLocaleDateString('en-US', {month: 'short'}) +
-                          ')',
-                      ),
-                    ),
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Physical count input */}
+        {/* Physical count input — no editable date */}
         <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 20px'}}>
           <div style={{display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap'}}>
             <div style={{fontSize: 12, fontWeight: 600, color: '#4b5563', alignSelf: 'center'}}>
-              {pInv && (pInv.starter || pInv.grower || pInv.layer) ? 'Update Physical Count' : 'Enter Physical Count'}
+              {poultryFeedInventory && poultryFeedInventory[countType]
+                ? 'Update Physical Count'
+                : 'Enter Physical Count'}
             </div>
             <div>
               <label style={{fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3}}>Feed type</label>
@@ -959,6 +913,8 @@ export default function BroilerFeedView({
                 min="0"
                 step="100"
                 placeholder="e.g. 2000"
+                value={countLbsInput}
+                onChange={(e) => setCountLbsInput(e.target.value)}
                 style={{
                   fontSize: 13,
                   padding: '7px 10px',
@@ -969,31 +925,42 @@ export default function BroilerFeedView({
                 }}
               />
             </div>
-            <div>
-              <label style={{fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3}}>Date</label>
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                background: '#f9fafb',
+                fontSize: 12,
+                color: '#000',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+                lineHeight: 1.2,
+              }}
+            >
               <input
-                id="poultry-feed-count-date"
-                type="date"
-                defaultValue={todayDate}
-                style={{
-                  fontSize: 13,
-                  padding: '7px 10px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: 6,
-                  fontFamily: 'inherit',
-                }}
+                id="poultry-feed-count-includes-delivery"
+                type="checkbox"
+                checked={countIncludesInput}
+                onChange={(e) => setCountIncludesInput(e.target.checked)}
+                style={{cursor: 'pointer', margin: 0, accentColor: '#000'}}
               />
-            </div>
+              {'Count includes ' + countMonthShort + ' order'}
+            </label>
             <button
-              onClick={function () {
-                var el = document.getElementById('poultry-feed-count-input');
-                var dl = document.getElementById('poultry-feed-count-date');
-                if (!el || !el.value) {
+              onClick={() => {
+                if (!countLbsInput) {
                   alert('Enter the lbs on hand.');
                   return;
                 }
-                savePoultryFeedCount(countType, el.value, dl ? dl.value : todayDate);
-                el.value = '';
+                // Physical count is "what is on site right now" — always
+                // stamps today's date. No backdating from the UI.
+                savePoultryFeedCount(countType, countLbsInput, todayDate, countIncludesInput);
+                setCountLbsInput('');
               }}
               style={{
                 padding: '7px 16px',
@@ -1010,452 +977,40 @@ export default function BroilerFeedView({
             >
               Save Count
             </button>
+            {poultryFeedInventory && poultryFeedInventory[countType] && (
+              <div style={{fontSize: 10, color: '#9ca3af', alignSelf: 'center'}}>
+                {'Last: ' + fmt(poultryFeedInventory[countType].date)}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Monthly summary — current first, then future, then past by year (legacy ledger) */}
-        {showPoultryLegacyLedger &&
-          (function () {
-            // Render a single month card — ledger format
-            function renderMonthCard(md) {
-              var lgS = pLedger.starter[md.ym];
-              var lgG = pLedger.grower[md.ym];
-              var lgL = pLedger.layer[md.ym];
-              var types = [
-                {
-                  key: 'starter',
-                  label: 'Starter',
-                  color: '#1d4ed8',
-                  ordKey: 'starter',
-                  lg: lgS,
-                  proj: md.starter,
-                  actual: md.actualStarter,
-                },
-                {
-                  key: 'grower',
-                  label: 'Grower',
-                  color: '#085041',
-                  ordKey: 'grower',
-                  lg: lgG,
-                  proj: md.grower,
-                  actual: md.actualGrover,
-                },
-                {
-                  key: 'layer',
-                  label: 'Layer Feed',
-                  color: '#78350f',
-                  ordKey: 'layerfeed',
-                  lg: lgL,
-                  proj: md.layerFeed,
-                  actual: md.actualLayer,
-                },
-              ];
-              var daysElapsed = md.isFuture ? 0 : md.isCurrent ? today.getDate() : md.daysInMonth;
-              return React.createElement(
-                'div',
-                {
-                  key: md.ym,
-                  style: {
-                    background: 'white',
-                    border: md.isCurrent ? '2px solid #085041' : '1px solid #e5e7eb',
-                    borderRadius: 12,
-                    overflow: 'hidden',
-                  },
-                },
-                React.createElement(
-                  'div',
-                  {
-                    style: {
-                      padding: '10px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      background: md.isCurrent ? '#ecfdf5' : md.isFuture ? '#f8fafc' : 'white',
-                    },
-                  },
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 14, fontWeight: 700, color: '#111827'}},
-                    fmtMonth(md.ym),
-                  ),
-                  md.isCurrent &&
-                    React.createElement(
-                      'span',
-                      {
-                        style: {
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: '#065f46',
-                          background: '#d1fae5',
-                          padding: '1px 8px',
-                          borderRadius: 10,
-                        },
-                      },
-                      'NOW',
-                    ),
-                  md.isFuture && React.createElement('span', {style: {fontSize: 10, color: '#9ca3af'}}, 'projected'),
-                ),
-                // Ledger table per feed type
-                React.createElement(
-                  'div',
-                  {style: {padding: '0 16px 8px'}},
-                  React.createElement(
-                    'table',
-                    {style: {width: '100%', borderCollapse: 'collapse', fontSize: 12}},
-                    React.createElement(
-                      'thead',
-                      null,
-                      React.createElement(
-                        'tr',
-                        {style: {borderBottom: '1px solid #e5e7eb'}},
-                        React.createElement(
-                          'th',
-                          {
-                            style: {
-                              padding: '6px 0',
-                              textAlign: 'left',
-                              fontWeight: 600,
-                              color: '#6b7280',
-                              fontSize: 10,
-                              textTransform: 'uppercase',
-                              letterSpacing: 0.5,
-                              width: 90,
-                            },
-                          },
-                          'Feed Type',
-                        ),
-                        React.createElement(
-                          'th',
-                          {
-                            style: {
-                              padding: '6px 8px',
-                              textAlign: 'right',
-                              fontWeight: 600,
-                              color: '#6b7280',
-                              fontSize: 10,
-                              textTransform: 'uppercase',
-                              letterSpacing: 0.5,
-                            },
-                          },
-                          'Start',
-                        ),
-                        React.createElement(
-                          'th',
-                          {
-                            style: {
-                              padding: '6px 8px',
-                              textAlign: 'right',
-                              fontWeight: 600,
-                              color: '#6b7280',
-                              fontSize: 10,
-                              textTransform: 'uppercase',
-                              letterSpacing: 0.5,
-                            },
-                          },
-                          'Consumed',
-                        ),
-                        React.createElement(
-                          'th',
-                          {
-                            style: {
-                              padding: '6px 8px',
-                              textAlign: 'right',
-                              fontWeight: 600,
-                              color: '#6b7280',
-                              fontSize: 10,
-                              textTransform: 'uppercase',
-                              letterSpacing: 0.5,
-                              width: 90,
-                            },
-                          },
-                          'Ordered',
-                        ),
-                        React.createElement(
-                          'th',
-                          {
-                            style: {
-                              padding: '6px 8px',
-                              textAlign: 'right',
-                              fontWeight: 600,
-                              color: '#6b7280',
-                              fontSize: 10,
-                              textTransform: 'uppercase',
-                              letterSpacing: 0.5,
-                            },
-                          },
-                          'End of Mo',
-                        ),
-                      ),
-                    ),
-                    React.createElement(
-                      'tbody',
-                      null,
-                      types.map(function (t) {
-                        var lg = t.lg;
-                        var ordRaw = (feedOrders[t.ordKey] || {})[md.ym];
-                        var ordVal = ordRaw != null && ordRaw !== '' ? ordRaw : '';
-                        return React.createElement(
-                          'tr',
-                          {key: t.key, style: {borderBottom: '1px solid #f3f4f6'}},
-                          React.createElement(
-                            'td',
-                            {style: {padding: '7px 0', fontWeight: 600, color: t.color, fontSize: 12}},
-                            t.label,
-                          ),
-                          React.createElement(
-                            'td',
-                            {style: {padding: '7px 8px', textAlign: 'right', color: lg ? '#374151' : '#9ca3af'}},
-                            lg ? lg.start.toLocaleString() : '\u2014',
-                          ),
-                          React.createElement(
-                            'td',
-                            {style: {padding: '7px 8px', textAlign: 'right', color: '#111827'}},
-                            lg
-                              ? React.createElement(
-                                  'span',
-                                  null,
-                                  lg.consumed.toLocaleString(),
-                                  md.isCurrent && lg.projCons > 0
-                                    ? React.createElement(
-                                        'span',
-                                        {style: {fontSize: 10, color: '#9ca3af', marginLeft: 4}},
-                                        '(' +
-                                          lg.actualCons.toLocaleString() +
-                                          '+' +
-                                          lg.projCons.toLocaleString() +
-                                          'p)',
-                                      )
-                                    : null,
-                                )
-                              : '\u2014',
-                          ),
-                          React.createElement(
-                            'td',
-                            {
-                              style: {padding: '7px 8px', textAlign: 'right'},
-                              onClick: function (e) {
-                                e.stopPropagation();
-                              },
-                            },
-                            React.createElement('input', {
-                              type: 'number',
-                              min: '0',
-                              step: '100',
-                              value: ordVal,
-                              onChange: function (e) {
-                                savePoultryOrder(t.ordKey, md.ym, e.target.value);
-                              },
-                              placeholder: '0',
-                              style: {
-                                width: 80,
-                                fontSize: 12,
-                                padding: '4px 8px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: 6,
-                                textAlign: 'right',
-                                fontFamily: 'inherit',
-                              },
-                            }),
-                          ),
-                          React.createElement(
-                            'td',
-                            {
-                              style: {
-                                padding: '7px 8px',
-                                textAlign: 'right',
-                                fontWeight: 700,
-                                color: lg ? (lg.end > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
-                              },
-                            },
-                            lg ? lg.end.toLocaleString() : '\u2014',
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                ),
-                null,
-              );
-            }
-
-            // Split months into current, future, past
-            var currentMonth = monthlyData.filter(function (m) {
-              return m.isCurrent;
-            });
-            var futureMonths = monthlyData.filter(function (m) {
-              return m.isFuture;
-            });
-            var pastMonths = monthlyData
-              .filter(function (m) {
-                return !m.isCurrent && !m.isFuture;
-              })
-              .reverse(); // newest first
-
-            // Group past months by year
-            var pastByYear = {};
-            pastMonths.forEach(function (m) {
-              var yr = m.ym.substring(0, 4);
-              if (!pastByYear[yr]) pastByYear[yr] = [];
-              pastByYear[yr].push(m);
-            });
-            var pastYears = Object.keys(pastByYear).sort().reverse(); // newest year first
-
-            var secToggle = poultryFeedExpandedMonths;
-            function togSec(key) {
-              setPoultryFeedExpandedMonths(function (s) {
-                var n = new Set(s);
-                n.has(key) ? n.delete(key) : n.add(key);
-                return n;
-              });
-            }
-
-            return React.createElement(
-              'div',
-              {style: {display: 'flex', flexDirection: 'column', gap: '1.25rem'}},
-              // Section header
-              React.createElement(
-                'div',
-                {style: {fontSize: 14, fontWeight: 700, color: '#085041'}},
-                'Monthly Poultry Feed Summary',
-              ),
-
-              // Current month — always visible
-              currentMonth.length > 0 && React.createElement('div', null, currentMonth.map(renderMonthCard)),
-
-              // Future months — collapsible
-              futureMonths.length > 0 &&
-                React.createElement(
-                  'div',
-                  null,
-                  React.createElement(
-                    'div',
-                    {
-                      onClick: function () {
-                        togSec('future');
-                      },
-                      style: {
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        padding: '8px 0',
-                        marginBottom: 6,
-                      },
-                    },
-                    React.createElement(
-                      'span',
-                      {style: {fontSize: 10, color: '#9ca3af'}},
-                      secToggle.has('future') ? '\u25bc' : '\u25b6',
-                    ),
-                    React.createElement(
-                      'span',
-                      {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
-                      'UPCOMING MONTHS',
-                    ),
-                    React.createElement(
-                      'span',
-                      {style: {fontSize: 11, color: '#9ca3af'}},
-                      '(' + futureMonths.length + ')',
-                    ),
-                  ),
-                  secToggle.has('future') &&
-                    React.createElement(
-                      'div',
-                      {style: {display: 'flex', flexDirection: 'column', gap: 10}},
-                      futureMonths.map(renderMonthCard),
-                    ),
-                ),
-
-              // Past months — collapsible, grouped by year
-              pastYears.length > 0 &&
-                React.createElement(
-                  'div',
-                  null,
-                  React.createElement(
-                    'div',
-                    {
-                      onClick: function () {
-                        togSec('past');
-                      },
-                      style: {
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        padding: '8px 0',
-                        marginBottom: 6,
-                      },
-                    },
-                    React.createElement(
-                      'span',
-                      {style: {fontSize: 10, color: '#9ca3af'}},
-                      secToggle.has('past') ? '\u25bc' : '\u25b6',
-                    ),
-                    React.createElement(
-                      'span',
-                      {style: {fontSize: 13, fontWeight: 600, color: '#4b5563'}},
-                      'PAST MONTHS',
-                    ),
-                    React.createElement(
-                      'span',
-                      {style: {fontSize: 11, color: '#9ca3af'}},
-                      '(' + pastMonths.length + ')',
-                    ),
-                  ),
-                  secToggle.has('past') &&
-                    React.createElement(
-                      'div',
-                      {style: {display: 'flex', flexDirection: 'column', gap: 14}},
-                      pastYears.map(function (yr) {
-                        var yearMonths = pastByYear[yr];
-                        var yearKey = 'past-' + yr;
-                        return React.createElement(
-                          'div',
-                          {key: yr},
-                          pastYears.length > 1 &&
-                            React.createElement(
-                              'div',
-                              {
-                                onClick: function () {
-                                  togSec(yearKey);
-                                },
-                                style: {
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 6,
-                                  cursor: 'pointer',
-                                  padding: '4px 0',
-                                  marginBottom: 6,
-                                },
-                              },
-                              React.createElement(
-                                'span',
-                                {style: {fontSize: 10, color: '#9ca3af'}},
-                                secToggle.has(yearKey) ? '\u25bc' : '\u25b6',
-                              ),
-                              React.createElement(
-                                'span',
-                                {style: {fontSize: 12, fontWeight: 600, color: '#6b7280'}},
-                                yr,
-                              ),
-                              React.createElement(
-                                'span',
-                                {style: {fontSize: 11, color: '#9ca3af'}},
-                                '(' + yearMonths.length + ' months)',
-                              ),
-                            ),
-                          (pastYears.length === 1 || secToggle.has(yearKey)) &&
-                            React.createElement(
-                              'div',
-                              {style: {display: 'flex', flexDirection: 'column', gap: 10}},
-                              yearMonths.map(renderMonthCard),
-                            ),
-                        );
-                      }),
-                    ),
-                ),
-            );
-          })()}
+        {/* Monthly cards: active first, then last-saved, then older behind a collapse */}
+        <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+          <div style={{fontSize: 14, fontWeight: 700, color: '#085041'}}>Monthly Poultry Feed Ledger</div>
+          {renderMonthCard(activeYM)}
+          {mostRecentSavedNonActiveYM && renderMonthCard(mostRecentSavedNonActiveYM)}
+          {olderSavedYMs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowOlderMonths((s) => !s)}
+              style={{
+                alignSelf: 'flex-start',
+                padding: '6px 12px',
+                background: 'transparent',
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                fontSize: 12,
+                color: '#4b5563',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {showOlderMonths ? '▼ Hide older months' : '▶ Show older months (' + olderSavedYMs.length + ')'}
+            </button>
+          )}
+          {showOlderMonths && olderSavedYMs.map((ym) => renderMonthCard(ym))}
+        </div>
 
         {/* Per-batch breakdown - Broiler: Active expanded, Processed collapsible, Planned collapsible */}
         {(function () {
@@ -1470,7 +1025,6 @@ export default function BroilerFeedView({
             var actStarter = bStats.starterFeed;
             var actGrower = bStats.growerFeed;
             var actTotal = actStarter + actGrower;
-            var autoSt = calcPoultryStatus(b);
             return React.createElement(
               'div',
               {key: b.id, style: {borderBottom: '1px solid #e5e7eb'}},
@@ -1582,7 +1136,7 @@ export default function BroilerFeedView({
                         React.createElement(
                           'span',
                           {style: {fontSize: 13, fontWeight: 700, color: col.act > 0 ? '#111827' : '#9ca3af'}},
-                          col.act > 0 ? col.act.toLocaleString() : '\u2014',
+                          col.act > 0 ? col.act.toLocaleString() : '—',
                         ),
                       ),
                       col.act > 0 &&
@@ -1756,7 +1310,7 @@ export default function BroilerFeedView({
               React.createElement(
                 'div',
                 {style: {fontWeight: 600, fontSize: 14, color: '#085041'}},
-                '\ud83d\udc14 Broiler Feed Estimate Per Batch',
+                '🐔 Broiler Feed Estimate Per Batch',
               ),
             ),
             // Active — always expanded
@@ -1810,11 +1364,7 @@ export default function BroilerFeedView({
                       gap: 6,
                     },
                   },
-                  React.createElement(
-                    'span',
-                    {style: {fontSize: 10, color: '#9ca3af'}},
-                    secT.has('proc') ? '\u25bc' : '\u25b6',
-                  ),
+                  React.createElement('span', {style: {fontSize: 10, color: '#9ca3af'}}, secT.has('proc') ? '▼' : '▶'),
                   'PROCESSED (' + processedBrFeed.length + ')',
                 ),
                 secT.has('proc') && processedBrFeed.map(renderBroilerBatchFeed),
@@ -1846,7 +1396,7 @@ export default function BroilerFeedView({
                   React.createElement(
                     'span',
                     {style: {fontSize: 10, color: '#9ca3af'}},
-                    secT.has('planned') ? '\u25bc' : '\u25b6',
+                    secT.has('planned') ? '▼' : '▶',
                   ),
                   'PLANNED (' + plannedBrFeed.length + ')',
                 ),
@@ -1874,11 +1424,9 @@ export default function BroilerFeedView({
               })
             }
           >
-            <div style={{fontWeight: 600, fontSize: 14, color: '#78350f'}}>
-              {'\ud83d\udc13 Layer Feed Estimate Per Batch'}
-            </div>
+            <div style={{fontWeight: 600, fontSize: 14, color: '#78350f'}}>{'🐓 Layer Feed Estimate Per Batch'}</div>
             <span style={{fontSize: 12, color: '#9ca3af'}}>
-              {collapsedBatches.has('layers') ? '\u25b6 expand' : '\u25bc collapse'}
+              {collapsedBatches.has('layers') ? '▶ expand' : '▼ collapse'}
             </span>
           </div>
           {!collapsedBatches.has('layers') && (
@@ -1926,7 +1474,7 @@ export default function BroilerFeedView({
                         flexWrap: 'wrap',
                       }}
                     >
-                      <span style={{fontSize: 14}}>{'\ud83d\udc13'}</span>
+                      <span style={{fontSize: 14}}>{'🐓'}</span>
                       <div style={{fontWeight: 600, fontSize: 13, color: '#92400e', minWidth: 100}}>{b.name}</div>
                       <span style={S.badge('#fef3c7', '#92400e')}>{phase}</span>
                       {startDate && <span style={{fontSize: 11, color: '#6b7280'}}>Started: {fmt(startDate)}</span>}
@@ -1934,7 +1482,7 @@ export default function BroilerFeedView({
                         {birdCount > 0 ? birdCount + ' birds' : 'no bird count'}
                       </span>
                       {hens !== birdCount && (
-                        <span style={{fontSize: 11, color: '#6b7280'}}>{'\u2192 ' + hens + ' projected hens'}</span>
+                        <span style={{fontSize: 11, color: '#6b7280'}}>{'→ ' + hens + ' projected hens'}</span>
                       )}
                       <div style={{marginLeft: 'auto', display: 'flex', gap: 16, flexWrap: 'wrap'}}>
                         <div style={{textAlign: 'center'}}>
