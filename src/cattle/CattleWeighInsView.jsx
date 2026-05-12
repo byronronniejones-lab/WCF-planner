@@ -117,30 +117,32 @@ const CattleWeighInsView = ({
           });
           if (!r.ok && r.reason !== 'not_in_batch') blocked.push({tag: e.tag || '?', reason: r.reason});
         }
-        if (blocked.length > 0) {
-          const lines = blocked.map((x) => '#' + x.tag + ' (' + x.reason + ')').join('\n');
-          if (
-            !window.confirm(
-              'Some cows could not be auto-reverted from their batches:\n\n' + lines + '\n\nDelete the session anyway?',
-            )
-          )
-            return;
-        }
-        // Cattle weigh-ins auto-publish a row into cattle_comments whenever an
-        // entry has a note. cattle_comments has no FK to weigh_ins (reference_id
-        // is plain text), so the cascade on weigh_in_sessions doesn't reach them.
-        const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
-        const wiIds = ((wis && wis.data) || []).map((r) => r.id);
-        if (wiIds.length > 0) {
-          try {
-            await sb.from('cattle_comments').delete().eq('source', 'weigh_in').in('reference_id', wiIds);
-          } catch (e) {
-            /* table may not exist on legacy schemas — ok to skip */
+        async function finishSessionDelete() {
+          // Cattle weigh-ins auto-publish a row into cattle_comments whenever an
+          // entry has a note. cattle_comments has no FK to weigh_ins (reference_id
+          // is plain text), so the cascade on weigh_in_sessions doesn't reach them.
+          const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
+          const wiIds = ((wis && wis.data) || []).map((r) => r.id);
+          if (wiIds.length > 0) {
+            try {
+              await sb.from('cattle_comments').delete().eq('source', 'weigh_in').in('reference_id', wiIds);
+            } catch (e) {
+              /* table may not exist on legacy schemas — ok to skip */
+            }
           }
+          await sb.from('weigh_in_sessions').delete().eq('id', s.id);
+          invalidateCattleWeighInsCache();
+          await loadAll();
         }
-        await sb.from('weigh_in_sessions').delete().eq('id', s.id);
-        invalidateCattleWeighInsCache();
-        await loadAll();
+        if (blocked.length > 0) {
+          const lines = blocked.map((x) => '#' + x.tag + ' (' + x.reason + ')').join(', ');
+          window._wcfConfirmDelete(
+            'Some cows could not be auto-reverted from their batches: ' + lines + '. Delete the session anyway?',
+            finishSessionDelete,
+          );
+          return;
+        }
+        await finishSessionDelete();
       },
     );
   }
@@ -252,35 +254,31 @@ const CattleWeighInsView = ({
   async function deleteEntry(e) {
     // If this entry attached a cow to a processing batch, detach first so
     // the batch.cows_detail and cow.processing_batch_id stay consistent.
-    async function doDelete() {
-      if (e.target_processing_batch_id) {
-        const cow = e.tag ? cattle.find((c) => c.tag === e.tag) : null;
-        if (cow) {
-          const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {
-            teamMember: authState && authState.name ? authState.name : null,
-          });
-          if (!r.ok && r.reason !== 'not_in_batch') {
-            if (
-              !window.confirm(
-                'Cow #' + (e.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete the entry anyway?',
-              )
-            )
-              return;
-          }
-        }
-      }
-      await sb.from('weigh_ins').delete().eq('id', e.id);
-      invalidateCattleWeighInsCache();
-      await loadAll();
-    }
-    if (!window._wcfConfirmDelete) {
-      if (!window.confirm('Delete this weigh-in entry?')) return;
-      await doDelete();
-      return;
-    }
     window._wcfConfirmDelete(
       'Delete this weigh-in entry? Attached cow will be detached and reverted where possible.',
-      doDelete,
+      async () => {
+        async function finishEntryDelete() {
+          await sb.from('weigh_ins').delete().eq('id', e.id);
+          invalidateCattleWeighInsCache();
+          await loadAll();
+        }
+        if (e.target_processing_batch_id) {
+          const cow = e.tag ? cattle.find((c) => c.tag === e.tag) : null;
+          if (cow) {
+            const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {
+              teamMember: authState && authState.name ? authState.name : null,
+            });
+            if (!r.ok && r.reason !== 'not_in_batch') {
+              window._wcfConfirmDelete(
+                'Cow #' + (e.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete the entry anyway?',
+                finishEntryDelete,
+              );
+              return;
+            }
+          }
+        }
+        await finishEntryDelete();
+      },
     );
   }
   // Same walk as the webform's findCowByPriorTag: current tag →

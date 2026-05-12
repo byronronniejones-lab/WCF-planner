@@ -117,31 +117,31 @@ const SheepWeighInsView = ({
           });
           if (!r.ok && r.reason !== 'not_in_batch') blocked.push({tag: e.tag || '?', reason: r.reason});
         }
-        if (blocked.length > 0) {
-          const lines = blocked.map((x) => '#' + x.tag + ' (' + x.reason + ')').join('\n');
-          if (
-            !window.confirm(
-              'Some sheep could not be auto-reverted from their batches:\n\n' +
-                lines +
-                '\n\nDelete the session anyway?',
-            )
-          )
-            return;
-        }
-        // sheep_comments has reference_id pointing at weigh_ins.id (no FK).
-        // Wipe matching comments before the session cascade lands.
-        const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
-        const wiIds = ((wis && wis.data) || []).map((r) => r.id);
-        if (wiIds.length > 0) {
-          try {
-            await sb.from('sheep_comments').delete().eq('source', 'weigh_in').in('reference_id', wiIds);
-          } catch (e) {
-            /* tolerated on legacy schemas */
+        async function finishSessionDelete() {
+          // sheep_comments has reference_id pointing at weigh_ins.id (no FK).
+          // Wipe matching comments before the session cascade lands.
+          const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
+          const wiIds = ((wis && wis.data) || []).map((r) => r.id);
+          if (wiIds.length > 0) {
+            try {
+              await sb.from('sheep_comments').delete().eq('source', 'weigh_in').in('reference_id', wiIds);
+            } catch (e) {
+              /* tolerated on legacy schemas */
+            }
           }
+          await sb.from('weigh_in_sessions').delete().eq('id', s.id);
+          invalidateSheepWeighInsCache();
+          await loadAll();
         }
-        await sb.from('weigh_in_sessions').delete().eq('id', s.id);
-        invalidateSheepWeighInsCache();
-        await loadAll();
+        if (blocked.length > 0) {
+          const lines = blocked.map((x) => '#' + x.tag + ' (' + x.reason + ')').join(', ');
+          window._wcfConfirmDelete(
+            'Some sheep could not be auto-reverted from their batches: ' + lines + '. Delete the session anyway?',
+            finishSessionDelete,
+          );
+          return;
+        }
+        await finishSessionDelete();
       },
     );
   }
@@ -243,40 +243,36 @@ const SheepWeighInsView = ({
     await loadAll();
   }
   async function deleteEntry(e) {
-    async function doDelete() {
-      if (e.target_processing_batch_id) {
-        const sh = e.tag ? sheep.find((x) => x.tag === e.tag) : null;
-        if (sh) {
-          const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {
-            teamMember: authState && authState.name ? authState.name : null,
-          });
-          if (!r.ok && r.reason !== 'not_in_batch') {
-            if (
-              !window.confirm(
-                'Sheep #' + (e.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete the entry anyway?',
-              )
-            )
-              return;
-          }
-        }
-      }
-      await sb.from('weigh_ins').delete().eq('id', e.id);
-      try {
-        await sb.from('sheep_comments').delete().eq('reference_id', e.id);
-      } catch (err) {
-        console.warn('sheep_comments weigh-in-delete cascade failed:', err);
-      }
-      invalidateSheepWeighInsCache();
-      await loadAll();
-    }
-    if (!window._wcfConfirmDelete) {
-      if (!window.confirm('Delete this weigh-in entry?')) return;
-      await doDelete();
-      return;
-    }
     window._wcfConfirmDelete(
       'Delete this weigh-in entry? Attached sheep will be detached and reverted where possible.',
-      doDelete,
+      async () => {
+        async function finishEntryDelete() {
+          await sb.from('weigh_ins').delete().eq('id', e.id);
+          try {
+            await sb.from('sheep_comments').delete().eq('reference_id', e.id);
+          } catch (err) {
+            console.warn('sheep_comments weigh-in-delete cascade failed:', err);
+          }
+          invalidateSheepWeighInsCache();
+          await loadAll();
+        }
+        if (e.target_processing_batch_id) {
+          const sh = e.tag ? sheep.find((x) => x.tag === e.tag) : null;
+          if (sh) {
+            const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {
+              teamMember: authState && authState.name ? authState.name : null,
+            });
+            if (!r.ok && r.reason !== 'not_in_batch') {
+              window._wcfConfirmDelete(
+                'Sheep #' + (e.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete the entry anyway?',
+                finishEntryDelete,
+              );
+              return;
+            }
+          }
+        }
+        await finishEntryDelete();
+      },
     );
   }
   // Walk current tag → import old_tags → weigh_in old_tags. Same fallback

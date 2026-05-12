@@ -556,13 +556,17 @@ test('pig fresh: local edit + delete pre-Save-Draft → only final state lands i
   await page.getByRole('button', {name: 'Save', exact: true}).click();
 
   // After the edit lands in local state, the 555 row's weight badge still
-  // says "555 lb". Auto-accept the window.confirm() dialog first.
-  page.once('dialog', (d) => d.accept());
+  // says "555 lb". Public webform routes destructive deletes through the
+  // local typed DeleteModal (App-scoped _wcfConfirmDelete is not mounted on
+  // anon webforms); type "delete" + Enter to confirm.
   await page
     .getByText('555 lb', {exact: true})
     .locator('xpath=parent::div')
     .getByRole('button', {name: /^Delete$/})
     .click();
+  await expect(page.getByText('Are you sure?')).toBeVisible({timeout: 5_000});
+  await page.getByPlaceholder('delete').fill('delete');
+  await page.keyboard.press('Enter');
 
   // Now Save Draft. Final entries[] should be [240, 245, 250].
   await page.getByRole('button', {name: /Save Draft \(3 entries\)/}).click();

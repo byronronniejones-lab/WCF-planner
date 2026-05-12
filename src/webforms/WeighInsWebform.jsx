@@ -32,6 +32,8 @@ import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
 import PlannerIcon, {PlannerIconLabel} from '../components/PlannerIcon.jsx';
 import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import DeleteModal from '../shared/DeleteModal.jsx';
 
 const WeighInsWebform = ({sb}) => {
   const [stage, setStage] = React.useState('species'); // 'species' | 'select' | 'session' | 'done'
@@ -114,6 +116,31 @@ const WeighInsWebform = ({sb}) => {
   const [lastSubmitOutcome, setLastSubmitOutcome] = React.useState(null);
   // Stuck submission modal state.
   const [stuckOpen, setStuckOpen] = React.useState(false);
+
+  // Local typed-delete confirmation modal. The App-scoped window._wcfConfirmDelete
+  // helper is not mounted on the public webform, so destructive flows here use
+  // a local state machine with the same DeleteModal UI. confirmDelete(message)
+  // returns a Promise that resolves true on typed confirm and false on cancel
+  // (Escape, Cancel button, or close) — never hangs.
+  const [deleteConfirmState, setDeleteConfirmState] = React.useState(null);
+  function confirmDelete(message) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      setDeleteConfirmState({
+        message,
+        onConfirm: () => settle(true),
+        onCancel: () => {
+          settle(false);
+          setDeleteConfirmState(null);
+        },
+      });
+    });
+  }
 
   // Pig session metrics from the public-safe pig_session_metrics RPC
   // (mig 049). Anon scope returns aggregates only for status='draft' pig
@@ -887,8 +914,9 @@ const WeighInsWebform = ({sb}) => {
   }
   async function deleteEntry(entry) {
     // Webform is anon-accessible -- _wcfConfirmDelete (App-scoped) isn't
-    // mounted here, so fall back to window.confirm unconditionally.
-    if (!window.confirm('Delete this entry? This cannot be undone.')) return;
+    // mounted here, so destructive flows use the local typed-confirm modal
+    // wired through confirmDelete() above.
+    if (!(await confirmDelete('Delete this entry? This cannot be undone.'))) return;
 
     // Phase 1C-D — pig fresh: drop from local entries[] only, no DB call.
     // Locks offline delete-before-Save-Draft (Codex review v3 #1).
@@ -908,11 +936,10 @@ const WeighInsWebform = ({sb}) => {
           teamMember: teamMember || null,
         });
         if (!r.ok && r.reason !== 'not_in_batch') {
-          if (
-            !window.confirm(
-              'Cow #' + (entry.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete anyway?',
-            )
-          ) {
+          const proceed = await confirmDelete(
+            'Cow #' + (entry.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete anyway?',
+          );
+          if (!proceed) {
             setBusy(false);
             return;
           }
@@ -926,11 +953,10 @@ const WeighInsWebform = ({sb}) => {
           teamMember: teamMember || null,
         });
         if (!r.ok && r.reason !== 'not_in_batch') {
-          if (
-            !window.confirm(
-              'Sheep #' + (entry.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete anyway?',
-            )
-          ) {
+          const proceed = await confirmDelete(
+            'Sheep #' + (entry.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete anyway?',
+          );
+          if (!proceed) {
             setBusy(false);
             return;
           }
@@ -1276,6 +1302,17 @@ const WeighInsWebform = ({sb}) => {
       />
     ) : null;
 
+  // Typed-delete confirmation modal — rendered on every stage alongside the
+  // stuck-submissions modal so destructive flows can resolve from any screen
+  // the form is currently on.
+  const deleteConfirmEl = deleteConfirmState ? (
+    <DeleteModal
+      msg={deleteConfirmState.message}
+      onConfirm={deleteConfirmState.onConfirm}
+      onCancel={deleteConfirmState.onCancel}
+    />
+  ) : null;
+
   // ── QUEUED-OFFLINE TERMINAL SCREEN (Phase 1C-D) ──
   // Set when the RPC submit returned state='queued'. Mirrors AddFeedWebform's
   // synced/queued copy — operator's draft is captured on-device and will
@@ -1362,6 +1399,7 @@ const WeighInsWebform = ({sb}) => {
           </button>
         </div>
         {stuckModalEl}
+        {deleteConfirmEl}
       </div>
     );
 
@@ -1435,6 +1473,7 @@ const WeighInsWebform = ({sb}) => {
           </button>
         </div>
         {stuckModalEl}
+        {deleteConfirmEl}
       </div>
     );
 
@@ -1529,6 +1568,7 @@ const WeighInsWebform = ({sb}) => {
           </div>
         </div>
         {stuckModalEl}
+        {deleteConfirmEl}
       </div>
     );
 
@@ -1818,6 +1858,7 @@ const WeighInsWebform = ({sb}) => {
           </div>
         </div>
         {stuckModalEl}
+        {deleteConfirmEl}
       </div>
     );
 
@@ -3178,6 +3219,7 @@ const WeighInsWebform = ({sb}) => {
           </div>
         )}
         {stuckModalEl}
+        {deleteConfirmEl}
       </div>
     );
 
