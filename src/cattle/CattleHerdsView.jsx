@@ -561,12 +561,6 @@ const CattleHerdsView = ({
     await loadAll();
   }
   async function deleteComment(id) {
-    if (!window._wcfConfirmDelete) {
-      if (!window.confirm('Delete this comment?')) return;
-      await sb.from('cattle_comments').delete().eq('id', id);
-      await loadAll();
-      return;
-    }
     window._wcfConfirmDelete('Delete this comment?', async () => {
       await sb.from('cattle_comments').delete().eq('id', id);
       await loadAll();

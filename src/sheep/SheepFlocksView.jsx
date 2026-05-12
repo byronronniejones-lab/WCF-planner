@@ -281,22 +281,16 @@ const SheepFlocksView = ({
     setSheep((prev) => prev.map((s) => (s.id === sheepId ? {...s, ...fields} : s)));
   }
   async function deleteSheep(id) {
-    const ok = window._wcfConfirmDelete
-      ? await new Promise((r) =>
-          window._wcfConfirmDelete(
-            'Permanently delete this sheep record? Lambing records, comments, and weigh-ins for this tag remain.',
-            () => r(true),
-          ),
-        )
-      : window.confirm(
-          'Permanently delete this sheep record? Lambing records, comments, and weigh-ins for this tag remain.',
-        );
-    if (!ok) return;
-    await sb.from('sheep').delete().eq('id', id);
-    await loadAll();
-    setShowAddForm(false);
-    setForm(null);
-    setExpandedSheep(null);
+    window._wcfConfirmDelete(
+      'Permanently delete this sheep record? Lambing records, comments, and weigh-ins for this tag remain.',
+      async () => {
+        await sb.from('sheep').delete().eq('id', id);
+        await loadAll();
+        setShowAddForm(false);
+        setForm(null);
+        setExpandedSheep(null);
+      },
+    );
   }
   async function transferSheep(id, newFlock) {
     const s = sheep.find((x) => x.id === id);
@@ -341,12 +335,10 @@ const SheepFlocksView = ({
     await loadAll();
   }
   async function deleteComment(id) {
-    const ok = window._wcfConfirmDelete
-      ? await new Promise((r) => window._wcfConfirmDelete('Delete this comment?', () => r(true)))
-      : window.confirm('Delete this comment?');
-    if (!ok) return;
-    await sb.from('sheep_comments').delete().eq('id', id);
-    await loadAll();
+    window._wcfConfirmDelete('Delete this comment?', async () => {
+      await sb.from('sheep_comments').delete().eq('id', id);
+      await loadAll();
+    });
   }
   async function addLambingRecord(s, formData) {
     if (!formData.lambing_date) {
@@ -391,17 +383,15 @@ const SheepFlocksView = ({
     return true;
   }
   async function deleteLambingRecord(recId) {
-    const ok = window._wcfConfirmDelete
-      ? await new Promise((r) => window._wcfConfirmDelete('Delete this lambing record?', () => r(true)))
-      : window.confirm('Delete this lambing record?');
-    if (!ok) return;
-    await sb.from('sheep_lambing_records').delete().eq('id', recId);
-    try {
-      await sb.from('sheep_comments').delete().eq('reference_id', recId);
-    } catch (e) {
-      console.warn('sheep_comments lambing-delete cascade failed:', e);
-    }
-    await loadAll();
+    window._wcfConfirmDelete('Delete this lambing record?', async () => {
+      await sb.from('sheep_lambing_records').delete().eq('id', recId);
+      try {
+        await sb.from('sheep_comments').delete().eq('reference_id', recId);
+      } catch (e) {
+        console.warn('sheep_comments lambing-delete cascade failed:', e);
+      }
+      await loadAll();
+    });
   }
 
   const inpS = {
