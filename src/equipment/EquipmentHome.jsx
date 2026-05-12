@@ -42,9 +42,10 @@ export default function EquipmentHome({
   const location = useLocation();
   const navigate = useNavigate();
 
-  // equipment_tech users only see the per-equipment tabs + fueling history.
-  // Fleet + Fuel Log sub-nav are hidden; detail page hides Spec / Upcoming
-  // Service / Maintenance sections (handled inside EquipmentDetail).
+  // equipment_tech users only see per-equipment tabs. The Fleet / Fuel Log /
+  // Materials admin sub-nav buttons are hidden; on the detail page they see
+  // Manuals & Videos, upcoming service, and fueling/checklist history but
+  // not maintenance events or admin surfaces (gated inside EquipmentDetail).
   const isEquipmentTech = authState?.role === 'equipment_tech';
 
   async function loadAll() {
@@ -109,9 +110,9 @@ export default function EquipmentHome({
       )}
       <Header />
 
-      {/* Secondary sub-nav within /equipment. equipment_tech users see
+      {/* Secondary sub-nav within /fleet. equipment_tech users see
           a simplified nav — just a quick-pick list of equipment tiles,
-          not the Fleet + Fuel Log admin surfaces. */}
+          not the Fleet + Fuel Log + Materials admin surfaces. */}
       <div
         style={{
           background: 'white',

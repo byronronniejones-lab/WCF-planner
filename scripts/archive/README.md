@@ -25,6 +25,11 @@ Files here mostly fall into these classes:
   `strip_mortality_from_webform_config.js`, `purchase_amounts_backfill.sql`,
   `generate_pwa_icons.cjs`, `reload_test_schema.cjs` — miscellaneous
   one-shots without active references.
+- `pull_podio_equipment.cjs`, `pull_podio_equipment_photos.cjs` — Podio
+  → Supabase one-shot pull. Source for the gitignored
+  `scripts/podio_equipment_dump/` directory. The Podio cutover is
+  complete; equipment data lives in Supabase. Kept here for replay only
+  if the dump ever needs to be regenerated.
 
 If a script in this directory is needed again, lift it back to `scripts/`
 (with `git mv` so history is preserved) and re-validate it against the

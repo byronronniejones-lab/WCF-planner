@@ -5,9 +5,10 @@
 //   * equipment                    (20 rows, from "Equipment Maintenance" app)
 //   * equipment_fuelings           (Fuel Log app + 15 checklist apps, deduped)
 //
-// Maintenance events + photos are NOT imported here — they'll be backfilled
-// by a follow-up pull_podio_equipment_photos.cjs when Ronnie runs a fresh
-// Podio pull with the file endpoint included.
+// Maintenance events + photos are NOT imported here. The Podio cutover is
+// complete; the historical photo-backfill pull script is preserved at
+// scripts/archive/pull_podio_equipment_photos.cjs as replay-only tooling.
+// Verify it against the current schema before re-running.
 //
 // Usage:
 //   node scripts/import_equipment.cjs            # preview only, writes nothing

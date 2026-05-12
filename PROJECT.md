@@ -84,6 +84,7 @@ Use this order when opening the repo cold:
 | `farm_team` | Read most assigned program surfaces; edit/delete own daily reports only; read-only for pig planned/processing trip mutations. |
 | `management` | Edit operational records; delete daily reports; can mutate pig planned/processing trip surfaces. |
 | `admin` | Full app access; deletes, admin panels, Tasks system/admin controls, user management. |
+| `equipment_tech` | Equipment-only access. Logged-in `/fleet` sub-nav hides the Fleet, Fuel Log, and Materials admin lists and exposes per-equipment tabs. Detail pages show Manuals & Videos, upcoming service, and fueling/checklist history; maintenance events and admin surfaces are hidden. |
 | `inactive` | Not an eligible active user. |
 
 Per-program access uses `profiles.program_access`. Null/empty means all programs. Admins always bypass program restrictions.
