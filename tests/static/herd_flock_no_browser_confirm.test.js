@@ -1,17 +1,18 @@
-// Static lock: checkpoint 3 of the project-wide browser-dialog cleanup.
+// Static lock: cattle-herd / sheep-flock browser-dialog cleanup.
 //
-// Destructive flows on cattle herd / sheep flock surfaces (delete comment,
-// delete sheep record, delete lambing record) must route through the typed
-// DeleteModal (via window._wcfConfirmDelete), not window.confirm or bare
-// confirm(). PROJECT.md Cross-App contract: "Do not introduce window.confirm,
-// window.alert, or window.prompt for destructive flows; use typed
-// confirmation modals. Use DeleteModal for deletes."
+// Checkpoint 3 cleared the destructive flows on these surfaces (delete
+// comment, delete sheep record, delete lambing record) — those must route
+// through the typed DeleteModal via window._wcfConfirmDelete.
 //
-// Scoped to the destructive copy strings cleared in checkpoint 3. The
-// save-without-tag confirms ("Save cow without a tag?", "Save sheep without
-// a tag?") and the cattle origin window.prompt ("New origin name:") are
-// intentionally out of scope for this checkpoint and must continue to live
-// in these files until a later checkpoint addresses them.
+// Checkpoint 5 cleared the remaining non-destructive holdouts: the
+// save-without-tag confirms (now route through window._wcfConfirm) and the
+// "New origin name:" window.prompt (now an inline UI inside the form).
+//
+// With both checkpoints landed, these two files contain NO browser confirm
+// or prompt of any kind. The combined assertion below locks both surfaces
+// against any future regression. PROJECT.md Cross-App contract: "Do not
+// introduce window.confirm, window.alert, or window.prompt for destructive
+// flows; use app-controlled confirmation modals."
 
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -51,18 +52,14 @@ describe('herd/flock delete flows: no browser confirm() on destructive copy', ()
     }
   }
 
-  // Sanity: out-of-scope prompts remain in their files. If a future
-  // checkpoint clears these, drop the corresponding assertion here.
-  it('CattleHerdsView retains the out-of-scope save-without-tag confirm', () => {
-    const source = readFileSync(resolve(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
-    expect(source).toMatch(/Save cow without a tag\?/);
-  });
-  it('CattleHerdsView retains the out-of-scope new-origin window.prompt', () => {
-    const source = readFileSync(resolve(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
-    expect(source).toMatch(/window\.prompt\(['"]New origin name:/);
-  });
-  it('SheepFlocksView retains the out-of-scope save-without-tag confirm', () => {
-    const source = readFileSync(resolve(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
-    expect(source).toMatch(/Save sheep without a tag\?/);
-  });
+  // Comprehensive lock: no browser confirm() or prompt() of any kind
+  // remains in either file. Catches future regressions that bypass the app-
+  // controlled DeleteModal / ConfirmModal infrastructure.
+  const BROWSER_DIALOG_RE = /(?:^|[^A-Za-z0-9_.])(?:window\.)?(?:confirm|prompt)\(/;
+  for (const rel of ['src/cattle/CattleHerdsView.jsx', 'src/sheep/SheepFlocksView.jsx']) {
+    it(`${rel} contains no browser confirm() or prompt() at all`, () => {
+      const source = readFileSync(resolve(ROOT, rel), 'utf8');
+      expect(source).not.toMatch(BROWSER_DIALOG_RE);
+    });
+  }
 });

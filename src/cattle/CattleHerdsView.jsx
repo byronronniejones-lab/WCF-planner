@@ -189,6 +189,12 @@ const CattleHerdsView = ({
   const [comments, setComments] = useState([]);
   const [breedOpts, setBreedOpts] = useState([]);
   const [originOpts, setOriginOpts] = useState([]);
+  // Inline new-origin UI: when the operator picks "+ Add new origin…" in the
+  // form's Origin select, we expose a small text input next to the select
+  // instead of opening a native window.prompt. addingOrigin gates render;
+  // newOriginInput holds the in-progress label.
+  const [addingOrigin, setAddingOrigin] = useState(false);
+  const [newOriginInput, setNewOriginInput] = useState('');
   const [processingBatches, setProcessingBatches] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -412,9 +418,21 @@ const CattleHerdsView = ({
   }
 
   // ── Add / Edit / Delete / Transfer / Comments / Calving — preserved ───────
+  // Single close path for the Add/Edit cow modal. Centralizes the form +
+  // edit-id reset alongside the inline add-origin UI state so no close path
+  // can leak addingOrigin/newOriginInput into the next modal open.
+  function closeCowForm() {
+    setShowAddForm(false);
+    setEditId(null);
+    setForm(null);
+    setAddingOrigin(false);
+    setNewOriginInput('');
+  }
   function openAdd() {
     setForm({...EMPTY_COW});
     setEditId(null);
+    setAddingOrigin(false);
+    setNewOriginInput('');
     setShowAddForm(true);
   }
   function openEdit(cow) {
@@ -440,12 +458,24 @@ const CattleHerdsView = ({
         : [],
     });
     setEditId(cow.id);
+    setAddingOrigin(false);
+    setNewOriginInput('');
     setShowAddForm(true);
   }
   async function saveCow() {
     if (!form.tag.trim()) {
-      if (!confirm('Save cow without a tag? (For unweaned calves; admin can tag later.)')) return;
+      window._wcfConfirm(
+        'Save cow without a tag? (For unweaned calves; admin can tag later.)',
+        () => {
+          void proceedSaveCow();
+        },
+        'Save',
+      );
+      return;
     }
+    await proceedSaveCow();
+  }
+  async function proceedSaveCow() {
     setSaving(true);
     const isFemale = form.sex === 'cow' || form.sex === 'heifer';
     const rec = {
@@ -498,9 +528,7 @@ const CattleHerdsView = ({
     }
     setSaving(false);
     await loadAll();
-    setShowAddForm(false);
-    setEditId(null);
-    setForm(null);
+    closeCowForm();
   }
   async function patchCow(cowId, fields) {
     if (!cowId || !fields) return;
@@ -518,9 +546,7 @@ const CattleHerdsView = ({
       async () => {
         await sb.from('cattle').delete().eq('id', id);
         await loadAll();
-        setShowAddForm(false);
-        setEditId(null);
-        setForm(null);
+        closeCowForm();
         setExpandedCow(null);
       },
     );
@@ -1755,9 +1781,7 @@ const CattleHerdsView = ({
       {showAddForm && form && (
         <div
           onClick={() => {
-            setShowAddForm(false);
-            setEditId(null);
-            setForm(null);
+            closeCowForm();
           }}
           style={{
             position: 'fixed',
@@ -1797,9 +1821,7 @@ const CattleHerdsView = ({
               <div style={{fontSize: 15, fontWeight: 600, color: '#991b1b'}}>{editId ? 'Edit Cow' : 'Add Cow'}</div>
               <button
                 onClick={() => {
-                  setShowAddForm(false);
-                  setEditId(null);
-                  setForm(null);
+                  closeCowForm();
                 }}
                 style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
               >
@@ -1883,26 +1905,10 @@ const CattleHerdsView = ({
                   onChange={function (e) {
                     var v = e.target.value;
                     if (v === '__add__') {
-                      var name = (window.prompt('New origin name:') || '').trim();
-                      if (!name) return;
-                      var exists = originOpts.find(function (o) {
-                        return o.label.toLowerCase() === name.toLowerCase();
-                      });
-                      if (exists) {
-                        setForm({...form, origin: exists.label});
-                        return;
-                      }
-                      var id = 'origin-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                      sb.from('cattle_origins')
-                        .insert({id: id, label: name, active: true})
-                        .then(function () {
-                          setOriginOpts(
-                            [...originOpts, {id: id, label: name, active: true}].sort(function (a, b) {
-                              return a.label.localeCompare(b.label);
-                            }),
-                          );
-                          setForm({...form, origin: name});
-                        });
+                      // Open the inline add-origin UI; form.origin stays unchanged
+                      // until the operator types a name and clicks Save.
+                      setNewOriginInput('');
+                      setAddingOrigin(true);
                       return;
                     }
                     setForm({...form, origin: v});
@@ -1923,6 +1929,85 @@ const CattleHerdsView = ({
                     }) && <option value={form.origin}>{form.origin}</option>}
                   <option value="__add__">{'+ Add new origin…'}</option>
                 </select>
+                {addingOrigin && (
+                  <div style={{display: 'flex', gap: 6, marginTop: 6, alignItems: 'center'}}>
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="New origin name"
+                      value={newOriginInput}
+                      onChange={(e) => setNewOriginInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setAddingOrigin(false);
+                          setNewOriginInput('');
+                        }
+                      }}
+                      style={{...inpS, flex: 1}}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        var name = (newOriginInput || '').trim();
+                        if (!name) return;
+                        var exists = originOpts.find(function (o) {
+                          return o.label.toLowerCase() === name.toLowerCase();
+                        });
+                        if (exists) {
+                          setForm({...form, origin: exists.label});
+                          setAddingOrigin(false);
+                          setNewOriginInput('');
+                          return;
+                        }
+                        var id = 'origin-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                        sb.from('cattle_origins')
+                          .insert({id: id, label: name, active: true})
+                          .then(function () {
+                            setOriginOpts(
+                              [...originOpts, {id: id, label: name, active: true}].sort(function (a, b) {
+                                return a.label.localeCompare(b.label);
+                              }),
+                            );
+                            setForm({...form, origin: name});
+                            setAddingOrigin(false);
+                            setNewOriginInput('');
+                          });
+                      }}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 6,
+                        border: 'none',
+                        background: '#1d4ed8',
+                        color: 'white',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingOrigin(false);
+                        setNewOriginInput('');
+                      }}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 6,
+                        border: '1px solid #d1d5db',
+                        background: 'white',
+                        color: '#374151',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <label style={lbl}>Birth Date</label>
@@ -2225,9 +2310,7 @@ const CattleHerdsView = ({
               )}
               <button
                 onClick={() => {
-                  setShowAddForm(false);
-                  setEditId(null);
-                  setForm(null);
+                  closeCowForm();
                 }}
                 style={{
                   padding: '8px 16px',

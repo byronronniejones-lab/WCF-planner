@@ -231,8 +231,18 @@ const SheepFlocksView = ({
   }
   async function saveSheep() {
     if (!form.tag.trim()) {
-      if (!confirm('Save sheep without a tag?')) return;
+      window._wcfConfirm(
+        'Save sheep without a tag?',
+        () => {
+          void proceedSaveSheep();
+        },
+        'Save',
+      );
+      return;
     }
+    await proceedSaveSheep();
+  }
+  async function proceedSaveSheep() {
     setSaving(true);
     const isEwe = form.sex === 'ewe';
     const rec = {
