@@ -16,10 +16,10 @@ import {test, expect} from './fixtures.js';
 test('authenticated user loads dashboard without LoginScreen', async ({page}) => {
   await page.goto('/');
 
-  // LoginScreen branding ("Broiler, Layer & Pig Planner") must NOT be visible
-  // on a successfully authenticated session — the storageState replays the
-  // session and the App skips LoginScreen.
-  await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
+  // LoginScreen (marked with data-login-screen) must NOT be visible on a
+  // successfully authenticated session — the storageState replays the session
+  // and the App skips LoginScreen.
+  await expect(page.locator('[data-login-screen]')).toHaveCount(0, {timeout: 15_000});
 
   // Boot loader must have faded — the App fades #wcf-boot-loader after the
   // first paint, then either renders LoginScreen or the authenticated tree.

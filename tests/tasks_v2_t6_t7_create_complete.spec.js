@@ -57,7 +57,7 @@ async function signInAsSimon(page) {
   await page.getByPlaceholder('your@email.com').first().fill('simon.tasks@wcfplanner.test');
   await page.getByPlaceholder('••••••••').fill('apply_test_mig_052_placeholder_password');
   await page.getByRole('button', {name: /^sign in$/i}).click();
-  await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
+  await expect(page.locator('[data-login-screen]')).toHaveCount(0, {timeout: 15_000});
 }
 
 test.describe('Tasks v2 T6 — New Task modal', () => {
@@ -339,7 +339,7 @@ test.describe('Tasks v2 T7 — Complete Task modal', () => {
     await page.getByPlaceholder('your@email.com').first().fill(TEST_ADMIN_EMAIL);
     await page.getByPlaceholder('••••••••').fill(process.env.VITE_TEST_ADMIN_PASSWORD || 'admin_password_unset_in_env');
     await page.getByRole('button', {name: /^sign in$/i}).click();
-    await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
+    await expect(page.locator('[data-login-screen]')).toHaveCount(0, {timeout: 15_000});
 
     await page.goto('/tasks');
     // Admin sees Simon's row in the others section AND the Complete button.

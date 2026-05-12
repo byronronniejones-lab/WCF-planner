@@ -104,7 +104,7 @@ test('anon load of /dailys renders WebformHub, not LoginScreen', async ({page}) 
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
 
   // Negative — LoginScreen branding must NOT be visible.
-  await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
+  await expect(page.locator('[data-login-screen]')).toHaveCount(0, {timeout: 15_000});
 
   // Positive — WebformHub form selector copy is unique to its !activeForm branch.
   await expect(page.getByText('Select a report type to fill out')).toBeVisible({timeout: 15_000});
@@ -118,7 +118,7 @@ test('anon load of /equipment renders FuelingHub, not LoginScreen', async ({page
 
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
 
-  await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
+  await expect(page.locator('[data-login-screen]')).toHaveCount(0, {timeout: 15_000});
 
   // FuelingHub root selector copy.
   await expect(page.getByText('Tap your equipment to log a fueling')).toBeVisible({timeout: 15_000});

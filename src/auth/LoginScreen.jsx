@@ -44,6 +44,7 @@ function LoginScreen({onLogin}) {
 
   return (
     <div
+      data-login-screen
       style={{
         minHeight: '100vh',
         background: '#085041',
@@ -64,8 +65,7 @@ function LoginScreen({onLogin}) {
         }}
       >
         <div style={{textAlign: 'center', marginBottom: '2rem'}}>
-          <div style={{fontSize: 24, fontWeight: 700, color: '#085041'}}>Broiler, Layer & Pig Planner</div>
-          <div style={{fontSize: 13, color: '#9ca3af', marginTop: 4}}>White Creek Farm</div>
+          <div style={{fontSize: 24, fontWeight: 700, color: '#085041'}}>WCF Planner</div>
         </div>
         {mode === 'login' ? (
           <form onSubmit={handleLogin} style={{display: 'flex', flexDirection: 'column', gap: 12}}>

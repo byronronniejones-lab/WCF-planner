@@ -55,9 +55,9 @@ setup('authenticate as admin', async ({page}) => {
   await page.getByRole('button', {name: /^sign in$/i}).click();
 
   // After successful sign-in, LoginScreen unmounts and the dashboard renders.
-  // The login branding "Broiler, Layer & Pig Planner" is unique to LoginScreen,
-  // so its disappearance is the cleanest readiness signal.
-  await expect(page.locator('text=Broiler, Layer & Pig Planner')).toHaveCount(0, {timeout: 15_000});
+  // The data-login-screen marker on LoginScreen's outer container is the
+  // stable readiness signal — branding-text changes won't break it.
+  await expect(page.locator('[data-login-screen]')).toHaveCount(0, {timeout: 15_000});
 
   await page.context().storageState({path: authFile});
 });
