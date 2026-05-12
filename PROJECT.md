@@ -46,9 +46,8 @@ Use this order when opening the repo cold:
 ### Active Roadmap
 
 1. **Project-wide browser-dialog cleanup.** Start with destructive `window.confirm` / `confirm` / `window.prompt` flows; replace with `DeleteModal`, inline two-step, or typed confirmation. Informational `window.alert` cleanup is a separate follow-up pass.
-2. **CI flake hardening.** Latest verified blocker: main CI run `25736097941` on `0226c41` failed at `tests/cattle_forecast.spec.js:785` with `locator.click: Timeout 10000ms exceeded`. Local pass on the same SHA. Re-check the run before fixing — env race or selector-stability candidate, not a confirmed code defect.
-3. **Script/archive hygiene.** Audit `scripts/` references against `package.json`, `.github`, `tests`, `src`, `PROJECT.md`, and `HO.md`; archive confirmed one-shot/manual scripts into `scripts/archive/` with a short README. Separate commit, not bundled with docs or feature lanes.
-4. **Incremental lint/test hygiene.** Touched-file warning cleanup, skipped-test review (incl. the two `.skip` bodies in `tests/cattle_send_to_processor.spec.js`), no broad churn pass without explicit approval.
+
+Ongoing hygiene remains incremental: keep touched files warning-clean where practical, avoid broad churn without explicit approval, and treat CI regressions as verified blockers before editing.
 
 ---
 
@@ -520,4 +519,3 @@ Current lint baseline is warnings-only. Do not add errors. When changing a lane,
 | `57fd7b7` | Equipment checklist row/focus stability. |
 
 For older migration history and rationale, use git log plus `archive/SESSION_LOG.md`.
-
