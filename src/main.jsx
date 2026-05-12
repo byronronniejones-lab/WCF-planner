@@ -59,6 +59,7 @@ import WcfToggle from './shared/WcfToggle.jsx';
 
 // Phase 2.1.2: DeleteModal extracted to src/shared/.
 import DeleteModal from './shared/DeleteModal.jsx';
+import ConfirmModal from './shared/ConfirmModal.jsx';
 
 // Phase 2.1.3 prep: layer-housing helpers extracted ahead of modal extractions
 // so the admin modal + webform hub can import them without a circular dep on
@@ -2962,6 +2963,17 @@ function App() {
     window._wcfConfirmDelete = confirmDelete;
   }, []);
 
+  // Non-destructive confirm (no typed gate) for side-effect actions that
+  // aren't deletes. Mirrors confirmDelete shape; an optional confirmLabel
+  // sets the action-button text.
+  const [confirmAction, setConfirmAction] = React.useState(null);
+  function confirmActionPrompt(message, onConfirm, confirmLabel) {
+    setConfirmAction({message, onConfirm, confirmLabel});
+  }
+  React.useEffect(() => {
+    window._wcfConfirm = confirmActionPrompt;
+  }, []);
+
   function closeForm() {
     clearTimeout(autoSaveTimer.current);
     if (editId && originalForm) {
@@ -3096,6 +3108,7 @@ function App() {
       signOut,
       loadUsers,
       DeleteConfirmModal,
+      ConfirmActionModal,
     });
 
   // ── DELETE CONFIRM MODAL ── (proper component so useState is never conditional)
@@ -3104,6 +3117,16 @@ function App() {
         msg: deleteConfirm.message,
         onConfirm: deleteConfirm.onConfirm,
         onCancel: () => setDeleteConfirm(null),
+      })
+    : null;
+
+  // ── CONFIRM ACTION MODAL ── (non-destructive side-effect confirmations)
+  const ConfirmActionModal = confirmAction
+    ? React.createElement(ConfirmModal, {
+        msg: confirmAction.message,
+        confirmLabel: confirmAction.confirmLabel,
+        onConfirm: confirmAction.onConfirm,
+        onCancel: () => setConfirmAction(null),
       })
     : null;
 

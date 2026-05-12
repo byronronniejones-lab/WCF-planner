@@ -23,7 +23,7 @@ import {todayCentralISO} from '../lib/dateUtils.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
 
-export default function Header({sb, signOut, loadUsers, DeleteConfirmModal}) {
+export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, ConfirmActionModal}) {
   const {authState, saveStatus, setShowUsers} = useAuth();
   const {view, setView, showMenu, setShowMenu} = useUI();
   const {showForm, setShowForm} = useBatches();
@@ -119,6 +119,7 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal}) {
   return (
     <div className="no-print">
       {DeleteConfirmModal}
+      {ConfirmActionModal}
       {/* ── Dark top bar ── */}
       <div style={S.header}>
         <button

@@ -644,13 +644,18 @@ export default function PigBatchesView({
   }
 
   function archiveBatch(batchId) {
-    if (!window.confirm('Mark this batch as processed? It will be hidden from the webform.')) return;
-    const nb = feederGroups.map((g) =>
-      g.id === batchId
-        ? {...g, status: 'processed', subBatches: (g.subBatches || []).map((s) => ({...s, status: 'processed'}))}
-        : g,
+    window._wcfConfirm(
+      'Mark this batch as processed? It will be hidden from the webform.',
+      () => {
+        const nb = feederGroups.map((g) =>
+          g.id === batchId
+            ? {...g, status: 'processed', subBatches: (g.subBatches || []).map((s) => ({...s, status: 'processed'}))}
+            : g,
+        );
+        persistFeeders(nb);
+      },
+      'Mark Processed',
     );
-    persistFeeders(nb);
   }
   function unarchiveBatch(batchId) {
     const nb = feederGroups.map((g) => (g.id === batchId ? {...g, status: 'active'} : g));

@@ -75,15 +75,20 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
   }
 
   async function sendPasswordReset(email, name) {
-    if (!window.confirm('Send a password reset email to ' + email + '?')) return;
-    try {
-      await sb.functions.invoke('rapid-processor', {
-        body: {type: 'password_reset', data: {email, name: name || ''}},
-      });
-      alert('✅ Password reset email sent to ' + email);
-    } catch (e) {
-      alert('Error sending reset email: ' + (e.message || 'Unknown error'));
-    }
+    window._wcfConfirm(
+      'Send a password reset email to ' + email + '?',
+      async () => {
+        try {
+          await sb.functions.invoke('rapid-processor', {
+            body: {type: 'password_reset', data: {email, name: name || ''}},
+          });
+          alert('✅ Password reset email sent to ' + email);
+        } catch (e) {
+          alert('Error sending reset email: ' + (e.message || 'Unknown error'));
+        }
+      },
+      'Send',
+    );
   }
 
   async function updateRole(userId, newRole) {
@@ -110,42 +115,46 @@ function UsersModal({sb, authState, allUsers, setAllUsers, setShowUsers, loadUse
   }
 
   async function deactivateUser(userId, email) {
-    if (!window.confirm('Deactivate ' + email + '? They will no longer be able to log in.')) return;
-    await sb.from('profiles').update({role: 'inactive'}).eq('id', userId);
-    setAllUsers((prev) => prev.map((p) => (p.id === userId ? {...p, role: 'inactive'} : p)));
+    window._wcfConfirm(
+      'Deactivate ' + email + '? They will no longer be able to log in.',
+      async () => {
+        await sb.from('profiles').update({role: 'inactive'}).eq('id', userId);
+        setAllUsers((prev) => prev.map((p) => (p.id === userId ? {...p, role: 'inactive'} : p)));
+      },
+      'Deactivate',
+    );
   }
 
   // Hard delete: removes the auth.users row (via service-role edge function)
   // AND the profiles row. After this the email is fully recyclable for a
   // fresh invite. Deactivate keeps the user but blocks login.
   async function deleteUser(userId, email) {
-    if (
-      !window.confirm(
-        'PERMANENTLY DELETE ' +
-          email +
-          '?\n\nThis removes the auth account so the email can be re-invited from scratch. Deactivate instead if you just want to block login.',
-      )
-    )
-      return;
-    setUmErr('');
-    setUmMsg('');
-    try {
-      const {error: fnErr} = await sb.functions.invoke('rapid-processor', {
-        body: {type: 'user_delete', data: {id: userId, email}},
-      });
-      if (fnErr) throw new Error(fnErr.message || 'Edge function error');
-      await sb.from('profiles').delete().eq('id', userId);
-      setAllUsers((prev) => prev.filter((p) => p.id !== userId));
-      setUmMsg('\u2705 Deleted ' + email + '. Email is now free to re-invite.');
-    } catch (e) {
-      setUmErr(
-        'Could not delete ' +
-          email +
-          ': ' +
-          (e.message || 'Unknown error') +
-          '. The auth account stays. Add the user_delete handler to your rapid-processor edge function to enable hard delete.',
-      );
-    }
+    window._wcfConfirmDelete(
+      'PERMANENTLY DELETE ' +
+        email +
+        '? This removes the auth account so the email can be re-invited from scratch. Deactivate instead if you just want to block login.',
+      async () => {
+        setUmErr('');
+        setUmMsg('');
+        try {
+          const {error: fnErr} = await sb.functions.invoke('rapid-processor', {
+            body: {type: 'user_delete', data: {id: userId, email}},
+          });
+          if (fnErr) throw new Error(fnErr.message || 'Edge function error');
+          await sb.from('profiles').delete().eq('id', userId);
+          setAllUsers((prev) => prev.filter((p) => p.id !== userId));
+          setUmMsg('\u2705 Deleted ' + email + '. Email is now free to re-invite.');
+        } catch (e) {
+          setUmErr(
+            'Could not delete ' +
+              email +
+              ': ' +
+              (e.message || 'Unknown error') +
+              '. The auth account stays. Add the user_delete handler to your rapid-processor edge function to enable hard delete.',
+          );
+        }
+      },
+    );
   }
 
   async function updateProgramAccess(userId, newList) {

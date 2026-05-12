@@ -1447,7 +1447,7 @@ const LayerBatchesView = ({
                         {h.status === 'active' && (
                           <button
                             onClick={() => {
-                              if (confirm('Retire ' + h.housing_name + '?')) retireHousing(h);
+                              window._wcfConfirm('Retire ' + h.housing_name + '?', () => retireHousing(h), 'Retire');
                             }}
                             style={{
                               padding: '5px 10px',
