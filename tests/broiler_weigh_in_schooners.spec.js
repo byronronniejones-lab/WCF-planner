@@ -193,6 +193,80 @@ test.describe('public broiler weigh-in (anon)', () => {
     await expect(page.getByRole('button', {name: 'Back to Forms'})).toBeVisible();
   });
 
+  // T8 — Public completion stamps week4Lbs onto app_store.ppp-v4 via the
+  // stamp_broiler_batch_avg RPC (mig 055). Pre-055 the public form called
+  // writeBroilerBatchAvg client-side, which silently no-op'd because anon
+  // RLS blocks app_store reads. This test fails if anything regresses that
+  // server-side stamp path (RPC missing, anon EXECUTE revoked, RLS lock
+  // re-applied without an RPC bypass, etc.).
+  test('T8: public completion stamps week4Lbs on app_store.ppp-v4', async ({
+    page,
+    supabaseAdmin,
+    broilerWeighInSchoonersScenario,
+  }) => {
+    void broilerWeighInSchoonersScenario;
+    await page.goto('/weighins');
+    await wipeOfflineQueue(page);
+    await startBroilerSession(page, 'B-26-01', 4);
+    await expect(page.getByText('Bird weights (lbs)')).toBeVisible({timeout: 10_000});
+
+    const inputs = page.locator('input[type="number"]');
+    // 1.4 + 1.5 + 1.6 + 1.7 = 6.2 / 4 = 1.55. Rounded to 2dp = 1.55.
+    await inputs.nth(0).fill('1.4');
+    await inputs.nth(1).fill('1.5');
+    await inputs.nth(15).fill('1.6');
+    await inputs.nth(16).fill('1.7');
+
+    await page.getByRole('button', {name: 'Save Weights'}).click();
+    await expect(page.locator('[data-submit-state="synced"]')).toHaveCount(1, {timeout: 15_000});
+
+    await page.getByRole('button', {name: /Complete Weigh-In/}).click();
+    await expect(page.getByText('Session Complete')).toBeVisible({timeout: 10_000});
+
+    const {data: row, error} = await supabaseAdmin.from('app_store').select('data').eq('key', 'ppp-v4').maybeSingle();
+    expect(error).toBeNull();
+    expect(Array.isArray(row && row.data)).toBe(true);
+    const batch = row.data.find((b) => b && b.name === 'B-26-01');
+    expect(batch).toBeTruthy();
+    expect(Number(batch.week4Lbs)).toBe(1.55);
+    // Sibling batches must remain untouched (jsonb walk in the RPC must
+    // re-emit non-matching rows verbatim, not strip them).
+    expect(row.data.find((b) => b && b.name === 'B-26-02')).toBeTruthy();
+    expect(row.data.find((b) => b && b.name === 'B-26-03')).toBeTruthy();
+  });
+
+  // T9 — Same coverage for week 6.
+  test('T9: public completion stamps week6Lbs on app_store.ppp-v4', async ({
+    page,
+    supabaseAdmin,
+    broilerWeighInSchoonersScenario,
+  }) => {
+    void broilerWeighInSchoonersScenario;
+    await page.goto('/weighins');
+    await wipeOfflineQueue(page);
+    await startBroilerSession(page, 'B-26-02', 6);
+    await expect(page.getByText('Bird weights (lbs)')).toBeVisible({timeout: 10_000});
+
+    const inputs = page.locator('input[type="number"]');
+    // B-26-02 is one schooner -> 15 inputs total. 4.0+4.2+4.4+4.6 = 17.2 / 4 = 4.3.
+    await inputs.nth(0).fill('4.0');
+    await inputs.nth(1).fill('4.2');
+    await inputs.nth(2).fill('4.4');
+    await inputs.nth(3).fill('4.6');
+
+    await page.getByRole('button', {name: 'Save Weights'}).click();
+    await expect(page.locator('[data-submit-state="synced"]')).toHaveCount(1, {timeout: 15_000});
+
+    await page.getByRole('button', {name: /Complete Weigh-In/}).click();
+    await expect(page.getByText('Session Complete')).toBeVisible({timeout: 10_000});
+
+    const {data: row, error} = await supabaseAdmin.from('app_store').select('data').eq('key', 'ppp-v4').maybeSingle();
+    expect(error).toBeNull();
+    const batch = row.data.find((b) => b && b.name === 'B-26-02');
+    expect(batch).toBeTruthy();
+    expect(Number(batch.week6Lbs)).toBe(4.3);
+  });
+
   // T_negative — Public flow makes zero requests to /rest/v1/app_store
   test('T_negative: public broiler flow does NOT request app_store', async ({
     page,

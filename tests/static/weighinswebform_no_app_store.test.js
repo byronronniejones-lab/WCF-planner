@@ -1,11 +1,14 @@
-// Static lock: WeighInsWebform.jsx must not reference app_store / ppp-v4.
+// Static lock: WeighInsWebform.jsx must not reference app_store / ppp-v4,
+// and must not import writeBroilerBatchAvg.
 //
 // The public broiler weigh-in form moved to webform_config.broiler_batch_meta
-// (see src/lib/broilerBatchMeta.js). The previous app_store ppp-v4 read was
-// anon-blocked under prod RLS and silently produced "(no schooner)" fallbacks.
-// This test guards against accidental reintroduction of either string in the
-// public form file. Scoped to that single file — admin code legitimately uses
-// both.
+// (see src/lib/broilerBatchMeta.js) on the READ side. The previous app_store
+// ppp-v4 read was anon-blocked under prod RLS and silently produced
+// "(no schooner)" fallbacks. On the WRITE side (week4Lbs / week6Lbs batch
+// stamp after Complete), the public form now routes through the
+// stamp_broiler_batch_avg SECURITY DEFINER RPC (mig 055) -- importing
+// writeBroilerBatchAvg would re-introduce the anon-blocked direct write
+// path. Admin code legitimately uses both.
 
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -24,6 +27,17 @@ describe('WeighInsWebform.jsx static lock', () => {
 
   it('does not contain the literal "ppp-v4"', () => {
     expect(source).not.toMatch(/ppp-v4/);
+  });
+
+  // Mig 055 hardening: importing writeBroilerBatchAvg re-introduces the
+  // anon-blocked direct write path on app_store. Public form must use the
+  // stamp_broiler_batch_avg SECURITY DEFINER RPC instead.
+  it('does not import writeBroilerBatchAvg', () => {
+    expect(source).not.toMatch(/writeBroilerBatchAvg/);
+  });
+
+  it('calls the stamp_broiler_batch_avg RPC', () => {
+    expect(source).toMatch(/stamp_broiler_batch_avg/);
   });
 
   it('imports the public broiler mirror helper', () => {

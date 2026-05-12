@@ -4,8 +4,8 @@
 // creation/save now routes through the parent-aware offline RPC queue
 // (`useOfflineRpcSubmit('weigh_in_session_batch')` against the
 // submit_weigh_in_session_batch RPC). Cattle/sheep paths and the entire
-// completion flow (finalizeSession + writeBroilerBatchAvg) remain
-// online-direct and unchanged. See PROJECT.md §7 mig 035 entry.
+// completion flow (finalizeSession + stamp_broiler_batch_avg RPC) remain
+// online-direct and unchanged. See PROJECT.md §7 mig 035 + 055 entries.
 //
 // Fresh-vs-DB-backed branching is gated by `sessionIsFresh`:
 //   - startNewSession for pig/broiler skips the weigh_in_sessions INSERT;
@@ -18,7 +18,6 @@
 //   - On state='queued', terminal "Saved on this device" screen.
 //   - 23505 from this RPC remains a stuck/schema bug, never success.
 import React from 'react';
-import {writeBroilerBatchAvg} from '../lib/broiler.js';
 import {deriveBroilerColumnLabels} from '../lib/broilerBatchMeta.js';
 import {fmt} from '../lib/dateUtils.js';
 import {formatAgeRange, formatFeedPerPig, formatGroupAdg, formatAvgWeight} from '../lib/pigForecast.js';
@@ -523,11 +522,32 @@ const WeighInsWebform = ({sb}) => {
     }
     setBusy(true);
     const completedAt = new Date().toISOString();
-    await sb.from('weigh_in_sessions').update({status: 'complete', completed_at: completedAt}).eq('id', session.id);
+    const compUp = await sb
+      .from('weigh_in_sessions')
+      .update({status: 'complete', completed_at: completedAt})
+      .eq('id', session.id);
+    if (compUp && compUp.error) {
+      setBusy(false);
+      setErr('Complete failed: ' + compUp.error.message);
+      return;
+    }
     if (species === 'broiler') {
-      // Pass the just-completed status through so writeBroilerBatchAvg fires.
-      const eR = await sb.from('weigh_ins').select('*').eq('session_id', session.id);
-      await writeBroilerBatchAvg(sb, {...session, status: 'complete'}, (eR && eR.data) || []);
+      // Server-side stamp of week4Lbs / week6Lbs on the matching broiler
+      // batch row. The public form cannot reach the admin batch store under
+      // anon RLS, so we route through stamp_broiler_batch_avg (SECURITY
+      // DEFINER) -- see supabase-migrations/055.
+      const stamp = await sb.rpc('stamp_broiler_batch_avg', {session_id_in: session.id});
+      if (stamp && stamp.error) {
+        setBusy(false);
+        setErr('Batch avg stamp failed: ' + stamp.error.message);
+        return;
+      }
+      // applied:false (no entries / batch row missing) is a benign no-op
+      // -- log to console but do not block the operator.
+      if (stamp && stamp.data && stamp.data.applied === false) {
+        // eslint-disable-next-line no-console
+        console.warn('stamp_broiler_batch_avg no-op:', stamp.data.reason);
+      }
     }
     setBusy(false);
     setStage('done');
@@ -1077,7 +1097,7 @@ const WeighInsWebform = ({sb}) => {
     }
     setEntries(recs);
     // No batch-avg write here -- saveBatch only runs while status='draft',
-    // and writeBroilerBatchAvg requires status='complete' to fire.
+    // and stamp_broiler_batch_avg requires status='complete' to fire.
     setBusy(false);
     return true;
   }
