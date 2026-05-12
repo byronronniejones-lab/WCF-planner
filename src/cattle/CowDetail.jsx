@@ -29,6 +29,7 @@ const CowDetail = ({
   onClose,
   originOpts,
   breedOpts,
+  ageLabel,
 }) => {
   // Auto-save inline editor — uncontrolled inputs that fire onPatch on blur
   // when the value changed. Numbers parse to number; empty strings become null.
@@ -362,6 +363,17 @@ const CowDetail = ({
               onBlur={patchOnBlur('birth_date', 'text')}
               style={editInp}
             />
+            <span style={{color: '#9ca3af'}}>Age:</span>
+            <span
+              style={{
+                fontSize: 12,
+                padding: '5px 8px',
+                color: '#6b7280',
+                fontFamily: 'inherit',
+              }}
+            >
+              {ageLabel || '—'}
+            </span>
             <span style={{color: '#9ca3af'}}>Purchased:</span>
             <input
               type="date"

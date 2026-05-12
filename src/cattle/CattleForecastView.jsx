@@ -1828,6 +1828,7 @@ function IncludeHeifersModal({
                   {isExpanded && (
                     <CowDetail
                       cow={h}
+                      ageLabel={ageStr}
                       weighIns={cowWeighIns}
                       calving={cowCalving}
                       comments={cowComments}

@@ -1467,6 +1467,7 @@ const CattleHerdsView = ({
                   {isExpanded && (
                     <CowDetail
                       cow={c}
+                      ageLabel={age(c.birth_date) || '—'}
                       weighIns={cowWeighIns}
                       calving={cowCalving}
                       comments={cowComments}
@@ -1671,6 +1672,7 @@ const CattleHerdsView = ({
                           {isExpanded && (
                             <CowDetail
                               cow={c}
+                              ageLabel={age(c.birth_date) || '—'}
                               weighIns={cowWeighIns}
                               calving={cowCalving}
                               comments={cowComments}
@@ -1739,6 +1741,7 @@ const CattleHerdsView = ({
                 return (
                   <CowDetail
                     cow={c}
+                    ageLabel={age(c.birth_date) || '—'}
                     weighIns={cowWeighIns}
                     calving={cowCalving}
                     comments={cowComments}

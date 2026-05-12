@@ -424,6 +424,7 @@ const SheepFlocksView = ({
     return (
       <SheepDetail
         sheep={s}
+        ageLabel={age(s.birth_date) || '—'}
         weighIns={sWeighIns}
         lambing={sLambing}
         comments={sComments}
