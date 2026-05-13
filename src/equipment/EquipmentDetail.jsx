@@ -10,6 +10,7 @@ import {
   EQUIPMENT_COLOR,
   WARRANTY_WINDOW_DAYS,
   computeIntervalStatus,
+  currentReadingFromFuelings,
   fmtReading,
   daysSince,
   stripPodioHtml,
@@ -185,6 +186,25 @@ export default function EquipmentDetail({
   // above, but scoped per fueling row so we can have multiple rows open
   // and editing independently.
   const fuelingTimers = React.useRef({});
+  async function syncCurrentReadingFromFuelings() {
+    const currentField = eq.tracking_unit === 'km' ? 'current_km' : 'current_hours';
+    const {data, error} = await sb
+      .from('equipment_fuelings')
+      .select('hours_reading,km_reading')
+      .eq('equipment_id', eq.id);
+    if (error) {
+      setNotice({kind: 'error', message: 'Fueling saved, but current reading sync failed: ' + error.message});
+      return;
+    }
+    const nextCurrent = currentReadingFromFuelings(eq, data || []);
+    const {error: updateError} = await sb
+      .from('equipment')
+      .update({[currentField]: nextCurrent})
+      .eq('id', eq.id);
+    if (updateError) {
+      setNotice({kind: 'error', message: 'Fueling saved, but current reading sync failed: ' + updateError.message});
+    }
+  }
   function queueFuelingSave(fuelingId, field, rawValue, parser) {
     setNotice(null);
     const key = fuelingId + ':' + field;
@@ -205,6 +225,8 @@ export default function EquipmentDetail({
         setNotice({kind: 'error', message: 'Save failed: ' + error.message});
         return;
       }
+      const readingField = eq.tracking_unit === 'km' ? 'km_reading' : 'hours_reading';
+      if (field === readingField) await syncCurrentReadingFromFuelings();
       onReload();
     }, 800);
   }
@@ -216,6 +238,7 @@ export default function EquipmentDetail({
         setNotice({kind: 'error', message: 'Delete failed: ' + error.message});
         return;
       }
+      await syncCurrentReadingFromFuelings();
       onReload();
     });
   }

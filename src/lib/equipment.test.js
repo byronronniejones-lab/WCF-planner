@@ -1,5 +1,11 @@
 import {describe, it, expect} from 'vitest';
-import {computeIntervalStatus, computeDueIntervals, soonestDue, latestSaneReading} from './equipment.js';
+import {
+  computeIntervalStatus,
+  computeDueIntervals,
+  soonestDue,
+  latestSaneReading,
+  currentReadingFromFuelings,
+} from './equipment.js';
 
 // Tests for the load-bearing equipment math invariants documented in
 // PROJECT.md §7. Tested through the public API only — snapToNearestMilestone
@@ -221,5 +227,33 @@ describe('latestSaneReading — equipment current-reading drift compensation', (
 
     const eqNull = {tracking_unit: 'hours', current_hours: null, current_km: null};
     expect(latestSaneReading(eqNull, fuelings)).toBe(825);
+  });
+});
+
+describe('currentReadingFromFuelings - admin correction support', () => {
+  it('uses the max valid hours reading so correcting a bad high fueling can lower equipment.current_hours', () => {
+    const eq = {tracking_unit: 'hours'};
+    const fuelings = [
+      {date: '2026-05-10', hours_reading: 173},
+      {date: '2026-04-12', hours_reading: 167},
+      {date: '2025-10-21', hours_reading: 157},
+    ];
+    expect(currentReadingFromFuelings(eq, fuelings)).toBe(173);
+  });
+
+  it('uses km_reading for km-tracked equipment and ignores invalid/blank readings', () => {
+    const eq = {tracking_unit: 'km'};
+    const fuelings = [
+      {km_reading: null, hours_reading: 9999},
+      {km_reading: '1200'},
+      {km_reading: -1},
+      {km_reading: 1250},
+    ];
+    expect(currentReadingFromFuelings(eq, fuelings)).toBe(1250);
+  });
+
+  it('returns null when no valid historical reading exists', () => {
+    expect(currentReadingFromFuelings({tracking_unit: 'hours'}, [])).toBeNull();
+    expect(currentReadingFromFuelings({tracking_unit: 'hours'}, [{hours_reading: null}])).toBeNull();
   });
 });

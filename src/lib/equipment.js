@@ -351,3 +351,22 @@ export function latestSaneReading(eq, fuelings) {
   }
   return currentReading;
 }
+
+// Recompute the equipment's current meter reading from its fueling history.
+// Used by the admin fuel-log editor after correcting/deleting a historical
+// reading. Public submissions advance equipment.current_* through the RPC,
+// but admin corrections must also be allowed to move the parent reading down
+// when a typo was previously saved too high.
+export function currentReadingFromFuelings(eq, fuelings) {
+  const unit = eq?.tracking_unit === 'km' ? 'km' : 'hours';
+  const readingCol = unit === 'km' ? 'km_reading' : 'hours_reading';
+  if (!Array.isArray(fuelings) || fuelings.length === 0) return null;
+
+  let max = null;
+  for (const f of fuelings) {
+    const reading = Number(f?.[readingCol]);
+    if (!Number.isFinite(reading) || reading <= 0) continue;
+    if (max == null || reading > max) max = reading;
+  }
+  return max;
+}
