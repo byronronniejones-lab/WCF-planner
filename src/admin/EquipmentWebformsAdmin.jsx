@@ -13,6 +13,8 @@
 
 import React from 'react';
 import {sb} from '../lib/supabase.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadRoster, activeNames as activeNamesFromRoster} from '../lib/teamMembers.js';
 import {EQUIPMENT_CATEGORIES} from '../lib/equipment.js';
 import EquipmentMaterialsEditor from './EquipmentMaterialsEditor.jsx';
@@ -397,7 +399,9 @@ export default function EquipmentWebformsAdmin() {
 // ── identity: name / serial / status ───────────────────────────────────────
 function IdentityEditor({equipment, onReload, onLocalPatch}) {
   const [busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   async function save(col, val) {
+    setNotice(null);
     const payload = typeof val === 'string' && !val.trim() ? null : val;
     setBusy(true);
     const {error} = await sb
@@ -406,7 +410,7 @@ function IdentityEditor({equipment, onReload, onLocalPatch}) {
       .eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {[col]: payload});
@@ -419,6 +423,7 @@ function IdentityEditor({equipment, onReload, onLocalPatch}) {
           Equipment name · serial · status
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       <div style={{display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'center', rowGap: 10}}>
         <div style={subTitle}>Name</div>
         <input
@@ -469,6 +474,7 @@ function IdentityEditor({equipment, onReload, onLocalPatch}) {
 function TeamMembersEditor({equipment, onReload, onLocalPatch}) {
   const [roster, setRoster] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -484,12 +490,13 @@ function TeamMembersEditor({equipment, onReload, onLocalPatch}) {
   const activeMaster = activeNamesFromRoster(roster);
 
   async function toggle(name) {
+    setNotice(null);
     setBusy(true);
     const next = assigned.includes(name) ? assigned.filter((n) => n !== name) : [...assigned, name];
     const {error} = await sb.from('equipment').update({team_members: next}).eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {team_members: next});
@@ -503,6 +510,7 @@ function TeamMembersEditor({equipment, onReload, onLocalPatch}) {
           Assign operators to this piece · names managed in admin
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       {activeMaster.length === 0 && (
         <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
           No active team members yet. Add names in the Webforms admin → Team Members section.
@@ -548,7 +556,9 @@ function TeamMembersEditor({equipment, onReload, onLocalPatch}) {
 // auto-save on blur, matching the inline /equipment/<slug> spec panel.
 function SpecsEditor({equipment, onReload, onLocalPatch}) {
   const [_busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   async function save(col, val) {
+    setNotice(null);
     setBusy(true);
     const payload = typeof val === 'string' && !val.trim() ? null : val;
     const {error} = await sb
@@ -557,7 +567,7 @@ function SpecsEditor({equipment, onReload, onLocalPatch}) {
       .eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {[col]: payload});
@@ -584,6 +594,7 @@ function SpecsEditor({equipment, onReload, onLocalPatch}) {
           Part numbers, oils, capacities — auto-saves on blur
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px 14px'}}>
         {FIELDS.map(([k, label]) => (
           <div key={k}>
@@ -669,14 +680,16 @@ function ManualsEditor({equipment, onReload, onLocalPatch}) {
   const [newVideoUrl, setNewVideoUrl] = React.useState('');
   const [newVideoTitle, setNewVideoTitle] = React.useState('');
   const [uploading, setUploading] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   const manuals = Array.isArray(equipment.manuals) ? equipment.manuals : [];
 
   async function persist(next) {
+    setNotice(null);
     setBusy(true);
     const {error} = await sb.from('equipment').update({manuals: next}).eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {manuals: next});
@@ -684,6 +697,7 @@ function ManualsEditor({equipment, onReload, onLocalPatch}) {
 
   async function uploadPdf(file) {
     if (!file) return;
+    setNotice(null);
     setUploading(true);
     const safe = (file.name || 'manual.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
     const bucketPath = 'manuals/' + equipment.slug + '/' + Date.now() + '-' + safe;
@@ -691,7 +705,7 @@ function ManualsEditor({equipment, onReload, onLocalPatch}) {
       .from('equipment-maintenance-docs')
       .upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
     if (upErr) {
-      alert('Upload failed: ' + upErr.message);
+      setNotice({kind: 'error', message: 'Upload failed: ' + upErr.message});
       setUploading(false);
       return;
     }
@@ -708,9 +722,13 @@ function ManualsEditor({equipment, onReload, onLocalPatch}) {
   async function addVideo() {
     const url = newVideoUrl.trim();
     if (!url) return;
+    setNotice(null);
     const vid = youtubeId(url);
     if (!vid) {
-      alert('Doesn’t look like a YouTube URL. Try https://youtu.be/... or https://youtube.com/watch?v=...');
+      setNotice({
+        kind: 'error',
+        message: 'Doesn’t look like a YouTube URL. Try https://youtu.be/... or https://youtube.com/watch?v=...',
+      });
       return;
     }
     const title = newVideoTitle.trim() || url;
@@ -748,6 +766,7 @@ function ManualsEditor({equipment, onReload, onLocalPatch}) {
           Operator reference — shows on /equipment and /fleet
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       {manuals.length === 0 && (
         <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
           No manuals or videos added yet.
@@ -884,14 +903,16 @@ function ManualsEditor({equipment, onReload, onLocalPatch}) {
 function DocumentsEditor({equipment, onReload, onLocalPatch}) {
   const [busy, setBusy] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   const docs = Array.isArray(equipment.documents) ? equipment.documents : [];
 
   async function persist(next) {
+    setNotice(null);
     setBusy(true);
     const {error} = await sb.from('equipment').update({documents: next}).eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {documents: next});
@@ -899,6 +920,7 @@ function DocumentsEditor({equipment, onReload, onLocalPatch}) {
 
   async function uploadPdf(file) {
     if (!file) return;
+    setNotice(null);
     setUploading(true);
     const safe = (file.name || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
     const bucketPath = 'documents/' + equipment.slug + '/' + Date.now() + '-' + safe;
@@ -906,7 +928,7 @@ function DocumentsEditor({equipment, onReload, onLocalPatch}) {
       .from('equipment-maintenance-docs')
       .upload(bucketPath, file, {upsert: false, contentType: file.type || 'application/pdf'});
     if (upErr) {
-      alert('Upload failed: ' + upErr.message);
+      setNotice({kind: 'error', message: 'Upload failed: ' + upErr.message});
       setUploading(false);
       return;
     }
@@ -948,6 +970,7 @@ function DocumentsEditor({equipment, onReload, onLocalPatch}) {
           Internal only — invoices, contracts, warranty paperwork. NOT shown on /equipment or /fleet.
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       {docs.length === 0 && (
         <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
           No admin documents uploaded yet.
@@ -1042,7 +1065,9 @@ function DocumentsEditor({equipment, onReload, onLocalPatch}) {
 // ── webform help text: operator_notes + fuel_gallons_help ─────────────────
 function WebformHelpTextEditor({equipment, onReload, onLocalPatch}) {
   const [_busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   async function save(col, val) {
+    setNotice(null);
     const payload = (val && val.trim()) || null;
     setBusy(true);
     const {error} = await sb
@@ -1051,7 +1076,7 @@ function WebformHelpTextEditor({equipment, onReload, onLocalPatch}) {
       .eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {[col]: payload});
@@ -1065,6 +1090,7 @@ function WebformHelpTextEditor({equipment, onReload, onLocalPatch}) {
           Shown to the team on /equipment/{equipment.slug}
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       <div style={{marginBottom: 14}}>
         <div style={subTitle}>Operator notes (yellow banner at top of form — between-fillup maintenance etc.)</div>
         <textarea
@@ -1099,14 +1125,16 @@ function WebformHelpTextEditor({equipment, onReload, onLocalPatch}) {
 function EveryFillupEditor({equipment, onReload, onLocalPatch}) {
   const [newLabel, setNewLabel] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   const items = Array.isArray(equipment.every_fillup_items) ? equipment.every_fillup_items : [];
 
   async function persist(next) {
+    setNotice(null);
     setBusy(true);
     const {error} = await sb.from('equipment').update({every_fillup_items: next}).eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {every_fillup_items: next});
@@ -1132,6 +1160,7 @@ function EveryFillupEditor({equipment, onReload, onLocalPatch}) {
     await persist(next);
   }
   async function editFillupHelp(help) {
+    setNotice(null);
     setBusy(true);
     const {error} = await sb
       .from('equipment')
@@ -1139,7 +1168,7 @@ function EveryFillupEditor({equipment, onReload, onLocalPatch}) {
       .eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {every_fillup_help: help || null});
@@ -1153,6 +1182,7 @@ function EveryFillupEditor({equipment, onReload, onLocalPatch}) {
           Ticked by the team on every /equipment submission
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       <div style={{marginBottom: 14}}>
         <div style={subTitle}>Help text (shown above the checks on the webform)</div>
         <textarea
@@ -1254,6 +1284,7 @@ function ServiceIntervalEditor({equipment, onReload, onLocalPatch}) {
   const [expandedIdx, setExpandedIdx] = React.useState(null);
   const [newTaskLabels, setNewTaskLabels] = React.useState({});
   const [busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   // Drag-reorder state. dragSource = {intervalIdx, taskIdx} of the row
   // being dragged; dragTarget = {intervalIdx, taskIdx} of the row the
   // pointer is currently over (for the insertion highlight). Both clear
@@ -1263,19 +1294,21 @@ function ServiceIntervalEditor({equipment, onReload, onLocalPatch}) {
   const intervals = Array.isArray(equipment.service_intervals) ? equipment.service_intervals : [];
 
   async function persist(next) {
+    setNotice(null);
     setBusy(true);
     const {error} = await sb.from('equipment').update({service_intervals: next}).eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {service_intervals: next});
   }
   async function addOne() {
+    setNotice(null);
     const v = parseInt(newVal, 10);
     if (!Number.isFinite(v) || v <= 0) {
-      alert('Enter a positive integer.');
+      setNotice({kind: 'error', message: 'Enter a positive integer.'});
       return;
     }
     const label = (newLabel || '').trim() || `Every ${v} ${newKind === 'km' ? 'km' : 'hours'} checklist`;
@@ -1350,6 +1383,7 @@ function ServiceIntervalEditor({equipment, onReload, onLocalPatch}) {
           Click an interval to edit its tasks + help text
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       {intervals.length === 0 && (
         <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
           No intervals configured.
@@ -1636,6 +1670,7 @@ function AttachmentChecklistsEditor({equipment, onReload, onLocalPatch}) {
   const [expandedIdx, setExpandedIdx] = React.useState(null);
   const [newTaskLabels, setNewTaskLabels] = React.useState({});
   const [busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
   // Drag-reorder state, scoped per attachment-checklist row. Same shape
   // as ServiceIntervalEditor's dragSource / dragTarget.
   const [dragSource, setDragSource] = React.useState(null);
@@ -1643,11 +1678,12 @@ function AttachmentChecklistsEditor({equipment, onReload, onLocalPatch}) {
   const items = Array.isArray(equipment.attachment_checklists) ? equipment.attachment_checklists : [];
 
   async function persist(next) {
+    setNotice(null);
     setBusy(true);
     const {error} = await sb.from('equipment').update({attachment_checklists: next}).eq('id', equipment.id);
     setBusy(false);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     applySavedEquipmentPatch(onLocalPatch, onReload, {attachment_checklists: next});
@@ -1706,6 +1742,7 @@ function AttachmentChecklistsEditor({equipment, onReload, onLocalPatch}) {
           Shown as optional sections on the webform
         </span>
       </div>
+      <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
       <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
         {items.map((a, i) => {
           const isExpanded = expandedIdx === i;
