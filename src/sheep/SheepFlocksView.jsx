@@ -19,6 +19,8 @@ import SheepCollapsibleOutcomeSections from './SheepCollapsibleOutcomeSections.j
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
 import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 
 const SheepFlocksView = ({
   sb,
@@ -39,6 +41,10 @@ const SheepFlocksView = ({
   const [weighIns, setWeighIns] = useState([]);
   const [lambingRecs, setLambingRecs] = useState([]);
   const [comments, setComments] = useState([]);
+  // Inline notice for save / patch / lambing validation failures.
+  // Cleared on each action entry + when opening the Add Sheep form so a
+  // prior row's error never shadows the next flow.
+  const [notice, setNotice] = useState(null);
   const [breedOpts, setBreedOpts] = useState([]);
   const [originOpts, setOriginOpts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -226,10 +232,12 @@ const SheepFlocksView = ({
   });
 
   function openAdd() {
+    setNotice(null);
     setForm({...EMPTY_SHEEP});
     setShowAddForm(true);
   }
   async function saveSheep() {
+    setNotice(null);
     if (!form.tag.trim()) {
       window._wcfConfirm(
         'Save sheep without a tag?',
@@ -272,7 +280,7 @@ const SheepFlocksView = ({
     const newId = (rec.tag ? 's-' + rec.tag : 's-' + Date.now()) + '-' + Math.random().toString(36).slice(2, 5);
     const {error} = await sb.from('sheep').insert({id: newId, ...rec});
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       setSaving(false);
       return;
     }
@@ -283,9 +291,10 @@ const SheepFlocksView = ({
   }
   async function patchSheep(sheepId, fields) {
     if (!sheepId || !fields) return;
+    setNotice(null);
     const {error} = await sb.from('sheep').update(fields).eq('id', sheepId);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     setSheep((prev) => prev.map((s) => (s.id === sheepId ? {...s, ...fields} : s)));
@@ -351,8 +360,9 @@ const SheepFlocksView = ({
     });
   }
   async function addLambingRecord(s, formData) {
+    setNotice(null);
     if (!formData.lambing_date) {
-      alert('Lambing date required.');
+      setNotice({kind: 'error', message: 'Lambing date required.'});
       return false;
     }
     const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
@@ -368,7 +378,7 @@ const SheepFlocksView = ({
     };
     const {error} = await sb.from('sheep_lambing_records').insert(rec);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return false;
     }
     try {
@@ -472,6 +482,7 @@ const SheepFlocksView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1200, margin: '0 auto'}}>
+        {!showAddForm && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
         {/* Top toolbar */}
         <div
           style={{
@@ -904,6 +915,7 @@ const SheepFlocksView = ({
       {showAddForm && form && (
         <div
           onClick={() => {
+            setNotice(null);
             setShowAddForm(false);
             setForm(null);
           }}
@@ -945,6 +957,7 @@ const SheepFlocksView = ({
               <div style={{fontSize: 15, fontWeight: 600, color: '#0f766e'}}>Add Sheep</div>
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowAddForm(false);
                   setForm(null);
                 }}
@@ -963,6 +976,9 @@ const SheepFlocksView = ({
                 overflowY: 'auto',
               }}
             >
+              <div style={{gridColumn: '1/-1'}}>
+                <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+              </div>
               <div>
                 <label style={lbl}>Tag #</label>
                 <input

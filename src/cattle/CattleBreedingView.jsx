@@ -1,6 +1,8 @@
 // Phase 2 Round 3 extraction (verbatim).
 import React from 'react';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel} from '../lib/cattleBreeding.js';
 const CattleBreedingView = ({
   sb,
@@ -22,6 +24,7 @@ const CattleBreedingView = ({
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   async function loadAll() {
     const [cR, calR, ctR] = await Promise.all([
@@ -41,6 +44,7 @@ const CattleBreedingView = ({
   const seqMap = buildCattleCycleSeqMap(cycles);
 
   function openAdd() {
+    setNotice(null);
     setForm({
       herd: 'mommas',
       bull_exposure_start: new Date().toISOString().slice(0, 10),
@@ -52,6 +56,7 @@ const CattleBreedingView = ({
     setShowForm(true);
   }
   function openEdit(c) {
+    setNotice(null);
     setForm({
       herd: c.herd || 'mommas',
       bull_exposure_start: c.bull_exposure_start,
@@ -63,8 +68,9 @@ const CattleBreedingView = ({
     setShowForm(true);
   }
   async function saveCycle() {
+    setNotice(null);
     if (!form.bull_exposure_start) {
-      alert('Bull exposure start date is required.');
+      setNotice({kind: 'error', message: 'Bull exposure start date is required.'});
       return;
     }
     const rec = {
@@ -162,6 +168,7 @@ const CattleBreedingView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
+        {!showForm && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
           <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}}>
             Breeding Cycles <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280'}}>({cycles.length})</span>
@@ -314,6 +321,7 @@ const CattleBreedingView = ({
       {showForm && form && (
         <div
           onClick={() => {
+            setNotice(null);
             setShowForm(false);
             setEditId(null);
             setForm(null);
@@ -358,6 +366,7 @@ const CattleBreedingView = ({
               </div>
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);
@@ -368,6 +377,7 @@ const CattleBreedingView = ({
               </button>
             </div>
             <div style={{padding: '16px 20px'}}>
+              <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
               <div style={{marginBottom: 10}}>
                 <label style={lbl}>Bull Exposure Start *</label>
                 <input
@@ -455,6 +465,7 @@ const CattleBreedingView = ({
               )}
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);

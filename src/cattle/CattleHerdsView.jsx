@@ -30,6 +30,8 @@ import {
   STALE_WEIGHT_DAYS_DEFAULT,
 } from '../lib/cattleHerdFilters.js';
 import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 
 const HERD_LABELS = {
   mommas: 'Mommas',
@@ -187,6 +189,10 @@ const CattleHerdsView = ({
   const [weighIns, setWeighIns] = useState([]);
   const [calvingRecs, setCalvingRecs] = useState([]);
   const [comments, setComments] = useState([]);
+  // Inline notice for save / patch / calving validation failures.
+  // Cleared on each save attempt + on form open so a prior row's error
+  // never shadows the next flow.
+  const [notice, setNotice] = useState(null);
   const [breedOpts, setBreedOpts] = useState([]);
   const [originOpts, setOriginOpts] = useState([]);
   // Inline new-origin UI: when the operator picks "+ Add new origin…" in the
@@ -422,6 +428,7 @@ const CattleHerdsView = ({
   // edit-id reset alongside the inline add-origin UI state so no close path
   // can leak addingOrigin/newOriginInput into the next modal open.
   function closeCowForm() {
+    setNotice(null);
     setShowAddForm(false);
     setEditId(null);
     setForm(null);
@@ -429,6 +436,7 @@ const CattleHerdsView = ({
     setNewOriginInput('');
   }
   function openAdd() {
+    setNotice(null);
     setForm({...EMPTY_COW});
     setEditId(null);
     setAddingOrigin(false);
@@ -436,6 +444,7 @@ const CattleHerdsView = ({
     setShowAddForm(true);
   }
   function openEdit(cow) {
+    setNotice(null);
     setForm({
       ...EMPTY_COW,
       ...cow,
@@ -509,11 +518,12 @@ const CattleHerdsView = ({
         })
         .filter(Boolean),
     };
+    setNotice(null);
     let newId = editId;
     if (editId) {
       const {error} = await sb.from('cattle').update(rec).eq('id', editId);
       if (error) {
-        alert('Save failed: ' + error.message);
+        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
         setSaving(false);
         return;
       }
@@ -521,7 +531,7 @@ const CattleHerdsView = ({
       newId = (rec.tag ? 'c-' + rec.tag : 'c-' + Date.now()) + '-' + Math.random().toString(36).slice(2, 5);
       const {error} = await sb.from('cattle').insert({id: newId, ...rec});
       if (error) {
-        alert('Save failed: ' + error.message);
+        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
         setSaving(false);
         return;
       }
@@ -532,9 +542,10 @@ const CattleHerdsView = ({
   }
   async function patchCow(cowId, fields) {
     if (!cowId || !fields) return;
+    setNotice(null);
     const {error} = await sb.from('cattle').update(fields).eq('id', cowId);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     setCattle((prev) => prev.map((c) => (c.id === cowId ? {...c, ...fields} : c)));
@@ -593,12 +604,13 @@ const CattleHerdsView = ({
     });
   }
   async function addCalvingRecord(cow, formData) {
+    setNotice(null);
     if (!formData.calving_date) {
-      alert('Calving date required.');
+      setNotice({kind: 'error', message: 'Calving date required.'});
       return false;
     }
     if (formData.complications_flag && !(formData.complications_desc || '').trim()) {
-      alert('Complications description required when complications flag is set.');
+      setNotice({kind: 'error', message: 'Complications description required when complications flag is set.'});
       return false;
     }
     const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
@@ -616,7 +628,7 @@ const CattleHerdsView = ({
     };
     const {error} = await sb.from('cattle_calving_records').insert(rec);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return false;
     }
     await loadAll();
@@ -1040,6 +1052,7 @@ const CattleHerdsView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1200, margin: '0 auto'}}>
+        {!showAddForm && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
         {/* Smart-filter row */}
         <div
           style={{
@@ -1841,6 +1854,9 @@ const CattleHerdsView = ({
                 overflowY: 'auto',
               }}
             >
+              <div style={{gridColumn: '1/-1'}}>
+                <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+              </div>
               <div>
                 <label style={lbl}>Tag #</label>
                 <input

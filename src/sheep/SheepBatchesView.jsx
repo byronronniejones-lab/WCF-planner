@@ -19,6 +19,8 @@
 // Sheep partition is exclusively driven by the weigh-in flag.
 import React from 'react';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadSheepWeighInsCached, invalidateSheepWeighInsCache} from '../lib/sheepCache.js';
 import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
 
@@ -44,6 +46,9 @@ const SheepBatchesView = ({
   const [form, setForm] = useState(null);
   const [sheepDraft, setSheepDraft] = useState({});
   const [expandedBatchId, setExpandedBatchId] = useState(null);
+  // Inline notice for batch save / detach failures + per-row warnings.
+  // Cleared at the start of each action handler + when opening the form.
+  const [notice, setNotice] = useState(null);
 
   async function loadAll() {
     const [bR, sR, wAll] = await Promise.all([
@@ -99,6 +104,7 @@ const SheepBatchesView = ({
   }
 
   function openAdd() {
+    setNotice(null);
     const yr = new Date().getFullYear().toString().slice(-2);
     const existing = batches
       .filter((b) => b.name && b.name.startsWith('S-' + yr + '-'))
@@ -116,6 +122,7 @@ const SheepBatchesView = ({
     setShowForm(true);
   }
   function openEdit(b) {
+    setNotice(null);
     setForm({
       name: b.name,
       planned_process_date: b.planned_process_date || '',
@@ -131,8 +138,9 @@ const SheepBatchesView = ({
   // Send-to-Processor flag on a sheep weigh-in entry (any flock per
   // §7) — no manual sheep attach in this view.
   async function saveBatch() {
+    setNotice(null);
     if (!form.name.trim()) {
-      alert('Batch name required.');
+      setNotice({kind: 'error', message: 'Batch name required.'});
       return;
     }
     const rec = {
@@ -183,15 +191,17 @@ const SheepBatchesView = ({
         invalidateSheepWeighInsCache();
         if (blocked.length > 0) {
           const lines = blocked.map((b) => '#' + (b.sheep?.tag || b.sheepId || '?') + ' (' + b.reason + ')').join('\n');
-          alert(
-            'Batch deleted. ' +
+          setNotice({
+            kind: 'warning',
+            message:
+              'Batch deleted. ' +
               reverted.length +
               ' sheep reverted. ' +
               blocked.length +
               ' could not be auto-reverted:\n\n' +
               lines +
               '\n\nManually move them via the Flocks tab if needed.',
-          );
+          });
         }
         await loadAll();
         setShowForm(false);
@@ -203,19 +213,25 @@ const SheepBatchesView = ({
   // Per-row × detach. Surfaces block reasons.
   async function detachSheepAndReport(batch, s) {
     if (!s || !s.id) return;
+    setNotice(null);
     const r = await detachSheepFromBatch(sb, s.id, batch.id, {
       teamMember: authState && authState.name ? authState.name : null,
     });
     if (!r.ok) {
       const tag = s.tag || r.sheep?.tag || '?';
       if (r.reason === 'no_prior_flock') {
-        alert(
-          'Cannot auto-detach #' +
+        setNotice({
+          kind: 'warning',
+          message:
+            'Cannot auto-detach #' +
             tag +
             ': no prior flock recorded for this sheep + batch. Manually move via the Flocks tab.',
-        );
+        });
       } else {
-        alert('Detach failed for #' + tag + ': ' + r.reason + (r.error ? ' — ' + r.error : ''));
+        setNotice({
+          kind: 'error',
+          message: 'Detach failed for #' + tag + ': ' + r.reason + (r.error ? ' — ' + r.error : ''),
+        });
       }
     }
     invalidateSheepWeighInsCache();
@@ -258,6 +274,7 @@ const SheepBatchesView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
+        {!showForm && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
           <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}}>
             Processing Batches <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280'}}>({batches.length})</span>
@@ -558,6 +575,7 @@ const SheepBatchesView = ({
       {showForm && form && (
         <div
           onClick={() => {
+            setNotice(null);
             setShowForm(false);
             setEditId(null);
             setForm(null);
@@ -602,6 +620,7 @@ const SheepBatchesView = ({
               </div>
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);
@@ -612,6 +631,7 @@ const SheepBatchesView = ({
               </button>
             </div>
             <div style={{padding: '16px 20px'}}>
+              <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
               <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
                 <div style={{gridColumn: '1/-1'}}>
                   <label style={lbl}>Name *</label>
@@ -716,6 +736,7 @@ const SheepBatchesView = ({
               )}
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);

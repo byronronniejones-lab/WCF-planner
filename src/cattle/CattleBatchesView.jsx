@@ -27,6 +27,8 @@
 // active) is unchanged.
 import React from 'react';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
 import {
@@ -80,6 +82,10 @@ const CattleBatchesView = ({
   const [scheduleDateDraft, setScheduleDateDraft] = useState({});
   const [scheduledDateDraft, setScheduledDateDraft] = useState({}); // scheduled row id → ISO date
   const [unschedulingBatchId, setUnschedulingBatchId] = useState(null);
+  // Inline notice for the row-level actions in this view (auto-complete,
+  // reopen, mark-complete, rename, detach, schedule/unschedule, date
+  // update). Each action handler clears at entry and writes on error.
+  const [notice, setNotice] = useState(null);
 
   async function loadAll() {
     const [bR, cR, wAll, calR, settings, inc, hid] = await Promise.all([
@@ -161,6 +167,7 @@ const CattleBatchesView = ({
   }
   async function saveCowWeight(batch, cattleId, field, value) {
     if (!canEdit) return;
+    setNotice(null);
     const rows = cowsDetailOf(batch).map((r) =>
       r.cattle_id === cattleId ? {...r, [field]: value === '' || value == null ? null : parseFloat(value)} : r,
     );
@@ -177,39 +184,44 @@ const CattleBatchesView = ({
         await markBatchComplete(sb, batch.id, {processedDate: nextBatch.actual_process_date});
         setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...nextBatch, status: 'complete'} : b)));
       } catch (e) {
-        alert('Auto-complete failed: ' + (e.message || e));
+        setNotice({kind: 'error', message: 'Auto-complete failed: ' + (e.message || e)});
       }
     }
   }
   async function reopenComplete(batch) {
     if (!canEdit) return;
+    setNotice(null);
     try {
       await reopenBatch(sb, batch.id);
       setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, status: 'active'} : b)));
     } catch (e) {
-      alert('Reopen failed: ' + (e.message || e));
+      setNotice({kind: 'error', message: 'Reopen failed: ' + (e.message || e)});
     }
   }
   async function markCompleteClick(batch) {
     if (!canEdit) return;
+    setNotice(null);
     if (!batchHasAllHangingWeights(batch)) {
       const missing = batchMissingHangingTags(batch);
-      alert(
-        'Cannot mark complete — these tags are missing hanging weights:\n\n#' +
+      setNotice({
+        kind: 'error',
+        message:
+          'Cannot mark complete — these tags are missing hanging weights:\n\n#' +
           missing.join('  #') +
           '\n\nEnter every cow’s hanging weight first.',
-      );
+      });
       return;
     }
     try {
       await markBatchComplete(sb, batch.id, {processedDate: batch.actual_process_date});
       setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, status: 'complete'} : b)));
     } catch (e) {
-      alert('Mark complete failed: ' + (e.message || e));
+      setNotice({kind: 'error', message: 'Mark complete failed: ' + (e.message || e)});
     }
   }
   async function saveRename(batch) {
     if (!canEdit) return;
+    setNotice(null);
     const proposed = (renameDraft[batch.id] || '').trim();
     if (!proposed || proposed === batch.name) {
       setRenameErr((p) => ({...p, [batch.id]: null}));
@@ -228,7 +240,7 @@ const CattleBatchesView = ({
     const r = await sb.from('cattle_processing_batches').update({name: proposed}).eq('id', batch.id);
     if (r.error) {
       setRenameErr((p) => ({...p, [batch.id]: 'db_error'}));
-      alert('Rename failed: ' + r.error.message);
+      setNotice({kind: 'error', message: 'Rename failed: ' + r.error.message});
       return;
     }
     setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, name: proposed} : b)));
@@ -242,15 +254,22 @@ const CattleBatchesView = ({
   async function detachCowAndReport(batch, cow) {
     if (!canEdit) return;
     if (!cow || !cow.id) return;
+    setNotice(null);
     const r = await detachCowFromBatch(sb, cow.id, batch.id, {
       teamMember: authState && authState.name ? authState.name : null,
     });
     if (!r.ok) {
       const tag = cow.tag || r.cow?.tag || '?';
       if (r.reason === 'no_prior_herd') {
-        alert('Cannot auto-detach #' + tag + ': no prior herd recorded. Manually move via the Herds tab.');
+        setNotice({
+          kind: 'warning',
+          message: 'Cannot auto-detach #' + tag + ': no prior herd recorded. Manually move via the Herds tab.',
+        });
       } else {
-        alert('Detach failed for #' + tag + ': ' + r.reason + (r.error ? ' — ' + r.error : ''));
+        setNotice({
+          kind: 'error',
+          message: 'Detach failed for #' + tag + ': ' + r.reason + (r.error ? ' — ' + r.error : ''),
+        });
       }
     }
     invalidateCattleWeighInsCache();
@@ -264,9 +283,10 @@ const CattleBatchesView = ({
   // virtual batch reappears under Planned on the next build.
   async function scheduleVirtualBatch(vb) {
     if (!canEdit) return;
+    setNotice(null);
     const date = (scheduleDateDraft[vb.name] || '').trim();
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      alert('Pick a processor date (YYYY-MM-DD) before scheduling.');
+      setNotice({kind: 'error', message: 'Pick a processor date (YYYY-MM-DD) before scheduling.'});
       return;
     }
     const rowId = 'cpb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -280,7 +300,7 @@ const CattleBatchesView = ({
     };
     const r = await sb.from('cattle_processing_batches').insert(row).select().single();
     if (r.error) {
-      alert('Schedule failed: ' + r.error.message);
+      setNotice({kind: 'error', message: 'Schedule failed: ' + r.error.message});
       return;
     }
     setBatches((prev) => [r.data, ...prev]);
@@ -295,9 +315,10 @@ const CattleBatchesView = ({
     if (!nextDate || !/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) return;
     const target = batches.find((b) => b.id === batchId);
     if (!target || target.status !== 'scheduled') return;
+    setNotice(null);
     const r = await sb.from('cattle_processing_batches').update({planned_process_date: nextDate}).eq('id', batchId);
     if (r.error) {
-      alert('Date update failed: ' + r.error.message);
+      setNotice({kind: 'error', message: 'Date update failed: ' + r.error.message});
       return;
     }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? {...b, planned_process_date: nextDate} : b)));
@@ -311,9 +332,10 @@ const CattleBatchesView = ({
       setUnschedulingBatchId(null);
       return;
     }
+    setNotice(null);
     const r = await sb.from('cattle_processing_batches').delete().eq('id', batchId);
     if (r.error) {
-      alert('Unschedule failed: ' + r.error.message);
+      setNotice({kind: 'error', message: 'Unschedule failed: ' + r.error.message});
       return;
     }
     setBatches((prev) => prev.filter((b) => b.id !== batchId));
@@ -337,6 +359,7 @@ const CattleBatchesView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
           <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}} data-cattle-batches-root>
             Processing Batches{' '}

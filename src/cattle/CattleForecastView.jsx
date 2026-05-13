@@ -36,6 +36,8 @@ import {
   removeHidden,
 } from '../lib/cattleForecastApi.js';
 import {CATTLE_HERD_KEYS, cowTagSet} from '../lib/cattleHerdFilters.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 
 const HERD_LABELS = {
   mommas: 'Mommas',
@@ -136,6 +138,9 @@ const CattleForecastView = ({
   const [loading, setLoading] = useState(true);
   const [savingSettings, setSavingSettings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Inline notice for forecast settings save / hide-state update / heifer
+  // selection save errors. Cleared at the start of each action handler.
+  const [notice, setNotice] = useState(null);
   const [yearFilter, setYearFilter] = useState(null); // null = current year by default
   const [monthFilter, setMonthFilter] = useState(null);
   const [showHeiferModal, setShowHeiferModal] = useState(false);
@@ -231,12 +236,13 @@ const CattleForecastView = ({
   }
   async function saveSettingsClick() {
     if (!canEdit) return;
+    setNotice(null);
     setSavingSettings(true);
     try {
       await saveForecastSettings(sb, settingsDraft, {updatedBy: authState?.name || authState?.user?.email || null});
       setSettings(settingsDraft);
     } catch (e) {
-      alert('Could not save Forecast settings: ' + (e.message || e));
+      setNotice({kind: 'error', message: 'Could not save Forecast settings: ' + (e.message || e)});
     } finally {
       setSavingSettings(false);
     }
@@ -248,6 +254,7 @@ const CattleForecastView = ({
   // ── hide/unhide ────────────────────────────────────────────────────────────
   async function toggleHidden(cattleId, monthKey, currentlyHidden) {
     if (!canEdit) return;
+    setNotice(null);
     const teamMember = authState?.name || authState?.user?.email || null;
     try {
       if (currentlyHidden) {
@@ -258,7 +265,7 @@ const CattleForecastView = ({
         setHidden((prev) => [...prev, {cattle_id: cattleId, month_key: monthKey, hidden_by: teamMember}]);
       }
     } catch (e) {
-      alert('Could not update hide state: ' + (e.message || e));
+      setNotice({kind: 'error', message: 'Could not update hide state: ' + (e.message || e)});
     }
   }
 
@@ -268,11 +275,12 @@ const CattleForecastView = ({
       setShowHeiferModal(false);
       return;
     }
+    setNotice(null);
     try {
       await saveHeiferIncludes(sb, nextSet, {includedBy: authState?.name || authState?.user?.email || null});
       setIncludes(new Set(nextSet));
     } catch (e) {
-      alert('Could not save heifer selections: ' + (e.message || e));
+      setNotice({kind: 'error', message: 'Could not save heifer selections: ' + (e.message || e)});
       return;
     }
     setShowHeiferModal(false);
@@ -339,6 +347,7 @@ const CattleForecastView = ({
           gap: '1.25rem',
         }}
       >
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         {/* Title + actions */}
         <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}} data-cattle-forecast-root>
           <div style={{fontSize: 20, fontWeight: 700, color: '#111827'}}>Cattle Forecast</div>
@@ -1630,6 +1639,7 @@ function IncludeHeifersModal({
   }, [eligibleHeiferIds]);
   const [expandedId, setExpandedId] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [modalNotice, setModalNotice] = useState(null);
 
   function toggle(id) {
     if (!canEdit) return;
@@ -1644,9 +1654,10 @@ function IncludeHeifersModal({
   // Inline auto-save patch (mirrors CattleHerdsView.patchCow)
   async function patchCow(cowId, fields) {
     if (!cowId || !fields) return;
+    setModalNotice(null);
     const r = await sb.from('cattle').update(fields).eq('id', cowId);
     if (r.error) {
-      alert('Save failed: ' + r.error.message);
+      setModalNotice({kind: 'error', message: 'Save failed: ' + r.error.message});
       return;
     }
     if (reload) await reload();
@@ -1698,6 +1709,9 @@ function IncludeHeifersModal({
           >
             {'×'}
           </button>
+        </div>
+        <div style={{padding: '8px 20px 0'}}>
+          <InlineNotice notice={modalNotice} onDismiss={() => setModalNotice(null)} />
         </div>
         <div style={{padding: '8px 20px 4px', fontSize: 11, color: '#6b7280'}} data-heifer-include-help>
           {heifers.length} heifer{heifers.length === 1 ? '' : 's'} currently in mommas. Checked heifers are included in
