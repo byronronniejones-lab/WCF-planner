@@ -4,11 +4,14 @@ import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 
+const FEED_GRID_COLUMNS = '2fr 80px 80px 70px 60px 60px 70px 120px';
+
 const LivestockFeedInputsPanel = ({sb}) => {
   const [feeds, setFeeds] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(true);
   const [categoryFilter, setCategoryFilter] = React.useState('all');
+  const [showInactiveFeeds, setShowInactiveFeeds] = React.useState(false);
   const [showForm, setShowForm] = React.useState(false);
   const [editingId, setEditingId] = React.useState(null);
   const [form, setForm] = React.useState(null);
@@ -398,6 +401,8 @@ const LivestockFeedInputsPanel = ({sb}) => {
   // (old Mark Inactive helper removed — replaced by deleteFeedPermanently below)
 
   const filteredFeeds = categoryFilter === 'all' ? feeds : feeds.filter((f) => f.category === categoryFilter);
+  const activeFeeds = filteredFeeds.filter((f) => f.status !== 'inactive');
+  const inactiveFeeds = filteredFeeds.filter((f) => f.status === 'inactive');
   const catMeta = (c) => CATEGORIES.find((x) => x.v === c) || CATEGORIES[4];
 
   const inpS = {
@@ -410,6 +415,175 @@ const LivestockFeedInputsPanel = ({sb}) => {
     boxSizing: 'border-box',
   };
   const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+
+  function renderFeedTable(rows, section) {
+    return (
+      <div data-feed-inputs-table={section} style={{border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden'}}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: FEED_GRID_COLUMNS,
+            gap: 0,
+            background: '#f9fafb',
+            borderBottom: '1px solid #e5e7eb',
+            padding: '6px 10px',
+            fontSize: 10,
+            fontWeight: 700,
+            color: '#4b5563',
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+          }}
+        >
+          <span>Name</span>
+          <span>Category</span>
+          <span style={{textAlign: 'right'}}>Unit / wt</span>
+          <span style={{textAlign: 'right'}}>DM</span>
+          <span style={{textAlign: 'right'}}>Moist</span>
+          <span style={{textAlign: 'right'}}>P% / NFC%</span>
+          <span style={{textAlign: 'right'}}>Landed $/lb</span>
+          <span style={{textAlign: 'right'}}>Actions</span>
+        </div>
+        {rows.map((f, i) => {
+          const cat = catMeta(f.category);
+          const lpl = landedPerLb(f);
+          const inactive = f.status === 'inactive';
+          const wt = parseFloat(f.unit_weight_lbs);
+          const mp = parseFloat(f.moisture_pct);
+          const dm =
+            Number.isFinite(wt) && wt > 0 && Number.isFinite(mp) && mp >= 0 && mp < 100 ? wt * (1 - mp / 100) : null;
+          return (
+            <div
+              key={f.id}
+              data-feed-input-row={f.id}
+              data-feed-input-status={inactive ? 'inactive' : 'active'}
+              onClick={() => openEdit(f)}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: FEED_GRID_COLUMNS,
+                gap: 0,
+                padding: '8px 10px',
+                fontSize: 12,
+                alignItems: 'center',
+                borderBottom: i < rows.length - 1 ? '1px solid #f3f4f6' : 'none',
+                cursor: 'pointer',
+                background: i % 2 ? '#fafafa' : 'white',
+                opacity: inactive ? 0.55 : 1,
+              }}
+              className="hoverable-tile"
+            >
+              <span
+                style={{
+                  fontWeight: 700,
+                  color: '#111827',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {f.name}
+                {inactive && (
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 10,
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                      background: '#fef2f2',
+                      color: '#b91c1c',
+                      fontWeight: 700,
+                    }}
+                  >
+                    INACTIVE
+                  </span>
+                )}
+              </span>
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: '1px 6px',
+                  borderRadius: 3,
+                  background: cat.bg,
+                  color: cat.color,
+                  fontWeight: 700,
+                  textAlign: 'center',
+                  textTransform: 'uppercase',
+                  justifySelf: 'start',
+                }}
+              >
+                {cat.l}
+              </span>
+              <span style={{textAlign: 'right', color: '#374151'}}>
+                {f.unit}
+                {f.unit_weight_lbs ? ' \u00b7 ' + f.unit_weight_lbs + ' lb' : ''}
+              </span>
+              <span
+                style={{
+                  textAlign: 'right',
+                  color: dm != null ? '#065f46' : '#9ca3af',
+                  fontWeight: dm != null ? 600 : 400,
+                }}
+              >
+                {dm != null ? Math.round(dm * 10) / 10 + ' lb' : '\u2014'}
+              </span>
+              <span style={{textAlign: 'right', color: '#4b5563'}}>
+                {f.moisture_pct != null ? f.moisture_pct + '%' : '\u2014'}
+              </span>
+              <span style={{textAlign: 'right', color: '#4b5563'}}>
+                {f.protein_pct != null || f.nfc_pct != null
+                  ? (f.protein_pct ?? '\u2014') + '/' + (f.nfc_pct ?? '\u2014')
+                  : '\u2014'}
+              </span>
+              <span style={{textAlign: 'right', color: lpl ? '#065f46' : '#9ca3af', fontWeight: lpl ? 600 : 400}}>
+                {lpl != null ? '$' + lpl.toFixed(3) : '\u2014'}
+              </span>
+              <span style={{display: 'flex', gap: 4, justifyContent: 'flex-end'}}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openUploadForFeed(f);
+                  }}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: 5,
+                    border: '1px solid #085041',
+                    background: 'white',
+                    color: '#085041',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {'\ud83d\udcce'}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEdit(f);
+                  }}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: 5,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#4b5563',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Edit
+                </button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div style={{marginTop: 16}}>
@@ -506,171 +680,63 @@ const LivestockFeedInputsPanel = ({sb}) => {
               </div>
             )}
 
-            {/* One-line-per-feed table */}
+            {/* Active feeds stay visible; inactive feeds stay tucked away until needed. */}
             {!loading && filteredFeeds.length > 0 && (
-              <div style={{border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden'}}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 80px 80px 70px 60px 60px 70px 120px',
-                    gap: 0,
-                    background: '#f9fafb',
-                    borderBottom: '1px solid #e5e7eb',
-                    padding: '6px 10px',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#4b5563',
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  <span>Name</span>
-                  <span>Category</span>
-                  <span style={{textAlign: 'right'}}>Unit / wt</span>
-                  <span style={{textAlign: 'right'}}>DM</span>
-                  <span style={{textAlign: 'right'}}>Moist</span>
-                  <span style={{textAlign: 'right'}}>P% / NFC%</span>
-                  <span style={{textAlign: 'right'}}>Landed $/lb</span>
-                  <span style={{textAlign: 'right'}}>Actions</span>
-                </div>
-                {filteredFeeds.map((f, i) => {
-                  const cat = catMeta(f.category);
-                  const lpl = landedPerLb(f);
-                  const inactive = f.status === 'inactive';
-                  const wt = parseFloat(f.unit_weight_lbs);
-                  const mp = parseFloat(f.moisture_pct);
-                  const dm =
-                    Number.isFinite(wt) && wt > 0 && Number.isFinite(mp) && mp >= 0 && mp < 100
-                      ? wt * (1 - mp / 100)
-                      : null;
-                  return (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                <div data-feed-inputs-section="active">
+                  <div style={{fontSize: 12, fontWeight: 700, color: '#065f46', marginBottom: 6}}>
+                    Active feeds ({activeFeeds.length})
+                  </div>
+                  {activeFeeds.length > 0 ? (
+                    renderFeedTable(activeFeeds, 'active')
+                  ) : (
                     <div
-                      key={f.id}
-                      onClick={() => openEdit(f)}
+                      data-feed-inputs-empty-active="1"
                       style={{
-                        display: 'grid',
-                        gridTemplateColumns: '2fr 80px 80px 70px 60px 60px 70px 120px',
-                        gap: 0,
-                        padding: '8px 10px',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 8,
+                        padding: '12px',
                         fontSize: 12,
-                        alignItems: 'center',
-                        borderBottom: i < filteredFeeds.length - 1 ? '1px solid #f3f4f6' : 'none',
-                        cursor: 'pointer',
-                        background: i % 2 ? '#fafafa' : 'white',
-                        opacity: inactive ? 0.55 : 1,
+                        color: '#9ca3af',
                       }}
-                      className="hoverable-tile"
                     >
-                      <span
-                        style={{
-                          fontWeight: 700,
-                          color: '#111827',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {f.name}
-                        {inactive && (
-                          <span
-                            style={{
-                              marginLeft: 6,
-                              fontSize: 10,
-                              padding: '1px 5px',
-                              borderRadius: 3,
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                              fontWeight: 700,
-                            }}
-                          >
-                            INACTIVE
-                          </span>
-                        )}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: '1px 6px',
-                          borderRadius: 3,
-                          background: cat.bg,
-                          color: cat.color,
-                          fontWeight: 700,
-                          textAlign: 'center',
-                          textTransform: 'uppercase',
-                          justifySelf: 'start',
-                        }}
-                      >
-                        {cat.l}
-                      </span>
-                      <span style={{textAlign: 'right', color: '#374151'}}>
-                        {f.unit}
-                        {f.unit_weight_lbs ? ' \u00b7 ' + f.unit_weight_lbs + ' lb' : ''}
-                      </span>
-                      <span
-                        style={{
-                          textAlign: 'right',
-                          color: dm != null ? '#065f46' : '#9ca3af',
-                          fontWeight: dm != null ? 600 : 400,
-                        }}
-                      >
-                        {dm != null ? Math.round(dm * 10) / 10 + ' lb' : '\u2014'}
-                      </span>
-                      <span style={{textAlign: 'right', color: '#4b5563'}}>
-                        {f.moisture_pct != null ? f.moisture_pct + '%' : '\u2014'}
-                      </span>
-                      <span style={{textAlign: 'right', color: '#4b5563'}}>
-                        {f.protein_pct != null || f.nfc_pct != null
-                          ? (f.protein_pct ?? '\u2014') + '/' + (f.nfc_pct ?? '\u2014')
-                          : '\u2014'}
-                      </span>
-                      <span
-                        style={{textAlign: 'right', color: lpl ? '#065f46' : '#9ca3af', fontWeight: lpl ? 600 : 400}}
-                      >
-                        {lpl != null ? '$' + lpl.toFixed(3) : '\u2014'}
-                      </span>
-                      <span style={{display: 'flex', gap: 4, justifyContent: 'flex-end'}}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openUploadForFeed(f);
-                          }}
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: 5,
-                            border: '1px solid #085041',
-                            background: 'white',
-                            color: '#085041',
-                            fontSize: 10,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          {'\ud83d\udcce'}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEdit(f);
-                          }}
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: 5,
-                            border: '1px solid #d1d5db',
-                            background: 'white',
-                            color: '#4b5563',
-                            fontSize: 10,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          Edit
-                        </button>
-                      </span>
+                      No active feeds in this category.
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+
+                {inactiveFeeds.length > 0 && (
+                  <div data-feed-inputs-section="inactive">
+                    <button
+                      type="button"
+                      data-feed-inputs-inactive-toggle="1"
+                      data-feed-inputs-inactive-state={showInactiveFeeds ? 'expanded' : 'collapsed'}
+                      onClick={() => setShowInactiveFeeds((v) => !v)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '9px 10px',
+                        borderRadius: 8,
+                        border: '1px solid #e5e7eb',
+                        background: '#f9fafb',
+                        color: '#374151',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{fontSize: 11, color: '#6b7280'}}>{showInactiveFeeds ? '\u25bc' : '\u25b6'}</span>
+                      <span>Inactive feeds ({inactiveFeeds.length})</span>
+                    </button>
+                    {showInactiveFeeds && (
+                      <div style={{marginTop: 8}}>{renderFeedTable(inactiveFeeds, 'inactive')}</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </>
