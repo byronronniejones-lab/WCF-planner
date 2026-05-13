@@ -296,7 +296,12 @@ test.describe('Task Center /tasks — read-only My Tasks tab', () => {
     const {simonId} = await seedTaskCenterFixture(supabaseAdmin);
 
     // Add a second Simon task with an earlier due date so we can
-    // verify the within-group sort order.
+    // verify the within-group sort order. After this insert Simon
+    // carries 2 open tasks (recurring + earlier), which qualifies
+    // his group for the top-2 pre-expand introduced in the Operator
+    // Clarity pass — solo-task groups stay collapsed, ≥2-task groups
+    // expand by default so cross-team workload is visible without
+    // an extra click.
     await supabaseAdmin.from('task_instances').insert({
       id: 'tic-other-simon-earlier',
       template_id: null,
@@ -311,8 +316,10 @@ test.describe('Task Center /tasks — read-only My Tasks tab', () => {
 
     await page.goto('/tasks');
 
+    // Simon has 2 open tasks so his group auto-expands. No click
+    // needed; assert the body is in the DOM directly.
     const simonGroup = page.locator(`[data-tasks-group="${simonId}"]`);
-    await simonGroup.locator('button').first().click();
+    await expect(simonGroup.locator('[data-tasks-group-state="expanded"]')).toBeVisible();
     const body = page.locator(`[data-tasks-group-body="${simonId}"]`);
     await expect(body).toBeVisible();
     const ids = await body.locator('[data-task-row]').evaluateAll((els) => els.map((e) => e.dataset.taskRow));

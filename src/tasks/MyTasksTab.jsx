@@ -1,12 +1,23 @@
 // Task Center — My Tasks tab. Tasks v2.
 //
-// Layout:
-//   Top section: "My open tasks (N)" — tasks where assignee_profile_id
-//   is the caller. Always expanded. Sorted by due_date asc so overdue
-//   rows surface first.
+// Layout (Codex 2026-05-13 Operator Clarity pass):
+//   Filter chip bar:   All / Overdue / Today / Recurring / System.
+//                      Pure client-side filter on the loaded open-task
+//                      list. Filters both my-section and other-groups.
 //
-//   Below: every other open task grouped by assignee, each group
-//   collapsed by default. Click the group header to expand.
+//   My open tasks (N): bucketed by due state — Overdue, Due today,
+//                      Upcoming. Empty sub-buckets are hidden so the
+//                      list scans clean when, e.g., nothing's overdue.
+//
+//   All other open tasks (N): grouped by assignee. The two groups
+//                      with the largest open-task counts are expanded
+//                      by default ONLY when those groups carry 2+
+//                      tasks each — solo-task groups don't represent
+//                      workload worth auto-surfacing, and the 2+
+//                      threshold keeps the page calm when every
+//                      teammate has just one item. When a non-"all"
+//                      filter is active, every group with matching
+//                      tasks expands so the filter shows its work.
 //
 // Row-level controls (T6-T9):
 //   - Photo affordance (📎) opens TaskPhotoLightbox; visible when the
@@ -22,7 +33,8 @@
 // per mig 050. Attribution string ("Submitted by ..." / "Created by
 // ...") is computed by attributionFor() — public-webform rows show
 // the operator name, logged-in-created rows show the locked creator
-// name from mig 050.
+// name from mig 050. Attribution renders on its own line below the
+// description for cleaner scanning at every viewport width.
 
 import React from 'react';
 import {
@@ -58,6 +70,32 @@ const SECTION_HEADER = {
   margin: '14px 0 8px',
   textTransform: 'uppercase',
   letterSpacing: 0.4,
+};
+const BUCKET_HEADER = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#4b5563',
+  margin: '10px 0 6px',
+  textTransform: 'uppercase',
+  letterSpacing: 0.5,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+};
+const BUCKET_DOT_OVERDUE = {
+  display: 'inline-block',
+  width: 8,
+  height: 8,
+  borderRadius: '50%',
+  background: '#dc2626',
+};
+const BUCKET_DOT_TODAY = {
+  ...BUCKET_DOT_OVERDUE,
+  background: '#f59e0b',
+};
+const BUCKET_DOT_UPCOMING = {
+  ...BUCKET_DOT_OVERDUE,
+  background: '#9ca3af',
 };
 const GROUP_HEADER = {
   background: 'white',
@@ -133,6 +171,65 @@ const PHOTO_LINK_BTN = {
   fontFamily: 'inherit',
 };
 
+const FILTER_BAR = {
+  display: 'flex',
+  gap: 6,
+  flexWrap: 'wrap',
+  marginBottom: 6,
+};
+const FILTER_CHIP_BASE = {
+  padding: '5px 12px',
+  borderRadius: 999,
+  border: '1px solid #d1d5db',
+  background: 'white',
+  color: '#4b5563',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+const FILTER_CHIP_ACTIVE = {
+  ...FILTER_CHIP_BASE,
+  background: '#085041',
+  border: '1px solid #085041',
+  color: 'white',
+};
+
+const FILTERS = [
+  {key: 'all', label: 'All'},
+  {key: 'overdue', label: 'Overdue'},
+  {key: 'today', label: 'Today'},
+  {key: 'recurring', label: 'Recurring'},
+  {key: 'system', label: 'System'},
+];
+
+// Pure filter predicate. Used to scope both the my-section and the
+// other-groups list to the active chip without re-querying.
+function matchesFilter(ti, filter, todayStr) {
+  if (filter === 'all') return true;
+  if (filter === 'overdue') return dueStateFor(ti, todayStr) === 'overdue';
+  if (filter === 'today') return dueStateFor(ti, todayStr) === 'today';
+  if (filter === 'recurring') return ti.designation === 'recurring';
+  if (filter === 'system') return ti.designation === 'system';
+  return true;
+}
+
+// Bucket my tasks by due state for the three sub-section headers.
+// Inputs are already filter-scoped so each bucket reflects the active
+// chip. Empty buckets are skipped at render time.
+function bucketByDueState(rows, todayStr) {
+  const overdue = [];
+  const today = [];
+  const upcoming = [];
+  for (const ti of rows || []) {
+    const s = dueStateFor(ti, todayStr);
+    if (s === 'overdue') overdue.push(ti);
+    else if (s === 'today') today.push(ti);
+    else upcoming.push(ti);
+  }
+  return {overdue, today, upcoming};
+}
+
 // eslint-disable-next-line no-unused-vars -- referenced via JSX <TaskRow .../> below
 function TaskRow({
   ti,
@@ -152,8 +249,19 @@ function TaskRow({
   const photo = photoPresenceFor(ti);
   return (
     <div data-task-row={ti.id} data-task-designation={ti.designation || ''} style={CARD}>
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10}}>
-        <div style={{fontSize: 15, fontWeight: 600, color: '#111827', flex: 1}}>
+      <div
+        style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap'}}
+      >
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: '#111827',
+            flex: '1 1 200px',
+            minWidth: 0,
+            wordBreak: 'break-word',
+          }}
+        >
           {ti.title}
           {ti.designation === 'recurring' && (
             <span data-task-badge="recurring" style={BADGE_RECURRING}>
@@ -183,12 +291,12 @@ function TaskRow({
       {ti.description && (
         <div style={{fontSize: 13, color: '#374151', marginTop: 4, whiteSpace: 'pre-wrap'}}>{ti.description}</div>
       )}
-      <div style={{display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 8}}>
-        {attribution && (
-          <span style={SUB} data-task-attribution-label={attribution.label}>
-            {attribution.label}: <span style={{color: '#374151'}}>{attribution.name}</span>
-          </span>
-        )}
+      {attribution && (
+        <div style={{...SUB, marginTop: 4}} data-task-attribution-label={attribution.label}>
+          {attribution.label}: <span style={{color: '#374151'}}>{attribution.name}</span>
+        </div>
+      )}
+      <div style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8}}>
         {(photo.hasRequest || photo.hasCompletion) && (
           <button
             type="button"
@@ -256,7 +364,13 @@ export default function MyTasksTab({sb, authState}) {
   const [assignableProfiles, setAssignableProfiles] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
-  const [expanded, setExpanded] = React.useState({}); // {assigneeProfileId: bool}
+  // Group expansion overlay. When the user explicitly toggles a group
+  // its key sits here as boolean; absent keys fall back to the
+  // pre-expand-top-2 default. Reset on filter change so a non-default
+  // filter can re-pre-expand matching groups without losing manual
+  // toggles for the "all" view.
+  const [expandedOverride, setExpandedOverride] = React.useState({});
+  const [filter, setFilter] = React.useState('all');
   const [completeTaskTarget, setCompleteTaskTarget] = React.useState(null);
   const [photoTaskTarget, setPhotoTaskTarget] = React.useState(null);
   const [editDueTarget, setEditDueTarget] = React.useState(null);
@@ -350,11 +464,82 @@ export default function MyTasksTab({sb, authState}) {
   // overdue / due-today doesn't drift on a phone set to a different
   // timezone (Ronnie's date-only / Central-time lock for tasks).
   const todayStr = todayCentralISO();
-  const {mine, otherGroups} = splitTasksForMyTab(tasks, callerProfileId, profiles);
+
+  // Apply the active filter chip BEFORE the my/other split + bucketing
+  // so counts in section headers reflect what the operator actually
+  // sees rendered.
+  const visibleTasks = React.useMemo(
+    () => tasks.filter((ti) => matchesFilter(ti, filter, todayStr)),
+    [tasks, filter, todayStr],
+  );
+  const {mine, otherGroups} = splitTasksForMyTab(visibleTasks, callerProfileId, profiles);
+  const mineBuckets = bucketByDueState(mine, todayStr);
+  const mineCount = mine.length;
+  const otherCount = otherGroups.reduce((n, g) => n + g.tasks.length, 0);
+
+  // Top-2 pre-expand: when the filter is "all", expand the two groups
+  // with the largest task counts AMONG groups that carry 2+ tasks. The
+  // 2+ threshold avoids auto-expanding solo-task groups (low signal
+  // for cross-team workload scanning) and keeps the page calm when
+  // every teammate has just one item. When a narrower filter is
+  // active, expand every group that has matching tasks so the
+  // filtered view shows its result without an extra click. Manual
+  // toggles in expandedOverride win over both defaults.
+  const topTwoIds = React.useMemo(() => {
+    if (filter !== 'all') return new Set(otherGroups.map((g) => g.profileId || '__unassigned__'));
+    const ranked = otherGroups
+      .filter((g) => g.tasks.length >= 2)
+      .slice()
+      .sort((a, b) => b.tasks.length - a.tasks.length)
+      .slice(0, 2);
+    return new Set(ranked.map((g) => g.profileId || '__unassigned__'));
+  }, [otherGroups, filter]);
+
+  function isGroupOpen(key) {
+    if (Object.prototype.hasOwnProperty.call(expandedOverride, key)) return !!expandedOverride[key];
+    return topTwoIds.has(key);
+  }
 
   function toggleGroup(profileId) {
     const key = profileId || '__unassigned__';
-    setExpanded((prev) => ({...prev, [key]: !prev[key]}));
+    const current = isGroupOpen(key);
+    setExpandedOverride((prev) => ({...prev, [key]: !current}));
+  }
+
+  // Reset the per-group manual overrides when the filter changes so the
+  // filter-driven defaults take effect (every match expanded). Pre-existing
+  // manual toggles on "all" are wiped intentionally — the filter is a
+  // separate scan mode, not an enrichment of the previous view.
+  React.useEffect(() => {
+    setExpandedOverride({});
+  }, [filter]);
+
+  function renderBucket(bucketKey, label, dotStyle, rows) {
+    if (!rows || rows.length === 0) return null;
+    return (
+      <div data-tasks-due-bucket={bucketKey} data-tasks-due-bucket-count={rows.length}>
+        <div style={BUCKET_HEADER}>
+          <span style={dotStyle} aria-hidden="true" />
+          {label} ({rows.length})
+        </div>
+        {rows.map((ti) => (
+          <TaskRow
+            key={ti.id}
+            ti={ti}
+            todayStr={todayStr}
+            canComplete={canCompleteRow(ti)}
+            canEditDue={canEditDueRow(ti)}
+            canAssign={canAssignRow(ti)}
+            canDelete={canDeleteRow(ti)}
+            onComplete={setCompleteTaskTarget}
+            onOpenPhotos={setPhotoTaskTarget}
+            onEditDue={setEditDueTarget}
+            onAssign={setAssignTarget}
+            onDelete={setDeleteTarget}
+          />
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -380,44 +565,64 @@ export default function MyTasksTab({sb, authState}) {
         <div style={SUB}>Loading…</div>
       ) : (
         <>
+          {/* Filter chip bar — client-side scope on the loaded list.
+              Counts in section headers below reflect the active filter
+              so the user sees how many rows the chip matched. */}
+          {/* Segmented filter — pressable toggle buttons, NOT a tablist.
+              role="group" + aria-pressed per button matches the actual
+              behavior (no associated tab panels, no roving tabindex);
+              role="tablist" would mislead assistive tech into expecting
+              ARIA tabs semantics this control does not implement. */}
+          <div data-tasks-filter-bar="1" style={FILTER_BAR} role="group" aria-label="Task filter">
+            {FILTERS.map((f) => {
+              const active = filter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  data-tasks-filter-chip={f.key}
+                  data-tasks-filter-active={active ? '1' : '0'}
+                  aria-pressed={active}
+                  onClick={() => setFilter(f.key)}
+                  style={active ? FILTER_CHIP_ACTIVE : FILTER_CHIP_BASE}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+
           <div data-tasks-section="mine">
-            <div style={SECTION_HEADER}>My open tasks ({mine.length})</div>
-            {mine.length === 0 ? (
+            <div style={SECTION_HEADER}>My open tasks ({mineCount})</div>
+            {mineCount === 0 ? (
               <div style={CARD}>
-                <div style={{fontSize: 13, color: '#374151'}}>Nothing assigned to you right now.</div>
+                <div style={{fontSize: 13, color: '#374151'}}>
+                  {filter === 'all'
+                    ? 'Nothing assigned to you right now. Browse other open tasks below, or use + New Task above to create one.'
+                    : 'No matches for the active filter. Try the All chip, or check the other open tasks below.'}
+                </div>
               </div>
             ) : (
-              mine.map((ti) => (
-                <TaskRow
-                  key={ti.id}
-                  ti={ti}
-                  todayStr={todayStr}
-                  canComplete={canCompleteRow(ti)}
-                  canEditDue={canEditDueRow(ti)}
-                  canAssign={canAssignRow(ti)}
-                  canDelete={canDeleteRow(ti)}
-                  onComplete={setCompleteTaskTarget}
-                  onOpenPhotos={setPhotoTaskTarget}
-                  onEditDue={setEditDueTarget}
-                  onAssign={setAssignTarget}
-                  onDelete={setDeleteTarget}
-                />
-              ))
+              <>
+                {renderBucket('overdue', 'Overdue', BUCKET_DOT_OVERDUE, mineBuckets.overdue)}
+                {renderBucket('today', 'Due today', BUCKET_DOT_TODAY, mineBuckets.today)}
+                {renderBucket('upcoming', 'Upcoming', BUCKET_DOT_UPCOMING, mineBuckets.upcoming)}
+              </>
             )}
           </div>
 
           <div data-tasks-section="others" style={{marginTop: 18}}>
-            <div style={SECTION_HEADER}>
-              All other open tasks ({otherGroups.reduce((n, g) => n + g.tasks.length, 0)})
-            </div>
+            <div style={SECTION_HEADER}>All other open tasks ({otherCount})</div>
             {otherGroups.length === 0 ? (
               <div style={CARD}>
-                <div style={{fontSize: 13, color: '#374151'}}>No other open tasks.</div>
+                <div style={{fontSize: 13, color: '#374151'}}>
+                  {filter === 'all' ? 'No other open tasks.' : 'No other open tasks match the active filter.'}
+                </div>
               </div>
             ) : (
               otherGroups.map((g) => {
                 const key = g.profileId || '__unassigned__';
-                const isOpen = !!expanded[key];
+                const isOpen = isGroupOpen(key);
                 return (
                   <div key={key} data-tasks-group={key}>
                     <button type="button" onClick={() => toggleGroup(g.profileId)} style={GROUP_HEADER}>
