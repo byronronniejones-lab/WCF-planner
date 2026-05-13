@@ -3,6 +3,8 @@ import React from 'react';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
@@ -33,6 +35,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
     comments: '',
   };
   const [form, setForm] = useState(EMPTY);
+  const [notice, setNotice] = useState(null);
 
   const PAGE = 1000;
   const [page, setPage] = useState(0);
@@ -85,6 +88,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
   }, [hasMore, page]);
 
   function openEdit(d) {
+    setNotice(null);
     setForm({
       date: d.date || todayStr(),
       teamMember: d.team_member || '',
@@ -104,6 +108,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
   }
   const [showAddModal, setShowAddModal] = useState(false);
   function save() {
+    setNotice(null);
     const g1 = form.group1Count !== '' ? parseInt(form.group1Count) : 0;
     const g2 = form.group2Count !== '' ? parseInt(form.group2Count) : 0;
     const g3 = form.group3Count !== '' ? parseInt(form.group3Count) : 0;
@@ -130,7 +135,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
         .eq('id', editId)
         .then(({error}) => {
           if (error) {
-            alert('Save failed: ' + error.message);
+            setNotice({kind: 'error', message: 'Save failed: ' + error.message});
             return;
           }
           refreshDailys && refreshDailys('egg');
@@ -145,7 +150,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
         .single()
         .then(({data, error}) => {
           if (error) {
-            alert('Save failed: ' + error.message);
+            setNotice({kind: 'error', message: 'Save failed: ' + error.message});
           } else if (data) {
             setRecords((p) => [data, ...p]);
             refreshDailys && refreshDailys('egg');
@@ -212,7 +217,10 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setNotice(null);
+                setShowAddModal(true);
+              }}
               style={{
                 padding: '8px 16px',
                 borderRadius: 8,
@@ -256,6 +264,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
             </button>
           )}
         </div>
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading...</div>}
         {!loading && filtered.length === 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>No records found</div>
@@ -359,7 +368,10 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
       </div>
       {showForm && (
         <div
-          onClick={() => setShowForm(false)}
+          onClick={() => {
+            setNotice(null);
+            setShowForm(false);
+          }}
           style={{
             position: 'fixed',
             top: 0,
@@ -400,7 +412,10 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
             >
               <div style={{fontSize: 15, fontWeight: 600, color: '#78350f'}}>{editId ? 'Edit' : 'Add'} Egg Report</div>
               <button
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setNotice(null);
+                  setShowForm(false);
+                }}
                 style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
               >
                 ×
@@ -417,6 +432,9 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
                 overflowY: 'auto',
               }}
             >
+              <div style={{gridColumn: '1/-1'}}>
+                <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+              </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={S.label}>Date *</label>
                 <input type="date" value={form.date} onChange={(e) => setForm((f) => ({...f, date: e.target.value}))} />
@@ -512,7 +530,13 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
                   Delete
                 </button>
               )}
-              <button onClick={() => setShowForm(false)} style={S.btnGhost}>
+              <button
+                onClick={() => {
+                  setNotice(null);
+                  setShowForm(false);
+                }}
+                style={S.btnGhost}
+              >
                 Cancel
               </button>
             </div>

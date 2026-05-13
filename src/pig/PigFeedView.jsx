@@ -54,6 +54,8 @@ import {usePig} from '../contexts/PigContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 
 export default function PigFeedView({
   Header,
@@ -442,6 +444,7 @@ export default function PigFeedView({
   // therefore reads from today's month, not from an editable date input.
   const [countLbsInput, setCountLbsInput] = React.useState(inv && inv.count != null ? String(inv.count) : '');
   const [countIncludesInput, setCountIncludesInput] = React.useState(!!(inv && inv.includesCurrentMonthDelivery));
+  const [countNotice, setCountNotice] = React.useState(null);
   const countMonthShort = (() => {
     const [y, m] = todayDate.split('-').map(Number);
     return new Date(y, m - 1, 1).toLocaleDateString('en-US', {month: 'short'});
@@ -608,9 +611,10 @@ export default function PigFeedView({
             <button
               onClick={() => {
                 if (!countLbsInput) {
-                  alert('Enter the lbs on hand.');
+                  setCountNotice({kind: 'error', message: 'Enter the lbs on hand.'});
                   return;
                 }
+                setCountNotice(null);
                 // Physical count is "what is on site right now" — always
                 // stamps today's date. No backdated bookkeeping.
                 savePigFeedCount(countLbsInput, todayDate, countIncludesInput);
@@ -632,6 +636,11 @@ export default function PigFeedView({
             </button>
             {inv && <div style={{fontSize: 10, color: '#9ca3af', alignSelf: 'center'}}>Last: {fmt(inv.date)}</div>}
           </div>
+          {countNotice && (
+            <div style={{marginTop: 10}}>
+              <InlineNotice notice={countNotice} onDismiss={() => setCountNotice(null)} />
+            </div>
+          )}
         </div>
 
         {/* Monthly cards: active first, then last saved, then older behind a collapse */}

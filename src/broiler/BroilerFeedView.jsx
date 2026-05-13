@@ -62,6 +62,8 @@ import {poultryDailyBurnLbs} from '../lib/feedPlanner.js';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {useLayer} from '../contexts/LayerContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 
 export default function BroilerFeedView({
   Header,
@@ -574,6 +576,7 @@ export default function BroilerFeedView({
   const countIncludesState = useState(false);
   const countIncludesInput = countIncludesState[0];
   const setCountIncludesInput = countIncludesState[1];
+  const [countNotice, setCountNotice] = useState(null);
   const countMonthShort = (() => {
     const [y, m] = todayDate.split('-').map(Number);
     return new Date(y, m - 1, 1).toLocaleDateString('en-US', {month: 'short'});
@@ -953,9 +956,10 @@ export default function BroilerFeedView({
             <button
               onClick={() => {
                 if (!countLbsInput) {
-                  alert('Enter the lbs on hand.');
+                  setCountNotice({kind: 'error', message: 'Enter the lbs on hand.'});
                   return;
                 }
+                setCountNotice(null);
                 // Physical count is "what is on site right now" — always
                 // stamps today's date. No backdating from the UI.
                 savePoultryFeedCount(countType, countLbsInput, todayDate, countIncludesInput);
@@ -982,6 +986,11 @@ export default function BroilerFeedView({
               </div>
             )}
           </div>
+          {countNotice && (
+            <div style={{marginTop: 10}}>
+              <InlineNotice notice={countNotice} onDismiss={() => setCountNotice(null)} />
+            </div>
+          )}
         </div>
 
         {/* Monthly cards: active first, then last-saved, then older behind a collapse */}

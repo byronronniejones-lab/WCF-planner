@@ -10,6 +10,8 @@ import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 
 // "nothing to report" sentinels — don't render these as a comment badge.
 // Public-webform placeholder now tells the team to enter "0"; this covers
@@ -35,6 +37,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const [editId, setEditId] = useState(null);
   const [editSource, setEditSource] = useState(null);
   const [form, setForm] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
   const [fFlock, setFFlock] = useState('');
   const [fTeam, setFTeam] = useState('');
@@ -121,6 +124,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   }, [hasMore, page]);
 
   function openEdit(d) {
+    setNotice(null);
     setForm({
       date: d.date || todayStr(),
       teamMember: d.team_member || '',
@@ -145,8 +149,9 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   }
 
   async function saveEdit() {
+    setNotice(null);
     if (!form.date || !form.teamMember || !form.flock) {
-      alert('Date, team member, and flock are required.');
+      setNotice({kind: 'error', message: 'Date, team member, and flock are required.'});
       return;
     }
     const feedsJ = (form.feeds || [])
@@ -192,7 +197,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
     };
     const {error} = await sb.from('sheep_dailys').update(rec).eq('id', editId);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     setRecords((p) => p.map((r) => (r.id === editId ? {...r, ...rec} : r)));
@@ -280,7 +285,10 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setNotice(null);
+                setShowAddModal(true);
+              }}
               style={{
                 padding: '8px 16px',
                 borderRadius: 8,
@@ -378,6 +386,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
           </div>
         </div>
 
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>}
         {!loading && filtered.length === 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>No records found</div>
@@ -583,6 +592,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
       {showForm && form && (
         <div
           onClick={() => {
+            setNotice(null);
             setShowForm(false);
             setEditId(null);
             setForm(null);
@@ -627,6 +637,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               </div>
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);
@@ -647,6 +658,9 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                 overflowY: 'auto',
               }}
             >
+              <div style={{gridColumn: '1/-1'}}>
+                <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+              </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={S.label}>Date *</label>
                 <input type="date" value={form.date} onChange={(e) => setForm({...form, date: e.target.value})} />
@@ -916,6 +930,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               )}
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);

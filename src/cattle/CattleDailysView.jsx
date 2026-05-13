@@ -5,6 +5,8 @@ import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
@@ -19,6 +21,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
   const [editId, setEditId] = useState(null);
   const [editSource, setEditSource] = useState(null);
   const [form, setForm] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
   const [fHerd, setFHerd] = useState('');
   const [fTeam, setFTeam] = useState('');
@@ -105,6 +108,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
   }, [hasMore, page]);
 
   function openEdit(d) {
+    setNotice(null);
     setForm({
       date: d.date || todayStr(),
       teamMember: d.team_member || '',
@@ -135,12 +139,13 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
   }
 
   async function saveEdit() {
+    setNotice(null);
     if (!form.date || !form.teamMember || !form.herd) {
-      alert('Date, team member, and herd are required.');
+      setNotice({kind: 'error', message: 'Date, team member, and herd are required.'});
       return;
     }
     if (parseInt(form.mortalityCount) > 0 && !(form.mortalityReason || '').trim()) {
-      alert('Mortality reason is required when mortalities are reported.');
+      setNotice({kind: 'error', message: 'Mortality reason is required when mortalities are reported.'});
       return;
     }
     // Build feeds/minerals jsonb with updated nutrition snapshots
@@ -185,7 +190,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
     };
     const {error} = await sb.from('cattle_dailys').update(rec).eq('id', editId);
     if (error) {
-      alert('Save failed: ' + error.message);
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return;
     }
     setRecords((p) => p.map((r) => (r.id === editId ? {...r, ...rec} : r)));
@@ -255,7 +260,10 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setNotice(null);
+                setShowAddModal(true);
+              }}
               style={{
                 padding: '8px 16px',
                 borderRadius: 8,
@@ -354,6 +362,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
           </div>
         </div>
 
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'\u2026'}</div>}
         {!loading && filtered.length === 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>No records found</div>
@@ -565,6 +574,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
       {showForm && form && (
         <div
           onClick={() => {
+            setNotice(null);
             setShowForm(false);
             setEditId(null);
             setForm(null);
@@ -609,6 +619,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
               </div>
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);
@@ -629,6 +640,9 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                 overflowY: 'auto',
               }}
             >
+              <div style={{gridColumn: '1/-1'}}>
+                <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+              </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={S.label}>Date *</label>
                 <input type="date" value={form.date} onChange={(e) => setForm({...form, date: e.target.value})} />
@@ -932,6 +946,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
               )}
               <button
                 onClick={() => {
+                  setNotice(null);
                   setShowForm(false);
                   setEditId(null);
                   setForm(null);

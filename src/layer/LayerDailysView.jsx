@@ -5,6 +5,8 @@ import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
 const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
@@ -37,6 +39,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
     comments: '',
   };
   const [form, setForm] = useState(EMPTY);
+  const [notice, setNotice] = useState(null);
 
   const PAGE = 1000;
   const [page, setPage] = useState(0);
@@ -90,6 +93,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
 
   const [editSource, setEditSource] = useState(null);
   function openEdit(d) {
+    setNotice(null);
     setForm({
       date: d.date || todayStr(),
       teamMember: d.team_member || '',
@@ -111,8 +115,9 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
   }
   const [showAddModal, setShowAddModal] = useState(false);
   async function save() {
+    setNotice(null);
     if (parseInt(form.mortalityCount) > 0 && !(form.mortalityReason || '').trim()) {
-      alert('Mortality reason is required when mortalities are reported.');
+      setNotice({kind: 'error', message: 'Mortality reason is required when mortalities are reported.'});
       return;
     }
     const rec = {
@@ -132,7 +137,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
     if (editId) {
       const {error} = await sb.from('layer_dailys').update(rec).eq('id', editId);
       if (error) {
-        alert('Save failed: ' + error.message);
+        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
         return;
       }
       setRecords((p) => p.map((r) => (r.id === editId ? {...r, ...rec} : r)));
@@ -143,19 +148,23 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
         const result = await setHousingAnchorFromReport(sb, rec.batch_label, lc, rec.date);
         if (!result || !result.ok) {
           if (result && result.reason === 'ambiguous-batch') {
-            alert(
-              'Hen count saved on the report, but the housing anchor was NOT updated.\n\nThe batch "' +
+            setNotice({
+              kind: 'warning',
+              message:
+                'Hen count saved on the report, but the housing anchor was NOT updated.\n\nThe batch "' +
                 result.batchName +
                 '" has multiple active housings (' +
                 result.housingNames.join(', ') +
                 '). Please go to Layers \u203a Housings and set the count manually on the correct housing.',
-            );
+            });
           } else if (result && result.reason === 'no-match') {
-            alert(
-              'Hen count saved on the report, but no matching housing was found for "' +
+            setNotice({
+              kind: 'warning',
+              message:
+                'Hen count saved on the report, but no matching housing was found for "' +
                 rec.batch_label +
                 '". Please update the housing count manually if needed.',
-            );
+            });
           }
         }
       }
@@ -169,7 +178,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
         .select()
         .single();
       if (error) {
-        alert('Save failed: ' + error.message);
+        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
         return;
       }
       if (data) {
@@ -181,19 +190,23 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
         const result = await setHousingAnchorFromReport(sb, rec.batch_label, lc, rec.date);
         if (!result || !result.ok) {
           if (result && result.reason === 'ambiguous-batch') {
-            alert(
-              'Hen count saved on the report, but the housing anchor was NOT updated.\n\nThe batch "' +
+            setNotice({
+              kind: 'warning',
+              message:
+                'Hen count saved on the report, but the housing anchor was NOT updated.\n\nThe batch "' +
                 result.batchName +
                 '" has multiple active housings (' +
                 result.housingNames.join(', ') +
                 '). Please go to Layers \u203a Housings and set the count manually on the correct housing.',
-            );
+            });
           } else if (result && result.reason === 'no-match') {
-            alert(
-              'Hen count saved on the report, but no matching housing was found for "' +
+            setNotice({
+              kind: 'warning',
+              message:
+                'Hen count saved on the report, but no matching housing was found for "' +
                 rec.batch_label +
                 '". Please update the housing count manually if needed.',
-            );
+            });
           }
         }
       }
@@ -258,7 +271,10 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setNotice(null);
+                setShowAddModal(true);
+              }}
               style={{
                 padding: '8px 16px',
                 borderRadius: 8,
@@ -349,6 +365,7 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
             })}
           </div>
         </div>
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading...</div>}
         {!loading && filtered.length === 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>No records found</div>
@@ -583,7 +600,10 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
       </div>
       {showForm && (
         <div
-          onClick={() => setShowForm(false)}
+          onClick={() => {
+            setNotice(null);
+            setShowForm(false);
+          }}
           style={{
             position: 'fixed',
             top: 0,
@@ -630,7 +650,10 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
                   : 'Add Layer Daily Report'}
               </div>
               <button
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setNotice(null);
+                  setShowForm(false);
+                }}
                 style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
               >
                 ×
@@ -647,6 +670,9 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
                 overflowY: 'auto',
               }}
             >
+              <div style={{gridColumn: '1/-1'}}>
+                <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+              </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={S.label}>Date *</label>
                 <input type="date" value={form.date} onChange={(e) => setForm((f) => ({...f, date: e.target.value}))} />
@@ -853,7 +879,13 @@ const LayerDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, 
                   Delete
                 </button>
               )}
-              <button onClick={() => setShowForm(false)} style={S.btnGhost}>
+              <button
+                onClick={() => {
+                  setNotice(null);
+                  setShowForm(false);
+                }}
+                style={S.btnGhost}
+              >
                 Cancel
               </button>
             </div>

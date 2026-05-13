@@ -5,6 +5,8 @@ import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 const PigDailysView = ({
   sb,
   fmt,
@@ -45,6 +47,7 @@ const PigDailysView = ({
     issues: '',
   };
   const [form, setForm] = useState(EMPTY);
+  const [notice, setNotice] = useState(null);
 
   const fromRecords = [...new Set(pigDailys.map((d) => d.batch_label).filter(Boolean))].sort();
   const groupList = [
@@ -71,6 +74,7 @@ const PigDailysView = ({
 
   const [editSource, setEditSource] = useState(null);
   function openEdit(d) {
+    setNotice(null);
     setForm({
       date: d.date || todayStr(),
       teamMember: d.team_member || '',
@@ -92,6 +96,7 @@ const PigDailysView = ({
   }
   const [showAddModal, setShowAddModal] = useState(false);
   function save() {
+    setNotice(null);
     const matchedGroup = feederGroups.find((g) => g.batchName === form.batchLabel);
     const matchedSub = feederGroups
       .flatMap((g) => (g.subBatches || []).map((s) => ({...s, parentId: g.id})))
@@ -122,7 +127,7 @@ const PigDailysView = ({
         .eq('id', editId)
         .then(({error}) => {
           if (error) {
-            alert('Save failed: ' + error.message);
+            setNotice({kind: 'error', message: 'Save failed: ' + error.message});
             return;
           }
           refreshDailys && refreshDailys('pig');
@@ -137,7 +142,7 @@ const PigDailysView = ({
         .single()
         .then(({data, error}) => {
           if (error) {
-            alert('Save failed: ' + error.message);
+            setNotice({kind: 'error', message: 'Save failed: ' + error.message});
           } else if (data) {
             setPigDailys((p) => [data, ...p]);
             refreshDailys && refreshDailys('pig');
@@ -204,7 +209,10 @@ const PigDailysView = ({
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setNotice(null);
+                setShowAddModal(true);
+              }}
               style={{
                 padding: '8px 16px',
                 borderRadius: 8,
@@ -295,6 +303,7 @@ const PigDailysView = ({
             })}
           </div>
         </div>
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         {pigDailys.length === 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
             No pig daily reports yet
@@ -493,7 +502,10 @@ const PigDailysView = ({
       </div>
       {showForm && (
         <div
-          onClick={() => setShowForm(false)}
+          onClick={() => {
+            setNotice(null);
+            setShowForm(false);
+          }}
           style={{
             position: 'fixed',
             top: 0,
@@ -540,7 +552,10 @@ const PigDailysView = ({
                   : 'Add Pig Daily Report'}
               </div>
               <button
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setNotice(null);
+                  setShowForm(false);
+                }}
                 style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
               >
                 ×
@@ -557,6 +572,9 @@ const PigDailysView = ({
                 overflowY: 'auto',
               }}
             >
+              <div style={{gridColumn: '1/-1'}}>
+                <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+              </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={S.label}>Date *</label>
                 <input type="date" value={form.date} onChange={(e) => setForm((f) => ({...f, date: e.target.value}))} />
@@ -683,7 +701,13 @@ const PigDailysView = ({
                   Delete
                 </button>
               )}
-              <button onClick={() => setShowForm(false)} style={S.btnGhost}>
+              <button
+                onClick={() => {
+                  setNotice(null);
+                  setShowForm(false);
+                }}
+                style={S.btnGhost}
+              >
                 Cancel
               </button>
             </div>
