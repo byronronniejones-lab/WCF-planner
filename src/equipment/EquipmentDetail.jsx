@@ -15,6 +15,8 @@ import {
   daysSince,
   stripPodioHtml,
 } from '../lib/equipment.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import EquipmentMeterStatusPanel from './EquipmentMeterStatusPanel.jsx';
 import EquipmentMaintenanceModal from './EquipmentMaintenanceModal.jsx';
 import ManualsCard from './ManualsCard.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -392,6 +394,15 @@ export default function EquipmentDetail({
       {/* Manuals & Videos — shown to everyone (including equipment_tech). */}
       <ManualsCard equipment={eq} />
 
+      {/* Meter Status — explains the relationship between equipment.current_*
+          and the fuel-log history. The Sync button writes current_hours /
+          current_km from the max of remaining fuelings via
+          currentReadingFromFuelings, scoped to this eq.id only. Admin-only
+          via the equipment_tech guard on the parent page. */}
+      {!isEquipmentTech && (
+        <EquipmentMeterStatusPanel equipment={eq} fuelings={sortedFuelings} fmt={fmt} onReload={onReload} />
+      )}
+
       {/* Specs & Fluids moved to /admin → Equipment modal (admin-only).
           This page is a read view of the piece itself. */}
 
@@ -428,6 +439,7 @@ export default function EquipmentDetail({
                 return (
                   <div
                     key={iv.kind + '-' + iv.hours_or_km}
+                    data-interval-tile={iv.kind + '-' + iv.hours_or_km}
                     style={{
                       background: bg,
                       border: '1px solid ' + bd,
@@ -436,7 +448,24 @@ export default function EquipmentDetail({
                       fontSize: 11,
                     }}
                   >
-                    <div style={{fontWeight: 700, color: color, fontSize: 12}}>{iv.label}</div>
+                    <div style={{display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6}}>
+                      <div style={{fontWeight: 700, color: color, fontSize: 12}}>{iv.label}</div>
+                      <div
+                        data-interval-size="1"
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: color,
+                          letterSpacing: 0.3,
+                          textTransform: 'uppercase',
+                          opacity: 0.85,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Every {iv.hours_or_km.toLocaleString()}
+                        {unitChar}
+                      </div>
+                    </div>
                     <div style={{color: '#6b7280', marginTop: 2}}>
                       Next at{' '}
                       <strong>
@@ -449,6 +478,23 @@ export default function EquipmentDetail({
                         {iv.overdue
                           ? 'OVERDUE by ' + Math.abs(iv.until_due) + unitChar
                           : iv.until_due + unitChar + ' away'}
+                      </div>
+                    )}
+                    {/* Why-due math line — explicit "current X → next at Y"
+                        readout so the operator can verify the status without
+                        cross-referencing the header tile. */}
+                    {reading != null && (
+                      <div data-interval-math="1" style={{color: '#6b7280', marginTop: 2, fontSize: 10}}>
+                        Current{' '}
+                        <strong>
+                          {Math.round(reading).toLocaleString()}
+                          {unitChar}
+                        </strong>{' '}
+                        {iv.overdue ? '>' : '→'} next at{' '}
+                        <strong>
+                          {iv.next_due.toLocaleString()}
+                          {unitChar}
+                        </strong>
                       </div>
                     )}
                     {lastRaw != null && (

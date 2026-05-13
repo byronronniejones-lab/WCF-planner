@@ -48,8 +48,12 @@ export default function EquipmentHome({
   // not maintenance events or admin surfaces (gated inside EquipmentDetail).
   const isEquipmentTech = authState?.role === 'equipment_tech';
 
-  async function loadAll() {
-    setLoading(true);
+  // `quiet:true` skips the loading=true flip so callers that reload after a
+  // user action (e.g. the meter-status Sync button) can preserve their own
+  // inline notice — otherwise the detail page unmounts under the loading
+  // spinner and any "Synced" banner disappears before it can be read.
+  async function loadAll({quiet = false} = {}) {
+    if (!quiet) setLoading(true);
     const [eR, fR, mR] = await Promise.all([
       sb.from('equipment').select('*').order('name'),
       sb.from('equipment_fuelings').select('*').order('date', {ascending: false}).limit(5000),
