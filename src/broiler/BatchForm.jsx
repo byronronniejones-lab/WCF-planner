@@ -63,10 +63,11 @@ export default function BatchForm({
     setParsedProcessor,
     docUploading,
     setDocUploading,
+    formNotice,
+    setFormNotice,
   } = useBatches();
   const {broilerDailys} = useDailysRecent();
   const {feedCosts} = useFeedCosts();
-  const [uploadNotice, setUploadNotice] = React.useState(null);
 
   // Derived values (were at App scope; only this component consumed them).
   const tl = calcTimeline(form.hatchDate, form.breed, form.processingDate);
@@ -1080,7 +1081,7 @@ export default function BatchForm({
                   </div>
                 )}
 
-                <InlineNotice notice={uploadNotice} onDismiss={() => setUploadNotice(null)} />
+                <InlineNotice notice={formNotice} onDismiss={() => setFormNotice(null)} />
 
                 {/* Drop zone */}
                 <label
@@ -1097,10 +1098,10 @@ export default function BatchForm({
                     e.preventDefault();
                     e.currentTarget.style.background = '#f8fafc';
                     e.currentTarget.style.borderColor = '#d1d5db';
-                    setUploadNotice(null);
+                    setFormNotice(null);
                     const files = Array.from(e.dataTransfer.files).filter((f) => /\.(pdf|xlsx|xls|csv)$/i.test(f.name));
                     if (!files.length) {
-                      setUploadNotice({kind: 'error', message: 'Only PDF, Excel, and CSV files are supported.'});
+                      setFormNotice({kind: 'error', message: 'Only PDF, Excel, and CSV files are supported.'});
                       return;
                     }
                     setDocUploading(true);
@@ -1137,7 +1138,7 @@ export default function BatchForm({
                       }
                     }
                     setDocUploading(false);
-                    if (errors.length) setUploadNotice({kind: 'error', message: errors.join('\n')});
+                    if (errors.length) setFormNotice({kind: 'error', message: errors.join('\n')});
                   }}
                   style={{
                     display: 'flex',
@@ -1170,7 +1171,7 @@ export default function BatchForm({
                     onChange={async (e) => {
                       const files = Array.from(e.target.files || []);
                       if (!files.length) return;
-                      setUploadNotice(null);
+                      setFormNotice(null);
                       setDocUploading(true);
                       const errors = [];
                       for (const file of files) {
@@ -1210,7 +1211,7 @@ export default function BatchForm({
                       }
                       setDocUploading(false);
                       e.target.value = '';
-                      if (errors.length) setUploadNotice({kind: 'error', message: errors.join('\n')});
+                      if (errors.length) setFormNotice({kind: 'error', message: errors.join('\n')});
                     }}
                   />
                 </label>

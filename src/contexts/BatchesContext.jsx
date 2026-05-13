@@ -38,6 +38,10 @@ export function BatchesProvider({children, formInit}) {
   const [parsedProcessor, setParsedProcessor] = useState(null);
   const [docUploading, setDocUploading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  // Inline notice surfaced inside the broiler add/edit modal. Shared so
+  // BatchForm helpers in main.jsx (parseProcessorXlsx + submit) can write
+  // through the same banner the BatchForm UI renders.
+  const [formNotice, setFormNotice] = useState(null);
 
   const value = {
     batches,
@@ -64,6 +68,8 @@ export function BatchesProvider({children, formInit}) {
     setDocUploading,
     deleteConfirm,
     setDeleteConfirm,
+    formNotice,
+    setFormNotice,
   };
   return <BatchesContext.Provider value={value}>{children}</BatchesContext.Provider>;
 }

@@ -1107,6 +1107,7 @@ function App() {
     setDocUploading,
     deleteConfirm,
     setDeleteConfirm,
+    setFormNotice,
   } = useBatches();
 
   // Phase 2.0.3: pig-scoped hooks live in PigContext.
@@ -2680,6 +2681,7 @@ function App() {
   }
 
   function openAdd() {
+    setFormNotice(null);
     setForm(EMPTY_FORM);
     setEditId(null);
     setConflicts([]);
@@ -2813,6 +2815,7 @@ function App() {
       console.warn('detectConflicts failed on openEdit:', e);
       setConflicts([]);
     }
+    setFormNotice(null);
     setOverride(false);
     setShowForm(true);
   }
@@ -2824,7 +2827,10 @@ function App() {
         try {
           await window._wcfLoadXLSX();
         } catch (e) {
-          alert('Could not load Excel parser. Check your internet connection and try again.');
+          setFormNotice({
+            kind: 'error',
+            message: 'Could not load Excel parser. Check your internet connection and try again.',
+          });
           return;
         }
       }
@@ -2953,15 +2959,20 @@ function App() {
       if (parsed && Object.keys(parsed).length > 1) {
         setParsedProcessor(parsed);
       } else {
-        alert(
-          "Couldn't find processor data in " +
+        // Parser couldn't find a recognized layout, but the upload still
+        // proceeds and the file lands as a normal attachment — warning,
+        // not error.
+        setFormNotice({
+          kind: 'warning',
+          message:
+            "Couldn't find processor data in " +
             file.name +
             '.\n\nThe parser looks for either:\n  • A raw per-package sheet with "Description" and "Weight" columns (Sonny\'s standard format), or\n  • A pivot summary with "Row Labels" / "Total Weight" / "Average Weight" columns.\n\nThe file was uploaded as an attachment.',
-        );
+        });
       }
     } catch (e) {
       console.warn('Processor parse error:', e);
-      alert('Excel parse error: ' + (e.message || 'Unknown error'));
+      setFormNotice({kind: 'error', message: 'Excel parse error: ' + (e.message || 'Unknown error')});
     }
   }
 
@@ -2986,6 +2997,7 @@ function App() {
 
   function closeForm() {
     clearTimeout(autoSaveTimer.current);
+    setFormNotice(null);
     if (editId && originalForm) {
       const keys = [
         'name',
@@ -3027,14 +3039,18 @@ function App() {
   }
 
   function submit(force) {
+    setFormNotice(null);
     if (!form.name.trim()) {
-      alert('Please enter a batch name.');
+      setFormNotice({kind: 'error', message: 'Please enter a batch name.'});
       return;
     }
     // Block on hard conflicts unless force=true. Soft (layer) conflicts always pass.
     const hardConflicts = (conflicts || []).filter((c) => !c.soft);
     if (hardConflicts.length > 0 && !force) {
-      alert('There are scheduling conflicts. Use the Override & Save Anyway button if you really want to save.');
+      setFormNotice({
+        kind: 'error',
+        message: 'There are scheduling conflicts. Use the Override & Save Anyway button if you really want to save.',
+      });
       return;
     }
     const tl = calcTimeline(form.hatchDate, form.breed, form.processingDate);
