@@ -18,6 +18,8 @@ import React from 'react';
 import SheepNewWeighInModal from './SheepNewWeighInModal.jsx';
 import SheepSendToProcessorModal from './SheepSendToProcessorModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadSheepWeighInsCached, invalidateSheepWeighInsCache} from '../lib/sheepCache.js';
 import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -51,6 +53,10 @@ const SheepWeighInsView = ({
   const [addEntryForm, setAddEntryForm] = useState({tag: '', weight: '', note: '', priorTag: ''});
   // Send-to-processor modal state.
   const [sessionForModal, setSessionForModal] = useState(null);
+  // Inline notice for tag-swap / detach / save failures on this view.
+  // Cleared on each entry-edit, add-entry, or send-to-processor toggle so
+  // a stale message from a prior row doesn't shadow the next action.
+  const [notice, setNotice] = useState(null);
 
   const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
 
@@ -190,6 +196,7 @@ const SheepWeighInsView = ({
     // Clearing the flag on an already-attached entry: detach first via the
     // prior_herd_or_flock fallback hierarchy. If detach blocks, surface the
     // reason and abort the toggle so the UI doesn't show a stale state.
+    setNotice(null);
     if (!next && e.target_processing_batch_id) {
       const sh = e.tag ? sheep.find((x) => x.tag === e.tag) : null;
       if (sh) {
@@ -197,21 +204,23 @@ const SheepWeighInsView = ({
           teamMember: authState && authState.name ? authState.name : null,
         });
         if (!r.ok && r.reason !== 'not_in_batch') {
-          alert(
-            'Cannot clear flag for #' +
+          setNotice({
+            kind: 'error',
+            message:
+              'Cannot clear flag for #' +
               (e.tag || '?') +
               ': ' +
               (r.reason === 'no_prior_flock'
                 ? 'no prior flock recorded for this sheep + batch. Manually move via the Flocks tab if needed.'
                 : r.reason + (r.error ? ' — ' + r.error : '')),
-          );
+          });
           return;
         }
       }
     }
     const {error} = await sb.from('weigh_ins').update({send_to_processor: !!next}).eq('id', e.id);
     if (error) {
-      alert('Could not update: ' + error.message);
+      setNotice({kind: 'error', message: 'Could not update: ' + error.message});
       return;
     }
     invalidateSheepWeighInsCache();
@@ -292,6 +301,7 @@ const SheepWeighInsView = ({
     return byWeighIn || null;
   }
   async function addEntryToSession(s) {
+    setNotice(null);
     const tag = (addEntryForm.tag || '').trim() || null;
     const weight = parseFloat(addEntryForm.weight);
     if (!Number.isFinite(weight) || weight <= 0) return;
@@ -300,21 +310,21 @@ const SheepWeighInsView = ({
     // her old_tags. Mirrors webform retag mode.
     if (priorTag) {
       if (!tag) {
-        alert('Enter a New tag # for the swap.');
+        setNotice({kind: 'error', message: 'Enter a New tag # for the swap.'});
         return;
       }
       if (priorTag === tag) {
-        alert('Prior tag and new tag cannot be the same.');
+        setNotice({kind: 'error', message: 'Prior tag and new tag cannot be the same.'});
         return;
       }
       const existingAtNewTag = sheep.find((x) => x.tag === tag);
       if (existingAtNewTag) {
-        alert('Tag #' + tag + ' is already assigned to another sheep.');
+        setNotice({kind: 'error', message: 'Tag #' + tag + ' is already assigned to another sheep.'});
         return;
       }
       const sh = findSheepByPriorTagAdmin(priorTag);
       if (!sh) {
-        alert('No sheep found with prior tag #' + priorTag + '.');
+        setNotice({kind: 'error', message: 'No sheep found with prior tag #' + priorTag + '.'});
         return;
       }
       const updatedOldTags = (Array.isArray(sh.old_tags) ? sh.old_tags : []).concat([
@@ -322,7 +332,7 @@ const SheepWeighInsView = ({
       ]);
       const sUpd = await sb.from('sheep').update({tag, old_tags: updatedOldTags}).eq('id', sh.id);
       if (sUpd.error) {
-        alert('Tag swap failed: ' + sUpd.error.message);
+        setNotice({kind: 'error', message: 'Tag swap failed: ' + sUpd.error.message});
         return;
       }
       const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
@@ -444,6 +454,7 @@ const SheepWeighInsView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
+        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         <div
           style={{
             display: 'flex',

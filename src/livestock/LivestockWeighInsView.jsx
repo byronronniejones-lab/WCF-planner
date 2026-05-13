@@ -9,6 +9,8 @@ import React from 'react';
 import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
 import {writeBroilerBatchAvg, recomputeBroilerBatchWeekAvg} from '../lib/broiler.js';
 import {loadRoster, activeNames as rosterActiveNames} from '../lib/teamMembers.js';
@@ -91,6 +93,10 @@ const LivestockWeighInsView = ({
   const [transferModal, setTransferModal] = useState(null); // {session, entry}
   const [transferForm, setTransferForm] = useState({tag: '', group: '1', sex: 'Gilt', birthDate: ''});
   const [transferBusy, setTransferBusy] = useState(false);
+  // Inline notice shared between the transfer-to-breeding modal and the
+  // list-level undo-transfer button. Cleared on modal open/close so a
+  // prior session's error doesn't shadow the new flow.
+  const [transferNotice, setTransferNotice] = useState(null);
 
   const speciesLabel = species === 'broiler' ? 'Broiler' : 'Pig';
 
@@ -468,6 +474,7 @@ const LivestockWeighInsView = ({
     return 3.5;
   }
   function openTransferModal(session, entry) {
+    setTransferNotice(null);
     setTransferModal({session, entry});
     // Default birth date from session date minus 6 months (rough feeder pig
     // age at processing-weight). Admin can adjust.
@@ -485,12 +492,13 @@ const LivestockWeighInsView = ({
     if (!transferModal) return;
     const {session, entry} = transferModal;
     const tag = (transferForm.tag || '').trim();
+    setTransferNotice(null);
     if (!tag) {
-      alert('Tag # is required.');
+      setTransferNotice({kind: 'error', message: 'Tag # is required.'});
       return;
     }
     if (!transferForm.group) {
-      alert('Pick a group.');
+      setTransferNotice({kind: 'error', message: 'Pick a group.'});
       return;
     }
     setTransferBusy(true);
@@ -498,7 +506,7 @@ const LivestockWeighInsView = ({
       // Resolve batch + sub from session.batch_id.
       const {parent, sub} = resolveBatchAndSub(session.batch_id);
       if (!parent) {
-        alert('Could not match this session to a feeder batch.');
+        setTransferNotice({kind: 'error', message: 'Could not match this session to a feeder batch.'});
         setTransferBusy(false);
         return;
       }
@@ -536,7 +544,7 @@ const LivestockWeighInsView = ({
       // Read current breeders, append, write back.
       const brR = await sb.from('app_store').select('data').eq('key', 'ppp-breeders-v1').maybeSingle();
       if (brR.error) {
-        alert('Could not read breeders registry: ' + brR.error.message);
+        setTransferNotice({kind: 'error', message: 'Could not read breeders registry: ' + brR.error.message});
         setTransferBusy(false);
         return;
       }
@@ -544,7 +552,10 @@ const LivestockWeighInsView = ({
       // Idempotency: skip if a breeder is already linked to this weigh-in id.
       // (Guards against double-clicks before the modal closes.)
       if (currentBreeders.some((b) => b.transferredFromBatch && b.transferredFromBatch.sourceWeighInId === entry.id)) {
-        alert('This weigh-in entry has already been transferred to breeding. No new breeder created.');
+        setTransferNotice({
+          kind: 'warning',
+          message: 'This weigh-in entry has already been transferred to breeding. No new breeder created.',
+        });
         setTransferModal(null);
         setTransferBusy(false);
         await loadAll();
@@ -553,7 +564,7 @@ const LivestockWeighInsView = ({
       const newBreeders = [...currentBreeders, breederRec];
       const brW = await sb.from('app_store').upsert({key: 'ppp-breeders-v1', data: newBreeders}, {onConflict: 'key'});
       if (brW.error) {
-        alert('Could not save new breeder: ' + brW.error.message);
+        setTransferNotice({kind: 'error', message: 'Could not save new breeder: ' + brW.error.message});
         setTransferBusy(false);
         return;
       }
@@ -574,7 +585,7 @@ const LivestockWeighInsView = ({
         .from('app_store')
         .upsert({key: 'ppp-feeders-v1', data: updatedFeederGroups}, {onConflict: 'key'});
       if (fW.error) {
-        alert('Could not update feeder batch counts: ' + fW.error.message);
+        setTransferNotice({kind: 'error', message: 'Could not update feeder batch counts: ' + fW.error.message});
         setTransferBusy(false);
         return;
       }
@@ -601,18 +612,22 @@ const LivestockWeighInsView = ({
           (entry.note || '');
         const wi2 = await sb.from('weigh_ins').update({note: noteFallback}).eq('id', entry.id);
         if (wi2.error) {
-          alert(
-            'Transfer mostly succeeded — breeder #' +
+          setTransferNotice({
+            kind: 'warning',
+            message:
+              'Transfer mostly succeeded — breeder #' +
               tag +
               ' was created and counts updated, but the weigh-in row could not be stamped: ' +
               wi.error.message +
               ' / ' +
               wi2.error.message,
-          );
+          });
         } else {
-          alert(
-            'Transfer succeeded — note: weigh_ins schema is missing transferred_to_breeding columns, fell back to a note marker. Run the migration to enable the badge.',
-          );
+          setTransferNotice({
+            kind: 'warning',
+            message:
+              'Transfer succeeded — note: weigh_ins schema is missing transferred_to_breeding columns, fell back to a note marker. Run the migration to enable the badge.',
+          });
         }
       }
 
@@ -620,7 +635,7 @@ const LivestockWeighInsView = ({
       setTransferBusy(false);
       await loadAll();
     } catch (e) {
-      alert('Transfer failed: ' + (e.message || 'unknown error'));
+      setTransferNotice({kind: 'error', message: 'Transfer failed: ' + (e.message || 'unknown error')});
       setTransferBusy(false);
     }
   }
@@ -813,6 +828,7 @@ const LivestockWeighInsView = ({
   // the legacy [transferred_to_breeding ...] note marker if present.
   async function undoTransferToBreeding(session, entry) {
     if (!entry) return;
+    setTransferNotice(null);
     if (!window._wcfConfirmDelete) {
       /* no-op: confirm helper missing */
     }
@@ -822,7 +838,7 @@ const LivestockWeighInsView = ({
     if (!Number.isFinite(feedAlloc) || feedAlloc <= 0) feedAlloc = noteMarker ? parseFloat(noteMarker[2]) : 0;
     if (!Number.isFinite(feedAlloc)) feedAlloc = 0;
     if (!entry.transferred_to_breeding && !noteMarker) {
-      alert("This entry doesn't appear to be transferred — nothing to undo.");
+      setTransferNotice({kind: 'warning', message: "This entry doesn't appear to be transferred — nothing to undo."});
       return;
     }
     // 1. Drop the breeder if still present.
@@ -882,6 +898,7 @@ const LivestockWeighInsView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
+        {!transferModal && <InlineNotice notice={transferNotice} onDismiss={() => setTransferNotice(null)} />}
         <div
           style={{
             display: 'flex',
@@ -2059,7 +2076,11 @@ const LivestockWeighInsView = ({
           const previewAlloc = Math.round(weight * fcr * 10) / 10;
           return (
             <div
-              onClick={() => !transferBusy && setTransferModal(null)}
+              onClick={() => {
+                if (transferBusy) return;
+                setTransferNotice(null);
+                setTransferModal(null);
+              }}
               style={{
                 position: 'fixed',
                 top: 0,
@@ -2095,7 +2116,10 @@ const LivestockWeighInsView = ({
                 >
                   <div style={{fontSize: 15, fontWeight: 600, color: '#5b21b6'}}>{'→ Transfer to Breeding'}</div>
                   <button
-                    onClick={() => setTransferModal(null)}
+                    onClick={() => {
+                      setTransferNotice(null);
+                      setTransferModal(null);
+                    }}
                     disabled={transferBusy}
                     style={{
                       background: 'none',
@@ -2110,6 +2134,7 @@ const LivestockWeighInsView = ({
                   </button>
                 </div>
                 <div style={{padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12}}>
+                  <InlineNotice notice={transferNotice} onDismiss={() => setTransferNotice(null)} />
                   <div style={{fontSize: 12, color: '#6b7280'}}>
                     From <strong>{(parent && parent.batchName) || session.batch_id}</strong>
                     {sub && (
@@ -2246,7 +2271,10 @@ const LivestockWeighInsView = ({
                   }}
                 >
                   <button
-                    onClick={() => setTransferModal(null)}
+                    onClick={() => {
+                      setTransferNotice(null);
+                      setTransferModal(null);
+                    }}
                     disabled={transferBusy}
                     style={{
                       padding: '8px 14px',

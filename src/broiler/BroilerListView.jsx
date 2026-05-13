@@ -21,6 +21,8 @@ import {
   isNearHoliday,
 } from '../lib/broiler.js';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
@@ -46,6 +48,7 @@ export default function BroilerListView({
   const role = authState?.role;
   const isAdmin = role === 'admin';
   const isMgmt = role === 'management' || role === 'admin';
+  const [listNotice, setListNotice] = React.useState(null);
 
   return (
     <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -80,6 +83,7 @@ export default function BroilerListView({
             + Add Batch
           </button>
         </div>
+        <InlineNotice notice={listNotice} onDismiss={() => setListNotice(null)} />
         <div style={{...S.card, overflowX: 'auto'}}>
           <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900}}>
             <thead>
@@ -299,8 +303,12 @@ export default function BroilerListView({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (canDeleteAnything(authState?.role)) del(b.id);
-                              else alert('Only admins can delete batches.');
+                              if (canDeleteAnything(authState?.role)) {
+                                setListNotice(null);
+                                del(b.id);
+                              } else {
+                                setListNotice({kind: 'error', message: 'Only admins can delete batches.'});
+                              }
                             }}
                             style={{
                               fontSize: 11,

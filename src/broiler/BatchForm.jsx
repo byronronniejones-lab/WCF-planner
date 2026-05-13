@@ -30,6 +30,8 @@ import {
   calcBroilerStatsFromDailys,
 } from '../lib/broiler.js';
 import UsersModal from '../auth/UsersModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
@@ -64,6 +66,7 @@ export default function BatchForm({
   } = useBatches();
   const {broilerDailys} = useDailysRecent();
   const {feedCosts} = useFeedCosts();
+  const [uploadNotice, setUploadNotice] = React.useState(null);
 
   // Derived values (were at App scope; only this component consumed them).
   const tl = calcTimeline(form.hatchDate, form.breed, form.processingDate);
@@ -1077,6 +1080,8 @@ export default function BatchForm({
                   </div>
                 )}
 
+                <InlineNotice notice={uploadNotice} onDismiss={() => setUploadNotice(null)} />
+
                 {/* Drop zone */}
                 <label
                   onDragOver={(e) => {
@@ -1092,15 +1097,17 @@ export default function BatchForm({
                     e.preventDefault();
                     e.currentTarget.style.background = '#f8fafc';
                     e.currentTarget.style.borderColor = '#d1d5db';
+                    setUploadNotice(null);
                     const files = Array.from(e.dataTransfer.files).filter((f) => /\.(pdf|xlsx|xls|csv)$/i.test(f.name));
                     if (!files.length) {
-                      alert('Only PDF, Excel, and CSV files are supported.');
+                      setUploadNotice({kind: 'error', message: 'Only PDF, Excel, and CSV files are supported.'});
                       return;
                     }
                     setDocUploading(true);
+                    const errors = [];
                     for (const file of files) {
                       if (file.size > 20 * 1024 * 1024) {
-                        alert(file.name + ' is over 20 MB and was skipped.');
+                        errors.push(file.name + ' is over 20 MB and was skipped.');
                         continue;
                       }
                       if (/\.xlsx?$/i.test(file.name)) await parseProcessorXlsx(file);
@@ -1126,10 +1133,11 @@ export default function BatchForm({
                           return {...f, documents: newDocs};
                         });
                       } catch (err) {
-                        alert('Upload failed for ' + file.name + ': ' + (err.message || 'Unknown error'));
+                        errors.push('Upload failed for ' + file.name + ': ' + (err.message || 'Unknown error'));
                       }
                     }
                     setDocUploading(false);
+                    if (errors.length) setUploadNotice({kind: 'error', message: errors.join('\n')});
                   }}
                   style={{
                     display: 'flex',
@@ -1162,14 +1170,16 @@ export default function BatchForm({
                     onChange={async (e) => {
                       const files = Array.from(e.target.files || []);
                       if (!files.length) return;
+                      setUploadNotice(null);
                       setDocUploading(true);
+                      const errors = [];
                       for (const file of files) {
                         if (!/\.(pdf|xlsx|xls|csv)$/i.test(file.name)) {
-                          alert(file.name + ' is not a supported file type and was skipped.');
+                          errors.push(file.name + ' is not a supported file type and was skipped.');
                           continue;
                         }
                         if (file.size > 20 * 1024 * 1024) {
-                          alert(file.name + ' is over 20 MB and was skipped.');
+                          errors.push(file.name + ' is over 20 MB and was skipped.');
                           continue;
                         }
                         if (/\.xlsx?$/i.test(file.name)) await parseProcessorXlsx(file);
@@ -1195,11 +1205,12 @@ export default function BatchForm({
                             return {...f, documents: newDocs};
                           });
                         } catch (err) {
-                          alert('Upload failed for ' + file.name + ': ' + (err.message || 'Unknown error'));
+                          errors.push('Upload failed for ' + file.name + ': ' + (err.message || 'Unknown error'));
                         }
                       }
                       setDocUploading(false);
                       e.target.value = '';
+                      if (errors.length) setUploadNotice({kind: 'error', message: errors.join('\n')});
                     }}
                   />
                 </label>
