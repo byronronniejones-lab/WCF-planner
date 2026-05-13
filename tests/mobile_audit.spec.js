@@ -20,6 +20,9 @@ import {test, expect} from './fixtures.js';
 
 const MOBILE_PORTRAIT = {width: 390, height: 844};
 const MOBILE_LARGE = {width: 430, height: 932};
+// Tightest practical phone width — iPhone SE 1st gen / many Android budget
+// devices. Catches collisions that 390 hides because of an extra 30px.
+const MOBILE_TIGHT = {width: 360, height: 780};
 
 const AUTH_ROUTES = [
   {path: '/', slug: 'home'},
@@ -173,8 +176,11 @@ function runAuditSuite(routes, isAuth, viewport, sizeLabel, strict) {
   });
 }
 
-// Hard overflow check at 390 (strict) and 430 (loose) for screenshots.
+// Hard overflow + element-escape check at 390 + 360 (tightest practical
+// phone). 430 just captures screenshots for the larger-phone comparison.
 runAuditSuite(AUTH_ROUTES, true, MOBILE_PORTRAIT, '390x844', true);
 runAuditSuite(PUBLIC_ROUTES, false, MOBILE_PORTRAIT, '390x844', true);
+runAuditSuite(AUTH_ROUTES, true, MOBILE_TIGHT, '360x780', true);
+runAuditSuite(PUBLIC_ROUTES, false, MOBILE_TIGHT, '360x780', true);
 runAuditSuite(AUTH_ROUTES, true, MOBILE_LARGE, '430x932', false);
 runAuditSuite(PUBLIC_ROUTES, false, MOBILE_LARGE, '430x932', false);
