@@ -471,7 +471,15 @@ serve(async (req) => {
       }
 
       const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const tempPw = `wcf_${crypto.randomUUID()}_${crypto.randomUUID()}`;
+      // bcrypt has a hard 72-byte input limit and GoTrue's bcrypt call
+      // PANICS rather than truncates when exceeded — surfacing as a
+      // generic 500 "Internal Server Error" with no actionable message.
+      // The previous `wcf_<uuid>_<uuid>` shape was 77 bytes and broke
+      // every user_create attempt since rapid-processor c4c6e9d landed.
+      // One UUIDv4 = ~122 bits of entropy, which is far above any
+      // reasonable brute-force threshold for a throwaway password the
+      // user resets on first login via the recovery link below.
+      const tempPw = `wcf_${crypto.randomUUID()}`;
 
       // Step 1: createUser. Failure here is the cleanest case — no
       // mutation happened, so the admin can fix inputs and retry.

@@ -128,6 +128,39 @@ describe('rapid-processor user_create — per-step error labeling', () => {
   it('input validation still labeled with step="input"', () => {
     expect(userCreateBlock).toMatch(/email required[\s\S]{0,80}step:\s*'input'/);
   });
+
+  // ────────────────────────────────────────────────────────────────────
+  // Regression lock: GoTrue's bcrypt has a hard 72-byte input limit and
+  // PANICS rather than truncates when exceeded. The original
+  // `wcf_${uuid}_${uuid}` shape was 4 + 36 + 1 + 36 = 77 bytes and
+  // every user_create attempt failed with "500: Internal Server Error".
+  // Lock the template so any future "make passwords stronger" edit that
+  // adds a second UUID (or any other concatenation that pushes the
+  // worst-case length over 72) trips this test.
+  // ────────────────────────────────────────────────────────────────────
+
+  it('tempPw template fits inside bcrypt 72-byte limit (worst-case)', () => {
+    const m = userCreateBlock.match(/const tempPw = `([^`]+)`/);
+    expect(m, 'expected const tempPw = `...` template literal').not.toBeNull();
+    const template = m[1];
+    // Replace every ${...} placeholder with its worst-case byte length:
+    //   crypto.randomUUID() → 36 bytes (UUIDv4 canonical form)
+    //   any other interpolation we don't recognize → fail loudly so a
+    //   future edit can't silently add a long substitution.
+    const placeholders = [...template.matchAll(/\$\{([^}]+)\}/g)];
+    for (const p of placeholders) {
+      expect(p[1].trim(), `unknown tempPw interpolation: ${p[1]}`).toBe('crypto.randomUUID()');
+    }
+    const literalBytes = template.replace(/\$\{[^}]+\}/g, '').length;
+    const worstCaseBytes = literalBytes + placeholders.length * 36;
+    expect(worstCaseBytes).toBeLessThanOrEqual(72);
+  });
+
+  it('tempPw uses exactly one randomUUID (lock against the 77-byte two-UUID regression)', () => {
+    const pwLine = userCreateBlock.match(/const tempPw = `[^`]+`/)[0];
+    const uuidCount = (pwLine.match(/crypto\.randomUUID\(\)/g) || []).length;
+    expect(uuidCount).toBe(1);
+  });
 });
 
 describe('UsersModal.createUser — honors welcomeEmailDelivered:false', () => {
