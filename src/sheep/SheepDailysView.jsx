@@ -725,6 +725,12 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                       (!form.flock || (f.herd_scope || []).includes(form.flock)),
                   );
                   const fiRow = feedInputs.find((x) => x.id === r.feedId);
+                  // Editing a historical row whose feedId now points at an
+                  // inactive feed: surface it as a disabled "(inactive)"
+                  // option so the dropdown shows what was stored without
+                  // letting the operator pick inactives for new rows.
+                  const showHistoricalInactive =
+                    fiRow && fiRow.status === 'inactive' && !feedsForFlock.some((f) => f.id === fiRow.id);
                   return (
                     <div
                       key={ri}
@@ -746,6 +752,11 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                         }
                       >
                         <option value="">Select feed...</option>
+                        {showHistoricalInactive && (
+                          <option value={fiRow.id} disabled>
+                            {fiRow.name} (inactive)
+                          </option>
+                        )}
                         {feedsForFlock.map((ff) => (
                           <option key={ff.id} value={ff.id}>
                             {ff.name}
@@ -809,6 +820,9 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                   // Mirror the feed dropdown: inactive minerals are not offered
                   // for new selections; historical .find() lookups resolve them.
                   const minerals = feedInputs.filter((f) => f.status !== 'inactive' && f.category === 'mineral');
+                  const miRow = feedInputs.find((x) => x.id === r.feedId);
+                  const showHistoricalInactiveMineral =
+                    miRow && miRow.status === 'inactive' && !minerals.some((m) => m.id === miRow.id);
                   return (
                     <div
                       key={ri}
@@ -830,6 +844,11 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                         }
                       >
                         <option value="">Select mineral...</option>
+                        {showHistoricalInactiveMineral && (
+                          <option value={miRow.id} disabled>
+                            {miRow.name} (inactive)
+                          </option>
+                        )}
                         {minerals.map((m) => (
                           <option key={m.id} value={m.id}>
                             {m.name}

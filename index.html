@@ -185,6 +185,12 @@
       -webkit-overflow-scrolling: touch !important;
       scrollbar-width: none;
       padding: 8px 12px !important;
+      /* Right-edge fade hints that there's more to swipe when section nav
+         items (Cattle: 8 tabs, Pigs: 8) overflow the viewport. The hidden
+         scrollbar above kept the visual clean but left operators with no
+         affordance — this fade gives the cue without a visible scrollbar. */
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+      mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
     }
     [data-header-subnav="1"]::-webkit-scrollbar {
       display: none;

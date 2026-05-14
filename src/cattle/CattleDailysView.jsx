@@ -706,6 +706,12 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                       (!form.herd || (f.herd_scope || []).includes(form.herd)),
                   );
                   const fiRow = feedInputs.find((x) => x.id === r.feedId);
+                  // Editing a historical row whose feedId now points at an
+                  // inactive feed: surface it as a disabled "(inactive)"
+                  // option so the dropdown shows what was stored without
+                  // letting the operator pick inactives for new rows.
+                  const showHistoricalInactive =
+                    fiRow && fiRow.status === 'inactive' && !feedsForHerd.some((f) => f.id === fiRow.id);
                   return (
                     <div
                       key={ri}
@@ -727,6 +733,11 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                         }
                       >
                         <option value="">Select feed...</option>
+                        {showHistoricalInactive && (
+                          <option value={fiRow.id} disabled>
+                            {fiRow.name} (inactive)
+                          </option>
+                        )}
                         {feedsForHerd.map((ff) => (
                           <option key={ff.id} value={ff.id}>
                             {ff.name}
@@ -815,6 +826,9 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                   // inactive minerals are excluded from new selections but stay
                   // resolvable via the historical .find() lookups.
                   const minerals = feedInputs.filter((f) => f.status !== 'inactive' && f.category === 'mineral');
+                  const miRow = feedInputs.find((x) => x.id === r.feedId);
+                  const showHistoricalInactiveMineral =
+                    miRow && miRow.status === 'inactive' && !minerals.some((m) => m.id === miRow.id);
                   return (
                     <div
                       key={ri}
@@ -836,6 +850,11 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                         }
                       >
                         <option value="">Select mineral...</option>
+                        {showHistoricalInactiveMineral && (
+                          <option value={miRow.id} disabled>
+                            {miRow.name} (inactive)
+                          </option>
+                        )}
                         {minerals.map((m) => (
                           <option key={m.id} value={m.id}>
                             {m.name}
