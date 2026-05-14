@@ -26,7 +26,7 @@ import {
   photoPresenceFor,
 } from '../lib/tasksCenterApi.js';
 import {TASK_CHANGE_EVENT} from '../lib/tasksCenterMutationsApi.js';
-import {fmt, fmtCentralDateTime, todayCentralISO} from '../lib/dateUtils.js';
+import {fmt, fmtCentralDateTime, todayCentralISO, centralISOFor} from '../lib/dateUtils.js';
 import TaskPhotoLightbox from './TaskPhotoLightbox.jsx';
 
 const CARD = {
@@ -131,28 +131,37 @@ function matchesCompletedFilter(ti, filter) {
 
 // Bucket by completed_at against today's Central date. "Today" is the
 // calendar day in America/Chicago; "Last 7 days" is the prior six full
-// days; everything older falls into "Older". Rows missing
-// completed_at land in "Older" (rare — completed rows should always
-// carry it, but the lock is defensive).
+// Central calendar days; everything older falls into "Older". Rows
+// missing completed_at land in "Older" (rare — completed rows should
+// always carry it, but the lock is defensive).
+//
+// Codex 2026-05-14 hotfix: every comparison runs against the Central
+// YYYY-MM-DD of the row's timestamp via `centralISOFor`, not the raw
+// UTC slice. A 9:00 PM Central completion is 2:00 UTC the next
+// calendar day; UTC-slicing would silently push it into the next
+// bucket and contradict the section labels which are Central.
 function bucketByCompletedAt(rows, todayStr) {
   const today = [];
   const lastWeek = [];
   const older = [];
   if (!todayStr) return {today, lastWeek, older};
-  const todayDate = new Date(todayStr + 'T00:00:00Z');
-  const sevenDaysAgo = new Date(todayDate.getTime() - 6 * 24 * 60 * 60 * 1000);
+  // Six prior Central calendar dates. Anchor on the Central YMD itself
+  // (treated as UTC noon for arithmetic — the noon anchor avoids
+  // any DST-flip edge case and the integer-day arithmetic is exact).
+  const anchor = new Date(todayStr + 'T12:00:00Z');
+  const sixDaysAgoYMD = new Date(anchor.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   for (const ti of rows || []) {
-    const at = ti.completed_at ? new Date(ti.completed_at) : null;
-    if (!at || Number.isNaN(at.getTime())) {
+    if (!ti.completed_at) {
       older.push(ti);
       continue;
     }
-    // Compare YMD only against today (Central). fmtCentralDateTime
-    // formats Central, but for bucketing we use raw ISO date math: a
-    // completion within the last full local day counts as Today.
-    const atIso = at.toISOString().slice(0, 10);
-    if (atIso === todayStr) today.push(ti);
-    else if (at >= sevenDaysAgo) lastWeek.push(ti);
+    const atYMD = centralISOFor(ti.completed_at);
+    if (!atYMD) {
+      older.push(ti);
+      continue;
+    }
+    if (atYMD === todayStr) today.push(ti);
+    else if (atYMD >= sixDaysAgoYMD && atYMD < todayStr) lastWeek.push(ti);
     else older.push(ti);
   }
   return {today, lastWeek, older};

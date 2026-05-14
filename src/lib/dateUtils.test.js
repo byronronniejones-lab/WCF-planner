@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {addDays, toISO, fmt, fmtS, todayISO, todayCentralISO, fmtCentralDateTime} from './dateUtils.js';
+import {addDays, toISO, fmt, fmtS, todayISO, todayCentralISO, fmtCentralDateTime, centralISOFor} from './dateUtils.js';
 
 describe('addDays', () => {
   it('adds days to an ISO date string and returns a Date object', () => {
@@ -149,5 +149,49 @@ describe('fmtCentralDateTime', () => {
     expect(fmtCentralDateTime(undefined)).toBe('—');
     expect(fmtCentralDateTime('')).toBe('—');
     expect(fmtCentralDateTime('not-a-date')).toBe('—');
+  });
+});
+
+describe('centralISOFor', () => {
+  it('returns the Central calendar date for a timestamp that is the next UTC day', () => {
+    // 2026-05-14 02:00 UTC = 2026-05-13 21:00 CDT. The Central calendar
+    // date is May 13, NOT May 14. Codex 2026-05-14 Completed-tab hotfix
+    // contract — a UTC slice here would put the row into the wrong
+    // Completed-tab bucket.
+    expect(centralISOFor('2026-05-14T02:00:00Z')).toBe('2026-05-13');
+  });
+
+  it('matches todayCentralISO when given new Date()', () => {
+    const now = new Date();
+    expect(centralISOFor(now)).toBe(todayCentralISO(now));
+  });
+
+  it('handles midnight Central correctly', () => {
+    // 2026-05-08 05:00 UTC = 2026-05-08 00:00 CDT. The Central calendar
+    // date is May 8.
+    expect(centralISOFor('2026-05-08T05:00:00Z')).toBe('2026-05-08');
+  });
+
+  it('rolls back one calendar day for a UTC instant just before Central midnight', () => {
+    // 2026-05-08 04:00 UTC = 2026-05-07 23:00 CDT — still May 7 Central.
+    expect(centralISOFor('2026-05-08T04:00:00Z')).toBe('2026-05-07');
+  });
+
+  it('respects CST (UTC-6) outside of DST', () => {
+    // 2026-12-15 05:00 UTC = 2026-12-14 23:00 CST — still Dec 14 Central.
+    expect(centralISOFor('2026-12-15T05:00:00Z')).toBe('2026-12-14');
+  });
+
+  it('accepts Date objects and epoch ms', () => {
+    const d = new Date('2026-05-14T02:00:00Z');
+    expect(centralISOFor(d)).toBe('2026-05-13');
+    expect(centralISOFor(d.getTime())).toBe('2026-05-13');
+  });
+
+  it('returns empty string for null, undefined, empty, or malformed input', () => {
+    expect(centralISOFor(null)).toBe('');
+    expect(centralISOFor(undefined)).toBe('');
+    expect(centralISOFor('')).toBe('');
+    expect(centralISOFor('not-a-date')).toBe('');
   });
 });

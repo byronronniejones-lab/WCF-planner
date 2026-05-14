@@ -105,6 +105,17 @@ describe('CompletedTab — date buckets', () => {
   it('empty buckets are skipped at render time', () => {
     expect(completedSrc).toMatch(/if \(!bucketRows \|\| bucketRows\.length === 0\) return null/);
   });
+
+  it('bucket comparison runs in America/Chicago, not UTC', () => {
+    // Codex 2026-05-14 hotfix: a 9:00 PM Central completion is the next
+    // UTC day. Slicing the row's toISOString() would push it into the
+    // wrong bucket and contradict the Central section labels. Lock that
+    // the comparison uses centralISOFor (the shared Central YMD helper)
+    // for the row date, and that the raw UTC slice pattern is gone.
+    expect(completedSrc).toMatch(/import \{[^}]*centralISOFor[^}]*\} from '\.\.\/lib\/dateUtils\.js'/);
+    expect(completedSrc).toMatch(/const atYMD = centralISOFor\(ti\.completed_at\)/);
+    expect(completedSrc).not.toMatch(/at\.toISOString\(\)\.slice\(0,\s*10\)/);
+  });
 });
 
 describe('CompletedTab — preserved row contract + read-only boundary', () => {

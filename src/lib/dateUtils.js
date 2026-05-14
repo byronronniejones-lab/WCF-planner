@@ -62,6 +62,34 @@ export function todayCentralISO(now = new Date()) {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+// Same Central-time YYYY-MM-DD as todayCentralISO, but for any input
+// timestamp instead of "now". Used by the Tasks Center Completed tab
+// when bucketing rows by completed_at into Today / Last 7 days / Older
+// against today's Central date — comparing the row's UTC slice would
+// flip rows around UTC midnight (e.g. a 9:00 PM Central completion lands
+// on the next UTC day and would silently jump bucket).
+//
+// Accepts the same inputs as fmtCentralDateTime: ISO string, Date, or
+// epoch ms. Returns '' for null/undefined/empty so the caller can
+// distinguish "no timestamp" from a parseable timestamp.
+export function centralISOFor(input) {
+  if (input === null || input === undefined || input === '') return '';
+  const d = input instanceof Date ? input : new Date(input);
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = fmt.formatToParts(d);
+  const get = (type) => {
+    const p = parts.find((x) => x.type === type);
+    return p ? p.value : '';
+  };
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 // Format a timestamptz (ISO string, Date, or epoch ms) as
 //   "mm/dd/yy h:mm AM/PM" in America/Chicago.
 //
