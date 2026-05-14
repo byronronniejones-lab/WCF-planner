@@ -17,6 +17,7 @@ import {
   loadAvailability,
   saveAvailability,
   setHidden,
+  sortByDailysOrder,
 } from '../lib/teamAvailability.js';
 import {setPublicAssigneeHidden} from '../lib/tasks.js';
 import {loadPublicAssigneeAvailability, savePublicAssigneeAvailability} from '../lib/tasksAdminApi.js';
@@ -489,7 +490,7 @@ function TeamAvailabilityEditor({loadUsers}) {
         default to visible everywhere.
       </div>
 
-      {TEAM_AVAILABILITY_FORM_KEYS.map((formKey) => {
+      {sortByDailysOrder(TEAM_AVAILABILITY_FORM_KEYS).map((formKey) => {
         const hiddenIds = new Set(availability.forms[formKey]?.hiddenIds || []);
         const hiddenCount = hiddenIds.size;
         const isPublicTasks = formKey === 'tasks-public';
@@ -1546,7 +1547,7 @@ export default function WebformsAdminView({
                   Manage sections, fields, and team members. Changes go live immediately.
                 </div>
 
-                {webformsConfig.webforms.map((wf) => {
+                {sortByDailysOrder(webformsConfig.webforms, (w) => w.id).map((wf) => {
                   const isAddFeed = wf.id === 'add-feed-webform';
                   const isWeighIns = wf.id === 'weighins-webform';
                   const totalFields = (wf.sections || []).reduce(

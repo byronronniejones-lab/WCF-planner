@@ -7,6 +7,8 @@ import {
   cleanAvailabilityForDeletedId,
   loadAvailability,
   saveAvailability,
+  dailysOrderIndex,
+  sortByDailysOrder,
 } from './teamAvailability.js';
 
 const ROSTER = [
@@ -16,7 +18,7 @@ const ROSTER = [
 ];
 
 describe('TEAM_AVAILABILITY_FORM_KEYS', () => {
-  it('lists the 10 expected form keys', () => {
+  it('lists the 10 expected form keys (alphabetic for stable membership)', () => {
     expect(TEAM_AVAILABILITY_FORM_KEYS).toEqual([
       'add-feed',
       'broiler-dailys',
@@ -29,6 +31,90 @@ describe('TEAM_AVAILABILITY_FORM_KEYS', () => {
       'tasks-public',
       'weigh-ins',
     ]);
+  });
+});
+
+describe('dailysOrderIndex / sortByDailysOrder — admin display ordering', () => {
+  // Mirrors src/webforms/WebformHub.jsx tile sequence: Add Feed → Weigh-Ins
+  // → Submit a Task → Broiler → Layer → Egg → Pig → Cattle → Sheep. Fuel
+  // Supply is not on /dailys, so it sits at the end of the admin surfaces.
+  const EXPECTED_FORM_KEY_ORDER = [
+    'add-feed',
+    'weigh-ins',
+    'tasks-public',
+    'broiler-dailys',
+    'layer-dailys',
+    'egg-dailys',
+    'pig-dailys',
+    'cattle-dailys',
+    'sheep-dailys',
+    'fuel-supply',
+  ];
+
+  it('assigns the same index to a formKey and its -webform alias', () => {
+    expect(dailysOrderIndex('add-feed')).toBe(dailysOrderIndex('add-feed-webform'));
+    expect(dailysOrderIndex('weigh-ins')).toBe(dailysOrderIndex('weighins-webform'));
+    expect(dailysOrderIndex('tasks-public')).toBe(dailysOrderIndex('tasks-public-webform'));
+    expect(dailysOrderIndex('fuel-supply')).toBe(dailysOrderIndex('fuel-supply-webform'));
+  });
+
+  it('returns a sentinel after-known index for unknown keys', () => {
+    const known = dailysOrderIndex('sheep-dailys');
+    const unknown = dailysOrderIndex('future-feature-form');
+    expect(unknown).toBeGreaterThan(known);
+  });
+
+  it('sorts TEAM_AVAILABILITY_FORM_KEYS into the canonical /dailys order', () => {
+    expect(sortByDailysOrder(TEAM_AVAILABILITY_FORM_KEYS)).toEqual(EXPECTED_FORM_KEY_ORDER);
+  });
+
+  it('sorts the stored webform IDs (PROD has 8) into the same /dailys order', () => {
+    // PROD webform_config.full_config.webforms ids as of 2026-05-14. The
+    // stored ordering is historical; this lane drives the displayed
+    // ordering instead. tasks-public and fuel-supply have no entries in
+    // the stored webforms list (availability-only).
+    const storedIds = [
+      'pig-dailys',
+      'broiler-dailys',
+      'layer-dailys',
+      'egg-dailys',
+      'add-feed-webform',
+      'cattle-dailys',
+      'sheep-dailys',
+      'weighins-webform',
+    ];
+    expect(sortByDailysOrder(storedIds)).toEqual([
+      'add-feed-webform',
+      'weighins-webform',
+      'broiler-dailys',
+      'layer-dailys',
+      'egg-dailys',
+      'pig-dailys',
+      'cattle-dailys',
+      'sheep-dailys',
+    ]);
+  });
+
+  it('uses the getKey extractor for arrays of objects (webformsConfig.webforms)', () => {
+    const webforms = [
+      {id: 'sheep-dailys', name: 'Sheep Daily Report'},
+      {id: 'add-feed-webform', name: 'Add Feed Webform'},
+      {id: 'cattle-dailys', name: 'Cattle Daily Report'},
+    ];
+    const sorted = sortByDailysOrder(webforms, (w) => w.id);
+    expect(sorted.map((w) => w.id)).toEqual(['add-feed-webform', 'cattle-dailys', 'sheep-dailys']);
+  });
+
+  it('places unknown keys after known ones in stable original order', () => {
+    const mixed = ['cattle-dailys', 'future-z', 'add-feed', 'future-a'];
+    expect(sortByDailysOrder(mixed)).toEqual(['add-feed', 'cattle-dailys', 'future-z', 'future-a']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = ['sheep-dailys', 'add-feed'];
+    const copy = input.slice();
+    sortByDailysOrder(input);
+    expect(input).toEqual(copy);
   });
 });
 

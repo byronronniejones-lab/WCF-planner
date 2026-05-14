@@ -27,9 +27,11 @@ import {normalizeRoster} from './teamMembers.js';
 
 const KEY = 'team_availability';
 
-// The 10 form keys this module gates. Keep alphabetic for stable admin UI
-// rendering. Adding a new form is one entry here + one consumer call to
-// `availableNamesFor`.
+// The 10 form keys this module gates. Storage order is alphabetic for
+// stable membership semantics; admin rendering applies sortByDailysOrder
+// below so the visible order matches the public /dailys selector. Adding
+// a new form is one entry here + one entry in DAILYS_ORDER + one consumer
+// call to `availableNamesFor`.
 //
 // 'tasks-public' (added 2026-05-05 with C3) gates the Submitted-by /
 // Assignor dropdown on /webforms/tasks. The Assignee dropdown on the
@@ -49,6 +51,58 @@ export const TEAM_AVAILABILITY_FORM_KEYS = [
   'tasks-public',
   'weigh-ins',
 ];
+
+// Canonical /dailys display order. Source of truth for the admin Webforms
+// list and Team Member Availability section ordering so the two surfaces
+// cannot drift from the public /dailys selector tile order. Mirrors the
+// tile sequence in src/webforms/WebformHub.jsx: Add Feed → Weigh-Ins →
+// Submit a Task → Broiler → Layer → Egg → Pig → Cattle → Sheep. Fuel
+// Supply is not on /dailys, so it lands after the matched items.
+//
+// Each entry is the alias group that maps to the same slot — availability
+// formKeys (e.g. 'add-feed') and stored webform IDs (e.g. 'add-feed-
+// webform') both resolve to the same order index.
+const DAILYS_ORDER = [
+  ['add-feed', 'add-feed-webform'],
+  ['weigh-ins', 'weighins-webform'],
+  ['tasks-public', 'tasks-public-webform'],
+  ['broiler-dailys'],
+  ['layer-dailys'],
+  ['egg-dailys'],
+  ['pig-dailys'],
+  ['cattle-dailys'],
+  ['sheep-dailys'],
+  ['fuel-supply', 'fuel-supply-webform'],
+];
+
+const ORDER_INDEX = (() => {
+  const m = new Map();
+  DAILYS_ORDER.forEach((aliases, i) => aliases.forEach((k) => m.set(k, i)));
+  return m;
+})();
+
+/**
+ * Returns the /dailys-order index for an availability formKey or stored
+ * webform id. Unknown / future entries return DAILYS_ORDER.length so they
+ * sort AFTER all known entries; callers using sortByDailysOrder get a
+ * stable original-order tiebreaker for unknowns.
+ */
+export function dailysOrderIndex(key) {
+  const i = ORDER_INDEX.get(key);
+  return i == null ? DAILYS_ORDER.length : i;
+}
+
+/**
+ * Returns a new array sorted by /dailys display order. Unknown keys land
+ * after known ones in their original relative order (stable). Pass a
+ * `getKey` extractor for arrays of objects (e.g. webformsConfig.webforms).
+ */
+export function sortByDailysOrder(list, getKey = (x) => x) {
+  return list
+    .map((item, i) => ({item, i, idx: dailysOrderIndex(getKey(item))}))
+    .sort((a, b) => a.idx - b.idx || a.i - b.i)
+    .map((x) => x.item);
+}
 
 // ── normalization ──────────────────────────────────────────────────────────
 
