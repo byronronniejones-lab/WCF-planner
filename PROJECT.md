@@ -4,7 +4,7 @@
 
 Live URL: https://wcfplanner.com
 
-Last updated: 2026-05-12
+Last updated: 2026-05-14
 
 This file is the project-specific source of truth: current build state, architecture, routes, data contracts, domain rules, and active roadmap. Workflow SOP, gate rules, validation requirements, and prompt relay rules live in [HO.md](HO.md). Session narratives live in git log and [archive/SESSION_LOG.md](archive/SESSION_LOG.md).
 
@@ -31,21 +31,27 @@ Use this order when opening the repo cold:
 | Core app | Vite + React 18 SPA, BrowserRouter with view-to-URL adapter, Netlify production from `main`. |
 | Public webforms | `/dailys`, `/addfeed`, `/weighins`, `/equipment`, `/equipment/supply`, `/dailys/tasks`. Legacy aliases remain. |
 | Logged-in equipment | `/fleet`, `/fleet/<slug>`, `/fleet/fuel-log`, `/fleet/materials`. Public `/equipment/<slug>` is not a logged-in fleet route. |
-| Tasks v2 | T1-T11 complete and deployed. `/tasks` is canonical. `/my-tasks` and `/admin/tasks` redirect to `/tasks`. Header has the single Tasks destination. Weekly digest uses the v2 template and shared cron-secret rapid-processor auth. |
+| Tasks v2 | T1-T11 complete and deployed. `/tasks` is canonical. `/my-tasks` and `/admin/tasks` redirect to `/tasks`. Header has the single Tasks destination. Weekly digest uses the v2 template and shared cron-secret rapid-processor auth. My Tasks has due-state buckets, filter chips, and conservative cross-team pre-expand. Completed has filter chips plus Today / Last 7 days / Older buckets. Recurring and System Tasks split Active/Inactive sections; inactive sections collapse by default. Recurring auto-expands templates with open instances; System surfaces per-rule overdue pills. |
 | Task assignees | Task Center mutation dropdowns use `tasks_public_assignee_availability`. Hidden profiles are excluded from New Task/Reassign/Recurring/System Rule modals. Read-only history/group labels still display hidden or inactive names when already assigned. |
 | Header | Dark bar groups Dailys + Equipment under "Webforms"; Equipment routes to public `/equipment`. Tasks is visually separated from webform links. |
+| Mobile UX | Main auth/public routes are covered by mobile audits at 360x780, 390x844, and 430x932. Header/sub-nav, daily cards, feed equations, BatchForm modal grids, and contained-scroll tables have mobile-specific hooks and regression coverage. |
 | Planner icons | `public/icons/planner/*.png` supplies program/action/equipment icons. Use `PlannerIcon`, `PlannerIconLabel`, and `plannerIconUrl`; do not reference the OneDrive source folder in app code. |
+| Operator notices | Source-wide native `alert`/`confirm`/`prompt` calls are banned by static locks. Operator-facing validation/save failures use inline notices or typed confirmation surfaces. |
+| Auth emails | Admin-created user emails, welcome emails, and password resets send through `rapid-processor` from `noreply@wcfplanner.com`. Operational report emails still use `reports@wcfplanner.com`. |
 | Pig planned trips | `/pig/batches` supports admin/management add/delete/move/date-step planned trips, plus lock/unlock via a sidecar key (`ppp-pig-planned-trip-locks-v1`). Locked trips reject manual date/count/add/delete edits in `/pig/batches`. `/pig/weighins` Send-to-Trip fulfillment still reconciles `plannedCount`/removal against a locked trip without changing the scheduled date. Farm team is read-only on planned/processing trip mutations. |
 | Pig processor controls | Completed pig weigh-in sessions still expose processor-send controls for authorized users when unsent entries exist. |
+| Cattle & Sheep Inputs | Admin Feed panel is labeled "Cattle & Sheep Inputs"; active inputs are shown by default and inactive inputs are collapsed. Public and admin cattle/sheep entry dropdowns hide `status='inactive'` while preserving legacy blank/null statuses as active. Historical/edit surfaces keep enough loaded input data to resolve inactive feeds already referenced by old records. |
 | Cattle processing workflow | Planned (virtual forecast) → Scheduled (`status='scheduled'`, processor date booked) → Active (Send-to-Processor promotes scheduled or creates fresh) → Processed (UI label; `status='complete'` in storage). Migration 054 widened the status CHECK to include `'scheduled'`. |
 | Layer dashboard | Main layer dashboard shows lifetime active-batch cost metrics. Layer group/batch detail views keep their own metrics. |
-| Equipment admin | Equipment checklist/materials text edits preserve focus and do not reload/reorder the screen on every textbox click. Drag reorder and checklist rows remain stable. |
+| Equipment admin | Equipment checklist/materials text edits preserve focus and do not reload/reorder the screen on every textbox click. Drag reorder and checklist rows remain stable. Equipment detail shows meter status, manual sync from fuel-log max, and explicit service-due math. Fueling edit/delete paths recompute current readings from remaining fuelings. |
 | Feed planner | `/pig/feed` and `/broiler/feed` ship as minimal ledger screens backed by `src/lib/feedPlanner.js`. Pig view shows four top tiles plus active-month workflow; poultry view shows Starter / Grower / Layer Feed as separate tile stacks. Active month + most recently saved month stay expanded; older saved months collapse. Save advances to the next month; physical-count snapshots anchor the math. |
 | Broiler public weigh-ins | Public `/weighins` (anon) cannot read `app_store.ppp-v4` under RLS. Week 4/6 completion stamps `week4Lbs`/`week6Lbs` on the matching batch through the `stamp_broiler_batch_avg` SECURITY DEFINER RPC (migration 055). Public form file is statically locked against `app_store`/`ppp-v4` literals and against importing `writeBroilerBatchAvg`. |
 
 ### Active Roadmap
 
-1. **Project-wide browser-dialog cleanup.** Start with destructive `window.confirm` / `confirm` / `window.prompt` flows; replace with `DeleteModal`, inline two-step, or typed confirmation. Informational `window.alert` cleanup is a separate follow-up pass.
+1. **Production UX smoke sweep.** Do a short live-workflow pass through `/tasks`, Cattle & Sheep Inputs, cattle/sheep daily entry, public dailys/add-feed, and equipment detail. Fix only confirmed operator friction.
+2. **Next product lane selection.** Ronnie and Codex should pick the next product feature or polish lane after the smoke sweep, rather than assuming more cleanup by default.
+3. **Docs/current-state hygiene.** Keep `PROJECT.md` aligned after shipped lanes; refresh Recent Milestones, Active Roadmap, and Tasks v2 surfaces on each session wrap. Do not move workflow SOP from `HO.md` into this file.
 
 Ongoing hygiene remains incremental: keep touched files warning-clean where practical, avoid broad churn without explicit approval, and treat CI regressions as verified blockers before editing.
 
@@ -297,10 +303,10 @@ Tasks v2 is complete and canonical at `/tasks`.
 Functional surfaces:
 
 - Header Tasks button and due/past-due badge for the logged-in user.
-- My Tasks tab: own open tasks plus grouped visible open tasks.
-- Recurring tab: template groups, admin CRUD.
-- Completed tab: completed rows, notes, assignee/completed-by names, photo lightbox.
-- System Tasks tab: admin-only view of built-in system rules, admin rule edits.
+- My Tasks tab: own open tasks with due-state buckets/filter chips, plus grouped visible open tasks with conservative pre-expand.
+- Recurring tab: template groups split into Active / Inactive sub-sections. Inactive is collapsed by default; templates with open instances auto-expand; admin CRUD uses typed confirmation for delete.
+- Completed tab: filter chips (All / Recurring / System / With photos / With notes) plus Today / Last 7 days / Older buckets; rows show notes, assignee, completed-by, attribution, and photo lightbox.
+- System Tasks tab: admin-only; Active / Inactive sub-sections with inactive collapsed by default, per-rule overdue count pills, and admin rule edits through the Edit Rule modal.
 - New Task modal, Complete Task modal, due-date edit modal, assign/delete modals.
 - Photo sidecar lightbox with signed URLs.
 - Weekly digest rebranded to Tasks v2 and verified in production.
@@ -377,12 +383,22 @@ Layers:
 - Flocks: `rams`, `ewes`, `feeders`; outcomes: `processed`, `deceased`, `sold`.
 - Sheep processing mirrors cattle but has looser Send-to-Processor gating: draft sessions from any flock.
 
+### Cattle & Sheep Inputs
+
+- The admin feed-input panel is named "Cattle & Sheep Inputs" and is owned by `src/admin/LivestockFeedInputsPanel.jsx`.
+- Active inputs render open by default; inactive inputs render under a collapsed inactive section.
+- Public/new-record selection surfaces treat every row except `status='inactive'` as selectable, so legacy blank/null statuses behave as active.
+- Cattle/sheep daily edit surfaces must keep enough input rows loaded to resolve historical records that already reference inactive inputs. Filter inactive rows at dropdown render sites, not at load time, when save-time snapshot rebuilding depends on `feedInputs.find(...)`.
+- Historical cost/report lookup surfaces may intentionally load inactive inputs.
+
 ### Equipment And Fuel
 
 - Logged-in Equipment lives under `/fleet`.
 - Public equipment/fueling lives under `/equipment`.
 - Fuel supplied to farm is `fuel_supplies`; fuel consumed by equipment is `equipment_fuelings`.
 - Public fueling uses `submit_equipment_fueling` RPC to insert fueling and bump current reading atomically.
+- Authenticated fueling edit/delete paths recompute `current_hours`/`current_km` from remaining fuel logs so corrected bad readings do not leave stale service-due state.
+- Equipment detail shows an admin meter-status panel, manual sync from fuel-log max, and a service interval math line such as `Current 173h -> next at 200h`.
 - Materials checklist data lives in `equipment_service_materials` and `equipment_material_clears`.
 - Equipment admin checklist/material textboxes must be one-click editable with no reload/focus loss/list reorder.
 
@@ -398,7 +414,7 @@ Read this section before editing related files.
 - Keep `wcfSelectAll` pagination pattern. `.limit()` silently caps at 1000.
 - Keep BrowserRouter view-to-URL adapter unless doing a planned full router migration.
 - Keep `\u` JSX escape literals where they already exist.
-- Do not introduce `window.confirm`, `window.alert`, or `window.prompt` for destructive flows; use typed confirmation modals.
+- Do not introduce `window.confirm`, `window.alert`, or `window.prompt` in source code; use inline notices, `DeleteModal`, or typed confirmation surfaces.
 - Use `DeleteModal` for deletes.
 - Public forms must keep no-auth access where documented.
 - Netlify redirect order matters: `equipment.html` rules before SPA fallback.
@@ -408,6 +424,7 @@ Read this section before editing related files.
 - Never delete directly from `storage.objects`; use Storage API list/remove recursion.
 - Private buckets must be read through signed URLs.
 - Task photo uploads are append-only (`upsert:false`), and duplicate object errors are retry success.
+- Admin-created user emails, welcome emails, and password resets are sent by `rapid-processor` from `noreply@wcfplanner.com`; do not route them through the report sender.
 - No migrations, RLS, Vault, or Edge Function deploys without explicit gates from Ronnie.
 
 ### Tasks
@@ -444,10 +461,17 @@ Read this section before editing related files.
 - `ppp-feed-orders-v1` per-row keys persist as written (`starter`, `grower`, `layerfeed` for poultry; `pig` for pig).
 - `includesCurrentMonthDelivery` is a live snapshot-row flag, written by the "Count includes [month] order" checkbox in the minimal ledger. Helpers must keep treating it as load-bearing and stay tolerant of legacy rows that already carry it.
 
+### Cattle & Sheep Inputs
+
+- New cattle/sheep feed selection dropdowns should hide only rows where `status === 'inactive'`. Do not restore strict `.eq('status', 'active')` filters because legacy blank/null rows must remain selectable.
+- Daily edit/history surfaces must preserve inactive referenced inputs for snapshot rebuilding; filter inactive rows at dropdown call sites rather than dropping them from the loaded array.
+- The Cattle & Sheep Inputs admin panel owns active/inactive status. Active rows are visible by default; inactive rows stay collapsed by default.
+
 ### Equipment
 
 - Public `/equipment/<slug>` remains public checklist/fueling; logged-in detail is `/fleet/<slug>`.
 - Equipment admin text inputs must not reload the screen, lose cursor focus, or reorder list items on click/edit.
+- Equipment current reading corrections must keep service-due math in sync with fuel-log edits/deletes. Use the shared fuel-log max helper instead of ad hoc current-reading math.
 - Rolling materials clears are bucketed by due service cycle; do not collapse them into a single permanent hide flag.
 
 ### Icons
@@ -487,7 +511,8 @@ Current lint baseline is warnings-only. Do not add errors. When changing a lane,
 | Area | Good starting tests |
 |---|---|
 | Routes/aliases | `src/lib/routes.test.js`, `tests/url_alias_redirects.spec.js` |
-| Tasks v2 | `tests/static/tasks_v2_route_wiring.test.js`, `tests/tasks_v2_*.spec.js`, `src/lib/tasksCenterApi.test.js` |
+| Tasks v2 | `tests/static/tasks_v2_route_wiring.test.js`, `tests/static/tasks_my_tab_filter_and_buckets.test.js`, `tests/static/tasks_remaining_tabs_clarity.test.js`, `tests/tasks_v2_*.spec.js`, `src/lib/tasksCenterApi.test.js` |
+| Cattle & Sheep Inputs | `tests/static/livestock_feed_inputs_panel.test.js`, `tests/static/cattle_sheep_inputs_consistency.test.js` |
 | Feed planner | `src/lib/feedPlanner.test.js` |
 | Pig planned trips/send | `src/lib/pigForecast.test.js`, `tests/pig_batches_planned_trips.spec.js`, `tests/pig_send_to_planned_trip.spec.js`, `tests/pig_batch_math.spec.js` |
 | Equipment | `tests/equipment_fueling_rpc.spec.js`, `tests/equipment_materials.spec.js`, `tests/home_dashboard_equipment.spec.js`, `tests/static/equipment_materials.test.js` |
@@ -503,19 +528,21 @@ Current lint baseline is warnings-only. Do not add errors. When changing a lane,
 
 | Commit | Summary |
 |---|---|
+| `f73eeb6` | Completed-tab bucketing hotfix: Today / Last 7 days / Older now compare in America/Chicago via shared `centralISOFor` helper, so evening Central completions no longer drift one UTC day forward. |
+| `acda5c2` | Task Center remaining-tab polish: Completed filter chips and date buckets, Recurring/System Active-Inactive splits, recurring open-instance auto-expand, and system overdue pills. |
+| `aeb0df7` | Cattle/sheep daily entry surfaces hide inactive feed inputs while preserving historical inactive lookups. |
+| `2a25121` | Public cattle/sheep webforms honor inactive Cattle & Sheep Inputs and keep legacy blank/null statuses active. |
+| `419f746` | Cattle & Sheep Inputs admin panel shows active inputs by default and keeps inactive inputs collapsed. |
+| `c0bb154` | My Tasks scanability: due buckets, filter chips, mobile wrapping, attribution line, and conservative cross-team pre-expand. |
+| `59e87aa` | Production stability audit locks for Supabase config, auth email senders, public bypass routes, aliases, and source-wide native-dialog ban. |
+| `c4f4b92` | Equipment meter-status panel, manual fuel-log sync, and service-due math explainability. |
+| `c4c6e9d` | Auth account emails and password resets route through `rapid-processor` from `noreply@wcfplanner.com`. |
+| `fdae030` | Mobile audit adds 360x780 strict viewport coverage. |
+| `cd0c849` | Equipment hotfix: fuel-log corrections sync current readings so service-due state does not stay stale. |
+| `e2fb350` | Final admin/webforms alert cleanup replaced remaining native alerts with inline notices. |
+| `58d8274` | Route-wide mobile audit and fixes for header, feed equation stacking, BatchForm grids, and fuel-log contained scroll. |
+| `9e927e6` | Mobile stabilization for header, daily tabs, and feed views. |
 | `544be95` | Broiler public week-avg stamp routed through `stamp_broiler_batch_avg` SECDEF RPC (migration 055). |
 | `0226c41` | Cattle scheduled batches (Planned → Scheduled → Active → Processed) and pig planned-trip lock sidecar (migration 054). |
-| `76ebbdc` | Poultry feed: per-feed-type stacked tiles + ordered column alignment hotfix. |
-| `f6057de` | Poultry feed ledger rebuild (`/broiler/feed` minimal ledger). |
-| `da8dd7d` | Pig feed ledger hotfixes: card order, Save 0, color hierarchy, physical count date. |
-| `160322c` | Pig feed ledger rebuild (`/pig/feed` minimal ledger). |
-| `611e77e` | Offline weigh-in test: content-based row locators replace `.nth()` after weight-desc sort landed. |
-| `3872ee2` | Removed operator-facing `includesCurrentMonthDelivery` checkbox (later superseded by the minimal-ledger rebuild, which re-introduced it as "Count includes [month] order"). |
-| `c0733a2` | Home dashboard Next-30 planner icon hotfix. |
-| `1abeaa2` | Initial snapshot-anchored feed order board on `/pig/feed` and `/broiler/feed` (later rebuilt into the minimal ledger). |
-| `7e50211` | Feed planner pure math helper and tests. |
-| `226c039` | Layer active-batch lifetime metrics. |
-| `8cef90e` | Pig planned-trip autosave date steppers. |
-| `57fd7b7` | Equipment checklist row/focus stability. |
 
 For older migration history and rationale, use git log plus `archive/SESSION_LOG.md`.
