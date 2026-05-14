@@ -9,8 +9,10 @@ import {buildMaterialChecklist, HOURS_WINDOW, KM_WINDOW} from '../../src/lib/equ
 // ============================================================================
 // Mig 048 ships two auth-only tables (equipment_service_materials +
 // equipment_material_clears) plus an idempotent seed of the approved list.
-// The operator-facing /fleet/materials view + admin Materials editor read
-// these tables. Codex-mandated locks:
+// The admin Materials editor + the home dashboard Materials Needed card
+// read these tables. The standalone /fleet/materials operator page was
+// retired 2026-05-14 — its surface now lives on the home card. Codex-
+// mandated locks:
 //
 //   1. Mig contract — table shapes, FK, structural-identity unique index
 //      (Codex amendment 3: identity excludes service_label), authenticated-
@@ -25,7 +27,8 @@ import {buildMaterialChecklist, HOURS_WINDOW, KM_WINDOW} from '../../src/lib/equ
 //      crossing the next_due milestone makes a stale clear no longer match.
 //   4. UI wiring — admin editor writes to equipment_service_materials, NOT
 //      to equipment.service_intervals JSONB (Codex amendment 3).
-//      EquipmentHome routes /fleet/materials to subView='materials'.
+//      EquipmentHome /fleet/materials route is aliased to /fleet in
+//      routes.js; the sub-nav has no Materials button.
 //   5. Editor stays internal — no anon policies on the new tables.
 // ============================================================================
 
@@ -37,7 +40,7 @@ const helperSrc = fs.readFileSync(path.join(ROOT, 'src/lib/equipmentMaterials.js
 const editorSrc = fs.readFileSync(path.join(ROOT, 'src/admin/EquipmentMaterialsEditor.jsx'), 'utf8');
 const adminSrc = fs.readFileSync(path.join(ROOT, 'src/admin/EquipmentWebformsAdmin.jsx'), 'utf8');
 const homeSrc = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentHome.jsx'), 'utf8');
-const listSrc = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentMaterialListView.jsx'), 'utf8');
+const routesSrc = fs.readFileSync(path.join(ROOT, 'src/lib/routes.js'), 'utf8');
 const dashboardSrc = fs.readFileSync(path.join(ROOT, 'src/dashboard/HomeDashboard.jsx'), 'utf8');
 
 describe('Mig 048 — equipment_service_materials table contract', () => {
@@ -615,21 +618,23 @@ describe('Admin editor wiring — writes to materials table, not service_interva
   });
 });
 
-describe('EquipmentHome — /fleet/materials sub-route + nav button gated by !isEquipmentTech', () => {
-  it("path === '/fleet/materials' resolves to subView='materials'", () => {
-    expect(homeSrc).toMatch(/path === '\/fleet\/materials'\)\s*subView = 'materials'/);
+describe('EquipmentHome — standalone /fleet/materials retired (2026-05-14)', () => {
+  it('EquipmentHome no longer imports EquipmentMaterialListView', () => {
+    expect(homeSrc).not.toMatch(/import\s+EquipmentMaterialListView/);
   });
 
-  it('Materials nav button rendered only for !isEquipmentTech', () => {
-    // Anchor on the button label; verify it sits in the !isEquipmentTech branch.
-    const navBlock = homeSrc.match(/\{!isEquipmentTech && \(\s*<>[\s\S]*?<\/>\s*\)\}/);
-    expect(navBlock).not.toBeNull();
-    expect(navBlock[0]).toMatch(/navigate\('\/fleet\/materials'\)/);
-    expect(navBlock[0]).toMatch(/📋 Materials/);
+  it('EquipmentHome path-routing no longer recognizes /fleet/materials as a subView', () => {
+    expect(homeSrc).not.toMatch(/path === '\/fleet\/materials'/);
+    expect(homeSrc).not.toMatch(/subView === 'materials'/);
   });
 
-  it("subView==='materials' renders <EquipmentMaterialListView /> guarded by !isEquipmentTech", () => {
-    expect(homeSrc).toMatch(/subView === 'materials' && !isEquipmentTech && <EquipmentMaterialListView \/>/);
+  it('sub-nav has no Materials button', () => {
+    expect(homeSrc).not.toMatch(/navigate\('\/fleet\/materials'\)/);
+    expect(homeSrc).not.toMatch(/📋 Materials/);
+  });
+
+  it('/fleet/materials is aliased to /fleet in routes.js so old bookmarks redirect cleanly', () => {
+    expect(routesSrc).toMatch(/'\/fleet\/materials'\s*:\s*'\/fleet'/);
   });
 });
 
@@ -666,9 +671,10 @@ describe('HomeDashboard Materials Needed card (lane amendment)', () => {
     expect(dashboardSrc).not.toMatch(/data-home-materials-clear-all/);
   });
 
-  it('links to /fleet/materials for the full detail view', () => {
-    expect(dashboardSrc).toMatch(/data-home-materials-link="1"/);
-    expect(dashboardSrc).toMatch(/navigate\('\/fleet\/materials'\)/);
+  it('does NOT link to /fleet/materials (standalone page retired 2026-05-14)', () => {
+    expect(dashboardSrc).not.toMatch(/data-home-materials-link/);
+    expect(dashboardSrc).not.toMatch(/navigate\('\/fleet\/materials'\)/);
+    expect(dashboardSrc).not.toMatch(/View full list/);
   });
 
   it('includes attachment_checklists in the equipment select so attachment-source materials resolve', () => {
@@ -683,33 +689,12 @@ describe('HomeDashboard Materials Needed card (lane amendment)', () => {
   });
 });
 
-describe('Operator list view — equipment_material_clears load failure handled', () => {
-  it('list view branches on clrRes.error and refuses to render rather than resurfacing cleared rows', () => {
-    expect(listSrc).toMatch(/if \(clrRes\.error\)/);
-  });
-});
-
-describe('Operator list view — cleared rows vanish (Codex amendment 2)', () => {
-  it('has no toggle/state for revealing cleared rows on the operator list', () => {
-    // Anchor on identifiers that would betray a "Show cleared" toggle:
-    // a setShowCleared/setRevealCleared hook, or a data-show-cleared marker.
-    expect(listSrc).not.toMatch(/setShowCleared|setRevealCleared|data-show-cleared/);
-  });
-
-  it('renders a single Clear button per material (✓ Clear)', () => {
-    expect(listSrc).toMatch(/✓ Clear/);
-  });
-
-  it('inserts to equipment_material_clears with due_bucket_value + due_bucket_unit', () => {
-    expect(listSrc).toMatch(/sb\.from\('equipment_material_clears'\)\.insert/);
-    expect(listSrc).toMatch(/due_bucket_value:\s*group\.due_bucket_value/);
-    expect(listSrc).toMatch(/due_bucket_unit:\s*group\.due_bucket_unit/);
-  });
-
-  it('does not duplicate computeIntervalStatus math (uses helper from equipmentMaterials.js)', () => {
-    expect(listSrc).toMatch(
-      /import\s*\{[^}]*\bbuildMaterialChecklist\b[^}]*\}\s*from\s*'\.\.\/lib\/equipmentMaterials\.js'/,
-    );
-    expect(listSrc).not.toMatch(/computeIntervalStatus/);
-  });
-});
+// The two describe blocks that previously locked the operator list view
+// (load-failure defensive guard + cleared-rows-vanish behavior + ✓ Clear
+// label + clears-table insert shape) lived in src/equipment/
+// EquipmentMaterialListView.jsx. That file was deleted on 2026-05-14
+// when the standalone /fleet/materials page was retired. The equivalent
+// operator surface lives on the home dashboard Materials Needed card —
+// its clrRes.error guard, single Clear button per material, and clears
+// insert shape are all locked by the "HomeDashboard Materials Needed
+// card" describe above.

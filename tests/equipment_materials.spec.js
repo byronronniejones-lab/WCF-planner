@@ -3,8 +3,13 @@ import {test, expect} from './fixtures.js';
 // ============================================================================
 // Equipment Materials Rolling Checklist (mig 048) — focused Playwright
 // ============================================================================
-// Locks the operator-facing /fleet/materials checklist + Clear-one-material
-// behavior. Uses a fresh test-owned equipment piece + materials inserted via
+// Locks the operator-facing Materials Needed surface + Clear-one-material
+// behavior. After the 2026-05-14 retirement of the standalone /fleet/
+// materials page, the home dashboard Materials Needed card is the only
+// operator surface — every assertion below visits "/" and uses the
+// data-home-* hooks.
+//
+// Uses a fresh test-owned equipment piece + materials inserted via
 // service_role between specs (resetDb cascades equipment + the new
 // materials/clears tables).
 // ============================================================================
@@ -61,8 +66,8 @@ async function seedMaterial(supabaseAdmin, equipment_id, overrides = {}) {
   return row;
 }
 
-// Test 1 — overdue equipment with parts shows up; Clear hides one row only.
-test('overdue piece appears; Clear hides only that material', async ({page, supabaseAdmin, resetDb}) => {
+// Test 1 — overdue equipment with parts shows up on home card; Clear hides one row only.
+test('home card: overdue piece appears; Clear hides only that material', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
   const eq = await seedEquipment(supabaseAdmin, {slug: 'mat-overdue', name: 'MatOverdue', current_hours: 80});
   // Two materials at the 50h interval — both should land on the rolling list
@@ -74,22 +79,23 @@ test('overdue piece appears; Clear hides only that material', async ({page, supa
     sort_order: 20,
   });
 
-  await page.goto('/fleet/materials');
+  await page.goto('/');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await expect(page.locator('[data-home-materials-card="1"]')).toBeVisible({timeout: 10_000});
 
-  // Both materials visible.
-  await expect(page.locator(`[data-material-row="${m1.id}"]`)).toBeVisible();
-  await expect(page.locator(`[data-material-row="${m2.id}"]`)).toBeVisible();
+  // Both materials visible on the home card.
+  await expect(page.locator(`[data-home-material-row="${m1.id}"]`)).toBeVisible();
+  await expect(page.locator(`[data-home-material-row="${m2.id}"]`)).toBeVisible();
   // Group is OVERDUE — scope to this equipment's block since the seeded
   // fleet may have other overdue groups visible at the same time.
-  await expect(page.locator('[data-material-equipment="mat-overdue"]').getByText('OVERDUE').first()).toBeVisible();
+  await expect(page.locator('[data-home-material-equipment="mat-overdue"]').getByText('OVERDUE').first()).toBeVisible();
 
   // Clear m1 only.
-  await page.locator(`[data-material-clear="${m1.id}"]`).click();
+  await page.locator(`[data-home-material-clear="${m1.id}"]`).click();
 
   // m1 vanishes; m2 stays.
-  await expect(page.locator(`[data-material-row="${m1.id}"]`)).toHaveCount(0, {timeout: 5_000});
-  await expect(page.locator(`[data-material-row="${m2.id}"]`)).toBeVisible();
+  await expect(page.locator(`[data-home-material-row="${m1.id}"]`)).toHaveCount(0, {timeout: 5_000});
+  await expect(page.locator(`[data-home-material-row="${m2.id}"]`)).toBeVisible();
 
   // DB clear row landed in the right bucket.
   const {data: clears} = await supabaseAdmin.from('equipment_material_clears').select('*').eq('material_id', m1.id);
@@ -98,8 +104,8 @@ test('overdue piece appears; Clear hides only that material', async ({page, supa
   expect(clears[0].due_bucket_unit).toBe('hours');
 });
 
-// Test 2 — equipment outside the 100h window is NOT on the list.
-test('material due outside the 100h window does not appear', async ({page, supabaseAdmin, resetDb}) => {
+// Test 2 — equipment outside the 100h window is NOT on the home card.
+test('home card: material due outside the 100h window does not appear', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
   const eq = await seedEquipment(supabaseAdmin, {
     slug: 'mat-far',
@@ -113,14 +119,14 @@ test('material due outside the 100h window does not appear', async ({page, supab
     material_name: 'Coolant',
   });
 
-  await page.goto('/fleet/materials');
+  await page.goto('/');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
   // The MatFar equipment block must not render — its materials are out of window.
-  await expect(page.locator('[data-material-equipment="mat-far"]')).toHaveCount(0);
+  await expect(page.locator('[data-home-material-equipment="mat-far"]')).toHaveCount(0);
 });
 
 // Test 3 — hijet km-tracked piece with material due within 5000km appears.
-test('hijet within 5000km window appears', async ({page, supabaseAdmin, resetDb}) => {
+test('home card: hijet within 5000km window appears', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
   const eq = await seedEquipment(supabaseAdmin, {
     slug: 'mat-hijet',
@@ -139,15 +145,18 @@ test('hijet within 5000km window appears', async ({page, supabaseAdmin, resetDb}
     material_name: 'Engine oil',
   });
 
-  await page.goto('/fleet/materials');
+  await page.goto('/');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await expect(page.locator('[data-material-equipment="mat-hijet"]')).toBeVisible();
-  await expect(page.locator(`[data-material-row="${m.id}"]`)).toBeVisible();
+  await expect(page.locator('[data-home-materials-card="1"]')).toBeVisible({timeout: 10_000});
+  await expect(page.locator('[data-home-material-equipment="mat-hijet"]')).toBeVisible();
+  await expect(page.locator(`[data-home-material-row="${m.id}"]`)).toBeVisible();
 });
 
-// Test 5 — HomeDashboard Materials card surfaces a due material + Clear hides
-// only that row + clear persists on refresh + "View full list" navigates.
-test('home dashboard shows due materials, clears one without affecting siblings, persists on refresh', async ({
+// Test 4 — HomeDashboard Materials card surfaces a due material + Clear hides
+// only that row + clear persists on refresh. (Previously this test also
+// followed a "View full list" link into /fleet/materials; that link was
+// removed when the standalone page was retired 2026-05-14.)
+test('home card: shows due materials, clears one without affecting siblings, persists on refresh', async ({
   page,
   supabaseAdmin,
   resetDb,
@@ -180,18 +189,11 @@ test('home dashboard shows due materials, clears one without affecting siblings,
   await expect(page.locator('[data-home-materials-card="1"]')).toBeVisible({timeout: 10_000});
   await expect(page.locator(`[data-home-material-row="${m1.id}"]`)).toHaveCount(0);
   await expect(page.locator(`[data-home-material-row="${m2.id}"]`)).toBeVisible();
-
-  // View full list link navigates to /fleet/materials and the same sibling
-  // material still appears there (and m1 still hidden).
-  await page.locator('[data-home-materials-link="1"]').click();
-  await expect(page).toHaveURL(/\/fleet\/materials\/?$/, {timeout: 10_000});
-  await expect(page.locator(`[data-material-row="${m2.id}"]`)).toBeVisible({timeout: 10_000});
-  await expect(page.locator(`[data-material-row="${m1.id}"]`)).toHaveCount(0);
 });
 
-// Test 4 — crossing the next_due milestone makes a stale clear no longer
-// match (cleared material reappears in the new bucket).
-test('clear expires when next_due milestone advances', async ({page, supabaseAdmin, resetDb}) => {
+// Test 5 — crossing the next_due milestone makes a stale clear no longer
+// match (cleared material reappears in the new bucket on the home card).
+test('home card: clear expires when next_due milestone advances', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
   const eq = await seedEquipment(supabaseAdmin, {
     slug: 'mat-cross',
@@ -210,9 +212,9 @@ test('clear expires when next_due milestone advances', async ({page, supabaseAdm
   });
 
   // First load — material is hidden by the clear.
-  await page.goto('/fleet/materials');
+  await page.goto('/');
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await expect(page.locator(`[data-material-row="${m.id}"]`)).toHaveCount(0);
+  await expect(page.locator(`[data-home-material-row="${m.id}"]`)).toHaveCount(0);
 
   // Now record a completion at hours_reading=80 — service_intervals_completed
   // for the 50h interval. computeIntervalStatus snaps 80 to milestone 100;
@@ -245,5 +247,6 @@ test('clear expires when next_due milestone advances', async ({page, supabaseAdm
   // Reload — bucket has shifted; material reappears.
   await page.reload();
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await expect(page.locator(`[data-material-row="${m.id}"]`)).toBeVisible({timeout: 10_000});
+  await expect(page.locator('[data-home-materials-card="1"]')).toBeVisible({timeout: 10_000});
+  await expect(page.locator(`[data-home-material-row="${m.id}"]`)).toBeVisible({timeout: 10_000});
 });

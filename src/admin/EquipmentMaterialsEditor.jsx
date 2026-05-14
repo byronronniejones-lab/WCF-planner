@@ -14,8 +14,9 @@
 // Clears (equipment_material_clears) are exposed here as a per-material
 // "Reset clear" control so admin can re-enable an "Every Use" clear or a
 // historical bucket clear for testing/operator-error recovery. The
-// operator-facing /fleet/materials list does NOT show cleared rows; this
-// editor is the only un-clear surface (Codex amendment 2).
+// operator-facing Materials Needed card on the home dashboard does NOT
+// show cleared rows (the standalone /fleet/materials page was retired
+// 2026-05-14); this editor is the only un-clear surface (Codex amendment 2).
 import React from 'react';
 import {sb} from '../lib/supabase.js';
 

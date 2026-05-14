@@ -119,10 +119,11 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
       });
   }, []);
 
-  // mig 048 — Materials + clears for the home dashboard card. Same data the
-  // /fleet/materials view loads, just rendered compactly here. Bumping
-  // materialsTick triggers a refetch (used after Clear so the row vanishes
-  // from the home view immediately).
+  // mig 048 — Materials + clears for the home dashboard card. After the
+  // 2026-05-14 retirement of the standalone /fleet/materials page, this
+  // card is the only operator-facing surface. Bumping materialsTick
+  // triggers a refetch (used after Clear so the row vanishes from the
+  // home view immediately).
   React.useEffect(() => {
     let cancelled = false;
     Promise.all([
@@ -515,11 +516,12 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   });
 
   // mig 048 — Materials Needed dashboard card.
-  // Same data /fleet/materials renders, just inline here. The fuelingsBy
-  // map gets fed into buildMaterialChecklist alongside the equipment list +
-  // materials + clears so the helper can derive next_due via the existing
-  // computeIntervalStatus math. Per Codex (lane amendment) Clear is one-
-  // material-at-a-time only on the home card too — no bulk clear.
+  // After the 2026-05-14 retirement of the standalone /fleet/materials
+  // page, this card is the only operator-facing materials surface. The
+  // fuelingsBy map gets fed into buildMaterialChecklist alongside the
+  // equipment list + materials + clears so the helper can derive next_due
+  // via the existing computeIntervalStatus math. Per Codex (lane
+  // amendment) Clear is one-material-at-a-time only — no bulk clear.
   const materialsFuelingsBy = React.useMemo(() => {
     const m = new Map();
     for (const eqId of Object.keys(equipmentFuelings || {})) {
@@ -1021,10 +1023,12 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
           </div>
         )}
 
-        {/* ── Materials Needed (mig 048) ── compact rolling-checklist on the
-              admin home. Cleared rows vanish from the active list (Codex
-              lane amendment 2). One-material-at-a-time clear only — no bulk
-              Clear All. Full detail at /fleet/materials. */}
+        {/* ── Materials Needed (mig 048) ── compact rolling-checklist for
+              every logged-in role (not admin-gated). Cleared rows vanish
+              from the active list (Codex lane amendment 2). One-material-
+              at-a-time clear only — no bulk Clear All. This is the
+              canonical operator surface for materials after the standalone
+              /fleet/materials page was retired 2026-05-14. */}
         {materialsChecklist.length > 0 && (
           <div data-home-materials-card="1">
             <div
@@ -1038,22 +1042,6 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
               <div style={{fontSize: 13, fontWeight: 600, color: '#92400e', letterSpacing: 0.3}}>
                 🧰 MATERIALS NEEDED
               </div>
-              <button
-                onClick={() => navigate('/fleet/materials')}
-                style={{
-                  fontSize: 11,
-                  color: '#1d4ed8',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0 4px',
-                  fontFamily: 'inherit',
-                  marginLeft: 'auto',
-                }}
-                data-home-materials-link="1"
-              >
-                View full list →
-              </button>
             </div>
             <div
               style={{

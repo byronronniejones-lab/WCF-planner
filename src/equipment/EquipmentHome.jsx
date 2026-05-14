@@ -17,7 +17,6 @@ import UsersModal from '../auth/UsersModal.jsx';
 import EquipmentFleetView from './EquipmentFleetView.jsx';
 import EquipmentFuelLogView from './EquipmentFuelLogView.jsx';
 import EquipmentDetail from './EquipmentDetail.jsx';
-import EquipmentMaterialListView from './EquipmentMaterialListView.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
 
@@ -79,11 +78,14 @@ export default function EquipmentHome({
   let subView = 'fleet';
   let detailSlug = null;
   if (path === '/fleet/fuel-log') subView = 'fuel-log';
-  else if (path === '/fleet/materials') subView = 'materials';
   else if (path.startsWith('/fleet/')) {
     detailSlug = path.slice('/fleet/'.length);
     subView = 'detail';
   }
+  // 2026-05-14: /fleet/materials standalone page retired. The route is
+  // aliased to /fleet in src/lib/routes.js (ALIASES_EXACT), so the URL
+  // adapter rewrites old bookmarks before this component ever sees them.
+  // The Materials Needed surface lives on the home dashboard now.
 
   const activeEq = detailSlug ? equipment.find((e) => e.slug === detailSlug) : null;
 
@@ -116,7 +118,9 @@ export default function EquipmentHome({
 
       {/* Secondary sub-nav within /fleet. equipment_tech users see
           a simplified nav — just a quick-pick list of equipment tiles,
-          not the Fleet + Fuel Log + Materials admin surfaces. */}
+          not the Fleet + Fuel Log admin surfaces. Materials live on the
+          home dashboard Materials Needed card; the standalone Materials
+          page/tab was retired 2026-05-14. */}
       <div
         style={{
           background: 'white',
@@ -143,9 +147,6 @@ export default function EquipmentHome({
             >
               <PlannerIcon iconKey="fueling" size={16} />
               Fuel Log
-            </button>
-            <button onClick={() => navigate('/fleet/materials')} style={subNavBtn(subView === 'materials')}>
-              📋 Materials
             </button>
           </>
         )}
@@ -232,7 +233,6 @@ export default function EquipmentHome({
         {!loading && !missingSchema && subView === 'fuel-log' && !isEquipmentTech && (
           <EquipmentFuelLogView equipment={equipment} fuelings={fuelings} fmt={fmt} />
         )}
-        {!loading && !missingSchema && subView === 'materials' && !isEquipmentTech && <EquipmentMaterialListView />}
         {!loading && !missingSchema && subView === 'detail' && activeEq && (
           <EquipmentDetail
             sb={sb}

@@ -138,6 +138,11 @@ export const ALIASES_EXACT = {
   // mounts are removed from main.jsx; the alias is the only path.
   '/my-tasks': '/tasks',
   '/admin/tasks': '/tasks',
+  // 2026-05-14: standalone /fleet/materials operator page retired in
+  // favor of the home dashboard Materials Needed card. Old bookmarks
+  // land on the fleet list (which already includes the per-equipment
+  // detail entry points).
+  '/fleet/materials': '/fleet',
 };
 
 // Prefix aliases. The matched prefix is replaced with the canonical prefix

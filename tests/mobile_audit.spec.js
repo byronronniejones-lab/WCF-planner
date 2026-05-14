@@ -59,7 +59,9 @@ const AUTH_ROUTES = [
   {path: '/sheep/weighins', slug: 'sheep-weighins'},
   {path: '/fleet', slug: 'fleet'},
   {path: '/fleet/fuel-log', slug: 'fleet-fuel-log'},
-  {path: '/fleet/materials', slug: 'fleet-materials'},
+  // /fleet/materials standalone page retired 2026-05-14; the URL is
+  // aliased to /fleet in src/lib/routes.js. Materials Needed surface
+  // lives on the home dashboard card now.
   {path: '/admin', slug: 'admin'},
   {path: '/tasks', slug: 'tasks'},
 ];
