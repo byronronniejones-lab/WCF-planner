@@ -9,6 +9,8 @@
 // same try/catch pattern used elsewhere in the cattle module. The view
 // layer surfaces error messages to the operator.
 
+import {todayCentralISO} from './dateUtils.js';
+
 const SETTINGS_PK = 'global';
 
 // ── settings ─────────────────────────────────────────────────────────────────
@@ -130,14 +132,14 @@ export async function removeHidden(sb, {cattleId, monthKey}) {
 
 // Mark an active batch complete. Caller is responsible for verifying every
 // cow has hanging_weight > 0 (use batchHasAllHangingWeights from the pure
-// helper). actual_process_date is set to weigh_in_sessions.date when the
-// batch was created via Send-to-Processor; manual completion uses the
-// caller-supplied date or today.
+// helper). actual_process_date resolves to the caller-supplied date when
+// truthy, otherwise today in America/Chicago — never null, so the
+// Processed section always renders a date.
 export async function markBatchComplete(sb, batchId, {processedDate} = {}) {
-  const update = {status: 'complete'};
-  if (processedDate && !update.actual_process_date) {
-    update.actual_process_date = processedDate;
-  }
+  const update = {
+    status: 'complete',
+    actual_process_date: processedDate || todayCentralISO(),
+  };
   const r = await sb.from('cattle_processing_batches').update(update).eq('id', batchId);
   if (r.error) throw new Error('markBatchComplete: ' + r.error.message);
 }

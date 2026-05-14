@@ -30,6 +30,7 @@ import UsersModal from '../auth/UsersModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
+import {todayCentralISO} from '../lib/dateUtils.js';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
 import {
   buildForecast,
@@ -44,6 +45,16 @@ import {
   markBatchComplete,
   reopenBatch,
 } from '../lib/cattleForecastApi.js';
+
+// Pick the best stored date when marking a batch complete:
+// actual (already stamped by Send-to-Processor) → planned (scheduled
+// booking) → today in Central. Returning null would leave the Processed
+// section showing no date — hotfix for C-26-02/C-26-03 PROD regression.
+function resolveProcessedDate(batch) {
+  if (batch && batch.actual_process_date) return batch.actual_process_date;
+  if (batch && batch.planned_process_date) return batch.planned_process_date;
+  return todayCentralISO();
+}
 
 const CattleBatchesView = ({
   sb,
@@ -180,9 +191,14 @@ const CattleBatchesView = ({
     setBatches((prev) => prev.map((b) => (b.id === batch.id ? nextBatch : b)));
     // Auto-flip to complete if every cow has hanging_weight > 0.
     if (field === 'hanging_weight' && nextBatch.status === 'active' && batchHasAllHangingWeights(nextBatch)) {
+      const processedDate = resolveProcessedDate(nextBatch);
       try {
-        await markBatchComplete(sb, batch.id, {processedDate: nextBatch.actual_process_date});
-        setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...nextBatch, status: 'complete'} : b)));
+        await markBatchComplete(sb, batch.id, {processedDate});
+        setBatches((prev) =>
+          prev.map((b) =>
+            b.id === batch.id ? {...nextBatch, status: 'complete', actual_process_date: processedDate} : b,
+          ),
+        );
       } catch (e) {
         setNotice({kind: 'error', message: 'Auto-complete failed: ' + (e.message || e)});
       }
@@ -212,9 +228,12 @@ const CattleBatchesView = ({
       });
       return;
     }
+    const processedDate = resolveProcessedDate(batch);
     try {
-      await markBatchComplete(sb, batch.id, {processedDate: batch.actual_process_date});
-      setBatches((prev) => prev.map((b) => (b.id === batch.id ? {...b, status: 'complete'} : b)));
+      await markBatchComplete(sb, batch.id, {processedDate});
+      setBatches((prev) =>
+        prev.map((b) => (b.id === batch.id ? {...b, status: 'complete', actual_process_date: processedDate} : b)),
+      );
     } catch (e) {
       setNotice({kind: 'error', message: 'Mark complete failed: ' + (e.message || e)});
     }
@@ -874,9 +893,15 @@ function BatchTile({
         <span style={{fontSize: 11, color: '#6b7280'}}>
           {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
         </span>
-        {batch.actual_process_date && (
-          <span style={{fontSize: 11, color: '#065f46'}}>processed {fmt(batch.actual_process_date)}</span>
-        )}
+        {isComplete
+          ? (batch.actual_process_date || batch.planned_process_date) && (
+              <span style={{fontSize: 11, color: '#065f46'}}>
+                processed {fmt(batch.actual_process_date || batch.planned_process_date)}
+              </span>
+            )
+          : batch.actual_process_date && (
+              <span style={{fontSize: 11, color: '#065f46'}}>processed {fmt(batch.actual_process_date)}</span>
+            )}
         {yieldPct && <span style={{fontSize: 11, fontWeight: 600, color: '#065f46'}}>{yieldPct + '% yield'}</span>}
       </div>
       {expanded && (

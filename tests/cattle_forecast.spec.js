@@ -789,14 +789,17 @@ test('batches: active auto-flips to complete on full hanging weights; reopen res
 }) => {
   // Seed a real active batch directly (mimics what Send-to-Processor would
   // create) so we can drive the hanging-weight UI without going through the
-  // weighins flow.
+  // weighins flow. actual_process_date is intentionally NULL on the seed so
+  // the auto-complete path exercises the planned→actual fallback (PROD
+  // hotfix for C-26-02/C-26-03, which landed in Processed with no date).
   const batchId = 'b-active-test-1';
+  const plannedDate = '2026-05-04';
   await supabaseAdmin.from('cattle_processing_batches').insert({
     id: batchId,
     name: 'C-26-99',
     status: 'active',
-    actual_process_date: '2026-05-04',
-    planned_process_date: '2026-05-04',
+    actual_process_date: null,
+    planned_process_date: plannedDate,
     cows_detail: [
       {cattle_id: 'F1', tag: '1001', live_weight: 1100, hanging_weight: null},
       {cattle_id: 'F-AT-MAX', tag: '1002', live_weight: 1450, hanging_weight: null},
@@ -846,6 +849,16 @@ test('batches: active auto-flips to complete on full hanging weights; reopen res
     )
     .toBe('complete');
 
+  // Hotfix lock: auto-complete must stamp actual_process_date from the
+  // planned date when the seed had none. Before the fix, this row landed in
+  // Processed with no displayed date.
+  const stampedR = await supabaseAdmin
+    .from('cattle_processing_batches')
+    .select('actual_process_date')
+    .eq('id', batchId)
+    .single();
+  expect(stampedR.data?.actual_process_date).toBe(plannedDate);
+
   // Expand Completed section so the tile is in the DOM again. The tile was
   // already expanded from the earlier weight-entry step (expandedBatchId
   // state survives the auto-flip), so its detail panel re-renders along
@@ -854,6 +867,7 @@ test('batches: active auto-flips to complete on full hanging weights; reopen res
   await page.locator('[data-batches-section="processed"]').locator('> div').first().click();
   const completedTile = page.locator('[data-batch-row="' + batchId + '"]');
   await expect(completedTile).toHaveAttribute('data-batch-status', 'complete');
+  await expect(completedTile).toContainText('processed 05/04/26');
 
   const reopen = page.locator('[data-reopen="' + batchId + '"]');
   await expect(reopen).toBeVisible();
