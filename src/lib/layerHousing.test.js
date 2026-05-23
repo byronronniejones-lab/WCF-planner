@@ -109,4 +109,36 @@ describe('computeProjectedCount', () => {
     expect(result.anchor).toBe(0);
     expect(result.projected).toBe(0);
   });
+
+  it('current_count 0 with same date as daily falls back to daily', () => {
+    const housing = {housing_name: 'Eggmobile 3', current_count: 0, current_count_date: '2026-04-10'};
+    const dailys = [{batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0}];
+    const result = computeProjectedCount(housing, dailys);
+    expect(result.anchor).toBe(115);
+    expect(result.projected).toBe(115);
+  });
+
+  it('string current_count "0" falls back to daily', () => {
+    const housing = {housing_name: 'Eggmobile 3', current_count: '0', current_count_date: null};
+    const dailys = [{batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0}];
+    const result = computeProjectedCount(housing, dailys);
+    expect(result.anchor).toBe(115);
+  });
+
+  it('empty string current_count falls back to daily', () => {
+    const housing = {housing_name: 'Eggmobile 3', current_count: '', current_count_date: null};
+    const dailys = [{batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0}];
+    const result = computeProjectedCount(housing, dailys);
+    expect(result.anchor).toBe(115);
+  });
+
+  it('matches daily by batch_id when batch_label differs from housing_name', () => {
+    const housing = {housing_name: 'Eggmobile 3', batch_id: 'batch-99', current_count: null, current_count_date: null};
+    const dailys = [
+      {batch_label: 'L-25-01', batch_id: 'batch-99', date: '2026-04-10', layer_count: 115, mortality_count: 0},
+    ];
+    const result = computeProjectedCount(housing, dailys);
+    expect(result).not.toBeNull();
+    expect(result.anchor).toBe(115);
+  });
 });
