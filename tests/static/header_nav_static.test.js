@@ -34,9 +34,24 @@ describe('Header — dark bar shape (post-Notifications-prep)', () => {
     expect(src).toMatch(/myDueCount > 0 && \(/);
   });
 
-  it('Notifications placeholder slot is rendered alongside Tasks', () => {
+  it('Notifications placeholder slot is preserved in source (kept behind a flag)', () => {
+    // Source still carries the placeholder JSX so the Notifications Center
+    // lane can flip one constant to wire it up. After 2026-05-22 the live
+    // render is gated on NOTIFICATIONS_CENTER_ENABLED so the empty bell
+    // doesn't take 36px of mobile header for a no-op tap.
     expect(src).toMatch(/data-notifications-header-link="1"/);
     expect(src).toMatch(/data-notifications-placeholder="1"/);
+  });
+
+  it('Notifications placeholder is gated on NOTIFICATIONS_CENTER_ENABLED (defaulted false)', () => {
+    // The constant must be defined exactly once at the top of the module
+    // and default to false until the Notifications Center storage lane
+    // ships. The button JSX must live inside that gate so the live header
+    // never renders a no-op bell.
+    expect(src).toMatch(/const NOTIFICATIONS_CENTER_ENABLED\s*=\s*false/);
+    expect(src).toMatch(
+      /\{NOTIFICATIONS_CENTER_ENABLED && authState\?\.user && \(\s*<button\s+data-notifications-header-link="1"/,
+    );
   });
 
   it('Notifications placeholder does NOT carry a count badge yet', () => {

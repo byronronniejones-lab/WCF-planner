@@ -38,11 +38,33 @@ describe('section sub-nav under @media (max-width: 600px)', () => {
   });
 
   it('adds a right-edge fade as the swipe affordance (both -webkit and standard mask)', () => {
+    // Fade width was strengthened from 16px to 28px in the 2026-05-22
+    // mobile-header refinement lane. The cut-off needs to be visible at a
+    // glance on cattle/pigs (8 tabs each) where the next tab is otherwise
+    // mid-character.
     expect(block[0]).toMatch(
-      /-webkit-mask-image:\s*linear-gradient\(to right,\s*black\s*calc\(100% - 16px\),\s*transparent\)/,
+      /-webkit-mask-image:\s*linear-gradient\(to right,\s*black\s*calc\(100% - 28px\),\s*transparent\)/,
     );
     expect(block[0]).toMatch(
-      /(?<!-webkit-)mask-image:\s*linear-gradient\(to right,\s*black\s*calc\(100% - 16px\),\s*transparent\)/,
+      /(?<!-webkit-)mask-image:\s*linear-gradient\(to right,\s*black\s*calc\(100% - 28px\),\s*transparent\)/,
     );
+  });
+
+  it('adds a right-edge chevron hint anchored to a relative wrapper around the scroller', () => {
+    // The chevron sits in index.html as ::after on [data-header-subnav-wrap].
+    // The wrapper is rendered by Header.jsx with position:relative so the
+    // chevron stays at the viewport's right edge while the scroller content
+    // moves underneath. pointer-events:none keeps touches reaching the tabs.
+    expect(html).toMatch(/\[data-header-subnav-wrap="1"\]::after\s*\{/);
+    expect(html).toMatch(/content:\s*'\\203A'/);
+    expect(html).toMatch(/pointer-events:\s*none/);
+  });
+
+  it('hides the brand section pill on mobile only', () => {
+    // The 2026-05-22 lane added [data-header-section-pill="1"] to the
+    // BROILERS/CATTLE/SHEEP/etc spans next to the WCF Planner brand.
+    // index.html's mobile @media block hides them so the brand row stays
+    // quiet; the sub-nav directly below still names the active section.
+    expect(html).toMatch(/\[data-header-section-pill="1"\]\s*\{\s*display:\s*none\s*!important/);
   });
 });

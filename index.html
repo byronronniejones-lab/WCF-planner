@@ -185,15 +185,41 @@
       -webkit-overflow-scrolling: touch !important;
       scrollbar-width: none;
       padding: 8px 12px !important;
-      /* Right-edge fade hints that there's more to swipe when section nav
-         items (Cattle: 8 tabs, Pigs: 8) overflow the viewport. The hidden
-         scrollbar above kept the visual clean but left operators with no
-         affordance — this fade gives the cue without a visible scrollbar. */
-      -webkit-mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
-      mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+      /* Right-edge fade — the swipe affordance. Strengthened from 16px to
+         28px so the cut-off is visible at a glance on cattle/pigs (8 tabs
+         each) where the next tab is otherwise mid-character. The chevron
+         hint below sits in the wrapper one level up so it stays anchored
+         to the viewport's right edge while the user scrolls. */
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+      mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
     }
     [data-header-subnav="1"]::-webkit-scrollbar {
       display: none;
+    }
+    /* Chevron hint anchored to the wrapper around the scroller. The wrapper
+       carries data-header-subnav-wrap="1" and position:relative from the
+       inline style in Header.jsx; the chevron is pointer-events:none so
+       touches still reach the underlying tabs. */
+    [data-header-subnav-wrap="1"]::after {
+      content: '\203A';
+      position: absolute;
+      top: 0;
+      right: 6px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      font-size: 18px;
+      font-weight: 800;
+      color: #4b5563;
+      pointer-events: none;
+      text-shadow: 0 0 6px #fff, 0 0 10px #fff;
+    }
+    /* Section pill on the dark header bar (BROILERS / CATTLE / SHEEP /
+       etc.) — hidden on mobile so the brand row stays quiet. The active
+       section is still announced by the sub-nav directly below; the pill
+       was duplicating that info while spending ~70px of header width. */
+    [data-header-section-pill="1"] {
+      display: none !important;
     }
     [data-mobile-hscroll="1"] {
       overflow-x: auto !important;

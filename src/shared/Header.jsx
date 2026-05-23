@@ -36,6 +36,14 @@ import {todayCentralISO} from '../lib/dateUtils.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
 
+// Notifications Center is not implemented yet. The placeholder button +
+// future BellIcon are kept in source behind this gate so the storage
+// lane can flip a single constant when it's ready. Until then the slot
+// renders nothing — a no-op icon was misleading on mobile, where every
+// 36px of the action group counts. Flip to true ONLY when a real
+// notifications source exists.
+const NOTIFICATIONS_CENTER_ENABLED = false;
+
 // Shared white-button shape for header action icons (Tasks, Notifications,
 // Hamburger). 2026-05-14 Codex direction: actual white buttons on the
 // green header, not translucent outline-on-green. 36×36 hit target meets
@@ -164,6 +172,19 @@ const MENU_DIVIDER = {
   margin: '4px 0',
 };
 
+// Section pill that sits next to the brand on the dark bar (BROILERS,
+// CATTLE, SHEEP, etc.). Hidden under @media (max-width: 600px) via the
+// data-header-section-pill hook so mobile gets a quieter brand while
+// the sub-nav right below still names the active section.
+const SECTION_PILL_STYLE = {
+  fontSize: 11,
+  fontWeight: 500,
+  color: 'rgba(255,255,255,.6)',
+  borderLeft: '1px solid rgba(255,255,255,.25)',
+  paddingLeft: 10,
+  letterSpacing: 0.5,
+};
+
 export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, ConfirmActionModal}) {
   const {authState, saveStatus, setShowUsers} = useAuth();
   const {view, setView, showMenu, setShowMenu} = useUI();
@@ -177,6 +198,11 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
   // refresh when the user tabs back in.
   const callerProfileId = authState && authState.user ? authState.user.id : null;
   const [myDueCount, setMyDueCount] = React.useState(0);
+  // Ref on the section sub-nav so an effect can scroll the active tab into
+  // view after a section/view change. Without this, the operator could land
+  // on a route whose tab sits off-screen to the right (cattle has 8 tabs;
+  // pigs has 8) and not realize the active one wasn't the first visible.
+  const subnavRef = React.useRef(null);
   React.useEffect(() => {
     if (!sb || !callerProfileId) {
       setMyDueCount(0);
@@ -232,7 +258,13 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
   const inCattle = cattleViews.includes(view);
   const inSheep = sheepViews.includes(view);
   const inEquipment = view === 'equipmentHome';
-  const inSection = inPoultry || inPigs || inLayers || inCattle || inSheep || inEquipment;
+  // inSubnav drives the light sub-nav strip. Brand pills use the individual
+  // in* flags directly. Equipment views render their own Fleet/Fuel Log tab
+  // strip inside the page, so the Header's sub-nav (which only had
+  // "⌂ Home + divider" for inEquipment) was a redundant strip back-to-back
+  // with the page's own tabs. equipmentHome keeps its brand pill but no
+  // longer triggers the Header sub-nav.
+  const inSubnav = inPoultry || inPigs || inLayers || inCattle || inSheep;
   const nb = (active) => ({
     padding: '7px 16px',
     borderRadius: 8,
@@ -272,6 +304,21 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
 
   const isAdmin = authState?.role === 'admin';
 
+  // After any view change that keeps us in a sub-nav section, nudge the
+  // active tab into the visible scroll area. Only scrolls if the active
+  // tab is fully outside the viewport — operators mid-swipe aren't fought.
+  React.useEffect(() => {
+    if (!subnavRef.current) return;
+    const active = subnavRef.current.querySelector('[data-subnav-active="1"]');
+    if (active && typeof active.scrollIntoView === 'function') {
+      try {
+        active.scrollIntoView({inline: 'nearest', block: 'nearest'});
+      } catch (_) {
+        /* older browsers without the options form — no-op */
+      }
+    }
+  }, [view]);
+
   return (
     <div className="no-print">
       {DeleteConfirmModal}
@@ -293,100 +340,37 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
         >
           <div style={{fontSize: 17, fontWeight: 700, letterSpacing: '-.4px', color: 'white'}}>WCF Planner</div>
           {inPoultry && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,.6)',
-                borderLeft: '1px solid rgba(255,255,255,.25)',
-                paddingLeft: 10,
-                letterSpacing: 0.5,
-              }}
-            >
+            <span data-header-section-pill="1" style={SECTION_PILL_STYLE}>
               BROILERS
             </span>
           )}
           {['webforms'].includes(view) && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,.6)',
-                borderLeft: '1px solid rgba(255,255,255,.25)',
-                paddingLeft: 10,
-                letterSpacing: 0.5,
-              }}
-            >
+            <span data-header-section-pill="1" style={SECTION_PILL_STYLE}>
               ADMIN
             </span>
           )}
           {inPigs && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,.6)',
-                borderLeft: '1px solid rgba(255,255,255,.25)',
-                paddingLeft: 10,
-                letterSpacing: 0.5,
-              }}
-            >
+            <span data-header-section-pill="1" style={SECTION_PILL_STYLE}>
               PIGS
             </span>
           )}
           {inLayers && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,.6)',
-                borderLeft: '1px solid rgba(255,255,255,.25)',
-                paddingLeft: 10,
-                letterSpacing: 0.5,
-              }}
-            >
+            <span data-header-section-pill="1" style={SECTION_PILL_STYLE}>
               LAYERS
             </span>
           )}
           {inCattle && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,.6)',
-                borderLeft: '1px solid rgba(255,255,255,.25)',
-                paddingLeft: 10,
-                letterSpacing: 0.5,
-              }}
-            >
+            <span data-header-section-pill="1" style={SECTION_PILL_STYLE}>
               CATTLE
             </span>
           )}
           {inSheep && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,.6)',
-                borderLeft: '1px solid rgba(255,255,255,.25)',
-                paddingLeft: 10,
-                letterSpacing: 0.5,
-              }}
-            >
+            <span data-header-section-pill="1" style={SECTION_PILL_STYLE}>
               SHEEP
             </span>
           )}
           {inEquipment && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,.6)',
-                borderLeft: '1px solid rgba(255,255,255,.25)',
-                paddingLeft: 10,
-                letterSpacing: 0.5,
-              }}
-            >
+            <span data-header-section-pill="1" style={SECTION_PILL_STYLE}>
               EQUIPMENT
             </span>
           )}
@@ -432,12 +416,12 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
             </button>
           )}
           {/* Notifications placeholder — layout slot for the future
-              Notifications Center lane. No real notification source is
-              wired yet; deliberately renders WITHOUT a badge so a stale
-              "0" or "N" can't mislead operators. The button is reachable
-              and announces its placeholder state via aria-label; clicking
-              it is a no-op until the Notifications Center ships. */}
-          {authState?.user && (
+              Notifications Center lane. Currently behind
+              NOTIFICATIONS_CENTER_ENABLED (false) so it does NOT render:
+              a no-op icon was confusing on mobile and the storage lane
+              hasn't shipped. JSX is preserved so the flip is one
+              constant when the lane lands. */}
+          {NOTIFICATIONS_CENTER_ENABLED && authState?.user && (
             <button
               data-notifications-header-link="1"
               data-notifications-placeholder="1"
@@ -547,105 +531,134 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
           )}
         </div>
       </div>
-      {/* ── Light sub-nav bar — only in section views ── */}
-      {inSection && (
-        <div
-          data-header-subnav="1"
-          style={{
-            background: 'white',
-            borderBottom: '1px solid #e5e7eb',
-            padding: '8px 1.25rem',
-            display: 'flex',
-            gap: 6,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-          }}
-        >
-          <button onClick={() => go('home')} style={ghostBtn}>
-            ⌂ Home
-          </button>
-          <div style={{width: 1, height: 20, background: '#e5e7eb', margin: '0 4px'}} />
-          {inPoultry &&
-            [
-              ['broilerHome', 'Dashboard'],
-              ['timeline', 'Timeline'],
-              ['list', 'Batches'],
-              ['broilerdailys', 'Dailys'],
-              ['broilerweighins', 'Weigh-Ins'],
-              ['feed', 'Poultry Feed'],
-            ].map(([v, l]) => (
-              <button
-                key={v}
-                style={nb(view === v && !showForm)}
-                onClick={() => {
-                  setShowForm(false);
-                  setView(v);
-                }}
-              >
-                {l}
-              </button>
-            ))}
-          {inPigs &&
-            [
-              ['pigsHome', 'Dashboard'],
-              ['breeding', 'Timeline'],
-              ['farrowing', 'Farrowing'],
-              ['sows', 'Breeding Pigs'],
-              ['pigbatches', 'Batches'],
-              ['pigdailys', 'Dailys'],
-              ['pigweighins', 'Weigh-Ins'],
-              ['pigs', 'Feed'],
-            ].map(([v, l]) => (
-              <button
-                key={v}
-                style={nb(view === v && !showForm && !showBreedForm && !showFarrowForm)}
-                onClick={() => {
-                  setShowForm(false);
-                  setShowBreedForm(false);
-                  setShowFarrowForm(false);
-                  setView(v);
-                }}
-              >
-                {l}
-              </button>
-            ))}
-          {inLayers &&
-            [
-              ['layersHome', 'Dashboard'],
-              ['layerbatches', 'Layer Batches'],
-              ['layerdailys', 'Layer Dailys'],
-              ['eggdailys', 'Egg Dailys'],
-            ].map(([v, l]) => (
-              <button key={v} style={nb(view === v)} onClick={() => setView(v)}>
-                {l}
-              </button>
-            ))}
-          {inCattle &&
-            [
-              ['cattleHome', 'Dashboard'],
-              ['cattleherds', 'Herds'],
-              ['cattlebreeding', 'Breeding'],
-              ['cattleweighins', 'Weigh-Ins'],
-              ['cattleforecast', 'Forecast'],
-              ['cattlebatches', 'Batches'],
-              ['cattledailys', 'Dailys'],
-            ].map(([v, l]) => (
-              <button key={v} style={nb(view === v)} onClick={() => setView(v)}>
-                {l}
-              </button>
-            ))}
-          {inSheep &&
-            [
-              ['sheepHome', 'Dashboard'],
-              ['sheepflocks', 'Flocks'],
-              ['sheepweighins', 'Weigh-Ins'],
-              ['sheepdailys', 'Dailys'],
-              ['sheepbatches', 'Batches'],
-            ].map(([v, l]) => (
-              <button key={v} style={nb(view === v)} onClick={() => setView(v)}>
-                {l}
-              </button>
-            ))}
+      {/* ── Light sub-nav bar — only in section views with tabs ── */}
+      {/* Wrapper carries position:relative so the right-edge chevron hint
+          in index.html can anchor to the viewport edge instead of the
+          scroller's content edge. */}
+      {inSubnav && (
+        <div data-header-subnav-wrap="1" style={{position: 'relative'}}>
+          <div
+            ref={subnavRef}
+            data-header-subnav="1"
+            style={{
+              background: 'white',
+              borderBottom: '1px solid #e5e7eb',
+              padding: '8px 1.25rem',
+              display: 'flex',
+              gap: 6,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+            }}
+          >
+            <button onClick={() => go('home')} style={ghostBtn}>
+              ⌂ Home
+            </button>
+            <div style={{width: 1, height: 20, background: '#e5e7eb', margin: '0 4px'}} />
+            {inPoultry &&
+              [
+                ['broilerHome', 'Dashboard'],
+                ['timeline', 'Timeline'],
+                ['list', 'Batches'],
+                ['broilerdailys', 'Dailys'],
+                ['broilerweighins', 'Weigh-Ins'],
+                ['feed', 'Poultry Feed'],
+              ].map(([v, l]) => {
+                const active = view === v && !showForm;
+                return (
+                  <button
+                    key={v}
+                    data-subnav-active={active ? '1' : undefined}
+                    style={nb(active)}
+                    onClick={() => {
+                      setShowForm(false);
+                      setView(v);
+                    }}
+                  >
+                    {l}
+                  </button>
+                );
+              })}
+            {inPigs &&
+              [
+                ['pigsHome', 'Dashboard'],
+                ['breeding', 'Timeline'],
+                ['farrowing', 'Farrowing'],
+                ['sows', 'Breeding Pigs'],
+                ['pigbatches', 'Batches'],
+                ['pigdailys', 'Dailys'],
+                ['pigweighins', 'Weigh-Ins'],
+                ['pigs', 'Feed'],
+              ].map(([v, l]) => {
+                const active = view === v && !showForm && !showBreedForm && !showFarrowForm;
+                return (
+                  <button
+                    key={v}
+                    data-subnav-active={active ? '1' : undefined}
+                    style={nb(active)}
+                    onClick={() => {
+                      setShowForm(false);
+                      setShowBreedForm(false);
+                      setShowFarrowForm(false);
+                      setView(v);
+                    }}
+                  >
+                    {l}
+                  </button>
+                );
+              })}
+            {inLayers &&
+              [
+                ['layersHome', 'Dashboard'],
+                ['layerbatches', 'Layer Batches'],
+                ['layerdailys', 'Layer Dailys'],
+                ['eggdailys', 'Egg Dailys'],
+              ].map(([v, l]) => (
+                <button
+                  key={v}
+                  data-subnav-active={view === v ? '1' : undefined}
+                  style={nb(view === v)}
+                  onClick={() => setView(v)}
+                >
+                  {l}
+                </button>
+              ))}
+            {inCattle &&
+              [
+                ['cattleHome', 'Dashboard'],
+                ['cattleherds', 'Herds'],
+                ['cattlebreeding', 'Breeding'],
+                ['cattleweighins', 'Weigh-Ins'],
+                ['cattleforecast', 'Forecast'],
+                ['cattlebatches', 'Batches'],
+                ['cattledailys', 'Dailys'],
+              ].map(([v, l]) => (
+                <button
+                  key={v}
+                  data-subnav-active={view === v ? '1' : undefined}
+                  style={nb(view === v)}
+                  onClick={() => setView(v)}
+                >
+                  {l}
+                </button>
+              ))}
+            {inSheep &&
+              [
+                ['sheepHome', 'Dashboard'],
+                ['sheepflocks', 'Flocks'],
+                ['sheepweighins', 'Weigh-Ins'],
+                ['sheepdailys', 'Dailys'],
+                ['sheepbatches', 'Batches'],
+              ].map(([v, l]) => (
+                <button
+                  key={v}
+                  data-subnav-active={view === v ? '1' : undefined}
+                  style={nb(view === v)}
+                  onClick={() => setView(v)}
+                >
+                  {l}
+                </button>
+              ))}
+          </div>
         </div>
       )}
     </div>

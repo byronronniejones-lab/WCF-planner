@@ -69,7 +69,7 @@ const TABS = [
   {key: 'mine', label: 'My Tasks'},
   {key: 'recurring', label: 'Recurring'},
   {key: 'completed', label: 'Completed'},
-  {key: 'system', label: 'System Tasks', adminOnly: true},
+  {key: 'system', label: 'System', adminOnly: true},
 ];
 
 export default function TaskCenterView({Header, sb, authState}) {
