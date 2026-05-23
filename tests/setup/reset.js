@@ -68,6 +68,13 @@ const TEST_OWNED_TABLES = [
   // Tasks v1 (migs 036-039). task_instances FK to task_templates (RESTRICT);
   // CASCADE on the TRUNCATE handles the FK so child-before-parent ordering
   // is just for readability. task_cron_runs has no FK.
+  // notifications (mig 057): FK task_instance_id ON DELETE CASCADE, so
+  // truncating task_instances already clears notification rows. Listed
+  // explicitly so the table is recognized as test-owned and so a future
+  // spec that seeds notifications directly (no parent task) still gets
+  // a clean slate. Order: before task_instances would be redundant — keep
+  // after for readability with the rest of the parents list.
+  'notifications',
   'task_instances',
   'task_cron_runs',
   'task_templates',

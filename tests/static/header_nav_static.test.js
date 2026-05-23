@@ -34,32 +34,30 @@ describe('Header — dark bar shape (post-Notifications-prep)', () => {
     expect(src).toMatch(/myDueCount > 0 && \(/);
   });
 
-  it('Notifications placeholder slot is preserved in source (kept behind a flag)', () => {
-    // Source still carries the placeholder JSX so the Notifications Center
-    // lane can flip one constant to wire it up. After 2026-05-22 the live
-    // render is gated on NOTIFICATIONS_CENTER_ENABLED so the empty bell
-    // doesn't take 36px of mobile header for a no-op tap.
+  it('Notifications bell is rendered (real data, no placeholder)', () => {
+    // After mig 057 the bell is wired to public.notifications. Keep the
+    // header-link hook for the Playwright spec; the placeholder hook is
+    // explicitly gone.
     expect(src).toMatch(/data-notifications-header-link="1"/);
-    expect(src).toMatch(/data-notifications-placeholder="1"/);
+    expect(src).not.toMatch(/data-notifications-placeholder="1"/);
+    expect(src).not.toMatch(/Notifications Center not yet implemented/);
   });
 
-  it('Notifications placeholder is gated on NOTIFICATIONS_CENTER_ENABLED (defaulted false)', () => {
-    // The constant must be defined exactly once at the top of the module
-    // and default to false until the Notifications Center storage lane
-    // ships. The button JSX must live inside that gate so the live header
-    // never renders a no-op bell.
-    expect(src).toMatch(/const NOTIFICATIONS_CENTER_ENABLED\s*=\s*false/);
+  it('NOTIFICATIONS_CENTER_ENABLED defaults to true and gates the rendered bell', () => {
+    // mig 057 ships the storage, so the flag flips to true. The bell JSX
+    // must live inside the {flag && authState?.user && (...)} gate so it
+    // only renders for logged-in users.
+    expect(src).toMatch(/const NOTIFICATIONS_CENTER_ENABLED\s*=\s*true/);
     expect(src).toMatch(
-      /\{NOTIFICATIONS_CENTER_ENABLED && authState\?\.user && \(\s*<button\s+data-notifications-header-link="1"/,
+      /\{NOTIFICATIONS_CENTER_ENABLED && authState\?\.user && \(\s*<div style=\{\{position: 'relative'\}\}>[\s\S]*?data-notifications-header-link="1"/,
     );
   });
 
-  it('Notifications placeholder does NOT carry a count badge yet', () => {
-    // Extract the notifications button block (CREATE … through its closing
-    // </button>) and assert no badge data attribute appears inside.
-    const block = src.match(/<button[^>]*data-notifications-header-link="1"[\s\S]*?<\/button>/);
-    expect(block, 'expected Notifications button block').not.toBeNull();
-    expect(block[0]).not.toMatch(/data-(notifications|tasks)-header-badge/);
+  it('Notifications bell carries the unread-count badge sourced from real data', () => {
+    expect(src).toMatch(/data-notifications-unread-badge=\{notifUnread\}/);
+    // Badge is conditionally rendered — only when notifUnread > 0 — so a
+    // recipient with no unread rows sees the icon alone, not a "0".
+    expect(src).toMatch(/\{notifUnread > 0 && \(/);
   });
 
   it('hamburger toggle is reachable for any logged-in user', () => {

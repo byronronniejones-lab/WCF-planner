@@ -32,17 +32,23 @@ import {useBatches} from '../contexts/BatchesContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 import {countMyOpenDueOrPastTasks} from '../lib/tasksCenterApi.js';
 import {TASK_CHANGE_EVENT} from '../lib/tasksCenterMutationsApi.js';
+import {
+  countUnreadNotifications,
+  loadRecentNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  NOTIFICATIONS_CHANGE_EVENT,
+} from '../lib/notificationsApi.js';
 import {todayCentralISO} from '../lib/dateUtils.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
 
-// Notifications Center is not implemented yet. The placeholder button +
-// future BellIcon are kept in source behind this gate so the storage
-// lane can flip a single constant when it's ready. Until then the slot
-// renders nothing — a no-op icon was misleading on mobile, where every
-// 36px of the action group counts. Flip to true ONLY when a real
-// notifications source exists.
-const NOTIFICATIONS_CENTER_ENABLED = false;
+// Notifications Center: enabled now that mig 057 ships the notifications
+// table and complete_task_instance v2 inserts a 'task_completed'
+// notification for the task creator when somebody else completes it.
+// The bell button renders a dropdown panel; the badge shows the
+// recipient's unread count from real DB data (no fakes).
+const NOTIFICATIONS_CENTER_ENABLED = true;
 
 // Shared white-button shape for header action icons (Tasks, Notifications,
 // Hamburger). 2026-05-14 Codex direction: actual white buttons on the
@@ -198,6 +204,13 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
   // refresh when the user tabs back in.
   const callerProfileId = authState && authState.user ? authState.user.id : null;
   const [myDueCount, setMyDueCount] = React.useState(0);
+  // Notifications Center state: unread count for the bell badge, the
+  // recent list for the dropdown, and the panel open flag. Loads only
+  // when the bell is enabled and a logged-in user is present. Soft-fails
+  // to 0/[] so a DB blip never breaks the header.
+  const [notifUnread, setNotifUnread] = React.useState(0);
+  const [notifRecent, setNotifRecent] = React.useState([]);
+  const [notifOpen, setNotifOpen] = React.useState(false);
   // Ref on the section sub-nav so an effect can scroll the active tab into
   // view after a section/view change. Without this, the operator could land
   // on a route whose tab sits off-screen to the right (cattle has 8 tabs;
@@ -240,6 +253,60 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
       }
     };
   }, [sb, callerProfileId, view]);
+
+  // Notifications: load unread count + recent list. Re-runs on auth,
+  // view change, focus, TASK_CHANGE_EVENT (a completion may have created
+  // a new notification for the caller), and NOTIFICATIONS_CHANGE_EVENT
+  // (a mark-read action somewhere else in the app).
+  React.useEffect(() => {
+    if (!NOTIFICATIONS_CENTER_ENABLED || !sb || !callerProfileId) {
+      setNotifUnread(0);
+      setNotifRecent([]);
+      return undefined;
+    }
+    let cancelled = false;
+    async function refresh() {
+      try {
+        const [n, list] = await Promise.all([
+          countUnreadNotifications(sb, callerProfileId),
+          loadRecentNotifications(sb, {limit: 20}),
+        ]);
+        if (!cancelled) {
+          setNotifUnread(n || 0);
+          setNotifRecent(list || []);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setNotifUnread(0);
+          setNotifRecent([]);
+        }
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('Header notifications: load failed', e && e.message ? e.message : e);
+        }
+      }
+    }
+    refresh();
+    function onFocus() {
+      refresh();
+    }
+    function onChange() {
+      refresh();
+    }
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('focus', onFocus);
+      window.addEventListener(TASK_CHANGE_EVENT, onChange);
+      window.addEventListener(NOTIFICATIONS_CHANGE_EVENT, onChange);
+    }
+    return () => {
+      cancelled = true;
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('focus', onFocus);
+        window.removeEventListener(TASK_CHANGE_EVENT, onChange);
+        window.removeEventListener(NOTIFICATIONS_CHANGE_EVENT, onChange);
+      }
+    };
+  }, [sb, callerProfileId, view]);
+
   const poultryViews = ['broilerHome', 'timeline', 'list', 'feed', 'broilerdailys', 'broilerweighins'];
   const pigViews = ['pigsHome', 'breeding', 'farrowing', 'sows', 'pigbatches', 'pigs', 'pigdailys', 'pigweighins'];
   const cattleViews = [
@@ -415,25 +482,178 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
               )}
             </button>
           )}
-          {/* Notifications placeholder — layout slot for the future
-              Notifications Center lane. Currently behind
-              NOTIFICATIONS_CENTER_ENABLED (false) so it does NOT render:
-              a no-op icon was confusing on mobile and the storage lane
-              hasn't shipped. JSX is preserved so the flip is one
-              constant when the lane lands. */}
+          {/* Notifications Center bell — real, data-backed. Badge shows
+              unread count from public.notifications (mig 057). Click
+              toggles a dropdown panel with the 20 most recent
+              notifications (read + unread). Row click goes to /tasks
+              and marks the notification read. "Mark all read" clears
+              every unread row for the recipient. */}
           {NOTIFICATIONS_CENTER_ENABLED && authState?.user && (
-            <button
-              data-notifications-header-link="1"
-              data-notifications-placeholder="1"
-              aria-label="Notifications (coming soon)"
-              title="Notifications (coming soon)"
-              onClick={() => {
-                /* Notifications Center not yet implemented — placeholder slot only. */
-              }}
-              style={HEADER_ICON_BTN}
-            >
-              <BellIcon size={18} />
-            </button>
+            <div style={{position: 'relative'}}>
+              <button
+                data-notifications-header-link="1"
+                aria-label={`Notifications${notifUnread > 0 ? ` (${notifUnread} unread)` : ''}`}
+                title="Notifications"
+                aria-expanded={notifOpen ? 'true' : 'false'}
+                onClick={() => setNotifOpen((o) => !o)}
+                style={notifOpen ? HEADER_ICON_BTN_ACTIVE : HEADER_ICON_BTN}
+              >
+                <BellIcon size={18} />
+                {notifUnread > 0 && (
+                  <span data-notifications-unread-badge={notifUnread} style={HEADER_BADGE}>
+                    {notifUnread}
+                  </span>
+                )}
+              </button>
+              {notifOpen && (
+                <div
+                  data-notifications-panel-scrim="1"
+                  onClick={() => setNotifOpen(false)}
+                  style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 199}}
+                />
+              )}
+              {notifOpen && (
+                <div
+                  data-notifications-panel="1"
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: '110%',
+                    background: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 10,
+                    boxShadow: '0 8px 24px rgba(0,0,0,.15)',
+                    zIndex: 200,
+                    minWidth: 320,
+                    maxWidth: 360,
+                    maxHeight: 480,
+                    overflow: 'hidden',
+                    fontFamily: 'inherit',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  <div
+                    data-notifications-panel-header="1"
+                    style={{
+                      padding: '10px 14px',
+                      borderBottom: '1px solid #f3f4f6',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{fontSize: 13, fontWeight: 700, color: '#111827'}}>Notifications</span>
+                    <span style={{fontSize: 11, color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}>
+                      {notifUnread > 0 ? `${notifUnread} unread` : 'all read'}
+                    </span>
+                    <button
+                      data-notifications-mark-all-read="1"
+                      onClick={async () => {
+                        try {
+                          await markAllNotificationsRead(sb, callerProfileId);
+                        } catch (_e) {
+                          /* soft-fail; next refresh will reconcile */
+                        }
+                      }}
+                      disabled={notifUnread === 0}
+                      style={{
+                        marginLeft: 'auto',
+                        padding: '4px 8px',
+                        background: 'none',
+                        border: 'none',
+                        color: notifUnread === 0 ? '#9ca3af' : '#085041',
+                        cursor: notifUnread === 0 ? 'default' : 'pointer',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Mark all read
+                    </button>
+                  </div>
+                  <div data-notifications-panel-list="1" style={{overflowY: 'auto', maxHeight: 420}}>
+                    {notifRecent.length === 0 && (
+                      <div
+                        data-notifications-empty="1"
+                        style={{padding: '20px 14px', textAlign: 'center', color: '#6b7280', fontSize: 13}}
+                      >
+                        No notifications yet.
+                      </div>
+                    )}
+                    {notifRecent.map((n) => {
+                      const unread = !n.read_at;
+                      return (
+                        <button
+                          key={n.id}
+                          data-notifications-row={n.id}
+                          data-notifications-row-unread={unread ? '1' : '0'}
+                          onClick={async () => {
+                            // Close the panel first so the navigation doesn't
+                            // leave a stale dropdown floating over /tasks.
+                            setNotifOpen(false);
+                            try {
+                              if (unread) await markNotificationRead(sb, n.id);
+                            } catch (_e) {
+                              /* soft-fail */
+                            }
+                            if (n.task_instance_id) {
+                              go('tasks');
+                            }
+                          }}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            textAlign: 'left',
+                            background: unread ? '#ecfdf5' : 'white',
+                            border: 'none',
+                            borderBottom: '1px solid #f3f4f6',
+                            padding: '10px 14px',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: unread ? 700 : 500,
+                              color: '#111827',
+                              lineHeight: 1.35,
+                            }}
+                          >
+                            {n.title}
+                          </div>
+                          {n.body && (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: '#4b5563',
+                                marginTop: 3,
+                                lineHeight: 1.4,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              {n.body}
+                            </div>
+                          )}
+                          <div
+                            style={{
+                              fontSize: 10.5,
+                              color: '#6b7280',
+                              marginTop: 4,
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {new Date(n.created_at).toLocaleString()}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
           {authState?.user && (
             <div style={{position: 'relative'}}>

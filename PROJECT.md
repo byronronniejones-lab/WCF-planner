@@ -37,6 +37,7 @@ Use this order when opening the repo cold:
 | Mobile UX | Main auth/public routes are covered by mobile audits at 360x780, 390x844, and 430x932. Header/sub-nav, daily cards, feed equations, BatchForm modal grids, and contained-scroll tables have mobile-specific hooks and regression coverage. |
 | Planner icons | `public/icons/planner/*.png` supplies program/action/equipment icons. Use `PlannerIcon`, `PlannerIconLabel`, and `plannerIconUrl`; do not reference the OneDrive source folder in app code. |
 | Operator notices | Source-wide native `alert`/`confirm`/`prompt` calls are banned by static locks. Operator-facing validation/save failures use inline notices or typed confirmation surfaces. |
+| Notifications Center | `public.notifications` table (mig 057) backs the header bell. `complete_task_instance` v2 atomically inserts a `task_completed` notification for `task_instances.created_by_profile_id` when the completer is a different profile. RLS pins SELECT/UPDATE to the recipient; no INSERT/DELETE policy. Header bell shows real unread count + dropdown panel with mark-one/mark-all-read. Self-completion, no-creator (recurring / system / public-webform), and missing-profile cases produce no notification. |
 | Auth emails | Admin-created user emails, welcome emails, and password resets send through `rapid-processor` from `noreply@wcfplanner.com`. Operational report emails still use `reports@wcfplanner.com`. |
 | Pig planned trips | `/pig/batches` supports admin/management add/delete/move/date-step planned trips, plus lock/unlock via a sidecar key (`ppp-pig-planned-trip-locks-v1`). Locked trips reject manual date/count/add/delete edits in `/pig/batches`. `/pig/weighins` Send-to-Trip fulfillment still reconciles `plannedCount`/removal against a locked trip without changing the scheduled date. Farm team is read-only on planned/processing trip mutations. |
 | Pig processor controls | Completed pig weigh-in sessions still expose processor-send controls for authorized users when unsent entries exist. |
@@ -435,6 +436,15 @@ Read this section before editing related files.
 - Header badge must soft-fail to zero and never break Header rendering.
 - Task Center assignee dropdowns must respect `tasks_public_assignee_availability` and fail closed on config read errors.
 - System task generation stays in cron/Edge Function flow, not frontend.
+
+### Notifications
+
+- `public.notifications` writes happen ONLY inside `SECURITY DEFINER` paths (today: `complete_task_instance` v2 from mig 053 + 057). Direct client INSERT/DELETE is unreachable (no policy + REVOKE).
+- Recipient-only RLS: a user can SELECT/UPDATE only rows where `recipient_profile_id = auth.uid()`. WITH CHECK keeps `recipient_profile_id` pinned so a stray UPDATE cannot reassign a row.
+- `complete_task_instance` v2's notification insert is wrapped in a `BEGIN/EXCEPTION` sub-transaction; a notification failure must NEVER roll back the completion itself.
+- Skip notification when: `created_by_profile_id IS NULL` (recurring / system / public-webform tasks), OR completer == creator (self-completion).
+- `task_completed` is the only allowed `type` value (CHECK constraint). Adding a new type requires a migration that widens the CHECK.
+- Header bell badge soft-fails to 0 on any error — never break Header render. Same pattern as the Tasks-due badge.
 
 ### Pig
 
