@@ -43,9 +43,19 @@ only when Ronnie explicitly assigns it.
 | Mobile header refinements | Live. Mobile section pill hidden, notification bell real, fleet duplicate nav removed. |
 | Tasks v2 | Canonical at `/tasks`; old `/my-tasks` and `/admin/tasks` are aliases. |
 
-### Open Working Tree
+### Parked WIP Stash
 
-Do not stage the whole tree. Split by lane.
+Working tree is intentionally clean after wrap. The parked code lanes are saved
+in a named stash:
+
+- Stash message: `wip: parked code lanes before wrap 2026-05-23`
+- Stash hash: `18a753e1ed36a1e1556069b918492196895fdc14`
+- Current ref at wrap: `stash@{0}` (verify with `git stash list`; the numbered
+  ref can change if new stashes are added)
+
+Before editing next session, inspect the stash with
+`git stash show -u --name-only 18a753e1ed36a1e1556069b918492196895fdc14`.
+Apply only when ready to untangle the lanes. Do not pop blindly.
 
 | Lane | Files | Next action |
 |---|---|---|
