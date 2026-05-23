@@ -1,7 +1,13 @@
 // One-shot UX sweep — boots each operator surface at desktop + three mobile
 // widths, captures a full-page screenshot, and probes for concrete layout
 // signals (horizontal scroll on body, viewport overflow). NOT part of the
-// regression floor — intended for ad-hoc audit runs only. Run explicitly:
+// regression floor — intended for ad-hoc audit runs only.
+//
+// EXCLUDED from CI: `npm run test:e2e:ci` (and the verify workflow) passes
+// `--grep-invert ux-audit` so this file does NOT run on push to main. The
+// 2026-05-23 verify run for 46a2f51 hit the 20-min workflow timeout inside
+// this spec; nothing failed, the job just ran out of time. Run it locally
+// when you need fresh screenshots:
 //
 //   npx playwright test tests/ux_audit.spec.js
 //

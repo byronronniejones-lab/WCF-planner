@@ -69,7 +69,13 @@ jobs:
         run: npm run build
 
       - name: E2E tests (Playwright)
-        run: npm run test:e2e
+        # test:e2e:ci excludes tests/ux_audit.spec.js. ux_audit is an ad-hoc
+        # audit spec (one-shot UX sweep used for screenshot review), not part
+        # of the regression floor. Running it inside CI tipped the verify job
+        # past the 20-min timeout on 2026-05-23. Run ux_audit manually via
+        # `npx playwright test tests/ux_audit.spec.js` when you need fresh
+        # audit screenshots.
+        run: npm run test:e2e:ci
 
       - name: Upload Playwright report on failure
         if: failure()
