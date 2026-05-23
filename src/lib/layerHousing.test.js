@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {computeProjectedCount} from './layerHousing.js';
+import {computeProjectedCount, computeHousingDisplayCount} from './layerHousing.js';
 
 describe('computeProjectedCount', () => {
   it('returns null for null housing', () => {
@@ -153,5 +153,49 @@ describe('computeProjectedCount', () => {
     const result = computeProjectedCount(housing, dailys);
     expect(result).not.toBeNull();
     expect(result.anchor).toBe(115);
+  });
+});
+
+describe('computeHousingDisplayCount', () => {
+  it('returns 0 for null housing', () => {
+    expect(computeHousingDisplayCount(null, [])).toBe(0);
+  });
+
+  it('returns positive current_count directly', () => {
+    const housing = {housing_name: 'Eggmobile 1', current_count: 200};
+    expect(computeHousingDisplayCount(housing, [])).toBe(200);
+  });
+
+  it('falls back to daily when current_count is 0', () => {
+    const housing = {housing_name: 'Eggmobile 3', status: 'active', current_count: 0, current_count_date: '2026-05-18'};
+    const dailys = [{batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0}];
+    expect(computeHousingDisplayCount(housing, dailys)).toBe(115);
+  });
+
+  it('falls back to daily when current_count is null', () => {
+    const housing = {housing_name: 'Eggmobile 3', current_count: null};
+    const dailys = [{batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0}];
+    expect(computeHousingDisplayCount(housing, dailys)).toBe(115);
+  });
+
+  it('does NOT subtract mortality', () => {
+    const housing = {housing_name: 'Eggmobile 3', current_count: null};
+    const dailys = [
+      {batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0},
+      {batch_label: 'Eggmobile 3', date: '2026-04-15', layer_count: null, mortality_count: 5},
+    ];
+    expect(computeHousingDisplayCount(housing, dailys)).toBe(115);
+  });
+
+  it('matches by batch_id when housing_name differs', () => {
+    const housing = {housing_name: 'Eggmobile 3', batch_id: 'b-99', current_count: null};
+    const dailys = [{batch_label: 'L-25-01', batch_id: 'b-99', date: '2026-04-10', layer_count: 115}];
+    expect(computeHousingDisplayCount(housing, dailys)).toBe(115);
+  });
+
+  it('returns 0 when no match and current_count is 0', () => {
+    const housing = {housing_name: 'Eggmobile 3', current_count: 0};
+    const dailys = [{batch_label: 'Eggmobile 1', date: '2026-04-10', layer_count: 200}];
+    expect(computeHousingDisplayCount(housing, dailys)).toBe(0);
   });
 });

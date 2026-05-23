@@ -9,7 +9,7 @@
 // ============================================================================
 import React from 'react';
 import {toISO, addDays} from '../lib/dateUtils.js';
-import {computeProjectedCount, computeLayerFeedCost} from '../lib/layerHousing.js';
+import {computeProjectedCount, computeHousingDisplayCount, computeLayerFeedCost} from '../lib/layerHousing.js';
 import {BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps} from '../lib/broiler.js';
 import {S} from '../lib/styles.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -641,8 +641,8 @@ const LayerBatchesView = ({
                                       >
                                         🏠 {h.housing_name}
                                         {(() => {
-                                          const p = computeProjectedCount(h, rawLayerDailys);
-                                          return p ? ' · ' + p.projected + ' hens' : '';
+                                          const c = computeHousingDisplayCount(h, rawLayerDailys);
+                                          return c > 0 ? ' · ' + c + ' hens' : '';
                                         })()}
                                       </span>
                                     ))}
@@ -1051,10 +1051,10 @@ const LayerBatchesView = ({
                 const s = batchStats[selectedBatch.id] || {};
                 const bHousings = layerHousings.filter((h) => h.batch_id === selectedBatch.id);
                 const orig = parseInt(selectedBatch.original_count) || 0;
-                const currentHens = bHousings.reduce((sum, h) => {
-                  const p = computeProjectedCount(h, rawLayerDailys);
-                  return sum + (p ? p.projected : 0);
-                }, 0);
+                const currentHens = bHousings.reduce(
+                  (sum, h) => sum + computeHousingDisplayCount(h, rawLayerDailys),
+                  0,
+                );
                 // End date for time-based metrics: today if active, latest housing retired_date if retired
                 const todayISOstr = new Date().toISOString().split('T')[0];
                 let endDate = todayISOstr;
@@ -1307,8 +1307,9 @@ const LayerBatchesView = ({
                 {batchHousings.map((h) => {
                   const hs = housingStats[h.id] || {};
                   const cap = getHousingCap(h.housing_name);
+                  const displayCount = computeHousingDisplayCount(h, rawLayerDailys);
                   const proj = computeProjectedCount(h, rawLayerDailys);
-                  const util = proj && cap ? Math.round((proj.projected / cap) * 100) : null;
+                  const util = displayCount && cap ? Math.round((displayCount / cap) * 100) : null;
                   return (
                     <div
                       key={h.id}

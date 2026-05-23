@@ -31,12 +31,13 @@ import {useCattleHome} from '../contexts/CattleHomeContext.jsx';
 import {useSheepHome} from '../contexts/SheepHomeContext.jsx';
 import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
+import {computeHousingDisplayCount} from '../lib/layerHousing.js';
 
 export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW_TO_PROGRAM}) {
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {batches} = useBatches();
   const {breedingCycles, farrowingRecs, feederGroups} = usePig();
-  const {layerGroups, layerHousings} = useLayer();
+  const {layerGroups, layerHousings, allLayerDailys} = useLayer();
   const {broilerDailys, pigDailys, layerDailysRecent, eggDailysRecent, cattleDailysRecent, sheepDailysRecent} =
     useDailysRecent();
   const {cattleForHome, cattleOnFarmCount} = useCattleHome();
@@ -815,7 +816,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
         {(() => {
           const totalHens = (layerHousings || [])
             .filter((h) => h.status === 'active')
-            .reduce((s, h) => s + (parseInt(h.current_count) || 0), 0);
+            .reduce((s, h) => s + computeHousingDisplayCount(h, allLayerDailys), 0);
           const activeFeederNamesHome = feederGroups
             .filter((g) => g.status === 'active')
             .flatMap((g) => {

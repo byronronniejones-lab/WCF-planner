@@ -8,6 +8,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const homeSrc = fs.readFileSync(path.join(ROOT, 'src/layer/LayersHomeView.jsx'), 'utf8');
 const batchesSrc = fs.readFileSync(path.join(ROOT, 'src/layer/LayerBatchesView.jsx'), 'utf8');
 const housingSrc = fs.readFileSync(path.join(ROOT, 'src/lib/layerHousing.js'), 'utf8');
+const dashSrc = fs.readFileSync(path.join(ROOT, 'src/dashboard/HomeDashboard.jsx'), 'utf8');
 
 describe('Layer dashboard active-batch lifetime stats', () => {
   it('removes the active-batch 30/90/120 rolling-window toggle', () => {
@@ -40,35 +41,37 @@ describe('Layer dashboard active-batch lifetime stats', () => {
   });
 });
 
-describe('Layer housing count fallback', () => {
-  it('computeProjectedCount falls back to daily layer_count when current_count is null', () => {
-    expect(housingSrc).toMatch(/if \(anchor == null\)/);
-    expect(housingSrc).toMatch(/layer_count/);
-    expect(housingSrc).toContain('housing.housing_name');
-    expect(housingSrc).toContain('batch_label');
+describe('Layer housing count — display helper consistency', () => {
+  it('layerHousing.js exports computeHousingDisplayCount', () => {
+    expect(housingSrc).toContain('export function computeHousingDisplayCount');
   });
 
-  it('LayersHomeView uses computeProjectedCount for all hen totals', () => {
-    expect(homeSrc).toContain('computeProjectedCount');
-    expect(homeSrc).not.toMatch(/totalHens\s*=\s*activeHousings\.reduce\([^)]*parseInt\(h\.current_count\)/);
+  it('HomeDashboard imports and uses computeHousingDisplayCount', () => {
+    expect(dashSrc).toContain('computeHousingDisplayCount');
+    expect(dashSrc).not.toMatch(/totalHens[\s\S]*?parseInt\(h\.current_count\)/);
   });
 
-  it('LayerBatchesView uses computeProjectedCount for utilization', () => {
-    expect(batchesSrc).toMatch(/const proj = computeProjectedCount/);
-    expect(batchesSrc).toMatch(/const util = proj && cap/);
+  it('LayersHomeView uses computeHousingDisplayCount for all hen totals', () => {
+    expect(homeSrc).toContain('computeHousingDisplayCount');
+    expect(homeSrc).not.toContain('computeProjectedCount');
+    expect(homeSrc).not.toMatch(/parseInt\(h\.current_count\)/);
+  });
+
+  it('LayerBatchesView chip uses computeHousingDisplayCount', () => {
+    expect(batchesSrc).toContain('computeHousingDisplayCount(h, rawLayerDailys)');
+    expect(batchesSrc).not.toMatch(/h\.current_count\s*\?\s*['"].*hens/);
+  });
+
+  it('LayerBatchesView currentHens uses computeHousingDisplayCount', () => {
+    expect(batchesSrc).toMatch(/currentHens[\s\S]*?computeHousingDisplayCount/);
+    expect(batchesSrc).not.toMatch(/currentHens[\s\S]*?parseInt\(h\.current_count\)/);
   });
 
   it('LayerBatchesView fetches layer_count in the dailys query', () => {
     expect(batchesSrc).toMatch(/fetchAll\('layer_dailys'[^)]*layer_count/);
   });
 
-  it('LayerBatchesView chip does not use raw h.current_count for hens', () => {
-    expect(batchesSrc).not.toMatch(/h\.current_count\s*\?\s*['"].*hens/);
-    expect(batchesSrc).toMatch(/computeProjectedCount\(h, rawLayerDailys\)/);
-  });
-
-  it('LayerBatchesView currentHens does not sum raw h.current_count', () => {
-    expect(batchesSrc).not.toMatch(/currentHens\s*=\s*bHousings\.reduce\([^)]*parseInt\(h\.current_count\)/);
-    expect(batchesSrc).toMatch(/currentHens\s*=\s*bHousings\.reduce/);
+  it('LayerBatchesView still uses computeProjectedCount for the Projected label', () => {
+    expect(batchesSrc).toMatch(/const proj = computeProjectedCount/);
   });
 });

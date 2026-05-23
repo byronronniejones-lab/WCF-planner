@@ -66,15 +66,36 @@ export async function setHousingAnchorFromReport(sb, housingOrBatchName, newCoun
   return {ok: true, id: target.id, housingName: target.housing_name, newCount: newC, newDate: reportDate};
 }
 
+// Resolve the display hen count for a housing — positive current_count when
+// present, otherwise the latest positive matching layer_dailys.layer_count.
+// NO mortality subtraction. Use this for dashboard totals, chips, and any
+// surface labeled "hens" or "current count".
+export function computeHousingDisplayCount(housing, layerDailys) {
+  if (!housing) return 0;
+  const parsed = housing.current_count != null ? parseInt(housing.current_count) : NaN;
+  if (parsed > 0) return parsed;
+
+  const hName = String(housing.housing_name || '')
+    .toLowerCase()
+    .trim();
+  const matches = (layerDailys || [])
+    .filter(
+      (d) =>
+        d &&
+        d.layer_count != null &&
+        parseInt(d.layer_count) > 0 &&
+        ((d.batch_label && String(d.batch_label).toLowerCase().trim() === hName) ||
+          (housing.batch_id && d.batch_id && d.batch_id === housing.batch_id)),
+    )
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (matches.length === 0) return parsed >= 0 ? parsed : 0;
+  const count = parseInt(matches[0].layer_count);
+  return isNaN(count) ? 0 : count;
+}
+
 // Compute projected count for a housing.
 // projected = anchor - sum(mortalities reported between anchorDate and today)
-// Anchor is current_count when positive; falls back to the latest matching
-// layer_dailys.layer_count when current_count is not positive.
-// For ACTIVE housings, any positive daily layer_count overrides a zero
-// anchor (operators submit 0 when they skip the count field, not to
-// mark an empty housing — empty housings get retired).
-// Matches dailys by housing_name OR by batch_id so reports filed under
-// the batch name still resolve.
+// Use this only where mortality-adjusted counts are explicitly intended.
 // Returns {anchor, anchorDate, projected, mortSince} or null if no anchor.
 export function computeProjectedCount(housing, layerDailys) {
   if (!housing) return null;
