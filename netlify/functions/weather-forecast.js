@@ -112,23 +112,25 @@ function normalize(raw, openMeteoDaily, loc) {
   const now = hourly[0] || null;
   const today = daily[0] || null;
 
+  const todayDate = today?.date;
+  const todayHourly = hourly.filter((h) => h.time && todayDate && h.time.startsWith(todayDate));
+  const rainHours = todayHourly.filter((h) => h.precipProb > 30);
+  const hourlyMax = todayHourly.length > 0 ? Math.max(...todayHourly.map((h) => h.precipProb || 0)) : 0;
+
   let rainSummary = 'No rain expected today';
-  if (today && today.precipProbMax > 30) {
-    const todayDate = today.date;
-    const rainHours = hourly.filter((h) => {
-      if (!h.time || !todayDate) return false;
-      return h.time.startsWith(todayDate) && h.precipProb > 30;
-    });
-    if (rainHours.length > 0) {
-      const firstHour = new Date(rainHours[0].time).getHours();
-      const maxProb = Math.max(...rainHours.map((h) => h.precipProb));
-      const likelihood = maxProb > 70 ? 'likely' : 'possible';
-      if (firstHour < 6) rainSummary = `Rain ${likelihood} early morning`;
-      else if (firstHour < 12) rainSummary = `Rain ${likelihood} this morning`;
-      else if (firstHour < 17) rainSummary = `Rain ${likelihood} after ${formatHour(firstHour)}`;
-      else if (firstHour < 21) rainSummary = `Rain ${likelihood} this evening`;
-      else rainSummary = `Showers ${likelihood} overnight`;
-    }
+  if (rainHours.length > 0) {
+    const firstHour = new Date(rainHours[0].time).getHours();
+    const maxProb = Math.max(...rainHours.map((h) => h.precipProb));
+    const likelihood = maxProb > 70 ? 'likely' : 'possible';
+    if (firstHour < 6) rainSummary = `Rain ${likelihood} early morning`;
+    else if (firstHour < 12) rainSummary = `Rain ${likelihood} this morning`;
+    else if (firstHour < 17) rainSummary = `Rain ${likelihood} after ${formatHour(firstHour)}`;
+    else if (firstHour < 21) rainSummary = `Rain ${likelihood} this evening`;
+    else rainSummary = `Showers ${likelihood} overnight`;
+  } else if (today && today.precipProbMax > 20 && hourlyMax <= 30) {
+    rainSummary = 'Rain chance present, timing unclear';
+  } else if (today && today.precipProbMax > 20) {
+    rainSummary = 'Low hourly rain signal today';
   }
 
   let freezeWarning = null;

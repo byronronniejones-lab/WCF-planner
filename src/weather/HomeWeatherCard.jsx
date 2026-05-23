@@ -85,11 +85,13 @@ export default function HomeWeatherCard() {
     return h === 0 ? '12a' : h < 12 ? h + 'a' : h === 12 ? '12p' : h - 12 + 'p';
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-  const rainHours = (hourly || []).filter(
-    (h) => h.time && (h.time.startsWith(todayStr) || h.time.startsWith(tomorrowStr)),
-  );
+  const nowMs = Date.now();
+  const end48h = nowMs + 48 * 3600 * 1000;
+  const rainHours = (hourly || []).filter((h) => {
+    if (!h.time) return false;
+    const t = new Date(h.time).getTime();
+    return t >= nowMs && t <= end48h;
+  });
 
   const loc = forecast.location || {};
   const ZOOM = 7;

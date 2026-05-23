@@ -56,6 +56,23 @@ describe('weather helper functions', () => {
   });
 });
 
+describe('Rain timing — rolling 48h window', () => {
+  it('card filters hourly by timestamp, not date string', () => {
+    expect(cardSrc).not.toMatch(/startsWith\(todayStr\)/);
+    expect(cardSrc).not.toMatch(/startsWith\(tomorrowStr\)/);
+    expect(cardSrc).toContain('end48h');
+  });
+
+  it('uses rolling ms comparison for 48h window', () => {
+    expect(cardSrc).toMatch(/48\s*\*\s*3600\s*\*\s*1000/);
+  });
+
+  it('forecast rain summary handles daily/hourly mismatch', () => {
+    expect(forecastFn).toContain('Rain chance present, timing unclear');
+    expect(forecastFn).toContain('Low hourly rain signal today');
+  });
+});
+
 describe('10-day daily forecast via Open-Meteo', () => {
   it('forecast function fetches from Open-Meteo for daily rows', () => {
     expect(forecastFn).toContain('api.open-meteo.com');
