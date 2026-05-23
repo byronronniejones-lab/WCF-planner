@@ -71,6 +71,18 @@ describe('Rain timing — rolling 48h window', () => {
     expect(forecastFn).toContain('Rain chance present, timing unclear');
     expect(forecastFn).toContain('Low hourly rain signal today');
   });
+
+  it('rain chart uses grid layout, not flex with wrap', () => {
+    const chartStart = cardSrc.indexOf('data-weather-rain-chart');
+    const chartSection = cardSrc.slice(chartStart, chartStart + 500);
+    expect(chartSection).toContain('grid');
+    expect(chartSection).not.toContain('flexWrap');
+  });
+
+  it('rain chart uses stable 48-slot grid layout', () => {
+    expect(cardSrc).toMatch(/repeat\(48,\s*minmax\(0,\s*1fr\)\)/);
+    expect(cardSrc).toContain('data-weather-rain-chart');
+  });
 });
 
 describe('10-day daily forecast via Open-Meteo', () => {

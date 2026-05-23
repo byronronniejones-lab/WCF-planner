@@ -291,7 +291,7 @@ export default function HomeWeatherCard() {
               React.createElement('div', {style: {color: '#1e40af', fontWeight: 700, marginTop: 4}}, freezeWarning),
           ),
 
-          // Hourly rain timing
+          // Hourly rain timing — stable 48-slot grid
           React.createElement(
             'div',
             {style: {marginBottom: 16}},
@@ -302,33 +302,47 @@ export default function HomeWeatherCard() {
             ),
             React.createElement(
               'div',
-              {style: {display: 'flex', gap: 2, flexWrap: 'wrap'}},
-              rainHours.map((h) =>
-                React.createElement('div', {
-                  key: h.time,
-                  title: fmtHour(h.time) + ': ' + Math.round(h.precipProb) + '%',
+              {'data-weather-rain-chart': true, style: {overflowX: 'auto', WebkitOverflowScrolling: 'touch'}},
+              React.createElement(
+                'div',
+                {
                   style: {
-                    width: 10,
-                    height: 28,
-                    borderRadius: 2,
-                    background:
-                      h.precipProb > 70
-                        ? '#2563eb'
-                        : h.precipProb > 40
-                          ? '#60a5fa'
-                          : h.precipProb > 20
-                            ? '#bfdbfe'
-                            : '#f3f4f6',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(48, minmax(0, 1fr))',
+                    minWidth: 360,
+                    height: 32,
+                    gap: 1,
                   },
+                },
+                Array.from({length: 48}, (_, i) => {
+                  const h = rainHours[i];
+                  const prob = h ? h.precipProb || 0 : 0;
+                  return React.createElement('div', {
+                    key: i,
+                    title: h ? fmtHour(h.time) + ': ' + Math.round(prob) + '%' : '',
+                    style: {
+                      borderRadius: 1,
+                      background: prob > 70 ? '#2563eb' : prob > 40 ? '#60a5fa' : prob > 20 ? '#bfdbfe' : '#f3f4f6',
+                    },
+                  });
                 }),
               ),
-            ),
-            React.createElement(
-              'div',
-              {style: {display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#9ca3af', marginTop: 2}},
-              React.createElement('span', null, 'Now'),
-              React.createElement('span', null, '+24h'),
-              React.createElement('span', null, '+48h'),
+              React.createElement(
+                'div',
+                {
+                  style: {
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 10,
+                    color: '#9ca3af',
+                    marginTop: 2,
+                    minWidth: 360,
+                  },
+                },
+                React.createElement('span', null, 'Now'),
+                React.createElement('span', null, '+24h'),
+                React.createElement('span', null, '+48h'),
+              ),
             ),
           ),
 
