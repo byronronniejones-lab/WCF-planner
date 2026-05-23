@@ -125,9 +125,9 @@ describe('RainViewer animated radar', () => {
     expect(radarFramesFn).toContain('weather-maps.json');
   });
 
-  it('radar frames start from current and include nowcast for forward animation', () => {
+  it('radar frames include recent past and nowcast for timeline animation', () => {
     expect(radarFramesFn).toContain('nowcast');
-    expect(radarFramesFn).toMatch(/past\[past\.length\s*-\s*1\]/);
+    expect(radarFramesFn).toMatch(/past.*slice\(-6\)/);
   });
 
   it('card uses RainViewer tile URLs, not Tomorrow.io', () => {

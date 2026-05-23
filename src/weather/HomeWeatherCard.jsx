@@ -30,7 +30,7 @@ export default function HomeWeatherCard() {
   }, []);
 
   React.useEffect(() => {
-    load(false);
+    load(true);
   }, [load]);
 
   async function handleRefresh() {

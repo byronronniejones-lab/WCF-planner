@@ -1,6 +1,6 @@
 // Netlify Function: RainViewer radar frame metadata proxy.
-// Returns the most recent radar frame as "now" plus all available
-// nowcast frames for forward-in-time animation.
+// Returns recent past frames + nowcast for forward-in-time animation.
+// Animation timeline: -60m → -50m → ... → Now → +10m → +20m
 // No API key required.
 
 export async function handler() {
@@ -10,14 +10,12 @@ export async function handler() {
       return {statusCode: 502, body: JSON.stringify({error: 'rainviewer_error'})};
     }
     const data = await res.json();
-    const past = data.radar?.past || [];
+    const past = (data.radar?.past || []).slice(-6);
     const nowcast = data.radar?.nowcast || [];
-    const current = past.length > 0 ? past[past.length - 1] : null;
-    const frames = [];
-    if (current) frames.push({time: current.time, path: current.path});
-    for (const f of nowcast) {
-      frames.push({time: f.time, path: f.path});
-    }
+    const frames = [
+      ...past.map((f) => ({time: f.time, path: f.path})),
+      ...nowcast.map((f) => ({time: f.time, path: f.path})),
+    ];
 
     return {
       statusCode: 200,

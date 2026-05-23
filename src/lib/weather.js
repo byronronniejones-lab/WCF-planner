@@ -11,7 +11,8 @@ let cachedAt = 0;
 
 export async function loadForecast({force = false} = {}) {
   if (!force && cached && Date.now() - cachedAt < CACHE_MS) return cached;
-  const res = await fetch(FORECAST_URL);
+  const url = force ? `${FORECAST_URL}?_t=${Date.now()}` : FORECAST_URL;
+  const res = await fetch(url);
   if (!res.ok) return null;
   const data = await res.json();
   if (data.error) return null;
