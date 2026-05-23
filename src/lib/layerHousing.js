@@ -69,10 +69,12 @@ export async function setHousingAnchorFromReport(sb, housingOrBatchName, newCoun
 // Compute projected count for a housing.
 // projected = anchor - sum(mortalities reported between anchorDate and today)
 // Anchor is current_count when positive; falls back to the latest matching
-// layer_dailys.layer_count when current_count is not a positive integer, or
-// when it's zero without a date strictly newer than the latest daily.
-// Matches dailys by housing_name OR by batch_id so reports filed under the
-// batch name still resolve.
+// layer_dailys.layer_count when current_count is not positive.
+// For ACTIVE housings, any positive daily layer_count overrides a zero
+// anchor (operators submit 0 when they skip the count field, not to
+// mark an empty housing — empty housings get retired).
+// Matches dailys by housing_name OR by batch_id so reports filed under
+// the batch name still resolve.
 // Returns {anchor, anchorDate, projected, mortSince} or null if no anchor.
 export function computeProjectedCount(housing, layerDailys) {
   if (!housing) return null;
@@ -104,8 +106,13 @@ export function computeProjectedCount(housing, layerDailys) {
   if (!(anchor > 0)) {
     const daily = latestDailyAnchor();
     if (daily) {
-      if (anchor === 0 && housing.current_count_date && housing.current_count_date > daily.date) {
-        // Intentional zero: current_count_date strictly newer than latest daily
+      if (
+        anchor === 0 &&
+        housing.status !== 'active' &&
+        housing.current_count_date &&
+        housing.current_count_date > daily.date
+      ) {
+        // Intentional zero on a retired/inactive housing with a date newer than the daily
       } else {
         anchor = daily.count;
         anchorDate = daily.date;

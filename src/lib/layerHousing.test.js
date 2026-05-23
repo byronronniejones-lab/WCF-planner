@@ -94,8 +94,21 @@ describe('computeProjectedCount', () => {
     expect(result.projected).toBe(115);
   });
 
-  it('current_count 0 with newer date preserves intentional zero', () => {
-    const housing = {housing_name: 'Eggmobile 3', current_count: 0, current_count_date: '2026-05-01'};
+  it('active housing with current_count 0 and newer date still falls back to daily', () => {
+    const housing = {housing_name: 'Eggmobile 3', status: 'active', current_count: 0, current_count_date: '2026-05-18'};
+    const dailys = [{batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0}];
+    const result = computeProjectedCount(housing, dailys);
+    expect(result.anchor).toBe(115);
+    expect(result.projected).toBe(115);
+  });
+
+  it('retired housing with current_count 0 and newer date preserves intentional zero', () => {
+    const housing = {
+      housing_name: 'Eggmobile 3',
+      status: 'retired',
+      current_count: 0,
+      current_count_date: '2026-05-01',
+    };
     const dailys = [{batch_label: 'Eggmobile 3', date: '2026-04-10', layer_count: 115, mortality_count: 0}];
     const result = computeProjectedCount(housing, dailys);
     expect(result.anchor).toBe(0);
