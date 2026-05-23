@@ -249,21 +249,32 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
         color: '#be185d',
         iconKey: ANIMAL_ICON_KEYS.pig,
       });
-    // Sows due in window
+    // Sows due in window. The label intentionally describes the GROUP's
+    // farrowing window, not "N individual sows scheduled" — the pending
+    // count is the secondary detail because the window itself is the
+    // event ("3 pending" doesn't mean "3 sows on this date"). Date stays
+    // as farrowingStart for sort stability; for already-active windows
+    // the subline renders the full Window MM/DD/YY-MM/DD/YY range so the
+    // bare start date isn't mistaken for an upcoming event.
     if (tl.farrowingStart <= in30 && tl.farrowingEnd >= todayStr) {
       const expected = [...(c.boar1Tags || '').split(/[\n,]+/), ...(c.boar2Tags || '').split(/[\n,]+/)]
         .map((t) => t.trim())
         .filter(Boolean);
       const farrowed = new Set(farrowingRecs.filter((r) => r.group === c.group).map((r) => r.sow.trim()));
       const pending = expected.filter((t) => !farrowed.has(t));
-      if (pending.length > 0)
+      if (pending.length > 0) {
+        const windowActive = tl.farrowingStart <= todayStr;
         weekEvents.push({
           type: 'farrow-due',
-          label: `${pending.length} sow${pending.length > 1 ? 's' : ''} due to farrow (${lbl})`,
+          label: `${lbl} sow group farrowing window ${windowActive ? 'active' : 'opens'}`,
           date: tl.farrowingStart,
+          subline: windowActive
+            ? `Window ${fmt(tl.farrowingStart)}-${fmt(tl.farrowingEnd)} · ${pending.length} pending`
+            : `Opens ${fmt(tl.farrowingStart)} · ${pending.length} pending`,
           color: '#1e40af',
           iconKey: ANIMAL_ICON_KEYS.pig,
         });
+      }
     }
   });
 
@@ -1199,7 +1210,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                       {e.label}
                     </div>
                     <div style={{fontSize: 11, color: '#9ca3af'}}>
-                      {fmt(e.date)}
+                      {e.subline || fmt(e.date)}
                       {e.reminder ? ' · click to open batch' : ''}
                     </div>
                   </div>

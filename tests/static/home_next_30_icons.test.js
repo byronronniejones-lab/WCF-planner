@@ -38,3 +38,45 @@ describe('HomeDashboard NEXT 30 DAYS planner icons', () => {
     expect(homeSrc).not.toMatch(/<span style=\{\{fontSize:\s*18\}\}>\{e\.icon\}<\/span>/);
   });
 });
+
+describe('HomeDashboard NEXT 30 DAYS — farrow-due labels + active-window subline', () => {
+  // Locate the farrow-due event push block. The "Sows due in window" comment
+  // anchors the block start; the closing brace + paren-comma is the push end.
+  const farrowDueBlock = homeSrc.match(/\/\/ Sows due in window[\s\S]*?type: 'farrow-due'[\s\S]*?\}\);/);
+  it('block exists', () => {
+    expect(farrowDueBlock, 'farrow-due push block expected').not.toBeNull();
+  });
+
+  it('reworded label uses "sow group farrowing window <active|opens>" — no "N sows due to farrow"', () => {
+    // New phrasing: group-centric, count moves to subline.
+    expect(farrowDueBlock[0]).toMatch(
+      /label:\s*`\$\{lbl\} sow group farrowing window \$\{windowActive \? 'active' : 'opens'\}`/,
+    );
+    // Negative lock: the old "N sow(s) due to farrow (lbl)" phrasing is gone
+    // from the source so a future refactor cannot quietly restore the
+    // "3 individual sows scheduled" misread.
+    expect(homeSrc).not.toMatch(/sow\$\{pending\.length > 1 \? 's' : ''\} due to farrow/);
+  });
+
+  it('windowActive flag distinguishes active from upcoming windows', () => {
+    expect(farrowDueBlock[0]).toMatch(/const windowActive = tl\.farrowingStart <= todayStr/);
+  });
+
+  it('active windows render "Window MM/DD-MM/DD · N pending" subline; upcoming use "Opens MM/DD · N pending"', () => {
+    expect(farrowDueBlock[0]).toMatch(
+      /subline:\s*windowActive\s*\?[\s\S]*?`Window \$\{fmt\(tl\.farrowingStart\)\}-\$\{fmt\(tl\.farrowingEnd\)\} · \$\{pending\.length\} pending`[\s\S]*?:\s*`Opens \$\{fmt\(tl\.farrowingStart\)\} · \$\{pending\.length\} pending`/,
+    );
+  });
+
+  it('renderer prefers event.subline over fmt(date) when present', () => {
+    // Subline-aware renderer keeps fmt(date) as the fallback so events
+    // without an explicit subline render their date as before.
+    expect(homeSrc).toMatch(/\{e\.subline \|\| fmt\(e\.date\)\}/);
+  });
+
+  it('still keeps active windows visible while pending > 0', () => {
+    // The outer gate has not changed: window overlap + pending > 0.
+    expect(farrowDueBlock[0]).toMatch(/tl\.farrowingStart <= in30 && tl\.farrowingEnd >= todayStr/);
+    expect(farrowDueBlock[0]).toMatch(/if \(pending\.length > 0\)/);
+  });
+});
