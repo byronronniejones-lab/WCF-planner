@@ -80,6 +80,10 @@ describe('10-day daily forecast via Open-Meteo', () => {
   it('falls back to Tomorrow daily when Open-Meteo fails', () => {
     expect(forecastFn).toContain('tomorrowDaily');
   });
+
+  it('selects Open-Meteo only when 10 rows are returned', () => {
+    expect(forecastFn).toMatch(/openMeteoDaily\.length >= 10/);
+  });
 });
 
 describe('RainViewer animated radar', () => {
@@ -90,6 +94,10 @@ describe('RainViewer animated radar', () => {
   it('weather-radar-frames.js fetches RainViewer metadata', () => {
     expect(radarFramesFn).toContain('rainviewer.com');
     expect(radarFramesFn).toContain('weather-maps.json');
+  });
+
+  it('radar frames use up to 13 past frames (full ~2hr window)', () => {
+    expect(radarFramesFn).toMatch(/slice\(-13\)/);
   });
 
   it('card uses RainViewer tile URLs, not Tomorrow.io', () => {

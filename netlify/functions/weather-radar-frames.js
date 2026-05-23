@@ -9,7 +9,7 @@ export async function handler() {
       return {statusCode: 502, body: JSON.stringify({error: 'rainviewer_error'})};
     }
     const data = await res.json();
-    const radar = (data.radar?.past || []).slice(-8).map((f) => ({
+    const radar = (data.radar?.past || []).slice(-13).map((f) => ({
       time: f.time,
       path: f.path,
     }));
