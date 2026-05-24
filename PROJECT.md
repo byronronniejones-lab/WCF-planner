@@ -27,8 +27,9 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest confirmed shipped checkpoint: `478e3b8 feat(activity): add change
-  logging for cattle, sheep, and equipment edits`.
+- Latest confirmed shipped checkpoint: `d7238f6 docs: wrap Activity change
+  logging lane`.
+- Open gates: none.
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
@@ -56,6 +57,7 @@ only when Ronnie explicitly assigns it.
 | Daily per-record Activity UI | Live. Compact Activity chips + ActivityModal on all 6 authenticated daily views; entity types already registered; no daily notes/issues/comments replacement. |
 | Error Resilience Phase 1 | Live. App-root ErrorBoundary, global `error` and `unhandledrejection` capture, and durable redacted client error events through `record_client_error` SECDEF RPC / `client_error_events` table. |
 | Activity change logging | Live. Routine field edits on `cattle.animal`, `sheep.animal`, and `equipment.item` now record `field.updated`/`status.changed` Activity events through the existing Activity Layer. Delete, restore, lifecycle/move actions, equipment child records, and admin-only documents remain deferred. |
+| Stash hygiene | Complete. Three superseded WIP stashes were audited and dropped; `git stash list` verified empty and `main` matched `origin/main`. |
 | Hamburger cleanup | Live. Hamburger has Home, Activity, Webforms: Dailys/Equipment, Admin/Users, Sign Out. |
 | Home farrow window wording | Live. Misleading `N pending` text removed from Home Next 30 Days farrowing windows. |
 | Tasks v2 | Canonical at `/tasks`; old `/my-tasks` and `/admin/tasks` are aliases. |
@@ -65,32 +67,28 @@ only when Ronnie explicitly assigns it.
 Stash numbers can change if new stashes are added; always verify with
 `git stash list` before acting. Do not pop or drop blindly.
 
-| Lane | Files | Next action |
-|---|---|---|
-| `stash@{0}` stale global activity deep-link WIP | `src/lib/activityRegistry.js`, `src/lib/notificationsApi.js`, `src/shared/Header.jsx`, task deep-link files, notification static test | Likely superseded by merged commits. Inspect before dropping; do not apply unless unique changes are proven. |
-| `stash@{1}` daily delete/restore | `supabase-migrations/061_daily_report_soft_delete_restore.sql`, six daily view patches, header routing | Superseded by migration 067 and the shipped soft-delete lane. Safe to drop after confirming no unique non-delete changes. |
-| `stash@{2}` old parked mixed lanes | Daily-report integrity files, superseded duplicate Home card files, shipped broiler-label files, `059_daily_unique_indexes.sql`, audit script | Do not pop. Contains shipped/superseded work mixed with possible future daily integrity/059 material. Inspect path-by-path only. |
+No parked WIP stashes are expected as of 2026-05-24. The prior three
+superseded stashes were audited and dropped during stash hygiene.
 
 ---
 
 ## Active Roadmap
 
-1. Stash hygiene — inspect and drop superseded stashes per Parked WIP table.
-2. Delete/restore strategy design for non-daily domains — cattle first
+1. Delete/restore strategy design for non-daily domains - cattle first
    candidate. Design per-domain model before implementation.
-3. Cattle soft-delete/audit implementation — only after strategy design is
+2. Cattle soft-delete/audit implementation - only after strategy design is
    approved. Follow the daily SECDEF RPC pattern.
-4. Audit-grade SECDEF RPCs — cattle/sheep lifecycle/status/move actions where
+3. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
    mutation + Activity must be atomic.
-5. Critical workflow Playwright matrix — define coverage targets, write specs
+4. Critical workflow Playwright matrix - define coverage targets, write specs
    for highest-risk uncovered paths.
-6. Incremental mutation cleanup — domain by domain per Identity Map. Choose
+5. Incremental mutation cleanup - domain by domain per Identity Map. Choose
    direct / `runMutation` / SECDEF per entity risk.
-7. Shared UI extraction — extract filter bar, tile row, loading/empty/error
+6. Shared UI extraction - extract filter bar, tile row, loading/empty/error
    patterns from views that repeat them 3+ times.
-8. Deferred: code-splitting — only when field-device measurements or
+7. Deferred: code-splitting - only when field-device measurements or
    operator pain justify it.
-9. Deferred: TypeScript — gradual `allowJs` + JSDoc approach if/when
+8. Deferred: TypeScript - gradual `allowJs` + JSDoc approach if/when
    started.
 
 ---
