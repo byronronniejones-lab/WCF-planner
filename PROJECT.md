@@ -26,9 +26,9 @@ only when Ronnie explicitly assigns it.
 
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
-- Latest live commit: `9bb1c3e docs: polish PROJECT.md per Codex review`
-- Pending local commits (not pushed/deployed): `1f8f667` daily Activity UI,
-  `b335880` platform roadmap docs.
+- Production source: `origin/main` via Netlify auto-deploy.
+- Latest confirmed shipped checkpoint: `43c2ea9 docs: add platform roadmap,
+  Record Identity Map, and updated risks`.
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
@@ -52,7 +52,7 @@ only when Ronnie explicitly assigns it.
 | Activity Layer foundation | Live. `record_activity_event` records allowlisted change/lifecycle events through SECDEF RPC. Layer batch notes and equipment status are pilot surfaces. |
 | Entity mutation helper | Live. `runMutation` standardizes client mutation errors plus optional best-effort Activity logging; it is not transactional. |
 | Daily soft-delete + restore | Live. Transactional SECDEF RPCs `soft_delete_daily_report` / `restore_daily_report` (admin-only). 6 daily entity types registered. `deleted_at`/`deleted_by` on all 6 daily tables. All read sites filtered. Admin Recently Deleted tab with restore. `record.deleted`/`record.restored` Activity events with human-readable labels. |
-| Daily per-record Activity UI | Committed, pending push/deploy. Compact Activity chips + ActivityModal on all 6 authenticated daily views; entity types already registered; no daily notes/issues/comments replacement. |
+| Daily per-record Activity UI | Live. Compact Activity chips + ActivityModal on all 6 authenticated daily views; entity types already registered; no daily notes/issues/comments replacement. |
 | Hamburger cleanup | Live. Hamburger has Home, Activity, Webforms: Dailys/Equipment, Admin/Users, Sign Out. |
 | Home farrow window wording | Live. Misleading `N pending` text removed from Home Next 30 Days farrowing windows. |
 | Tasks v2 | Canonical at `/tasks`; old `/my-tasks` and `/admin/tasks` are aliases. |
