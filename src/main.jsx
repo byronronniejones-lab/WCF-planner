@@ -24,6 +24,11 @@ import {VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT, ALIASES_EXACT, ALIASES_PREFIX} 
 // any rename or rewiring (the names `sb`, `wcfSendEmail`, `wcfSelectAll`
 // are still globals in the module scope).
 import {sb} from './lib/supabase.js';
+import {initErrorReporting, installGlobalListeners} from './lib/clientErrorReporting.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import ErrorBoundary from './shared/ErrorBoundary.jsx';
+initErrorReporting(sb);
+installGlobalListeners();
 import {wcfSendEmail} from './lib/email.js';
 import {wcfSelectAll} from './lib/pagination.js';
 import {softDeleteDailyReport} from './lib/dailyReportsApi.js';
@@ -3831,33 +3836,35 @@ const breedTlStartInit = () => {
 // extracted view, if it ever wants to) can use useLocation/useNavigate.
 // The view ↔ URL sync lives inside App via useViewUrlSync() below.
 root.render(
-  <BrowserRouter>
-    <AuthProvider>
-      <BatchesProvider formInit={EMPTY_FORM}>
-        <PigProvider
-          initialFarrowing={INITIAL_FARROWING}
-          initialBreeders={INITIAL_BREEDERS}
-          breedTlStartInit={breedTlStartInit}
-        >
-          <LayerProvider>
-            <DailysRecentProvider>
-              <CattleHomeProvider>
-                <SheepHomeProvider>
-                  <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
-                    <FeedCostsProvider>
-                      <UIProvider>
-                        <App />
-                      </UIProvider>
-                    </FeedCostsProvider>
-                  </WebformsConfigProvider>
-                </SheepHomeProvider>
-              </CattleHomeProvider>
-            </DailysRecentProvider>
-          </LayerProvider>
-        </PigProvider>
-      </BatchesProvider>
-    </AuthProvider>
-  </BrowserRouter>,
+  <ErrorBoundary>
+    <BrowserRouter>
+      <AuthProvider>
+        <BatchesProvider formInit={EMPTY_FORM}>
+          <PigProvider
+            initialFarrowing={INITIAL_FARROWING}
+            initialBreeders={INITIAL_BREEDERS}
+            breedTlStartInit={breedTlStartInit}
+          >
+            <LayerProvider>
+              <DailysRecentProvider>
+                <CattleHomeProvider>
+                  <SheepHomeProvider>
+                    <WebformsConfigProvider configInit={DEFAULT_WEBFORMS_CONFIG}>
+                      <FeedCostsProvider>
+                        <UIProvider>
+                          <App />
+                        </UIProvider>
+                      </FeedCostsProvider>
+                    </WebformsConfigProvider>
+                  </SheepHomeProvider>
+                </CattleHomeProvider>
+              </DailysRecentProvider>
+            </LayerProvider>
+          </PigProvider>
+        </BatchesProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  </ErrorBoundary>,
 );
 
 // Fade out the static boot loader after React's first paint. Two RAFs to
