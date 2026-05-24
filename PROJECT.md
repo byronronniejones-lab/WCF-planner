@@ -26,7 +26,9 @@ only when Ronnie explicitly assigns it.
 
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
-- Latest live commit: `c85611e docs: update PROJECT.md for daily soft-delete + session wrap`
+- Latest live commit: `9bb1c3e docs: polish PROJECT.md per Codex review`
+- Pending local commits (not pushed/deployed): `1f8f667` daily Activity UI,
+  `b335880` platform roadmap docs.
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
@@ -50,6 +52,7 @@ only when Ronnie explicitly assigns it.
 | Activity Layer foundation | Live. `record_activity_event` records allowlisted change/lifecycle events through SECDEF RPC. Layer batch notes and equipment status are pilot surfaces. |
 | Entity mutation helper | Live. `runMutation` standardizes client mutation errors plus optional best-effort Activity logging; it is not transactional. |
 | Daily soft-delete + restore | Live. Transactional SECDEF RPCs `soft_delete_daily_report` / `restore_daily_report` (admin-only). 6 daily entity types registered. `deleted_at`/`deleted_by` on all 6 daily tables. All read sites filtered. Admin Recently Deleted tab with restore. `record.deleted`/`record.restored` Activity events with human-readable labels. |
+| Daily per-record Activity UI | Committed, pending push/deploy. Compact Activity chips + ActivityModal on all 6 authenticated daily views; entity types already registered; no daily notes/issues/comments replacement. |
 | Hamburger cleanup | Live. Hamburger has Home, Activity, Webforms: Dailys/Equipment, Admin/Users, Sign Out. |
 | Home farrow window wording | Live. Misleading `N pending` text removed from Home Next 30 Days farrowing windows. |
 | Tasks v2 | Canonical at `/tasks`; old `/my-tasks` and `/admin/tasks` are aliases. |
@@ -69,51 +72,191 @@ Stash numbers can change if new stashes are added; always verify with
 
 ## Active Roadmap
 
-1. Per-record Activity UI on daily views:
-   - Wire ActivityPanel compact chips on all 6 daily view surfaces. Entity types
-     are already registered; this adds the visible affordance.
-   - Do not replace existing notes/issues/comments-concerns fields.
-2. Expand Activity change logging to more surfaces:
-   - Broiler batch field edits, cattle/sheep animal edits, equipment detail edits.
-   - Use `runMutation` for routine field changes, SECDEF RPCs for audit-critical
-     paths (status transitions, lifecycle events).
-3. Audit-grade mutation paths:
-   - Evaluate which non-daily write paths need transactional server RPCs.
-   - Delete/restore is already audit-grade via mig 067 RPCs. Extend the pattern
-     to other domains as needed.
-4. Stash hygiene:
-   - Inspect `stash@{0}` and drop only if it has no unique changes.
-   - Treat `stash@{2}` as mixed/superseded; pull only specific files if a later
-     lane needs them.
-5. Optional daily-report DB hardening:
-   - `059_daily_unique_indexes.sql` remains unapplied.
-   - Do not apply until duplicate cleanup is explicitly approved and complete.
-   - `egg_dailys` should stay pre-submit guard only unless a safe scope is
-     designed.
+1. Record Identity Map — build the reference table below from repo state.
+   Planning artifact, not a code lane.
+2. Error Resilience Phase 1 — app-root ErrorBoundary, global
+   `error`/`unhandledrejection` capture, redacted durable error signal. Not
+   full observability.
+3. Activity change logging on already-wired high-value surfaces —
+   cattle/sheep animal field edits, equipment detail edits. Use `runMutation`
+   where it fits.
+4. Stash hygiene — inspect and drop superseded stashes per Parked WIP table.
+5. Delete/restore strategy design for non-daily domains — cattle first
+   candidate. Design per-domain model before implementation.
+6. Cattle soft-delete/audit implementation — only after strategy design is
+   approved. Follow the daily SECDEF RPC pattern.
+7. Audit-grade SECDEF RPCs — cattle/sheep lifecycle/status/move actions where
+   mutation + Activity must be atomic.
+8. Critical workflow Playwright matrix — define coverage targets, write specs
+   for highest-risk uncovered paths.
+9. Incremental mutation cleanup — domain by domain per Identity Map. Choose
+   direct / `runMutation` / SECDEF per entity risk.
+10. Shared UI extraction — extract filter bar, tile row, loading/empty/error
+    patterns from views that repeat them 3+ times.
+11. Deferred: code-splitting — only when field-device measurements or
+    operator pain justify it.
+12. Deferred: TypeScript — gradual `allowJs` + JSDoc approach if/when
+    started.
+
+---
+
+## Platform Roadmap
+
+Longer-term direction organized by capability tier. Active Roadmap items
+above are the near-term build queue drawn from these tiers.
+
+### Record Identity and Audit Coverage
+
+Every meaningful entity needs a stable ID, human label, route/deep-link,
+permission resolver, Activity/comments status, mutation path, and audit
+status. The Record Identity Map below is the planning anchor. Expand it as
+new entities gain Activity, mutation helpers, or delete/restore support.
+
+### Error Resilience and Runtime Signals
+
+React ErrorBoundary catches render/lifecycle crashes but not event handlers
+or async errors. Global `error` and `unhandledrejection` listeners cover the
+rest. First pass is a redacted durable signal (not just console.warn); admin
+dashboards and external services are later tiers. The app already has
+feature-level error handling (Header badges soft-fail, RPC callers catch,
+offline queue classifies errors).
+
+### Mutation Semantics
+
+~200 direct `sb.from()` mutation calls exist across `src/`. Direct calls are
+not automatically wrong — the missing piece is per-entity write semantics.
+`runMutation` fits routine saves that want optional Activity logging. SECDEF
+RPCs fit audit-critical flows where mutation and Activity must succeed or
+fail together. `runMutation` caller count is not a success metric; correct
+write path per entity is.
+
+### Delete/Restore and Recovery Strategy
+
+Daily reports prove soft-delete without tombstones: the source row remains
+with `deleted_at`, and the Activity resolver sees deleted rows. Other
+domains need deliberate design: cattle hard-delete cascades destroy
+weigh-ins, calving, comments, and transfers; sheep hard-delete orphans
+children. Tombstones are only needed where source rows cannot remain
+resolver-visible after deletion.
+
+### Test Coverage Matrix
+
+132 test files (30 unit, 53 static, 49 Playwright) is strong for ~105k
+lines. Coverage is weighted toward tasks and activity. Cattle CRUD,
+equipment lifecycle, and weigh-in flows have thinner E2E coverage. The
+matrix should define which workflows must always have Playwright coverage
+and fill gaps incrementally.
+
+### Shared UI Extraction
+
+14 shared components exist in `src/shared/`. The path is extraction from
+proven patterns, not top-down design. When a pattern repeats across 3+
+views (filter bar, date-grouped tile list, chip row, loading/empty/error
+states), extract it.
+
+### Deferred Long-Term Maturity
+
+- TypeScript: 105k lines of pure JS. Gradual `allowJs` + JSDoc + typed
+  utility modules when started, not a repo-wide conversion.
+- Code-splitting: current 2 MB main chunk loads once and is browser-cached.
+  Dynamic `import()` already defers xlsx and pdfjs-dist. Route-level
+  splitting is justified only when field-device measurements show a problem.
+
+---
+
+## Record Identity Map
+
+Compact reference for per-entity platform decisions. Default permission
+model is RLS for table-backed entities and `program_access` checks for
+`app_store` entities. Expand this table as new entities gain Activity,
+mutation helpers, or delete/restore support.
+
+### Primary Entities — Activity Wired
+
+| Entity | Stable ID | Label | Storage | Mutation | Delete | Audit |
+|---|---|---|---|---|---|---|
+| task.instance | text | title | `task_instances` | SECDEF RPCs | hard (RPC, validated) | comments + task.completed trigger |
+| poultry.daily | UUID | date + batch_label | `poultry_dailys` | direct | soft (SECDEF) | comments + deleted/restored events |
+| layer.daily | UUID | date + batch_label | `layer_dailys` | direct | soft (SECDEF) | comments + deleted/restored events |
+| egg.daily | UUID | date | `egg_dailys` | direct | soft (SECDEF) | comments + deleted/restored events |
+| pig.daily | UUID | date + batch_label | `pig_dailys` | direct | soft (SECDEF) | comments + deleted/restored events |
+| cattle.daily | UUID | date + herd | `cattle_dailys` | direct | soft (SECDEF) | comments + deleted/restored events |
+| sheep.daily | UUID | date + flock | `sheep_dailys` | direct | soft (SECDEF) | comments + deleted/restored events |
+| broiler.batch | name (string) | batch name | `app_store` ppp-v4 | direct (upsert) | TBD | partial — delete unlogged |
+| pig.batch | group id | batchName | `app_store` ppp-feeders-v1 | direct (upsert) | TBD | partial |
+| layer.batch | UUID | name | `layer_batches` | direct | hard-cascade (housings) | partial |
+| layer.housing | UUID | housing_name | `layer_housings` | direct | hard (via batch cascade) | partial |
+| cattle.animal | UUID | tag | `cattle` | direct | hard-cascade (weigh-ins, calving, comments, transfers) | partial — delete unlogged |
+| sheep.animal | UUID | tag | `sheep` | direct | hard-orphan (children remain) | partial — delete unlogged |
+| cattle.processing | UUID | batch name | `cattle_processing_batches` | direct | hard (scheduled only) | partial |
+| sheep.processing | UUID | batch name | `sheep_processing_batches` | direct | hard | partial |
+| equipment.item | UUID | name | `equipment` | mixed — status via `runMutation`, other fields direct | record itself not deletable; child fuelings/maintenance hard-delete | comments + pilot field/status change events |
+
+### Sub-Entities — No Activity Wiring
+
+| Entity | Storage | Parent | Delete | Notes |
+|---|---|---|---|---|
+| weigh_in_sessions | `weigh_in_sessions` | cattle/pig/sheep | hard | SECDEF batch submit for creation |
+| weigh_ins | `weigh_ins` | session | hard | child entries |
+| cattle_comments | `cattle_comments` | cattle.animal | hard (cascades from parent) | |
+| sheep_comments | `sheep_comments` | sheep.animal | hard (does not cascade) | |
+| cattle_breeding_cycles | `cattle_breeding_cycles` | cattle.animal | hard | |
+| sheep_lambing_records | `sheep_lambing_records` | sheep.animal | hard (does not cascade) | |
+| equipment_fuelings | `equipment_fuelings` | equipment.item | hard | current-reading recompute on delete |
+| equipment_maintenance_events | `equipment_maintenance_events` | equipment.item | hard | |
+| fuel_bills | `fuel_bills` | admin | TBD | |
+| fuel_supplies | `fuel_supplies` | admin | TBD | |
+
+### app_store JSON — No Stable Per-Record ID
+
+| Key | Domain | Notes |
+|---|---|---|
+| `ppp-v4` | broiler batches | `batch.name` is display ID; no UUID per record |
+| `ppp-feeders-v1` | pig feeder groups + sub-batches | group-level ID exists; sub-batch IDs are client-generated |
+| `ppp-pigs-v1` | pig herd data | no per-record stable ID |
+| `ppp-breeding-v1` | pig breeding cycles | no per-record stable ID |
+| `ppp-farrowing-v1` | pig farrowing records | no per-record stable ID |
+| `ppp-breeders-v1` | pig breeders | no per-record stable ID |
+| `ppp-feed-orders-v1` | feed orders | no per-record stable ID |
+| `ppp-pig-feed-inventory-v1` | pig feed inventory | no per-record stable ID |
+| `ppp-poultry-feed-inventory-v1` | poultry feed inventory | no per-record stable ID |
+
+Entities without stable per-record IDs cannot participate in Activity,
+deep-links, or per-record audit trails until identity decisions are made.
+
+---
 
 ## Known Platform Risks
 
 These are hardening priorities, not reasons to rewrite.
 
-- Direct client mutations are still the dominant write pattern outside Tasks v2
-  and Activity. Audit snapshot on 2026-05-24 found roughly 200 direct
-  `sb.from(...).insert/update/upsert/delete` call sites in `src`.
-- Hard deletes remain for non-daily entities. Daily reports now soft-delete via
-  transactional RPCs. Other domains (cattle/sheep/equipment/tasks) still
-  hard-delete or use domain-specific patterns.
+- Hard-delete data loss and audit blindness outside daily reports. Cattle
+  hard-delete cascades destroy weigh-ins, calving records, comments, and
+  transfers permanently. Sheep hard-delete orphans children. Equipment
+  sub-records, weigh-in sessions, breeding/lambing records, and task
+  templates hard-delete with no Activity logging and no recovery path. See
+  the Record Identity Map for per-entity delete behavior.
+- Direct client mutations are the dominant write pattern (~200 call sites in
+  `src`). Direct calls are not automatically wrong; the missing piece is
+  per-entity write semantics specifying which paths should be direct,
+  `runMutation`, or SECDEF RPC. The Record Identity Map tracks this.
+- No root ErrorBoundary or durable redacted runtime error signal.
+  Feature-level error handling exists (Header badges soft-fail, RPC callers
+  catch, offline queue classifies errors), but a render-time crash can
+  white-screen the app, and no errors persist beyond the browser console.
 - `runMutation` is non-transactional. If a client mutation succeeds and its
   Activity RPC fails, the data change is already committed. Audit-critical
   paths need transactional SECDEF RPCs/triggers.
-- Activity covers 16 entity types (10 original + 6 daily). Weigh-in sessions,
-  breeding/farrowing records, equipment maintenance events, fuel records, and
-  other operational records still need entity identity decisions before they
-  can have durable per-record Activity.
-- `app_store` JSON entities need stable IDs before they can participate in
-  Activity, deep-links, and audit trails as cleanly as table-backed rows.
-- Playwright coverage is strong in several domains but does not yet cover every
-  high-frequency operator path. Daily delete/restore has focused Playwright
-  verification; durable create/edit/delete/restore spec coverage is still a
-  future hardening target.
+- `app_store` JSON entities need stable per-record IDs before they can
+  participate in Activity, deep-links, and per-record audit trails.
+- Playwright coverage is weighted toward tasks and activity. Cattle CRUD,
+  equipment lifecycle, and weigh-in flows have thinner E2E coverage.
+- `059_daily_unique_indexes.sql` remains unapplied. Do not apply until
+  duplicate cleanup is explicitly approved and a safe `egg_dailys` scope is
+  designed.
+- Current main JS chunk is ~2 MB. Dynamic `import()` already defers xlsx
+  and pdfjs-dist. Route-level code-splitting is deferred unless
+  field-device measurements or operator pain justify it.
 
 ---
 
@@ -152,6 +295,14 @@ These are hardening priorities, not reasons to rewrite.
   300k+ lines without repeated per-surface invention.
 - CC should not repitch skipped skill installs: UI UX Pro Max, Impeccable/Taste
   for WCF, Stop Slop, GSD, claude-mem for WCF, OpenSpec.
+- `runMutation` caller count is not a success metric. The goal is correct
+  write semantics per entity: direct calls for simple saves, `runMutation`
+  for routine mutations that want optional Activity logging, SECDEF RPCs for
+  audit-critical flows.
+- Soft-delete does not require tombstones when the source row remains
+  resolver-visible via `deleted_at`. Daily reports prove this model.
+- Tombstones are needed only for true hard-deleted records where source rows
+  cannot remain resolver-visible and audit visibility is still required.
 
 ---
 
@@ -173,6 +324,12 @@ restores, completes, reopens, moves, or comments on planner records.
   ticks.
 - Identify the focused Playwright path that proves the user workflow when a
   lane changes mutation behavior or adds a new surface.
+- Identify delete behavior and restore expectations before modifying delete
+  paths. Consult the Record Identity Map for current per-entity state.
+- Identify whether the lane introduces a new unhandled runtime failure mode
+  or needs error reporting coverage.
+- Choose direct write vs `runMutation` vs SECDEF RPC based on entity risk
+  and the Record Identity Map, not helper adoption targets.
 - State commit, push, PROD migration, deploy, and docs gates separately.
 
 ---

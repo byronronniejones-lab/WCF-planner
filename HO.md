@@ -160,6 +160,11 @@ Use those prefixes exactly. Inside copyable relay blocks, keep content plain
 text. Avoid Markdown backticks around file paths, route names, function names,
 commands, or commit subjects so Ronnie can paste the block cleanly.
 
+Every CC-ready `From Codex:` prompt must be placed in one single copyable text
+box/code block so Ronnie can copy the whole prompt with one click. Keep the
+content inside the block as plain text; do not use Markdown formatting inside
+the relay text.
+
 If CC or Codex disagrees, state:
 
 - Concrete risk.
@@ -204,7 +209,9 @@ A CC-ready `From Codex:` prompt should include:
 - Commit/push/deploy/doc gates.
 - Open blockers, if any.
 
-Prompts should be copyable and direct.
+Prompts should be copyable and direct. Put the entire `From Codex:` relay in
+one copyable text box/code block; do not split one CC prompt across multiple
+blocks.
 
 ---
 
