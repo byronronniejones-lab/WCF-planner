@@ -27,12 +27,13 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest confirmed shipped checkpoint: `43c2ea9 docs: add platform roadmap,
-  Record Identity Map, and updated risks`.
+- Latest confirmed shipped checkpoint: `8ac5668 feat(resilience): add
+  ErrorBoundary, global error capture, and durable reporting`.
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
-  global activity log, `066` activity change events, `067` daily soft-delete.
+  global activity log, `066` activity change events, `067` daily soft-delete,
+  `068` client error events / durable client error reporting.
 - PROD migrations drafted/stashed only: `059_daily_unique_indexes.sql` is not
   applied. `061_daily_report_soft_delete_restore.sql` is superseded by `067`.
 - CI note: verify may be red from known unrelated Playwright flakes. Do not mix
@@ -53,6 +54,7 @@ only when Ronnie explicitly assigns it.
 | Entity mutation helper | Live. `runMutation` standardizes client mutation errors plus optional best-effort Activity logging; it is not transactional. |
 | Daily soft-delete + restore | Live. Transactional SECDEF RPCs `soft_delete_daily_report` / `restore_daily_report` (admin-only). 6 daily entity types registered. `deleted_at`/`deleted_by` on all 6 daily tables. All read sites filtered. Admin Recently Deleted tab with restore. `record.deleted`/`record.restored` Activity events with human-readable labels. |
 | Daily per-record Activity UI | Live. Compact Activity chips + ActivityModal on all 6 authenticated daily views; entity types already registered; no daily notes/issues/comments replacement. |
+| Error Resilience Phase 1 | Live. App-root ErrorBoundary, global `error` and `unhandledrejection` capture, and durable redacted client error events through `record_client_error` SECDEF RPC / `client_error_events` table. |
 | Hamburger cleanup | Live. Hamburger has Home, Activity, Webforms: Dailys/Equipment, Admin/Users, Sign Out. |
 | Home farrow window wording | Live. Misleading `N pending` text removed from Home Next 30 Days farrowing windows. |
 | Tasks v2 | Canonical at `/tasks`; old `/my-tasks` and `/admin/tasks` are aliases. |
@@ -72,30 +74,25 @@ Stash numbers can change if new stashes are added; always verify with
 
 ## Active Roadmap
 
-1. Record Identity Map — build the reference table below from repo state.
-   Planning artifact, not a code lane.
-2. Error Resilience Phase 1 — app-root ErrorBoundary, global
-   `error`/`unhandledrejection` capture, redacted durable error signal. Not
-   full observability.
-3. Activity change logging on already-wired high-value surfaces —
+1. Activity change logging on already-wired high-value surfaces —
    cattle/sheep animal field edits, equipment detail edits. Use `runMutation`
    where it fits.
-4. Stash hygiene — inspect and drop superseded stashes per Parked WIP table.
-5. Delete/restore strategy design for non-daily domains — cattle first
+2. Stash hygiene — inspect and drop superseded stashes per Parked WIP table.
+3. Delete/restore strategy design for non-daily domains — cattle first
    candidate. Design per-domain model before implementation.
-6. Cattle soft-delete/audit implementation — only after strategy design is
+4. Cattle soft-delete/audit implementation — only after strategy design is
    approved. Follow the daily SECDEF RPC pattern.
-7. Audit-grade SECDEF RPCs — cattle/sheep lifecycle/status/move actions where
+5. Audit-grade SECDEF RPCs — cattle/sheep lifecycle/status/move actions where
    mutation + Activity must be atomic.
-8. Critical workflow Playwright matrix — define coverage targets, write specs
+6. Critical workflow Playwright matrix — define coverage targets, write specs
    for highest-risk uncovered paths.
-9. Incremental mutation cleanup — domain by domain per Identity Map. Choose
+7. Incremental mutation cleanup — domain by domain per Identity Map. Choose
    direct / `runMutation` / SECDEF per entity risk.
-10. Shared UI extraction — extract filter bar, tile row, loading/empty/error
-    patterns from views that repeat them 3+ times.
-11. Deferred: code-splitting — only when field-device measurements or
-    operator pain justify it.
-12. Deferred: TypeScript — gradual `allowJs` + JSDoc approach if/when
+8. Shared UI extraction — extract filter bar, tile row, loading/empty/error
+   patterns from views that repeat them 3+ times.
+9. Deferred: code-splitting — only when field-device measurements or
+   operator pain justify it.
+10. Deferred: TypeScript — gradual `allowJs` + JSDoc approach if/when
     started.
 
 ---
@@ -114,12 +111,13 @@ new entities gain Activity, mutation helpers, or delete/restore support.
 
 ### Error Resilience and Runtime Signals
 
-React ErrorBoundary catches render/lifecycle crashes but not event handlers
-or async errors. Global `error` and `unhandledrejection` listeners cover the
-rest. First pass is a redacted durable signal (not just console.warn); admin
-dashboards and external services are later tiers. The app already has
-feature-level error handling (Header badges soft-fail, RPC callers catch,
-offline queue classifies errors).
+Phase 1 shipped. App-root ErrorBoundary catches render/lifecycle crashes.
+Global `error` and `unhandledrejection` listeners capture async/event
+failures. Redacted client error events persist durably through
+`record_client_error` SECDEF RPC and `client_error_events` table (migration
+068). Feature-level error handling also remains (Header badges soft-fail,
+RPC callers catch, offline queue classifies errors). Admin dashboard,
+alerting, trend views, and external monitoring services are later tiers.
 
 ### Mutation Semantics
 
@@ -240,10 +238,10 @@ These are hardening priorities, not reasons to rewrite.
   `src`). Direct calls are not automatically wrong; the missing piece is
   per-entity write semantics specifying which paths should be direct,
   `runMutation`, or SECDEF RPC. The Record Identity Map tracks this.
-- No root ErrorBoundary or durable redacted runtime error signal.
-  Feature-level error handling exists (Header badges soft-fail, RPC callers
-  catch, offline queue classifies errors), but a render-time crash can
-  white-screen the app, and no errors persist beyond the browser console.
+- Runtime observability is Phase 1 only. Redacted client error events now
+  persist through migration 068, but there is no admin UI, alerting, trend
+  view, or third-party monitoring. Keep future logging changes redacted and
+  minimal.
 - `runMutation` is non-transactional. If a client mutation succeeds and its
   Activity RPC fails, the data change is already committed. Audit-critical
   paths need transactional SECDEF RPCs/triggers.
