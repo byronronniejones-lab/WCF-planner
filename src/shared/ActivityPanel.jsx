@@ -174,6 +174,11 @@ function renderEventBody(body, mentionedProfileNames, mentionedProfileIds) {
 function eventTypeLabel(t) {
   if (t === 'comment.posted') return null; // bare comment, no badge
   if (t === 'task.completed') return 'COMPLETED';
+  if (t === 'field.updated') return 'UPDATED';
+  if (t === 'status.changed') return 'STATUS';
+  if (t === 'record.created') return 'CREATED';
+  if (t === 'record.deleted') return 'DELETED';
+  if (t === 'record.restored') return 'RESTORED';
   return t.toUpperCase();
 }
 
@@ -312,7 +317,7 @@ export default function ActivityPanel({
         style={hot ? COMPACT_CHIP_HOT : COMPACT_CHIP}
         title={count === 1 ? '1 activity event' : `${count} activity events`}
       >
-        💬 {count > 0 ? count : ''}
+        💬 {count > 0 ? count : 'Activity'}
       </button>
     );
   }

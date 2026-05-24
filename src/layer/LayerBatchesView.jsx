@@ -18,6 +18,7 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 import ActivityPanel from '../shared/ActivityPanel.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import ActivityModal from '../shared/ActivityModal.jsx';
+import {recordFieldChange} from '../lib/activityApi.js';
 
 const LayerBatchesView = ({
   sb,
@@ -131,6 +132,7 @@ const LayerBatchesView = ({
   const batchAutoSaveTimer = useRef(null);
   const [batchSaving, setBatchSaving] = useState(false);
   const [batchPending, setBatchPending] = useState(false);
+  const batchInitialNotesRef = useRef(null);
 
   // Handle deep-link from timeline (clicking a layer bar selects this batch)
   useEffect(() => {
@@ -395,6 +397,30 @@ const LayerBatchesView = ({
   async function closeBatchForm() {
     const ok = await flushBatchAutosave();
     if (!ok) return; // don't close if there's an unrecoverable error (e.g. missing name)
+    const prevNotes = batchInitialNotesRef.current;
+    const currNotes = bForm.notes || '';
+    if (editBatchId && prevNotes !== null && currNotes !== prevNotes) {
+      try {
+        await recordFieldChange(sb, {
+          entityType: 'layer.batch',
+          entityId: editBatchId,
+          entityLabel: bForm.name || editBatchId,
+          changes: [
+            {
+              field: 'notes',
+              label: 'Notes',
+              from: prevNotes,
+              to: currNotes,
+              old_present: !!prevNotes,
+              new_present: !!currNotes,
+            },
+          ],
+        });
+      } catch (_e) {
+        // Best-effort — don't block form close on activity failure
+      }
+    }
+    batchInitialNotesRef.current = null;
     setShowBatchForm(false);
     setEditBatchId(null);
     setBForm(EMPTY_BATCH);
@@ -555,6 +581,7 @@ const LayerBatchesView = ({
                 onClick={() => {
                   setBForm({...EMPTY_BATCH, name: nextBatchName()});
                   setEditBatchId(null);
+                  batchInitialNotesRef.current = null;
                   setShowBatchForm(true);
                 }}
                 style={{
@@ -883,6 +910,7 @@ const LayerBatchesView = ({
                     per_lb_layer_cost: selectedBatch.per_lb_layer_cost || '',
                   });
                   setEditBatchId(selectedBatch.id);
+                  batchInitialNotesRef.current = selectedBatch.notes || '';
                   setShowBatchForm(true);
                 }}
                 style={{

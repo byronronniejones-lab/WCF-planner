@@ -22,6 +22,11 @@ const ENTITY_TYPE_LABELS = {
 const EVENT_TYPE_LABELS = {
   'comment.posted': 'Comment',
   'task.completed': 'Completed',
+  'field.updated': 'Updated',
+  'status.changed': 'Status',
+  'record.created': 'Created',
+  'record.deleted': 'Deleted',
+  'record.restored': 'Restored',
 };
 
 const ENTITY_FILTERS = [

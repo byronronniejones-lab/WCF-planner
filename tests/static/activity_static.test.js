@@ -225,12 +225,16 @@ describe('mig 058 — task.completed trigger', () => {
 });
 
 describe('src/lib/activityApi.js — helpers + parser', () => {
-  it('exports the five client helpers + change event name', () => {
+  it('exports the Activity Layer helpers + change event name', () => {
     expect(apiSrc).toMatch(/export async function listActivityEvents/);
     expect(apiSrc).toMatch(/export async function countActivityForEntity/);
     expect(apiSrc).toMatch(/export async function postActivityComment/);
     expect(apiSrc).toMatch(/export async function editActivityEvent/);
     expect(apiSrc).toMatch(/export async function deleteActivityEvent/);
+    expect(apiSrc).toMatch(/export async function recordActivityEvent/);
+    expect(apiSrc).toMatch(/export async function recordFieldChange/);
+    expect(apiSrc).toMatch(/export async function recordStatusChange/);
+    expect(apiSrc).toMatch(/export function buildFieldChangeSummary/);
     expect(apiSrc).toMatch(/export const ACTIVITY_CHANGE_EVENT = 'wcf-activity-change'/);
   });
 
@@ -246,6 +250,7 @@ describe('src/lib/activityApi.js — helpers + parser', () => {
     expect(apiSrc).toMatch(/\.rpc\('post_activity_comment'/);
     expect(apiSrc).toMatch(/\.rpc\('edit_activity_event'/);
     expect(apiSrc).toMatch(/\.rpc\('delete_activity_event'/);
+    expect(apiSrc).toMatch(/\.rpc\('record_activity_event'/);
   });
 
   it('mention renderer uses name-array chipping; no uuid token markup', () => {
@@ -276,9 +281,7 @@ describe('mig 060 — mention contract switch (plain @Name + p_mentions[] author
       /array_agg\(COALESCE\(p2\.full_name, ''\) ORDER BY am2\.created_at, am2\.mentioned_profile_id\)/,
     );
     // Same ORDER BY on the ids array so they pair correctly.
-    expect(mig060).toMatch(
-      /array_agg\(am\.mentioned_profile_id ORDER BY am\.created_at, am\.mentioned_profile_id\)/,
-    );
+    expect(mig060).toMatch(/array_agg\(am\.mentioned_profile_id ORDER BY am\.created_at, am\.mentioned_profile_id\)/);
   });
 
   it('post_activity_comment + edit_activity_event drop body-uuid validation', () => {
@@ -377,9 +380,7 @@ describe('src/shared/ActivityPanel.jsx — wire + data hooks', () => {
   it('renderEventBody passes mentioned_profile_names + ids to the renderer', () => {
     // Mig 060 contract: chips are driven by the names array returned in
     // list_activity_events, not by parsing the body for uuid tokens.
-    expect(panelSrc).toMatch(
-      /renderEventBody\(ev\.body, ev\.mentioned_profile_names, ev\.mentioned_profile_ids\)/,
-    );
+    expect(panelSrc).toMatch(/renderEventBody\(ev\.body, ev\.mentioned_profile_names, ev\.mentioned_profile_ids\)/);
     // Negative: no fallback to parsing body for the dead canonical token.
     expect(panelSrc).not.toMatch(/MENTION_INLINE_RE/);
   });
@@ -457,6 +458,132 @@ describe('Task Center wire-up', () => {
     // mentions both intentionally — we strip comments before scanning.)
     const code = myTasksTabSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
     expect(code).not.toContain('📎');
+  });
+});
+
+describe('mig 066 — record_activity_event (generalized Activity Layer RPC)', () => {
+  const mig066 = fs.readFileSync(path.join(ROOT, 'supabase-migrations/066_activity_change_events.sql'), 'utf8');
+
+  it('defines the generalized SECURITY DEFINER RPC with event_type param', () => {
+    expect(mig066).toMatch(/CREATE OR REPLACE FUNCTION public\.record_activity_event/);
+    expect(mig066).toMatch(/SECURITY DEFINER/);
+    expect(mig066).toMatch(/p_entity_type\s+text/);
+    expect(mig066).toMatch(/p_entity_id\s+text/);
+    expect(mig066).toMatch(/p_event_type\s+text/);
+    expect(mig066).toMatch(/p_entity_label\s+text/);
+    expect(mig066).toMatch(/p_body\s+text/);
+    expect(mig066).toMatch(/p_payload\s+jsonb/);
+  });
+
+  it('drops the narrow record_activity_change_event if it existed', () => {
+    expect(mig066).toMatch(/DROP FUNCTION IF EXISTS public\.record_activity_change_event/);
+  });
+
+  it('authenticates the caller and rejects inactive profiles', () => {
+    expect(mig066).toMatch(/record_activity_event: authenticated caller required/);
+    expect(mig066).toMatch(/v_role IS NULL OR v_role = 'inactive'/);
+  });
+
+  it('rejects null or blank event_type before the allowlist check', () => {
+    expect(mig066).toMatch(/p_event_type IS NULL OR length\(trim\(p_event_type\)\) = 0/);
+    expect(mig066).toMatch(/record_activity_event: event_type required/);
+  });
+
+  it('enforces an event_type allowlist', () => {
+    for (const t of ['field.updated', 'status.changed', 'record.created', 'record.deleted', 'record.restored']) {
+      expect(mig066, `missing allowed event_type: ${t}`).toContain(`'${t}'`);
+    }
+    expect(mig066).toMatch(/record_activity_event: unsupported event_type/);
+  });
+
+  it('gates on _activity_can_write', () => {
+    expect(mig066).toMatch(/IF NOT public\._activity_can_write\(p_entity_type, p_entity_id\)/);
+  });
+
+  it('documents record.deleted as soft-delete only (tombstone must exist for resolver)', () => {
+    expect(mig066).toMatch(/soft-deleted/i);
+    expect(mig066).toMatch(/source entity must still exist/i);
+    expect(mig066).not.toMatch(/record soft-deleted or removed/);
+  });
+
+  it('documents Phase 1 best-effort semantics (not audit-grade transactional)', () => {
+    expect(mig066).toMatch(/Phase 1/);
+    expect(mig066).toMatch(/best-effort/i);
+  });
+
+  it('inserts into activity_events and stores entity_label in payload', () => {
+    expect(mig066).toMatch(/INSERT INTO public\.activity_events/);
+    expect(mig066).toMatch(/p_event_type/);
+    expect(mig066).toMatch(/entity_label/);
+  });
+
+  it('guards body length', () => {
+    expect(mig066).toMatch(/body too long/);
+  });
+
+  it('does NOT create notifications or mentions', () => {
+    expect(mig066).not.toMatch(/INSERT INTO public\.notifications/);
+    expect(mig066).not.toMatch(/INSERT INTO public\.activity_mentions/);
+  });
+
+  it('REVOKE from anon + GRANT to authenticated + NOTIFY', () => {
+    expect(mig066).toMatch(/REVOKE ALL ON FUNCTION public\.record_activity_event\([^)]*\) FROM PUBLIC, anon/);
+    expect(mig066).toMatch(/GRANT EXECUTE ON FUNCTION public\.record_activity_event\([^)]*\) TO authenticated/);
+    expect(mig066).toMatch(/NOTIFY pgrst, 'reload schema'/);
+  });
+});
+
+describe('Activity Layer — event type labels', () => {
+  const logSrc = fs.readFileSync(path.join(ROOT, 'src/activity/ActivityLogView.jsx'), 'utf8');
+  const EVENT_TYPES = ['field.updated', 'status.changed', 'record.created', 'record.deleted', 'record.restored'];
+
+  it('ActivityPanel eventTypeLabel handles all Activity Layer event types', () => {
+    for (const t of EVENT_TYPES) {
+      expect(panelSrc, `missing eventTypeLabel for ${t}`).toContain(`'${t}'`);
+    }
+  });
+
+  it('ActivityLogView EVENT_TYPE_LABELS covers all Activity Layer event types', () => {
+    for (const t of EVENT_TYPES) {
+      expect(logSrc, `missing EVENT_TYPE_LABELS for ${t}`).toContain(`'${t}'`);
+    }
+  });
+});
+
+describe('Activity Layer — pilot surface: layer batch notes (field.updated)', () => {
+  const layerSrc = fs.readFileSync(path.join(ROOT, 'src/layer/LayerBatchesView.jsx'), 'utf8');
+
+  it('imports recordFieldChange from activityApi', () => {
+    expect(layerSrc).toContain("import {recordFieldChange} from '../lib/activityApi.js'");
+  });
+
+  it('tracks initial notes via batchInitialNotesRef', () => {
+    expect(layerSrc).toContain('batchInitialNotesRef');
+  });
+
+  it('fires field change event on form close when notes changed', () => {
+    expect(layerSrc).toContain('recordFieldChange(sb');
+    expect(layerSrc).toContain("field: 'notes'");
+    expect(layerSrc).toContain("label: 'Notes'");
+  });
+});
+
+describe('Activity Layer — pilot surface: equipment status (status.changed)', () => {
+  const eqSrc = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentDetail.jsx'), 'utf8');
+
+  it('imports recordStatusChange from activityApi', () => {
+    expect(eqSrc).toContain("import {recordStatusChange} from '../lib/activityApi.js'");
+  });
+
+  it('fires status change event on equipment status toggle', () => {
+    expect(eqSrc).toContain('recordStatusChange(sb');
+    expect(eqSrc).toContain("entityType: 'equipment.item'");
+  });
+});
+
+describe('Compact chip zero-count shows actionable label', () => {
+  it('zero-count displays "Activity" text', () => {
+    expect(panelSrc).toContain("count > 0 ? count : 'Activity'");
   });
 });
 

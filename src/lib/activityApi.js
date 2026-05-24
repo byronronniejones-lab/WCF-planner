@@ -123,6 +123,70 @@ export async function deleteActivityEvent(sb, eventId) {
   return data;
 }
 
+// ── Activity Layer: general event recording (mig 066) ───────────────────
+//
+// Platform write path for the WCF Activity Layer. Every user-initiated
+// mutation should flow through recordActivityEvent or one of the
+// convenience wrappers below. Do NOT use for autosave ticks or
+// intermediate state — only for intentional saved changes.
+//
+// Allowed event types (server-enforced):
+//   field.updated, status.changed, record.created,
+//   record.deleted, record.restored
+
+export async function recordActivityEvent(sb, {entityType, entityId, eventType, entityLabel, body, payload}) {
+  if (!sb) throw new Error('recordActivityEvent: sb required');
+  if (!entityType || !entityId) throw new Error('recordActivityEvent: entityType + entityId required');
+  if (!eventType) throw new Error('recordActivityEvent: eventType required');
+  const {data, error} = await sb.rpc('record_activity_event', {
+    p_entity_type: entityType,
+    p_entity_id: entityId,
+    p_event_type: eventType,
+    p_entity_label: entityLabel || null,
+    p_body: body || null,
+    p_payload: payload || {},
+  });
+  if (error) throw new Error(`recordActivityEvent: ${error.message || String(error)}`);
+  fireActivityChangeEvent(entityType, entityId);
+  return data;
+}
+
+export function buildFieldChangeSummary(changes) {
+  if (!Array.isArray(changes) || changes.length === 0) return {body: '', changes: []};
+  const parts = changes.map((c) => {
+    const label = c.label || c.field;
+    if (!c.new_present && c.old_present) return 'Cleared ' + label;
+    if (c.new_present && !c.old_present) return 'Set ' + label;
+    const excerpt = typeof c.to === 'string' && c.to.length > 80 ? c.to.slice(0, 80) + '…' : c.to;
+    return 'Updated ' + label + (excerpt != null ? ': ' + excerpt : '');
+  });
+  return {body: parts.join('; '), changes};
+}
+
+export async function recordFieldChange(sb, {entityType, entityId, entityLabel, changes}) {
+  const summary = buildFieldChangeSummary(changes);
+  return recordActivityEvent(sb, {
+    entityType,
+    entityId,
+    eventType: 'field.updated',
+    entityLabel,
+    body: summary.body,
+    payload: {changes: summary.changes},
+  });
+}
+
+export async function recordStatusChange(sb, {entityType, entityId, entityLabel, from, to}) {
+  const body = 'Status changed from ' + (from || '(none)') + ' to ' + (to || '(none)');
+  return recordActivityEvent(sb, {
+    entityType,
+    entityId,
+    eventType: 'status.changed',
+    entityLabel,
+    body,
+    payload: {changes: [{field: 'status', label: 'Status', from, to, old_present: !!from, new_present: !!to}]},
+  });
+}
+
 // ── Mention rendering helper (pure, exported for reuse + testing) ──────
 
 /**

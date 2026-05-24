@@ -21,6 +21,7 @@ import EquipmentMaintenanceModal from './EquipmentMaintenanceModal.jsx';
 import ManualsCard from './ManualsCard.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+import {recordStatusChange} from '../lib/activityApi.js';
 
 export default function EquipmentDetail({
   sb,
@@ -304,11 +305,23 @@ export default function EquipmentDetail({
           <button
             onClick={async () => {
               setNotice(null);
-              const next = eq.status === 'sold' ? 'active' : 'sold';
+              const prev = eq.status;
+              const next = prev === 'sold' ? 'active' : 'sold';
               const {error} = await sb.from('equipment').update({status: next}).eq('id', eq.id);
               if (error) {
                 setNotice({kind: 'error', message: 'Status update failed: ' + error.message});
                 return;
+              }
+              try {
+                await recordStatusChange(sb, {
+                  entityType: 'equipment.item',
+                  entityId: eq.id,
+                  entityLabel: eq.name,
+                  from: prev,
+                  to: next,
+                });
+              } catch (_e) {
+                // Best-effort — don't block status toggle on activity failure
               }
               onReload();
             }}
