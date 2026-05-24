@@ -26,13 +26,13 @@ only when Ronnie explicitly assigns it.
 
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
-- Latest live commit: `3d25e7f feat(activity): add shared entity mutation helper`
+- Latest live commit: `7417121 feat(dailys): add soft-delete restore activity audit`
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
-  global activity log, `066` activity change events.
-- PROD migrations drafted/stashed only: `059_daily_unique_indexes.sql` and
-  `061_daily_report_soft_delete_restore.sql` are not applied.
+  global activity log, `066` activity change events, `067` daily soft-delete.
+- PROD migrations drafted/stashed only: `059_daily_unique_indexes.sql` is not
+  applied. `061_daily_report_soft_delete_restore.sql` is superseded by `067`.
 - CI note: verify may be red from known unrelated Playwright flakes. Do not mix
   CI-stabilization work into feature lanes.
 
@@ -49,6 +49,7 @@ only when Ronnie explicitly assigns it.
 | Global Activity Log | Live at `/activity`. Permission-filtered RPC reads `activity_events`; comments, task completions, deleted-comment placeholders, and explicit system/change events show there. |
 | Activity Layer foundation | Live. `record_activity_event` records allowlisted change/lifecycle events through SECDEF RPC. Layer batch notes and equipment status are pilot surfaces. |
 | Entity mutation helper | Live. `runMutation` standardizes client mutation errors plus optional best-effort Activity logging; it is not transactional. |
+| Daily soft-delete + restore | Live. Transactional SECDEF RPCs `soft_delete_daily_report` / `restore_daily_report` (admin-only). 6 daily entity types registered. `deleted_at`/`deleted_by` on all 6 daily tables. All read sites filtered. Admin Recently Deleted tab with restore. `record.deleted`/`record.restored` Activity events with human-readable labels. |
 | Hamburger cleanup | Live. Hamburger has Home, Activity, Webforms: Dailys/Equipment, Admin/Users, Sign Out. |
 | Home farrow window wording | Live. Misleading `N pending` text removed from Home Next 30 Days farrowing windows. |
 | Tasks v2 | Canonical at `/tasks`; old `/my-tasks` and `/admin/tasks` are aliases. |
@@ -61,30 +62,25 @@ Stash numbers can change if new stashes are added; always verify with
 | Lane | Files | Next action |
 |---|---|---|
 | `stash@{0}` stale global activity deep-link WIP | `src/lib/activityRegistry.js`, `src/lib/notificationsApi.js`, `src/shared/Header.jsx`, task deep-link files, notification static test | Likely superseded by merged commits. Inspect before dropping; do not apply unless unique changes are proven. |
-| `stash@{1}` daily delete/restore | `supabase-migrations/061_daily_report_soft_delete_restore.sql`, `src/lib/dailyReportsApi.js`, `src/admin/RecentlyDeletedDailyReports.jsx`, six daily views, related filters/tests | Keep. Inspect before reuse because it predates the Activity Layer. Needs migration gate planning. |
+| `stash@{1}` daily delete/restore | `supabase-migrations/061_daily_report_soft_delete_restore.sql`, six daily view patches, header routing | Superseded by migration 067 and the shipped soft-delete lane. Safe to drop after confirming no unique non-delete changes. |
 | `stash@{2}` old parked mixed lanes | Daily-report integrity files, superseded duplicate Home card files, shipped broiler-label files, `059_daily_unique_indexes.sql`, audit script | Do not pop. Contains shipped/superseded work mixed with possible future daily integrity/059 material. Inspect path-by-path only. |
 
 ---
 
 ## Active Roadmap
 
-1. Daily Report Soft-Delete + Restore:
-   - Soft-delete daily reports with tombstones.
-   - Build Recently Deleted admin view and restore flow.
-   - Log `record.deleted` / `record.restored` Activity events where source rows
-     remain resolver-visible.
-   - Inspect `stash@{1}` before reusing because it predates migration `066`.
-2. Daily report entity/activity expansion:
-   - Register daily report entity types in `activityRegistry`.
-   - Add `_activity_can_read` resolver branches.
-   - Wire per-record Activity affordances without replacing existing
-     notes/issues/comments-concerns fields.
-   - Add Playwright coverage for create/edit/delete/restore and `/activity`.
+1. Per-record Activity UI on daily views:
+   - Wire ActivityPanel compact chips on all 6 daily view surfaces. Entity types
+     are already registered; this adds the visible affordance.
+   - Do not replace existing notes/issues/comments-concerns fields.
+2. Expand Activity change logging to more surfaces:
+   - Broiler batch field edits, cattle/sheep animal edits, equipment detail edits.
+   - Use `runMutation` for routine field changes, SECDEF RPCs for audit-critical
+     paths (status transitions, lifecycle events).
 3. Audit-grade mutation paths:
-   - Use `runMutation` for routine client-side mutation consistency.
-   - Use transactional SECDEF RPCs for delete/restore, status transitions, and
-     other audit-critical paths where data mutation and Activity must succeed
-     together.
+   - Evaluate which non-daily write paths need transactional server RPCs.
+   - Delete/restore is already audit-grade via mig 067 RPCs. Extend the pattern
+     to other domains as needed.
 4. Stash hygiene:
    - Inspect `stash@{0}` and drop only if it has no unique changes.
    - Treat `stash@{2}` as mixed/superseded; pull only specific files if a later
@@ -102,16 +98,16 @@ These are hardening priorities, not reasons to rewrite.
 - Direct client mutations are still the dominant write pattern outside Tasks v2
   and Activity. Audit snapshot on 2026-05-24 found roughly 200 direct
   `sb.from(...).insert/update/upsert/delete` call sites in `src`.
-- Hard deletes remain common. Audit snapshot on 2026-05-24 found roughly 40
-  direct `.delete()` call sites in `src`; `deleted_at` is currently implemented
-  only for `activity_events`.
+- Hard deletes remain for non-daily entities. Daily reports now soft-delete via
+  transactional RPCs. Other domains (cattle/sheep/equipment/tasks) still
+  hard-delete or use domain-specific patterns.
 - `runMutation` is non-transactional. If a client mutation succeeds and its
   Activity RPC fails, the data change is already committed. Audit-critical
   paths need transactional SECDEF RPCs/triggers.
-- Activity covers 10 entity types. Daily reports, weigh-in sessions, breeding
-  and farrowing records, equipment maintenance events, fuel records, and other
-  operational records still need entity identity decisions before they can have
-  durable per-record Activity.
+- Activity covers 16 entity types (10 original + 6 daily). Weigh-in sessions,
+  breeding/farrowing records, equipment maintenance events, fuel records, and
+  other operational records still need entity identity decisions before they
+  can have durable per-record Activity.
 - `app_store` JSON entities need stable IDs before they can participate in
   Activity, deep-links, and audit trails as cleanly as table-backed rows.
 - Playwright coverage is strong in several domains but does not yet cover every
@@ -232,6 +228,7 @@ Aliases:
 | Notifications | `src/lib/notificationsApi.js`, `src/shared/Header.jsx` |
 | Activity | `src/lib/activityApi.js`, `src/lib/activityRegistry.js`, `src/lib/globalActivityApi.js`, `src/activity/ActivityLogView.jsx`, `src/shared/ActivityPanel.jsx`, `src/shared/MentionTextarea.jsx`, `src/shared/ActivityModal.jsx` |
 | Entity mutations | `src/lib/entityMutations.js` |
+| Daily reports API | `src/lib/dailyReportsApi.js`, `src/admin/RecentlyDeletedDailyReports.jsx` |
 | Public forms | `src/webforms/*` |
 | Icons | `src/lib/plannerIcons.js`, `src/components/PlannerIcon.jsx` |
 | Offline | `src/lib/offline*.js`, `src/lib/useOffline*.js` |
@@ -352,7 +349,8 @@ Read the relevant contract before editing its files.
   is checked before role shortcuts; admin does not bypass fake-id rejection.
 - Supported entity types are: `task.instance`, `broiler.batch`, `pig.batch`,
   `layer.batch`, `layer.housing`, `cattle.animal`, `cattle.processing`,
-  `sheep.animal`, `sheep.processing`, `equipment.item`.
+  `sheep.animal`, `sheep.processing`, `equipment.item`, `poultry.daily`,
+  `layer.daily`, `egg.daily`, `pig.daily`, `cattle.daily`, `sheep.daily`.
 - New entity type = one `_activity_can_read` resolver branch, one
   `activityRegistry` entry, route/deep-link mapping, one surface wire-up, and a
   mutation/error/activity plan that uses `runMutation` or a SECDEF RPC where
@@ -409,8 +407,12 @@ Read the relevant contract before editing its files.
   - partial indexes exclude Add Feed rows
   - `egg_dailys`: warning/pre-submit guard only, no hard unique index yet
 - Existing PROD duplicate cleanup is required before applying migration `059`.
-- Future delete lane should use soft-delete plus global Recently Deleted/Audit;
-  hard delete hides evidence operators need.
+- Daily reports use soft-delete via `soft_delete_daily_report` /
+  `restore_daily_report` SECDEF RPCs (admin-only, transactional with Activity).
+  All daily table reads filter `.is('deleted_at', null)`. Admin Recently Deleted
+  tab shows deleted reports with restore. No hard-delete path remains for dailys.
+- Delete button is admin-only across all 6 daily views.
+- `dailyDuplicateCheck.js` excludes soft-deleted records from duplicate checks.
 
 ### Pig
 
@@ -506,7 +508,7 @@ Focused starting points:
 | Tasks | `tests/static/tasks_*.test.js`, `tests/tasks_v2_*.spec.js`, `src/lib/tasksCenterApi.test.js` |
 | Activity | `tests/activity_phase1.spec.js`, `tests/static/activity_static.test.js`, `tests/static/global_activity_deep_links_static.test.js`, `tests/static/mention_deep_links_static.test.js`, `tests/static/activity_phase2_entities_static.test.js`, `tests/static/global_activity_log_static.test.js` |
 | Entity mutations | `src/lib/entityMutations.test.js`, `tests/static/entity_mutations_static.test.js` |
-| Daily reports | `tests/static/daily_report_integrity.test.js` |
+| Daily reports | `tests/static/daily_soft_delete_static.test.js`, `tests/static/daily_duplicate_prevention_static.test.js` |
 | Broiler | `src/lib/broiler.test.js`, `tests/broiler_*.spec.js`, `tests/static/weighinswebform_no_app_store.test.js` |
 | Pig | `src/lib/pigForecast.test.js`, `tests/pig_*.spec.js` |
 | Cattle | `src/lib/cattleForecast.test.js`, `tests/cattle_*.spec.js` |
