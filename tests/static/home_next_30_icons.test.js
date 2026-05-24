@@ -62,10 +62,11 @@ describe('HomeDashboard NEXT 30 DAYS — farrow-due labels + active-window subli
     expect(farrowDueBlock[0]).toMatch(/const windowActive = tl\.farrowingStart <= todayStr/);
   });
 
-  it('active windows render "Window MM/DD-MM/DD · N pending" subline; upcoming use "Opens MM/DD · N pending"', () => {
+  it('active windows render "Window MM/DD-MM/DD" subline without pending count', () => {
     expect(farrowDueBlock[0]).toMatch(
-      /subline:\s*windowActive\s*\?[\s\S]*?`Window \$\{fmt\(tl\.farrowingStart\)\}-\$\{fmt\(tl\.farrowingEnd\)\} · \$\{pending\.length\} pending`[\s\S]*?:\s*`Opens \$\{fmt\(tl\.farrowingStart\)\} · \$\{pending\.length\} pending`/,
+      /subline:\s*windowActive\s*\?[\s\S]*?`Window \$\{fmt\(tl\.farrowingStart\)\}-\$\{fmt\(tl\.farrowingEnd\)\}`[\s\S]*?:\s*`Opens \$\{fmt\(tl\.farrowingStart\)\}`/,
     );
+    expect(farrowDueBlock[0]).not.toMatch(/subline:[\s\S]*?pending/);
   });
 
   it('renderer prefers event.subline over fmt(date) when present', () => {

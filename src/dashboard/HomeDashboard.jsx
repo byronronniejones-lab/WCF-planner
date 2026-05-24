@@ -271,8 +271,8 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
           label: `${lbl} sow group farrowing window ${windowActive ? 'active' : 'opens'}`,
           date: tl.farrowingStart,
           subline: windowActive
-            ? `Window ${fmt(tl.farrowingStart)}-${fmt(tl.farrowingEnd)} · ${pending.length} pending`
-            : `Opens ${fmt(tl.farrowingStart)} · ${pending.length} pending`,
+            ? `Window ${fmt(tl.farrowingStart)}-${fmt(tl.farrowingEnd)}`
+            : `Opens ${fmt(tl.farrowingStart)}`,
           color: '#1e40af',
           iconKey: ANIMAL_ICON_KEYS.pig,
         });
