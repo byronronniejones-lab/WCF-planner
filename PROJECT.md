@@ -7,7 +7,7 @@ This file is project-specific truth: current state, active roadmap,
 architecture map, and load-bearing contracts. Workflow, gates, and relay format
 live in [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-05-23.
+Last updated: 2026-05-24.
 
 ---
 
@@ -26,9 +26,13 @@ only when Ronnie explicitly assigns it.
 
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
-- Latest live commit: `82e54a0 fix(activity): polish mentions and photo attachment indicators`
-- PROD migrations live: `057` notifications, `058` activity events, `060` mention contract
-- PROD migration drafted only: `059_daily_unique_indexes.sql` (not applied)
+- Latest live commit: `33a4dea fix(activity): merge Activity Log polish`
+- PROD migrations live: `057` notifications, `058` activity events,
+  `060` mention contract, `062` activity entity expansion, `063`
+  notification activity resolution, `064` activity Phase 2 entities, `065`
+  global activity log.
+- PROD migrations drafted/stashed only: `059_daily_unique_indexes.sql` and
+  `061_daily_report_soft_delete_restore.sql` are not applied.
 - CI note: verify may be red from known unrelated Playwright flakes. Do not mix
   CI-stabilization work into feature lanes.
 
@@ -36,59 +40,57 @@ only when Ronnie explicitly assigns it.
 
 | Area | State |
 |---|---|
-| Notifications Center | Live. `task_completed` and `mention` notifications use `public.notifications`. |
-| Activity + @Mentions Phase 1 | Live on task instances. Per-tile activity panel, @ picker, mention fanout, task-completed activity trigger. |
-| Mention polish | Live. Body stores plain `@Name`; server uses `p_mentions[]` as identity. |
-| Home farrow window wording | Live, but needs follow-up to remove the confusing `N pending` text. |
-| Mobile header refinements | Live. Mobile section pill hidden, notification bell real, fleet duplicate nav removed. |
+| Eggmobile 3 fallback | Live. Layer housing count fallback restored Eggmobile 3 and active layer totals. |
+| Daily duplicate prevention | Live. Pre-submit duplicate guards are merged; DB unique-index migration `059` remains unapplied. |
+| Broiler batch location labels | Live. Broiler daily/report dropdowns show current housing/location labels while storing the plain batch name. |
+| Home Weather | Live. Tomorrow.io forecast proxy, 10-day forecast, rain/freeze focus, and animated radar are on Home. |
+| Notifications Center | Live. `task_completed` and `mention` notifications use `public.notifications`; task and non-task mention deep-links are live. |
+| Activity + @Mentions | Live. Comments, @mentions, compact chips, ActivityModal, and deep-links are live for 10 entity types. |
+| Global Activity Log | Live at `/activity`. Permission-filtered RPC reads `activity_events`; deleted comments show a placeholder. |
+| Hamburger cleanup | Live. Hamburger has Home, Activity, Webforms: Dailys/Equipment, Admin/Users, Sign Out. |
+| Home farrow window wording | Live. Misleading `N pending` text removed from Home Next 30 Days farrowing windows. |
 | Tasks v2 | Canonical at `/tasks`; old `/my-tasks` and `/admin/tasks` are aliases. |
 
 ### Parked WIP Stash
 
-Working tree is intentionally clean after wrap. The parked code lanes are saved
-in a named stash:
-
-- Stash message: `wip: parked code lanes before wrap 2026-05-23`
-- Stash hash: `18a753e1ed36a1e1556069b918492196895fdc14`
-- Current ref at wrap: `stash@{0}` (verify with `git stash list`; the numbered
-  ref can change if new stashes are added)
-
-Before editing next session, inspect the stash with
-`git stash show -u --name-only 18a753e1ed36a1e1556069b918492196895fdc14`.
-Apply only when ready to untangle the lanes. Do not pop blindly.
+Working tree is intentionally clean after wrap. Stash numbers can change if new
+stashes are added; always verify with `git stash list` before acting. Do not pop
+or drop blindly.
 
 | Lane | Files | Next action |
 |---|---|---|
-| Daily-report integrity | `src/main.jsx`, `src/dashboard/HomeDashboard.jsx`, six daily views, `tests/static/daily_report_integrity.test.js` | Keep. Land after tree is untangled. App-code only. |
-| Superseded duplicate Home card | `src/dashboard/HomeDashboard.jsx`, `src/lib/dailyReportDuplicates*`, `tests/static/daily_report_duplicates_static.test.js` | Drop next session. No Home duplicate card. |
-| Broiler dropdown location labels | `src/lib/broilerBatchMeta*`, `src/shared/AdminAddReportModal.jsx`, webform files, `tests/static/broiler_batch_location_dropdowns.test.js` | Keep for later. Display location next to batch name; stored value remains batch name. |
-| Duplicate-prevention draft | `supabase-migrations/059_daily_unique_indexes.sql`, `scripts/audit_daily_duplicates.cjs` | Do not apply until data cleanup is approved and done. |
+| `stash@{0}` stale global activity deep-link WIP | `src/lib/activityRegistry.js`, `src/lib/notificationsApi.js`, `src/shared/Header.jsx`, task deep-link files, notification static test | Likely superseded by merged commits. Inspect before dropping; do not apply unless unique changes are proven. |
+| `stash@{1}` daily delete/restore | `supabase-migrations/061_daily_report_soft_delete_restore.sql`, `src/lib/dailyReportsApi.js`, `src/admin/RecentlyDeletedDailyReports.jsx`, six daily views, related filters/tests | Keep. Resume after Activity visibility/change-events unless Ronnie redirects. Needs migration gate planning. |
+| `stash@{2}` old parked mixed lanes | Daily-report integrity files, superseded duplicate Home card files, shipped broiler-label files, `059_daily_unique_indexes.sql`, audit script | Do not pop. Contains shipped/superseded work mixed with possible future daily integrity/059 material. Inspect path-by-path only. |
 
 ---
 
 ## Active Roadmap
 
-1. Replace the weird task-row photo icon with a clearer affordance.
-2. Remove `N pending` from the Home farrowing-window line.
-3. Untangle the working tree. Drop the superseded Home duplicate-card work.
-4. Land Daily-report integrity.
-5. Build duplicate prevention:
-   - Pre-submit duplicate check/warning on daily forms.
-   - DB unique indexes for poultry, pig, layer, cattle, sheep only.
-   - Exclude `source='add_feed_webform'`.
-   - No hard unique index for `egg_dailys`.
-   - Clean existing PROD duplicates before applying migration `059`.
-   - Audit files: `C:\Users\Ronni\cc-research\daily-duplicates-audit\daily-duplicates-prod-2026-05-23T15-12-16Z.{md,json}`.
-6. Add broiler batch location labels:
-   - Example: `B-26-07 (Schooner 2 & 3)`
-   - Example: `B-26-08 (Brooder #2)`
-   - Stored value stays the batch label.
-7. Plan Delete Visibility + Restore:
+1. Activity visibility + meaningful change events:
+   - Verify/fix visible Activity/comment affordances on all claimed entity
+     surfaces. Ronnie reports Tasks are obvious, but broiler/layer/etc. are not.
+   - Add a server-side activity/change-event RPC; clients must not insert
+     directly into `activity_events`.
+   - First wiring target: Layer batch note updates should appear in `/activity`
+     and that entity's ActivityModal.
+   - Do not log every keystroke or noisy autosave. Log meaningful saved changes
+     such as notes/status/date/location/count changes.
+2. Resume Daily Report Soft-Delete + Restore:
    - Soft-delete daily reports.
    - Recently Deleted admin view.
    - Restore flow.
    - Delete notifications.
    - Global audit/activity surface for deleted records.
+3. Stash hygiene:
+   - Inspect `stash@{0}` and drop only if it has no unique changes.
+   - Treat `stash@{2}` as mixed/superseded; pull only specific files if a later
+     lane needs them.
+4. Optional daily-report DB hardening:
+   - `059_daily_unique_indexes.sql` remains unapplied.
+   - Do not apply until duplicate cleanup is explicitly approved and complete.
+   - `egg_dailys` should stay pre-submit guard only unless a safe scope is
+     designed.
 
 ---
 
@@ -106,6 +108,14 @@ Apply only when ready to untangle the lanes. Do not pop blindly.
   deleted surface is needed for deletes.
 - Delete events may belong in Notifications Center because they are operational
   exceptions, not routine duplicate noise.
+- Activity Log is accessible to all authenticated users and is permission
+  filtered server-side. It is not admin-only.
+- Current Activity Log shows existing `activity_events` only: comments,
+  mentions, task completions, and any explicit system events. Normal row edits
+  are not logged yet; that is the next activity lane.
+- Meaningful change events should go through SECURITY DEFINER RPCs, use
+  `_activity_can_write`, and avoid notification fanout unless explicitly
+  requested.
 - CC should not repitch skipped skill installs: UI UX Pro Max, Impeccable/Taste
   for WCF, Stop Slop, GSD, claude-mem for WCF, OpenSpec.
 
@@ -134,6 +144,7 @@ Authenticated:
 
 - `/` home dashboard
 - `/tasks`
+- `/activity`
 - `/broiler`, `/layer`, `/pig`, `/cattle`, `/sheep`
 - `/fleet`
 - `/admin`
@@ -160,7 +171,7 @@ Aliases:
 | Supabase | `src/lib/supabase.js`, `src/lib/pagination.js` |
 | Tasks | `src/tasks/*`, `src/lib/tasks*Api.js`, `src/lib/tasksCenter*Api.js` |
 | Notifications | `src/lib/notificationsApi.js`, `src/shared/Header.jsx` |
-| Activity | `src/lib/activityApi.js`, `src/lib/activityRegistry.js`, `src/shared/ActivityPanel.jsx`, `src/shared/MentionTextarea.jsx`, `src/shared/ActivityModal.jsx` |
+| Activity | `src/lib/activityApi.js`, `src/lib/activityRegistry.js`, `src/lib/globalActivityApi.js`, `src/activity/ActivityLogView.jsx`, `src/shared/ActivityPanel.jsx`, `src/shared/MentionTextarea.jsx`, `src/shared/ActivityModal.jsx` |
 | Public forms | `src/webforms/*` |
 | Icons | `src/lib/plannerIcons.js`, `src/components/PlannerIcon.jsx` |
 | Offline | `src/lib/offline*.js`, `src/lib/useOffline*.js` |
@@ -273,13 +284,22 @@ Read the relevant contract before editing its files.
 
 - All activity reads/writes go through SECURITY DEFINER RPCs:
   `list_activity_events`, `count_activity_for_entity`,
-  `post_activity_comment`, `edit_activity_event`, `delete_activity_event`.
+  `post_activity_comment`, `edit_activity_event`, `delete_activity_event`,
+  `list_global_activity`.
 - No direct `.from('activity_events')` or `.from('activity_mentions')` in
   `src`.
 - `_activity_can_read(entity_type, entity_id)` is fail-closed. Entity existence
   is checked before role shortcuts; admin does not bypass fake-id rejection.
-- Phase 1 supports only `task.*` entity types. New entity type = one resolver
-  branch, one `activityRegistry` entry, and one surface wire-up.
+- Supported entity types are: `task.instance`, `broiler.batch`, `pig.batch`,
+  `layer.batch`, `layer.housing`, `cattle.animal`, `cattle.processing`,
+  `sheep.animal`, `sheep.processing`, `equipment.item`.
+- New entity type = one `_activity_can_read` resolver branch, one
+  `activityRegistry` entry, route/deep-link mapping, and one surface wire-up.
+- `/activity` is a permission-filtered global timeline backed by
+  `list_global_activity`; it must never bypass `_activity_can_read`.
+- Normal field edits are not automatically activity events yet. The next lane
+  should add meaningful change events through a new SECDEF RPC that checks
+  `_activity_can_write`.
 - Mentions use `p_mentions[]` as identity. Visible body stays user-friendly
   plain `@Name`; UUIDs must not appear in body text.
 - Server validates mentions: profile exists, profile active, max 10 mentions,
@@ -394,7 +414,7 @@ Focused starting points:
 |---|---|
 | Routes | `src/lib/routes.test.js`, `tests/url_alias_redirects.spec.js` |
 | Tasks | `tests/static/tasks_*.test.js`, `tests/tasks_v2_*.spec.js`, `src/lib/tasksCenterApi.test.js` |
-| Activity | `tests/activity_phase1.spec.js`, `tests/static/activity_static.test.js` |
+| Activity | `tests/activity_phase1.spec.js`, `tests/static/activity_static.test.js`, `tests/static/global_activity_deep_links_static.test.js`, `tests/static/mention_deep_links_static.test.js`, `tests/static/activity_phase2_entities_static.test.js`, `tests/static/global_activity_log_static.test.js` |
 | Daily reports | `tests/static/daily_report_integrity.test.js` |
 | Broiler | `src/lib/broiler.test.js`, `tests/broiler_*.spec.js`, `tests/static/weighinswebform_no_app_store.test.js` |
 | Pig | `src/lib/pigForecast.test.js`, `tests/pig_*.spec.js` |
