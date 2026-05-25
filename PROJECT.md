@@ -27,14 +27,15 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest confirmed shipped checkpoint: `d7238f6 docs: wrap Activity change
-  logging lane`.
+- Latest confirmed shipped checkpoint: `a7557ef feat(cattle): add admin-only
+  soft-delete/restore for cattle.animal`.
 - Open gates: none.
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
   global activity log, `066` activity change events, `067` daily soft-delete,
-  `068` client error events / durable client error reporting.
+  `068` client error events / durable client error reporting, `069` cattle
+  animal soft-delete / restore.
 - PROD migrations drafted/stashed only: `059_daily_unique_indexes.sql` is not
   applied. `061_daily_report_soft_delete_restore.sql` is superseded by `067`.
 - CI note: verify may be red from known unrelated Playwright flakes. Do not mix
@@ -54,9 +55,10 @@ only when Ronnie explicitly assigns it.
 | Activity Layer foundation | Live. `record_activity_event` records allowlisted change/lifecycle events through SECDEF RPC. Layer batch notes and equipment status are pilot surfaces. |
 | Entity mutation helper | Live. `runMutation` standardizes client mutation errors plus optional best-effort Activity logging; it is not transactional. |
 | Daily soft-delete + restore | Live. Transactional SECDEF RPCs `soft_delete_daily_report` / `restore_daily_report` (admin-only). 6 daily entity types registered. `deleted_at`/`deleted_by` on all 6 daily tables. All read sites filtered. Admin Recently Deleted tab with restore. `record.deleted`/`record.restored` Activity events with human-readable labels. |
+| Cattle soft-delete + restore | Live. Admin-only source-row soft-delete/restore for `cattle.animal` through SECDEF RPCs in migration `069`. Normal cattle reads hide deleted rows; admin Recently Deleted can restore; no cattle DELETE policy remains. |
 | Daily per-record Activity UI | Live. Compact Activity chips + ActivityModal on all 6 authenticated daily views; entity types already registered; no daily notes/issues/comments replacement. |
 | Error Resilience Phase 1 | Live. App-root ErrorBoundary, global `error` and `unhandledrejection` capture, and durable redacted client error events through `record_client_error` SECDEF RPC / `client_error_events` table. |
-| Activity change logging | Live. Routine field edits on `cattle.animal`, `sheep.animal`, and `equipment.item` now record `field.updated`/`status.changed` Activity events through the existing Activity Layer. Delete, restore, lifecycle/move actions, equipment child records, and admin-only documents remain deferred. |
+| Activity change logging | Live. Routine field edits on `cattle.animal`, `sheep.animal`, and `equipment.item` now record `field.updated`/`status.changed` Activity events through the existing Activity Layer. Cattle delete/restore is now transactional/audited; sheep delete/restore, lifecycle/move actions, equipment child records, and admin-only documents remain deferred. |
 | Stash hygiene | Complete. Three superseded WIP stashes were audited and dropped; `git stash list` verified empty and `main` matched `origin/main`. |
 | Hamburger cleanup | Live. Hamburger has Home, Activity, Webforms: Dailys/Equipment, Admin/Users, Sign Out. |
 | Home farrow window wording | Live. Misleading `N pending` text removed from Home Next 30 Days farrowing windows. |
@@ -74,21 +76,19 @@ superseded stashes were audited and dropped during stash hygiene.
 
 ## Active Roadmap
 
-1. Delete/restore strategy design for non-daily domains - cattle first
-   candidate. Design per-domain model before implementation.
-2. Cattle soft-delete/audit implementation - only after strategy design is
-   approved. Follow the daily SECDEF RPC pattern.
-3. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
+1. Sheep delete/restore strategy design - decide source-row soft-delete vs
+   tombstone/resolver model before implementation.
+2. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
    mutation + Activity must be atomic.
-4. Critical workflow Playwright matrix - define coverage targets, write specs
+3. Critical workflow Playwright matrix - define coverage targets, write specs
    for highest-risk uncovered paths.
-5. Incremental mutation cleanup - domain by domain per Identity Map. Choose
+4. Incremental mutation cleanup - domain by domain per Identity Map. Choose
    direct / `runMutation` / SECDEF per entity risk.
-6. Shared UI extraction - extract filter bar, tile row, loading/empty/error
+5. Shared UI extraction - extract filter bar, tile row, loading/empty/error
    patterns from views that repeat them 3+ times.
-7. Deferred: code-splitting - only when field-device measurements or
+6. Deferred: code-splitting - only when field-device measurements or
    operator pain justify it.
-8. Deferred: TypeScript - gradual `allowJs` + JSDoc approach if/when
+7. Deferred: TypeScript - gradual `allowJs` + JSDoc approach if/when
    started.
 
 ---
@@ -126,18 +126,19 @@ write path per entity is.
 
 ### Delete/Restore and Recovery Strategy
 
-Daily reports prove soft-delete without tombstones: the source row remains
-with `deleted_at`, and the Activity resolver sees deleted rows. Other
-domains need deliberate design: cattle hard-delete cascades destroy
-weigh-ins, calving, comments, and transfers; sheep hard-delete orphans
-children. Tombstones are only needed where source rows cannot remain
+Daily reports and `cattle.animal` prove source-row soft-delete without
+tombstones: the source row remains with `deleted_at`, and the Activity resolver
+sees deleted rows. Remaining domains need deliberate design: sheep hard-delete
+orphans children, and equipment/task sub-records still need per-entity recovery
+decisions. Tombstones are only needed where source rows cannot remain
 resolver-visible after deletion.
 
 ### Test Coverage Matrix
 
-132 test files (30 unit, 53 static, 49 Playwright) is strong for ~105k
-lines. Coverage is weighted toward tasks and activity. Cattle CRUD,
-equipment lifecycle, and weigh-in flows have thinner E2E coverage. The
+139 test files (32 unit, 56 static, 50 Playwright, 1 setup) is strong for
+~105k lines. Coverage is weighted toward tasks, activity, and cattle
+soft-delete. Broader cattle CRUD, equipment lifecycle, and weigh-in flows have
+thinner E2E coverage. The
 matrix should define which workflows must always have Playwright coverage
 and fill gaps incrementally.
 
@@ -180,7 +181,7 @@ mutation helpers, or delete/restore support.
 | pig.batch | group id | batchName | `app_store` ppp-feeders-v1 | direct (upsert) | TBD | partial |
 | layer.batch | UUID | name | `layer_batches` | direct | hard-cascade (housings) | partial |
 | layer.housing | UUID | housing_name | `layer_housings` | direct | hard (via batch cascade) | partial |
-| cattle.animal | UUID | tag | `cattle` | direct + `runMutation` | hard-cascade (weigh-ins, calving, comments, transfers) | comments + routine field.updated; delete unlogged |
+| cattle.animal | UUID | tag | `cattle` | direct + `runMutation` + SECDEF delete/restore | soft (SECDEF, admin-only) | comments + routine field.updated + deleted/restored events |
 | sheep.animal | UUID | tag | `sheep` | direct + `runMutation` | hard-orphan (children remain) | comments + routine field.updated; delete unlogged |
 | cattle.processing | UUID | batch name | `cattle_processing_batches` | direct | hard (scheduled only) | partial |
 | sheep.processing | UUID | batch name | `sheep_processing_batches` | direct | hard | partial |
@@ -192,7 +193,9 @@ mutation helpers, or delete/restore support.
 |---|---|---|---|---|
 | weigh_in_sessions | `weigh_in_sessions` | cattle/pig/sheep | hard | SECDEF batch submit for creation |
 | weigh_ins | `weigh_ins` | session | hard | child entries |
-| cattle_comments | `cattle_comments` | cattle.animal | hard (cascades from parent) | |
+| cattle_comments | `cattle_comments` | cattle.animal | survives cattle soft-delete | Hard-cascade only if forbidden parent hard-delete bypasses RLS. |
+| cattle_transfers | `cattle_transfers` | cattle.animal | survives cattle soft-delete | Parent hard-delete is blocked; transfer trail remains. |
+| cattle_calving_records | `cattle_calving_records` | cattle.animal | survives cattle soft-delete | `calf_id` remains on soft-delete; `dam_tag` is text. |
 | sheep_comments | `sheep_comments` | sheep.animal | hard (does not cascade) | |
 | cattle_breeding_cycles | `cattle_breeding_cycles` | cattle.animal | hard | |
 | sheep_lambing_records | `sheep_lambing_records` | sheep.animal | hard (does not cascade) | |
@@ -224,13 +227,12 @@ deep-links, or per-record audit trails until identity decisions are made.
 
 These are hardening priorities, not reasons to rewrite.
 
-- Hard-delete data loss and audit blindness. Routine field edits on
-  cattle/sheep/equipment now log Activity events, but delete, restore,
-  and lifecycle/move actions remain unlogged. Cattle hard-delete cascades
-  destroy weigh-ins, calving records, comments, and transfers permanently.
-  Sheep hard-delete orphans children. Equipment sub-records, weigh-in
-  sessions, breeding/lambing records, and task templates hard-delete with
-  no Activity logging and no recovery path. See the Record Identity Map
+- Hard-delete data loss and audit blindness. Daily reports and `cattle.animal`
+  now use soft-delete/restore with Activity events. Routine field edits on
+  cattle/sheep/equipment log Activity events, but sheep delete/restore,
+  livestock lifecycle/move actions, equipment sub-records, weigh-in sessions,
+  breeding/lambing records, and task templates still need recovery and audit
+  decisions. Sheep hard-delete orphans children. See the Record Identity Map
   for per-entity delete behavior.
 - Direct client mutations are the dominant write pattern (~200 call sites in
   `src`). Direct calls are not automatically wrong; the missing piece is
@@ -245,8 +247,9 @@ These are hardening priorities, not reasons to rewrite.
   paths need transactional SECDEF RPCs/triggers.
 - `app_store` JSON entities need stable per-record IDs before they can
   participate in Activity, deep-links, and per-record audit trails.
-- Playwright coverage is weighted toward tasks and activity. Cattle CRUD,
-  equipment lifecycle, and weigh-in flows have thinner E2E coverage.
+- Playwright coverage is weighted toward tasks, activity, and cattle
+  soft-delete. Broader cattle CRUD, equipment lifecycle, and weigh-in flows
+  have thinner E2E coverage.
 - `059_daily_unique_indexes.sql` remains unapplied. Do not apply until
   duplicate cleanup is explicitly approved and a safe `egg_dailys` scope is
   designed.
@@ -297,6 +300,11 @@ These are hardening priorities, not reasons to rewrite.
   audit-critical flows.
 - Soft-delete does not require tombstones when the source row remains
   resolver-visible via `deleted_at`. Daily reports prove this model.
+- Cattle soft-delete uses the source `cattle` row with `deleted_at` /
+  `deleted_by`, not tombstones. Sold/deceased/processed are business states,
+  not delete states. Active-herd cattle tag uniqueness remains scoped to
+  `mommas`, `backgrounders`, `finishers`, and `bulls`, and excludes deleted
+  rows.
 - Tombstones are needed only for true hard-deleted records where source rows
   cannot remain resolver-visible and audit visibility is still required.
 
@@ -606,6 +614,18 @@ Read the relevant contract before editing its files.
 - Cattle and sheep use dedicated Supabase tables, not `app_store`.
 - Cattle herds: `mommas`, `backgrounders`, `finishers`, `bulls`.
 - Sheep flocks: `rams`, `ewes`, `feeders`.
+- Cattle animal delete/restore is admin-only through
+  `soft_delete_cattle_animal` / `restore_cattle_animal`; clients have no direct
+  cattle DELETE policy.
+- Normal cattle read surfaces filter `deleted_at IS NULL`. Admin Recently
+  Deleted surfaces may read deleted cattle through admin-gated RLS.
+- Cattle active-herd tag uniqueness is `tag` where `deleted_at IS NULL` and
+  herd is one of `mommas`, `backgrounders`, `finishers`, `bulls`.
+- Sold/deceased/processed cattle are not delete states; they remain active
+  records for delete/restore purposes.
+- Processing batch detail may resolve a deleted cow by ID in admin context; do
+  not add a `deleted_at` filter to `src/lib/cattleProcessingBatch.js` unless
+  that workflow is redesigned.
 - Cattle processing storage statuses remain `scheduled`, `active`, `complete`;
   UI may label `complete` as Processed.
 - Cattle move only when Send-to-Processor promotes a row to `active`.
@@ -665,7 +685,7 @@ Focused starting points:
 | Daily reports | `tests/static/daily_soft_delete_static.test.js`, `tests/static/daily_duplicate_prevention_static.test.js` |
 | Broiler | `src/lib/broiler.test.js`, `tests/broiler_*.spec.js`, `tests/static/weighinswebform_no_app_store.test.js` |
 | Pig | `src/lib/pigForecast.test.js`, `tests/pig_*.spec.js` |
-| Cattle | `src/lib/cattleForecast.test.js`, `tests/cattle_*.spec.js` |
+| Cattle | `src/lib/cattleForecast.test.js`, `tests/static/cattle_soft_delete_static.test.js`, `tests/cattle_*.spec.js` |
 | Sheep | `tests/sheep_send_to_processor.spec.js` |
 | Equipment | `tests/equipment_*.spec.js`, `tests/static/equipment_materials.test.js` |
 | Offline/public forms | `tests/offline_*.spec.js`, `tests/team_availability.spec.js`, `tests/daily_report_photos.spec.js` |
