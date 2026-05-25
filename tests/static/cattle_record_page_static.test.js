@@ -161,14 +161,20 @@ describe('CowDetail — breeding blacklist UI', () => {
   it('uses boxSizing border-box to prevent overflow', () => {
     expect(cowDetail).toMatch(/data-breeding-blacklist-row[\s\S]*?boxSizing:\s*'border-box'/);
   });
-  it('makes the blacklist row the label with left-aligned contents', () => {
+  it('makes the blacklist control a compact label with left-aligned contents', () => {
     expect(cowDetail).toMatch(/<label[\s\S]*?data-breeding-blacklist-row="1"/);
+    expect(cowDetail).toMatch(/data-breeding-blacklist-row[\s\S]*?display:\s*'inline-flex'/);
     expect(cowDetail).toMatch(/data-breeding-blacklist-row[\s\S]*?justifyContent:\s*'flex-start'/);
-    expect(cowDetail).toMatch(/data-breeding-blacklist-row[\s\S]*?width:\s*'100%'/);
+    expect(cowDetail).toMatch(/data-breeding-blacklist-row[\s\S]*?maxWidth:\s*'100%'/);
+  });
+  it('overrides the global input width on the blacklist checkbox', () => {
+    expect(cowDetail).toMatch(/type="checkbox"[\s\S]*?width:\s*14/);
+    expect(cowDetail).toMatch(/type="checkbox"[\s\S]*?height:\s*14/);
+    expect(cowDetail).toMatch(/type="checkbox"[\s\S]*?flex:\s*'0 0 14px'/);
   });
   it('keeps checkbox before the blacklist text inside the row', () => {
     expect(cowDetail).toMatch(
-      /data-breeding-blacklist-row[\s\S]*?<input[\s\S]*?<span[\s\S]*?>Breeding blacklist<\/span>/,
+      /data-breeding-blacklist-row[\s\S]*?<input[\s\S]*?<span[\s\S]*?>\s*Breeding blacklist\s*<\/span>/,
     );
   });
 });

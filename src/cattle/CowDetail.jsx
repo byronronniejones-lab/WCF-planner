@@ -545,20 +545,21 @@ const CowDetail = ({
           data-breeding-blacklist-row="1"
           style={{
             marginTop: 10,
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'flex-start',
             gap: 8,
-            width: '100%',
+            maxWidth: '100%',
             boxSizing: 'border-box',
-            padding: '8px 12px',
-            background: cow.breeding_blacklist ? '#991b1b' : '#f9fafb',
+            padding: '6px 12px',
+            background: cow.breeding_blacklist ? '#991b1b' : '#fee2e2',
             color: cow.breeding_blacklist ? 'white' : '#7f1d1d',
-            border: '1px solid ' + (cow.breeding_blacklist ? '#991b1b' : '#e5e7eb'),
+            border: '1px solid ' + (cow.breeding_blacklist ? '#991b1b' : '#fecaca'),
             borderRadius: 6,
             cursor: 'pointer',
             fontSize: 13,
             fontWeight: 700,
+            lineHeight: 1.3,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
           }}
@@ -567,9 +568,21 @@ const CowDetail = ({
             type="checkbox"
             checked={!!cow.breeding_blacklist}
             onChange={patchOnChange('breeding_blacklist')}
-            style={{margin: 0, flex: '0 0 auto'}}
+            style={{
+              margin: 0,
+              padding: 0,
+              width: 14,
+              height: 14,
+              minWidth: 14,
+              flex: '0 0 14px',
+              boxSizing: 'border-box',
+              accentColor: '#7f1d1d',
+              cursor: 'pointer',
+            }}
           />
-          <span style={{minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis'}}>Breeding blacklist</span>
+          <span style={{minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block'}}>
+            Breeding blacklist
+          </span>
         </label>
       )}
 
