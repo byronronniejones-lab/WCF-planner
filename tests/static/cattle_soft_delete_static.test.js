@@ -183,8 +183,9 @@ describe('CattleHerdsView — admin-gated delete + restore', () => {
   it('imports softDeleteCattleAnimal', () => {
     expect(herdsSrc).toContain('softDeleteCattleAnimal');
   });
-  it('imports or uses restoreCattleAnimal', () => {
-    expect(herdsSrc).toContain('restoreCattleAnimal');
+  it('does not have Recently Deleted UI on herds page', () => {
+    expect(herdsSrc).not.toContain('Recently Deleted');
+    expect(herdsSrc).not.toContain('restoreCattleAnimal');
   });
 });
 
