@@ -86,15 +86,14 @@ describe('Header — resolved entity routing', () => {
 });
 
 describe('Per-surface deep-link handlers', () => {
-  const surfaces = [
+  const modalSurfaces = [
     {name: 'BroilerListView', src: broilerList, entity: 'broiler.batch'},
     {name: 'LayerBatchesView', src: layerBatches, entity: 'layer.batch'},
-    {name: 'CattleHerdsView', src: cattleHerds, entity: 'cattle.animal'},
     {name: 'SheepFlocksView', src: sheepFlocks, entity: 'sheep.animal'},
     {name: 'EquipmentFleetView', src: equipFleet, entity: 'equipment.item'},
   ];
 
-  for (const s of surfaces) {
+  for (const s of modalSurfaces) {
     it(`${s.name} listens for wcf-entity-deep-link`, () => {
       expect(s.src).toContain('wcf-entity-deep-link');
       expect(s.src).toContain('addEventListener');
@@ -109,6 +108,11 @@ describe('Per-surface deep-link handlers', () => {
       expect(s.src).toContain('setActivityTarget');
     });
   }
+
+  it('CattleHerdsView deep-link navigates to record page', () => {
+    expect(cattleHerds).toContain('wcf-entity-deep-link');
+    expect(cattleHerds).toContain("navigate('/cattle/herds/'");
+  });
 
   it('LayerBatchesView also handles layer.housing deep-links', () => {
     expect(layerBatches).toContain("'layer.housing'");

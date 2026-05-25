@@ -80,7 +80,15 @@ const POPOVER_ITEM_ACTIVE = {
   color: '#085041',
 };
 
-export default function MentionTextarea({sb, value = '', mentions = [], onChange, placeholder, disabled}) {
+export default function MentionTextarea({
+  sb,
+  value = '',
+  mentions = [],
+  onChange,
+  placeholder,
+  disabled,
+  loadProfiles,
+}) {
   const [eligible, setEligible] = React.useState([]); // [{id, full_name}]
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -94,12 +102,13 @@ export default function MentionTextarea({sb, value = '', mentions = [], onChange
   React.useEffect(() => {
     if (!sb) return;
     let cancelled = false;
-    loadTaskAssignableProfilesById(sb)
-      .then((map) => {
+    const loader = loadProfiles || ((s) => loadTaskAssignableProfilesById(s).then((map) => Object.values(map || {})));
+    loader(sb)
+      .then((list) => {
         if (cancelled) return;
-        const list = Object.values(map || {});
-        list.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
-        setEligible(list);
+        const sorted = Array.isArray(list) ? list : Object.values(list || {});
+        sorted.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+        setEligible(sorted);
       })
       .catch((e) => {
         if (typeof console !== 'undefined' && console.warn) {

@@ -1,9 +1,6 @@
 // Outcome-herd collapsible sections shown at the bottom of CattleHerdsView
 // in tile mode. Each outcome (Processed / Deceased / Sold) is its own
-// collapsible panel. Expanding a panel shows the cow list; clicking a cow
-// row toggles its inline CowDetail (via the renderCowDetail render-prop
-// closure passed by CattleHerdsView). This keeps the user "in place" on the
-// herds page instead of jumping to the flat filtered view.
+// collapsible panel. Clicking a cow row navigates to the record page.
 import React from 'react';
 
 const CollapsibleOutcomeSections = ({
@@ -15,9 +12,7 @@ const CollapsibleOutcomeSections = ({
   fmt,
   setStatusFilter,
   processingInfo,
-  expandedCow,
-  setExpandedCow,
-  renderCowDetail,
+  onCowClick,
 }) => {
   const [expanded, setExpanded] = React.useState({});
   return (
@@ -73,13 +68,12 @@ const CollapsibleOutcomeSections = ({
             {isExpanded && (
               <div>
                 {cows.slice(0, 50).map((c) => {
-                  const isCowExpanded = expandedCow === c.id;
-                  const clickable = !!setExpandedCow;
+                  const clickable = !!onCowClick;
                   const pInfo = processingInfo ? processingInfo(c) : null;
                   return (
                     <div key={c.id} id={'cow-' + c.id} style={{borderTop: '1px solid #f3f4f6'}}>
                       <div
-                        onClick={clickable ? () => setExpandedCow(isCowExpanded ? null : c.id) : undefined}
+                        onClick={clickable ? () => onCowClick(c) : undefined}
                         style={{
                           padding: '8px 16px',
                           fontSize: 12,
@@ -92,7 +86,7 @@ const CollapsibleOutcomeSections = ({
                         }}
                         className={clickable ? 'hoverable-tile' : ''}
                       >
-                        {clickable && <span style={{fontSize: 11, color: '#9ca3af'}}>{isCowExpanded ? '▼' : '▶'}</span>}
+                        {clickable && <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>}
                         <span style={{fontWeight: 600, color: '#111827', minWidth: 60}}>
                           {c.tag ? '#' + c.tag : '(no tag)'}
                         </span>
@@ -105,9 +99,6 @@ const CollapsibleOutcomeSections = ({
                           <span style={{fontWeight: 600, color: '#4b5563'}}>{pInfo.age + ' at processing'}</span>
                         )}
                       </div>
-                      {isCowExpanded && renderCowDetail && (
-                        <div style={{borderTop: '1px solid #e5e7eb'}}>{renderCowDetail(c)}</div>
-                      )}
                     </div>
                   );
                 })}

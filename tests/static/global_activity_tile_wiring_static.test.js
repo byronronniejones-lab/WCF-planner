@@ -13,11 +13,12 @@ const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.j
 const equipFleet = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFleetView.jsx'), 'utf8');
 const activityPanel = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityPanel.jsx'), 'utf8');
 
+// CattleHerdsView no longer renders Activity chips/modal — cattle uses
+// dedicated record pages with inline Comments + Activity sections.
 const SURFACES = [
   {name: 'BroilerListView', src: broilerList, entity: 'broiler.batch', idField: 'b.name'},
   {name: 'LayerBatchesView (batch)', src: layerBatches, entity: 'layer.batch', idField: 'batch.id'},
   {name: 'LayerBatchesView (housing)', src: layerBatches, entity: 'layer.housing', idField: 'h.id'},
-  {name: 'CattleHerdsView', src: cattleHerds, entity: 'cattle.animal', idField: 'c.id'},
   {name: 'SheepFlocksView', src: sheepFlocks, entity: 'sheep.animal', idField: 's.id'},
   {name: 'EquipmentFleetView', src: equipFleet, entity: 'equipment.item', idField: 'eq.id'},
 ];
@@ -36,7 +37,6 @@ describe('Activity tile wiring — ActivityModal', () => {
   for (const {name, src} of [
     {name: 'BroilerListView', src: broilerList},
     {name: 'LayerBatchesView', src: layerBatches},
-    {name: 'CattleHerdsView', src: cattleHerds},
     {name: 'SheepFlocksView', src: sheepFlocks},
     {name: 'EquipmentFleetView', src: equipFleet},
   ]) {
@@ -76,10 +76,6 @@ describe('Activity tile wiring — entity IDs', () => {
     expect(layerBatches).toMatch(/entityType:\s*'layer\.housing'[\s\S]*?entityId:\s*h\.id/);
   });
 
-  it('cattle.animal uses c.id', () => {
-    expect(cattleHerds).toMatch(/entityId:\s*c\.id/);
-  });
-
   it('sheep.animal uses s.id', () => {
     expect(sheepFlocks).toMatch(/entityId:\s*s\.id/);
   });
@@ -97,7 +93,6 @@ describe('Activity tile wiring — authState', () => {
   for (const {name, src} of [
     {name: 'BroilerListView', src: broilerList},
     {name: 'LayerBatchesView', src: layerBatches},
-    {name: 'CattleHerdsView', src: cattleHerds},
     {name: 'SheepFlocksView', src: sheepFlocks},
     {name: 'EquipmentFleetView', src: equipFleet},
   ]) {

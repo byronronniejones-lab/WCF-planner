@@ -14,9 +14,9 @@ import {describe, it, expect} from 'vitest';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
 
-const COW_DETAIL_CALLERS = ['src/cattle/CattleHerdsView.jsx', 'src/cattle/CattleForecastView.jsx'];
+const COW_DETAIL_CALLERS = ['src/cattle/CattleAnimalPage.jsx', 'src/cattle/CattleForecastView.jsx'];
 
-const herdsView = readFileSync(resolve(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
+const animalPage = readFileSync(resolve(ROOT, 'src/cattle/CattleAnimalPage.jsx'), 'utf8');
 const forecastView = readFileSync(resolve(ROOT, 'src/cattle/CattleForecastView.jsx'), 'utf8');
 const cowDetail = readFileSync(resolve(ROOT, 'src/cattle/CowDetail.jsx'), 'utf8');
 const flocksView = readFileSync(resolve(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
@@ -40,9 +40,9 @@ describe('Every CowDetail caller passes ageLabel', () => {
   });
 });
 
-describe('CattleHerdsView → CowDetail ageLabel wiring', () => {
-  it('uses the existing age() helper with the "—" fallback for missing birth_date', () => {
-    expect(herdsView).toMatch(/ageLabel=\{age\(c\.birth_date\)\s*\|\|\s*'—'\}/);
+describe('CattleAnimalPage → CowDetail ageLabel wiring', () => {
+  it('uses an age() helper with the "—" fallback for missing birth_date', () => {
+    expect(animalPage).toMatch(/ageLabel=\{age\(cow\.birth_date\)\s*\|\|\s*'—'\}/);
   });
 });
 

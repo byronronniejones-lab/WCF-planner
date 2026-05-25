@@ -25,6 +25,7 @@
 // across the ~50 call sites.
 // ============================================================================
 import React from 'react';
+import {useNavigate} from 'react-router-dom';
 import {S} from '../lib/styles.js';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
@@ -195,6 +196,7 @@ const SECTION_PILL_STYLE = {
 export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, ConfirmActionModal}) {
   const {authState, saveStatus, setShowUsers} = useAuth();
   const {view, setView, showMenu, setShowMenu} = useUI();
+  const headerNavigate = useNavigate();
   const {showForm, setShowForm} = useBatches();
   const {showBreedForm, setShowBreedForm, showFarrowForm, setShowFarrowForm} = usePig();
   // Tasks v2 T3: own due/past-due count for the Header badge. Soft-fails
@@ -599,6 +601,11 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
                               /* soft-fail */
                             }
                             const route = resolveNotificationRoute(n, n.activity_entity_type, n.activity_entity_id);
+                            if (n.type === 'comment_mention' && route.startsWith('/')) {
+                              headerNavigate(route);
+                              setNotifOpen(false);
+                              return;
+                            }
                             const {view: targetView, search} = routeToView(route);
                             if (typeof window !== 'undefined') {
                               if (search) window._wcfDeepLink = search;

@@ -48,7 +48,7 @@ export const ACTIVITY_REGISTRY = {
   },
   [ENTITY_TYPES.CATTLE_ANIMAL]: {
     displayLabel: (id, ctx) => (ctx && ctx.tag ? ctx.tag : id),
-    route: (_id) => '/cattle/herds',
+    route: (id) => '/cattle/herds/' + id,
     program: 'cattle',
   },
   [ENTITY_TYPES.SHEEP_ANIMAL]: {
@@ -113,6 +113,22 @@ export function getActivityEntityMeta(entityType) {
 }
 
 export function resolveNotificationRoute(notification, eventEntityType, eventEntityId) {
+  if (notification && notification.type === 'comment_mention') {
+    const et = notification.activity_entity_type;
+    const eid = notification.activity_entity_id;
+    if (et && eid) {
+      const meta = getActivityEntityMeta(et);
+      if (meta && typeof meta.route === 'function') {
+        try {
+          let route = meta.route(eid);
+          if (notification.comment_id) route += '#comment-' + notification.comment_id;
+          return route;
+        } catch (_e) {
+          /* fall through */
+        }
+      }
+    }
+  }
   if (notification && notification.type === 'mention' && eventEntityType) {
     const meta = getActivityEntityMeta(eventEntityType);
     if (meta && typeof meta.route === 'function') {
@@ -155,5 +171,6 @@ export function routeToView(routePath) {
     '/admin': 'webforms',
   };
   if (path.startsWith('/fleet/')) return {view: 'equipmentHome', search: search || ''};
+  if (path.startsWith('/cattle/herds/')) return {view: 'cattleherds', search: search || ''};
   return {view: VIEW_MAP[path] || 'home', search: search || ''};
 }

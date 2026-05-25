@@ -9,9 +9,11 @@
 // `cattle.maternal_issue_flag` + `cattle.maternal_issue_desc` are NOT dropped
 // — that's a separate migration gate.
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import UsersModal from '../auth/UsersModal.jsx';
 import CattleBulkImport from './CattleBulkImport.jsx';
-import CowDetail from './CowDetail.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import CattleAnimalPage from './CattleAnimalPage.jsx';
 import CollapsibleOutcomeSections from './CollapsibleOutcomeSections.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
 import {
@@ -60,10 +62,6 @@ const CATTLE_LABELS = {
 const CATTLE_FORMATTERS = {
   old_tags: (v) => countSummary(v, 'prior tag'),
 };
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityPanel from '../shared/ActivityPanel.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
 
 const HERD_LABELS = {
   mommas: 'Mommas',
@@ -202,7 +200,18 @@ function buildSmartProposalPreview(proposal) {
   return parts.join(' · ');
 }
 
-const CattleHerdsView = ({
+function CattleHerdsRouter(props) {
+  const location = useLocation();
+  const cattleDetailId = location.pathname.startsWith('/cattle/herds/')
+    ? location.pathname.slice('/cattle/herds/'.length) || null
+    : null;
+  if (cattleDetailId) {
+    return React.createElement(CattleAnimalPage, {sb: props.sb, fmt: props.fmt, authState: props.authState});
+  }
+  return React.createElement(CattleHerdsHub, props);
+}
+
+const CattleHerdsHub = ({
   sb,
   fmt,
   Header,
@@ -217,10 +226,10 @@ const CattleHerdsView = ({
   setPendingEdit,
 }) => {
   const {useState, useEffect, useMemo} = React;
+  const navigate = useNavigate();
   const [cattle, setCattle] = useState([]);
   const [weighIns, setWeighIns] = useState([]);
   const [calvingRecs, setCalvingRecs] = useState([]);
-  const [comments, setComments] = useState([]);
   // Inline notice for save / patch / calving validation failures.
   // Cleared on each save attempt + on form open so a prior row's error
   // never shadows the next flow.
@@ -253,8 +262,6 @@ const CattleHerdsView = ({
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [expandedCow, setExpandedCow] = useState(null);
-  const [activityTarget, setActivityTarget] = useState(null);
   const [deletedCattle, setDeletedCattle] = useState([]);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deletedLoading, setDeletedLoading] = useState(false);
@@ -264,26 +271,21 @@ const CattleHerdsView = ({
     function onEntityDeepLink() {
       const dl = window._wcfEntityDeepLink;
       if (!dl || dl.entityType !== 'cattle.animal') return;
-      const c = cattle.find((x) => x.id === dl.entityId);
-      if (c) {
-        window._wcfEntityDeepLink = null;
-        setActivityTarget({entityType: 'cattle.animal', entityId: c.id, entityLabel: c.tag || c.id});
-      }
+      window._wcfEntityDeepLink = null;
+      navigate('/cattle/herds/' + dl.entityId);
     }
     onEntityDeepLink();
     window.addEventListener('wcf-entity-deep-link', onEntityDeepLink);
     return () => window.removeEventListener('wcf-entity-deep-link', onEntityDeepLink);
-  }, [cattle]);
+  }, []);
 
   const [expandedHerds, setExpandedHerds] = useState({});
-  const [cowNavStack, setCowNavStack] = useState([]);
 
   async function loadAll() {
-    const [cR, wAll, calR, comR, brR, orR, pbR] = await Promise.all([
+    const [cR, wAll, calR, brR, orR, pbR] = await Promise.all([
       sb.from('cattle').select('*').is('deleted_at', null).order('tag'),
       loadCattleWeighInsCached(sb),
       sb.from('cattle_calving_records').select('*').order('calving_date', {ascending: false}),
-      sb.from('cattle_comments').select('*').order('created_at', {ascending: false}),
       sb.from('cattle_breeds').select('*').order('label'),
       sb.from('cattle_origins').select('*').order('label'),
       sb.from('cattle_processing_batches').select('id,name,actual_process_date,planned_process_date'),
@@ -291,7 +293,6 @@ const CattleHerdsView = ({
     if (cR.data) setCattle(cR.data);
     setWeighIns(wAll);
     if (calR.data) setCalvingRecs(calR.data);
-    if (comR.data) setComments(comR.data);
     if (brR.data) setBreedOpts(brR.data);
     if (orR.data) setOriginOpts(orR.data);
     if (pbR.data) setProcessingBatches(pbR.data);
@@ -510,7 +511,7 @@ const CattleHerdsView = ({
     setSmartProposal(null);
   }
 
-  // ── Add / Edit / Delete / Transfer / Comments / Calving — preserved ───────
+  // ── Add / Edit / Delete / Transfer / Calving — preserved ───────
   // Single close path for the Add/Edit cow modal. Centralizes the form +
   // edit-id reset alongside the inline add-origin UI state so no close path
   // can leak addingOrigin/newOriginInput into the next modal open.
@@ -675,7 +676,6 @@ const CattleHerdsView = ({
         await loadAll();
         if (authState?.role === 'admin') await loadDeletedCattle();
         closeCowForm();
-        setExpandedCow(null);
         setNotice({kind: 'success', message: 'Cow #' + (cow?.tag || id) + ' deleted.'});
       } catch (e) {
         setNotice({kind: 'error', message: 'Delete failed: ' + (e.message || String(e))});
@@ -699,29 +699,6 @@ const CattleHerdsView = ({
       team_member: authState && authState.name ? authState.name : null,
     });
     await loadAll();
-  }
-  async function addQuickComment(cattleId, cattleTag, text) {
-    if (!text.trim()) return;
-    await sb.from('cattle_comments').insert({
-      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-      cattle_id: cattleId,
-      cattle_tag: cattleTag,
-      comment: text.trim(),
-      team_member: authState && authState.name ? authState.name : null,
-      source: 'manual',
-    });
-    await loadAll();
-  }
-  async function editComment(id, newText) {
-    if (!newText.trim()) return;
-    await sb.from('cattle_comments').update({comment: newText.trim()}).eq('id', id);
-    await loadAll();
-  }
-  async function deleteComment(id) {
-    window._wcfConfirmDelete('Delete this comment?', async () => {
-      await sb.from('cattle_comments').delete().eq('id', id);
-      await loadAll();
-    });
   }
   async function addCalvingRecord(cow, formData) {
     setNotice(null);
@@ -767,47 +744,6 @@ const CattleHerdsView = ({
   }
   function calfCount(tag) {
     return calfCountFor(tag, calvingRecs);
-  }
-  function navigateToCow(target, fromCowId) {
-    if (!target || !target.id) return;
-    if (fromCowId && fromCowId !== target.id) setCowNavStack((s) => [...s, fromCowId]);
-    if (CATTLE_HERD_KEYS.includes(target.herd)) {
-      setViewMode('grouped');
-      setExpandedHerds((prev) => ({...prev, [target.herd]: true}));
-    } else {
-      setViewMode('flat');
-      setFilter('herdSet', [target.herd]);
-    }
-    setExpandedCow(target.id);
-    setTimeout(() => {
-      const el = document.getElementById('cow-' + target.id);
-      if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-    }, 80);
-  }
-  function navigateBack() {
-    if (cowNavStack.length === 0) {
-      setExpandedCow(null);
-      return;
-    }
-    const prevId = cowNavStack[cowNavStack.length - 1];
-    const prev = cattle.find((c) => c.id === prevId);
-    setCowNavStack((s) => s.slice(0, -1));
-    if (prev) {
-      if (CATTLE_HERD_KEYS.includes(prev.herd)) {
-        setViewMode('grouped');
-        setExpandedHerds((p) => ({...p, [prev.herd]: true}));
-      } else {
-        setViewMode('flat');
-        setFilter('herdSet', [prev.herd]);
-      }
-      setExpandedCow(prev.id);
-      setTimeout(() => {
-        const el = document.getElementById('cow-' + prev.id);
-        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-      }, 80);
-    } else {
-      setExpandedCow(null);
-    }
   }
 
   // ── filter / sort UI subcomponents (inline for context) ────────────────────
@@ -1494,13 +1430,6 @@ const CattleHerdsView = ({
             {sortedFlat.map((c, i) => {
               const hc = HERD_COLORS[c.herd] || HERD_COLORS.mommas;
               const lw = lastWeight(c);
-              const isExpanded = expandedCow === c.id;
-              const cTags = cowTagSet(c);
-              const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
-              const cowCalving = calvingRecs.filter((r) => r.dam_tag === c.tag);
-              const cowComments = comments
-                .filter((cm) => cm.cattle_id === c.id || cm.cattle_tag === c.tag)
-                .slice(0, 20);
               return (
                 <div
                   key={c.id}
@@ -1508,151 +1437,102 @@ const CattleHerdsView = ({
                   data-cow-row-tag={c.tag || ''}
                   style={{borderBottom: i < sortedFlat.length - 1 ? '1px solid #f3f4f6' : 'none'}}
                 >
-                  {!isExpanded && (
-                    <div
-                      onClick={() => setExpandedCow(c.id)}
+                  <div
+                    onClick={() => navigate('/cattle/herds/' + c.id)}
+                    style={{
+                      padding: '10px 16px 10px 0',
+                      display: 'grid',
+                      gridTemplateColumns: '48px 16px 70px 110px 60px 180px 70px 90px 1fr',
+                      alignItems: 'center',
+                      gap: 10,
+                      cursor: 'pointer',
+                      background: c.breeding_blacklist ? '#fecaca' : 'white',
+                    }}
+                    className="hoverable-tile"
+                  >
+                    <span
                       style={{
-                        padding: '10px 16px 10px 0',
-                        display: 'grid',
-                        gridTemplateColumns: '48px 16px 70px 110px 60px 180px 70px 90px 1fr',
+                        fontSize: 11,
+                        color: '#9ca3af',
+                        fontVariantNumeric: 'tabular-nums',
+                        alignSelf: 'stretch',
+                        display: 'flex',
                         alignItems: 'center',
-                        gap: 10,
-                        cursor: 'pointer',
-                        background: c.breeding_blacklist ? '#fecaca' : 'white',
+                        justifyContent: 'flex-end',
+                        paddingRight: 10,
+                        paddingLeft: 8,
+                        marginTop: -10,
+                        marginBottom: -10,
+                        borderRight: '1px solid #d1d5db',
+                        fontWeight: 600,
                       }}
-                      className="hoverable-tile"
                     >
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: '#9ca3af',
-                          fontVariantNumeric: 'tabular-nums',
-                          alignSelf: 'stretch',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          paddingRight: 10,
-                          paddingLeft: 8,
-                          marginTop: -10,
-                          marginBottom: -10,
-                          borderRight: '1px solid #d1d5db',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
-                      <span
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 13,
-                          color: '#111827',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
-                        {c.tag ? '#' + c.tag : '(no tag)'}
-                        <span onClick={(e) => e.stopPropagation()} data-activity-surface="cattle.animal">
-                          {React.createElement(ActivityPanel, {
-                            sb,
-                            authState,
-                            entityType: 'cattle.animal',
-                            entityId: c.id,
-                            entityLabel: c.tag || c.id,
-                            mode: 'compact',
-                            onCompactClick: setActivityTarget,
-                          })}
+                      {i + 1}
+                    </span>
+                    <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: '#111827',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      {c.tag ? '#' + c.tag : '(no tag)'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        background: hc.bg,
+                        color: hc.tx,
+                        border: '1px solid ' + hc.bd,
+                        fontWeight: 600,
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {HERD_LABELS[c.herd]}
+                    </span>
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '—'}</span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: '#6b7280',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {c.breed || '—'}
+                    </span>
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
+                    <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
+                      {lw ? lw.toLocaleString() + ' lb' : 'no weigh-in'}
+                    </span>
+                    <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+                      {c.dam_tag && <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + c.dam_tag}</span>}
+                      {c.breeding_blacklist && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: '#fef2f2',
+                            color: '#b91c1c',
+                            fontWeight: 600,
+                          }}
+                        >
+                          BLACKLIST
                         </span>
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          background: hc.bg,
-                          color: hc.tx,
-                          border: '1px solid ' + hc.bd,
-                          fontWeight: 600,
-                          textAlign: 'center',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {HERD_LABELS[c.herd]}
-                      </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '—'}</span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: '#6b7280',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {c.breed || '—'}
-                      </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
-                      <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
-                        {lw ? lw.toLocaleString() + ' lb' : 'no weigh-in'}
-                      </span>
-                      <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-                        {c.dam_tag && <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + c.dam_tag}</span>}
-                        {c.breeding_blacklist && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                              fontWeight: 600,
-                            }}
-                          >
-                            BLACKLIST
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  )}
-                  {isExpanded && (
-                    <CowDetail
-                      cow={c}
-                      ageLabel={age(c.birth_date) || '—'}
-                      weighIns={cowWeighIns}
-                      calving={cowCalving}
-                      comments={cowComments}
-                      calves={cattle.filter((x) => x.dam_tag === c.tag)}
-                      dam={cattle.find((x) => x.tag === c.dam_tag)}
-                      cattleList={cattle}
-                      fmt={fmt}
-                      HERDS={CATTLE_ALL_HERD_KEYS}
-                      HERD_LABELS={HERD_LABELS}
-                      HERD_COLORS={HERD_COLORS}
-                      onEdit={() => openEdit(c)}
-                      onTransfer={(newHerd) => transferCow(c.id, newHerd)}
-                      onDelete={authState?.role === 'admin' ? () => deleteCow(c.id) : undefined}
-                      onComment={(text) => addQuickComment(c.id, c.tag, text)}
-                      onEditComment={editComment}
-                      onDeleteComment={deleteComment}
-                      onAddCalving={(data) => addCalvingRecord(c, data)}
-                      onDeleteCalving={(id) => deleteCalvingRecord(id)}
-                      onNavigateToCow={(target) => navigateToCow(target, c.id)}
-                      onNavigateBack={navigateBack}
-                      canNavigateBack={cowNavStack.length > 0}
-                      backToTag={
-                        cowNavStack.length > 0
-                          ? (cattle.find((x) => x.id === cowNavStack[cowNavStack.length - 1]) || {}).tag
-                          : null
-                      }
-                      onPatch={(fields) => patchCow(c.id, fields)}
-                      onClose={() => setExpandedCow(null)}
-                      originOpts={originOpts}
-                      breedOpts={breedOpts}
-                    />
-                  )}
+                      )}
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -1722,13 +1602,6 @@ const CattleHerdsView = ({
                       const lw = lastWeight(c);
                       const lc = lastCalving(c.tag);
                       const cc = calfCount(c.tag);
-                      const isExpanded = expandedCow === c.id;
-                      const cTags = cowTagSet(c);
-                      const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
-                      const cowCalving = calvingRecs.filter((r) => r.dam_tag === c.tag);
-                      const cowComments = comments
-                        .filter((cm) => cm.cattle_id === c.id || cm.cattle_tag === c.tag)
-                        .slice(0, 20);
                       return (
                         <div
                           key={c.id}
@@ -1736,148 +1609,95 @@ const CattleHerdsView = ({
                           data-cow-row-tag={c.tag || ''}
                           style={{borderBottom: '1px solid #f3f4f6'}}
                         >
-                          {!isExpanded && (
-                            <div
-                              onClick={() => setExpandedCow(c.id)}
+                          <div
+                            onClick={() => navigate('/cattle/herds/' + c.id)}
+                            style={{
+                              padding: '10px 18px 10px 0',
+                              display: 'grid',
+                              gridTemplateColumns: '48px 16px 70px 60px 180px 70px 90px 1fr',
+                              alignItems: 'center',
+                              gap: 10,
+                              cursor: 'pointer',
+                              background: c.breeding_blacklist ? '#fecaca' : 'transparent',
+                            }}
+                            className="hoverable-tile"
+                          >
+                            <span
                               style={{
-                                padding: '10px 18px 10px 0',
-                                display: 'grid',
-                                gridTemplateColumns: '48px 16px 70px 60px 180px 70px 90px 1fr',
+                                fontSize: 11,
+                                color: '#9ca3af',
+                                fontVariantNumeric: 'tabular-nums',
+                                alignSelf: 'stretch',
+                                display: 'flex',
                                 alignItems: 'center',
-                                gap: 10,
-                                cursor: 'pointer',
-                                background: c.breeding_blacklist ? '#fecaca' : 'transparent',
+                                justifyContent: 'flex-end',
+                                paddingRight: 10,
+                                paddingLeft: 8,
+                                marginTop: -10,
+                                marginBottom: -10,
+                                borderRight: '1px solid #d1d5db',
+                                fontWeight: 600,
                               }}
-                              className="hoverable-tile"
                             >
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: '#9ca3af',
-                                  fontVariantNumeric: 'tabular-nums',
-                                  alignSelf: 'stretch',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'flex-end',
-                                  paddingRight: 10,
-                                  paddingLeft: 8,
-                                  marginTop: -10,
-                                  marginBottom: -10,
-                                  borderRight: '1px solid #d1d5db',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {cowIdx + 1}
-                              </span>
-                              <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
-                              <span
-                                style={{
-                                  fontWeight: 700,
-                                  fontSize: 13,
-                                  color: '#111827',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                }}
-                              >
-                                {c.tag ? '#' + c.tag : '(no tag)'}
-                                <span onClick={(e) => e.stopPropagation()} data-activity-surface="cattle.animal">
-                                  {React.createElement(ActivityPanel, {
-                                    sb,
-                                    authState,
-                                    entityType: 'cattle.animal',
-                                    entityId: c.id,
-                                    entityLabel: c.tag || c.id,
-                                    mode: 'compact',
-                                    onCompactClick: setActivityTarget,
-                                  })}
+                              {cowIdx + 1}
+                            </span>
+                            <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
+                            <span
+                              style={{
+                                fontWeight: 700,
+                                fontSize: 13,
+                                color: '#111827',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              {c.tag ? '#' + c.tag : '(no tag)'}
+                            </span>
+                            <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '—'}</span>
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: '#6b7280',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {c.breed || '—'}
+                            </span>
+                            <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
+                            <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
+                              {lw ? lw.toLocaleString() + ' lb' : '—'}
+                            </span>
+                            <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+                              {c.dam_tag && <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + c.dam_tag}</span>}
+                              {h === 'mommas' && (
+                                <span data-calf-count={cc} style={{fontSize: 11, color: '#7f1d1d', fontWeight: 600}}>
+                                  {'Calves: ' + cc}
                                 </span>
-                              </span>
-                              <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '—'}</span>
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: '#6b7280',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {c.breed || '—'}
-                              </span>
-                              <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
-                              <span
-                                style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}
-                              >
-                                {lw ? lw.toLocaleString() + ' lb' : '—'}
-                              </span>
-                              <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-                                {c.dam_tag && (
-                                  <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + c.dam_tag}</span>
-                                )}
-                                {h === 'mommas' && (
-                                  <span data-calf-count={cc} style={{fontSize: 11, color: '#7f1d1d', fontWeight: 600}}>
-                                    {'Calves: ' + cc}
-                                  </span>
-                                )}
-                                {h === 'mommas' && lc && (
-                                  <span style={{fontSize: 11, color: '#9ca3af'}}>
-                                    {'last calved ' + fmt(lc.calving_date)}
-                                  </span>
-                                )}
-                                {c.breeding_blacklist && (
-                                  <span
-                                    style={{
-                                      fontSize: 10,
-                                      padding: '1px 6px',
-                                      borderRadius: 4,
-                                      background: '#fef2f2',
-                                      color: '#b91c1c',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    BLACKLIST
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          )}
-                          {isExpanded && (
-                            <CowDetail
-                              cow={c}
-                              ageLabel={age(c.birth_date) || '—'}
-                              weighIns={cowWeighIns}
-                              calving={cowCalving}
-                              comments={cowComments}
-                              calves={cattle.filter((x) => x.dam_tag === c.tag)}
-                              dam={cattle.find((x) => x.tag === c.dam_tag)}
-                              cattleList={cattle}
-                              fmt={fmt}
-                              HERDS={CATTLE_ALL_HERD_KEYS}
-                              HERD_LABELS={HERD_LABELS}
-                              HERD_COLORS={HERD_COLORS}
-                              onEdit={() => openEdit(c)}
-                              onTransfer={(newHerd) => transferCow(c.id, newHerd)}
-                              onDelete={authState?.role === 'admin' ? () => deleteCow(c.id) : undefined}
-                              onComment={(text) => addQuickComment(c.id, c.tag, text)}
-                              onEditComment={editComment}
-                              onDeleteComment={deleteComment}
-                              onAddCalving={(data) => addCalvingRecord(c, data)}
-                              onDeleteCalving={(id) => deleteCalvingRecord(id)}
-                              onNavigateToCow={(target) => navigateToCow(target, c.id)}
-                              onNavigateBack={navigateBack}
-                              canNavigateBack={cowNavStack.length > 0}
-                              backToTag={
-                                cowNavStack.length > 0
-                                  ? (cattle.find((x) => x.id === cowNavStack[cowNavStack.length - 1]) || {}).tag
-                                  : null
-                              }
-                              onPatch={(fields) => patchCow(c.id, fields)}
-                              onClose={() => setExpandedCow(null)}
-                              originOpts={originOpts}
-                              breedOpts={breedOpts}
-                            />
-                          )}
+                              )}
+                              {h === 'mommas' && lc && (
+                                <span style={{fontSize: 11, color: '#9ca3af'}}>
+                                  {'last calved ' + fmt(lc.calving_date)}
+                                </span>
+                              )}
+                              {c.breeding_blacklist && (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: '#fef2f2',
+                                    color: '#b91c1c',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  BLACKLIST
+                                </span>
+                              )}
+                            </span>
+                          </div>
                         </div>
                       );
                     })}
@@ -1902,52 +1722,7 @@ const CattleHerdsView = ({
                 setFilter('herdSet', [value]);
               }}
               processingInfo={processingInfo}
-              expandedCow={expandedCow}
-              setExpandedCow={setExpandedCow}
-              renderCowDetail={(c) => {
-                const cTags = cowTagSet(c);
-                const cowWeighIns = weighIns.filter((w) => cTags.has(String(w.tag)));
-                const cowCalving = calvingRecs.filter((r) => r.dam_tag === c.tag);
-                const cowComments = comments
-                  .filter((cm) => cm.cattle_id === c.id || cm.cattle_tag === c.tag)
-                  .slice(0, 20);
-                return (
-                  <CowDetail
-                    cow={c}
-                    ageLabel={age(c.birth_date) || '—'}
-                    weighIns={cowWeighIns}
-                    calving={cowCalving}
-                    comments={cowComments}
-                    calves={cattle.filter((x) => x.dam_tag === c.tag)}
-                    dam={cattle.find((x) => x.tag === c.dam_tag)}
-                    cattleList={cattle}
-                    fmt={fmt}
-                    HERDS={CATTLE_ALL_HERD_KEYS}
-                    HERD_LABELS={HERD_LABELS}
-                    HERD_COLORS={HERD_COLORS}
-                    onEdit={() => openEdit(c)}
-                    onTransfer={(newHerd) => transferCow(c.id, newHerd)}
-                    onDelete={authState?.role === 'admin' ? () => deleteCow(c.id) : undefined}
-                    onComment={(text) => addQuickComment(c.id, c.tag, text)}
-                    onEditComment={editComment}
-                    onDeleteComment={deleteComment}
-                    onAddCalving={(data) => addCalvingRecord(c, data)}
-                    onDeleteCalving={(id) => deleteCalvingRecord(id)}
-                    onNavigateToCow={(target) => navigateToCow(target, c.id)}
-                    onNavigateBack={navigateBack}
-                    canNavigateBack={cowNavStack.length > 0}
-                    backToTag={
-                      cowNavStack.length > 0
-                        ? (cattle.find((x) => x.id === cowNavStack[cowNavStack.length - 1]) || {}).tag
-                        : null
-                    }
-                    onPatch={(fields) => patchCow(c.id, fields)}
-                    onClose={() => setExpandedCow(null)}
-                    originOpts={originOpts}
-                    breedOpts={breedOpts}
-                  />
-                );
-              }}
+              onCowClick={(c) => navigate('/cattle/herds/' + c.id)}
             />
           </div>
         )}
@@ -2501,7 +2276,7 @@ const CattleHerdsView = ({
                     <span>Breeding blacklist</span>
                   </label>
                   <div style={{fontSize: 11, color: '#9ca3af', marginLeft: 26, marginTop: 4}}>
-                    Use the comments timeline to record why.
+                    Use the Issues section to record why.
                   </div>
                 </div>
               )}
@@ -2609,12 +2384,6 @@ const CattleHerdsView = ({
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 };
@@ -3124,4 +2893,4 @@ function PopoverFooter({onClear, onClose}) {
   );
 }
 
-export default CattleHerdsView;
+export default CattleHerdsRouter;
