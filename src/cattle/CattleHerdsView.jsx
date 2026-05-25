@@ -206,7 +206,12 @@ function CattleHerdsRouter(props) {
     ? location.pathname.slice('/cattle/herds/'.length) || null
     : null;
   if (cattleDetailId) {
-    return React.createElement(CattleAnimalPage, {sb: props.sb, fmt: props.fmt, authState: props.authState});
+    return React.createElement(CattleAnimalPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+    });
   }
   return React.createElement(CattleHerdsHub, props);
 }

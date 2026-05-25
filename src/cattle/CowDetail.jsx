@@ -549,6 +549,7 @@ const CowDetail = ({
             background: cow.breeding_blacklist ? '#fef2f2' : '#f9fafb',
             borderRadius: 6,
             border: '1px solid ' + (cow.breeding_blacklist ? '#fca5a5' : '#e5e7eb'),
+            boxSizing: 'border-box',
           }}
         >
           <label
@@ -570,9 +571,6 @@ const CowDetail = ({
               style={{margin: 0, flexShrink: 0}}
             />
             <span>Breeding blacklist</span>
-            <span style={{fontSize: 11, color: '#9ca3af', fontWeight: 400}}>
-              Do not breed. Record reason in Issues.
-            </span>
           </label>
         </div>
       )}

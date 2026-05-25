@@ -41,6 +41,9 @@ describe('CattleHerdsView — no legacy Activity or inline CowDetail', () => {
   it('parses /cattle/herds/<id> from URL', () => {
     expect(herdsView).toContain('/cattle/herds/');
   });
+  it('passes Header to CattleAnimalPage', () => {
+    expect(herdsView).toContain('Header: props.Header');
+  });
 });
 
 describe('CollapsibleOutcomeSections — no inline CowDetail', () => {
@@ -66,6 +69,15 @@ describe('CattleAnimalPage — CowDetail remount on navigation', () => {
   });
   it('resets loading to true on cattleId change', () => {
     expect(animalPage).toContain('setLoading(true)');
+  });
+});
+
+describe('CattleAnimalPage — app header', () => {
+  it('accepts Header prop', () => {
+    expect(animalPage).toMatch(/CattleAnimalPage\(\{[^}]*Header/);
+  });
+  it('renders Header component', () => {
+    expect(animalPage).toContain('{Header && <Header />}');
   });
 });
 
@@ -143,8 +155,11 @@ describe('CowDetail — breeding blacklist UI', () => {
   it('keeps the label on one line with whiteSpace nowrap', () => {
     expect(cowDetail).toMatch(/breeding.blacklist[\s\S]*?whiteSpace:\s*'nowrap'/);
   });
-  it('includes helper text inline', () => {
-    expect(cowDetail).toContain('Do not breed. Record reason in Issues.');
+  it('does not include helper text', () => {
+    expect(cowDetail).not.toContain('Do not breed. Record reason in Issues.');
+  });
+  it('uses boxSizing border-box to prevent overflow', () => {
+    expect(cowDetail).toMatch(/data-breeding-blacklist-row[\s\S]*?boxSizing:\s*'border-box'/);
   });
 });
 

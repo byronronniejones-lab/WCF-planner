@@ -67,7 +67,7 @@ function age(birth) {
   return m + 'mo';
 }
 
-export default function CattleAnimalPage({sb, fmt, authState}) {
+export default function CattleAnimalPage({sb, fmt, authState, Header}) {
   const navigate = useNavigate();
   const location = useLocation();
   const cattleId = location.pathname.replace('/cattle/herds/', '');
@@ -268,29 +268,37 @@ export default function CattleAnimalPage({sb, fmt, authState}) {
   }
 
   if (loading) {
-    return <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>;
+    return (
+      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+        {Header && <Header />}
+        <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>
+      </div>
+    );
   }
 
   if (!cow) {
     return (
-      <div style={{padding: 24}}>
-        <button
-          type="button"
-          onClick={() => navigate('/cattle/herds')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#1d4ed8',
-            cursor: 'pointer',
-            fontSize: 14,
-            fontFamily: 'inherit',
-            padding: 0,
-          }}
-        >
-          ← Back to Herds
-        </button>
-        <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>
-          Cattle record not found. It may have been deleted.
+      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+        {Header && <Header />}
+        <div style={{padding: 24}}>
+          <button
+            type="button"
+            onClick={() => navigate('/cattle/herds')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#1d4ed8',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontFamily: 'inherit',
+              padding: 0,
+            }}
+          >
+            ← Back to Herds
+          </button>
+          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>
+            Cattle record not found. It may have been deleted.
+          </div>
         </div>
       </div>
     );
@@ -302,159 +310,164 @@ export default function CattleAnimalPage({sb, fmt, authState}) {
   });
 
   return (
-    <div data-cattle-animal-page="1" style={{maxWidth: 800, margin: '0 auto', padding: '12px 16px'}}>
-      <div style={{marginBottom: 12}}>
-        <button
-          type="button"
-          onClick={() => navigate('/cattle/herds')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#1d4ed8',
-            cursor: 'pointer',
-            fontSize: 14,
-            fontFamily: 'inherit',
-            padding: 0,
-            fontWeight: 500,
-          }}
-        >
-          ← Back to Herds
-        </button>
-      </div>
-
-      <h1
-        data-record-title="1"
-        style={{
-          fontSize: 28,
-          fontWeight: 700,
-          color: '#111827',
-          margin: '0 0 12px',
-          lineHeight: 1.2,
-        }}
-      >
-        {cow.tag ? '#' + cow.tag : 'Untagged animal'}
-      </h1>
-
-      {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
-
-      <CowDetail
-        key={cow.id}
-        cow={cow}
-        ageLabel={age(cow.birth_date) || '—'}
-        weighIns={cowWeighIns}
-        calving={calvingRecs.filter((r) => r.dam_tag === cow.tag)}
-        comments={[]}
-        calves={cattle.filter((x) => x.dam_tag === cow.tag)}
-        dam={cattle.find((x) => x.tag === cow.dam_tag)}
-        cattleList={cattle}
-        fmt={fmt}
-        HERDS={CATTLE_ALL_HERD_KEYS}
-        HERD_LABELS={HERD_LABELS}
-        HERD_COLORS={HERD_COLORS}
-        onEdit={() => {}}
-        onTransfer={(newHerd) => transferCow(newHerd)}
-        onDelete={authState?.role === 'admin' ? () => deleteCow() : undefined}
-        onComment={null}
-        onEditComment={null}
-        onDeleteComment={null}
-        hideComments={true}
-        onAddCalving={(data) => addCalvingRecord(cow, data)}
-        onDeleteCalving={(id) => deleteCalvingRecord(id)}
-        onNavigateToCow={(target) => navigateToCow(target)}
-        onNavigateBack={() => navigate('/cattle/herds/' + fromCowId)}
-        canNavigateBack={Boolean(fromCowId)}
-        backToTag={fromCowTag}
-        onPatch={(fields) => patchCow(fields)}
-        onClose={() => navigate('/cattle/herds')}
-        originOpts={originOpts}
-        breedOpts={breedOpts}
-      />
-
-      <div style={{marginTop: 16}}>
-        <CommentsSection
-          sb={sb}
-          authState={authState}
-          entityType="cattle.animal"
-          entityId={cow.id}
-          entityLabel={cow.tag || cow.id}
-        />
-      </div>
-
-      <div style={{marginTop: 16}}>
-        <button
-          type="button"
-          data-activity-log-toggle="1"
-          onClick={() => setActivityExpanded((p) => !p)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'white',
-            border: '1px solid #e5e7eb',
-            borderRadius: 10,
-            padding: '10px 14px',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#374151',
-            fontFamily: 'inherit',
-            width: '100%',
-            textAlign: 'left',
-          }}
-        >
-          <span style={{fontSize: 10}}>{activityExpanded ? '▼' : '▶'}</span>
-          Activity log ({activityCount})
-        </button>
-        {activityExpanded && (
-          <div
-            data-activity-audit-log="1"
+    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+      {Header && <Header />}
+      <div data-cattle-animal-page="1" style={{maxWidth: 800, margin: '0 auto', padding: '12px 16px'}}>
+        <div style={{marginBottom: 12}}>
+          <button
+            type="button"
+            onClick={() => navigate('/cattle/herds')}
             style={{
-              background: 'white',
-              border: '1px solid #e5e7eb',
-              borderTop: 'none',
-              borderRadius: '0 0 10px 10px',
-              padding: 14,
+              background: 'none',
+              border: 'none',
+              color: '#1d4ed8',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontFamily: 'inherit',
+              padding: 0,
+              fontWeight: 500,
             }}
           >
-            {activityEvents.length === 0 && <div style={{fontSize: 12.5, color: '#6b7280'}}>No audit events yet.</div>}
-            {activityEvents.map((ev) => (
-              <div key={ev.id} style={{padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: 12}}>
-                <span style={{fontWeight: 700, color: '#111827', fontSize: 12.5}}>
-                  {ev.actor_display_name || (ev.actor_profile_id ? 'Unknown user' : 'System')}
-                </span>{' '}
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    padding: '1px 6px',
-                    borderRadius: 4,
-                    background: '#e0f2fe',
-                    color: '#075985',
-                  }}
-                >
-                  {ev.event_type.replace('.', ' ')}
-                </span>
-                {' · '}
-                <span style={{color: '#6b7280'}}>
-                  {(() => {
-                    try {
-                      const d = new Date(ev.created_at);
-                      const diff = (Date.now() - d.getTime()) / 1000;
-                      if (diff < 60) return 'just now';
-                      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-                      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-                      return d.toLocaleString();
-                    } catch (_e) {
-                      return ev.created_at;
-                    }
-                  })()}
-                </span>
-                {ev.body && <div style={{color: '#374151', marginTop: 2}}>{ev.body}</div>}
-              </div>
-            ))}
-          </div>
-        )}
+            ← Back to Herds
+          </button>
+        </div>
+
+        <h1
+          data-record-title="1"
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            color: '#111827',
+            margin: '0 0 12px',
+            lineHeight: 1.2,
+          }}
+        >
+          {cow.tag ? '#' + cow.tag : 'Untagged animal'}
+        </h1>
+
+        {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
+
+        <CowDetail
+          key={cow.id}
+          cow={cow}
+          ageLabel={age(cow.birth_date) || '—'}
+          weighIns={cowWeighIns}
+          calving={calvingRecs.filter((r) => r.dam_tag === cow.tag)}
+          comments={[]}
+          calves={cattle.filter((x) => x.dam_tag === cow.tag)}
+          dam={cattle.find((x) => x.tag === cow.dam_tag)}
+          cattleList={cattle}
+          fmt={fmt}
+          HERDS={CATTLE_ALL_HERD_KEYS}
+          HERD_LABELS={HERD_LABELS}
+          HERD_COLORS={HERD_COLORS}
+          onEdit={() => {}}
+          onTransfer={(newHerd) => transferCow(newHerd)}
+          onDelete={authState?.role === 'admin' ? () => deleteCow() : undefined}
+          onComment={null}
+          onEditComment={null}
+          onDeleteComment={null}
+          hideComments={true}
+          onAddCalving={(data) => addCalvingRecord(cow, data)}
+          onDeleteCalving={(id) => deleteCalvingRecord(id)}
+          onNavigateToCow={(target) => navigateToCow(target)}
+          onNavigateBack={() => navigate('/cattle/herds/' + fromCowId)}
+          canNavigateBack={Boolean(fromCowId)}
+          backToTag={fromCowTag}
+          onPatch={(fields) => patchCow(fields)}
+          onClose={() => navigate('/cattle/herds')}
+          originOpts={originOpts}
+          breedOpts={breedOpts}
+        />
+
+        <div style={{marginTop: 16}}>
+          <CommentsSection
+            sb={sb}
+            authState={authState}
+            entityType="cattle.animal"
+            entityId={cow.id}
+            entityLabel={cow.tag || cow.id}
+          />
+        </div>
+
+        <div style={{marginTop: 16}}>
+          <button
+            type="button"
+            data-activity-log-toggle="1"
+            onClick={() => setActivityExpanded((p) => !p)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              padding: '10px 14px',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#374151',
+              fontFamily: 'inherit',
+              width: '100%',
+              textAlign: 'left',
+            }}
+          >
+            <span style={{fontSize: 10}}>{activityExpanded ? '▼' : '▶'}</span>
+            Activity log ({activityCount})
+          </button>
+          {activityExpanded && (
+            <div
+              data-activity-audit-log="1"
+              style={{
+                background: 'white',
+                border: '1px solid #e5e7eb',
+                borderTop: 'none',
+                borderRadius: '0 0 10px 10px',
+                padding: 14,
+              }}
+            >
+              {activityEvents.length === 0 && (
+                <div style={{fontSize: 12.5, color: '#6b7280'}}>No audit events yet.</div>
+              )}
+              {activityEvents.map((ev) => (
+                <div key={ev.id} style={{padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: 12}}>
+                  <span style={{fontWeight: 700, color: '#111827', fontSize: 12.5}}>
+                    {ev.actor_display_name || (ev.actor_profile_id ? 'Unknown user' : 'System')}
+                  </span>{' '}
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      background: '#e0f2fe',
+                      color: '#075985',
+                    }}
+                  >
+                    {ev.event_type.replace('.', ' ')}
+                  </span>
+                  {' · '}
+                  <span style={{color: '#6b7280'}}>
+                    {(() => {
+                      try {
+                        const d = new Date(ev.created_at);
+                        const diff = (Date.now() - d.getTime()) / 1000;
+                        if (diff < 60) return 'just now';
+                        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+                        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+                        return d.toLocaleString();
+                      } catch (_e) {
+                        return ev.created_at;
+                      }
+                    })()}
+                  </span>
+                  {ev.body && <div style={{color: '#374151', marginTop: 2}}>{ev.body}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
