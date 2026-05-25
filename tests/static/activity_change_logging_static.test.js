@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const cattleHerds = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
 const cattleForecast = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleForecastView.jsx'), 'utf8');
 const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
+const sheepAnimalPage = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepAnimalPage.jsx'), 'utf8');
 const eqAdmin = fs.readFileSync(path.join(ROOT, 'src/admin/EquipmentWebformsAdmin.jsx'), 'utf8');
 const diffHelper = fs.readFileSync(path.join(ROOT, 'src/lib/activityChangeDiff.js'), 'utf8');
 
@@ -46,27 +47,27 @@ describe('Activity change logging - cattle.animal', () => {
 });
 
 describe('Activity change logging - sheep.animal', () => {
-  it('SheepFlocksView imports runMutation and recordFieldChange', () => {
-    expect(sheepFlocks).toContain("import {runMutation, recordFieldChange} from '../lib/entityMutations.js'");
+  it('SheepAnimalPage imports runMutation and recordFieldChange', () => {
+    expect(sheepAnimalPage).toContain("import {runMutation, recordFieldChange} from '../lib/entityMutations.js'");
   });
 
-  it('SheepFlocksView imports buildChanges', () => {
-    expect(sheepFlocks).toContain("import {buildChanges, countSummary} from '../lib/activityChangeDiff.js'");
+  it('SheepAnimalPage imports buildChanges', () => {
+    expect(sheepAnimalPage).toContain("import {buildChanges, countSummary} from '../lib/activityChangeDiff.js'");
   });
 
-  it('SheepFlocksView patchSheep uses runMutation with sheep.animal', () => {
-    expect(sheepFlocks).toContain("entityType: 'sheep.animal'");
-    expect(sheepFlocks).toContain('runMutation(');
+  it('SheepAnimalPage patchSheep uses runMutation with sheep.animal', () => {
+    expect(sheepAnimalPage).toContain("entityType: 'sheep.animal'");
+    expect(sheepAnimalPage).toContain('runMutation(');
   });
 
-  it('SheepFlocksView excludes flock and processing_batch_id', () => {
-    expect(sheepFlocks).toContain("'flock'");
-    expect(sheepFlocks).toContain("'processing_batch_id'");
-    expect(sheepFlocks).toContain('SHEEP_EXCLUDE');
+  it('SheepAnimalPage excludes flock and processing_batch_id', () => {
+    expect(sheepAnimalPage).toContain("'flock'");
+    expect(sheepAnimalPage).toContain("'processing_batch_id'");
+    expect(sheepAnimalPage).toContain('SHEEP_EXCLUDE');
   });
 
   it('does not route deletes through record.deleted', () => {
-    expect(sheepFlocks.match(/record\.deleted/g)).toBeNull();
+    expect(sheepAnimalPage.match(/record\.deleted/g)).toBeNull();
   });
 });
 

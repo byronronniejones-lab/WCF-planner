@@ -13,13 +13,12 @@ const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.j
 const equipFleet = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFleetView.jsx'), 'utf8');
 const activityPanel = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityPanel.jsx'), 'utf8');
 
-// CattleHerdsView no longer renders Activity chips/modal — cattle uses
-// dedicated record pages with inline Comments + Activity sections.
+// CattleHerdsView and SheepFlocksView no longer render Activity chips/modal —
+// they use dedicated record pages with inline Comments + Activity sections.
 const SURFACES = [
   {name: 'BroilerListView', src: broilerList, entity: 'broiler.batch', idField: 'b.name'},
   {name: 'LayerBatchesView (batch)', src: layerBatches, entity: 'layer.batch', idField: 'batch.id'},
   {name: 'LayerBatchesView (housing)', src: layerBatches, entity: 'layer.housing', idField: 'h.id'},
-  {name: 'SheepFlocksView', src: sheepFlocks, entity: 'sheep.animal', idField: 's.id'},
   {name: 'EquipmentFleetView', src: equipFleet, entity: 'equipment.item', idField: 'eq.id'},
 ];
 
@@ -37,7 +36,6 @@ describe('Activity tile wiring — ActivityModal', () => {
   for (const {name, src} of [
     {name: 'BroilerListView', src: broilerList},
     {name: 'LayerBatchesView', src: layerBatches},
-    {name: 'SheepFlocksView', src: sheepFlocks},
     {name: 'EquipmentFleetView', src: equipFleet},
   ]) {
     it(`${name} renders ActivityModal`, () => {
@@ -76,10 +74,6 @@ describe('Activity tile wiring — entity IDs', () => {
     expect(layerBatches).toMatch(/entityType:\s*'layer\.housing'[\s\S]*?entityId:\s*h\.id/);
   });
 
-  it('sheep.animal uses s.id', () => {
-    expect(sheepFlocks).toMatch(/entityId:\s*s\.id/);
-  });
-
   it('equipment.item uses eq.id', () => {
     expect(equipFleet).toMatch(/entityId:\s*eq\.id/);
   });
@@ -93,7 +87,6 @@ describe('Activity tile wiring — authState', () => {
   for (const {name, src} of [
     {name: 'BroilerListView', src: broilerList},
     {name: 'LayerBatchesView', src: layerBatches},
-    {name: 'SheepFlocksView', src: sheepFlocks},
     {name: 'EquipmentFleetView', src: equipFleet},
   ]) {
     it(`${name} passes authState to ActivityModal/Panel`, () => {
@@ -118,13 +111,6 @@ describe('Cattle + sheep wired in both flat and grouped modes', () => {
     const groupedIdx = cattleHerds.indexOf('herdOpen');
     const flatChip = cattleHerds.indexOf("entityType: 'cattle.animal'");
     const groupedChip = cattleHerds.indexOf("entityType: 'cattle.animal'", flatChip + 1);
-    expect(flatChip).toBeGreaterThan(-1);
-    expect(groupedChip).toBeGreaterThan(flatChip);
-  });
-
-  it('SheepFlocksView has sheep.animal chips in both flat and grouped rows', () => {
-    const flatChip = sheepFlocks.indexOf("entityType: 'sheep.animal'");
-    const groupedChip = sheepFlocks.indexOf("entityType: 'sheep.animal'", flatChip + 1);
     expect(flatChip).toBeGreaterThan(-1);
     expect(groupedChip).toBeGreaterThan(flatChip);
   });

@@ -53,7 +53,7 @@ export const ACTIVITY_REGISTRY = {
   },
   [ENTITY_TYPES.SHEEP_ANIMAL]: {
     displayLabel: (id, ctx) => (ctx && ctx.tag ? ctx.tag : id),
-    route: (_id) => '/sheep/flocks',
+    route: (id) => '/sheep/flocks/' + id,
     program: 'sheep',
   },
   [ENTITY_TYPES.EQUIPMENT_ITEM]: {
@@ -172,5 +172,6 @@ export function routeToView(routePath) {
   };
   if (path.startsWith('/fleet/')) return {view: 'equipmentHome', search: search || ''};
   if (path.startsWith('/cattle/herds/')) return {view: 'cattleherds', search: search || ''};
+  if (path.startsWith('/sheep/flocks/')) return {view: 'sheepflocks', search: search || ''};
   return {view: VIEW_MAP[path] || 'home', search: search || ''};
 }

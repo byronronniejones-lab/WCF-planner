@@ -1298,6 +1298,7 @@ function App() {
     const isFuelingSubpath =
       !exactPathView && (location.pathname.startsWith('/equipment/') || location.pathname === '/equipment');
     const isCattleHerdsSubpath = !exactPathView && location.pathname.startsWith('/cattle/herds/');
+    const isSheepFlocksSubpath = !exactPathView && location.pathname.startsWith('/sheep/flocks/');
     const viewFromUrl = isWebformSubpath
       ? 'webformhub'
       : isEquipmentSubpath
@@ -1306,7 +1307,9 @@ function App() {
           ? 'fuelingHub'
           : isCattleHerdsSubpath
             ? 'cattleherds'
-            : exactPathView;
+            : isSheepFlocksSubpath
+              ? 'sheepflocks'
+              : exactPathView;
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -1347,6 +1350,8 @@ function App() {
     if (view === 'fuelingHub' && location.pathname.startsWith('/equipment/')) return;
     // Don't clobber /cattle/herds/<id> sub-paths — CattleHerdsView owns them.
     if (view === 'cattleherds' && location.pathname.startsWith('/cattle/herds/')) return;
+    // Don't clobber /sheep/flocks/<id> sub-paths — SheepFlocksView owns them.
+    if (view === 'sheepflocks' && location.pathname.startsWith('/sheep/flocks/')) return;
     const pathFromView = VIEW_TO_PATH[view];
     if (pathFromView && pathFromView !== location.pathname) {
       navigate(pathFromView);

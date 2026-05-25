@@ -89,7 +89,6 @@ describe('Per-surface deep-link handlers', () => {
   const modalSurfaces = [
     {name: 'BroilerListView', src: broilerList, entity: 'broiler.batch'},
     {name: 'LayerBatchesView', src: layerBatches, entity: 'layer.batch'},
-    {name: 'SheepFlocksView', src: sheepFlocks, entity: 'sheep.animal'},
     {name: 'EquipmentFleetView', src: equipFleet, entity: 'equipment.item'},
   ];
 
@@ -112,6 +111,11 @@ describe('Per-surface deep-link handlers', () => {
   it('CattleHerdsView deep-link navigates to record page', () => {
     expect(cattleHerds).toContain('wcf-entity-deep-link');
     expect(cattleHerds).toContain("navigate('/cattle/herds/'");
+  });
+
+  it('SheepFlocksView deep-link navigates to record page', () => {
+    expect(sheepFlocks).toContain('wcf-entity-deep-link');
+    expect(sheepFlocks).toContain("navigate('/sheep/flocks/'");
   });
 
   it('LayerBatchesView also handles layer.housing deep-links', () => {

@@ -34,6 +34,7 @@ const SheepDetail = ({
   originOpts,
   breedOpts,
   ageLabel,
+  hideComments,
 }) => {
   const patchOnBlur = (field, parser) => (ev) => {
     if (!onPatch) return;
@@ -1122,234 +1123,236 @@ const SheepDetail = ({
         </div>
       )}
 
-      {/* Comments timeline + add */}
-      <div style={{marginTop: 12}}>
-        <div style={sectionTitle}>Comments Timeline</div>
-        <div style={{display: 'flex', gap: 6, marginBottom: 6}}>
-          <input
-            type="text"
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            placeholder={'Add a comment…'}
-            style={{
-              flex: 1,
-              fontSize: 12,
-              padding: '6px 10px',
-              border: '1px solid #d1d5db',
-              borderRadius: 6,
-              fontFamily: 'inherit',
-            }}
-          />
-          <button
-            onClick={() => {
-              onComment(commentText);
-              setCommentText('');
-            }}
-            disabled={!commentText.trim()}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 6,
-              border: 'none',
-              background: commentText.trim() ? '#0f766e' : '#d1d5db',
-              color: 'white',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: commentText.trim() ? 'pointer' : 'not-allowed',
-              fontFamily: 'inherit',
-            }}
-          >
-            Add
-          </button>
-        </div>
-        {comments && comments.length > 0 ? (
-          <div style={{maxHeight: 260, overflowY: 'auto'}}>
-            {comments.map((c) => {
-              const isEditing = editingCommentId === c.id;
-              return (
-                <div
-                  key={c.id}
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    marginBottom: 4,
-                    fontSize: 11,
-                  }}
-                >
-                  <div style={{display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2, flexWrap: 'wrap'}}>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '1px 6px',
-                        borderRadius: 4,
-                        background:
-                          c.source === 'weigh_in'
-                            ? '#eff6ff'
-                            : c.source === 'lambing'
-                              ? '#f0fdfa'
-                              : c.source === 'daily_report'
-                                ? '#ecfdf5'
-                                : c.source === 'import'
-                                  ? '#fef3c7'
-                                  : '#f3f4f6',
-                        color:
-                          c.source === 'weigh_in'
-                            ? '#1e40af'
-                            : c.source === 'lambing'
-                              ? '#0f766e'
-                              : c.source === 'daily_report'
-                                ? '#065f46'
-                                : c.source === 'import'
-                                  ? '#92400e'
-                                  : '#374151',
-                      }}
-                    >
-                      {c.source}
-                    </span>
-                    <span style={{color: '#9ca3af'}}>{fmt((c.created_at || '').slice(0, 10))}</span>
-                    {c.team_member && <span style={{color: '#9ca3af', fontWeight: 600}}>{'· ' + c.team_member}</span>}
-                    {!isEditing && onEditComment && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingCommentId(c.id);
-                          setEditingCommentText(c.comment || '');
-                        }}
-                        style={{
-                          marginLeft: 'auto',
-                          fontSize: 10,
-                          color: '#1d4ed8',
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '2px 4px',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {!isEditing && onDeleteComment && (
-                      <button
-                        type="button"
-                        onClick={() => onDeleteComment(c.id)}
-                        style={{
-                          fontSize: 10,
-                          color: '#b91c1c',
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '2px 4px',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                  {isEditing ? (
-                    <div>
-                      <textarea
-                        value={editingCommentText}
-                        onChange={(e) => setEditingCommentText(e.target.value)}
-                        rows={2}
-                        style={{
-                          width: '100%',
-                          fontSize: 11,
-                          padding: '4px 8px',
-                          border: '1px solid #d1d5db',
-                          borderRadius: 5,
-                          fontFamily: 'inherit',
-                          boxSizing: 'border-box',
-                          resize: 'vertical',
-                        }}
-                      />
-                      <div style={{display: 'flex', gap: 6, marginTop: 4}}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onEditComment(c.id, editingCommentText);
-                            setEditingCommentId(null);
-                            setEditingCommentText('');
-                          }}
-                          disabled={!editingCommentText.trim()}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: 5,
-                            border: 'none',
-                            background: editingCommentText.trim() ? '#0f766e' : '#d1d5db',
-                            color: 'white',
-                            fontSize: 10,
-                            fontWeight: 600,
-                            cursor: editingCommentText.trim() ? 'pointer' : 'not-allowed',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingCommentId(null);
-                            setEditingCommentText('');
-                          }}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: 5,
-                            border: '1px solid #d1d5db',
-                            background: 'white',
-                            color: '#6b7280',
-                            fontSize: 10,
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{color: '#374151'}}>{c.comment}</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>No comments yet.</div>
-        )}
-        {sheep.breeding_blacklist && (
-          <div
-            style={{
-              marginTop: 8,
-              background: '#fecaca',
-              border: '1px solid #f87171',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 11,
-              display: 'flex',
-              gap: 8,
-              alignItems: 'center',
-            }}
-          >
-            <span
+      {/* Legacy comments — hidden when CommentsSection is used on the record page */}
+      {!hideComments && (
+        <div style={{marginTop: 12}}>
+          <div style={sectionTitle}>Issues</div>
+          <div style={{display: 'flex', gap: 6, marginBottom: 6}}>
+            <input
+              type="text"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder={'Add a comment…'}
               style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '1px 6px',
-                borderRadius: 4,
-                background: '#0f766e',
+                flex: 1,
+                fontSize: 12,
+                padding: '6px 10px',
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                fontFamily: 'inherit',
+              }}
+            />
+            <button
+              onClick={() => {
+                onComment(commentText);
+                setCommentText('');
+              }}
+              disabled={!commentText.trim()}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: 'none',
+                background: commentText.trim() ? '#0f766e' : '#d1d5db',
                 color: 'white',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: commentText.trim() ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit',
               }}
             >
-              BREEDING BLACKLIST
-            </span>
-            <span style={{color: '#0f5248', fontWeight: 600}}>{'Flagged — do not breed.'}</span>
+              Add
+            </button>
           </div>
-        )}
-      </div>
+          {comments && comments.length > 0 ? (
+            <div style={{maxHeight: 260, overflowY: 'auto'}}>
+              {comments.map((c) => {
+                const isEditing = editingCommentId === c.id;
+                return (
+                  <div
+                    key={c.id}
+                    style={{
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 6,
+                      padding: '6px 10px',
+                      marginBottom: 4,
+                      fontSize: 11,
+                    }}
+                  >
+                    <div style={{display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2, flexWrap: 'wrap'}}>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          background:
+                            c.source === 'weigh_in'
+                              ? '#eff6ff'
+                              : c.source === 'lambing'
+                                ? '#f0fdfa'
+                                : c.source === 'daily_report'
+                                  ? '#ecfdf5'
+                                  : c.source === 'import'
+                                    ? '#fef3c7'
+                                    : '#f3f4f6',
+                          color:
+                            c.source === 'weigh_in'
+                              ? '#1e40af'
+                              : c.source === 'lambing'
+                                ? '#0f766e'
+                                : c.source === 'daily_report'
+                                  ? '#065f46'
+                                  : c.source === 'import'
+                                    ? '#92400e'
+                                    : '#374151',
+                        }}
+                      >
+                        {c.source}
+                      </span>
+                      <span style={{color: '#9ca3af'}}>{fmt((c.created_at || '').slice(0, 10))}</span>
+                      {c.team_member && <span style={{color: '#9ca3af', fontWeight: 600}}>{'· ' + c.team_member}</span>}
+                      {!isEditing && onEditComment && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCommentId(c.id);
+                            setEditingCommentText(c.comment || '');
+                          }}
+                          style={{
+                            marginLeft: 'auto',
+                            fontSize: 10,
+                            color: '#1d4ed8',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {!isEditing && onDeleteComment && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteComment(c.id)}
+                          style={{
+                            fontSize: 10,
+                            color: '#b91c1c',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                    {isEditing ? (
+                      <div>
+                        <textarea
+                          value={editingCommentText}
+                          onChange={(e) => setEditingCommentText(e.target.value)}
+                          rows={2}
+                          style={{
+                            width: '100%',
+                            fontSize: 11,
+                            padding: '4px 8px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: 5,
+                            fontFamily: 'inherit',
+                            boxSizing: 'border-box',
+                            resize: 'vertical',
+                          }}
+                        />
+                        <div style={{display: 'flex', gap: 6, marginTop: 4}}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onEditComment(c.id, editingCommentText);
+                              setEditingCommentId(null);
+                              setEditingCommentText('');
+                            }}
+                            disabled={!editingCommentText.trim()}
+                            style={{
+                              padding: '3px 10px',
+                              borderRadius: 5,
+                              border: 'none',
+                              background: editingCommentText.trim() ? '#0f766e' : '#d1d5db',
+                              color: 'white',
+                              fontSize: 10,
+                              fontWeight: 600,
+                              cursor: editingCommentText.trim() ? 'pointer' : 'not-allowed',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCommentId(null);
+                              setEditingCommentText('');
+                            }}
+                            style={{
+                              padding: '3px 10px',
+                              borderRadius: 5,
+                              border: '1px solid #d1d5db',
+                              background: 'white',
+                              color: '#6b7280',
+                              fontSize: 10,
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{color: '#374151'}}>{c.comment}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>No comments yet.</div>
+          )}
+          {sheep.breeding_blacklist && (
+            <div
+              style={{
+                marginTop: 8,
+                background: '#fecaca',
+                border: '1px solid #f87171',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 11,
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: '#0f766e',
+                  color: 'white',
+                }}
+              >
+                BREEDING BLACKLIST
+              </span>
+              <span style={{color: '#0f5248', fontWeight: 600}}>{'Flagged — do not breed.'}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action buttons (Edit removed — fields are inline-editable above) */}
       <div

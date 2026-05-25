@@ -12,51 +12,35 @@
 //   * Add Sheep modal retained only for creating new records.
 //   * Tag / age / weight / flock sort options.
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import UsersModal from '../auth/UsersModal.jsx';
 import SheepBulkImport from './SheepBulkImport.jsx';
-import SheepDetail from './SheepDetail.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import SheepAnimalPage from './SheepAnimalPage.jsx';
 import SheepCollapsibleOutcomeSections from './SheepCollapsibleOutcomeSections.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
 import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityPanel from '../shared/ActivityPanel.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
-import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
-import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 
-const SHEEP_EXCLUDE = ['flock', 'processing_batch_id'];
-const SHEEP_LABELS = {
-  tag: 'Tag',
-  sex: 'Sex',
-  breed: 'Breed',
-  origin: 'Origin',
-  birth_date: 'Birth date',
-  purchase_date: 'Purchase date',
-  purchase_amount: 'Purchase amount',
-  dam_tag: 'Dam tag',
-  dam_reg_num: 'Dam reg #',
-  sire_tag: 'Sire tag',
-  sire_reg_num: 'Sire reg #',
-  registration_num: 'Registration #',
-  breeding_status: 'Breeding status',
-  breeding_blacklist: 'Breeding blacklist',
-  maternal_issue_flag: 'Maternal issue flag',
-  maternal_issue_desc: 'Maternal issue description',
-  sale_date: 'Sale date',
-  sale_amount: 'Sale amount',
-  death_date: 'Death date',
-  death_reason: 'Death reason',
-  old_tags: 'Prior tags',
-};
-const SHEEP_FORMATTERS = {
-  old_tags: (v) => countSummary(v, 'prior tag'),
-};
+function SheepFlocksRouter(props) {
+  const location = useLocation();
+  const sheepDetailId = location.pathname.startsWith('/sheep/flocks/')
+    ? location.pathname.slice('/sheep/flocks/'.length) || null
+    : null;
+  if (sheepDetailId) {
+    return React.createElement(SheepAnimalPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+    });
+  }
+  return React.createElement(SheepFlocksHub, props);
+}
 
-const SheepFlocksView = ({
+const SheepFlocksHub = ({
   sb,
   fmt,
   Header,
@@ -71,33 +55,26 @@ const SheepFlocksView = ({
   setPendingEdit,
 }) => {
   const {useState, useEffect} = React;
+  const navigate = useNavigate();
   const [sheep, setSheep] = useState([]);
   const [weighIns, setWeighIns] = useState([]);
   const [lambingRecs, setLambingRecs] = useState([]);
-  const [comments, setComments] = useState([]);
-  // Inline notice for save / patch / lambing validation failures.
-  // Cleared on each action entry + when opening the Add Sheep form so a
-  // prior row's error never shadows the next flow.
   const [notice, setNotice] = useState(null);
   const [breedOpts, setBreedOpts] = useState([]);
   const [originOpts, setOriginOpts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activityTarget, setActivityTarget] = useState(null);
 
   React.useEffect(() => {
     function onEntityDeepLink() {
       const dl = window._wcfEntityDeepLink;
       if (!dl || dl.entityType !== 'sheep.animal') return;
-      const s = sheep.find((x) => x.id === dl.entityId);
-      if (s) {
-        window._wcfEntityDeepLink = null;
-        setActivityTarget({entityType: 'sheep.animal', entityId: s.id, entityLabel: s.tag || s.id});
-      }
+      window._wcfEntityDeepLink = null;
+      navigate('/sheep/flocks/' + dl.entityId);
     }
     onEntityDeepLink();
     window.addEventListener('wcf-entity-deep-link', onEntityDeepLink);
     return () => window.removeEventListener('wcf-entity-deep-link', onEntityDeepLink);
-  }, [sheep]);
+  }, []);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
@@ -106,9 +83,7 @@ const SheepFlocksView = ({
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [expandedSheep, setExpandedSheep] = useState(null);
   const [expandedFlocks, setExpandedFlocks] = useState({});
-  const [sheepNavStack, setSheepNavStack] = useState([]);
 
   const FLOCKS = ['rams', 'ewes', 'feeders'];
   const OUTCOMES = ['processed', 'deceased', 'sold'];
@@ -162,17 +137,15 @@ const SheepFlocksView = ({
       sessIds.length > 0
         ? await sb.from('weigh_ins').select('*').in('session_id', sessIds).order('entered_at', {ascending: false})
         : {data: []};
-    const [sR, lR, cR, brR, orR] = await Promise.all([
+    const [sR, lR, brR, orR] = await Promise.all([
       sb.from('sheep').select('*').order('tag'),
       sb.from('sheep_lambing_records').select('*').order('lambing_date', {ascending: false}),
-      sb.from('sheep_comments').select('*').order('created_at', {ascending: false}),
       sb.from('sheep_breeds').select('*').order('label'),
       sb.from('sheep_origins').select('*').order('label'),
     ]);
     if (sR.data) setSheep(sR.data);
     if (wR.data) setWeighIns(wR.data);
     if (lR.data) setLambingRecs(lR.data);
-    if (cR.data) setComments(cR.data);
     if (brR.data) setBreedOpts(brR.data);
     if (orR.data) setOriginOpts(orR.data);
     setLoading(false);
@@ -214,48 +187,6 @@ const SheepFlocksView = ({
   }
   function lambCount(tag) {
     return sheep.filter((s) => s.dam_tag === tag).length;
-  }
-
-  function navigateToSheep(target, fromSheepId) {
-    if (!target || !target.id) return;
-    if (fromSheepId && fromSheepId !== target.id) setSheepNavStack((s) => [...s, fromSheepId]);
-    if (FLOCKS.includes(target.flock)) {
-      setSearch('');
-      setStatusFilter('active');
-      setExpandedFlocks((prev) => ({...prev, [target.flock]: true}));
-    } else {
-      setSearch('');
-      setStatusFilter(target.flock);
-    }
-    setExpandedSheep(target.id);
-    setTimeout(() => {
-      const el = document.getElementById('sheep-' + target.id);
-      if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-    }, 80);
-  }
-  function navigateBack() {
-    if (sheepNavStack.length === 0) {
-      setExpandedSheep(null);
-      return;
-    }
-    const prevId = sheepNavStack[sheepNavStack.length - 1];
-    const prev = sheep.find((s) => s.id === prevId);
-    setSheepNavStack((s) => s.slice(0, -1));
-    if (prev) {
-      if (FLOCKS.includes(prev.flock)) {
-        setStatusFilter('active');
-        setExpandedFlocks((p) => ({...p, [prev.flock]: true}));
-      } else {
-        setStatusFilter(prev.flock);
-      }
-      setExpandedSheep(prev.id);
-      setTimeout(() => {
-        const el = document.getElementById('sheep-' + prev.id);
-        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-      }, 80);
-    } else {
-      setExpandedSheep(null);
-    }
   }
 
   const filtered = sheep.filter((s) => {
@@ -339,144 +270,6 @@ const SheepFlocksView = ({
     setShowAddForm(false);
     setForm(null);
   }
-  async function patchSheep(sheepId, fields) {
-    if (!sheepId || !fields) return;
-    setNotice(null);
-    const animal = sheep.find((s) => s.id === sheepId);
-    const result = await runMutation(() => sb.from('sheep').update(fields).eq('id', sheepId), {
-      activity: () => {
-        const changes = buildChanges(animal, fields, {
-          exclude: SHEEP_EXCLUDE,
-          labels: SHEEP_LABELS,
-          formatters: SHEEP_FORMATTERS,
-        });
-        if (changes.length === 0) return;
-        return recordFieldChange(sb, {
-          entityType: 'sheep.animal',
-          entityId: sheepId,
-          entityLabel: fields.tag || animal?.tag || sheepId,
-          changes,
-        });
-      },
-      onError: (msg) => setNotice({kind: 'error', message: 'Save failed: ' + msg}),
-    });
-    if (result.ok) setSheep((prev) => prev.map((s) => (s.id === sheepId ? {...s, ...fields} : s)));
-  }
-  async function deleteSheep(id) {
-    window._wcfConfirmDelete(
-      'Permanently delete this sheep record? Lambing records, comments, and weigh-ins for this tag remain.',
-      async () => {
-        await sb.from('sheep').delete().eq('id', id);
-        await loadAll();
-        setShowAddForm(false);
-        setForm(null);
-        setExpandedSheep(null);
-      },
-    );
-  }
-  async function transferSheep(id, newFlock) {
-    const s = sheep.find((x) => x.id === id);
-    if (!s) return;
-    const oldFlock = s.flock;
-    const updates = {flock: newFlock};
-    if (newFlock === 'deceased' && !s.death_date) updates.death_date = new Date().toISOString().slice(0, 10);
-    if (newFlock === 'sold' && !s.sale_date) updates.sale_date = new Date().toISOString().slice(0, 10);
-    await sb.from('sheep').update(updates).eq('id', id);
-    // Append to sheep_transfers audit log (mirrors cattle_transfers writes
-    // in CattleHerdsView.transferCow). Tolerated if the table is missing
-    // on legacy schemas.
-    try {
-      await sb.from('sheep_transfers').insert({
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        sheep_id: id,
-        from_flock: oldFlock,
-        to_flock: newFlock,
-        reason: 'manual',
-        team_member: authState && authState.name ? authState.name : null,
-      });
-    } catch (e) {
-      /* table only exists post-migration-029 */
-    }
-    await loadAll();
-  }
-  async function addQuickComment(sheepId, sheepTag, text) {
-    if (!text.trim()) return;
-    await sb.from('sheep_comments').insert({
-      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-      sheep_id: sheepId,
-      sheep_tag: sheepTag,
-      comment: text.trim(),
-      team_member: authState && authState.name ? authState.name : null,
-      source: 'manual',
-    });
-    await loadAll();
-  }
-  async function editComment(id, newText) {
-    if (!newText.trim()) return;
-    await sb.from('sheep_comments').update({comment: newText.trim()}).eq('id', id);
-    await loadAll();
-  }
-  async function deleteComment(id) {
-    window._wcfConfirmDelete('Delete this comment?', async () => {
-      await sb.from('sheep_comments').delete().eq('id', id);
-      await loadAll();
-    });
-  }
-  async function addLambingRecord(s, formData) {
-    setNotice(null);
-    if (!formData.lambing_date) {
-      setNotice({kind: 'error', message: 'Lambing date required.'});
-      return false;
-    }
-    const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
-    const rec = {
-      id,
-      dam_tag: s.tag,
-      lambing_date: formData.lambing_date,
-      total_born: parseInt(formData.total_born) || 0,
-      deaths: parseInt(formData.deaths) || 0,
-      complications_flag: !!formData.complications_flag,
-      complications_desc: formData.complications_desc || null,
-      notes: formData.notes || null,
-    };
-    const {error} = await sb.from('sheep_lambing_records').insert(rec);
-    if (error) {
-      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
-      return false;
-    }
-    try {
-      const note =
-        rec.total_born +
-        ' born' +
-        (rec.deaths > 0 ? ', ' + rec.deaths + ' died' : '') +
-        (rec.complications_flag ? ' [complications: ' + rec.complications_desc + ']' : '');
-      await sb.from('sheep_comments').insert({
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        sheep_id: s.id,
-        sheep_tag: s.tag,
-        comment: note,
-        team_member: authState && authState.name ? authState.name : null,
-        source: 'lambing',
-        reference_id: id,
-      });
-    } catch (e) {
-      console.warn('sheep_comments lambing insert failed:', e);
-    }
-    await loadAll();
-    return true;
-  }
-  async function deleteLambingRecord(recId) {
-    window._wcfConfirmDelete('Delete this lambing record?', async () => {
-      await sb.from('sheep_lambing_records').delete().eq('id', recId);
-      try {
-        await sb.from('sheep_comments').delete().eq('reference_id', recId);
-      } catch (e) {
-        console.warn('sheep_comments lambing-delete cascade failed:', e);
-      }
-      await loadAll();
-    });
-  }
-
   const inpS = {
     fontSize: 13,
     padding: '7px 10px',
@@ -488,48 +281,6 @@ const SheepFlocksView = ({
   };
   const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
   const isFlatMode = search || statusFilter !== 'active';
-
-  const renderDetail = (s) => {
-    const sTags = sheepTagSet(s);
-    const sWeighIns = weighIns.filter((w) => sTags.has(w.tag));
-    const sLambing = lambingRecs.filter((r) => r.dam_tag === s.tag);
-    const sComments = comments.filter((cm) => cm.sheep_id === s.id || cm.sheep_tag === s.tag).slice(0, 20);
-    return (
-      <SheepDetail
-        sheep={s}
-        ageLabel={age(s.birth_date) || '—'}
-        weighIns={sWeighIns}
-        lambing={sLambing}
-        comments={sComments}
-        lambs={sheep.filter((x) => x.dam_tag === s.tag)}
-        dam={sheep.find((x) => x.tag === s.dam_tag)}
-        sheepList={sheep}
-        fmt={fmt}
-        FLOCKS={ALL_FLOCKS}
-        FLOCK_LABELS={FLOCK_LABELS}
-        FLOCK_COLORS={FLOCK_COLORS}
-        onTransfer={(newFlock) => transferSheep(s.id, newFlock)}
-        onDelete={() => deleteSheep(s.id)}
-        onComment={(text) => addQuickComment(s.id, s.tag, text)}
-        onEditComment={editComment}
-        onDeleteComment={deleteComment}
-        onAddLambing={(data) => addLambingRecord(s, data)}
-        onDeleteLambing={(id) => deleteLambingRecord(id)}
-        onNavigateToSheep={(target) => navigateToSheep(target, s.id)}
-        onNavigateBack={navigateBack}
-        canNavigateBack={sheepNavStack.length > 0}
-        backToTag={
-          sheepNavStack.length > 0
-            ? (sheep.find((x) => x.id === sheepNavStack[sheepNavStack.length - 1]) || {}).tag
-            : null
-        }
-        onPatch={(fields) => patchSheep(s.id, fields)}
-        onClose={() => setExpandedSheep(null)}
-        originOpts={originOpts}
-        breedOpts={breedOpts}
-      />
-    );
-  };
 
   return (
     <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -682,137 +433,122 @@ const SheepFlocksView = ({
             {sorted.map((s, i) => {
               const fc = FLOCK_COLORS[s.flock] || FLOCK_COLORS.ewes;
               const lw = lastWeight(s);
-              const isExpanded = expandedSheep === s.id;
               return (
                 <div
                   key={s.id}
                   id={'sheep-' + s.id}
                   style={{borderBottom: i < sorted.length - 1 ? '1px solid #f3f4f6' : 'none'}}
                 >
-                  {!isExpanded && (
-                    <div
-                      onClick={() => setExpandedSheep(s.id)}
+                  <div
+                    onClick={() => navigate('/sheep/flocks/' + s.id)}
+                    style={{
+                      padding: '10px 16px 10px 0',
+                      display: 'grid',
+                      gridTemplateColumns: '48px 16px 70px 110px 60px 180px 70px 90px 1fr',
+                      alignItems: 'center',
+                      gap: 10,
+                      cursor: 'pointer',
+                      background: s.breeding_blacklist ? '#fecaca' : 'white',
+                    }}
+                    className="hoverable-tile"
+                  >
+                    <span
                       style={{
-                        padding: '10px 16px 10px 0',
-                        display: 'grid',
-                        gridTemplateColumns: '48px 16px 70px 110px 60px 180px 70px 90px 1fr',
+                        fontSize: 11,
+                        color: '#9ca3af',
+                        fontVariantNumeric: 'tabular-nums',
+                        alignSelf: 'stretch',
+                        display: 'flex',
                         alignItems: 'center',
-                        gap: 10,
-                        cursor: 'pointer',
-                        background: s.breeding_blacklist ? '#fecaca' : 'white',
+                        justifyContent: 'flex-end',
+                        paddingRight: 10,
+                        paddingLeft: 8,
+                        marginTop: -10,
+                        marginBottom: -10,
+                        borderRight: '1px solid #d1d5db',
+                        fontWeight: 600,
                       }}
-                      className="hoverable-tile"
                     >
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: '#9ca3af',
-                          fontVariantNumeric: 'tabular-nums',
-                          alignSelf: 'stretch',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          paddingRight: 10,
-                          paddingLeft: 8,
-                          marginTop: -10,
-                          marginBottom: -10,
-                          borderRight: '1px solid #d1d5db',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
-                      <span
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 13,
-                          color: '#111827',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
-                        {s.tag ? '#' + s.tag : '(no tag)'}
-                        <span onClick={(e) => e.stopPropagation()} data-activity-surface="sheep.animal">
-                          {React.createElement(ActivityPanel, {
-                            sb,
-                            authState,
-                            entityType: 'sheep.animal',
-                            entityId: s.id,
-                            entityLabel: s.tag || s.id,
-                            mode: 'compact',
-                            onCompactClick: setActivityTarget,
-                          })}
+                      {i + 1}
+                    </span>
+                    <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: '#111827',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      {s.tag ? '#' + s.tag : '(no tag)'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        background: fc.bg,
+                        color: fc.tx,
+                        border: '1px solid ' + fc.bd,
+                        fontWeight: 600,
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {FLOCK_LABELS[s.flock]}
+                    </span>
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{s.sex || '—'}</span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: '#6b7280',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {s.breed || '—'}
+                    </span>
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{age(s.birth_date) || '—'}</span>
+                    <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
+                      {lw ? lw.toLocaleString() + ' lb' : 'no weigh-in'}
+                    </span>
+                    <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+                      {s.dam_tag && <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + s.dam_tag}</span>}
+                      {s.maternal_issue_flag && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: '#fef2f2',
+                            color: '#b91c1c',
+                            fontWeight: 600,
+                          }}
+                        >
+                          MATERNAL ISSUE
                         </span>
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          background: fc.bg,
-                          color: fc.tx,
-                          border: '1px solid ' + fc.bd,
-                          fontWeight: 600,
-                          textAlign: 'center',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {FLOCK_LABELS[s.flock]}
-                      </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{s.sex || '—'}</span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: '#6b7280',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {s.breed || '—'}
-                      </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{age(s.birth_date) || '—'}</span>
-                      <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
-                        {lw ? lw.toLocaleString() + ' lb' : 'no weigh-in'}
-                      </span>
-                      <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-                        {s.dam_tag && <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + s.dam_tag}</span>}
-                        {s.maternal_issue_flag && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                              fontWeight: 600,
-                            }}
-                          >
-                            MATERNAL ISSUE
-                          </span>
-                        )}
-                        {s.breeding_blacklist && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                              fontWeight: 600,
-                            }}
-                          >
-                            BLACKLIST
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  )}
-                  {isExpanded && renderDetail(s)}
+                      )}
+                      {s.breeding_blacklist && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: '#fef2f2',
+                            color: '#b91c1c',
+                            fontWeight: 600,
+                          }}
+                        >
+                          BLACKLIST
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -871,127 +607,110 @@ const SheepFlocksView = ({
                       const lw = lastWeight(s);
                       const ll = lastLambing(s.tag);
                       const lc = lambCount(s.tag);
-                      const isExpanded = expandedSheep === s.id;
                       return (
                         <div key={s.id} id={'sheep-' + s.id} style={{borderBottom: '1px solid #f3f4f6'}}>
-                          {!isExpanded && (
-                            <div
-                              onClick={() => setExpandedSheep(s.id)}
+                          <div
+                            onClick={() => navigate('/sheep/flocks/' + s.id)}
+                            style={{
+                              padding: '10px 18px 10px 0',
+                              display: 'grid',
+                              gridTemplateColumns: '48px 16px 70px 60px 180px 70px 90px 1fr',
+                              alignItems: 'center',
+                              gap: 10,
+                              cursor: 'pointer',
+                              background: s.breeding_blacklist ? '#fecaca' : 'transparent',
+                            }}
+                            className="hoverable-tile"
+                          >
+                            <span
                               style={{
-                                padding: '10px 18px 10px 0',
-                                display: 'grid',
-                                gridTemplateColumns: '48px 16px 70px 60px 180px 70px 90px 1fr',
+                                fontSize: 11,
+                                color: '#9ca3af',
+                                fontVariantNumeric: 'tabular-nums',
+                                alignSelf: 'stretch',
+                                display: 'flex',
                                 alignItems: 'center',
-                                gap: 10,
-                                cursor: 'pointer',
-                                background: s.breeding_blacklist ? '#fecaca' : 'transparent',
+                                justifyContent: 'flex-end',
+                                paddingRight: 10,
+                                paddingLeft: 8,
+                                marginTop: -10,
+                                marginBottom: -10,
+                                borderRight: '1px solid #d1d5db',
+                                fontWeight: 600,
                               }}
-                              className="hoverable-tile"
                             >
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: '#9ca3af',
-                                  fontVariantNumeric: 'tabular-nums',
-                                  alignSelf: 'stretch',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'flex-end',
-                                  paddingRight: 10,
-                                  paddingLeft: 8,
-                                  marginTop: -10,
-                                  marginBottom: -10,
-                                  borderRight: '1px solid #d1d5db',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {idx + 1}
-                              </span>
-                              <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
-                              <span
-                                style={{
-                                  fontWeight: 700,
-                                  fontSize: 13,
-                                  color: '#111827',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                }}
-                              >
-                                {s.tag ? '#' + s.tag : '(no tag)'}
-                                <span onClick={(e) => e.stopPropagation()} data-activity-surface="sheep.animal">
-                                  {React.createElement(ActivityPanel, {
-                                    sb,
-                                    authState,
-                                    entityType: 'sheep.animal',
-                                    entityId: s.id,
-                                    entityLabel: s.tag || s.id,
-                                    mode: 'compact',
-                                    onCompactClick: setActivityTarget,
-                                  })}
+                              {idx + 1}
+                            </span>
+                            <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
+                            <span
+                              style={{
+                                fontWeight: 700,
+                                fontSize: 13,
+                                color: '#111827',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              {s.tag ? '#' + s.tag : '(no tag)'}
+                            </span>
+                            <span style={{fontSize: 11, color: '#6b7280'}}>{s.sex || '—'}</span>
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: '#6b7280',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {s.breed || '—'}
+                            </span>
+                            <span style={{fontSize: 11, color: '#6b7280'}}>{age(s.birth_date) || '—'}</span>
+                            <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
+                              {lw ? lw.toLocaleString() + ' lb' : '—'}
+                            </span>
+                            <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+                              {f === 'ewes' && lc > 0 && (
+                                <span style={{fontSize: 11, color: '#0f766e', fontWeight: 600}}>
+                                  {lc + ' ' + (lc === 1 ? 'lamb' : 'lambs')}
                                 </span>
-                              </span>
-                              <span style={{fontSize: 11, color: '#6b7280'}}>{s.sex || '—'}</span>
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: '#6b7280',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {s.breed || '—'}
-                              </span>
-                              <span style={{fontSize: 11, color: '#6b7280'}}>{age(s.birth_date) || '—'}</span>
-                              <span
-                                style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}
-                              >
-                                {lw ? lw.toLocaleString() + ' lb' : '—'}
-                              </span>
-                              <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-                                {f === 'ewes' && lc > 0 && (
-                                  <span style={{fontSize: 11, color: '#0f766e', fontWeight: 600}}>
-                                    {lc + ' ' + (lc === 1 ? 'lamb' : 'lambs')}
-                                  </span>
-                                )}
-                                {f === 'ewes' && ll && (
-                                  <span style={{fontSize: 11, color: '#9ca3af'}}>
-                                    {'last lambed ' + fmt(ll.lambing_date)}
-                                  </span>
-                                )}
-                                {s.maternal_issue_flag && (
-                                  <span
-                                    style={{
-                                      fontSize: 10,
-                                      padding: '1px 6px',
-                                      borderRadius: 4,
-                                      background: '#fef2f2',
-                                      color: '#b91c1c',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    MATERNAL
-                                  </span>
-                                )}
-                                {s.breeding_blacklist && (
-                                  <span
-                                    style={{
-                                      fontSize: 10,
-                                      padding: '1px 6px',
-                                      borderRadius: 4,
-                                      background: '#fef2f2',
-                                      color: '#b91c1c',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    BLACKLIST
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          )}
-                          {isExpanded && renderDetail(s)}
+                              )}
+                              {f === 'ewes' && ll && (
+                                <span style={{fontSize: 11, color: '#9ca3af'}}>
+                                  {'last lambed ' + fmt(ll.lambing_date)}
+                                </span>
+                              )}
+                              {s.maternal_issue_flag && (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: '#fef2f2',
+                                    color: '#b91c1c',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  MATERNAL
+                                </span>
+                              )}
+                              {s.breeding_blacklist && (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: '#fef2f2',
+                                    color: '#b91c1c',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  BLACKLIST
+                                </span>
+                              )}
+                            </span>
+                          </div>
                         </div>
                       );
                     })}
@@ -1006,9 +725,7 @@ const SheepFlocksView = ({
               OUTCOMES={OUTCOMES}
               fmt={fmt}
               setStatusFilter={setStatusFilter}
-              expandedSheep={expandedSheep}
-              setExpandedSheep={setExpandedSheep}
-              renderSheepDetail={renderDetail}
+              onSheepClick={(s) => navigate('/sheep/flocks/' + s.id)}
             />
           </div>
         )}
@@ -1275,14 +992,8 @@ const SheepFlocksView = ({
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 };
 
-export default SheepFlocksView;
+export default SheepFlocksRouter;

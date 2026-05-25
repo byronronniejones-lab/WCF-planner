@@ -72,9 +72,10 @@ describe('CowDetail accepts and renders ageLabel near birth_date', () => {
   });
 });
 
-describe('SheepFlocksView → SheepDetail ageLabel wiring', () => {
+describe('SheepAnimalPage → SheepDetail ageLabel wiring', () => {
+  const sheepAnimalPage = readFileSync(resolve(ROOT, 'src/sheep/SheepAnimalPage.jsx'), 'utf8');
   it('passes ageLabel into the SheepDetail render site', () => {
-    expect(flocksView).toMatch(/ageLabel=\{age\(s\.birth_date\)\s*\|\|\s*'—'\}/);
+    expect(sheepAnimalPage).toMatch(/ageLabel=\{age\(animal\.birth_date\)\s*\|\|\s*'—'\}/);
   });
 });
 

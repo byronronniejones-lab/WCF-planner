@@ -10,9 +10,7 @@ const SheepCollapsibleOutcomeSections = ({
   OUTCOMES,
   fmt,
   setStatusFilter,
-  expandedSheep,
-  setExpandedSheep,
-  renderSheepDetail,
+  onSheepClick,
 }) => {
   const [expanded, setExpanded] = React.useState({});
   return (
@@ -67,42 +65,33 @@ const SheepCollapsibleOutcomeSections = ({
             </div>
             {isExpanded && (
               <div>
-                {rows.slice(0, 50).map((s) => {
-                  const isSheepExpanded = expandedSheep === s.id;
-                  const clickable = !!setExpandedSheep;
-                  return (
-                    <div key={s.id} id={'sheep-' + s.id} style={{borderTop: '1px solid #f3f4f6'}}>
-                      <div
-                        onClick={clickable ? () => setExpandedSheep(isSheepExpanded ? null : s.id) : undefined}
-                        style={{
-                          padding: '8px 16px',
-                          fontSize: 12,
-                          color: '#4b5563',
-                          display: 'flex',
-                          gap: 10,
-                          flexWrap: 'wrap',
-                          alignItems: 'center',
-                          cursor: clickable ? 'pointer' : 'default',
-                        }}
-                        className={clickable ? 'hoverable-tile' : ''}
-                      >
-                        {clickable && (
-                          <span style={{fontSize: 11, color: '#9ca3af'}}>{isSheepExpanded ? '▼' : '▶'}</span>
-                        )}
-                        <span style={{fontWeight: 600, color: '#111827', minWidth: 60}}>
-                          {s.tag ? '#' + s.tag : '(no tag)'}
-                        </span>
-                        <span>{s.sex || '—'}</span>
-                        <span>{s.breed || '—'}</span>
-                        {s.death_date && <span>{'died ' + fmt(s.death_date)}</span>}
-                        {s.sale_date && <span>{'sold ' + fmt(s.sale_date)}</span>}
-                      </div>
-                      {isSheepExpanded && renderSheepDetail && (
-                        <div style={{borderTop: '1px solid #e5e7eb'}}>{renderSheepDetail(s)}</div>
-                      )}
+                {rows.slice(0, 50).map((s) => (
+                  <div key={s.id} id={'sheep-' + s.id} style={{borderTop: '1px solid #f3f4f6'}}>
+                    <div
+                      onClick={onSheepClick ? () => onSheepClick(s) : undefined}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: 12,
+                        color: '#4b5563',
+                        display: 'flex',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        cursor: onSheepClick ? 'pointer' : 'default',
+                      }}
+                      className={onSheepClick ? 'hoverable-tile' : ''}
+                    >
+                      {onSheepClick && <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>}
+                      <span style={{fontWeight: 600, color: '#111827', minWidth: 60}}>
+                        {s.tag ? '#' + s.tag : '(no tag)'}
+                      </span>
+                      <span>{s.sex || '—'}</span>
+                      <span>{s.breed || '—'}</span>
+                      {s.death_date && <span>{'died ' + fmt(s.death_date)}</span>}
+                      {s.sale_date && <span>{'sold ' + fmt(s.sale_date)}</span>}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
                 {rows.length > 50 && (
                   <div style={{padding: '8px 16px', fontSize: 11, color: '#9ca3af'}}>
                     {rows.length - 50} more — click "View all" above to filter to this section.

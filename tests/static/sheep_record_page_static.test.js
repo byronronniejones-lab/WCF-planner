@@ -1,0 +1,171 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {describe, it, expect} from 'vitest';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..', '..');
+
+const flocksView = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
+const animalPage = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepAnimalPage.jsx'), 'utf8');
+const sheepDetail = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepDetail.jsx'), 'utf8');
+const collapsible = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepCollapsibleOutcomeSections.jsx'), 'utf8');
+const mainJsx = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
+const registry = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
+
+describe('SheepFlocksView — no legacy Activity or inline SheepDetail', () => {
+  it('does not import ActivityPanel', () => {
+    expect(flocksView).not.toMatch(/^import ActivityPanel/m);
+  });
+  it('does not import ActivityModal', () => {
+    expect(flocksView).not.toMatch(/^import ActivityModal/m);
+  });
+  it('does not render SheepDetail inline', () => {
+    expect(flocksView).not.toMatch(/<SheepDetail\b/);
+  });
+  it('does not have expandedSheep state', () => {
+    expect(flocksView).not.toContain('setExpandedSheep');
+  });
+  it('does not have sheepNavStack state', () => {
+    expect(flocksView).not.toContain('sheepNavStack');
+  });
+  it('does not query sheep_comments', () => {
+    expect(flocksView).not.toContain("from('sheep_comments').select('*')");
+  });
+  it('navigates to /sheep/flocks/<id> on tile click', () => {
+    expect(flocksView).toContain("navigate('/sheep/flocks/' + s.id)");
+  });
+  it('imports SheepAnimalPage for hub routing', () => {
+    expect(flocksView).toContain('SheepAnimalPage');
+  });
+  it('parses /sheep/flocks/<id> from URL', () => {
+    expect(flocksView).toContain('/sheep/flocks/');
+  });
+  it('passes Header to SheepAnimalPage', () => {
+    expect(flocksView).toContain('Header: props.Header');
+  });
+});
+
+describe('SheepCollapsibleOutcomeSections — no inline SheepDetail', () => {
+  it('does not render SheepDetail JSX', () => {
+    expect(collapsible).not.toMatch(/<SheepDetail\b/);
+  });
+  it('does not accept renderSheepDetail prop', () => {
+    expect(collapsible).not.toContain('renderSheepDetail');
+  });
+  it('accepts onSheepClick for navigation', () => {
+    expect(collapsible).toContain('onSheepClick');
+  });
+});
+
+describe('SheepAnimalPage — SheepDetail remount on navigation', () => {
+  it('keys SheepDetail by sheep.id to force remount', () => {
+    expect(animalPage).toContain('key={animal.id}');
+  });
+  it('resets state on sheepId change', () => {
+    expect(animalPage).toContain('setAnimal(null)');
+    expect(animalPage).toContain('setLoading(true)');
+  });
+});
+
+describe('SheepAnimalPage — app header', () => {
+  it('accepts Header prop', () => {
+    expect(animalPage).toMatch(/SheepAnimalPage\(\{[^}]*Header/);
+  });
+  it('renders Header component', () => {
+    expect(animalPage).toContain('{Header && <Header />}');
+  });
+});
+
+describe('SheepAnimalPage — record page structure', () => {
+  it('renders CommentsSection with sheep.animal', () => {
+    expect(animalPage).toContain('CommentsSection');
+    expect(animalPage).toContain('entityType="sheep.animal"');
+  });
+  it('does not import ActivityPanel or ActivityModal', () => {
+    expect(animalPage).not.toMatch(/^import ActivityPanel/m);
+    expect(animalPage).not.toMatch(/^import ActivityModal/m);
+  });
+  it('has a collapsed Activity audit log', () => {
+    expect(animalPage).toContain('data-activity-log-toggle');
+    expect(animalPage).toContain('data-activity-audit-log');
+  });
+  it('filters out comment.posted from Activity events', () => {
+    expect(animalPage).toContain("event_type !== 'comment.posted'");
+  });
+  it('does not load sheep_comments', () => {
+    expect(animalPage).not.toContain("from('sheep_comments')");
+  });
+  it('passes hideComments to SheepDetail', () => {
+    expect(animalPage).toContain('hideComments={true}');
+  });
+  it('has a back link to /sheep/flocks', () => {
+    expect(animalPage).toContain("navigate('/sheep/flocks')");
+  });
+  it('handles hash anchors for comment deep-links', () => {
+    expect(animalPage).toContain('location.hash');
+    expect(animalPage).toContain('scrollIntoView');
+  });
+});
+
+describe('SheepAnimalPage — record page title', () => {
+  it('shows tag as the page title', () => {
+    expect(animalPage).toContain("animal.tag ? '#' + animal.tag : 'Untagged animal'");
+  });
+  it('has a data-record-title marker', () => {
+    expect(animalPage).toContain('data-record-title');
+  });
+});
+
+describe('SheepAnimalPage — sheep-to-sheep navigation state', () => {
+  it('does not hard-code canNavigateBack={true}', () => {
+    expect(animalPage).not.toContain('canNavigateBack={true}');
+  });
+  it('derives canNavigateBack from location.state.fromSheepId', () => {
+    expect(animalPage).toContain('fromSheepId');
+    expect(animalPage).toContain('canNavigateBack={Boolean(fromSheepId)}');
+  });
+  it('passes fromSheepTag as backToTag', () => {
+    expect(animalPage).toContain('backToTag={fromSheepTag}');
+  });
+  it('navigateToSheep passes route state with source sheep', () => {
+    expect(animalPage).toContain('fromSheepId: animal.id');
+    expect(animalPage).toContain('fromSheepTag: animal.tag');
+  });
+});
+
+describe('SheepAnimalPage — delete semantics', () => {
+  it('uses hard delete not soft delete', () => {
+    expect(animalPage).toContain(".delete().eq('id', animal.id)");
+    expect(animalPage).not.toContain('softDelete');
+    expect(animalPage).not.toContain("is('deleted_at'");
+  });
+});
+
+describe('SheepDetail — hideComments prop', () => {
+  it('accepts hideComments prop', () => {
+    expect(sheepDetail).toContain('hideComments');
+  });
+  it('labels the legacy section as Issues not Comments Timeline', () => {
+    expect(sheepDetail).toContain('>Issues<');
+    expect(sheepDetail).not.toContain('>Comments Timeline<');
+  });
+});
+
+describe('URL adapter — sheep flocks sub-path', () => {
+  it('detects /sheep/flocks/<id> as a sub-path', () => {
+    expect(mainJsx).toContain("location.pathname.startsWith('/sheep/flocks/')");
+  });
+  it('preserves /sheep/flocks/<id> in view→URL sync', () => {
+    expect(mainJsx).toContain("view === 'sheepflocks' && location.pathname.startsWith('/sheep/flocks/')");
+  });
+});
+
+describe('activityRegistry — sheep.animal route', () => {
+  it('routes to /sheep/flocks/<id> not just /sheep/flocks', () => {
+    expect(registry).toMatch(/route:\s*\(id\)\s*=>\s*'\/sheep\/flocks\/'\s*\+\s*id/);
+  });
+  it('routeToView handles /sheep/flocks/<id> paths', () => {
+    expect(registry).toContain("path.startsWith('/sheep/flocks/')");
+  });
+});

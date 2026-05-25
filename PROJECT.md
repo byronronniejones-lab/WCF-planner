@@ -27,28 +27,31 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest confirmed shipped checkpoint: `1169907 fix(home): include pig
-  breeding stock in missed dailys`.
-- Open gates: Phase 1 cattle record page + Comments foundation awaiting
-  commit approval from Codex. See In-Progress Build below.
+- Latest confirmed shipped checkpoint: `e1bce04 fix(cattle): remove
+  Recently Deleted box from herds page`.
+- Open gates: none for the cattle record page / Comments foundation phase.
+  Next active build is the sitewide Operational Record Pages rollout.
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
   global activity log, `066` activity change events, `067` daily soft-delete,
   `068` client error events / durable client error reporting, `069` cattle
-  animal soft-delete / restore, `070` daily delete for active roles.
+  animal soft-delete / restore, `070` daily delete for active roles, `071`
+  comments foundation.
 - PROD migrations drafted/stashed only: `059_daily_unique_indexes.sql` is not
   applied. `061_daily_report_soft_delete_restore.sql` is superseded by `067`.
 - CI note: verify may be red from known unrelated Playwright flakes. Do not mix
   CI-stabilization work into feature lanes.
 
-### In-Progress Build: Phase 1 Cattle Record Page + Comments Foundation
+### Shipped Checkpoint: Phase 1 Cattle Record Page + Comments Foundation
 
-Status: code complete; TEST migration 071 applied; TEST E2E proof
-passed; Codex review passed. Not pushed. Not on PROD.
+Status: live on PROD. Cattle record pages, Comments foundation, PROD migration
+`071`, and the private `comment-photos` Storage bucket are shipped. Follow-up
+UI hotfixes for the record title/header, cow-to-cow navigation, breeding
+blacklist control, and herds-page Recently Deleted removal are also shipped.
 
-Migration `071_comments_foundation.sql` is applied to TEST only. The
-`comment-photos` private Storage bucket exists on TEST only.
+Migration `071_comments_foundation.sql` is applied to TEST and PROD. The
+`comment-photos` private Storage bucket exists on TEST and PROD.
 
 What was built:
 - Dedicated cattle animal record page at `/cattle/herds/<id>`.
@@ -75,7 +78,7 @@ What was built:
   record page URL.
 - activityRegistry cattle.animal route returns /cattle/herds/<id>,
   routeToView handles cattle sub-paths.
-- Static tests: cattle_record_page_static.test.js (34 tests),
+- Static tests: cattle_record_page_static.test.js (55 tests),
   comments_foundation_static.test.js (65 tests).
 
 Files created:
@@ -113,10 +116,20 @@ E2E proof results (all passed on TEST):
 - Activity log has zero comment.posted events for test comments
 - User deletes own comment
 
+Post-ship cleanup completed:
+- Cattle record page shows the app header and a large `#tag` page title.
+- Cow-to-cow links remount the record detail and keep back navigation scoped to
+  actual cow-to-cow navigation.
+- Breeding blacklist renders as a compact red pill; the checkbox explicitly
+  overrides the global input width.
+- Herds page no longer shows a Recently Deleted box. Cattle restore backend
+  support remains available, but that recovery surface is not part of the herds
+  page.
+
 Next steps:
-1. Push approval: push to main (Netlify deploy).
-2. PROD migration 071 apply + PROD comment-photos bucket creation
-   require separate Ronnie PROD gates.
+1. Roll the operational record-page pattern across the site.
+2. After durable record pages exist, return to custom editable-table activity
+   lanes such as cattle forecast month hide/unhide history.
 
 ### Recent Shipped Work
 
@@ -132,10 +145,10 @@ Next steps:
 | Activity Layer foundation | Live. `record_activity_event` records allowlisted change/lifecycle events through SECDEF RPC. Layer batch notes and equipment status are pilot surfaces. |
 | Entity mutation helper | Live. `runMutation` standardizes client mutation errors plus optional best-effort Activity logging; it is not transactional. |
 | Daily soft-delete + restore | Live. Transactional SECDEF RPCs `soft_delete_daily_report` / `restore_daily_report`. Soft-delete is allowed for any active authenticated role; restore remains admin-only. 6 daily entity types registered. `deleted_at`/`deleted_by` on all 6 daily tables. All read sites filtered. Admin Recently Deleted tab with restore. `record.deleted`/`record.restored` Activity events with human-readable labels. |
-| Cattle soft-delete + restore | Live. Admin-only source-row soft-delete/restore for `cattle.animal` through SECDEF RPCs in migration `069`. Normal cattle reads hide deleted rows; admin Recently Deleted can restore; no cattle DELETE policy remains. |
+| Cattle soft-delete + restore | Live. Admin-only source-row soft-delete/restore for `cattle.animal` through SECDEF RPCs in migration `069`. Normal cattle reads hide deleted rows; no cattle DELETE policy remains. The herds-page Recently Deleted box was removed; restore remains a backend/admin capability for a future proper recovery surface. |
 | Daily per-record Activity UI | Legacy live. Compact Activity chips + ActivityModal remain on all 6 authenticated daily views until those entities move to operational record pages. Do not copy this pattern into new work. |
 | Home missed pig breeding-stock dailys | Live. Home missed-report checks include active SOWS and BOARS breeding-stock groups in addition to pig feeder groups. |
-| Operational Record Pages foundation | Planned / active build. Site-wide standard is dedicated pages for operational records. Tiles/lists are clean summaries only. Record pages own fields, editing, Comments, attachments, Activity log, edit history, and future related tools. Phase 1 proves the pattern on `cattle.animal`. |
+| Operational Record Pages foundation | Phase 1 live on `cattle.animal`. Site-wide standard is dedicated pages for operational records. Tiles/lists are clean summaries only. Record pages own fields, editing, Comments, attachments, Activity log, edit history, and future related tools. Next phase rolls this pattern across the rest of the app before custom editable-table Activity work. |
 | Codebase hardening and cleanup | Planned. Cleanup is a first-class roadmap track: retire deprecated UI/data paths as entities migrate, remove dead code with proof, extract shared record-page/list patterns, and document what remains intentionally legacy. |
 | Error Resilience Phase 1 | Live. App-root ErrorBoundary, global `error` and `unhandledrejection` capture, and durable redacted client error events through `record_client_error` SECDEF RPC / `client_error_events` table. |
 | Activity change logging | Live. Routine field edits on `cattle.animal`, `sheep.animal`, and `equipment.item` now record `field.updated`/`status.changed` Activity events through the existing Activity Layer. Cattle delete/restore is now transactional/audited; sheep delete/restore, lifecycle/move actions, equipment child records, and admin-only documents remain deferred. |
@@ -156,23 +169,24 @@ superseded stashes were audited and dropped during stash hygiene.
 
 ## Active Roadmap
 
-1. Operational Record Pages Phase 1 - move `cattle.animal` from inline
-   expansion/edit modal patterns to a dedicated record page with on-page
-   editing, separate Comments, attachments, edit history, and collapsed
-   Activity log.
-2. Comments foundation - introduce reusable record-scoped Comments primitives
-   keyed by `entity_type` + `entity_id`; keep Comments separate from
-   `activity_events`.
-3. Codebase hardening and cleanup - remove deprecated patterns as each entity
+1. Operational Record Pages sitewide rollout - migrate remaining operational
+   records to dedicated URLs/pages using the cattle-proven pattern: app header,
+   record title, editable detail workspace, Comments, attachments, collapsed
+   Activity audit log, route/deep-link support, and retired list-page
+   workspaces.
+2. Codebase hardening and cleanup - remove deprecated patterns as each entity
    migrates, classify legacy/import/test-only code, and reduce context burn for
    future sessions.
-4. Record Page migration plan - migrate remaining operational entities to the
+3. Record Page migration plan - migrate remaining operational entities to the
    same dedicated record-page pattern in phases; no new Activity bubbles,
    inline record workspaces, or modal-based record workspaces.
-5. Sheep delete/restore strategy design - decide source-row soft-delete vs
+4. Sheep delete/restore strategy design - decide source-row soft-delete vs
    tombstone/resolver model before implementation.
-6. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
+5. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
    mutation + Activity must be atomic.
+6. Custom editable-table Activity - after record pages exist, add scoped
+   history for operational tables such as cattle forecast month hide/unhide,
+   feed forecast edits, breeding schedule edits, and similar table workflows.
 7. Critical workflow Playwright matrix - define coverage targets, write specs
    for highest-risk uncovered paths.
 8. Incremental mutation cleanup - domain by domain per Identity Map. Choose
@@ -251,9 +265,9 @@ operator comments, or session comments should be standardized to `Issues` as
 their owning record pages are migrated. Do not perform broad schema renames
 without a separate migration plan.
 
-### Phase 1 Cattle Record Page Scope
+### Completed Phase 1 Cattle Record Page Scope
 
-Phase 1 proves the foundation on `cattle.animal`.
+Phase 1 proved the foundation on `cattle.animal` and is live on PROD.
 
 Required outcomes:
 
@@ -277,9 +291,9 @@ Required outcomes:
 - Remove or update stale cattle tests that only prove the retired inline/modal
   behavior, replacing them with record-page tests.
 
-Out of scope for Phase 1:
+Still out of scope after Phase 1:
 
-- Migrating other entities.
+- Migrating other entities; that is now the next active phase.
 - Broad schema renames for existing in-record notes/comments fields.
 - Reactions/emoji, real-time updates, or admin/config record pages.
 - Production migration/deploy actions without Ronnie's separate gates.
@@ -473,25 +487,37 @@ deep-links, or per-record audit trails until identity decisions are made.
 
 ### Operational Record Page Migration Plan
 
-Phase 1 is `cattle.animal`. It replaces the cattle inline expansion and cattle
-animal edit modal as the primary experience with a dedicated cattle record page
-and reusable Comments/Activity foundation.
+Phase 1 (`cattle.animal`) is live. It replaced cattle inline expansion and the
+cattle animal edit modal as the primary experience with a dedicated cattle
+record page and reusable Comments/Activity foundation.
 
-Planned follow-on phases:
+Next active phase: migrate operational record pages across the site before
+building custom editable-table Activity surfaces. Custom table history needs
+durable record pages to land on first.
 
-1. `sheep.animal` - same animal record-page pattern; design sheep
+Planned rollout order:
+
+1. Shared record-page shell / contracts - extract only what is proven from
+   cattle: header/back/title/loading/not-found conventions, Comments placement,
+   collapsed Activity audit log placement, and route/deep-link expectations.
+   Keep extraction thin; do not block entity migration on a large design-system
+   rewrite.
+2. `sheep.animal` - same animal record-page pattern; design sheep
    delete/restore before changing destructive paths.
-2. Daily reports - `poultry.daily`, `layer.daily`, `egg.daily`, `pig.daily`,
-   `cattle.daily`, and `sheep.daily`; remove daily Activity chips and make
-   each daily report open to a stable record page.
-3. `equipment.item` - migrate existing detail experience to the same
-   operational record-page shell and attach the new Comments layer.
-4. `task.instance` - make task details use the same record-page foundation
-   while preserving task RPC write contracts.
-5. Batch and processing records - `broiler.batch`, `pig.batch`,
+3. Batch and processing records - `broiler.batch`, `pig.batch`,
    `layer.batch`, `layer.housing`, `cattle.processing`, and
    `sheep.processing`; resolve missing stable IDs before migrating any
    `app_store` entity that lacks durable identity.
+4. Daily reports - `poultry.daily`, `layer.daily`, `egg.daily`, `pig.daily`,
+   `cattle.daily`, and `sheep.daily`; remove daily Activity chips and make each
+   daily report open to a stable record page.
+5. `equipment.item` - migrate existing detail experience to the same
+   operational record-page shell and attach the new Comments layer.
+6. `task.instance` - make task details use the same record-page foundation
+   while preserving task RPC write contracts.
+7. Custom editable-table Activity - after record pages exist, add table-scoped
+   audit/history for forecast/feed/breeding workflows. First target should be
+   cattle forecast month hide/unhide.
 
 Each phase must retire legacy Activity bubbles, record-workspace modals, and
 inline expanded record workspaces for the entity it migrates. Do not leave
@@ -760,8 +786,7 @@ Storage buckets:
 - `daily-photos`
 - `task-photos`
 - `task-request-photos`
-- `comment-photos` (private; Comments foundation attachments; PROD
-  creation gated separately)
+- `comment-photos` (private; Comments foundation attachments)
 
 ---
 
@@ -813,8 +838,8 @@ Read the relevant contract before editing its files.
 - `complete_task_instance` notification insert must never roll back the task
   completion.
 - Skip task-completed notification when creator is null or completer is creator.
-- Valid `notifications.type`: `task_completed`, `mention`; Comments foundation
-  adds `comment_mention`. New types require a migration that widens the CHECK.
+- Valid `notifications.type`: `task_completed`, `mention`, `comment_mention`.
+  New types require a migration that widens the CHECK.
 - Header bell soft-fails to zero and must not break Header rendering.
 
 ### Activity, Comments, And Mentions
