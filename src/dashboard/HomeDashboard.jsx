@@ -37,7 +37,7 @@ import {computeHousingDisplayCount} from '../lib/layerHousing.js';
 export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW_TO_PROGRAM}) {
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {batches} = useBatches();
-  const {breedingCycles, farrowingRecs, feederGroups} = usePig();
+  const {breedingCycles, farrowingRecs, feederGroups, breeders} = usePig();
   const {layerGroups, layerHousings, allLayerDailys} = useLayer();
   const {broilerDailys, pigDailys, layerDailysRecent, eggDailysRecent, cattleDailysRecent, sheepDailysRecent} =
     useDailysRecent();
@@ -379,6 +379,19 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             });
         }
       });
+    // Pig breeding stock — SOWS and BOARS are non-feeder daily targets
+    const hasActiveSows = (breeders || []).some((b) => !b.archived && (b.sex === 'Sow' || b.sex === 'Gilt'));
+    const hasActiveBoars = (breeders || []).some((b) => !b.archived && b.sex === 'Boar');
+    if (hasActiveSows) {
+      const key = `pig-stock-sows|${checkDate}`;
+      if (!pigCheck.has('sows') && !missedCleared.has(key))
+        allMissed.push({key, label: 'SOWS', iconKey: ANIMAL_ICON_KEYS.pig, type: 'Pig', date: checkDate});
+    }
+    if (hasActiveBoars) {
+      const key = `pig-stock-boars|${checkDate}`;
+      if (!pigCheck.has('boars') && !missedCleared.has(key))
+        allMissed.push({key, label: 'BOARS', iconKey: ANIMAL_ICON_KEYS.pig, type: 'Pig', date: checkDate});
+    }
     // Layers
     (layerGroups || [])
       .filter((g) => g.status === 'active')
@@ -572,7 +585,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   }
 
   const activeBroilerBatches2 = batches.filter((b) => calcPoultryStatus(b) === 'active');
-  const activePigBatches2 = feederGroups.filter((g) => g.status === 'active');
+  const hasAnyActivePig = feederGroups.some((g) => g.status === 'active') || (breeders || []).some((b) => !b.archived);
   const activeLayerGroups2 = (layerGroups || []).filter((g) => g.status === 'active');
 
   // ── Admin weekly table data ──
@@ -951,7 +964,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
           </div>
         )}
         {allMissed.length === 0 &&
-          (activeBroilerBatches2.length > 0 || activePigBatches2.length > 0 || activeLayerGroups2.length > 0) && (
+          (activeBroilerBatches2.length > 0 || hasAnyActivePig || activeLayerGroups2.length > 0) && (
             <div
               style={{
                 background: '#ecfdf5',
