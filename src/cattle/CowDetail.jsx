@@ -554,7 +554,7 @@ const CowDetail = ({
         >
           <label
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: 8,
               cursor: 'pointer',
