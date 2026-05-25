@@ -541,32 +541,36 @@ const CowDetail = ({
       </div>
       {/* Breeding blacklist (hidden for steers \u2014 they can't breed) */}
       {cow.sex !== 'steer' && (
-        <div data-breeding-blacklist-row="1" style={{marginTop: 10}}>
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              cursor: 'pointer',
-              fontSize: 13,
-              color: 'white',
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-              background: '#991b1b',
-              padding: '6px 14px',
-              borderRadius: 6,
-              lineHeight: 1.4,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={!!cow.breeding_blacklist}
-              onChange={patchOnChange('breeding_blacklist')}
-              style={{margin: 0, flexShrink: 0, accentColor: 'white'}}
-            />
-            Breeding blacklist
-          </label>
-        </div>
+        <label
+          data-breeding-blacklist-row="1"
+          style={{
+            marginTop: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            gap: 8,
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '8px 12px',
+            background: cow.breeding_blacklist ? '#991b1b' : '#f9fafb',
+            color: cow.breeding_blacklist ? 'white' : '#7f1d1d',
+            border: '1px solid ' + (cow.breeding_blacklist ? '#991b1b' : '#e5e7eb'),
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={!!cow.breeding_blacklist}
+            onChange={patchOnChange('breeding_blacklist')}
+            style={{margin: 0, flex: '0 0 auto'}}
+          />
+          <span style={{minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis'}}>Breeding blacklist</span>
+        </label>
       )}
 
       {/* Weigh-in history — table / chart toggle with per-row ADG + lifetime footer */}
