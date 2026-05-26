@@ -7,12 +7,16 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import RecordActivityLog from '../shared/RecordActivityLog.jsx';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
+import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
+import {loadSheepWeighInsCached, invalidateSheepWeighInsCache} from '../lib/sheepCache.js';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
+import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
 import {runMutation, recordFieldChange, recordStatusChange, recordActivityEvent} from '../lib/entityMutations.js';
 import {buildChanges} from '../lib/activityChangeDiff.js';
 
 const HERD_LABELS = {mommas: 'Mommas', backgrounders: 'Backgrounders', finishers: 'Finishers', bulls: 'Bulls'};
+const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
 const SPECIES_BACK = {
   cattle: {path: '/cattle/weighins', label: 'Cattle Weigh-Ins'},
   sheep: {path: '/sheep/weighins', label: 'Sheep Weigh-Ins'},
@@ -50,16 +54,16 @@ function adgLbPerDay(priorWt, priorDate, curWt, curDate) {
   return Number.isFinite(adg) ? adg : null;
 }
 
-function findCowByPriorTag(priorTag, cattle) {
+function findAnimalByPriorTag(priorTag, animals) {
   if (!priorTag) return null;
   const pt = String(priorTag).trim();
-  const byCurrent = cattle.find((c) => c.tag === pt);
+  const byCurrent = animals.find((c) => c.tag === pt);
   if (byCurrent) return byCurrent;
-  const byImport = cattle.find(
+  const byImport = animals.find(
     (c) => Array.isArray(c.old_tags) && c.old_tags.some((ot) => ot && ot.tag === pt && ot.source === 'import'),
   );
   if (byImport) return byImport;
-  const byWeighIn = cattle.find(
+  const byWeighIn = animals.find(
     (c) => Array.isArray(c.old_tags) && c.old_tags.some((ot) => ot && ot.tag === pt && ot.source === 'weigh_in'),
   );
   return byWeighIn || null;
@@ -72,31 +76,62 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
 
   const [session, setSession] = React.useState(null);
   const [sEntries, setSEntries] = React.useState([]);
-  const [cattle, setCattle] = React.useState([]);
+  const [animals, setAnimals] = React.useState([]);
   const [allSessions, setAllSessions] = React.useState([]);
   const [allEntries, setAllEntries] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [accessDenied, setAccessDenied] = React.useState(false);
   const [notice, setNotice] = React.useState(null);
   const [entryEdits, setEntryEdits] = React.useState({});
   const [addForm, setAddForm] = React.useState({tag: '', weight: '', note: '', priorTag: ''});
   const [sessionForModal, setSessionForModal] = React.useState(null);
 
+  function invalidateCache() {
+    if (session && session.species === 'sheep') invalidateSheepWeighInsCache();
+    else invalidateCattleWeighInsCache();
+  }
+
+  function canAccessSpecies(species) {
+    if (!species) return false;
+    if (!authState || authState === false || !authState.profile) return true;
+    if (authState.role === 'admin') return true;
+    const list = authState.profile.program_access;
+    if (!Array.isArray(list) || list.length === 0) return true;
+    return list.includes(species);
+  }
+
   async function loadAll() {
-    const [{data: sess}, {data: eData}, cR, sR] = await Promise.all([
-      sb.from('weigh_in_sessions').select('*').eq('id', sessionId).single(),
-      sb.from('weigh_ins').select('*').eq('session_id', sessionId),
-      sb.from('cattle').select('*').is('deleted_at', null),
-      sb.from('weigh_in_sessions').select('*').eq('species', 'cattle').order('date', {ascending: false}),
-    ]);
+    const {data: sess} = await sb
+      .from('weigh_in_sessions')
+      .select('id, species, herd, date, team_member, status, started_at, completed_at, notes')
+      .eq('id', sessionId)
+      .single();
     if (sess) setSession(sess);
+    const sp = sess ? sess.species : null;
+    if (sp !== 'cattle' && sp !== 'sheep') {
+      setLoading(false);
+      return;
+    }
+    if (!canAccessSpecies(sp)) {
+      setAccessDenied(true);
+      setLoading(false);
+      return;
+    }
+    const animalQuery =
+      sp === 'cattle' ? sb.from('cattle').select('*').is('deleted_at', null) : sb.from('sheep').select('*');
+    const [{data: eData}, aR, sR] = await Promise.all([
+      sb.from('weigh_ins').select('*').eq('session_id', sessionId),
+      animalQuery,
+      sb.from('weigh_in_sessions').select('*').eq('species', sp).order('date', {ascending: false}),
+    ]);
     const sorted = (eData || []).sort(sortEntriesByTagAsc);
     setSEntries(sorted);
     const edits = {};
     for (const e of sorted) edits[e.id] = {tag: e.tag || '', weight: String(e.weight ?? ''), note: e.note || ''};
     setEntryEdits(edits);
-    if (cR.data) setCattle(cR.data);
+    if (aR.data) setAnimals(aR.data);
     if (sR.data) setAllSessions(sR.data);
-    const allWI = await loadCattleWeighInsCached(sb);
+    const allWI = sp === 'cattle' ? await loadCattleWeighInsCached(sb) : await loadSheepWeighInsCached(sb);
     setAllEntries(allWI || []);
     setLoading(false);
   }
@@ -105,8 +140,9 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     setSession(null);
     setLoading(true);
     setNotice(null);
+    setAccessDenied(false);
     loadAll();
-  }, [sessionId]);
+  }, [sessionId, authState]);
 
   React.useEffect(() => {
     if (!loading && location.hash) {
@@ -147,7 +183,9 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   }
 
   function sessionLabel() {
-    return (session.date || '') + ' · ' + (HERD_LABELS[session.herd] || session.herd || 'cattle');
+    const groupLabels = session.species === 'sheep' ? FLOCK_LABELS : HERD_LABELS;
+    const groupKey = session.species === 'sheep' ? session.herd : session.herd;
+    return (session.date || '') + ' · ' + (groupLabels[groupKey] || groupKey || session.species);
   }
 
   async function reopenSession() {
@@ -164,7 +202,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           }),
       },
     );
-    invalidateCattleWeighInsCache();
+    invalidateCache();
     await loadAll();
   }
 
@@ -176,12 +214,13 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         const sessEntries = sEntries.filter((e) => e.target_processing_batch_id);
         const blocked = [];
         for (const e of sessEntries) {
-          const cow = e.tag ? cattle.find((c) => c.tag === e.tag) : null;
+          const cow = e.tag ? animals.find((c) => c.tag === e.tag) : null;
           if (!cow) {
             blocked.push({tag: e.tag || '?', reason: 'no_cow_for_tag'});
             continue;
           }
-          const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {
+          const detachFn = session.species === 'sheep' ? detachSheepFromBatch : detachCowFromBatch;
+          const r = await detachFn(sb, cow.id, e.target_processing_batch_id, {
             teamMember: authState && authState.name ? authState.name : null,
           });
           if (!r.ok && r.reason !== 'not_in_batch') blocked.push({tag: e.tag || '?', reason: r.reason});
@@ -201,15 +240,17 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           const wis = await sb.from('weigh_ins').select('id').eq('session_id', session.id);
           const wiIds = ((wis && wis.data) || []).map((r) => r.id);
           if (wiIds.length > 0) {
+            const commentsTable = session.species === 'sheep' ? 'sheep_comments' : 'cattle_comments';
             try {
-              await sb.from('cattle_comments').delete().eq('source', 'weigh_in').in('reference_id', wiIds);
+              await sb.from(commentsTable).delete().eq('source', 'weigh_in').in('reference_id', wiIds);
             } catch (_e) {
               /* table may not exist on legacy schemas */
             }
           }
           await sb.from('weigh_in_sessions').delete().eq('id', session.id);
-          invalidateCattleWeighInsCache();
-          navigate('/cattle/weighins');
+          if (session.species === 'sheep') invalidateSheepWeighInsCache();
+          else invalidateCattleWeighInsCache();
+          navigate(backInfo.path);
         }
         if (blocked.length > 0) {
           const lines = blocked.map((x) => '#' + x.tag + ' (' + x.reason + ')').join(', ');
@@ -222,7 +263,8 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   }
 
   async function completeSession() {
-    if (session.herd === 'finishers') {
+    const canSendToProcessor = session.species === 'sheep' || session.herd === 'finishers';
+    if (canSendToProcessor) {
       const flagged = sEntries.filter((e) => e.send_to_processor === true);
       if (flagged.length > 0) {
         setSessionForModal(session);
@@ -250,16 +292,17 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           }),
       },
     );
-    invalidateCattleWeighInsCache();
+    invalidateCache();
     await loadAll();
   }
 
   async function toggleProcessor(e, next) {
     setNotice(null);
     if (!next && e.target_processing_batch_id) {
-      const cow = e.tag ? cattle.find((c) => c.tag === e.tag) : null;
+      const cow = e.tag ? animals.find((c) => c.tag === e.tag) : null;
       if (cow) {
-        const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {
+        const detachFn = session.species === 'sheep' ? detachSheepFromBatch : detachCowFromBatch;
+        const r = await detachFn(sb, cow.id, e.target_processing_batch_id, {
           teamMember: authState && authState.name ? authState.name : null,
         });
         if (!r.ok && r.reason !== 'not_in_batch') {
@@ -289,7 +332,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
       setNotice({kind: 'error', message: 'Could not update: ' + (result.error || 'unknown error')});
       return;
     }
-    invalidateCattleWeighInsCache();
+    invalidateCache();
     setSEntries((prev) => prev.map((x) => (x.id === e.id ? {...x, send_to_processor: !!next} : x)));
     if (!next && e.target_processing_batch_id) await loadAll();
   }
@@ -310,7 +353,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     const newTag = (ef.tag || '').trim() || null;
     const newWeight = parseFloat(ef.weight);
     if (!Number.isFinite(newWeight) || newWeight <= 0) return;
-    const cowWithTag = newTag ? cattle.find((c) => c.tag === newTag) : null;
+    const cowWithTag = newTag ? animals.find((c) => c.tag === newTag) : null;
     const newTagFlag = newTag && !cowWithTag;
     const updates = {tag: newTag, weight: newWeight, note: ef.note || null, new_tag_flag: newTagFlag};
     await runMutation(() => sb.from('weigh_ins').update(updates).eq('id', e.id), {
@@ -336,7 +379,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         });
       },
     });
-    invalidateCattleWeighInsCache();
+    invalidateCache();
     await loadAll();
   }
 
@@ -357,18 +400,19 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
             /* best-effort */
           }
         }
-        invalidateCattleWeighInsCache();
+        invalidateCache();
         await loadAll();
       }
       if (e.target_processing_batch_id) {
-        const cow = e.tag ? cattle.find((c) => c.tag === e.tag) : null;
+        const cow = e.tag ? animals.find((c) => c.tag === e.tag) : null;
         if (cow) {
-          const r = await detachCowFromBatch(sb, cow.id, e.target_processing_batch_id, {
+          const detachFn2 = session.species === 'sheep' ? detachSheepFromBatch : detachCowFromBatch;
+          const r = await detachFn2(sb, cow.id, e.target_processing_batch_id, {
             teamMember: authState && authState.name ? authState.name : null,
           });
           if (!r.ok && r.reason !== 'not_in_batch') {
             window._wcfConfirmDelete(
-              'Cow #' + (e.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete anyway?',
+              '#' + (e.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete anyway?',
               finish,
             );
             return;
@@ -381,17 +425,24 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
 
   async function reconcileNewTag(entry, knownCowId) {
     if (!knownCowId) return;
-    const cow = cattle.find((c) => c.id === knownCowId);
+    const cow = animals.find((c) => c.id === knownCowId);
     if (!cow) return;
     const priorTag = cow.tag;
     const newTag = entry.tag;
     const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : []).concat([
       {tag: priorTag, changed_at: new Date().toISOString(), source: 'weigh_in'},
     ]);
-    await sb.from('cattle').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownCowId);
+    const animalTable = session.species === 'sheep' ? 'sheep' : 'cattle';
+    await sb.from(animalTable).update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownCowId);
     await sb.from('weigh_ins').update({new_tag_flag: false}).eq('id', entry.id);
+    const commentsTable2 = session.species === 'sheep' ? 'sheep_comments' : 'cattle_comments';
+    const idCol = session.species === 'sheep' ? 'sheep_id' : 'cattle_id';
+    const tagCol = session.species === 'sheep' ? 'sheep_tag' : 'cattle_tag';
     try {
-      await sb.from('cattle_comments').update({cattle_id: knownCowId, cattle_tag: newTag}).eq('reference_id', entry.id);
+      await sb
+        .from(commentsTable2)
+        .update({[idCol]: knownCowId, [tagCol]: newTag})
+        .eq('reference_id', entry.id);
     } catch (_e) {
       /* soft-fail */
     }
@@ -406,7 +457,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     } catch (_e) {
       /* best-effort */
     }
-    invalidateCattleWeighInsCache();
+    invalidateCache();
     await loadAll();
   }
 
@@ -425,12 +476,12 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         setNotice({kind: 'error', message: 'Prior tag and new tag cannot be the same.'});
         return;
       }
-      const existingAtNewTag = cattle.find((c) => c.tag === tag);
+      const existingAtNewTag = animals.find((c) => c.tag === tag);
       if (existingAtNewTag) {
         setNotice({kind: 'error', message: 'Tag #' + tag + ' is already assigned to another cow.'});
         return;
       }
-      const cow = findCowByPriorTag(priorTag, cattle);
+      const cow = findAnimalByPriorTag(priorTag, animals);
       if (!cow) {
         setNotice({kind: 'error', message: 'No cow found with prior tag #' + priorTag + '.'});
         return;
@@ -438,7 +489,8 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
       const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : []).concat([
         {tag: priorTag, changed_at: new Date().toISOString(), source: 'import'},
       ]);
-      const cowUpd = await sb.from('cattle').update({tag, old_tags: updatedOldTags}).eq('id', cow.id);
+      const swapTable = session.species === 'sheep' ? 'sheep' : 'cattle';
+      const cowUpd = await sb.from(swapTable).update({tag, old_tags: updatedOldTags}).eq('id', cow.id);
       if (cowUpd.error) {
         setNotice({kind: 'error', message: 'Tag swap failed: ' + cowUpd.error.message});
         return;
@@ -469,12 +521,12 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
       } catch (_e) {
         /* best-effort */
       }
-      invalidateCattleWeighInsCache();
+      invalidateCache();
       setAddForm({tag: '', weight: '', note: '', priorTag: ''});
       await loadAll();
       return;
     }
-    const cowWithTag = tag ? cattle.find((c) => c.tag === tag) : null;
+    const cowWithTag = tag ? animals.find((c) => c.tag === tag) : null;
     const newTagFlag = tag && !cowWithTag;
     const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
     const {error: insErr2} = await sb.from('weigh_ins').insert({
@@ -501,7 +553,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     } catch (_e) {
       /* best-effort */
     }
-    invalidateCattleWeighInsCache();
+    invalidateCache();
     setAddForm({tag: '', weight: '', note: '', priorTag: ''});
     await loadAll();
   }
@@ -515,6 +567,32 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <div data-access-denied="1" style={{minHeight: '100vh', background: '#f1f3f2'}}>
+        {Header && <Header />}
+        <div style={{padding: 24}}>
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#1d4ed8',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontFamily: 'inherit',
+              padding: 0,
+            }}
+          >
+            ← Home
+          </button>
+          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>You do not have access to this program.</div>
+        </div>
+      </div>
+    );
+  }
+
   if (!session) {
     return (
       <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -522,7 +600,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         <div style={{padding: 24}}>
           <button
             type="button"
-            onClick={() => navigate('/cattle/weighins')}
+            onClick={() => navigate('/')}
             style={{
               background: 'none',
               border: 'none',
@@ -541,7 +619,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     );
   }
 
-  if (session.species !== 'cattle') {
+  if (session.species !== 'cattle' && session.species !== 'sheep') {
     const back = SPECIES_BACK[session.species] || {path: '/', label: 'Home'};
     return (
       <div data-unsupported-species="1" style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -580,7 +658,8 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     })
     .filter((a) => a != null);
   const avgAdg = adgs.length > 0 ? adgs.reduce((x, v) => x + v, 0) / adgs.length : null;
-  const entityLabel = (session.date || '') + ' · ' + (HERD_LABELS[session.herd] || session.herd || 'cattle');
+  const groupLabelsMap = session.species === 'sheep' ? FLOCK_LABELS : HERD_LABELS;
+  const entityLabel = (session.date || '') + ' · ' + (groupLabelsMap[session.herd] || session.herd || session.species);
   const backInfo = SPECIES_BACK[session.species] || {path: '/', label: 'Home'};
 
   return (
@@ -608,7 +687,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
 
         <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12}}>
           <h1 data-record-title="1" style={{fontSize: 24, fontWeight: 700, color: '#111827', margin: 0}}>
-            {HERD_LABELS[session.herd] || session.herd} — {fmt(session.date)}
+            {groupLabelsMap[session.herd] || session.herd} — {fmt(session.date)}
           </h1>
           <span
             style={{
@@ -724,7 +803,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
               }}
             >
               {sEntries.map((e) => {
-                const cow = cattle.find((c) => c.tag === e.tag);
+                const cow = animals.find((c) => c.tag === e.tag);
                 const ef = entryEdits[e.id] || {tag: e.tag || '', weight: String(e.weight ?? ''), note: e.note || ''};
                 const prior = priors[e.tag];
                 const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
@@ -801,7 +880,9 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                           </span>
                         )}
                         {!e.new_tag_flag && cow && (
-                          <span style={{fontSize: 11, color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</span>
+                          <span style={{fontSize: 11, color: '#6b7280'}}>
+                            {groupLabelsMap[cow.herd || cow.flock] || cow.herd || cow.flock}
+                          </span>
                         )}
                         <span style={{fontSize: 10, color: '#9ca3af', marginLeft: 'auto'}}>
                           {(e.entered_at || '').slice(11, 16)}
@@ -823,12 +904,12 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                           }}
                         >
                           <option value="">Reconcile to known cow...</option>
-                          {cattle
+                          {animals
                             .filter((c) => c.tag)
                             .sort((a, b) => (parseFloat(a.tag) || 0) - (parseFloat(b.tag) || 0))
                             .map((c) => (
                               <option key={c.id} value={c.id}>
-                                {'#' + c.tag + ' (' + (c.herd || '?') + ')'}
+                                {'#' + c.tag + ' (' + (c.herd || c.flock || '?') + ')'}
                               </option>
                             ))}
                         </select>
@@ -842,38 +923,41 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                           flexWrap: 'wrap',
                         }}
                       >
-                        {session.herd === 'finishers' && session.status === 'draft' && (
-                          <button
-                            onClick={() => toggleProcessor(e, !e.send_to_processor)}
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 4,
-                              border: '1px solid ' + (e.send_to_processor ? '#991b1b' : '#d1d5db'),
-                              background: e.send_to_processor ? '#991b1b' : 'white',
-                              color: e.send_to_processor ? 'white' : '#6b7280',
-                              cursor: 'pointer',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            {e.send_to_processor ? '✓ Processor' : '→ Processor'}
-                          </button>
-                        )}
-                        {session.herd === 'finishers' && session.status !== 'draft' && e.send_to_processor && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 4,
-                              background: '#991b1b',
-                              color: 'white',
-                            }}
-                          >
-                            ✓ Processor
-                          </span>
-                        )}
+                        {(session.species === 'sheep' || session.herd === 'finishers') &&
+                          session.status === 'draft' && (
+                            <button
+                              onClick={() => toggleProcessor(e, !e.send_to_processor)}
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: 4,
+                                border: '1px solid ' + (e.send_to_processor ? '#991b1b' : '#d1d5db'),
+                                background: e.send_to_processor ? '#991b1b' : 'white',
+                                color: e.send_to_processor ? 'white' : '#6b7280',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              {e.send_to_processor ? '✓ Processor' : '→ Processor'}
+                            </button>
+                          )}
+                        {(session.species === 'sheep' || session.herd === 'finishers') &&
+                          session.status !== 'draft' &&
+                          e.send_to_processor && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: 4,
+                                background: '#991b1b',
+                                color: 'white',
+                              }}
+                            >
+                              ✓ Processor
+                            </span>
+                          )}
                         <button
                           onClick={() => revertEntry(e)}
                           style={{
@@ -1006,22 +1090,36 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         </div>
       </div>
 
-      {sessionForModal && (
-        <CattleSendToProcessorModal
-          sb={sb}
-          session={sessionForModal}
-          flaggedEntries={sEntries.filter((e) => e.send_to_processor === true)}
-          cattleList={cattle}
-          weighIns={allEntries}
-          teamMember={(authState && authState.name) || null}
-          authState={authState}
-          onCancel={() => setSessionForModal(null)}
-          onConfirmed={async () => {
+      {sessionForModal &&
+        session.species === 'sheep' &&
+        React.createElement(SheepSendToProcessorModal, {
+          sb,
+          session: sessionForModal,
+          flaggedEntries: sEntries.filter((e) => e.send_to_processor === true),
+          sheepList: animals,
+          teamMember: (authState && authState.name) || null,
+          onCancel: () => setSessionForModal(null),
+          onConfirmed: async () => {
             setSessionForModal(null);
             await finalizeComplete();
-          }}
-        />
-      )}
+          },
+        })}
+      {sessionForModal &&
+        session.species !== 'sheep' &&
+        React.createElement(CattleSendToProcessorModal, {
+          sb,
+          session: sessionForModal,
+          flaggedEntries: sEntries.filter((e) => e.send_to_processor === true),
+          cattleList: animals,
+          weighIns: allEntries,
+          teamMember: (authState && authState.name) || null,
+          authState,
+          onCancel: () => setSessionForModal(null),
+          onConfirmed: async () => {
+            setSessionForModal(null);
+            await finalizeComplete();
+          },
+        })}
     </div>
   );
 }

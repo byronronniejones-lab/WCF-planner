@@ -1721,7 +1721,6 @@ function App() {
     sheepdailys: 'sheep',
     sheepweighins: 'sheep',
     equipmentHome: 'equipment',
-    weighinsessions: 'cattle',
   };
   function canAccessProgram(prog) {
     if (!prog) return true;

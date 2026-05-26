@@ -30,8 +30,8 @@ describe('main.jsx — /weigh-in-sessions/<id> route', () => {
   it('weighinsessions is in VALID_VIEWS', () => {
     expect(mainSrc).toMatch(/VALID_VIEWS\s*=\s*\[[\s\S]*?'weighinsessions'/);
   });
-  it('weighinsessions is program-gated for cattle', () => {
-    expect(mainSrc).toMatch(/VIEW_TO_PROGRAM[\s\S]*?weighinsessions:\s*'cattle'/);
+  it('weighinsessions is not single-program-gated (multi-species)', () => {
+    expect(mainSrc).not.toMatch(/VIEW_TO_PROGRAM[\s\S]*?weighinsessions:/);
   });
 });
 
@@ -44,8 +44,24 @@ describe('WeighInSessionPage — data loading', () => {
     expect(pageSrc).toContain("from('weigh_ins')");
     expect(pageSrc).toContain(".eq('session_id', sessionId)");
   });
-  it('loads cattle rows for tag lookup', () => {
-    expect(pageSrc).toContain("from('cattle')");
+  it('loads animal rows with species-specific query (cattle uses deleted_at, sheep does not)', () => {
+    expect(pageSrc).toContain("from('cattle').select('*').is('deleted_at', null)");
+    expect(pageSrc).toContain("from('sheep').select('*')");
+  });
+  it('checks species before loading entries and animals', () => {
+    expect(pageSrc).toMatch(/species[\s\S]*?!==\s*'cattle'[\s\S]*?!==\s*'sheep'[\s\S]*?return/);
+  });
+  it('checks program_access before loading entries', () => {
+    expect(pageSrc).toContain('canAccessSpecies');
+    expect(pageSrc).toContain('program_access');
+    expect(pageSrc).toMatch(/canAccessSpecies\(sp\)[\s\S]*?setAccessDenied[\s\S]*?return[\s\S]*?from\('weigh_ins'\)/);
+  });
+  it('renders access-denied state when program_access denies', () => {
+    expect(pageSrc).toContain('accessDenied');
+    expect(pageSrc).toContain('data-access-denied');
+  });
+  it('does not render CommentsSection or RecordActivityLog when access denied', () => {
+    expect(pageSrc).toMatch(/accessDenied[\s\S]*?return[\s\S]*?CommentsSection/);
   });
 });
 
@@ -64,10 +80,24 @@ describe('WeighInSessionPage — CommentsSection + RecordActivityLog', () => {
   });
 });
 
-describe('WeighInSessionPage — cattle-only support', () => {
-  it('checks species and shows unsupported state for non-cattle', () => {
-    expect(pageSrc).toContain("session.species !== 'cattle'");
+describe('WeighInSessionPage — cattle + sheep support', () => {
+  it('supports cattle and sheep, shows unsupported for others', () => {
+    expect(pageSrc).toContain("session.species !== 'cattle' && session.species !== 'sheep'");
     expect(pageSrc).toContain('data-unsupported-species');
+  });
+  it('imports SheepSendToProcessorModal', () => {
+    expect(pageSrc).toContain('SheepSendToProcessorModal');
+  });
+  it('imports sheepCache functions', () => {
+    expect(pageSrc).toContain('loadSheepWeighInsCached');
+    expect(pageSrc).toContain('invalidateSheepWeighInsCache');
+  });
+  it('imports detachSheepFromBatch', () => {
+    expect(pageSrc).toContain('detachSheepFromBatch');
+  });
+  it('has FLOCK_LABELS for sheep', () => {
+    expect(pageSrc).toContain('FLOCK_LABELS');
+    expect(pageSrc).toContain("rams: 'Rams'");
   });
   it('has a species-aware back link', () => {
     expect(pageSrc).toContain('/cattle/weighins');
