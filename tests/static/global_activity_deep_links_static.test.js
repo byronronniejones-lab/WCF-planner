@@ -116,14 +116,14 @@ describe('SQL migration 062 — role gate + entity resolver', () => {
 });
 
 describe('resolveNotificationRoute — task deep links', () => {
-  it('routes task_completed to completed tab with task id', () => {
+  it('routes task_completed to /tasks/<id> record page', () => {
     const route = resolveNotificationRoute({type: 'task_completed', task_instance_id: 'ti-123'});
-    expect(route).toBe('/tasks?tab=completed&task=ti-123');
+    expect(route).toBe('/tasks/ti-123');
   });
 
-  it('routes task mention to /tasks?task=<id>', () => {
+  it('routes task mention to /tasks/<id> record page', () => {
     const route = resolveNotificationRoute({type: 'mention', task_instance_id: 'ti-456'});
-    expect(route).toBe('/tasks?task=ti-456');
+    expect(route).toBe('/tasks/ti-456');
   });
 
   it('falls back to /tasks for unknown types', () => {
@@ -145,14 +145,20 @@ describe('notification deep-link infrastructure', () => {
     expect(notifApiSrc).toContain('activity_event_id');
   });
 
-  it('Header dispatches wcf-task-deep-link event for same-page navigation', () => {
-    expect(headerSrc).toContain('wcf-task-deep-link');
-    expect(headerSrc).toContain('dispatchEvent');
+  it('Header direct-navigates record-page routes, not all clean paths', () => {
+    expect(headerSrc).toContain('isRecordPageRoute');
+    expect(headerSrc).toContain("route.startsWith('/tasks/')");
+    expect(headerSrc).toContain("route.startsWith('/fleet/')");
+    expect(headerSrc).toContain('headerNavigate(route)');
   });
 
-  it('TaskCenterView listens for wcf-task-deep-link event', () => {
-    expect(taskCenterSrc).toContain('wcf-task-deep-link');
-    expect(taskCenterSrc).toContain('addEventListener');
+  it('Header does NOT use the generic clean-path direct-navigate condition', () => {
+    expect(headerSrc).not.toContain("route.startsWith('/') && !route.includes('?')");
+  });
+
+  it('Header preserves _wcfEntityDeepLink dispatch for legacy entity routes', () => {
+    expect(headerSrc).toContain('_wcfEntityDeepLink');
+    expect(headerSrc).toContain('wcf-entity-deep-link');
   });
 
   it('Header imports and uses resolveNotificationRoute', () => {
@@ -165,77 +171,35 @@ describe('notification deep-link infrastructure', () => {
   });
 });
 
-describe('task deep-link — open tasks (MyTasksTab)', () => {
-  it('TaskCenterView parses tab and task from deep link', () => {
-    expect(taskCenterSrc).toContain("params.get('tab')");
+describe('task deep-link — record-page routing', () => {
+  it('TasksRouter redirects legacy ?task=<id> to /tasks/<id>', () => {
     expect(taskCenterSrc).toContain("params.get('task')");
+    expect(taskCenterSrc).toContain("navigate('/tasks/'");
+    expect(taskCenterSrc).toContain('{replace: true}');
   });
 
-  it('TaskCenterView switches to completed tab when tab=completed', () => {
-    expect(taskCenterSrc).toContain("setActiveTab('completed')");
+  it('TasksRouter routes /tasks/<id> to TaskInstancePage', () => {
+    expect(taskCenterSrc).toContain("location.pathname.startsWith('/tasks/')");
+    expect(taskCenterSrc).toContain('TaskInstancePage');
   });
 
-  it('TaskCenterView switches to mine tab when task without tab', () => {
-    expect(taskCenterSrc).toContain("setActiveTab('mine')");
+  it('MyTasksTab no longer has deep-link or ActivityModal machinery', () => {
+    expect(myTasksSrc).not.toContain('deepLinkTaskId');
+    expect(myTasksSrc).not.toContain('ActivityModal');
+    expect(myTasksSrc).not.toContain('setActivityTarget');
   });
 
-  it('MyTasksTab accepts deepLinkTaskId and opens activity', () => {
-    expect(myTasksSrc).toContain('deepLinkTaskId');
-    expect(myTasksSrc).toContain('setActivityTarget');
-    expect(myTasksSrc).toContain('scrollIntoView');
+  it('CompletedTab no longer has deep-link or ActivityModal machinery', () => {
+    expect(completedSrc).not.toContain('deepLinkTaskId');
+    expect(completedSrc).not.toContain('ActivityModal');
+    expect(completedSrc).not.toContain('setActivityTarget');
   });
 
-  it('MyTasksTab calls onDeepLinkMiss when task not found in open tasks', () => {
-    expect(myTasksSrc).toContain('onDeepLinkMiss');
+  it('MyTasksTab row titles navigate to /tasks/<id>', () => {
+    expect(myTasksSrc).toContain("navigate('/tasks/' + ti.id)");
   });
 
-  it('MyTasksTab calls onDeepLinkHandled when task is found', () => {
-    expect(myTasksSrc).toContain('onDeepLinkHandled');
-  });
-
-  it('MyTasksTab uses deepLinkNonce to handle re-clicks', () => {
-    expect(myTasksSrc).toContain('deepLinkNonce');
-  });
-
-  it('TaskCenterView provides onDeepLinkMiss that switches to completed', () => {
-    expect(taskCenterSrc).toContain('onDeepLinkMiss');
-    expect(taskCenterSrc).toMatch(/onDeepLinkMiss[\s\S]*?setActiveTab\('completed'\)/);
-  });
-
-  it('TaskCenterView clears deepLinkTaskId via onDeepLinkHandled', () => {
-    expect(taskCenterSrc).toContain('onDeepLinkHandled');
-    expect(taskCenterSrc).toMatch(/onDeepLinkHandled[\s\S]*?setDeepLinkTaskId\(null\)/);
-  });
-});
-
-describe('task deep-link — completed tasks (CompletedTab)', () => {
-  it('CompletedTab accepts deepLinkTaskId, deepLinkNonce, and onDeepLinkHandled', () => {
-    expect(completedSrc).toContain('deepLinkTaskId');
-    expect(completedSrc).toContain('deepLinkNonce');
-    expect(completedSrc).toContain('onDeepLinkHandled');
-  });
-
-  it('CompletedTab scrolls to deep-linked task', () => {
-    expect(completedSrc).toContain('scrollIntoView');
-    expect(completedSrc).toContain('data-task-row');
-  });
-
-  it('CompletedTab opens ActivityPanel for deep-linked task', () => {
-    expect(completedSrc).toContain('setActivityTarget');
-    expect(completedSrc).toContain("entityType: 'task.instance'");
-  });
-
-  it('CompletedTab renders ActivityModal', () => {
-    expect(completedSrc).toContain('ActivityModal');
-  });
-
-  it('CompletedTab calls onDeepLinkHandled after lookup', () => {
-    expect(completedSrc).toContain('onDeepLinkHandled()');
-  });
-
-  it('TaskCenterView passes deepLinkTaskId, deepLinkNonce, and onDeepLinkHandled to CompletedTab', () => {
-    expect(taskCenterSrc).toMatch(/CompletedTab,\s*\{[\s\S]*?deepLinkTaskId/);
-    expect(taskCenterSrc).toMatch(/CompletedTab,\s*\{[\s\S]*?deepLinkNonce/);
-    expect(taskCenterSrc).toMatch(/CompletedTab,\s*\{[\s\S]*?onDeepLinkHandled/);
+  it('CompletedTab row titles navigate to /tasks/<id>', () => {
+    expect(completedSrc).toContain("navigate('/tasks/' + t.id)");
   });
 });

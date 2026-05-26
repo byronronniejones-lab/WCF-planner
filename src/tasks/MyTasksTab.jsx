@@ -39,6 +39,7 @@
 // description for cleaner scanning at every viewport width.
 
 import React from 'react';
+import {useNavigate} from 'react-router-dom';
 import {
   loadOpenTaskInstances,
   loadEligibleProfilesById,
@@ -52,10 +53,6 @@ import {TASK_CHANGE_EVENT, fireTaskChangeEvent} from '../lib/tasksCenterMutation
 import {todayCentralISO} from '../lib/dateUtils.js';
 import CompleteTaskModal from './CompleteTaskModal.jsx';
 import TaskPhotoLightbox from './TaskPhotoLightbox.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityPanel from '../shared/ActivityPanel.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
 import EditDueDateModal from './EditDueDateModal.jsx';
 import AssignTaskModal from './AssignTaskModal.jsx';
 import DeleteTaskModal from './DeleteTaskModal.jsx';
@@ -249,9 +246,7 @@ function TaskRow({
   onEditDue,
   onAssign,
   onDelete,
-  onOpenActivity,
-  sb,
-  authState,
+  onNavigate,
 }) {
   const due = dueStateFor(ti, todayStr);
   const attribution = attributionFor(ti);
@@ -271,7 +266,20 @@ function TaskRow({
             wordBreak: 'break-word',
           }}
         >
-          {ti.title}
+          <span
+            role="link"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onNavigate) onNavigate(ti);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && onNavigate) onNavigate(ti);
+            }}
+            style={{cursor: 'pointer', color: '#1d4ed8', textDecoration: 'none'}}
+          >
+            {ti.title}
+          </span>
           {ti.designation === 'recurring' && (
             <span data-task-badge="recurring" style={BADGE_RECURRING}>
               Recurring
@@ -335,18 +343,6 @@ function TaskRow({
               </button>
             );
           })()}
-        {onOpenActivity && sb && (
-          <ActivityPanel
-            sb={sb}
-            authState={authState}
-            entityType="task.instance"
-            entityId={ti.id}
-            entityLabel={ti.title}
-            entityCtx={ti}
-            mode="compact"
-            onCompactClick={(target) => onOpenActivity(target)}
-          />
-        )}
         {canComplete && (
           <button
             type="button"
@@ -392,27 +388,16 @@ function TaskRow({
   );
 }
 
-export default function MyTasksTab({sb, authState, deepLinkTaskId, deepLinkNonce, onDeepLinkMiss, onDeepLinkHandled}) {
+export default function MyTasksTab({sb, authState}) {
+  const navigate = useNavigate();
   const [tasks, setTasks] = React.useState([]);
-  // profiles is the unfiltered display map (for row name rendering).
-  // assignableProfiles is the filtered subset for write-modal dropdowns
-  // — hidden profiles via Public Tasks availability are excluded.
   const [profiles, setProfiles] = React.useState({});
   const [assignableProfiles, setAssignableProfiles] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
-  // Group expansion overlay. When the user explicitly toggles a group
-  // its key sits here as boolean; absent keys fall back to the
-  // pre-expand-top-2 default. Reset on filter change so a non-default
-  // filter can re-pre-expand matching groups without losing manual
-  // toggles for the "all" view.
   const [expandedOverride, setExpandedOverride] = React.useState({});
   const [filter, setFilter] = React.useState('all');
   const [completeTaskTarget, setCompleteTaskTarget] = React.useState(null);
-  // Activity Center modal — opened when a task row's compact 💬 chip is
-  // clicked. Carries enough context to render the full Activity panel
-  // for that task without re-resolving the row.
-  const [activityTarget, setActivityTarget] = React.useState(null);
   const [photoTaskTarget, setPhotoTaskTarget] = React.useState(null);
   const [editDueTarget, setEditDueTarget] = React.useState(null);
   const [assignTarget, setAssignTarget] = React.useState(null);
@@ -447,21 +432,6 @@ export default function MyTasksTab({sb, authState, deepLinkTaskId, deepLinkNonce
       cancelled = true;
     };
   }, [sb, reloadKey]);
-
-  React.useEffect(() => {
-    if (!deepLinkTaskId || loading) return;
-    const task = tasks.find((t) => t.id === deepLinkTaskId);
-    if (task) {
-      setActivityTarget({entityType: 'task.instance', entityId: task.id, entityLabel: task.title, entityCtx: task});
-      setTimeout(() => {
-        const el = document.querySelector(`[data-task-row="${task.id}"]`);
-        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-      }, 200);
-      if (onDeepLinkHandled) onDeepLinkHandled();
-    } else if (onDeepLinkMiss) {
-      onDeepLinkMiss();
-    }
-  }, [deepLinkTaskId, deepLinkNonce, loading]);
 
   // Listen for cross-component create/complete events so a task created
   // through the +New Task modal (or completed via the Complete modal in
@@ -592,9 +562,7 @@ export default function MyTasksTab({sb, authState, deepLinkTaskId, deepLinkNonce
             onEditDue={setEditDueTarget}
             onAssign={setAssignTarget}
             onDelete={setDeleteTarget}
-            onOpenActivity={setActivityTarget}
-            sb={sb}
-            authState={authState}
+            onNavigate={(ti) => navigate('/tasks/' + ti.id)}
           />
         ))}
       </div>
@@ -711,9 +679,7 @@ export default function MyTasksTab({sb, authState, deepLinkTaskId, deepLinkNonce
                             onEditDue={setEditDueTarget}
                             onAssign={setAssignTarget}
                             onDelete={setDeleteTarget}
-                            onOpenActivity={setActivityTarget}
-                            sb={sb}
-                            authState={authState}
+                            onNavigate={(ti) => navigate('/tasks/' + ti.id)}
                           />
                         ))}
                       </div>
@@ -737,12 +703,6 @@ export default function MyTasksTab({sb, authState, deepLinkTaskId, deepLinkNonce
           fireTaskChangeEvent();
           setReloadKey((k) => k + 1);
         },
-      })}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
       })}
       {React.createElement(TaskPhotoLightbox, {
         sb,

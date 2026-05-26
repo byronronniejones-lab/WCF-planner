@@ -1305,6 +1305,7 @@ function App() {
     const isSheepDailysSubpath = !exactPathView && location.pathname.startsWith('/sheep/dailys/');
     const isLayerDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/dailys/');
     const isEggDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/eggs/');
+    const isTasksSubpath = !exactPathView && location.pathname.startsWith('/tasks/');
     const viewFromUrl = isWebformSubpath
       ? 'webformhub'
       : isEquipmentSubpath
@@ -1327,7 +1328,9 @@ function App() {
                         ? 'layerdailys'
                         : isEggDailysSubpath
                           ? 'eggdailys'
-                          : exactPathView;
+                          : isTasksSubpath
+                            ? 'tasks'
+                            : exactPathView;
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -1377,6 +1380,7 @@ function App() {
     if (view === 'sheepdailys' && location.pathname.startsWith('/sheep/dailys/')) return;
     if (view === 'layerdailys' && location.pathname.startsWith('/layer/dailys/')) return;
     if (view === 'eggdailys' && location.pathname.startsWith('/layer/eggs/')) return;
+    if (view === 'tasks' && location.pathname.startsWith('/tasks/')) return;
     const pathFromView = VIEW_TO_PATH[view];
     if (pathFromView && pathFromView !== location.pathname) {
       navigate(pathFromView);

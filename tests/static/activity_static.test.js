@@ -431,18 +431,15 @@ describe('src/shared/ActivityModal.jsx — wrapper', () => {
 });
 
 describe('Task Center wire-up', () => {
-  it('CompleteTaskModal embeds the full ActivityPanel + accepts authState', () => {
-    expect(completeTaskModalSrc).toMatch(/import ActivityPanel from '\.\.\/shared\/ActivityPanel\.jsx'/);
-    expect(completeTaskModalSrc).toMatch(/data-complete-task-activity="1"/);
-    expect(completeTaskModalSrc).toMatch(/entityType="task\.instance"/);
-    expect(completeTaskModalSrc).toMatch(/function CompleteTaskModal\([^)]*authState[^)]*\)/);
+  it('CompleteTaskModal does not embed ActivityPanel (moved to record page)', () => {
+    expect(completeTaskModalSrc).not.toContain('ActivityPanel');
+    expect(completeTaskModalSrc).not.toContain('data-complete-task-activity');
   });
 
-  it('MyTasksTab passes onOpenActivity + sb + authState to TaskRow and renders ActivityModal', () => {
-    expect(myTasksTabSrc).toMatch(/import ActivityModal from '\.\.\/shared\/ActivityModal\.jsx'/);
-    expect(myTasksTabSrc).toMatch(/onOpenActivity=\{setActivityTarget\}/);
-    expect(myTasksTabSrc).toMatch(/React\.createElement\(ActivityModal/);
-    expect(myTasksTabSrc).toMatch(/target:\s*activityTarget/);
+  it('MyTasksTab does not import ActivityPanel or ActivityModal (moved to record page)', () => {
+    expect(myTasksTabSrc).not.toMatch(/import ActivityPanel/);
+    expect(myTasksTabSrc).not.toMatch(/import ActivityModal/);
+    expect(myTasksTabSrc).not.toContain('setActivityTarget');
   });
 
   it('TaskRow photo indicator uses the picture icon + photo count label (paperclip retired)', () => {

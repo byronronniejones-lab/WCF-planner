@@ -28,7 +28,7 @@ export const ENTITY_TYPES = {
 export const ACTIVITY_REGISTRY = {
   [ENTITY_TYPES.TASK_INSTANCE]: {
     displayLabel: (id, ctx) => (ctx && ctx.title ? ctx.title : id),
-    route: (id) => `/tasks?task=${encodeURIComponent(id)}`,
+    route: (id) => `/tasks/${encodeURIComponent(id)}`,
     program: null,
   },
   [ENTITY_TYPES.BROILER_BATCH]: {
@@ -140,10 +140,7 @@ export function resolveNotificationRoute(notification, eventEntityType, eventEnt
     }
   }
   if (notification && notification.task_instance_id) {
-    if (notification.type === 'task_completed') {
-      return `/tasks?tab=completed&task=${encodeURIComponent(notification.task_instance_id)}`;
-    }
-    return `/tasks?task=${encodeURIComponent(notification.task_instance_id)}`;
+    return `/tasks/${encodeURIComponent(notification.task_instance_id)}`;
   }
   return '/tasks';
 }
@@ -170,6 +167,7 @@ export function routeToView(routePath) {
     '/fleet': 'equipmentHome',
     '/admin': 'webforms',
   };
+  if (path.startsWith('/tasks/')) return {view: 'tasks', search: search || ''};
   if (path.startsWith('/fleet/')) return {view: 'equipmentHome', search: search || ''};
   if (path.startsWith('/cattle/herds/')) return {view: 'cattleherds', search: search || ''};
   if (path.startsWith('/sheep/flocks/')) return {view: 'sheepflocks', search: search || ''};

@@ -28,11 +28,13 @@
 // the weekly digest links and template are Tasks v2 (T10).
 
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import MyTasksTab from './MyTasksTab.jsx';
 import RecurringTab from './RecurringTab.jsx';
 import CompletedTab from './CompletedTab.jsx';
 import SystemTasksTab from './SystemTasksTab.jsx';
 import NewTaskModal from './NewTaskModal.jsx';
+import TaskInstancePage from './TaskInstancePage.jsx';
 import {loadEligibleProfilesById, loadTaskAssignableProfilesById} from '../lib/tasksCenterApi.js';
 import {fireTaskChangeEvent} from '../lib/tasksCenterMutationsApi.js';
 
@@ -72,45 +74,9 @@ const TABS = [
   {key: 'system', label: 'System', adminOnly: true},
 ];
 
-export default function TaskCenterView({Header, sb, authState}) {
+function TaskCenterView({Header, sb, authState}) {
   const [activeTab, setActiveTab] = React.useState('mine');
   const [newTaskOpen, setNewTaskOpen] = React.useState(false);
-  const [deepLinkTaskId, setDeepLinkTaskId] = React.useState(null);
-  const [deepLinkNonce, setDeepLinkNonce] = React.useState(0);
-
-  const applyDeepLink = React.useCallback(() => {
-    const dl = typeof window !== 'undefined' && window._wcfDeepLink;
-    if (!dl) return;
-    const params = new URLSearchParams(dl);
-    const tab = params.get('tab');
-    const taskId = params.get('task');
-    if (tab === 'completed') setActiveTab('completed');
-    else if (taskId && !tab) setActiveTab('mine');
-    if (taskId) {
-      setDeepLinkTaskId(taskId);
-      setDeepLinkNonce((n) => n + 1);
-    }
-    window._wcfDeepLink = null;
-  }, []);
-
-  const onDeepLinkMiss = React.useCallback(() => {
-    setActiveTab('completed');
-  }, []);
-
-  const onDeepLinkHandled = React.useCallback(() => {
-    setDeepLinkTaskId(null);
-  }, []);
-
-  React.useEffect(() => {
-    applyDeepLink();
-  }, [applyDeepLink]);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handler = () => applyDeepLink();
-    window.addEventListener('wcf-task-deep-link', handler);
-    return () => window.removeEventListener('wcf-task-deep-link', handler);
-  }, [applyDeepLink]);
   // Two profile maps. profilesById is the unfiltered display map (every
   // eligible profile, used for read-only name resolution on existing
   // tasks/templates/rules including ones already assigned to a profile
@@ -154,28 +120,11 @@ export default function TaskCenterView({Header, sb, authState}) {
   // React.createElement instead of JSX so ESLint sees the tab-component
   // imports as referenced. Matches main.jsx's view-mounting pattern.
   let body = null;
-  if (activeTab === 'mine')
-    body = React.createElement(MyTasksTab, {
-      sb,
-      authState,
-      deepLinkTaskId,
-      deepLinkNonce,
-      onDeepLinkMiss,
-      onDeepLinkHandled,
-    });
+  if (activeTab === 'mine') body = React.createElement(MyTasksTab, {sb, authState});
   else if (activeTab === 'recurring') body = React.createElement(RecurringTab, {sb, authState});
-  else if (activeTab === 'completed')
-    body = React.createElement(CompletedTab, {sb, authState, deepLinkTaskId, deepLinkNonce, onDeepLinkHandled});
+  else if (activeTab === 'completed') body = React.createElement(CompletedTab, {sb, authState});
   else if (activeTab === 'system' && isAdmin) body = React.createElement(SystemTasksTab, {sb, authState});
-  else
-    body = React.createElement(MyTasksTab, {
-      sb,
-      authState,
-      deepLinkTaskId,
-      deepLinkNonce,
-      onDeepLinkMiss,
-      onDeepLinkHandled,
-    });
+  else body = React.createElement(MyTasksTab, {sb, authState});
 
   return (
     <div style={PAGE_BG} data-view="task-center">
@@ -254,4 +203,32 @@ export default function TaskCenterView({Header, sb, authState}) {
       </div>
     </div>
   );
+}
+
+export default function TasksRouter({Header, sb, authState}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const legacyTaskId = React.useMemo(() => {
+    if (location.pathname !== '/tasks') return null;
+    const params = new URLSearchParams(location.search);
+    return params.get('task') || null;
+  }, [location.pathname, location.search]);
+
+  React.useEffect(() => {
+    if (legacyTaskId) {
+      navigate('/tasks/' + encodeURIComponent(legacyTaskId), {replace: true});
+    }
+  }, [legacyTaskId, navigate]);
+
+  if (legacyTaskId) return null;
+
+  const taskDetailId = location.pathname.startsWith('/tasks/')
+    ? location.pathname.slice('/tasks/'.length) || null
+    : null;
+
+  if (taskDetailId) {
+    return React.createElement(TaskInstancePage, {sb, authState, Header});
+  }
+  return React.createElement(TaskCenterView, {Header, sb, authState});
 }

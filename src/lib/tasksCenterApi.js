@@ -246,6 +246,13 @@ export async function loadCompletedTaskInstances(sb, {limit = 200} = {}) {
   return data || [];
 }
 
+export async function loadTaskInstanceById(sb, id) {
+  if (!id) return null;
+  const {data, error} = await sb.from('task_instances').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(`loadTaskInstanceById: ${error.message}`);
+  return data || null;
+}
+
 // ── Tasks v2 T4: Recurring tab ──────────────────────────────────────────
 //
 // Load every recurring task_templates row (active + inactive) so the

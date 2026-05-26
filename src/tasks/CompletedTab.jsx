@@ -19,6 +19,7 @@
 // storage uploads. Static lock asserts each.
 
 import React from 'react';
+import {useNavigate} from 'react-router-dom';
 import {
   loadCompletedTaskInstances,
   loadEligibleProfilesById,
@@ -28,10 +29,6 @@ import {
 import {TASK_CHANGE_EVENT} from '../lib/tasksCenterMutationsApi.js';
 import {fmt, fmtCentralDateTime, todayCentralISO, centralISOFor} from '../lib/dateUtils.js';
 import TaskPhotoLightbox from './TaskPhotoLightbox.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityPanel from '../shared/ActivityPanel.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
 
 const CARD = {
   background: 'white',
@@ -183,7 +180,7 @@ const PHOTO_LINK_BTN = {
 };
 
 // eslint-disable-next-line no-unused-vars -- referenced via JSX <CompletedRow .../> below
-function CompletedRow({ti, profilesById, onOpenPhotos}) {
+function CompletedRow({ti, profilesById, onOpenPhotos, onNavigate}) {
   const photo = photoPresenceFor(ti);
   const attribution = attributionFor(ti);
   const assigneeName = nameFor(ti.assignee_profile_id, profilesById);
@@ -209,7 +206,20 @@ function CompletedRow({ti, profilesById, onOpenPhotos}) {
             wordBreak: 'break-word',
           }}
         >
-          {ti.title}
+          <span
+            role="link"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onNavigate) onNavigate(ti);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && onNavigate) onNavigate(ti);
+            }}
+            style={{cursor: 'pointer', color: '#1d4ed8', textDecoration: 'none'}}
+          >
+            {ti.title}
+          </span>
           {ti.designation === 'recurring' && (
             <span data-task-badge="recurring" style={BADGE_RECURRING}>
               Recurring
@@ -274,14 +284,14 @@ function CompletedRow({ti, profilesById, onOpenPhotos}) {
   );
 }
 
-export default function CompletedTab({sb, authState, deepLinkTaskId, deepLinkNonce, onDeepLinkHandled}) {
+export default function CompletedTab({sb, authState}) {
+  const navigate = useNavigate();
   const [rows, setRows] = React.useState([]);
   const [profiles, setProfiles] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
   const [filter, setFilter] = React.useState('all');
   const [photoTaskTarget, setPhotoTaskTarget] = React.useState(null);
-  const [activityTarget, setActivityTarget] = React.useState(null);
   const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
@@ -304,19 +314,6 @@ export default function CompletedTab({sb, authState, deepLinkTaskId, deepLinkNon
       cancelled = true;
     };
   }, [sb, reloadKey]);
-
-  React.useEffect(() => {
-    if (!deepLinkTaskId || loading) return;
-    const task = rows.find((t) => t.id === deepLinkTaskId);
-    if (task) {
-      setActivityTarget({entityType: 'task.instance', entityId: task.id, entityLabel: task.title, entityCtx: task});
-      setTimeout(() => {
-        const el = document.querySelector(`[data-task-row="${task.id}"]`);
-        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-      }, 200);
-    }
-    if (onDeepLinkHandled) onDeepLinkHandled();
-  }, [deepLinkTaskId, deepLinkNonce, loading]);
 
   // A completion in MyTasksTab fires TASK_CHANGE_EVENT; refresh so the
   // newly-completed row appears at the top of this tab without waiting
@@ -348,7 +345,13 @@ export default function CompletedTab({sb, authState, deepLinkTaskId, deepLinkNon
           {label} ({bucketRows.length})
         </div>
         {bucketRows.map((ti) => (
-          <CompletedRow key={ti.id} ti={ti} profilesById={profiles} onOpenPhotos={setPhotoTaskTarget} />
+          <CompletedRow
+            key={ti.id}
+            ti={ti}
+            profilesById={profiles}
+            onOpenPhotos={setPhotoTaskTarget}
+            onNavigate={(t) => navigate('/tasks/' + t.id)}
+          />
         ))}
       </div>
     );
@@ -420,12 +423,6 @@ export default function CompletedTab({sb, authState, deepLinkTaskId, deepLinkNon
         task: photoTaskTarget,
         isOpen: !!photoTaskTarget,
         onClose: () => setPhotoTaskTarget(null),
-      })}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
       })}
     </div>
   );

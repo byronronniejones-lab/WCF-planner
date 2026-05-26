@@ -601,7 +601,19 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
                               /* soft-fail */
                             }
                             const route = resolveNotificationRoute(n, n.activity_entity_type, n.activity_entity_id);
-                            if (n.type === 'comment_mention' && route.startsWith('/')) {
+                            const isRecordPageRoute =
+                              n.type === 'comment_mention' ||
+                              route.startsWith('/tasks/') ||
+                              route.startsWith('/fleet/') ||
+                              route.startsWith('/cattle/herds/') ||
+                              route.startsWith('/sheep/flocks/') ||
+                              route.startsWith('/broiler/dailys/') ||
+                              route.startsWith('/layer/dailys/') ||
+                              route.startsWith('/layer/eggs/') ||
+                              route.startsWith('/pig/dailys/') ||
+                              route.startsWith('/cattle/dailys/') ||
+                              route.startsWith('/sheep/dailys/');
+                            if (isRecordPageRoute && route.startsWith('/')) {
                               headerNavigate(route);
                               setNotifOpen(false);
                               return;
