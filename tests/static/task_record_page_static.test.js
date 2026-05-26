@@ -24,18 +24,9 @@ describe('TaskInstancePage — record page structure', () => {
     expect(pageSrc).toContain('entityId={record.id}');
     expect(pageSrc).toContain('entityLabel={record.title}');
   });
-  it('has a collapsed Activity audit log', () => {
-    expect(pageSrc).toContain('data-activity-log-toggle');
-    expect(pageSrc).toContain('data-activity-audit-log');
-  });
-  it('filters out comment.posted from Activity events', () => {
-    expect(pageSrc).toContain("event_type !== 'comment.posted'");
-  });
-  it('loads activity events via listActivityEvents', () => {
-    expect(pageSrc).toContain('listActivityEvents');
-  });
-  it('listens for ACTIVITY_CHANGE_EVENT', () => {
-    expect(pageSrc).toContain('ACTIVITY_CHANGE_EVENT');
+  it('uses shared RecordActivityLog for audit log', () => {
+    expect(pageSrc).toContain('RecordActivityLog');
+    expect(pageSrc).toContain('entityType="task.instance"');
   });
   it('handles hash anchors for comment deep-links', () => {
     expect(pageSrc).toContain('location.hash');

@@ -94,12 +94,9 @@ describe('CattleAnimalPage — record page structure', () => {
     expect(animalPage).not.toContain('postActivityComment');
     expect(animalPage).not.toContain('data-activity-compose');
   });
-  it('has a collapsed Activity audit log', () => {
-    expect(animalPage).toContain('data-activity-log-toggle');
-    expect(animalPage).toContain('data-activity-audit-log');
-  });
-  it('filters out comment.posted from Activity events', () => {
-    expect(animalPage).toContain("event_type !== 'comment.posted'");
+  it('uses shared RecordActivityLog for audit log', () => {
+    expect(animalPage).toContain('RecordActivityLog');
+    expect(animalPage).toContain('entityType="cattle.animal"');
   });
   it('does not load cattle_comments', () => {
     expect(animalPage).not.toContain("from('cattle_comments')");

@@ -94,18 +94,15 @@ describe('Daily record pages — structure', () => {
       expect(p.src).toContain('CommentsSection');
       expect(p.src).toContain(`entityType="${p.entity}"`);
     });
-    it(`${p.name} has Activity log toggle`, () => {
-      expect(p.src).toContain('data-activity-log-toggle');
-      expect(p.src).toContain('data-activity-audit-log');
+    it(`${p.name} uses shared RecordActivityLog`, () => {
+      expect(p.src).toContain('RecordActivityLog');
+      expect(p.src).toContain(`entityType="${p.entity}"`);
     });
     it(`${p.name} has data-record-title`, () => {
       expect(p.src).toContain('data-record-title');
     });
     it(`${p.name} renders Header`, () => {
       expect(p.src).toContain('{Header && <Header />}');
-    });
-    it(`${p.name} filters out comment.posted`, () => {
-      expect(p.src).toContain("event_type !== 'comment.posted'");
     });
     it(`${p.name} uses softDeleteDailyReport`, () => {
       expect(p.src).toContain('softDeleteDailyReport');

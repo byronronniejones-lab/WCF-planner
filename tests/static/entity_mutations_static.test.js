@@ -59,10 +59,9 @@ describe('EquipmentDetail — pilot migration to runMutation', () => {
     expect(eqDetailSrc).toContain('runMutation');
   });
 
-  it('imports activityApi for the record-page audit log', () => {
-    expect(eqDetailSrc).toContain("from '../lib/activityApi.js'");
-    expect(eqDetailSrc).toContain('listActivityEvents');
-    expect(eqDetailSrc).toContain('ACTIVITY_CHANGE_EVENT');
+  it('uses shared RecordActivityLog for audit log', () => {
+    expect(eqDetailSrc).toContain('RecordActivityLog');
+    expect(eqDetailSrc).not.toContain("from '../lib/activityApi.js'");
   });
 
   it('uses runMutation for the status toggle', () => {

@@ -3,7 +3,8 @@ import {useNavigate, useLocation} from 'react-router-dom';
 import CowDetail from './CowDetail.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import CommentsSection from '../shared/CommentsSection.jsx';
-import {listActivityEvents, ACTIVITY_CHANGE_EVENT} from '../lib/activityApi.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import RecordActivityLog from '../shared/RecordActivityLog.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
@@ -82,9 +83,6 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
   const [originOpts, setOriginOpts] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [notice, setNotice] = React.useState(null);
-  const [activityExpanded, setActivityExpanded] = React.useState(false);
-  const [activityEvents, setActivityEvents] = React.useState([]);
-  const [activityCount, setActivityCount] = React.useState(0);
 
   async function loadAll() {
     const [cR, allCattle, wAll, calR, brR, orR] = await Promise.all([
@@ -108,51 +106,8 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
     setCow(null);
     setLoading(true);
     setNotice(null);
-    setActivityExpanded(false);
-    setActivityEvents([]);
-    setActivityCount(0);
     loadAll();
   }, [cattleId]);
-
-  React.useEffect(() => {
-    if (!activityExpanded || !cow) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const rows = await listActivityEvents(sb, 'cattle.animal', cow.id, {limit: 50});
-        if (cancelled) return;
-        const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
-        setActivityEvents(auditOnly);
-        setActivityCount(auditOnly.filter((e) => !e.deleted_at).length);
-      } catch (_e) {
-        /* soft-fail */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activityExpanded, cow?.id]);
-
-  React.useEffect(() => {
-    if (!cow) return;
-    listActivityEvents(sb, 'cattle.animal', cow.id, {limit: 50}).then((rows) => {
-      const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
-      setActivityCount(auditOnly.filter((e) => !e.deleted_at).length);
-    });
-  }, [cow?.id]);
-
-  React.useEffect(() => {
-    function onActivityChange() {
-      if (!cow || !activityExpanded) return;
-      listActivityEvents(sb, 'cattle.animal', cow.id, {limit: 50}).then((rows) => {
-        const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
-        setActivityEvents(auditOnly);
-        setActivityCount(auditOnly.filter((e) => !e.deleted_at).length);
-      });
-    }
-    window.addEventListener(ACTIVITY_CHANGE_EVENT, onActivityChange);
-    return () => window.removeEventListener(ACTIVITY_CHANGE_EVENT, onActivityChange);
-  }, [cow?.id, activityExpanded]);
 
   React.useEffect(() => {
     if (!loading && location.hash) {
@@ -391,82 +346,7 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
         </div>
 
         <div style={{marginTop: 16}}>
-          <button
-            type="button"
-            data-activity-log-toggle="1"
-            onClick={() => setActivityExpanded((p) => !p)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'white',
-              border: '1px solid #e5e7eb',
-              borderRadius: 10,
-              padding: '10px 14px',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
-              color: '#374151',
-              fontFamily: 'inherit',
-              width: '100%',
-              textAlign: 'left',
-            }}
-          >
-            <span style={{fontSize: 10}}>{activityExpanded ? '▼' : '▶'}</span>
-            Activity log ({activityCount})
-          </button>
-          {activityExpanded && (
-            <div
-              data-activity-audit-log="1"
-              style={{
-                background: 'white',
-                border: '1px solid #e5e7eb',
-                borderTop: 'none',
-                borderRadius: '0 0 10px 10px',
-                padding: 14,
-              }}
-            >
-              {activityEvents.length === 0 && (
-                <div style={{fontSize: 12.5, color: '#6b7280'}}>No audit events yet.</div>
-              )}
-              {activityEvents.map((ev) => (
-                <div key={ev.id} style={{padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: 12}}>
-                  <span style={{fontWeight: 700, color: '#111827', fontSize: 12.5}}>
-                    {ev.actor_display_name || (ev.actor_profile_id ? 'Unknown user' : 'System')}
-                  </span>{' '}
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      padding: '1px 6px',
-                      borderRadius: 4,
-                      background: '#e0f2fe',
-                      color: '#075985',
-                    }}
-                  >
-                    {ev.event_type.replace('.', ' ')}
-                  </span>
-                  {' · '}
-                  <span style={{color: '#6b7280'}}>
-                    {(() => {
-                      try {
-                        const d = new Date(ev.created_at);
-                        const diff = (Date.now() - d.getTime()) / 1000;
-                        if (diff < 60) return 'just now';
-                        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-                        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-                        return d.toLocaleString();
-                      } catch (_e) {
-                        return ev.created_at;
-                      }
-                    })()}
-                  </span>
-                  {ev.body && <div style={{color: '#374151', marginTop: 2}}>{ev.body}</div>}
-                </div>
-              ))}
-            </div>
-          )}
+          <RecordActivityLog sb={sb} entityType="cattle.animal" entityId={cow.id} />
         </div>
       </div>
     </div>

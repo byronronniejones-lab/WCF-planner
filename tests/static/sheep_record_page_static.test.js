@@ -86,12 +86,9 @@ describe('SheepAnimalPage — record page structure', () => {
     expect(animalPage).not.toMatch(/^import ActivityPanel/m);
     expect(animalPage).not.toMatch(/^import ActivityModal/m);
   });
-  it('has a collapsed Activity audit log', () => {
-    expect(animalPage).toContain('data-activity-log-toggle');
-    expect(animalPage).toContain('data-activity-audit-log');
-  });
-  it('filters out comment.posted from Activity events', () => {
-    expect(animalPage).toContain("event_type !== 'comment.posted'");
+  it('uses shared RecordActivityLog for audit log', () => {
+    expect(animalPage).toContain('RecordActivityLog');
+    expect(animalPage).toContain('entityType="sheep.animal"');
   });
   it('does not load sheep_comments', () => {
     expect(animalPage).not.toContain("from('sheep_comments')");

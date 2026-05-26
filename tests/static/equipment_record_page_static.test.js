@@ -45,18 +45,9 @@ describe('EquipmentDetail — record page structure', () => {
     expect(detail).not.toMatch(/^import ActivityPanel/m);
     expect(detail).not.toMatch(/^import ActivityModal/m);
   });
-  it('has a collapsed Activity audit log', () => {
-    expect(detail).toContain('data-activity-log-toggle');
-    expect(detail).toContain('data-activity-audit-log');
-  });
-  it('filters out comment.posted from Activity events', () => {
-    expect(detail).toContain("event_type !== 'comment.posted'");
-  });
-  it('loads activity events via listActivityEvents', () => {
-    expect(detail).toContain('listActivityEvents');
-  });
-  it('listens for ACTIVITY_CHANGE_EVENT', () => {
-    expect(detail).toContain('ACTIVITY_CHANGE_EVENT');
+  it('uses shared RecordActivityLog for audit log', () => {
+    expect(detail).toContain('RecordActivityLog');
+    expect(detail).toContain('entityType="equipment.item"');
   });
   it('imports useLocation for hash-scroll', () => {
     expect(detail).toContain("from 'react-router-dom'");
