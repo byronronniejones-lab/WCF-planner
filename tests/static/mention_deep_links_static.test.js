@@ -13,7 +13,6 @@ const broilerList = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerListView
 const layerBatches = fs.readFileSync(path.join(ROOT, 'src/layer/LayerBatchesView.jsx'), 'utf8');
 const cattleHerds = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
 const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
-const equipFleet = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFleetView.jsx'), 'utf8');
 
 describe('Migration 063 — list_recent_notifications RPC', () => {
   it('creates SECURITY DEFINER RPC', () => {
@@ -89,7 +88,6 @@ describe('Per-surface deep-link handlers', () => {
   const modalSurfaces = [
     {name: 'BroilerListView', src: broilerList, entity: 'broiler.batch'},
     {name: 'LayerBatchesView', src: layerBatches, entity: 'layer.batch'},
-    {name: 'EquipmentFleetView', src: equipFleet, entity: 'equipment.item'},
   ];
 
   for (const s of modalSurfaces) {
@@ -122,7 +120,8 @@ describe('Per-surface deep-link handlers', () => {
     expect(layerBatches).toContain("'layer.housing'");
   });
 
-  it('EquipmentFleetView passes slug in entityCtx on deep-link', () => {
-    expect(equipFleet).toMatch(/slug:\s*eq\.slug/);
+  it('equipment.item routes by ID (record page, not modal)', () => {
+    const registrySrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
+    expect(registrySrc).toContain('route: (id) => `/fleet/${id}`');
   });
 });

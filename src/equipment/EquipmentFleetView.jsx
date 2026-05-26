@@ -15,36 +15,9 @@ import {
 } from '../lib/equipment.js';
 import EquipmentAddModal from './EquipmentAddModal.jsx';
 import EquipmentCategoryIcon from '../components/EquipmentCategoryIcon.jsx';
-import {useAuth} from '../contexts/AuthContext.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityPanel from '../shared/ActivityPanel.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
 
 export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen, onReload}) {
-  const {authState} = useAuth();
   const [showAdd, setShowAdd] = React.useState(false);
-  const [activityTarget, setActivityTarget] = React.useState(null);
-
-  React.useEffect(() => {
-    function onEntityDeepLink() {
-      const dl = window._wcfEntityDeepLink;
-      if (!dl || dl.entityType !== 'equipment.item') return;
-      const eq = (equipment || []).find((x) => x.id === dl.entityId);
-      if (eq) {
-        window._wcfEntityDeepLink = null;
-        setActivityTarget({
-          entityType: 'equipment.item',
-          entityId: eq.id,
-          entityLabel: eq.name,
-          entityCtx: {slug: eq.slug},
-        });
-      }
-    }
-    onEntityDeepLink();
-    window.addEventListener('wcf-entity-deep-link', onEntityDeepLink);
-    return () => window.removeEventListener('wcf-entity-deep-link', onEntityDeepLink);
-  }, [equipment]);
 
   if (!equipment || equipment.length === 0) {
     return (
@@ -121,18 +94,6 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       >
         <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap'}}>
           <span style={{fontSize: 15, fontWeight: 700, color: cat.color}}>{eq.name}</span>
-          <span onClick={(e) => e.stopPropagation()} data-activity-surface="equipment.item">
-            {React.createElement(ActivityPanel, {
-              sb,
-              authState,
-              entityType: 'equipment.item',
-              entityId: eq.id,
-              entityLabel: eq.name,
-              entityCtx: {slug: eq.slug},
-              mode: 'compact',
-              onCompactClick: setActivityTarget,
-            })}
-          </span>
           <span
             style={{
               fontSize: 10,
@@ -267,12 +228,6 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 }

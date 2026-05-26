@@ -87,7 +87,9 @@ export default function EquipmentHome({
   // adapter rewrites old bookmarks before this component ever sees them.
   // The Materials Needed surface lives on the home dashboard now.
 
-  const activeEq = detailSlug ? equipment.find((e) => e.slug === detailSlug) : null;
+  const activeEq = detailSlug
+    ? equipment.find((e) => e.slug === detailSlug) || equipment.find((e) => e.id === detailSlug)
+    : null;
 
   const subNavBtn = (active) => ({
     padding: '7px 14px',

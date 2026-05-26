@@ -58,7 +58,7 @@ export const ACTIVITY_REGISTRY = {
   },
   [ENTITY_TYPES.EQUIPMENT_ITEM]: {
     displayLabel: (id, ctx) => (ctx && ctx.name ? ctx.name : id),
-    route: (_id, ctx) => (ctx && ctx.slug ? `/fleet/${ctx.slug}` : '/fleet'),
+    route: (id) => `/fleet/${id}`,
     program: null,
   },
   [ENTITY_TYPES.PIG_BATCH]: {

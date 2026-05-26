@@ -10,16 +10,15 @@ const broilerList = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerListView
 const layerBatches = fs.readFileSync(path.join(ROOT, 'src/layer/LayerBatchesView.jsx'), 'utf8');
 const cattleHerds = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
 const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
-const equipFleet = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFleetView.jsx'), 'utf8');
 const activityPanel = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityPanel.jsx'), 'utf8');
 
-// CattleHerdsView and SheepFlocksView no longer render Activity chips/modal —
-// they use dedicated record pages with inline Comments + Activity sections.
+// CattleHerdsView, SheepFlocksView, and EquipmentFleetView no longer render
+// Activity chips/modal — they use dedicated record pages with inline
+// Comments + Activity sections.
 const SURFACES = [
   {name: 'BroilerListView', src: broilerList, entity: 'broiler.batch', idField: 'b.name'},
   {name: 'LayerBatchesView (batch)', src: layerBatches, entity: 'layer.batch', idField: 'batch.id'},
   {name: 'LayerBatchesView (housing)', src: layerBatches, entity: 'layer.housing', idField: 'h.id'},
-  {name: 'EquipmentFleetView', src: equipFleet, entity: 'equipment.item', idField: 'eq.id'},
 ];
 
 describe('Activity tile wiring — compact chips', () => {
@@ -36,7 +35,6 @@ describe('Activity tile wiring — ActivityModal', () => {
   for (const {name, src} of [
     {name: 'BroilerListView', src: broilerList},
     {name: 'LayerBatchesView', src: layerBatches},
-    {name: 'EquipmentFleetView', src: equipFleet},
   ]) {
     it(`${name} renders ActivityModal`, () => {
       expect(src).toContain('ActivityModal');
@@ -73,21 +71,12 @@ describe('Activity tile wiring — entity IDs', () => {
   it('layer.housing uses h.id', () => {
     expect(layerBatches).toMatch(/entityType:\s*'layer\.housing'[\s\S]*?entityId:\s*h\.id/);
   });
-
-  it('equipment.item uses eq.id', () => {
-    expect(equipFleet).toMatch(/entityId:\s*eq\.id/);
-  });
-
-  it('equipment.item passes slug in entityCtx', () => {
-    expect(equipFleet).toContain('slug: eq.slug');
-  });
 });
 
 describe('Activity tile wiring — authState', () => {
   for (const {name, src} of [
     {name: 'BroilerListView', src: broilerList},
     {name: 'LayerBatchesView', src: layerBatches},
-    {name: 'EquipmentFleetView', src: equipFleet},
   ]) {
     it(`${name} passes authState to ActivityModal/Panel`, () => {
       expect(src).toContain('authState');
@@ -96,7 +85,7 @@ describe('Activity tile wiring — authState', () => {
 });
 
 describe('No direct activity table access', () => {
-  const allSrc = [broilerList, layerBatches, cattleHerds, sheepFlocks, equipFleet];
+  const allSrc = [broilerList, layerBatches, cattleHerds, sheepFlocks];
   it('no view directly queries activity_events or activity_mentions', () => {
     for (const src of allSrc) {
       expect(src).not.toContain("from('activity_events')");

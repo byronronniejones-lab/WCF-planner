@@ -6,6 +6,7 @@
 //   5. Maintenance events (+ Add modal with photo upload)
 //   6. Warranty expiration flag when < 60 days out
 import React from 'react';
+import {useLocation} from 'react-router-dom';
 import {
   EQUIPMENT_COLOR,
   WARRANTY_WINDOW_DAYS,
@@ -21,6 +22,9 @@ import EquipmentMaintenanceModal from './EquipmentMaintenanceModal.jsx';
 import ManualsCard from './ManualsCard.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import CommentsSection from '../shared/CommentsSection.jsx';
+import {listActivityEvents, ACTIVITY_CHANGE_EVENT} from '../lib/activityApi.js';
 import {runMutation, recordStatusChange} from '../lib/entityMutations.js';
 
 export default function EquipmentDetail({
@@ -34,6 +38,7 @@ export default function EquipmentDetail({
   onReload,
 }) {
   const eq = equipment;
+  const location = useLocation();
   const reading = eq.tracking_unit === 'km' ? eq.current_km : eq.current_hours;
   const readingLabel = eq.tracking_unit === 'km' ? 'KM' : 'Hours';
   const [expandedFueling, setExpandedFueling] = React.useState(null);
@@ -42,6 +47,59 @@ export default function EquipmentDetail({
   // Lightbox: photos array + active index. Null when closed. Drives the
   // full-screen viewer with prev/next/close.
   const [lightbox, setLightbox] = React.useState(null);
+
+  const [activityExpanded, setActivityExpanded] = React.useState(false);
+  const [activityEvents, setActivityEvents] = React.useState([]);
+  const [activityCount, setActivityCount] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!activityExpanded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listActivityEvents(sb, 'equipment.item', eq.id, {limit: 50});
+        if (cancelled) return;
+        const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
+        setActivityEvents(auditOnly);
+        setActivityCount(auditOnly.filter((e) => !e.deleted_at).length);
+      } catch (_e) {
+        /* soft-fail */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activityExpanded, eq.id]);
+
+  React.useEffect(() => {
+    listActivityEvents(sb, 'equipment.item', eq.id, {limit: 50}).then((rows) => {
+      const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
+      setActivityCount(auditOnly.filter((e) => !e.deleted_at).length);
+    });
+  }, [eq.id]);
+
+  React.useEffect(() => {
+    function onActivityChange() {
+      if (!activityExpanded) return;
+      listActivityEvents(sb, 'equipment.item', eq.id, {limit: 50}).then((rows) => {
+        const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
+        setActivityEvents(auditOnly);
+        setActivityCount(auditOnly.filter((e) => !e.deleted_at).length);
+      });
+    }
+    window.addEventListener(ACTIVITY_CHANGE_EVENT, onActivityChange);
+    return () => window.removeEventListener(ACTIVITY_CHANGE_EVENT, onActivityChange);
+  }, [eq.id, activityExpanded]);
+
+  React.useEffect(() => {
+    if (location.hash) {
+      const anchor = location.hash.slice(1);
+      setTimeout(() => {
+        const el = document.getElementById(anchor);
+        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+      }, 200);
+    }
+  }, [eq.id, location.hash]);
 
   // Optimistic local patches for fueling rows — keyed by fueling id. Lets
   // the user toggle checklist items without triggering a full re-fetch
@@ -1240,6 +1298,93 @@ export default function EquipmentDetail({
           }}
         />
       )}
+
+      <div style={{marginTop: 0}}>
+        <CommentsSection
+          sb={sb}
+          authState={authState}
+          entityType="equipment.item"
+          entityId={eq.id}
+          entityLabel={eq.name}
+        />
+      </div>
+
+      <div style={{marginTop: 0}}>
+        <button
+          type="button"
+          data-activity-log-toggle="1"
+          onClick={() => setActivityExpanded((p) => !p)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: 10,
+            padding: '10px 14px',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#374151',
+            fontFamily: 'inherit',
+            width: '100%',
+            textAlign: 'left',
+          }}
+        >
+          <span style={{fontSize: 10}}>{activityExpanded ? '▼' : '▶'}</span>
+          Activity log ({activityCount})
+        </button>
+        {activityExpanded && (
+          <div
+            data-activity-audit-log="1"
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderTop: 'none',
+              borderRadius: '0 0 10px 10px',
+              padding: 14,
+            }}
+          >
+            {activityEvents.length === 0 && <div style={{fontSize: 12.5, color: '#6b7280'}}>No audit events yet.</div>}
+            {activityEvents.map((ev) => (
+              <div key={ev.id} style={{padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: 12}}>
+                <span style={{fontWeight: 700, color: '#111827', fontSize: 12.5}}>
+                  {ev.actor_display_name || (ev.actor_profile_id ? 'Unknown user' : 'System')}
+                </span>{' '}
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    background: '#e0f2fe',
+                    color: '#075985',
+                  }}
+                >
+                  {ev.event_type.replace('.', ' ')}
+                </span>
+                {' · '}
+                <span style={{color: '#6b7280'}}>
+                  {(() => {
+                    try {
+                      const d = new Date(ev.created_at);
+                      const diff = (Date.now() - d.getTime()) / 1000;
+                      if (diff < 60) return 'just now';
+                      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+                      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+                      return d.toLocaleString();
+                    } catch (_e) {
+                      return ev.created_at;
+                    }
+                  })()}
+                </span>
+                {ev.body && <div style={{color: '#374151', marginTop: 2}}>{ev.body}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Photo lightbox — full-screen viewer with prev/next/close. Esc closes;
           ← → arrow keys navigate; click backdrop to close. */}
