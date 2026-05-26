@@ -13,6 +13,14 @@ const eggDailys = fs.readFileSync(path.join(ROOT, 'src/layer/EggDailysView.jsx')
 const pigDailys = fs.readFileSync(path.join(ROOT, 'src/pig/PigDailysView.jsx'), 'utf8');
 const cattleDailys = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleDailysView.jsx'), 'utf8');
 const sheepDailys = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepDailysView.jsx'), 'utf8');
+const mainJsx = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
+
+const poultryPage = fs.readFileSync(path.join(ROOT, 'src/broiler/PoultryDailyPage.jsx'), 'utf8');
+const pigPage = fs.readFileSync(path.join(ROOT, 'src/pig/PigDailyPage.jsx'), 'utf8');
+const cattlePage = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleDailyPage.jsx'), 'utf8');
+const sheepPage = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepDailyPage.jsx'), 'utf8');
+const layerPage = fs.readFileSync(path.join(ROOT, 'src/layer/LayerDailyPage.jsx'), 'utf8');
+const eggPage = fs.readFileSync(path.join(ROOT, 'src/layer/EggDailyPage.jsx'), 'utf8');
 
 const DAILY_TYPES = ['poultry.daily', 'layer.daily', 'egg.daily', 'pig.daily', 'cattle.daily', 'sheep.daily'];
 
@@ -26,64 +34,86 @@ describe('activityRegistry — daily entity types', () => {
       expect(ACTIVITY_REGISTRY[t]).toBeTruthy();
       expect(typeof ACTIVITY_REGISTRY[t].route).toBe('function');
     });
+
+    it(`${t} route includes the record ID`, () => {
+      const route = ACTIVITY_REGISTRY[t].route('test-id');
+      expect(route).toContain('test-id');
+    });
   }
 });
 
-describe('Activity wiring — daily view surfaces', () => {
-  const surfaces = [
-    {name: 'BroilerDailysView', src: broilerDailys, entity: 'poultry.daily'},
-    {name: 'LayerDailysView', src: layerDailys, entity: 'layer.daily'},
-    {name: 'EggDailysView', src: eggDailys, entity: 'egg.daily'},
-    {name: 'PigDailysView', src: pigDailys, entity: 'pig.daily'},
-    {name: 'CattleDailysView', src: cattleDailys, entity: 'cattle.daily'},
-    {name: 'SheepDailysView', src: sheepDailys, entity: 'sheep.daily'},
+describe('Daily views — retired legacy Activity UI', () => {
+  const views = [
+    {name: 'BroilerDailysView', src: broilerDailys},
+    {name: 'LayerDailysView', src: layerDailys},
+    {name: 'EggDailysView', src: eggDailys},
+    {name: 'PigDailysView', src: pigDailys},
+    {name: 'CattleDailysView', src: cattleDailys},
+    {name: 'SheepDailysView', src: sheepDailys},
   ];
 
-  for (const s of surfaces) {
-    it(`${s.name} imports ActivityPanel`, () => {
-      expect(s.src).toContain("import ActivityPanel from '../shared/ActivityPanel.jsx'");
+  for (const v of views) {
+    it(`${v.name} does not import ActivityPanel`, () => {
+      expect(v.src).not.toMatch(/^import ActivityPanel/m);
     });
-
-    it(`${s.name} imports ActivityModal`, () => {
-      expect(s.src).toContain("import ActivityModal from '../shared/ActivityModal.jsx'");
-    });
-
-    it(`${s.name} renders ActivityPanel compact for ${s.entity}`, () => {
-      expect(s.src).toContain(`entityType: '${s.entity}'`);
-      expect(s.src).toContain("mode: 'compact'");
-    });
-
-    it(`${s.name} renders ActivityModal with activityTarget`, () => {
-      expect(s.src).toContain('ActivityModal');
-      expect(s.src).toContain('activityTarget');
-      expect(s.src).toContain('setActivityTarget');
-    });
-
-    it(`${s.name} has data-activity-surface="${s.entity}"`, () => {
-      expect(s.src).toContain(`data-activity-surface="${s.entity}"`);
-    });
-
-    it(`${s.name} has stopPropagation on chip wrapper`, () => {
-      expect(s.src).toContain('stopPropagation');
-    });
-
-    it(`${s.name} uses d.id as entityId`, () => {
-      expect(s.src).toMatch(/entityId:\s*d\.id/);
-    });
-
-    it(`${s.name} has deep-link listener for ${s.entity}`, () => {
-      expect(s.src).toContain('wcf-entity-deep-link');
-      expect(s.src).toContain('addEventListener');
-      expect(s.src).toContain(`dl.entityType !== '${s.entity}'`);
-    });
-
-    it(`${s.name} clears deep-link after opening`, () => {
-      expect(s.src).toContain('window._wcfEntityDeepLink = null');
+    it(`${v.name} does not import ActivityModal`, () => {
+      expect(v.src).not.toMatch(/^import ActivityModal/m);
     });
   }
 });
 
-describe('Activity wiring — no direct table access in daily views', () => {
+describe('Daily views — navigate to record page', () => {
+  const views = [
+    {name: 'BroilerDailysView', src: broilerDailys, path: '/broiler/dailys/'},
+    {name: 'PigDailysView', src: pigDailys, path: '/pig/dailys/'},
+    {name: 'CattleDailysView', src: cattleDailys, path: '/cattle/dailys/'},
+    {name: 'SheepDailysView', src: sheepDailys, path: '/sheep/dailys/'},
+    {name: 'LayerDailysView', src: layerDailys, path: '/layer/dailys/'},
+    {name: 'EggDailysView', src: eggDailys, path: '/layer/eggs/'},
+  ];
+
+  for (const v of views) {
+    it(`${v.name} navigates to ${v.path}<id>`, () => {
+      expect(v.src).toContain("navigate('" + v.path);
+    });
+  }
+});
+
+describe('Daily record pages — structure', () => {
+  const pages = [
+    {name: 'PoultryDailyPage', src: poultryPage, entity: 'poultry.daily'},
+    {name: 'PigDailyPage', src: pigPage, entity: 'pig.daily'},
+    {name: 'CattleDailyPage', src: cattlePage, entity: 'cattle.daily'},
+    {name: 'SheepDailyPage', src: sheepPage, entity: 'sheep.daily'},
+    {name: 'LayerDailyPage', src: layerPage, entity: 'layer.daily'},
+    {name: 'EggDailyPage', src: eggPage, entity: 'egg.daily'},
+  ];
+
+  for (const p of pages) {
+    it(`${p.name} renders CommentsSection with ${p.entity}`, () => {
+      expect(p.src).toContain('CommentsSection');
+      expect(p.src).toContain(`entityType="${p.entity}"`);
+    });
+    it(`${p.name} has Activity log toggle`, () => {
+      expect(p.src).toContain('data-activity-log-toggle');
+      expect(p.src).toContain('data-activity-audit-log');
+    });
+    it(`${p.name} has data-record-title`, () => {
+      expect(p.src).toContain('data-record-title');
+    });
+    it(`${p.name} renders Header`, () => {
+      expect(p.src).toContain('{Header && <Header />}');
+    });
+    it(`${p.name} filters out comment.posted`, () => {
+      expect(p.src).toContain("event_type !== 'comment.posted'");
+    });
+    it(`${p.name} uses softDeleteDailyReport`, () => {
+      expect(p.src).toContain('softDeleteDailyReport');
+    });
+  }
+});
+
+describe('Daily views — no direct activity table access', () => {
   const allSrc = [broilerDailys, layerDailys, eggDailys, pigDailys, cattleDailys, sheepDailys];
   for (const src of allSrc) {
     it('does not reference .from(activity_events)', () => {
@@ -91,6 +121,26 @@ describe('Activity wiring — no direct table access in daily views', () => {
     });
     it('does not reference .from(activity_mentions)', () => {
       expect(src).not.toMatch(/\.from\(['"]activity_mentions['"]\)/);
+    });
+  }
+});
+
+describe('URL adapter — daily sub-paths', () => {
+  const paths = [
+    {path: '/broiler/dailys/', view: 'broilerdailys'},
+    {path: '/pig/dailys/', view: 'pigdailys'},
+    {path: '/cattle/dailys/', view: 'cattledailys'},
+    {path: '/sheep/dailys/', view: 'sheepdailys'},
+    {path: '/layer/dailys/', view: 'layerdailys'},
+    {path: '/layer/eggs/', view: 'eggdailys'},
+  ];
+
+  for (const p of paths) {
+    it(`detects ${p.path}<id> sub-path`, () => {
+      expect(mainJsx).toContain(`location.pathname.startsWith('${p.path}')`);
+    });
+    it(`guards ${p.view} sub-path from URL clobbering`, () => {
+      expect(mainJsx).toContain(`view === '${p.view}' && location.pathname.startsWith('${p.path}')`);
     });
   }
 });

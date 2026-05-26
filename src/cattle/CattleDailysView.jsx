@@ -1,5 +1,6 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
@@ -8,11 +9,26 @@ import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
-import ActivityPanel from '../shared/ActivityPanel.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
-const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
+import CattleDailyPage from './CattleDailyPage.jsx';
+
+function CattleDailysRouter(props) {
+  const location = useLocation();
+  const dailyId = location.pathname.startsWith('/cattle/dailys/')
+    ? location.pathname.slice('/cattle/dailys/'.length) || null
+    : null;
+  if (dailyId) {
+    return React.createElement(CattleDailyPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+    });
+  }
+  return React.createElement(CattleDailysHub, props);
+}
+
+const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
     const d = new Date();
@@ -27,7 +43,6 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
   const [editSource, setEditSource] = useState(null);
   const [form, setForm] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [activityTarget, setActivityTarget] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
   const [fHerd, setFHerd] = useState('');
   const [fTeam, setFTeam] = useState('');
@@ -115,6 +130,8 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
     }
   }, [hasMore, page]);
 
+  const navigate = useNavigate();
+
   React.useEffect(() => {
     function onEntityDeepLink() {
       const dl = window._wcfEntityDeepLink;
@@ -122,11 +139,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
       const rec = records.find((r) => r.id === dl.entityId);
       if (rec) {
         window._wcfEntityDeepLink = null;
-        setActivityTarget({
-          entityType: 'cattle.daily',
-          entityId: rec.id,
-          entityLabel: rec.date + (rec.herd ? ' · ' + rec.herd : ''),
-        });
+        navigate('/cattle/dailys/' + rec.id);
       }
     }
     onEntityDeepLink();
@@ -429,7 +442,7 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                       <div style={{height: 2, background: '#9ca3af', margin: '6px 0', borderRadius: 1}} />
                     )}
                     <div
-                      onClick={() => openEdit(d)}
+                      onClick={() => navigate('/cattle/dailys/' + d.id)}
                       style={{
                         background: d.source === 'add_feed_webform' ? '#fffbeb' : shadeBg,
                         borderRadius: 8,
@@ -491,17 +504,6 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
                             </span>
                           )}
                           <DailyPhotoChip photos={d.photos} />
-                          <span onClick={(e) => e.stopPropagation()} data-activity-surface="cattle.daily">
-                            {React.createElement(ActivityPanel, {
-                              sb,
-                              authState,
-                              entityType: 'cattle.daily',
-                              entityId: d.id,
-                              entityLabel: d.date + (d.herd ? ' \u00b7 ' + d.herd : ''),
-                              mode: 'compact',
-                              onCompactClick: setActivityTarget,
-                            })}
-                          </span>
                         </span>
                         <span
                           style={{
@@ -1029,14 +1031,8 @@ const CattleDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEd
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 };
 
-export default CattleDailysView;
+export default CattleDailysRouter;

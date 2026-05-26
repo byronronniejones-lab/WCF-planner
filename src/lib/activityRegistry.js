@@ -78,32 +78,32 @@ export const ACTIVITY_REGISTRY = {
   },
   [ENTITY_TYPES.POULTRY_DAILY]: {
     displayLabel: (id, ctx) => (ctx && ctx.date ? ctx.date + (ctx.batch_label ? ' · ' + ctx.batch_label : '') : id),
-    route: (_id) => '/broiler/dailys',
+    route: (id) => '/broiler/dailys/' + id,
     program: 'broiler',
   },
   [ENTITY_TYPES.LAYER_DAILY]: {
     displayLabel: (id, ctx) => (ctx && ctx.date ? ctx.date + (ctx.batch_label ? ' · ' + ctx.batch_label : '') : id),
-    route: (_id) => '/layer/dailys',
+    route: (id) => '/layer/dailys/' + id,
     program: 'layer',
   },
   [ENTITY_TYPES.EGG_DAILY]: {
     displayLabel: (id, ctx) => (ctx && ctx.date ? ctx.date : id),
-    route: (_id) => '/layer/eggs',
+    route: (id) => '/layer/eggs/' + id,
     program: 'layer',
   },
   [ENTITY_TYPES.PIG_DAILY]: {
     displayLabel: (id, ctx) => (ctx && ctx.date ? ctx.date + (ctx.batch_label ? ' · ' + ctx.batch_label : '') : id),
-    route: (_id) => '/pig/dailys',
+    route: (id) => '/pig/dailys/' + id,
     program: 'pig',
   },
   [ENTITY_TYPES.CATTLE_DAILY]: {
     displayLabel: (id, ctx) => (ctx && ctx.date ? ctx.date + (ctx.herd ? ' · ' + ctx.herd : '') : id),
-    route: (_id) => '/cattle/dailys',
+    route: (id) => '/cattle/dailys/' + id,
     program: 'cattle',
   },
   [ENTITY_TYPES.SHEEP_DAILY]: {
     displayLabel: (id, ctx) => (ctx && ctx.date ? ctx.date + (ctx.flock ? ' · ' + ctx.flock : '') : id),
-    route: (_id) => '/sheep/dailys',
+    route: (id) => '/sheep/dailys/' + id,
     program: 'sheep',
   },
 };
@@ -173,5 +173,11 @@ export function routeToView(routePath) {
   if (path.startsWith('/fleet/')) return {view: 'equipmentHome', search: search || ''};
   if (path.startsWith('/cattle/herds/')) return {view: 'cattleherds', search: search || ''};
   if (path.startsWith('/sheep/flocks/')) return {view: 'sheepflocks', search: search || ''};
+  if (path.startsWith('/broiler/dailys/')) return {view: 'broilerdailys', search: search || ''};
+  if (path.startsWith('/pig/dailys/')) return {view: 'pigdailys', search: search || ''};
+  if (path.startsWith('/cattle/dailys/')) return {view: 'cattledailys', search: search || ''};
+  if (path.startsWith('/sheep/dailys/')) return {view: 'sheepdailys', search: search || ''};
+  if (path.startsWith('/layer/dailys/')) return {view: 'layerdailys', search: search || ''};
+  if (path.startsWith('/layer/eggs/')) return {view: 'eggdailys', search: search || ''};
   return {view: VIEW_MAP[path] || 'home', search: search || ''};
 }

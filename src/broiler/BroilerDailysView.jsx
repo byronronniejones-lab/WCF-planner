@@ -1,5 +1,6 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {formatBroilerBatchLabel, splitSchooners} from '../lib/broilerBatchMeta.js';
@@ -10,11 +11,26 @@ import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
-import ActivityPanel from '../shared/ActivityPanel.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
-const BroilerDailysView = ({sb, fmt, Header, authState, batches, pendingEdit, setPendingEdit, refreshDailys}) => {
+import PoultryDailyPage from './PoultryDailyPage.jsx';
+
+function BroilerDailysRouter(props) {
+  const location = useLocation();
+  const dailyId = location.pathname.startsWith('/broiler/dailys/')
+    ? location.pathname.slice('/broiler/dailys/'.length) || null
+    : null;
+  if (dailyId) {
+    return React.createElement(PoultryDailyPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+    });
+  }
+  return React.createElement(BroilerDailysHub, props);
+}
+
+const BroilerDailysHub = ({sb, fmt, Header, authState, batches, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
     const d = new Date();
@@ -45,7 +61,6 @@ const BroilerDailysView = ({sb, fmt, Header, authState, batches, pendingEdit, se
   };
   const [form, setForm] = useState(EMPTY);
   const [notice, setNotice] = useState(null);
-  const [activityTarget, setActivityTarget] = useState(null);
   const role = authState?.role;
 
   const PAGE = 1000;
@@ -102,6 +117,8 @@ const BroilerDailysView = ({sb, fmt, Header, authState, batches, pendingEdit, se
     }
   }, [hasMore, page]);
 
+  const navigate = useNavigate();
+
   React.useEffect(() => {
     function onEntityDeepLink() {
       const dl = window._wcfEntityDeepLink;
@@ -109,11 +126,7 @@ const BroilerDailysView = ({sb, fmt, Header, authState, batches, pendingEdit, se
       const rec = records.find((r) => r.id === dl.entityId);
       if (rec) {
         window._wcfEntityDeepLink = null;
-        setActivityTarget({
-          entityType: 'poultry.daily',
-          entityId: rec.id,
-          entityLabel: rec.date + (rec.batch_label ? ' · ' + rec.batch_label : ''),
-        });
+        navigate('/broiler/dailys/' + rec.id);
       }
     }
     onEntityDeepLink();
@@ -385,7 +398,7 @@ const BroilerDailysView = ({sb, fmt, Header, authState, batches, pendingEdit, se
                       <div style={{height: 2, background: '#9ca3af', margin: '6px 0', borderRadius: 1}} />
                     )}
                     <div
-                      onClick={() => openEdit(d)}
+                      onClick={() => navigate('/broiler/dailys/' + d.id)}
                       style={{
                         background: d.source === 'add_feed_webform' ? '#fffbeb' : shadeBg,
                         borderRadius: 8,
@@ -442,17 +455,6 @@ const BroilerDailysView = ({sb, fmt, Header, authState, batches, pendingEdit, se
                             </span>
                           )}
                           <DailyPhotoChip photos={d.photos} />
-                          <span onClick={(e) => e.stopPropagation()} data-activity-surface="poultry.daily">
-                            {React.createElement(ActivityPanel, {
-                              sb,
-                              authState,
-                              entityType: 'poultry.daily',
-                              entityId: d.id,
-                              entityLabel: d.date + (d.batch_label ? ' \u00b7 ' + d.batch_label : ''),
-                              mode: 'compact',
-                              onCompactClick: setActivityTarget,
-                            })}
-                          </span>
                         </span>
                         <span
                           style={{
@@ -867,14 +869,8 @@ const BroilerDailysView = ({sb, fmt, Header, authState, batches, pendingEdit, se
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 };
 
-export default BroilerDailysView;
+export default BroilerDailysRouter;

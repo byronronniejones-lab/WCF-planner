@@ -1,5 +1,6 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {checkDailyDuplicate, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
@@ -9,11 +10,26 @@ import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
-import ActivityPanel from '../shared/ActivityPanel.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
-const PigDailysView = ({
+import PigDailyPage from './PigDailyPage.jsx';
+
+function PigDailysRouter(props) {
+  const location = useLocation();
+  const dailyId = location.pathname.startsWith('/pig/dailys/')
+    ? location.pathname.slice('/pig/dailys/'.length) || null
+    : null;
+  if (dailyId) {
+    return React.createElement(PigDailyPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+    });
+  }
+  return React.createElement(PigDailysHub, props);
+}
+
+const PigDailysHub = ({
   sb,
   fmt,
   Header,
@@ -54,7 +70,6 @@ const PigDailysView = ({
   };
   const [form, setForm] = useState(EMPTY);
   const [notice, setNotice] = useState(null);
-  const [activityTarget, setActivityTarget] = useState(null);
 
   const fromRecords = [...new Set(pigDailys.map((d) => d.batch_label).filter(Boolean))].sort();
   const groupList = [
@@ -79,6 +94,8 @@ const PigDailysView = ({
     }
   }, [pendingEdit, pigDailys]);
 
+  const navigate = useNavigate();
+
   React.useEffect(() => {
     function onEntityDeepLink() {
       const dl = window._wcfEntityDeepLink;
@@ -86,11 +103,7 @@ const PigDailysView = ({
       const rec = pigDailys.find((r) => r.id === dl.entityId);
       if (rec) {
         window._wcfEntityDeepLink = null;
-        setActivityTarget({
-          entityType: 'pig.daily',
-          entityId: rec.id,
-          entityLabel: rec.date + (rec.batch_label ? ' · ' + rec.batch_label : ''),
-        });
+        navigate('/pig/dailys/' + rec.id);
       }
     }
     onEntityDeepLink();
@@ -367,7 +380,7 @@ const PigDailysView = ({
                       <div style={{height: 2, background: '#9ca3af', margin: '6px 0', borderRadius: 1}} />
                     )}
                     <div
-                      onClick={() => openEdit(d)}
+                      onClick={() => navigate('/pig/dailys/' + d.id)}
                       style={{
                         background: d.source === 'add_feed_webform' ? '#fffbeb' : shadeBg,
                         borderRadius: 8,
@@ -424,17 +437,6 @@ const PigDailysView = ({
                             </span>
                           )}
                           <DailyPhotoChip photos={d.photos} />
-                          <span onClick={(e) => e.stopPropagation()} data-activity-surface="pig.daily">
-                            {React.createElement(ActivityPanel, {
-                              sb,
-                              authState,
-                              entityType: 'pig.daily',
-                              entityId: d.id,
-                              entityLabel: d.date + (d.batch_label ? ' \u00b7 ' + d.batch_label : ''),
-                              mode: 'compact',
-                              onCompactClick: setActivityTarget,
-                            })}
-                          </span>
                         </span>
                         <span
                           style={{
@@ -758,14 +760,8 @@ const PigDailysView = ({
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 };
 
-export default PigDailysView;
+export default PigDailysRouter;

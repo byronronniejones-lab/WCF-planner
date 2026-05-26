@@ -5,6 +5,7 @@
 // Card tile shows feed / mineral summary lines. Comments that are just
 // "None" / "none" / "0" / "n/a" no longer render as a pill badge.
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
@@ -13,10 +14,24 @@ import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
-import ActivityPanel from '../shared/ActivityPanel.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
+import SheepDailyPage from './SheepDailyPage.jsx';
+
+function SheepDailysRouter(props) {
+  const location = useLocation();
+  const dailyId = location.pathname.startsWith('/sheep/dailys/')
+    ? location.pathname.slice('/sheep/dailys/'.length) || null
+    : null;
+  if (dailyId) {
+    return React.createElement(SheepDailyPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+    });
+  }
+  return React.createElement(SheepDailysHub, props);
+}
 
 // "nothing to report" sentinels — don't render these as a comment badge.
 // Public-webform placeholder now tells the team to enter "0"; this covers
@@ -27,7 +42,7 @@ const isSentinelComment = (s) => {
   return t === '' || t === 'none' || t === '0' || t === 'n/a' || t === 'na' || t === '-';
 };
 
-const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
+const SheepDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
     const d = new Date();
@@ -43,7 +58,6 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const [editSource, setEditSource] = useState(null);
   const [form, setForm] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [activityTarget, setActivityTarget] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
   const [fFlock, setFFlock] = useState('');
   const [fTeam, setFTeam] = useState('');
@@ -136,6 +150,8 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
     }
   }, [hasMore, page]);
 
+  const navigate = useNavigate();
+
   React.useEffect(() => {
     function onEntityDeepLink() {
       const dl = window._wcfEntityDeepLink;
@@ -143,11 +159,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
       const rec = records.find((r) => r.id === dl.entityId);
       if (rec) {
         window._wcfEntityDeepLink = null;
-        setActivityTarget({
-          entityType: 'sheep.daily',
-          entityId: rec.id,
-          entityLabel: rec.date + (rec.flock ? ' · ' + rec.flock : ''),
-        });
+        navigate('/sheep/dailys/' + rec.id);
       }
     }
     onEntityDeepLink();
@@ -460,7 +472,7 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                       <div style={{height: 2, background: '#9ca3af', margin: '6px 0', borderRadius: 1}} />
                     )}
                     <div
-                      onClick={() => openEdit(d)}
+                      onClick={() => navigate('/sheep/dailys/' + d.id)}
                       style={{
                         background: d.source === 'add_feed_webform' ? '#fffbeb' : shadeBg,
                         borderRadius: 8,
@@ -522,17 +534,6 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                             </span>
                           )}
                           <DailyPhotoChip photos={d.photos} />
-                          <span onClick={(e) => e.stopPropagation()} data-activity-surface="sheep.daily">
-                            {React.createElement(ActivityPanel, {
-                              sb,
-                              authState,
-                              entityType: 'sheep.daily',
-                              entityId: d.id,
-                              entityLabel: d.date + (d.flock ? ' · ' + d.flock : ''),
-                              mode: 'compact',
-                              onCompactClick: setActivityTarget,
-                            })}
-                          </span>
                         </span>
                         <span
                           style={{
@@ -1015,14 +1016,8 @@ const SheepDailysView = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 };
 
-export default SheepDailysView;
+export default SheepDailysRouter;

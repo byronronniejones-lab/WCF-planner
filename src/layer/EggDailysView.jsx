@@ -1,5 +1,6 @@
 // Auto-extracted by Phase 2 Round 2 (verbatim). See MIGRATION_PLAN §6.
 import React from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {checkDailyDuplicate, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
@@ -7,11 +8,26 @@ import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsAp
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
-import ActivityPanel from '../shared/ActivityPanel.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
-const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys}) => {
+import EggDailyPage from './EggDailyPage.jsx';
+
+function EggDailysRouter(props) {
+  const location = useLocation();
+  const dailyId = location.pathname.startsWith('/layer/eggs/')
+    ? location.pathname.slice('/layer/eggs/'.length) || null
+    : null;
+  if (dailyId) {
+    return React.createElement(EggDailyPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+    });
+  }
+  return React.createElement(EggDailysHub, props);
+}
+
+const EggDailysHub = ({sb, fmt, Header, authState, layerGroups, pendingEdit, setPendingEdit, refreshDailys}) => {
   const {useState, useEffect} = React;
   const todayStr = () => {
     const d = new Date();
@@ -42,7 +58,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
   };
   const [form, setForm] = useState(EMPTY);
   const [notice, setNotice] = useState(null);
-  const [activityTarget, setActivityTarget] = useState(null);
+  const navigate = useNavigate();
 
   const PAGE = 1000;
   const [page, setPage] = useState(0);
@@ -103,7 +119,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
       const rec = records.find((r) => r.id === dl.entityId);
       if (rec) {
         window._wcfEntityDeepLink = null;
-        setActivityTarget({entityType: 'egg.daily', entityId: rec.id, entityLabel: rec.date});
+        navigate('/layer/eggs/' + rec.id);
       }
     }
     onEntityDeepLink();
@@ -318,7 +334,7 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
               return (
                 <div
                   key={d.id}
-                  onClick={() => openEdit(d)}
+                  onClick={() => navigate('/layer/eggs/' + d.id)}
                   style={{
                     background: 'white',
                     borderRadius: 8,
@@ -367,17 +383,6 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
                           {'\ud83d\udce6 ' + d.dozens_on_hand + ' doz on hand'}
                         </span>
                       )}
-                      <span onClick={(e) => e.stopPropagation()} data-activity-surface="egg.daily">
-                        {React.createElement(ActivityPanel, {
-                          sb,
-                          authState,
-                          entityType: 'egg.daily',
-                          entityId: d.id,
-                          entityLabel: d.date,
-                          mode: 'compact',
-                          onCompactClick: setActivityTarget,
-                        })}
-                      </span>
                     </span>
                   </div>
                   {comment && (
@@ -584,14 +589,8 @@ const EggDailysView = ({sb, fmt, Header, authState, layerGroups, pendingEdit, se
           </div>
         </div>
       )}
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 };
 
-export default EggDailysView;
+export default EggDailysRouter;

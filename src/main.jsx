@@ -1299,6 +1299,12 @@ function App() {
       !exactPathView && (location.pathname.startsWith('/equipment/') || location.pathname === '/equipment');
     const isCattleHerdsSubpath = !exactPathView && location.pathname.startsWith('/cattle/herds/');
     const isSheepFlocksSubpath = !exactPathView && location.pathname.startsWith('/sheep/flocks/');
+    const isBroilerDailysSubpath = !exactPathView && location.pathname.startsWith('/broiler/dailys/');
+    const isPigDailysSubpath = !exactPathView && location.pathname.startsWith('/pig/dailys/');
+    const isCattleDailysSubpath = !exactPathView && location.pathname.startsWith('/cattle/dailys/');
+    const isSheepDailysSubpath = !exactPathView && location.pathname.startsWith('/sheep/dailys/');
+    const isLayerDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/dailys/');
+    const isEggDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/eggs/');
     const viewFromUrl = isWebformSubpath
       ? 'webformhub'
       : isEquipmentSubpath
@@ -1309,7 +1315,19 @@ function App() {
             ? 'cattleherds'
             : isSheepFlocksSubpath
               ? 'sheepflocks'
-              : exactPathView;
+              : isBroilerDailysSubpath
+                ? 'broilerdailys'
+                : isPigDailysSubpath
+                  ? 'pigdailys'
+                  : isCattleDailysSubpath
+                    ? 'cattledailys'
+                    : isSheepDailysSubpath
+                      ? 'sheepdailys'
+                      : isLayerDailysSubpath
+                        ? 'layerdailys'
+                        : isEggDailysSubpath
+                          ? 'eggdailys'
+                          : exactPathView;
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -1352,6 +1370,13 @@ function App() {
     if (view === 'cattleherds' && location.pathname.startsWith('/cattle/herds/')) return;
     // Don't clobber /sheep/flocks/<id> sub-paths — SheepFlocksView owns them.
     if (view === 'sheepflocks' && location.pathname.startsWith('/sheep/flocks/')) return;
+    // Don't clobber daily record sub-paths — each DailysView router owns them.
+    if (view === 'broilerdailys' && location.pathname.startsWith('/broiler/dailys/')) return;
+    if (view === 'pigdailys' && location.pathname.startsWith('/pig/dailys/')) return;
+    if (view === 'cattledailys' && location.pathname.startsWith('/cattle/dailys/')) return;
+    if (view === 'sheepdailys' && location.pathname.startsWith('/sheep/dailys/')) return;
+    if (view === 'layerdailys' && location.pathname.startsWith('/layer/dailys/')) return;
+    if (view === 'eggdailys' && location.pathname.startsWith('/layer/eggs/')) return;
     const pathFromView = VIEW_TO_PATH[view];
     if (pathFromView && pathFromView !== location.pathname) {
       navigate(pathFromView);
