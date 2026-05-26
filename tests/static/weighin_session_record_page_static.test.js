@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const pageSrc = fs.readFileSync(path.join(ROOT, 'src/livestock/WeighInSessionPage.jsx'), 'utf8');
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
 const listSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleWeighInsView.jsx'), 'utf8');
+const sheepListSrc = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepWeighInsView.jsx'), 'utf8');
 
 describe('main.jsx — /weigh-in-sessions/<id> route', () => {
   it('detects isWeighInSessionSubpath', () => {
@@ -234,5 +235,36 @@ describe('CattleWeighInsView — cleaned list view', () => {
   });
   it('still has tag search', () => {
     expect(listSrc).toContain('tagSearch');
+  });
+});
+
+describe('SheepWeighInsView — cleaned list view', () => {
+  it('navigates to /weigh-in-sessions/<id> on tile click', () => {
+    expect(sheepListSrc).toContain("navigate('/weigh-in-sessions/' + s.id)");
+  });
+  it('does not have expandedSession state', () => {
+    expect(sheepListSrc).not.toContain('expandedSession');
+  });
+  it('does not render inline entries', () => {
+    expect(sheepListSrc).not.toContain('sEntries.map');
+  });
+  it('does not import SheepSendToProcessorModal', () => {
+    expect(sheepListSrc).not.toContain('SheepSendToProcessorModal');
+  });
+  it('does not import detachSheepFromBatch', () => {
+    expect(sheepListSrc).not.toContain('detachSheepFromBatch');
+  });
+  it('still has + New Weigh-In button', () => {
+    expect(sheepListSrc).toContain('New Weigh-In');
+    expect(sheepListSrc).toContain('data-new-weighin-button');
+  });
+  it('navigates to record page after creating a new session', () => {
+    expect(sheepListSrc).toContain("navigate('/weigh-in-sessions/' + id)");
+  });
+  it('still has status filter', () => {
+    expect(sheepListSrc).toContain('statusFilter');
+  });
+  it('still has tag search', () => {
+    expect(sheepListSrc).toContain('tagSearch');
   });
 });

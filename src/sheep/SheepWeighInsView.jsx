@@ -1,29 +1,12 @@
-// ============================================================================
-// SheepWeighInsView — Phase 3 rewrite (full feature parity with cattle)
-// ============================================================================
-// Mirrors CattleWeighInsView structure for sheep:
-//   * Status filter (all / draft / complete) + tag search
-//   * SheepNewWeighInModal for session creation (flock selector)
-//   * Per-row Edit (tag/weight/note)
-//   * Per-row Delete (with detach-first if entry attached a sheep to a batch)
-//   * Add-entry Swap Tag flow (priorTag → updates sheep.tag + stamps old_tags)
-//   * Add-entry Missing Tag flow (new_tag_flag set when tag isn't in directory)
-//   * Reconcile-new-tag dropdown (assign an unrecognized tag to a known sheep)
-//   * Send-to-Processor toggle (gated to draft session, any flock per §7)
-//   * SheepSendToProcessorModal triggered on completeSession when flagged
-//   * Session delete: detach attached sheep first, prompt continue if any block
-//   * ADG vs prior completed session, identical math to cattle
-// ============================================================================
 import React from 'react';
+import {useNavigate} from 'react-router-dom';
 import SheepNewWeighInModal from './SheepNewWeighInModal.jsx';
-import SheepSendToProcessorModal from './SheepSendToProcessorModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
-import InlineNotice from '../shared/InlineNotice.jsx';
-import {loadSheepWeighInsCached, invalidateSheepWeighInsCache} from '../lib/sheepCache.js';
-import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
+import {loadSheepWeighInsCached} from '../lib/sheepCache.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
+
+const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
 
 const SheepWeighInsView = ({
   sb,
@@ -37,42 +20,17 @@ const SheepWeighInsView = ({
   setAllUsers,
   loadUsers,
 }) => {
+  const navigate = useNavigate();
   const {useState, useEffect} = React;
   const [sessions, setSessions] = useState([]);
-  const [entries, setEntries] = useState({}); // session_id -> [entries]
-  const [sheep, setSheep] = useState([]);
+  const [entries, setEntries] = useState({});
   const [loading, setLoading] = useState(true);
-  const [expandedSession, setExpandedSession] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('all'); // all | draft | complete
+  const [statusFilter, setStatusFilter] = useState('all');
   const [showNewModal, setShowNewModal] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
-  // Inline entry editing
-  const [editingEntryId, setEditingEntryId] = useState(null);
-  const [editForm, setEditForm] = useState({tag: '', weight: '', note: ''});
-  // Add-entry form per session
-  const [addEntryForm, setAddEntryForm] = useState({tag: '', weight: '', note: '', priorTag: ''});
-  // Send-to-processor modal state.
-  const [sessionForModal, setSessionForModal] = useState(null);
-  // Inline notice for tag-swap / detach / save failures on this view.
-  // Cleared on each entry-edit, add-entry, or send-to-processor toggle so
-  // a stale message from a prior row doesn't shadow the next action.
-  const [notice, setNotice] = useState(null);
 
-  const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
-
-  function sortEntriesByTagAsc(a, b) {
-    const at = a && a.tag,
-      bt = b && b.tag;
-    if (at == null && bt == null) return (a.entered_at || '').localeCompare(b.entered_at || '');
-    if (at == null) return 1;
-    if (bt == null) return -1;
-    const an = parseFloat(at),
-      bn = parseFloat(bt);
-    if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
-    return String(at).localeCompare(String(bt));
-  }
   async function loadAll() {
-    const [sR, eAll, shR] = await Promise.all([
+    const [sR, eAll] = await Promise.all([
       sb
         .from('weigh_in_sessions')
         .select('*')
@@ -80,309 +38,21 @@ const SheepWeighInsView = ({
         .order('date', {ascending: false})
         .order('started_at', {ascending: false}),
       loadSheepWeighInsCached(sb),
-      sb.from('sheep').select('id, tag, flock, old_tags'),
     ]);
     if (sR.data) setSessions(sR.data);
     const m = {};
-    eAll.forEach((e) => {
+    (eAll || []).forEach((e) => {
       if (!m[e.session_id]) m[e.session_id] = [];
       m[e.session_id].push(e);
     });
-    for (const k in m) m[k].sort(sortEntriesByTagAsc);
     setEntries(m);
-    if (shR.data) setSheep(shR.data);
     setLoading(false);
   }
+
   useEffect(() => {
     loadAll();
   }, []);
 
-  async function reopenSession(s) {
-    await sb.from('weigh_in_sessions').update({status: 'draft', completed_at: null}).eq('id', s.id);
-    invalidateSheepWeighInsCache();
-    await loadAll();
-  }
-  async function deleteSession(s) {
-    if (!window._wcfConfirmDelete) return;
-    window._wcfConfirmDelete(
-      'Delete this weigh-in session and all its entries? Attached sheep will be detached and reverted to prior flocks where possible.',
-      async () => {
-        // Detach any sheep attached via this session's weigh-in entries first,
-        // so processing batches don't carry orphan sheep_detail rows after the
-        // cascade. Detach reports any sheep that can't be auto-reverted.
-        const sessEntries = (entries[s.id] || []).filter((e) => e.target_processing_batch_id);
-        const blocked = [];
-        for (const e of sessEntries) {
-          const sh = e.tag ? sheep.find((x) => x.tag === e.tag) : null;
-          if (!sh) {
-            blocked.push({tag: e.tag || '?', reason: 'no_sheep_for_tag'});
-            continue;
-          }
-          const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {
-            teamMember: authState && authState.name ? authState.name : null,
-          });
-          if (!r.ok && r.reason !== 'not_in_batch') blocked.push({tag: e.tag || '?', reason: r.reason});
-        }
-        async function finishSessionDelete() {
-          // sheep_comments has reference_id pointing at weigh_ins.id (no FK).
-          // Wipe matching comments before the session cascade lands.
-          const wis = await sb.from('weigh_ins').select('id').eq('session_id', s.id);
-          const wiIds = ((wis && wis.data) || []).map((r) => r.id);
-          if (wiIds.length > 0) {
-            try {
-              await sb.from('sheep_comments').delete().eq('source', 'weigh_in').in('reference_id', wiIds);
-            } catch (e) {
-              /* tolerated on legacy schemas */
-            }
-          }
-          await sb.from('weigh_in_sessions').delete().eq('id', s.id);
-          invalidateSheepWeighInsCache();
-          await loadAll();
-        }
-        if (blocked.length > 0) {
-          const lines = blocked.map((x) => '#' + x.tag + ' (' + x.reason + ')').join(', ');
-          window._wcfConfirmDelete(
-            'Some sheep could not be auto-reverted from their batches: ' + lines + '. Delete the session anyway?',
-            finishSessionDelete,
-          );
-          return;
-        }
-        await finishSessionDelete();
-      },
-    );
-  }
-  async function reconcileNewTag(entry, knownSheepId) {
-    if (!knownSheepId) return;
-    const sh = sheep.find((x) => x.id === knownSheepId);
-    if (!sh) return;
-    // Tag-swap pattern: the WEIGH-IN keeps its new tag; the SHEEP's tag gets
-    // updated with the prior tag pushed to old_tags (source='weigh_in').
-    const priorTag = sh.tag;
-    const newTag = entry.tag;
-    const updatedOldTags = (Array.isArray(sh.old_tags) ? sh.old_tags : []).concat([
-      {tag: priorTag, changed_at: new Date().toISOString(), source: 'weigh_in'},
-    ]);
-    await sb.from('sheep').update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownSheepId);
-    await sb.from('weigh_ins').update({new_tag_flag: false}).eq('id', entry.id);
-    try {
-      await sb.from('sheep_comments').update({sheep_id: knownSheepId, sheep_tag: newTag}).eq('reference_id', entry.id);
-    } catch (e) {
-      console.warn('sheep_comments tag-swap update failed:', e);
-    }
-    invalidateSheepWeighInsCache();
-    await loadAll();
-  }
-
-  async function completeSession(s) {
-    // Any sheep session with flagged entries opens the batch modal. Sheep
-    // gate is intentionally looser than cattle (per Ronnie 2026-04-27): rams
-    // / ewes / feeders / null-herd imports can all send animals to processor.
-    const flagged = (entries[s.id] || []).filter((e) => e.send_to_processor === true);
-    if (flagged.length > 0) {
-      setSessionForModal(s);
-      return;
-    }
-    await finalizeComplete(s);
-  }
-  async function finalizeComplete(s) {
-    await sb
-      .from('weigh_in_sessions')
-      .update({status: 'complete', completed_at: new Date().toISOString()})
-      .eq('id', s.id);
-    invalidateSheepWeighInsCache();
-    await loadAll();
-  }
-  async function toggleProcessor(e, next) {
-    // Clearing the flag on an already-attached entry: detach first via the
-    // prior_herd_or_flock fallback hierarchy. If detach blocks, surface the
-    // reason and abort the toggle so the UI doesn't show a stale state.
-    setNotice(null);
-    if (!next && e.target_processing_batch_id) {
-      const sh = e.tag ? sheep.find((x) => x.tag === e.tag) : null;
-      if (sh) {
-        const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {
-          teamMember: authState && authState.name ? authState.name : null,
-        });
-        if (!r.ok && r.reason !== 'not_in_batch') {
-          setNotice({
-            kind: 'error',
-            message:
-              'Cannot clear flag for #' +
-              (e.tag || '?') +
-              ': ' +
-              (r.reason === 'no_prior_flock'
-                ? 'no prior flock recorded for this sheep + batch. Manually move via the Flocks tab if needed.'
-                : r.reason + (r.error ? ' — ' + r.error : '')),
-          });
-          return;
-        }
-      }
-    }
-    const {error} = await sb.from('weigh_ins').update({send_to_processor: !!next}).eq('id', e.id);
-    if (error) {
-      setNotice({kind: 'error', message: 'Could not update: ' + error.message});
-      return;
-    }
-    invalidateSheepWeighInsCache();
-    setEntries((prev) => {
-      const next2 = {...prev};
-      for (const sid in next2) {
-        next2[sid] = next2[sid].map((x) => (x.id === e.id ? {...x, send_to_processor: !!next} : x));
-      }
-      return next2;
-    });
-    if (!next && e.target_processing_batch_id) await loadAll();
-  }
-  function startEditEntry(e) {
-    setEditingEntryId(e.id);
-    setEditForm({tag: e.tag || '', weight: String(e.weight ?? ''), note: e.note || ''});
-  }
-  async function saveEntryEdit(e) {
-    const newTag = (editForm.tag || '').trim() || null;
-    const newWeight = parseFloat(editForm.weight);
-    if (!Number.isFinite(newWeight) || newWeight <= 0) return;
-    const sheepWithTag = newTag ? sheep.find((x) => x.tag === newTag) : null;
-    const newTagFlag = newTag && !sheepWithTag;
-    await sb
-      .from('weigh_ins')
-      .update({tag: newTag, weight: newWeight, note: editForm.note || null, new_tag_flag: newTagFlag})
-      .eq('id', e.id);
-    invalidateSheepWeighInsCache();
-    setEditingEntryId(null);
-    await loadAll();
-  }
-  async function deleteEntry(e) {
-    window._wcfConfirmDelete(
-      'Delete this weigh-in entry? Attached sheep will be detached and reverted where possible.',
-      async () => {
-        async function finishEntryDelete() {
-          await sb.from('weigh_ins').delete().eq('id', e.id);
-          try {
-            await sb.from('sheep_comments').delete().eq('reference_id', e.id);
-          } catch (err) {
-            console.warn('sheep_comments weigh-in-delete cascade failed:', err);
-          }
-          invalidateSheepWeighInsCache();
-          await loadAll();
-        }
-        if (e.target_processing_batch_id) {
-          const sh = e.tag ? sheep.find((x) => x.tag === e.tag) : null;
-          if (sh) {
-            const r = await detachSheepFromBatch(sb, sh.id, e.target_processing_batch_id, {
-              teamMember: authState && authState.name ? authState.name : null,
-            });
-            if (!r.ok && r.reason !== 'not_in_batch') {
-              window._wcfConfirmDelete(
-                'Sheep #' + (e.tag || '?') + ' could not be auto-reverted (' + r.reason + '). Delete the entry anyway?',
-                finishEntryDelete,
-              );
-              return;
-            }
-          }
-        }
-        await finishEntryDelete();
-      },
-    );
-  }
-  // Walk current tag → import old_tags → weigh_in old_tags. Same fallback
-  // order as the cattle admin (mirrors the public webform's findCowByPriorTag).
-  function findSheepByPriorTagAdmin(priorTag) {
-    if (!priorTag) return null;
-    const pt = String(priorTag).trim();
-    const byCurrent = sheep.find((x) => x.tag === pt);
-    if (byCurrent) return byCurrent;
-    const byImport = sheep.find(
-      (x) => Array.isArray(x.old_tags) && x.old_tags.some((ot) => ot && ot.tag === pt && ot.source === 'import'),
-    );
-    if (byImport) return byImport;
-    const byWeighIn = sheep.find(
-      (x) => Array.isArray(x.old_tags) && x.old_tags.some((ot) => ot && ot.tag === pt && ot.source === 'weigh_in'),
-    );
-    return byWeighIn || null;
-  }
-  async function addEntryToSession(s) {
-    setNotice(null);
-    const tag = (addEntryForm.tag || '').trim() || null;
-    const weight = parseFloat(addEntryForm.weight);
-    if (!Number.isFinite(weight) || weight <= 0) return;
-    const priorTag = (addEntryForm.priorTag || '').trim();
-    // Swap-Tag flow: prior tag supplied → swap matching sheep's tag + stamp
-    // her old_tags. Mirrors webform retag mode.
-    if (priorTag) {
-      if (!tag) {
-        setNotice({kind: 'error', message: 'Enter a New tag # for the swap.'});
-        return;
-      }
-      if (priorTag === tag) {
-        setNotice({kind: 'error', message: 'Prior tag and new tag cannot be the same.'});
-        return;
-      }
-      const existingAtNewTag = sheep.find((x) => x.tag === tag);
-      if (existingAtNewTag) {
-        setNotice({kind: 'error', message: 'Tag #' + tag + ' is already assigned to another sheep.'});
-        return;
-      }
-      const sh = findSheepByPriorTagAdmin(priorTag);
-      if (!sh) {
-        setNotice({kind: 'error', message: 'No sheep found with prior tag #' + priorTag + '.'});
-        return;
-      }
-      const updatedOldTags = (Array.isArray(sh.old_tags) ? sh.old_tags : []).concat([
-        {tag: priorTag, changed_at: new Date().toISOString(), source: 'import'},
-      ]);
-      const sUpd = await sb.from('sheep').update({tag, old_tags: updatedOldTags}).eq('id', sh.id);
-      if (sUpd.error) {
-        setNotice({kind: 'error', message: 'Tag swap failed: ' + sUpd.error.message});
-        return;
-      }
-      const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
-      await sb.from('weigh_ins').insert({
-        id,
-        session_id: s.id,
-        tag,
-        weight,
-        note: addEntryForm.note || null,
-        new_tag_flag: false,
-        reconcile_intent: 'retag',
-        entered_at: new Date().toISOString(),
-      });
-      invalidateSheepWeighInsCache();
-      setAddEntryForm({tag: '', weight: '', note: '', priorTag: ''});
-      await loadAll();
-      return;
-    }
-    const sheepWithTag = tag ? sheep.find((x) => x.tag === tag) : null;
-    const newTagFlag = tag && !sheepWithTag;
-    const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
-    await sb.from('weigh_ins').insert({
-      id,
-      session_id: s.id,
-      tag,
-      weight,
-      note: addEntryForm.note || null,
-      new_tag_flag: !!newTagFlag,
-      entered_at: new Date().toISOString(),
-    });
-    // Auto-publish the note onto the sheep's timeline (matches cattle pattern).
-    if (addEntryForm.note && addEntryForm.note.trim()) {
-      try {
-        await sb.from('sheep_comments').insert({
-          id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-          sheep_id: sheepWithTag ? sheepWithTag.id : null,
-          sheep_tag: tag,
-          comment: addEntryForm.note.trim(),
-          team_member: (authState && authState.name) || null,
-          source: 'weigh_in',
-          reference_id: id,
-        });
-      } catch (err) {
-        /* tolerated */
-      }
-    }
-    invalidateSheepWeighInsCache();
-    setAddEntryForm({tag: '', weight: '', note: '', priorTag: ''});
-    await loadAll();
-  }
   async function createNewSession(opts) {
     const id = 'wsess-' + String(Date.now()) + Math.random().toString(36).slice(2, 6);
     const rec = {
@@ -395,49 +65,15 @@ const SheepWeighInsView = ({
       started_at: new Date().toISOString(),
     };
     await sb.from('weigh_in_sessions').insert(rec);
-    await loadAll();
-    setExpandedSession(id);
     setShowNewModal(false);
-  }
-
-  // ADG helpers — mirror cattle's so admin tab + webform show identical numbers.
-  function adgLbPerDay(priorWt, priorDate, curWt, curDate) {
-    if (priorWt == null || curWt == null || !priorDate || !curDate) return null;
-    const pd = new Date(priorDate + 'T12:00:00');
-    const cd = new Date(curDate + 'T12:00:00');
-    const days = Math.round((cd - pd) / 86400000);
-    if (!Number.isFinite(days) || days < 1) return null;
-    const adg = (parseFloat(curWt) - parseFloat(priorWt)) / days;
-    return Number.isFinite(adg) ? adg : null;
-  }
-  function computePriorsForSession(sess) {
-    const byTag = {};
-    if (!sess) return byTag;
-    const earlier = sessions.filter((o) => {
-      if (o.id === sess.id) return false;
-      if (o.status !== 'complete') return false;
-      if ((o.date || '') < (sess.date || '')) return true;
-      if ((o.date || '') === (sess.date || '')) return (o.started_at || '') < (sess.started_at || '');
-      return false;
-    });
-    for (const o of earlier) {
-      const es = entries[o.id] || [];
-      for (const e of es) {
-        if (!e.tag) continue;
-        const existing = byTag[e.tag];
-        const sd = o.date;
-        if (!existing || sd > existing.date) byTag[e.tag] = {weight: parseFloat(e.weight) || 0, date: sd};
-      }
-    }
-    return byTag;
+    navigate('/weigh-in-sessions/' + id);
   }
 
   const tagQ = tagSearch.trim().toLowerCase();
   const entryMatchesTag = (e) => !tagQ || (e.tag || '').toLowerCase().includes(tagQ);
   const statusFiltered = sessions.filter((s) => statusFilter === 'all' || s.status === statusFilter);
   const filtered = tagQ ? statusFiltered.filter((s) => (entries[s.id] || []).some(entryMatchesTag)) : statusFiltered;
-  const visibleEntriesFor = (sid) => (entries[sid] || []).filter(entryMatchesTag);
-  const totalEntries = filtered.reduce((s, sess) => s + visibleEntriesFor(sess.id).length, 0);
+  const totalEntries = filtered.reduce((s, sess) => s + (entries[sess.id] || []).length, 0);
   const matchedSessionCount = tagQ ? filtered.length : null;
 
   return (
@@ -454,7 +90,6 @@ const SheepWeighInsView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
-        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         <div
           style={{
             display: 'flex',
@@ -471,8 +106,7 @@ const SheepWeighInsView = ({
               {tagQ ? (
                 <span>
                   Search <strong>{'#' + tagSearch}</strong>: {matchedSessionCount} session
-                  {matchedSessionCount === 1 ? '' : 's'} {'·'} {totalEntries} matching{' '}
-                  {totalEntries === 1 ? 'entry' : 'entries'}
+                  {matchedSessionCount === 1 ? '' : 's'}
                 </span>
               ) : (
                 <span>
@@ -486,10 +120,7 @@ const SheepWeighInsView = ({
               <input
                 type="search"
                 value={tagSearch}
-                onChange={(e) => {
-                  setTagSearch(e.target.value);
-                  if (e.target.value) setExpandedSession(null);
-                }}
+                onChange={(e) => setTagSearch(e.target.value)}
                 placeholder="Search by tag #..."
                 style={{
                   fontFamily: 'inherit',
@@ -545,7 +176,7 @@ const SheepWeighInsView = ({
                     fontSize: 11,
                     fontWeight: 600,
                     cursor: 'pointer',
-                    background: statusFilter === o.k ? '#0f766e' : 'white',
+                    background: statusFilter === o.k ? '#1e40af' : 'white',
                     color: statusFilter === o.k ? 'white' : '#6b7280',
                   }}
                 >
@@ -554,12 +185,13 @@ const SheepWeighInsView = ({
               ))}
             </div>
             <button
+              data-new-weighin-button="1"
               onClick={() => setShowNewModal(true)}
               style={{
                 padding: '7px 14px',
                 borderRadius: 7,
                 border: 'none',
-                background: '#0f766e',
+                background: '#1e40af',
                 color: 'white',
                 fontWeight: 600,
                 fontSize: 12,
@@ -596,540 +228,61 @@ const SheepWeighInsView = ({
         <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
           {filtered.map((s) => {
             const sEntriesAll = entries[s.id] || [];
-            const isExpanded = tagQ ? true : expandedSession === s.id;
-            const sEntries = tagQ ? sEntriesAll.filter(entryMatchesTag) : sEntriesAll;
-            const newTagCount = sEntriesAll.filter((e) => e.new_tag_flag).length;
             const countLabel = tagQ
-              ? sEntries.length + ' of ' + sEntriesAll.length + ' match'
+              ? sEntriesAll.filter(entryMatchesTag).length + ' of ' + sEntriesAll.length + ' match'
               : sEntriesAll.length + ' ' + (sEntriesAll.length === 1 ? 'entry' : 'entries');
+            const newTagCount = sEntriesAll.filter((e) => e.new_tag_flag).length;
             return (
               <div
                 key={s.id}
-                style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden'}}
+                data-weighin-session-tile={s.id}
+                onClick={() => navigate('/weigh-in-sessions/' + s.id)}
+                className="hoverable-tile"
+                style={{
+                  background: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 10,
+                  padding: '10px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                }}
               >
-                <div
-                  onClick={() => {
-                    if (tagQ) return;
-                    setExpandedSession(isExpanded ? null : s.id);
-                  }}
+                <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
+                  {FLOCK_LABELS[s.herd] || s.herd || 'Unknown flock'}
+                </span>
+                <span
                   style={{
-                    padding: '10px 16px',
-                    cursor: tagQ ? 'default' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 10,
+                    background: s.status === 'complete' ? '#d1fae5' : '#fef3c7',
+                    color: s.status === 'complete' ? '#065f46' : '#92400e',
+                    textTransform: 'uppercase',
                   }}
-                  className={tagQ ? '' : 'hoverable-tile'}
                 >
-                  {!tagQ && <span style={{fontSize: 11, color: '#9ca3af'}}>{isExpanded ? '▼' : '▶'}</span>}
-                  <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
-                    {FLOCK_LABELS[s.herd] || s.herd || 'Unknown flock'}
-                  </span>
+                  {s.status}
+                </span>
+                <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
+                <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
+                <span style={{fontSize: 11, fontWeight: 600, color: tagQ ? '#065f46' : '#1e40af'}}>{countLabel}</span>
+                {newTagCount > 0 && !tagQ && (
                   <span
                     style={{
                       fontSize: 10,
                       fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: 10,
-                      background: s.status === 'complete' ? '#d1fae5' : '#fef3c7',
-                      color: s.status === 'complete' ? '#065f46' : '#92400e',
-                      textTransform: 'uppercase',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      background: '#fef2f2',
+                      color: '#b91c1c',
                     }}
                   >
-                    {s.status}
+                    {newTagCount + ' new tags'}
                   </span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
-                  <span style={{fontSize: 11, fontWeight: 600, color: tagQ ? '#065f46' : '#0f766e'}}>{countLabel}</span>
-                  {newTagCount > 0 && !tagQ && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        borderRadius: 4,
-                        background: '#fef2f2',
-                        color: '#b91c1c',
-                      }}
-                    >
-                      {newTagCount + ' new tags'}
-                    </span>
-                  )}
-                </div>
-                {isExpanded &&
-                  (() => {
-                    const priors = computePriorsForSession(s);
-                    const curDate = s.date;
-                    const adgs = sEntriesAll
-                      .map((e) => {
-                        const p = priors[e.tag];
-                        return p ? adgLbPerDay(p.weight, p.date, e.weight, curDate) : null;
-                      })
-                      .filter((a) => a != null);
-                    const avgAdg = adgs.length > 0 ? adgs.reduce((x, v) => x + v, 0) / adgs.length : null;
-                    return (
-                      <div style={{borderTop: '1px solid #f3f4f6', padding: '10px 16px', background: '#fafafa'}}>
-                        <div
-                          style={{display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center'}}
-                        >
-                          {s.status === 'draft' && (
-                            <button
-                              onClick={() => completeSession(s)}
-                              style={{
-                                padding: '4px 10px',
-                                borderRadius: 6,
-                                border: '1px solid #047857',
-                                background: '#047857',
-                                color: 'white',
-                                fontSize: 11,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              {'✓ Complete Session'}
-                            </button>
-                          )}
-                          {s.status === 'complete' && (
-                            <button
-                              onClick={() => reopenSession(s)}
-                              style={{
-                                padding: '4px 10px',
-                                borderRadius: 6,
-                                border: '1px solid #d1d5db',
-                                background: 'white',
-                                color: '#0f766e',
-                                fontSize: 11,
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              Reopen Session
-                            </button>
-                          )}
-                          {avgAdg != null && (
-                            <span
-                              title={adgs.length + ' of ' + sEntriesAll.length + ' entries have a prior weigh-in'}
-                              style={{
-                                padding: '3px 10px',
-                                borderRadius: 6,
-                                background: avgAdg >= 0 ? '#ecfdf5' : '#fef2f2',
-                                color: avgAdg >= 0 ? '#065f46' : '#b91c1c',
-                                border: '1px solid ' + (avgAdg >= 0 ? '#a7f3d0' : '#fecaca'),
-                                fontSize: 11,
-                                fontWeight: 700,
-                              }}
-                            >
-                              {'avg ADG ' +
-                                (avgAdg >= 0 ? '+' : '') +
-                                avgAdg.toFixed(2) +
-                                ' lb/d (' +
-                                adgs.length +
-                                ' of ' +
-                                sEntriesAll.length +
-                                ')'}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => deleteSession(s)}
-                            style={{
-                              marginLeft: 'auto',
-                              padding: '4px 10px',
-                              borderRadius: 6,
-                              border: '1px solid #F09595',
-                              background: 'white',
-                              color: '#b91c1c',
-                              fontSize: 11,
-                              cursor: 'pointer',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            Delete Session
-                          </button>
-                        </div>
-                        {sEntries.length === 0 && (
-                          <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>
-                            No entries in this session.
-                          </div>
-                        )}
-                        {sEntries.length > 0 && (
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                              gap: 6,
-                              marginBottom: 8,
-                            }}
-                          >
-                            {sEntries.map((e) => {
-                              const sh = sheep.find((x) => x.tag === e.tag);
-                              const isEditing = editingEntryId === e.id;
-                              const prior = priors[e.tag];
-                              const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
-                              return (
-                                <div
-                                  key={e.id}
-                                  style={{
-                                    background: e.send_to_processor ? '#fef2f2' : 'white',
-                                    border:
-                                      '1px solid ' +
-                                      (e.send_to_processor ? '#fca5a5' : e.new_tag_flag ? '#fca5a5' : '#e5e7eb'),
-                                    borderRadius: 6,
-                                    padding: '6px 10px',
-                                    fontSize: 12,
-                                  }}
-                                >
-                                  {isEditing ? (
-                                    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                                      <div style={{display: 'flex', gap: 4}}>
-                                        <input
-                                          type="text"
-                                          placeholder="Tag #"
-                                          value={editForm.tag}
-                                          onChange={(ev) => setEditForm((f) => ({...f, tag: ev.target.value}))}
-                                          style={{
-                                            fontSize: 12,
-                                            padding: '4px 8px',
-                                            border: '1px solid #d1d5db',
-                                            borderRadius: 5,
-                                            fontFamily: 'inherit',
-                                            flex: '0 0 80px',
-                                            minWidth: 0,
-                                          }}
-                                        />
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          step="0.1"
-                                          placeholder="lb"
-                                          value={editForm.weight}
-                                          onChange={(ev) => setEditForm((f) => ({...f, weight: ev.target.value}))}
-                                          style={{
-                                            fontSize: 12,
-                                            padding: '4px 8px',
-                                            border: '1px solid #d1d5db',
-                                            borderRadius: 5,
-                                            fontFamily: 'inherit',
-                                            flex: 1,
-                                            minWidth: 0,
-                                          }}
-                                        />
-                                      </div>
-                                      <input
-                                        type="text"
-                                        placeholder="Note (optional)"
-                                        value={editForm.note}
-                                        onChange={(ev) => setEditForm((f) => ({...f, note: ev.target.value}))}
-                                        style={{
-                                          fontSize: 12,
-                                          padding: '4px 8px',
-                                          border: '1px solid #d1d5db',
-                                          borderRadius: 5,
-                                          fontFamily: 'inherit',
-                                        }}
-                                      />
-                                      <div style={{display: 'flex', gap: 4, justifyContent: 'flex-end'}}>
-                                        <button
-                                          onClick={() => setEditingEntryId(null)}
-                                          style={{
-                                            padding: '3px 10px',
-                                            borderRadius: 5,
-                                            border: '1px solid #d1d5db',
-                                            background: 'white',
-                                            color: '#6b7280',
-                                            fontSize: 11,
-                                            cursor: 'pointer',
-                                            fontFamily: 'inherit',
-                                          }}
-                                        >
-                                          Cancel
-                                        </button>
-                                        <button
-                                          onClick={() => saveEntryEdit(e)}
-                                          disabled={!(parseFloat(editForm.weight) > 0)}
-                                          style={{
-                                            padding: '3px 10px',
-                                            borderRadius: 5,
-                                            border: 'none',
-                                            background: parseFloat(editForm.weight) > 0 ? '#0f766e' : '#d1d5db',
-                                            color: 'white',
-                                            fontSize: 11,
-                                            fontWeight: 600,
-                                            cursor: parseFloat(editForm.weight) > 0 ? 'pointer' : 'not-allowed',
-                                            fontFamily: 'inherit',
-                                          }}
-                                        >
-                                          Save
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                                      <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
-                                        {e.tag ? (
-                                          <span style={{fontWeight: 700, color: '#111827'}}>{'#' + e.tag}</span>
-                                        ) : (
-                                          <span style={{color: '#9ca3af'}}>(no tag)</span>
-                                        )}
-                                        <span style={{fontWeight: 600, color: '#0f766e'}}>{e.weight} lb</span>
-                                        {prior && (
-                                          <span style={{fontSize: 10, color: '#6b7280'}} title={'prior ' + prior.date}>
-                                            {'prior ' + Math.round(prior.weight) + ' lb'}
-                                          </span>
-                                        )}
-                                        {adg != null && (
-                                          <span
-                                            style={{
-                                              fontSize: 10,
-                                              fontWeight: 700,
-                                              padding: '1px 6px',
-                                              borderRadius: 4,
-                                              background: adg >= 0 ? '#ecfdf5' : '#fef2f2',
-                                              color: adg >= 0 ? '#065f46' : '#b91c1c',
-                                              border: '1px solid ' + (adg >= 0 ? '#a7f3d0' : '#fecaca'),
-                                            }}
-                                          >
-                                            {(adg >= 0 ? '+' : '') + adg.toFixed(2) + ' lb/d'}
-                                          </span>
-                                        )}
-                                        {e.new_tag_flag && (
-                                          <span
-                                            style={{
-                                              fontSize: 10,
-                                              fontWeight: 700,
-                                              padding: '1px 6px',
-                                              borderRadius: 4,
-                                              background: '#fef2f2',
-                                              color: '#b91c1c',
-                                            }}
-                                          >
-                                            NEW TAG
-                                          </span>
-                                        )}
-                                        {!e.new_tag_flag && sh && (
-                                          <span style={{fontSize: 11, color: '#6b7280'}}>
-                                            {FLOCK_LABELS[sh.flock] || sh.flock}
-                                          </span>
-                                        )}
-                                        <span style={{fontSize: 10, color: '#9ca3af', marginLeft: 'auto'}}>
-                                          {(e.entered_at || '').slice(11, 16)}
-                                        </span>
-                                      </div>
-                                      {e.note && (
-                                        <div style={{fontSize: 11, color: '#92400e', fontStyle: 'italic'}}>
-                                          {e.note}
-                                        </div>
-                                      )}
-                                      {e.new_tag_flag && (
-                                        <select
-                                          onChange={(ev) => {
-                                            if (ev.target.value) {
-                                              reconcileNewTag(e, ev.target.value);
-                                            }
-                                          }}
-                                          defaultValue=""
-                                          style={{
-                                            fontSize: 11,
-                                            padding: '3px 6px',
-                                            border: '1px solid #d1d5db',
-                                            borderRadius: 4,
-                                            fontFamily: 'inherit',
-                                            width: '100%',
-                                          }}
-                                        >
-                                          <option value="">Reconcile to known sheep...</option>
-                                          {sheep
-                                            .filter((x) => x.tag)
-                                            .sort((a, b) => (parseFloat(a.tag) || 0) - (parseFloat(b.tag) || 0))
-                                            .map((x) => (
-                                              <option key={x.id} value={x.id}>
-                                                {'#' + x.tag + ' (' + (x.flock || '?') + ')'}
-                                              </option>
-                                            ))}
-                                        </select>
-                                      )}
-                                      <div
-                                        style={{
-                                          display: 'flex',
-                                          gap: 4,
-                                          justifyContent: 'flex-end',
-                                          alignItems: 'center',
-                                          flexWrap: 'wrap',
-                                        }}
-                                      >
-                                        {s.status === 'draft' && (
-                                          <button
-                                            onClick={() => toggleProcessor(e, !e.send_to_processor)}
-                                            title={
-                                              e.send_to_processor
-                                                ? 'Remove from processor run'
-                                                : 'Send this sheep to the processor on session Complete'
-                                            }
-                                            style={{
-                                              fontSize: 10,
-                                              fontWeight: 700,
-                                              padding: '3px 8px',
-                                              borderRadius: 4,
-                                              border: '1px solid ' + (e.send_to_processor ? '#991b1b' : '#d1d5db'),
-                                              background: e.send_to_processor ? '#991b1b' : 'white',
-                                              color: e.send_to_processor ? 'white' : '#6b7280',
-                                              cursor: 'pointer',
-                                              fontFamily: 'inherit',
-                                            }}
-                                          >
-                                            {e.send_to_processor ? '✓ Processor' : '→ Processor'}
-                                          </button>
-                                        )}
-                                        {s.status !== 'draft' && e.send_to_processor && (
-                                          <span
-                                            title="This sheep was flagged for the processor during the draft session."
-                                            style={{
-                                              fontSize: 10,
-                                              fontWeight: 700,
-                                              padding: '3px 8px',
-                                              borderRadius: 4,
-                                              background: '#991b1b',
-                                              color: 'white',
-                                              fontFamily: 'inherit',
-                                            }}
-                                          >
-                                            {'✓ Processor'}
-                                          </span>
-                                        )}
-                                        <button
-                                          onClick={() => startEditEntry(e)}
-                                          style={{
-                                            fontSize: 10,
-                                            color: '#0f766e',
-                                            background: 'none',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            padding: '2px 6px',
-                                            fontFamily: 'inherit',
-                                          }}
-                                        >
-                                          Edit
-                                        </button>
-                                        <button
-                                          onClick={() => deleteEntry(e)}
-                                          style={{
-                                            fontSize: 10,
-                                            color: '#b91c1c',
-                                            background: 'none',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            padding: '2px 6px',
-                                            fontFamily: 'inherit',
-                                          }}
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {/* Add entry row. Prior tag # triggers Swap-Tag flow. */}
-                        <div
-                          style={{
-                            marginTop: 8,
-                            background: '#f0fdfa',
-                            border: '1px dashed #5eead4',
-                            borderRadius: 6,
-                            padding: '8px 10px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <span style={{fontSize: 11, fontWeight: 600, color: '#0f766e'}}>+ Add entry:</span>
-                          <input
-                            type="text"
-                            placeholder="Prior tag (swap)"
-                            title="Optional. Fill to swap a known sheep's tag on the spot."
-                            value={addEntryForm.priorTag}
-                            onChange={(ev) => setAddEntryForm((f) => ({...f, priorTag: ev.target.value}))}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 8px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              width: 130,
-                              background: addEntryForm.priorTag ? '#ccfbf1' : 'white',
-                            }}
-                          />
-                          <input
-                            type="text"
-                            placeholder={addEntryForm.priorTag ? 'New tag #' : 'Tag #'}
-                            value={addEntryForm.tag}
-                            onChange={(ev) => setAddEntryForm((f) => ({...f, tag: ev.target.value}))}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 8px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              width: 90,
-                            }}
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            placeholder="lb"
-                            value={addEntryForm.weight}
-                            onChange={(ev) => setAddEntryForm((f) => ({...f, weight: ev.target.value}))}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 8px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              width: 70,
-                            }}
-                          />
-                          <input
-                            type="text"
-                            placeholder="Note (optional)"
-                            value={addEntryForm.note}
-                            onChange={(ev) => setAddEntryForm((f) => ({...f, note: ev.target.value}))}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 8px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              flex: 1,
-                              minWidth: 100,
-                            }}
-                          />
-                          <button
-                            onClick={() => addEntryToSession(s)}
-                            disabled={!(parseFloat(addEntryForm.weight) > 0)}
-                            style={{
-                              padding: '4px 12px',
-                              borderRadius: 5,
-                              border: 'none',
-                              background: parseFloat(addEntryForm.weight) > 0 ? '#0f766e' : '#d1d5db',
-                              color: 'white',
-                              fontSize: 11,
-                              fontWeight: 600,
-                              cursor: parseFloat(addEntryForm.weight) > 0 ? 'pointer' : 'not-allowed',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            {addEntryForm.priorTag ? 'Swap + Add' : 'Add'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                )}
               </div>
             );
           })}
@@ -1137,21 +290,6 @@ const SheepWeighInsView = ({
       </div>
       {showNewModal && (
         <SheepNewWeighInModal sb={sb} onClose={() => setShowNewModal(false)} onCreate={createNewSession} />
-      )}
-      {sessionForModal && (
-        <SheepSendToProcessorModal
-          sb={sb}
-          session={sessionForModal}
-          flaggedEntries={(entries[sessionForModal.id] || []).filter((e) => e.send_to_processor === true)}
-          sheepList={sheep}
-          teamMember={(authState && authState.name) || null}
-          onCancel={() => setSessionForModal(null)}
-          onConfirmed={async () => {
-            const s = sessionForModal;
-            setSessionForModal(null);
-            await finalizeComplete(s);
-          }}
-        />
       )}
     </div>
   );
