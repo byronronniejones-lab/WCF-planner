@@ -81,36 +81,17 @@ describe('Pig weigh-in metrics — admin LivestockWeighInsView (commit 3)', () =
     );
   });
 
-  it('expanded pig view sorts by weight DESC without mutating sEntries', () => {
-    // [...sEntries] is the immutable copy; the sort is render-only.
-    expect(adminSrc).toMatch(
-      /\[\.\.\.sEntries\]\s*\.sort\(\(a, b\) => \(parseFloat\(b\.weight\) \|\| 0\) - \(parseFloat\(a\.weight\) \|\| 0\)\)/,
-    );
-    // Regression negative lock: the OLD direct sEntries.map render path
-    // for pig entries (around line 1582 pre-edit) is gone; the new path
-    // chains the sort first.
-    // The sort must be in scope of the species==='pig' block — verifying
-    // by asserting the sort sits within ~50 lines after the pig branch.
-    const pigBranchIdx = adminSrc.indexOf("species === 'pig' &&");
-    expect(pigBranchIdx).toBeGreaterThan(0);
+  it('pig inline accordion is removed — pig navigates to record page', () => {
+    expect(adminSrc).toContain("navigate('/weigh-in-sessions/' + s.id)");
+    expect(adminSrc).not.toContain('addPigEntry');
+    expect(adminSrc).not.toContain('deletePigEntry');
   });
 
-  it('keeps Send-to-Processor visible for completed pig sessions without unlocking weight edits', () => {
-    expect(adminSrc).toMatch(/const isTransferredEntry = \(e\) =>/);
-    expect(adminSrc).toMatch(
-      /const unsent = sEntries\.filter\(\(e\) => !e\.sent_to_trip_id && !isTransferredEntry\(e\)\)/,
-    );
-    expect(adminSrc).toMatch(/\{canAct && canManagePigPlannedTrips && \(/);
-
-    const barIdx = adminSrc.indexOf('data-pig-send-bar="1"');
-    const weightsIdx = adminSrc.indexOf('Weights ({sEntries.length})');
-    expect(barIdx).toBeGreaterThan(0);
-    expect(weightsIdx).toBeGreaterThan(barIdx);
-
-    const barWindow = adminSrc.slice(Math.max(0, barIdx - 500), barIdx + 500);
-    expect(barWindow).toMatch(/unsent\.length > 0 && canManagePigPlannedTrips/);
-    expect(barWindow).not.toMatch(/fieldsLocked/);
-    expect(adminSrc).toMatch(/Send to processor:/);
-    expect(adminSrc).toMatch(/Send ' \+ sel\.length \+ ' to Processor/);
+  it('pig send-to-trip and transfer-to-breeding removed from list view', () => {
+    expect(adminSrc).not.toContain('PigSendToTripModal');
+    expect(adminSrc).not.toContain('sendEntriesToTrip');
+    expect(adminSrc).not.toContain('transferToBreeding');
+    expect(adminSrc).not.toContain('data-pig-send-bar');
+    expect(adminSrc).not.toContain('canManagePigPlannedTrips');
   });
 });

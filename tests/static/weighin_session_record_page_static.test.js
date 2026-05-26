@@ -10,6 +10,7 @@ const pageSrc = fs.readFileSync(path.join(ROOT, 'src/livestock/WeighInSessionPag
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
 const listSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleWeighInsView.jsx'), 'utf8');
 const sheepListSrc = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepWeighInsView.jsx'), 'utf8');
+const livestockSrc = fs.readFileSync(path.join(ROOT, 'src/livestock/LivestockWeighInsView.jsx'), 'utf8');
 
 describe('main.jsx — /weigh-in-sessions/<id> route', () => {
   it('detects isWeighInSessionSubpath', () => {
@@ -372,5 +373,34 @@ describe('SheepWeighInsView — cleaned list view', () => {
   });
   it('still has tag search', () => {
     expect(sheepListSrc).toContain('tagSearch');
+  });
+});
+
+describe('LivestockWeighInsView — pig list cleanup', () => {
+  it('pig tiles navigate to /weigh-in-sessions/<id>', () => {
+    expect(livestockSrc).toContain("navigate('/weigh-in-sessions/' + s.id)");
+  });
+  it('pig tile click navigates instead of expanding', () => {
+    expect(livestockSrc).toMatch(/species === 'pig'[\s\S]*?navigate\('\/weigh-in-sessions\/' \+ s\.id\)/);
+  });
+  it('pig session creation navigates to record page', () => {
+    expect(livestockSrc).toMatch(/species === 'pig'[\s\S]*?navigate\('\/weigh-in-sessions\/' \+ rec\.id\)/);
+  });
+  it('pig inline accordion is skipped', () => {
+    expect(livestockSrc).toContain("isExpanded && species !== 'pig'");
+  });
+  it('pig tiles have data-weighin-session-tile marker', () => {
+    expect(livestockSrc).toContain('data-weighin-session-tile');
+  });
+  it('broiler accordion still renders when expanded', () => {
+    expect(livestockSrc).toContain('isExpanded');
+    expect(livestockSrc).toContain('gridInputs');
+  });
+  it('broiler batch metadata edit is preserved', () => {
+    expect(livestockSrc).toContain('metaWeek');
+    expect(livestockSrc).toContain('metaTeam');
+  });
+  it('still has status filter', () => {
+    expect(livestockSrc).toContain('statusFilter');
   });
 });
