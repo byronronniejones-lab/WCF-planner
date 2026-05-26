@@ -23,6 +23,7 @@ const ENTITY_TYPE_LABELS = {
   'pig.daily': 'Pig Daily',
   'cattle.daily': 'Cattle Daily',
   'sheep.daily': 'Sheep Daily',
+  'weighin.session': 'Weigh-In Session',
 };
 
 const EVENT_TYPE_LABELS = {
@@ -53,6 +54,7 @@ const ENTITY_FILTERS = [
   {value: 'pig.daily', label: 'Pig Daily'},
   {value: 'cattle.daily', label: 'Cattle Daily'},
   {value: 'sheep.daily', label: 'Sheep Daily'},
+  {value: 'weighin.session', label: 'Weigh-In Sessions'},
 ];
 
 export default function ActivityLogView({Header}) {

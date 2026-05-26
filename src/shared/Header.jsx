@@ -612,7 +612,8 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
                               route.startsWith('/layer/eggs/') ||
                               route.startsWith('/pig/dailys/') ||
                               route.startsWith('/cattle/dailys/') ||
-                              route.startsWith('/sheep/dailys/');
+                              route.startsWith('/sheep/dailys/') ||
+                              route.startsWith('/weigh-in-sessions/');
                             if (isRecordPageRoute && route.startsWith('/')) {
                               headerNavigate(route);
                               setNotifOpen(false);

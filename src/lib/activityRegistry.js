@@ -23,6 +23,7 @@ export const ENTITY_TYPES = {
   PIG_DAILY: 'pig.daily',
   CATTLE_DAILY: 'cattle.daily',
   SHEEP_DAILY: 'sheep.daily',
+  WEIGHIN_SESSION: 'weighin.session',
 };
 
 export const ACTIVITY_REGISTRY = {
@@ -106,6 +107,11 @@ export const ACTIVITY_REGISTRY = {
     route: (id) => '/sheep/dailys/' + id,
     program: 'sheep',
   },
+  [ENTITY_TYPES.WEIGHIN_SESSION]: {
+    displayLabel: (id, ctx) => (ctx && ctx.date ? ctx.date + (ctx.species ? ' · ' + ctx.species : '') : id),
+    route: (id) => '/weigh-in-sessions/' + id,
+    program: null,
+  },
 };
 
 export function getActivityEntityMeta(entityType) {
@@ -177,5 +183,6 @@ export function routeToView(routePath) {
   if (path.startsWith('/sheep/dailys/')) return {view: 'sheepdailys', search: search || ''};
   if (path.startsWith('/layer/dailys/')) return {view: 'layerdailys', search: search || ''};
   if (path.startsWith('/layer/eggs/')) return {view: 'eggdailys', search: search || ''};
+  if (path.startsWith('/weigh-in-sessions/')) return {view: 'weighinsessions', search: search || ''};
   return {view: VIEW_MAP[path] || 'home', search: search || ''};
 }
