@@ -110,6 +110,7 @@ import CowDetail from './cattle/CowDetail.jsx';
 // were accidentally bundled into adjacent modal files in Round 1. Split.
 import LivestockWeighInsView from './livestock/LivestockWeighInsView.jsx';
 import CattleWeighInsView from './cattle/CattleWeighInsView.jsx';
+import WeighInSessionPage from './livestock/WeighInSessionPage.jsx';
 
 // Phase 2.3 prep: helpers needed by Round 3 views extracted to src/lib/.
 import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from './lib/cattleCache.js';
@@ -1306,6 +1307,7 @@ function App() {
     const isLayerDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/dailys/');
     const isEggDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/eggs/');
     const isTasksSubpath = !exactPathView && location.pathname.startsWith('/tasks/');
+    const isWeighInSessionSubpath = !exactPathView && location.pathname.startsWith('/weigh-in-sessions/');
     const viewFromUrl = isWebformSubpath
       ? 'webformhub'
       : isEquipmentSubpath
@@ -1330,7 +1332,9 @@ function App() {
                           ? 'eggdailys'
                           : isTasksSubpath
                             ? 'tasks'
-                            : exactPathView;
+                            : isWeighInSessionSubpath
+                              ? 'weighinsessions'
+                              : exactPathView;
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -1381,6 +1385,7 @@ function App() {
     if (view === 'layerdailys' && location.pathname.startsWith('/layer/dailys/')) return;
     if (view === 'eggdailys' && location.pathname.startsWith('/layer/eggs/')) return;
     if (view === 'tasks' && location.pathname.startsWith('/tasks/')) return;
+    if (view === 'weighinsessions' && location.pathname.startsWith('/weigh-in-sessions/')) return;
     const pathFromView = VIEW_TO_PATH[view];
     if (pathFromView && pathFromView !== location.pathname) {
       navigate(pathFromView);
@@ -1672,6 +1677,7 @@ function App() {
     'equipmentHome',
     'fuelingHub',
     'fuelSupply',
+    'weighinsessions',
   ];
   useEffect(() => {
     if (view && !VALID_VIEWS.includes(view)) setView('home');
@@ -1715,6 +1721,7 @@ function App() {
     sheepdailys: 'sheep',
     sheepweighins: 'sheep',
     equipmentHome: 'equipment',
+    weighinsessions: 'cattle',
   };
   function canAccessProgram(prog) {
     if (!prog) return true;
@@ -3420,6 +3427,7 @@ function App() {
       setAllUsers,
       loadUsers,
     });
+  if (view === 'weighinsessions') return React.createElement(WeighInSessionPage, {sb, fmt, Header, authState});
   if (view === 'cattleweighins')
     return React.createElement(CattleWeighInsView, {
       sb,

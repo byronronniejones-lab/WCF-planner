@@ -136,9 +136,9 @@ describe('ActivityLogView — weighin.session label and filter', () => {
   });
 });
 
-describe('No weigh-in record page UI in this lane', () => {
-  it('no WeighInSessionPage component exists yet', () => {
+describe('WeighInSessionPage exists', () => {
+  it('WeighInSessionPage component is present', () => {
     const exists = fs.existsSync(path.join(ROOT, 'src/livestock/WeighInSessionPage.jsx'));
-    expect(exists).toBe(false);
+    expect(exists).toBe(true);
   });
 });

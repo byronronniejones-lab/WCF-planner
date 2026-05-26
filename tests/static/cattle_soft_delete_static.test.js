@@ -144,7 +144,7 @@ describe('Active-record filter audit — cattle views', () => {
     'src/cattle/CattleForecastView.jsx',
     'src/cattle/CattleBatchesView.jsx',
     'src/cattle/CattleBreedingView.jsx',
-    'src/cattle/CattleWeighInsView.jsx',
+    'src/livestock/WeighInSessionPage.jsx',
     'src/webforms/WeighInsWebform.jsx',
     'src/main.jsx',
   ];
