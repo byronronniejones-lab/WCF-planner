@@ -23,6 +23,8 @@ import {
 } from '../lib/pigForecast.js';
 import {todayCentralISO} from '../lib/dateUtils.js';
 import PigSendToTripModal from './PigSendToTripModal.jsx';
+import {writeBroilerBatchAvg, recomputeBroilerBatchWeekAvg} from '../lib/broiler.js';
+import {loadRoster, activeNames as rosterActiveNames} from '../lib/teamMembers.js';
 
 const HERD_LABELS = {mommas: 'Mommas', backgrounders: 'Backgrounders', finishers: 'Finishers', bulls: 'Bulls'};
 const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
@@ -102,6 +104,17 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   const [transferForm, setTransferForm] = React.useState({tag: '', group: '1', sex: 'Gilt', birthDate: ''});
   const [transferBusy, setTransferBusy] = React.useState(false);
   const [transferNotice, setTransferNotice] = React.useState(null);
+  const [broilerBatchRecs, setBroilerBatchRecs] = React.useState([]);
+  const [activeRoster, setActiveRoster] = React.useState([]);
+  const [gridLabels, setGridLabels] = React.useState([]);
+  const [gridInputs, setGridInputs] = React.useState([]);
+  const [gridNote, setGridNote] = React.useState('');
+  const [savingGrid, setSavingGrid] = React.useState(false);
+  const [gridErr, setGridErr] = React.useState('');
+  const [metaWeek, setMetaWeek] = React.useState(4);
+  const [metaTeam, setMetaTeam] = React.useState('');
+  const [metaBusy, setMetaBusy] = React.useState(false);
+  const [metaErr, setMetaErr] = React.useState('');
 
   function invalidateCache() {
     if (session && session.species === 'sheep') invalidateSheepWeighInsCache();
@@ -120,12 +133,12 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   async function loadAll() {
     const {data: sess} = await sb
       .from('weigh_in_sessions')
-      .select('id, species, herd, batch_id, date, team_member, status, started_at, completed_at, notes')
+      .select('id, species, herd, batch_id, date, team_member, status, started_at, completed_at, notes, broiler_week')
       .eq('id', sessionId)
       .single();
     if (sess) setSession(sess);
     const sp = sess ? sess.species : null;
-    if (sp !== 'cattle' && sp !== 'sheep' && sp !== 'pig') {
+    if (sp !== 'cattle' && sp !== 'sheep' && sp !== 'pig' && sp !== 'broiler') {
       setLoading(false);
       return;
     }
@@ -168,6 +181,12 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         setFeederGroups([]);
       }
     }
+    if (sp === 'broiler') {
+      const batchR = await sb.from('app_store').select('data').eq('key', 'ppp-v4').maybeSingle();
+      setBroilerBatchRecs(batchR && batchR.data && Array.isArray(batchR.data.data) ? batchR.data.data : []);
+      const roster = await loadRoster(sb);
+      setActiveRoster(rosterActiveNames(roster));
+    }
     setLoading(false);
   }
 
@@ -188,6 +207,163 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
       }, 200);
     }
   }, [loading, location.hash]);
+
+  function deriveBroilerLabels(s) {
+    if (!s || s.species !== 'broiler') return [];
+    const rec = broilerBatchRecs.find((b) => (b.name || '') === s.batch_id);
+    const raw = rec && rec.schooner ? String(rec.schooner) : '';
+    const parts = raw
+      .split('&')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts : ['(no schooner)'];
+  }
+
+  function hydrateBroilerGrid(labels, entries) {
+    const grid = Array(labels.length * 15).fill('');
+    labels.forEach((label, colIdx) => {
+      const colE = entries.filter((e) => (e.tag || '') === label);
+      colE.slice(0, 15).forEach((e, i) => {
+        grid[colIdx * 15 + i] = String(e.weight);
+      });
+    });
+    return grid;
+  }
+
+  React.useEffect(() => {
+    if (!session || session.species !== 'broiler' || loading) return;
+    const labels = deriveBroilerLabels(session);
+    setGridLabels(labels);
+    setGridInputs(hydrateBroilerGrid(labels, sEntries));
+    setGridNote(session.notes || '');
+    setGridErr('');
+    const w = Number(session.broiler_week);
+    setMetaWeek(w === 4 || w === 6 ? w : 4);
+    setMetaTeam(session.team_member || '');
+    setMetaErr('');
+  }, [session, sEntries, broilerBatchRecs, loading]);
+
+  async function saveBroilerGrid() {
+    if (!session || session.species !== 'broiler') return;
+    const rows = [];
+    for (let i = 0; i < gridInputs.length; i++) {
+      const w = gridInputs[i];
+      if (w === '' || isNaN(parseFloat(w)) || parseFloat(w) <= 0) continue;
+      const colIdx = Math.floor(i / 15);
+      const tag = gridLabels[colIdx] ? gridLabels[colIdx] : null;
+      rows.push({weight: parseFloat(w), tag});
+    }
+    setSavingGrid(true);
+    setGridErr('');
+    const del = await sb.from('weigh_ins').delete().eq('session_id', session.id).is('sent_to_trip_id', null);
+    if (del.error) {
+      setSavingGrid(false);
+      setGridErr('Save failed (clear): ' + del.error.message);
+      return false;
+    }
+    let recs = [];
+    if (rows.length > 0) {
+      const t0 = Date.now();
+      recs = rows.map((r, i) => ({
+        id: String(t0 + i) + Math.random().toString(36).slice(2, 6),
+        session_id: session.id,
+        tag: r.tag,
+        weight: r.weight,
+        note: null,
+        new_tag_flag: false,
+      }));
+      const ins = await sb.from('weigh_ins').insert(recs);
+      if (ins.error) {
+        setSavingGrid(false);
+        setGridErr('Save failed (insert): ' + ins.error.message);
+        return false;
+      }
+    }
+    if (gridNote !== (session.notes || '')) {
+      await sb
+        .from('weigh_in_sessions')
+        .update({notes: gridNote || null})
+        .eq('id', session.id);
+    }
+    await writeBroilerBatchAvg(sb, session, recs);
+    try {
+      await recordActivityEvent(sb, {
+        entityType: 'weighin.session',
+        entityId: session.id,
+        eventType: 'field.updated',
+        entityLabel: sessionLabel(),
+        body: 'Saved broiler grid (' + recs.length + ' entries)',
+      });
+    } catch (_e) {
+      /* best-effort */
+    }
+    setSavingGrid(false);
+    await loadAll();
+    return true;
+  }
+
+  async function saveBroilerMetadata() {
+    if (!session || session.species !== 'broiler') return;
+    const oldWeek = Number(session.broiler_week);
+    const newWeek = Number(metaWeek);
+    const oldTeam = (session.team_member || '').trim();
+    const newTeam = (metaTeam || '').trim();
+    if (!newTeam) {
+      setMetaErr('Pick a team member.');
+      return;
+    }
+    if (newWeek !== 4 && newWeek !== 6) {
+      setMetaErr('Week must be 4 or 6.');
+      return;
+    }
+    const weekChanged = oldWeek !== newWeek;
+    const teamChanged = oldTeam !== newTeam;
+    if (!weekChanged && !teamChanged) return;
+
+    setMetaBusy(true);
+    setMetaErr('');
+    const upd = {};
+    if (weekChanged) upd.broiler_week = newWeek;
+    if (teamChanged) upd.team_member = newTeam;
+    const r = await sb.from('weigh_in_sessions').update(upd).eq('id', session.id);
+    if (r && r.error) {
+      setMetaBusy(false);
+      setMetaErr('Save failed: ' + r.error.message);
+      return;
+    }
+
+    if (session.status === 'complete' && weekChanged) {
+      const r1 = await recomputeBroilerBatchWeekAvg(sb, session.batch_id, oldWeek, {excludeSessionId: session.id});
+      if (!r1.ok) {
+        setMetaBusy(false);
+        setMetaErr('Save partly failed (old week): ' + r1.message);
+        return;
+      }
+      const eR = await sb.from('weigh_ins').select('weight').eq('session_id', session.id);
+      if (eR && eR.error) {
+        setMetaBusy(false);
+        setMetaErr('Save partly failed (entries read): ' + eR.error.message);
+        return;
+      }
+      await writeBroilerBatchAvg(sb, {...session, broiler_week: newWeek}, (eR && eR.data) || []);
+    }
+    try {
+      const parts = [];
+      if (weekChanged) parts.push('week ' + oldWeek + ' → ' + newWeek);
+      if (teamChanged) parts.push('team ' + oldTeam + ' → ' + newTeam);
+      await recordActivityEvent(sb, {
+        entityType: 'weighin.session',
+        entityId: session.id,
+        eventType: 'field.updated',
+        entityLabel: sessionLabel(),
+        body: 'Updated metadata: ' + parts.join(', '),
+      });
+    } catch (_e) {
+      /* best-effort */
+    }
+    setMetaBusy(false);
+    await loadAll();
+  }
 
   function computePriors() {
     const byTag = {};
@@ -218,12 +394,14 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   }
 
   function sessionLabel() {
-    if (isPig) return (session.date || '') + ' · ' + (session.batch_id || 'pig');
+    if (isPig || isBroiler) return (session.date || '') + ' · ' + (session.batch_id || session.species);
     const groupLabels = session.species === 'sheep' ? FLOCK_LABELS : HERD_LABELS;
     return (session.date || '') + ' · ' + (groupLabels[session.herd] || session.herd || session.species);
   }
 
   async function reopenSession() {
+    const wasBroilerComplete = isBroiler && session.status === 'complete';
+    const oldWeek = Number(session.broiler_week);
     await runMutation(
       () => sb.from('weigh_in_sessions').update({status: 'draft', completed_at: null}).eq('id', session.id),
       {
@@ -237,18 +415,27 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           }),
       },
     );
+    if (wasBroilerComplete && (oldWeek === 4 || oldWeek === 6)) {
+      const r2 = await recomputeBroilerBatchWeekAvg(sb, session.batch_id, oldWeek, {excludeSessionId: session.id});
+      if (!r2.ok) {
+        setNotice({kind: 'error', message: 'Session reopened, but ppp-v4 cleanup failed: ' + r2.message});
+        await loadAll();
+        return;
+      }
+    }
     invalidateCache();
     await loadAll();
   }
 
   async function deleteSession() {
     if (!window._wcfConfirmDelete) return;
-    const deleteMsg = isPig
-      ? 'Delete this weigh-in session and all its entries? This cannot be undone.'
-      : 'Delete this weigh-in session and all its entries? Attached animals will be detached and reverted to prior herds where possible.';
+    const deleteMsg =
+      isPig || isBroiler
+        ? 'Delete this weigh-in session and all its entries? This cannot be undone.'
+        : 'Delete this weigh-in session and all its entries? Attached animals will be detached and reverted to prior herds where possible.';
     window._wcfConfirmDelete(deleteMsg, async () => {
       const blocked = [];
-      if (!isPig) {
+      if (!isPig && !isBroiler) {
         const batchEntries = sEntries.filter((e) => e.target_processing_batch_id);
         for (const e of batchEntries) {
           const cow = e.tag ? animals.find((c) => c.tag === e.tag) : null;
@@ -264,6 +451,18 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         }
       }
       async function finishDelete() {
+        if (isBroiler && session.status === 'complete') {
+          const oldWeek = Number(session.broiler_week);
+          if (oldWeek === 4 || oldWeek === 6) {
+            const r2 = await recomputeBroilerBatchWeekAvg(sb, session.batch_id, oldWeek, {
+              excludeSessionId: session.id,
+            });
+            if (!r2.ok) {
+              setNotice({kind: 'error', message: 'Cannot delete: ppp-v4 cleanup failed: ' + r2.message});
+              return;
+            }
+          }
+        }
         try {
           await recordActivityEvent(sb, {
             entityType: 'weighin.session',
@@ -275,7 +474,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         } catch (_e) {
           /* best-effort */
         }
-        if (!isPig) {
+        if (!isPig && !isBroiler) {
           const wis = await sb.from('weigh_ins').select('id').eq('session_id', session.id);
           const wiIds = ((wis && wis.data) || []).map((r) => r.id);
           if (wiIds.length > 0) {
@@ -301,6 +500,32 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   }
 
   async function completeSession() {
+    if (isBroiler) {
+      const gridOk = await saveBroilerGrid();
+      if (!gridOk) return;
+      const eR = await sb.from('weigh_ins').select('*').eq('session_id', session.id);
+      const freshEntries = (eR && eR.data) || [];
+      await runMutation(
+        () =>
+          sb
+            .from('weigh_in_sessions')
+            .update({status: 'complete', completed_at: new Date().toISOString()})
+            .eq('id', session.id),
+        {
+          activity: () =>
+            recordStatusChange(sb, {
+              entityType: 'weighin.session',
+              entityId: session.id,
+              entityLabel: sessionLabel(),
+              from: 'draft',
+              to: 'complete',
+            }),
+        },
+      );
+      await writeBroilerBatchAvg(sb, {...session, status: 'complete'}, freshEntries);
+      await loadAll();
+      return;
+    }
     const canSendToProcessor = session.species === 'sheep' || session.herd === 'finishers';
     if (canSendToProcessor) {
       const flagged = sEntries.filter((e) => e.send_to_processor === true);
@@ -1056,7 +1281,12 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     );
   }
 
-  if (session.species !== 'cattle' && session.species !== 'sheep' && session.species !== 'pig') {
+  if (
+    session.species !== 'cattle' &&
+    session.species !== 'sheep' &&
+    session.species !== 'pig' &&
+    session.species !== 'broiler'
+  ) {
     const back = SPECIES_BACK[session.species] || {path: '/', label: 'Home'};
     return (
       <div data-unsupported-species="1" style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -1087,19 +1317,28 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   }
 
   const isPig = session.species === 'pig';
-  const priors = isPig ? {} : computePriors();
+  const isBroiler = session.species === 'broiler';
+  const priors = isPig || isBroiler ? {} : computePriors();
   const curDate = session.date;
-  const adgs = isPig
-    ? []
-    : sEntries
-        .map((e) => {
-          const p = priors[e.tag];
-          return p ? adgLbPerDay(p.weight, p.date, e.weight, curDate) : null;
-        })
-        .filter((a) => a != null);
+  const adgs =
+    isPig || isBroiler
+      ? []
+      : sEntries
+          .map((e) => {
+            const p = priors[e.tag];
+            return p ? adgLbPerDay(p.weight, p.date, e.weight, curDate) : null;
+          })
+          .filter((a) => a != null);
   const avgAdg = adgs.length > 0 ? adgs.reduce((x, v) => x + v, 0) / adgs.length : null;
+  const broilerAvg =
+    isBroiler && sEntries.length > 0
+      ? Math.round((sEntries.reduce((s, e) => s + (parseFloat(e.weight) || 0), 0) / sEntries.length) * 100) / 100
+      : null;
   const groupLabelsMap = session.species === 'sheep' ? FLOCK_LABELS : HERD_LABELS;
-  const groupName = isPig ? session.batch_id || 'pig' : groupLabelsMap[session.herd] || session.herd || session.species;
+  const groupName =
+    isPig || isBroiler
+      ? session.batch_id || session.species
+      : groupLabelsMap[session.herd] || session.herd || session.species;
   const entityLabel = (session.date || '') + ' · ' + groupName;
   const backInfo = SPECIES_BACK[session.species] || {path: '/', label: 'Home'};
 
@@ -1186,9 +1425,150 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
               </span>
             </>
           )}
+          {isBroiler && session.broiler_week && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 10,
+                background: '#fef3c7',
+                color: '#92400e',
+              }}
+            >
+              {'WK ' + session.broiler_week}
+            </span>
+          )}
+          {isBroiler && broilerAvg != null && (
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#065f46',
+                padding: '2px 10px',
+                borderRadius: 10,
+                background: '#d1fae5',
+              }}
+            >
+              avg {broilerAvg} lb
+            </span>
+          )}
         </div>
 
         {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
+
+        {isBroiler &&
+          (() => {
+            const baseRoster = activeRoster;
+            const cur = (session.team_member || '').trim();
+            const includesCurrent = !cur || baseRoster.includes(cur);
+            const teamOptions = includesCurrent
+              ? baseRoster.map((n) => ({value: n, label: n}))
+              : [{value: cur, label: cur + ' (retired)'}, ...baseRoster.map((n) => ({value: n, label: n}))];
+            const metaDirty = Number(metaWeek) !== Number(session.broiler_week) || (metaTeam || '').trim() !== cur;
+            const wkBtnStyle = (active) => ({
+              padding: '4px 10px',
+              borderRadius: 6,
+              border: '1px solid ' + (active ? '#1e40af' : '#d1d5db'),
+              background: active ? '#1e40af' : 'white',
+              color: active ? 'white' : '#374151',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            });
+            return (
+              <div
+                data-testid="broiler-meta-panel"
+                style={{
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  marginBottom: 10,
+                  background: 'white',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4}}>
+                  {'SESSION METADATA'}
+                </div>
+                <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                  <span style={{fontSize: 12, color: '#374151', minWidth: 90}}>{'Week:'}</span>
+                  <button
+                    type="button"
+                    data-testid="broiler-meta-wk4"
+                    onClick={() => setMetaWeek(4)}
+                    aria-pressed={Number(metaWeek) === 4}
+                    style={wkBtnStyle(Number(metaWeek) === 4)}
+                  >
+                    {'WK 4'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="broiler-meta-wk6"
+                    onClick={() => setMetaWeek(6)}
+                    aria-pressed={Number(metaWeek) === 6}
+                    style={wkBtnStyle(Number(metaWeek) === 6)}
+                  >
+                    {'WK 6'}
+                  </button>
+                </div>
+                <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                  <span style={{fontSize: 12, color: '#374151', minWidth: 90}}>{'Team Member:'}</span>
+                  <select
+                    data-testid="broiler-meta-team"
+                    value={metaTeam}
+                    onChange={(e) => setMetaTeam(e.target.value)}
+                    style={{
+                      fontFamily: 'inherit',
+                      fontSize: 13,
+                      padding: '6px 8px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: 6,
+                      background: 'white',
+                      minWidth: 160,
+                    }}
+                  >
+                    {teamOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {metaDirty && (
+                  <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                    <button
+                      type="button"
+                      data-testid="broiler-meta-save"
+                      onClick={() => saveBroilerMetadata()}
+                      disabled={metaBusy}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: 6,
+                        border: 'none',
+                        background: metaBusy ? '#9ca3af' : '#1e40af',
+                        color: 'white',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: metaBusy ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {metaBusy ? 'Saving…' : 'Save Metadata'}
+                    </button>
+                  </div>
+                )}
+                {metaErr && (
+                  <div data-testid="broiler-meta-err" style={{fontSize: 11, color: '#b91c1c'}}>
+                    {metaErr}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
         <div style={{display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap'}}>
           {session.status === 'draft' && (
@@ -1261,482 +1641,630 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           )}
         </div>
 
-        <div
-          data-weighin-entries="1"
-          style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 18px'}}
-        >
-          {sEntries.length === 0 && (
-            <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>No entries yet.</div>
-          )}
-          {sEntries.length > 0 && (
+        {isBroiler && gridLabels.length > 0 && (
+          <div
+            data-broiler-grid="1"
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              padding: '14px 18px',
+              marginBottom: 12,
+            }}
+          >
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                gap: 6,
-                marginBottom: 8,
+                gridTemplateColumns: 'repeat(' + gridLabels.length + ', 1fr)',
+                gap: 8,
+                marginBottom: 10,
               }}
             >
-              {sEntries.map((e) => {
-                const ef = entryEdits[e.id] || {tag: e.tag || '', weight: String(e.weight ?? ''), note: e.note || ''};
-                if (isPig) {
-                  const isSent = !!e.sent_to_trip_id;
-                  const isTransferred = !!(e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || ''));
-                  const isLocked = isSent || isTransferred;
+              {gridLabels.map((label, col) => (
+                <div key={col}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#374151',
+                      textAlign: 'center',
+                      padding: '4px 0',
+                      marginBottom: 4,
+                      background: '#eef2ff',
+                      borderRadius: 6,
+                    }}
+                  >
+                    {'Schooner ' + label}
+                  </div>
+                  {Array.from({length: 15}).map((_, row) => {
+                    const idx = col * 15 + row;
+                    return (
+                      <div key={row} style={{display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3}}>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: '#9ca3af',
+                            minWidth: 18,
+                            textAlign: 'right',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {row + 1}
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={gridInputs[idx] || ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setGridInputs((prev) => {
+                              const next = prev.slice();
+                              next[idx] = v;
+                              return next;
+                            });
+                          }}
+                          placeholder="0"
+                          style={{
+                            fontFamily: 'inherit',
+                            fontSize: 13,
+                            padding: '6px 8px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: 6,
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            background: 'white',
+                            color: '#111827',
+                            outline: 'none',
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            <div style={{marginBottom: 10}}>
+              <label style={{display: 'block', fontSize: 12, color: '#374151', marginBottom: 4, fontWeight: 600}}>
+                Session note
+              </label>
+              <textarea
+                value={gridNote}
+                onChange={(ev) => setGridNote(ev.target.value)}
+                rows={2}
+                placeholder="Optional"
+                style={{
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  padding: '6px 8px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 6,
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  background: 'white',
+                  color: '#111827',
+                  outline: 'none',
+                  resize: 'vertical',
+                }}
+              />
+            </div>
+            {gridErr && (
+              <div
+                style={{
+                  color: '#b91c1c',
+                  fontSize: 12,
+                  marginBottom: 8,
+                  padding: '6px 10px',
+                  background: '#fef2f2',
+                  borderRadius: 6,
+                }}
+              >
+                {gridErr}
+              </div>
+            )}
+            <button
+              onClick={saveBroilerGrid}
+              disabled={savingGrid}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 7,
+                border: 'none',
+                background: savingGrid ? '#9ca3af' : '#1e40af',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: savingGrid ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {savingGrid ? 'Saving…' : 'Save Weights'}
+            </button>
+          </div>
+        )}
+
+        {!isBroiler && (
+          <div
+            data-weighin-entries="1"
+            style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 18px'}}
+          >
+            {sEntries.length === 0 && (
+              <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>No entries yet.</div>
+            )}
+            {sEntries.length > 0 && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                  gap: 6,
+                  marginBottom: 8,
+                }}
+              >
+                {sEntries.map((e) => {
+                  const ef = entryEdits[e.id] || {tag: e.tag || '', weight: String(e.weight ?? ''), note: e.note || ''};
+                  if (isPig) {
+                    const isSent = !!e.sent_to_trip_id;
+                    const isTransferred = !!(
+                      e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || '')
+                    );
+                    const isLocked = isSent || isTransferred;
+                    return (
+                      <div
+                        key={e.id}
+                        style={{
+                          background: isSent ? '#ecfdf5' : isTransferred ? '#eef2ff' : 'white',
+                          border: '1px solid ' + (isSent ? '#a7f3d0' : isTransferred ? '#c7d2fe' : '#e5e7eb'),
+                          borderRadius: 6,
+                          padding: '6px 10px',
+                          fontSize: 12,
+                        }}
+                      >
+                        <div style={{display: 'flex', gap: 4, alignItems: 'center'}}>
+                          {!isLocked && session.status === 'draft' && canManagePigPlannedTrips && (
+                            <input
+                              type="checkbox"
+                              checked={selectedEntryIds.has(e.id)}
+                              onChange={() =>
+                                setSelectedEntryIds((prev) => {
+                                  const n = new Set(prev);
+                                  if (n.has(e.id)) n.delete(e.id);
+                                  else n.add(e.id);
+                                  return n;
+                                })
+                              }
+                            />
+                          )}
+                          {isLocked ? (
+                            <span style={{fontWeight: 600, color: '#1e40af', flex: 1}}>{e.weight} lb</span>
+                          ) : (
+                            <>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                placeholder="lb"
+                                value={ef.weight}
+                                onChange={(ev) => setEntryField(e.id, 'weight', ev.target.value)}
+                                style={{...inp, flex: '0 0 80px', minWidth: 0}}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Note"
+                                value={ef.note}
+                                onChange={(ev) => setEntryField(e.id, 'note', ev.target.value)}
+                                style={{...inp, flex: 1, minWidth: 60}}
+                              />
+                            </>
+                          )}
+                          {isSent && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                background: '#d1fae5',
+                                color: '#065f46',
+                              }}
+                            >
+                              Sent to trip
+                            </span>
+                          )}
+                          {isTransferred && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                background: '#eef2ff',
+                                color: '#3730a3',
+                              }}
+                            >
+                              Transferred
+                            </span>
+                          )}
+                        </div>
+                        {isLocked && e.note && (
+                          <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>{e.note}</div>
+                        )}
+                        <div
+                          style={{display: 'flex', gap: 4, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap'}}
+                        >
+                          {isSent && canManagePigPlannedTrips && (
+                            <button
+                              onClick={() => undoSendToTrip(e)}
+                              style={{
+                                fontSize: 10,
+                                color: '#b45309',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              Undo send
+                            </button>
+                          )}
+                          {isTransferred && (
+                            <button
+                              onClick={() => undoTransferToBreeding(e)}
+                              style={{
+                                fontSize: 10,
+                                color: '#b45309',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              Undo transfer
+                            </button>
+                          )}
+                          {!isLocked && (
+                            <>
+                              <button
+                                onClick={() => openTransferModal(e)}
+                                style={{
+                                  fontSize: 10,
+                                  color: '#3730a3',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '2px 6px',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                → Breeding
+                              </button>
+                              <button
+                                onClick={() => revertEntry(e)}
+                                style={{
+                                  fontSize: 10,
+                                  color: '#6b7280',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '2px 6px',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                Revert
+                              </button>
+                              <button
+                                onClick={() => saveEntry(e)}
+                                disabled={!(parseFloat(ef.weight) > 0)}
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  color: 'white',
+                                  background: parseFloat(ef.weight) > 0 ? '#1e40af' : '#d1d5db',
+                                  border: 'none',
+                                  borderRadius: 4,
+                                  cursor: parseFloat(ef.weight) > 0 ? 'pointer' : 'not-allowed',
+                                  padding: '3px 8px',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => deleteEntry(e)}
+                                style={{
+                                  fontSize: 10,
+                                  color: '#b91c1c',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '2px 6px',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  const cow = animals.find((c) => c.tag === e.tag);
+                  const prior = priors[e.tag];
+                  const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
                   return (
                     <div
                       key={e.id}
                       style={{
-                        background: isSent ? '#ecfdf5' : isTransferred ? '#eef2ff' : 'white',
-                        border: '1px solid ' + (isSent ? '#a7f3d0' : isTransferred ? '#c7d2fe' : '#e5e7eb'),
+                        background: e.send_to_processor ? '#fef2f2' : 'white',
+                        border:
+                          '1px solid ' + (e.send_to_processor ? '#fca5a5' : e.new_tag_flag ? '#fca5a5' : '#e5e7eb'),
                         borderRadius: 6,
                         padding: '6px 10px',
                         fontSize: 12,
                       }}
                     >
-                      <div style={{display: 'flex', gap: 4, alignItems: 'center'}}>
-                        {!isLocked && session.status === 'draft' && canManagePigPlannedTrips && (
+                      <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                        <div style={{display: 'flex', gap: 4, alignItems: 'center'}}>
                           <input
-                            type="checkbox"
-                            checked={selectedEntryIds.has(e.id)}
-                            onChange={() =>
-                              setSelectedEntryIds((prev) => {
-                                const n = new Set(prev);
-                                if (n.has(e.id)) n.delete(e.id);
-                                else n.add(e.id);
-                                return n;
-                              })
-                            }
+                            type="text"
+                            placeholder="Tag #"
+                            value={ef.tag}
+                            onChange={(ev) => setEntryField(e.id, 'tag', ev.target.value)}
+                            style={{...inp, flex: '0 0 80px', minWidth: 0}}
                           />
-                        )}
-                        {isLocked ? (
-                          <span style={{fontWeight: 600, color: '#1e40af', flex: 1}}>{e.weight} lb</span>
-                        ) : (
-                          <>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              placeholder="lb"
-                              value={ef.weight}
-                              onChange={(ev) => setEntryField(e.id, 'weight', ev.target.value)}
-                              style={{...inp, flex: '0 0 80px', minWidth: 0}}
-                            />
-                            <input
-                              type="text"
-                              placeholder="Note"
-                              value={ef.note}
-                              onChange={(ev) => setEntryField(e.id, 'note', ev.target.value)}
-                              style={{...inp, flex: 1, minWidth: 60}}
-                            />
-                          </>
-                        )}
-                        {isSent && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: '#d1fae5',
-                              color: '#065f46',
-                            }}
-                          >
-                            Sent to trip
-                          </span>
-                        )}
-                        {isTransferred && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: '#eef2ff',
-                              color: '#3730a3',
-                            }}
-                          >
-                            Transferred
-                          </span>
-                        )}
-                      </div>
-                      {isLocked && e.note && <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>{e.note}</div>}
-                      <div
-                        style={{display: 'flex', gap: 4, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap'}}
-                      >
-                        {isSent && canManagePigPlannedTrips && (
-                          <button
-                            onClick={() => undoSendToTrip(e)}
-                            style={{
-                              fontSize: 10,
-                              color: '#b45309',
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: '2px 6px',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            Undo send
-                          </button>
-                        )}
-                        {isTransferred && (
-                          <button
-                            onClick={() => undoTransferToBreeding(e)}
-                            style={{
-                              fontSize: 10,
-                              color: '#b45309',
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: '2px 6px',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            Undo transfer
-                          </button>
-                        )}
-                        {!isLocked && (
-                          <>
-                            <button
-                              onClick={() => openTransferModal(e)}
-                              style={{
-                                fontSize: 10,
-                                color: '#3730a3',
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              → Breeding
-                            </button>
-                            <button
-                              onClick={() => revertEntry(e)}
-                              style={{
-                                fontSize: 10,
-                                color: '#6b7280',
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              Revert
-                            </button>
-                            <button
-                              onClick={() => saveEntry(e)}
-                              disabled={!(parseFloat(ef.weight) > 0)}
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 600,
-                                color: 'white',
-                                background: parseFloat(ef.weight) > 0 ? '#1e40af' : '#d1d5db',
-                                border: 'none',
-                                borderRadius: 4,
-                                cursor: parseFloat(ef.weight) > 0 ? 'pointer' : 'not-allowed',
-                                padding: '3px 8px',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => deleteEntry(e)}
-                              style={{
-                                fontSize: 10,
-                                color: '#b91c1c',
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
-                const cow = animals.find((c) => c.tag === e.tag);
-                const prior = priors[e.tag];
-                const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
-                return (
-                  <div
-                    key={e.id}
-                    style={{
-                      background: e.send_to_processor ? '#fef2f2' : 'white',
-                      border: '1px solid ' + (e.send_to_processor ? '#fca5a5' : e.new_tag_flag ? '#fca5a5' : '#e5e7eb'),
-                      borderRadius: 6,
-                      padding: '6px 10px',
-                      fontSize: 12,
-                    }}
-                  >
-                    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                      <div style={{display: 'flex', gap: 4, alignItems: 'center'}}>
-                        <input
-                          type="text"
-                          placeholder="Tag #"
-                          value={ef.tag}
-                          onChange={(ev) => setEntryField(e.id, 'tag', ev.target.value)}
-                          style={{...inp, flex: '0 0 80px', minWidth: 0}}
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          placeholder="lb"
-                          value={ef.weight}
-                          onChange={(ev) => setEntryField(e.id, 'weight', ev.target.value)}
-                          style={{...inp, flex: '0 0 70px', minWidth: 0}}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Note"
-                          value={ef.note}
-                          onChange={(ev) => setEntryField(e.id, 'note', ev.target.value)}
-                          style={{...inp, flex: 1, minWidth: 60}}
-                        />
-                      </div>
-                      <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
-                        {prior && (
-                          <span style={{fontSize: 10, color: '#6b7280'}} title={'prior ' + prior.date}>
-                            {'prior ' + Math.round(prior.weight) + ' lb'}
-                          </span>
-                        )}
-                        {adg != null && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: adg >= 0 ? '#ecfdf5' : '#fef2f2',
-                              color: adg >= 0 ? '#065f46' : '#b91c1c',
-                              border: '1px solid ' + (adg >= 0 ? '#a7f3d0' : '#fecaca'),
-                            }}
-                          >
-                            {(adg >= 0 ? '+' : '') + adg.toFixed(2) + ' lb/d'}
-                          </span>
-                        )}
-                        {e.new_tag_flag && (
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                            }}
-                          >
-                            NEW TAG
-                          </span>
-                        )}
-                        {!e.new_tag_flag && cow && (
-                          <span style={{fontSize: 11, color: '#6b7280'}}>
-                            {groupLabelsMap[cow.herd || cow.flock] || cow.herd || cow.flock}
-                          </span>
-                        )}
-                        <span style={{fontSize: 10, color: '#9ca3af', marginLeft: 'auto'}}>
-                          {(e.entered_at || '').slice(11, 16)}
-                        </span>
-                      </div>
-                      {e.new_tag_flag && (
-                        <select
-                          onChange={(ev) => {
-                            if (ev.target.value) reconcileNewTag(e, ev.target.value);
-                          }}
-                          defaultValue=""
-                          style={{
-                            fontSize: 11,
-                            padding: '3px 6px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: 4,
-                            fontFamily: 'inherit',
-                            width: '100%',
-                          }}
-                        >
-                          <option value="">Reconcile to known cow...</option>
-                          {animals
-                            .filter((c) => c.tag)
-                            .sort((a, b) => (parseFloat(a.tag) || 0) - (parseFloat(b.tag) || 0))
-                            .map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {'#' + c.tag + ' (' + (c.herd || c.flock || '?') + ')'}
-                              </option>
-                            ))}
-                        </select>
-                      )}
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: 4,
-                          justifyContent: 'flex-end',
-                          alignItems: 'center',
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        {(session.species === 'sheep' || session.herd === 'finishers') &&
-                          session.status === 'draft' && (
-                            <button
-                              onClick={() => toggleProcessor(e, !e.send_to_processor)}
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: '3px 8px',
-                                borderRadius: 4,
-                                border: '1px solid ' + (e.send_to_processor ? '#991b1b' : '#d1d5db'),
-                                background: e.send_to_processor ? '#991b1b' : 'white',
-                                color: e.send_to_processor ? 'white' : '#6b7280',
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              {e.send_to_processor ? '✓ Processor' : '→ Processor'}
-                            </button>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            placeholder="lb"
+                            value={ef.weight}
+                            onChange={(ev) => setEntryField(e.id, 'weight', ev.target.value)}
+                            style={{...inp, flex: '0 0 70px', minWidth: 0}}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Note"
+                            value={ef.note}
+                            onChange={(ev) => setEntryField(e.id, 'note', ev.target.value)}
+                            style={{...inp, flex: 1, minWidth: 60}}
+                          />
+                        </div>
+                        <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
+                          {prior && (
+                            <span style={{fontSize: 10, color: '#6b7280'}} title={'prior ' + prior.date}>
+                              {'prior ' + Math.round(prior.weight) + ' lb'}
+                            </span>
                           )}
-                        {(session.species === 'sheep' || session.herd === 'finishers') &&
-                          session.status !== 'draft' &&
-                          e.send_to_processor && (
+                          {adg != null && (
                             <span
                               style={{
                                 fontSize: 10,
                                 fontWeight: 700,
-                                padding: '3px 8px',
+                                padding: '1px 6px',
                                 borderRadius: 4,
-                                background: '#991b1b',
-                                color: 'white',
+                                background: adg >= 0 ? '#ecfdf5' : '#fef2f2',
+                                color: adg >= 0 ? '#065f46' : '#b91c1c',
+                                border: '1px solid ' + (adg >= 0 ? '#a7f3d0' : '#fecaca'),
                               }}
                             >
-                              ✓ Processor
+                              {(adg >= 0 ? '+' : '') + adg.toFixed(2) + ' lb/d'}
                             </span>
                           )}
-                        <button
-                          onClick={() => revertEntry(e)}
+                          {e.new_tag_flag && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                background: '#fef2f2',
+                                color: '#b91c1c',
+                              }}
+                            >
+                              NEW TAG
+                            </span>
+                          )}
+                          {!e.new_tag_flag && cow && (
+                            <span style={{fontSize: 11, color: '#6b7280'}}>
+                              {groupLabelsMap[cow.herd || cow.flock] || cow.herd || cow.flock}
+                            </span>
+                          )}
+                          <span style={{fontSize: 10, color: '#9ca3af', marginLeft: 'auto'}}>
+                            {(e.entered_at || '').slice(11, 16)}
+                          </span>
+                        </div>
+                        {e.new_tag_flag && (
+                          <select
+                            onChange={(ev) => {
+                              if (ev.target.value) reconcileNewTag(e, ev.target.value);
+                            }}
+                            defaultValue=""
+                            style={{
+                              fontSize: 11,
+                              padding: '3px 6px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: 4,
+                              fontFamily: 'inherit',
+                              width: '100%',
+                            }}
+                          >
+                            <option value="">Reconcile to known cow...</option>
+                            {animals
+                              .filter((c) => c.tag)
+                              .sort((a, b) => (parseFloat(a.tag) || 0) - (parseFloat(b.tag) || 0))
+                              .map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {'#' + c.tag + ' (' + (c.herd || c.flock || '?') + ')'}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        <div
                           style={{
-                            fontSize: 10,
-                            color: '#6b7280',
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '2px 6px',
-                            fontFamily: 'inherit',
+                            display: 'flex',
+                            gap: 4,
+                            justifyContent: 'flex-end',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
                           }}
                         >
-                          Revert
-                        </button>
-                        <button
-                          onClick={() => saveEntry(e)}
-                          disabled={!(parseFloat(ef.weight) > 0)}
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 600,
-                            color: 'white',
-                            background: parseFloat(ef.weight) > 0 ? '#1e40af' : '#d1d5db',
-                            border: 'none',
-                            borderRadius: 4,
-                            cursor: parseFloat(ef.weight) > 0 ? 'pointer' : 'not-allowed',
-                            padding: '3px 8px',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => deleteEntry(e)}
-                          style={{
-                            fontSize: 10,
-                            color: '#b91c1c',
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '2px 6px',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          Delete
-                        </button>
+                          {(session.species === 'sheep' || session.herd === 'finishers') &&
+                            session.status === 'draft' && (
+                              <button
+                                onClick={() => toggleProcessor(e, !e.send_to_processor)}
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  border: '1px solid ' + (e.send_to_processor ? '#991b1b' : '#d1d5db'),
+                                  background: e.send_to_processor ? '#991b1b' : 'white',
+                                  color: e.send_to_processor ? 'white' : '#6b7280',
+                                  cursor: 'pointer',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                {e.send_to_processor ? '✓ Processor' : '→ Processor'}
+                              </button>
+                            )}
+                          {(session.species === 'sheep' || session.herd === 'finishers') &&
+                            session.status !== 'draft' &&
+                            e.send_to_processor && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  background: '#991b1b',
+                                  color: 'white',
+                                }}
+                              >
+                                ✓ Processor
+                              </span>
+                            )}
+                          <button
+                            onClick={() => revertEntry(e)}
+                            style={{
+                              fontSize: 10,
+                              color: '#6b7280',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px 6px',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Revert
+                          </button>
+                          <button
+                            onClick={() => saveEntry(e)}
+                            disabled={!(parseFloat(ef.weight) > 0)}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              color: 'white',
+                              background: parseFloat(ef.weight) > 0 ? '#1e40af' : '#d1d5db',
+                              border: 'none',
+                              borderRadius: 4,
+                              cursor: parseFloat(ef.weight) > 0 ? 'pointer' : 'not-allowed',
+                              padding: '3px 8px',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => deleteEntry(e)}
+                            style={{
+                              fontSize: 10,
+                              color: '#b91c1c',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px 6px',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div
-            style={{
-              marginTop: 8,
-              background: '#eff6ff',
-              border: '1px dashed #bfdbfe',
-              borderRadius: 6,
-              padding: '8px 10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              flexWrap: 'wrap',
-            }}
-          >
-            <span style={{fontSize: 11, fontWeight: 600, color: '#1e40af'}}>+ Add entry:</span>
-            {!isPig && (
-              <>
-                <input
-                  type="text"
-                  placeholder="Prior tag (swap)"
-                  value={addForm.priorTag}
-                  onChange={(ev) => setAddForm((f) => ({...f, priorTag: ev.target.value}))}
-                  style={{...inp, width: 130, background: addForm.priorTag ? '#dbeafe' : 'white'}}
-                />
-                <input
-                  type="text"
-                  placeholder={addForm.priorTag ? 'New tag #' : 'Tag #'}
-                  value={addForm.tag}
-                  onChange={(ev) => setAddForm((f) => ({...f, tag: ev.target.value}))}
-                  style={{...inp, width: 90}}
-                />
-              </>
+                  );
+                })}
+              </div>
             )}
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              placeholder="lb"
-              value={addForm.weight}
-              onChange={(ev) => setAddForm((f) => ({...f, weight: ev.target.value}))}
-              style={{...inp, width: 70}}
-            />
-            <input
-              type="text"
-              placeholder="Note"
-              value={addForm.note}
-              onChange={(ev) => setAddForm((f) => ({...f, note: ev.target.value}))}
-              style={{...inp, flex: 1, minWidth: 100}}
-            />
-            <button
-              onClick={addEntry}
-              disabled={!(parseFloat(addForm.weight) > 0)}
+
+            <div
               style={{
-                padding: '4px 12px',
-                borderRadius: 5,
-                border: 'none',
-                background: parseFloat(addForm.weight) > 0 ? '#1e40af' : '#d1d5db',
-                color: 'white',
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: parseFloat(addForm.weight) > 0 ? 'pointer' : 'not-allowed',
-                fontFamily: 'inherit',
+                marginTop: 8,
+                background: '#eff6ff',
+                border: '1px dashed #bfdbfe',
+                borderRadius: 6,
+                padding: '8px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                flexWrap: 'wrap',
               }}
             >
-              {!isPig && addForm.priorTag ? 'Swap + Add' : 'Add'}
-            </button>
+              <span style={{fontSize: 11, fontWeight: 600, color: '#1e40af'}}>+ Add entry:</span>
+              {!isPig && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Prior tag (swap)"
+                    value={addForm.priorTag}
+                    onChange={(ev) => setAddForm((f) => ({...f, priorTag: ev.target.value}))}
+                    style={{...inp, width: 130, background: addForm.priorTag ? '#dbeafe' : 'white'}}
+                  />
+                  <input
+                    type="text"
+                    placeholder={addForm.priorTag ? 'New tag #' : 'Tag #'}
+                    value={addForm.tag}
+                    onChange={(ev) => setAddForm((f) => ({...f, tag: ev.target.value}))}
+                    style={{...inp, width: 90}}
+                  />
+                </>
+              )}
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="lb"
+                value={addForm.weight}
+                onChange={(ev) => setAddForm((f) => ({...f, weight: ev.target.value}))}
+                style={{...inp, width: 70}}
+              />
+              <input
+                type="text"
+                placeholder="Note"
+                value={addForm.note}
+                onChange={(ev) => setAddForm((f) => ({...f, note: ev.target.value}))}
+                style={{...inp, flex: 1, minWidth: 100}}
+              />
+              <button
+                onClick={addEntry}
+                disabled={!(parseFloat(addForm.weight) > 0)}
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: 5,
+                  border: 'none',
+                  background: parseFloat(addForm.weight) > 0 ? '#1e40af' : '#d1d5db',
+                  color: 'white',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: parseFloat(addForm.weight) > 0 ? 'pointer' : 'not-allowed',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {!isPig && addForm.priorTag ? 'Swap + Add' : 'Add'}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div style={{marginTop: 16}}>
           <CommentsSection

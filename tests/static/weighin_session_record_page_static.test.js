@@ -82,11 +82,9 @@ describe('WeighInSessionPage — CommentsSection + RecordActivityLog', () => {
   });
 });
 
-describe('WeighInSessionPage — cattle + sheep + pig support', () => {
-  it('supports cattle, sheep, and pig; shows unsupported for others', () => {
-    expect(pageSrc).toContain(
-      "session.species !== 'cattle' && session.species !== 'sheep' && session.species !== 'pig'",
-    );
+describe('WeighInSessionPage — cattle + sheep + pig + broiler support', () => {
+  it('supports cattle, sheep, pig, and broiler; shows unsupported for others', () => {
+    expect(pageSrc).toContain("session.species !== 'broiler'");
     expect(pageSrc).toContain('data-unsupported-species');
   });
   it('imports pig metrics formatters', () => {
@@ -376,31 +374,150 @@ describe('SheepWeighInsView — cleaned list view', () => {
   });
 });
 
-describe('LivestockWeighInsView — pig list cleanup', () => {
-  it('pig tiles navigate to /weigh-in-sessions/<id>', () => {
+describe('WeighInSessionPage — broiler record page', () => {
+  it('loadAll allows species broiler', () => {
+    expect(pageSrc).toContain("sp !== 'broiler'");
+  });
+  it('loads ppp-v4 for broiler batch recs', () => {
+    expect(pageSrc).toContain("'ppp-v4'");
+    expect(pageSrc).toContain('broilerBatchRecs');
+  });
+  it('loads active roster for broiler', () => {
+    expect(pageSrc).toContain('loadRoster');
+    expect(pageSrc).toContain('activeRoster');
+  });
+  it('imports writeBroilerBatchAvg and recomputeBroilerBatchWeekAvg', () => {
+    expect(pageSrc).toContain('writeBroilerBatchAvg');
+    expect(pageSrc).toContain('recomputeBroilerBatchWeekAvg');
+  });
+  it('has broiler grid labels and inputs state', () => {
+    expect(pageSrc).toContain('gridLabels');
+    expect(pageSrc).toContain('gridInputs');
+  });
+  it('derives schooner labels from ppp-v4', () => {
+    expect(pageSrc).toContain('deriveBroilerLabels');
+    expect(pageSrc).toMatch(/schooner[\s\S]*?split\('&'\)/);
+  });
+  it('renders broiler metadata panel', () => {
+    expect(pageSrc).toContain('data-testid="broiler-meta-panel"');
+    expect(pageSrc).toContain('broiler-meta-wk4');
+    expect(pageSrc).toContain('broiler-meta-wk6');
+    expect(pageSrc).toContain('broiler-meta-team');
+    expect(pageSrc).toContain('broiler-meta-save');
+  });
+  it('renders broiler weight grid', () => {
+    expect(pageSrc).toContain('data-broiler-grid');
+    expect(pageSrc).toContain('Schooner');
+  });
+  it('has broiler grid save function', () => {
+    expect(pageSrc).toContain('saveBroilerGrid');
+    expect(pageSrc).toContain('Save Weights');
+  });
+  it('has broiler metadata save function', () => {
+    expect(pageSrc).toContain('saveBroilerMetadata');
+    expect(pageSrc).toContain('Save Metadata');
+  });
+  it('broiler complete flushes grid then writes batch avg', () => {
+    expect(pageSrc).toMatch(/isBroiler[\s\S]*?saveBroilerGrid[\s\S]*?writeBroilerBatchAvg/);
+  });
+  it('broiler reopen recomputes old week avg', () => {
+    expect(pageSrc).toMatch(/wasBroilerComplete[\s\S]*?recomputeBroilerBatchWeekAvg/);
+  });
+  it('broiler delete recomputes old week for complete sessions', () => {
+    expect(pageSrc).toMatch(
+      /isBroiler && session\.status === 'complete'[\s\S]*?recomputeBroilerBatchWeekAvg[\s\S]*?finishDelete|recordActivityEvent/,
+    );
+  });
+  it('broiler metadata save handles week change side effects', () => {
+    expect(pageSrc).toMatch(/saveBroilerMetadata[\s\S]*?recomputeBroilerBatchWeekAvg[\s\S]*?writeBroilerBatchAvg/);
+  });
+  it('shows broiler week badge in title area', () => {
+    expect(pageSrc).toContain("'WK ' + session.broiler_week");
+  });
+  it('shows broiler avg weight in title area', () => {
+    expect(pageSrc).toContain('broilerAvg');
+  });
+  it('preserves retired team member in dropdown', () => {
+    expect(pageSrc).toContain("(retired)'");
+  });
+  it('has session notes textarea for broiler grid', () => {
+    expect(pageSrc).toContain('gridNote');
+    expect(pageSrc).toContain('Session note');
+  });
+  it('does not show cattle/sheep/pig entries section for broiler', () => {
+    expect(pageSrc).toContain('!isBroiler');
+  });
+  it('has no page-level edit-mode gate on broiler grid', () => {
+    expect(pageSrc).not.toContain('gridUnlocked');
+    expect(pageSrc).not.toContain('Edit Weights');
+  });
+  it('logs Activity for broiler grid save', () => {
+    expect(pageSrc).toMatch(/saveBroilerGrid[\s\S]*?recordActivityEvent[\s\S]*?Saved broiler grid/);
+  });
+  it('logs Activity for broiler metadata save', () => {
+    expect(pageSrc).toMatch(/saveBroilerMetadata[\s\S]*?recordActivityEvent[\s\S]*?Updated metadata/);
+  });
+  it('saveBroilerGrid returns false on failure', () => {
+    expect(pageSrc).toMatch(/saveBroilerGrid[\s\S]*?return false/);
+  });
+  it('completeSession checks grid save result before marking complete', () => {
+    expect(pageSrc).toMatch(/gridOk[\s\S]*?if \(!gridOk\) return/);
+  });
+  it('reopenSession checks recompute result and surfaces failure via notice', () => {
+    expect(pageSrc).toMatch(/reopenSession[\s\S]*?recomputeBroilerBatchWeekAvg[\s\S]*?!r2\.ok[\s\S]*?setNotice/);
+  });
+  it('deleteSession checks recompute result and blocks delete on failure', () => {
+    expect(pageSrc).toMatch(
+      /finishDelete[\s\S]*?recomputeBroilerBatchWeekAvg[\s\S]*?!r2\.ok[\s\S]*?setNotice[\s\S]*?return/,
+    );
+  });
+});
+
+describe('LivestockWeighInsView — navigation-only list', () => {
+  it('all tiles navigate to /weigh-in-sessions/<id>', () => {
     expect(livestockSrc).toContain("navigate('/weigh-in-sessions/' + s.id)");
   });
-  it('pig tile click navigates instead of expanding', () => {
-    expect(livestockSrc).toMatch(/species === 'pig'[\s\S]*?navigate\('\/weigh-in-sessions\/' \+ s\.id\)/);
+  it('session creation navigates to record page', () => {
+    expect(livestockSrc).toContain("navigate('/weigh-in-sessions/' + rec.id)");
   });
-  it('pig session creation navigates to record page', () => {
-    expect(livestockSrc).toMatch(/species === 'pig'[\s\S]*?navigate\('\/weigh-in-sessions\/' \+ rec\.id\)/);
+  it('does not have expandedSession state', () => {
+    expect(livestockSrc).not.toContain('expandedSession');
   });
-  it('pig inline accordion is skipped', () => {
-    expect(livestockSrc).toContain("isExpanded && species !== 'pig'");
+  it('does not have broiler grid or metadata state', () => {
+    expect(livestockSrc).not.toContain('gridInputs');
+    expect(livestockSrc).not.toContain('gridLabels');
+    expect(livestockSrc).not.toContain('metaWeek');
+    expect(livestockSrc).not.toContain('metaTeam');
   });
-  it('pig tiles have data-weighin-session-tile marker', () => {
+  it('does not have inline action functions', () => {
+    expect(livestockSrc).not.toContain('saveAdminGrid');
+    expect(livestockSrc).not.toContain('saveSessionMetadata');
+    expect(livestockSrc).not.toContain('completeFromAdmin');
+    expect(livestockSrc).not.toContain('reopenSession');
+    expect(livestockSrc).not.toContain('deleteSession');
+  });
+  it('does not import broiler helpers', () => {
+    expect(livestockSrc).not.toContain('writeBroilerBatchAvg');
+    expect(livestockSrc).not.toContain('recomputeBroilerBatchWeekAvg');
+    expect(livestockSrc).not.toContain('loadRoster');
+  });
+  it('tiles have data-weighin-session-tile marker', () => {
     expect(livestockSrc).toContain('data-weighin-session-tile');
-  });
-  it('broiler accordion still renders when expanded', () => {
-    expect(livestockSrc).toContain('isExpanded');
-    expect(livestockSrc).toContain('gridInputs');
-  });
-  it('broiler batch metadata edit is preserved', () => {
-    expect(livestockSrc).toContain('metaWeek');
-    expect(livestockSrc).toContain('metaTeam');
   });
   it('still has status filter', () => {
     expect(livestockSrc).toContain('statusFilter');
+  });
+  it('still has New Weigh-In button', () => {
+    expect(livestockSrc).toContain('New Weigh-In');
+  });
+  it('still shows broiler week badge', () => {
+    expect(livestockSrc).toContain('broiler_week');
+  });
+  it('still shows avg weight badge for broiler', () => {
+    expect(livestockSrc).toContain('avgWeight');
+  });
+  it('pig metrics row is preserved', () => {
+    expect(livestockSrc).toContain('pigMetricsBySession');
+    expect(livestockSrc).toContain('formatAgeRange');
   });
 });

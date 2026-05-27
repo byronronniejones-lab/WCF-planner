@@ -3,12 +3,12 @@ import {test, expect} from './fixtures.js';
 // ============================================================================
 // Admin broiler session metadata edit (WK + team_member)
 // ============================================================================
-// Drives /broiler/weighins (LivestockWeighInsView) under the default
-// authenticated storage state. Locks the always-visible inline metadata
-// panel for broiler sessions, the broiler-only visibility, the legacy
-// team_member preservation, and the side-effect on app_store.ppp-v4
-// (recompute OLD week / write NEW week) when a complete session's
-// broiler_week changes.
+// Drives /weigh-in-sessions/<id> (WeighInSessionPage) and /broiler/weighins
+// (LivestockWeighInsView, now navigation-only) under the default
+// authenticated storage state. Locks the metadata panel on the record page,
+// broiler-only visibility, legacy team_member preservation, and the
+// side-effect on app_store.ppp-v4 (recompute OLD week / write NEW week)
+// when a complete session's broiler_week changes.
 //
 // Helper contract (src/lib/broiler.js recomputeBroilerBatchWeekAvg) is
 // exercised end-to-end here; unit-level cases live in src/lib/broiler.test.js.
@@ -29,31 +29,22 @@ test('T1: edit draft session WK + team_member; ppp-v4 untouched', async ({
   adminBroilerSessionMetaScenario,
 }) => {
   const {batchId, draftId} = adminBroilerSessionMetaScenario;
-  await page.goto('/broiler/weighins');
+  await page.goto('/weigh-in-sessions/' + draftId);
 
-  // Two sessions visible in the list — pick the DRAFT one. Both rows show
-  // 'B-26-01'; expand by clicking the row that also shows 'DRAFT' status.
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await expect(page.getByText('B-26-01').first()).toBeVisible({timeout: 15_000});
-  // Click the DRAFT row by its DRAFT pill.
-  await page.getByText('draft', {exact: true}).first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+  await expect(page.locator('[data-testid="broiler-meta-panel"]')).toBeVisible({timeout: 15_000});
 
   await page.getByTestId('broiler-meta-wk6').click();
   await page.getByTestId('broiler-meta-team').selectOption({label: 'JANE'});
   await page.getByTestId('broiler-meta-save').click();
 
-  // Wait for the save round-trip + reload to settle.
   await expect(page.getByTestId('broiler-meta-save')).toHaveCount(0, {timeout: 10_000});
 
-  // DB row reflects both changes.
   const {data: rows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', draftId);
   expect(rows).toHaveLength(1);
   expect(rows[0].broiler_week).toBe(6);
   expect(rows[0].team_member).toBe('JANE');
   expect(rows[0].status).toBe('draft');
 
-  // ppp-v4 untouched — week4Lbs still 1.5, no week6Lbs added.
   const batch = await readPppV4Batch(supabaseAdmin, batchId);
   expect(batch.week4Lbs).toBe(1.5);
   expect(batch.week6Lbs).toBeUndefined();
@@ -68,11 +59,9 @@ test('T2: edit complete session team_member only; ppp-v4 untouched', async ({
   adminBroilerSessionMetaScenario,
 }) => {
   const {batchId, completeId} = adminBroilerSessionMetaScenario;
-  await page.goto('/broiler/weighins');
+  await page.goto('/weigh-in-sessions/' + completeId);
 
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await page.getByText('complete', {exact: true}).first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+  await expect(page.locator('[data-testid="broiler-meta-panel"]')).toBeVisible({timeout: 15_000});
 
   await page.getByTestId('broiler-meta-team').selectOption({label: 'JANE'});
   await page.getByTestId('broiler-meta-save').click();
@@ -97,11 +86,9 @@ test('T3: edit complete session WK 4→6 (sole wk4) → wk4Lbs deleted, wk6Lbs s
   adminBroilerSessionMetaScenario,
 }) => {
   const {batchId, completeId} = adminBroilerSessionMetaScenario;
-  await page.goto('/broiler/weighins');
+  await page.goto('/weigh-in-sessions/' + completeId);
 
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await page.getByText('complete', {exact: true}).first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+  await expect(page.locator('[data-testid="broiler-meta-panel"]')).toBeVisible({timeout: 15_000});
 
   await page.getByTestId('broiler-meta-wk6').click();
   await page.getByTestId('broiler-meta-save').click();
@@ -111,9 +98,7 @@ test('T3: edit complete session WK 4→6 (sole wk4) → wk4Lbs deleted, wk6Lbs s
   expect(rows[0].broiler_week).toBe(6);
 
   const batch = await readPppV4Batch(supabaseAdmin, batchId);
-  // OLD week field DELETED (Q4 contract).
   expect('week4Lbs' in batch).toBe(false);
-  // NEW week field set from this session's entries (avg 1.5).
   expect(batch.week6Lbs).toBe(1.5);
 });
 
@@ -130,11 +115,6 @@ test('T4: two complete wk4 sessions, move later one to WK6 → wk4Lbs from other
 }) => {
   const {batchId, completeId} = adminBroilerSessionMetaScenario;
 
-  // Pre-seed an EARLIER complete wk4 session for the same batch with avg
-  // 1.7 (weights all 1.7). The fixture's seeded complete session is wk4
-  // avg 1.5; we want the EARLIER session (other) to be the one whose avg
-  // ends up in wk4Lbs after the move. The fixture's session is the one
-  // we'll move to WK 6.
   const otherId = 'sd-complete-other';
   const today = new Date().toISOString().slice(0, 10);
   const completedEarlier = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
@@ -162,61 +142,42 @@ test('T4: two complete wk4 sessions, move later one to WK6 → wk4Lbs from other
   r = await supabaseAdmin.from('weigh_ins').insert(otherEntries);
   expect(r.error).toBeNull();
 
-  await page.goto('/broiler/weighins');
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-
-  // Sessions are ordered by completed_at desc — the FIXTURE's complete
-  // session (1.5) lands first because it was completed AFTER the
-  // pre-seeded other (1.7). Click the first COMPLETE row to move it.
-  await page.getByText('complete', {exact: true}).first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+  await page.goto('/weigh-in-sessions/' + completeId);
+  await expect(page.locator('[data-testid="broiler-meta-panel"]')).toBeVisible({timeout: 15_000});
 
   await page.getByTestId('broiler-meta-wk6').click();
   await page.getByTestId('broiler-meta-save').click();
   await expect(page.getByTestId('broiler-meta-save')).toHaveCount(0, {timeout: 10_000});
 
-  // Moved session is now wk6.
   const {data: movedRows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', completeId);
   expect(movedRows[0].broiler_week).toBe(6);
 
   const batch = await readPppV4Batch(supabaseAdmin, batchId);
-  expect(batch.week4Lbs).toBe(1.7); // from the OTHER session (excludeSessionId locked out the moved one)
-  expect(batch.week6Lbs).toBe(1.5); // from the moved session's existing entries
+  expect(batch.week4Lbs).toBe(1.7);
+  expect(batch.week6Lbs).toBe(1.5);
 });
 
 // =============================================================================
-// T5 — Regression: existing weight-grid save path still preserves entries
-//      AND session notes (locks the promised regression surface for the
-//      metadata-edit feature).
+// T5 — Regression: weight-grid save path still preserves entries AND session
+//      notes on the record page.
 // =============================================================================
-test('T5: weight-grid save still preserves entries and notes after metadata-panel work', async ({
+test('T5: weight-grid save still preserves entries and notes on record page', async ({
   page,
   supabaseAdmin,
   adminBroilerSessionMetaScenario,
 }) => {
   const {completeId} = adminBroilerSessionMetaScenario;
 
-  // Pre-stamp a note on the complete session so the regression covers
-  // both entries AND notes preservation through the grid save path.
   const NOTE = 'admin-test-note do not lose';
   let r = await supabaseAdmin.from('weigh_in_sessions').update({notes: NOTE}).eq('id', completeId);
   expect(r.error).toBeNull();
 
-  await page.goto('/broiler/weighins');
+  await page.goto('/weigh-in-sessions/' + completeId);
 
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await page.getByText('complete', {exact: true}).first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+  await expect(page.locator('[data-broiler-grid="1"]')).toBeVisible({timeout: 15_000});
 
-  // Unlock the grid.
-  await page.getByRole('button', {name: /Edit Weights/}).click();
-  // Grid hydrates from existing entries — 5 weights present (1.3,1.4,1.5,1.6,1.7).
-  // Notes textarea hydrates from session.notes. We don't change anything;
-  // just hit save and verify entries + notes unchanged.
-  // (Save Weights button surfaces once unlocked.)
   await page.getByRole('button', {name: 'Save Weights'}).click();
-  // After save, the unlock toggles back; wait for it.
-  await expect(page.getByRole('button', {name: /Edit Weights/})).toBeVisible({timeout: 10_000});
+  await expect(page.getByRole('button', {name: 'Save Weights'})).toBeEnabled({timeout: 10_000});
 
   const {data: weighIns} = await supabaseAdmin.from('weigh_ins').select('weight').eq('session_id', completeId);
   expect(weighIns).toHaveLength(5);
@@ -229,22 +190,16 @@ test('T5: weight-grid save still preserves entries and notes after metadata-pane
 });
 
 // =============================================================================
-// T6 — Negative UI lock: pig sessions in LivestockWeighInsView do NOT
-// render the broiler metadata panel OR the broiler-only Reopen Session
-// button. Seeded as COMPLETE so both negatives bite (Reopen only renders
-// when isComplete; the metadata panel is broiler-gated regardless).
-// (Cattle/sheep are different views.)
+// T6 — Negative UI lock: pig sessions do NOT render the broiler metadata
+// panel on /weigh-in-sessions/<id>.
 // =============================================================================
-test('T6: pig complete session does NOT show the broiler metadata panel or Reopen button', async ({
+test('T6: pig complete session does NOT show the broiler metadata panel', async ({
   page,
   supabaseAdmin,
   adminBroilerSessionMetaScenario,
 }) => {
   void adminBroilerSessionMetaScenario;
 
-  // Pig flow needs an active pig group + a complete pig session (so that
-  // the Reopen button's complete-only gate would fire if it were
-  // species-broad — proves the broiler-only gate holds).
   let r = await supabaseAdmin
     .from('webform_config')
     .upsert({key: 'active_groups', data: ['P-26-01']}, {onConflict: 'key'});
@@ -264,26 +219,16 @@ test('T6: pig complete session does NOT show the broiler metadata panel or Reope
   });
   expect(r.error).toBeNull();
 
-  await page.goto('/pig/weighins');
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await expect(page.getByText('P-26-01').first()).toBeVisible({timeout: 15_000});
-  await page.getByText('P-26-01').first().click();
-
-  // Some non-broiler expanded marker should be visible — the Edit/Complete
-  // buttons exist on every species, so wait on Delete Weigh-In.
-  await expect(page.getByRole('button', {name: 'Delete Weigh-In'})).toBeVisible({timeout: 10_000});
-  // Broiler-only metadata panel must NOT render.
+  await page.goto('/weigh-in-sessions/pig-sess-1');
+  await expect(page.locator('[data-record-title="1"]')).toBeVisible({timeout: 15_000});
   await expect(page.locator('[data-testid="broiler-meta-panel"]')).toHaveCount(0);
-  // Broiler-only Reopen Session button must NOT render on a complete pig
-  // session — locks the species gate added alongside the reopen-avg lane.
-  await expect(page.locator('[data-testid="broiler-reopen-session"]')).toHaveCount(0);
+  await expect(page.locator('[data-broiler-grid]')).toHaveCount(0);
 });
 
 // =============================================================================
-// T7 — Legacy team_member preservation. Session has team_member='RETIREE'
-//      but RETIREE is not in the active roster. The dropdown shows it
-//      with a "(retired)" suffix, and a save that touches WK only
-//      preserves team_member='RETIREE'.
+// T7 — Legacy team_member preservation on the record page. Session has
+//      team_member='RETIREE' not in active roster; dropdown shows it with
+//      "(retired)" suffix, and a WK-only save preserves team_member.
 // =============================================================================
 test('T7: legacy team_member preserved across a WK-only save', async ({
   page,
@@ -292,8 +237,6 @@ test('T7: legacy team_member preserved across a WK-only save', async ({
 }) => {
   const {batchId} = adminBroilerSessionMetaScenario;
 
-  // Insert a complete broiler session for the batch with a retired team
-  // name (not present in the active roster BMAN+JANE).
   const today = new Date().toISOString().slice(0, 10);
   const completed = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   const retiredId = 'sd-retired';
@@ -309,8 +252,6 @@ test('T7: legacy team_member preserved across a WK-only save', async ({
     completed_at: completed,
   });
   expect(r.error).toBeNull();
-  // 2 entries on the retired session (avg = 2.0) so the WK 4→6 path
-  // produces a non-empty wk6Lbs in T7.
   r = await supabaseAdmin.from('weigh_ins').insert([
     {
       id: `${retiredId}-e0`,
@@ -333,23 +274,13 @@ test('T7: legacy team_member preserved across a WK-only save', async ({
   ]);
   expect(r.error).toBeNull();
 
-  await page.goto('/broiler/weighins');
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await page.goto('/weigh-in-sessions/' + retiredId);
+  await expect(page.locator('[data-testid="broiler-meta-panel"]')).toBeVisible({timeout: 15_000});
 
-  // Two complete sessions exist (the seeded BMAN one and the retired one).
-  // The retired session was completed BEFORE the seeded one, so the seeded
-  // session is on top by completed_at desc. Find the row showing 'RETIREE'.
-  await expect(page.getByText('RETIREE').first()).toBeVisible({timeout: 10_000});
-  await page.getByText('RETIREE').first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
-
-  // Dropdown current value is RETIREE; the option is rendered with the
-  // (retired) marker even though the active roster doesn't include it.
   const teamSelect = page.getByTestId('broiler-meta-team');
   await expect(teamSelect).toHaveValue('RETIREE');
   await expect(teamSelect.locator('option', {hasText: 'RETIREE (retired)'})).toHaveCount(1);
 
-  // Make a dirty change on WK only (4 → 6), leaving team as RETIREE.
   await page.getByTestId('broiler-meta-wk6').click();
   await page.getByTestId('broiler-meta-save').click();
   await expect(page.getByTestId('broiler-meta-save')).toHaveCount(0, {timeout: 10_000});
@@ -361,9 +292,7 @@ test('T7: legacy team_member preserved across a WK-only save', async ({
 
 // =============================================================================
 // T8 — Reopen sole complete wk4 session: status flips to draft,
-//      completed_at clears, and ppp-v4.week4Lbs is DELETED because no
-//      other complete wk4 session backs it. Drives the real
-//      /broiler/weighins UI (Reopen Session button).
+//      completed_at clears, and ppp-v4.week4Lbs is DELETED.
 // =============================================================================
 test('T8: reopen sole complete wk4 session → draft + completed_at null + week4Lbs deleted', async ({
   page,
@@ -371,34 +300,26 @@ test('T8: reopen sole complete wk4 session → draft + completed_at null + week4
   adminBroilerSessionMetaScenario,
 }) => {
   const {batchId, completeId} = adminBroilerSessionMetaScenario;
-  await page.goto('/broiler/weighins');
+  await page.goto('/weigh-in-sessions/' + completeId);
 
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-  await page.getByText('complete', {exact: true}).first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+  await expect(page.locator('[data-record-title="1"]')).toBeVisible({timeout: 15_000});
 
-  // Click Reopen Session and wait for the button to disappear (the row is
-  // now draft, so the complete-only gate hides the button after loadAll).
-  await page.getByTestId('broiler-reopen-session').click();
-  await expect(page.getByTestId('broiler-reopen-session')).toHaveCount(0, {timeout: 10_000});
+  await page.getByRole('button', {name: 'Reopen Session'}).click();
+  await expect(page.getByRole('button', {name: 'Reopen Session'})).toHaveCount(0, {timeout: 10_000});
 
-  // DB row reflects the reopen.
   const {data: rows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', completeId);
   expect(rows).toHaveLength(1);
   expect(rows[0].status).toBe('draft');
   expect(rows[0].completed_at).toBeNull();
 
-  // ppp-v4 wk4Lbs key DELETED (no other complete session backs the avg).
   const batch = await readPppV4Batch(supabaseAdmin, batchId);
   expect('week4Lbs' in batch).toBe(false);
-  // wk6Lbs was never set in the seed and stays unset.
   expect(batch.week6Lbs).toBeUndefined();
 });
 
 // =============================================================================
 // T9 — Reopen one of two complete wk4 sessions: ppp-v4.week4Lbs
-//      RECOMPUTES from the OTHER complete wk4 session via excludeSessionId.
-//      Mirrors T4's two-session shape but exercises the reopen path.
+//      RECOMPUTES from the OTHER complete wk4 session.
 // =============================================================================
 test('T9: reopen later complete wk4 session of two → wk4Lbs recomputes from the other', async ({
   page,
@@ -407,11 +328,6 @@ test('T9: reopen later complete wk4 session of two → wk4Lbs recomputes from th
 }) => {
   const {batchId, completeId} = adminBroilerSessionMetaScenario;
 
-  // Pre-seed an EARLIER complete wk4 session for the same batch with avg
-  // 1.7 (3 entries × 1.7). The fixture's seeded complete session is wk4
-  // avg 1.5, completed AFTER this one, so it's the "later" session that
-  // we'll reopen via the UI. After reopen, week4Lbs should recompute from
-  // THIS earlier session's entries (1.7).
   const otherId = 'sd-complete-other';
   const today = new Date().toISOString().slice(0, 10);
   const completedEarlier = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
@@ -439,38 +355,33 @@ test('T9: reopen later complete wk4 session of two → wk4Lbs recomputes from th
   r = await supabaseAdmin.from('weigh_ins').insert(otherEntries);
   expect(r.error).toBeNull();
 
-  await page.goto('/broiler/weighins');
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await page.goto('/weigh-in-sessions/' + completeId);
+  await expect(page.locator('[data-record-title="1"]')).toBeVisible({timeout: 15_000});
 
-  // Sessions are ordered by completed_at desc — the FIXTURE's complete
-  // session (1.5) lands first because it was completed AFTER the
-  // pre-seeded other (1.7). Click the first COMPLETE row (the later one).
-  await page.getByText('complete', {exact: true}).first().click();
-  await expect(page.locator('[data-testid="broiler-meta-panel"]').first()).toBeVisible({timeout: 10_000});
+  await page.getByRole('button', {name: 'Reopen Session'}).click();
+  await expect(page.getByRole('button', {name: 'Reopen Session'})).toHaveCount(0, {timeout: 10_000});
 
-  await page.getByTestId('broiler-reopen-session').click();
-  // The Reopen Session button only renders inside the EXPANDED tile (and
-  // only when isComplete). Only one tile expands at a time, so before
-  // click the count is 1 (fixture's expanded complete row). After a
-  // successful reopen, fixture flips to draft and the button hides; the
-  // OTHER complete session is still collapsed (no button rendered for
-  // it). Waiting for count == 0 acts as a sync barrier on the async
-  // reopen pipeline (DB update + recompute + loadAll), avoiding the
-  // race where Playwright resolves click() before the React onClick
-  // handler's await chain finishes.
-  await expect(page.getByTestId('broiler-reopen-session')).toHaveCount(0, {timeout: 10_000});
-
-  // Reopened session is now draft.
   const {data: reopenedRows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', completeId);
   expect(reopenedRows[0].status).toBe('draft');
   expect(reopenedRows[0].completed_at).toBeNull();
 
-  // The OTHER session is untouched (still complete).
   const {data: otherRows} = await supabaseAdmin.from('weigh_in_sessions').select('*').eq('id', otherId);
   expect(otherRows[0].status).toBe('complete');
 
-  // ppp-v4.week4Lbs recomputed from the OTHER session's entries (1.7).
   const batch = await readPppV4Batch(supabaseAdmin, batchId);
   expect(batch.week4Lbs).toBe(1.7);
   expect(batch.week6Lbs).toBeUndefined();
+});
+
+// =============================================================================
+// T10 — Broiler list tiles navigate to record page.
+// =============================================================================
+test('T10: broiler list tiles navigate to record page', async ({page, adminBroilerSessionMetaScenario}) => {
+  const {draftId} = adminBroilerSessionMetaScenario;
+  await page.goto('/broiler/weighins');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+
+  await page.locator('[data-weighin-session-tile="' + draftId + '"]').click();
+  await expect(page).toHaveURL(/\/weigh-in-sessions\//);
+  await expect(page.locator('[data-testid="broiler-meta-panel"]')).toBeVisible({timeout: 15_000});
 });
