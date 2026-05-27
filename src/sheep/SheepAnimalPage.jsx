@@ -154,21 +154,29 @@ export default function SheepAnimalPage({sb, fmt, authState, Header}) {
   async function transferSheep(newFlock) {
     if (!animal) return;
     const oldFlock = animal.flock;
+    if (newFlock === oldFlock) return;
+    setNotice(null);
     const updates = {flock: newFlock};
     if (newFlock === 'deceased' && !animal.death_date) updates.death_date = new Date().toISOString().slice(0, 10);
     if (newFlock === 'sold' && !animal.sale_date) updates.sale_date = new Date().toISOString().slice(0, 10);
-    await sb.from('sheep').update(updates).eq('id', animal.id);
-    try {
-      await sb.from('sheep_transfers').insert({
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
-        sheep_id: animal.id,
-        from_flock: oldFlock,
-        to_flock: newFlock,
-        reason: 'manual',
-        team_member: authState && authState.name ? authState.name : null,
+    const {error: updateErr} = await sb.from('sheep').update(updates).eq('id', animal.id);
+    if (updateErr) {
+      setNotice({kind: 'error', message: 'Transfer failed: ' + updateErr.message});
+      return;
+    }
+    const {error: auditErr} = await sb.from('sheep_transfers').insert({
+      id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+      sheep_id: animal.id,
+      from_flock: oldFlock,
+      to_flock: newFlock,
+      reason: 'manual',
+      team_member: authState && authState.name ? authState.name : null,
+    });
+    if (auditErr) {
+      setNotice({
+        kind: 'warning',
+        message: 'Sheep moved to ' + newFlock + ', but transfer audit row failed: ' + auditErr.message,
       });
-    } catch (_e) {
-      /* table only exists post-migration */
     }
     await loadAll();
   }

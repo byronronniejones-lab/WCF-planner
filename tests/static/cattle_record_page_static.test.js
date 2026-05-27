@@ -244,3 +244,17 @@ describe('activityRegistry — cattle.animal route', () => {
     expect(registry).toContain('#comment-');
   });
 });
+
+describe('CattleAnimalPage — transfer hardening', () => {
+  it('transferCow checks update result before inserting audit row', () => {
+    expect(animalPage).toMatch(
+      /transferCow[\s\S]*?\{error:\s*updateErr\}[\s\S]*?if \(updateErr\)[\s\S]*?return[\s\S]*?cattle_transfers/,
+    );
+  });
+  it('transferCow has no-op guard when destination matches current herd', () => {
+    expect(animalPage).toMatch(/transferCow[\s\S]*?newHerd === oldHerd[\s\S]*?return/);
+  });
+  it('transferCow surfaces warning when audit insert fails', () => {
+    expect(animalPage).toMatch(/auditErr[\s\S]*?setNotice[\s\S]*?warning[\s\S]*?audit/i);
+  });
+});

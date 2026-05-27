@@ -166,3 +166,17 @@ describe('activityRegistry — sheep.animal route', () => {
     expect(registry).toContain("path.startsWith('/sheep/flocks/')");
   });
 });
+
+describe('SheepAnimalPage — transfer hardening', () => {
+  it('transferSheep checks update result before inserting audit row', () => {
+    expect(animalPage).toMatch(
+      /transferSheep[\s\S]*?\{error:\s*updateErr\}[\s\S]*?if \(updateErr\)[\s\S]*?return[\s\S]*?sheep_transfers/,
+    );
+  });
+  it('transferSheep has no-op guard when destination matches current flock', () => {
+    expect(animalPage).toMatch(/transferSheep[\s\S]*?newFlock === oldFlock[\s\S]*?return/);
+  });
+  it('transferSheep surfaces warning when audit insert fails', () => {
+    expect(animalPage).toMatch(/auditErr[\s\S]*?setNotice[\s\S]*?warning[\s\S]*?audit/i);
+  });
+});

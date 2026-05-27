@@ -148,11 +148,17 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
   async function transferCow(newHerd) {
     if (!cow) return;
     const oldHerd = cow.herd;
+    if (newHerd === oldHerd) return;
+    setNotice(null);
     const updates = {herd: newHerd};
     if (newHerd === 'deceased' && !cow.death_date) updates.death_date = new Date().toISOString().slice(0, 10);
     if (newHerd === 'sold' && !cow.sale_date) updates.sale_date = new Date().toISOString().slice(0, 10);
-    await sb.from('cattle').update(updates).eq('id', cow.id);
-    await sb.from('cattle_transfers').insert({
+    const {error: updateErr} = await sb.from('cattle').update(updates).eq('id', cow.id);
+    if (updateErr) {
+      setNotice({kind: 'error', message: 'Transfer failed: ' + updateErr.message});
+      return;
+    }
+    const {error: auditErr} = await sb.from('cattle_transfers').insert({
       id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
       cattle_id: cow.id,
       from_herd: oldHerd,
@@ -160,6 +166,12 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
       reason: 'manual',
       team_member: authState && authState.name ? authState.name : null,
     });
+    if (auditErr) {
+      setNotice({
+        kind: 'warning',
+        message: 'Cow moved to ' + newHerd + ', but transfer audit row failed: ' + auditErr.message,
+      });
+    }
     await loadAll();
   }
 
