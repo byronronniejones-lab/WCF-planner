@@ -1,6 +1,6 @@
 # HO - Static Workflow SOP
 
-Last updated: 2026-05-25.
+Last updated: 2026-05-27.
 
 This is the durable start-of-session workflow for Ronnie, CC (Claude Code), and
 Codex. It is not a session log and must not carry current project state.
@@ -15,8 +15,24 @@ Read order for every new session:
 3. Inspect the repo before planning or editing.
 
 Do not create extra handoff docs, session indexes, or archive notes unless
-Ronnie explicitly asks. Docs are updated only during Ronnie-requested
-wrap/docs work or when Ronnie asks for a specific doc change.
+Ronnie explicitly asks.
+
+## Doc Freeze Rule
+
+During normal build, hotfix, review, and validation lanes, do not edit
+`PROJECT.md`, `HO.md`, or docs files.
+
+Docs may be updated only when Ronnie explicitly says one of:
+
+- wrap
+- docs
+- session end
+- update `PROJECT.md` / update `HO.md`
+- a specific named doc change
+
+If CC or Codex includes doc changes outside an explicit docs/wrap request,
+Codex must block the commit gate and ask for the docs changes to be removed
+before approval.
 
 ---
 
@@ -326,7 +342,3 @@ do not revert them unless Ronnie explicitly asks.
 
 Prefer scoped staging by path. Do not stage generated reports, local env files,
 or unrelated line-ending churn.
-
-Do not update `PROJECT.md` during normal builds unless Ronnie explicitly asks
-for wrap/docs work or a specific `PROJECT.md` change. Do not make
-`PROJECT.md` cleanup a normal commit/push blocker.

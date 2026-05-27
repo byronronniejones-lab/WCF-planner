@@ -27,12 +27,14 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest confirmed shipped checkpoint: `921e61c feat(cattle): cattle
-  processing batch record page at /cattle/batches/<id>`.
+- Latest confirmed shipped checkpoint: `4b541e7 fix(cattle):
+  mobile-legible cattle batch weights + read-only complete editing`.
 - Open gates: none. Current source is clean on `main` / `origin/main`.
   Cattle processing batch record pages are live at `/cattle/batches/<id>`
   for scheduled/active/complete rows. `/cattle/batches` is navigation-only
-  for real batches; virtual planned batches remain list-only.
+  for real batches; virtual planned batches remain list-only. Complete
+  cattle processing batches show mobile-legible live/hanging weights and are
+  read-only until reopened.
   Comment-photos Storage RLS hotfix is live (migration 073). Broiler
   record page and weigh-in hardening shipped in prior checkpoints.
   Remaining batch/processing record pages (sheep, pig, broiler, layer)
@@ -212,8 +214,9 @@ What was built:
 | Daily per-record Activity UI | Retired from all 6 authenticated daily views. Daily report record pages now own immediately editable fields, Comments, and collapsed Activity history. |
 | Home missed pig breeding-stock dailys | Live. Home missed-report checks include active SOWS and BOARS breeding-stock groups in addition to pig feeder groups. |
 | Operational Record Pages foundation | Live on `cattle.animal`, `sheep.animal`, all 6 daily report entity types, `equipment.item`, `task.instance`, `weighin.session` for all 4 species, and `cattle.processing` at `/cattle/batches/<id>`. Site-wide standard is dedicated pages for operational records. Tiles/lists are clean summaries only. Record pages own fields, editing, Comments, attachments, Activity log, edit history, and future related tools. Remaining batch/processing pages (sheep, pig, broiler, layer) deferred for identity/workflow design. |
-| Cattle processing batch record pages | Live at `/cattle/batches/<id>` for scheduled/active/complete rows. Virtual planned batches remain list-only. CommentsSection + RecordActivityLog. Complete batch weights visible but read-only until reopened. Unschedule Activity deferred pending soft-delete strategy. ActivityPanel/ActivityModal retired from the list view. |
+| Cattle processing batch record pages | Live at `/cattle/batches/<id>` for scheduled/active/complete rows. Virtual planned batches remain list-only. CommentsSection + RecordActivityLog. Complete batch weights are mobile-legible and read-only until reopened; active records use blur-save name editing with no Save Name button. Unschedule Activity deferred pending soft-delete strategy. ActivityPanel/ActivityModal retired from the list view. |
 | Comment-photos Storage RLS | Live. Migration 073 adds authenticated INSERT + SELECT policies on `storage.objects` for the `comment-photos` bucket. Fixes "new row violates row-level security policy" on comment photo attachments. |
+| Animal transfer handler hardening | Live. Cattle/sheep animal transfer handlers now check primary animal update errors before writing transfer audit rows, surface warning notices when audit insert fails after a successful move, and no-op when destination matches the current herd/flock. |
 | Weigh-in session record pages | Live for cattle, sheep, pig, and broiler at `/weigh-in-sessions/<id>`. All 4 list views are navigation-only. Pig send-to-trip and transfer-to-breeding, broiler metadata/grid/ppp-v4 side effects all live on the record page. Focused Playwright hardening shipped for all species. |
 | Codebase hardening and cleanup | Planned. Cleanup is a first-class roadmap track: retire deprecated UI/data paths as entities migrate, remove dead code with proof, extract shared record-page/list patterns, and document what remains intentionally legacy. |
 | Error Resilience Phase 1 | Live. App-root ErrorBoundary, global `error` and `unhandledrejection` capture, and durable redacted client error events through `record_client_error` SECDEF RPC / `client_error_events` table. |
@@ -509,7 +512,7 @@ record-page foundation.
 | cattle.animal | UUID | tag | `cattle` | direct + `runMutation` + SECDEF delete/restore | soft (SECDEF, admin-only) | Live | comments + routine field.updated + deleted/restored events |
 | sheep.animal | UUID | tag | `sheep` | direct + `runMutation` | hard-orphan (children remain) | Live | comments + routine field.updated; delete unlogged |
 | weighin.session | UUID | date + species/batch/herd | `weigh_in_sessions` + `weigh_ins` | direct + app_store side effects for pig/broiler workflows | hard | Live for all 4 species | comments + routine field/status/lifecycle events |
-| cattle.processing | UUID | batch name | `cattle_processing_batches` | direct + error-checked save | hard (scheduled only; active/complete not deletable) | Live at `/cattle/batches/<id>` | comments + status.changed + field.updated; unschedule Activity deferred pending soft-delete |
+| cattle.processing | UUID | batch name | `cattle_processing_batches` | direct + error-checked save | hard (scheduled only; active/complete not deletable) | Live at `/cattle/batches/<id>`; complete fields read-only until reopen | comments + status.changed + field.updated; unschedule Activity deferred pending soft-delete |
 | sheep.processing | UUID | batch name | `sheep_processing_batches` | direct | hard | Planned batch/processing phase | partial |
 | equipment.item | UUID | name | `equipment` | mixed - status + admin fields via `runMutation`, detail fields direct | record itself not deletable; child fuelings/maintenance hard-delete | Live | comments + routine field.updated + status.changed; documents/child records excluded |
 
@@ -603,7 +606,9 @@ These are hardening priorities, not reasons to rewrite.
 - Direct client mutations are the dominant write pattern (~200 call sites in
   `src`). Direct calls are not automatically wrong; the missing piece is
   per-entity write semantics specifying which paths should be direct,
-  `runMutation`, or SECDEF RPC. The Record Identity Map tracks this.
+  `runMutation`, or SECDEF RPC. Cattle/sheep animal transfers now check
+  primary update failures before audit writes, but remain client-side and
+  non-atomic. The Record Identity Map tracks this.
 - Runtime observability is Phase 1 only. Redacted client error events now
   persist through migration 068, but there is no admin UI, alerting, trend
   view, or third-party monitoring. Keep future logging changes redacted and
