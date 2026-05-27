@@ -814,31 +814,20 @@ test('batches: active auto-flips to complete on full hanging weights; reopen res
     .update({herd: 'processed', processing_batch_id: batchId})
     .in('id', ['F1', 'F-AT-MAX']);
 
-  await page.goto('/cattle/batches');
-  await expect(page.locator('[data-cattle-batches-root]')).toBeVisible({timeout: 15_000});
+  // Navigate directly to the record page
+  await page.goto('/cattle/batches/' + batchId);
+  await expect(page.locator('[data-record-title="1"]')).toBeVisible({timeout: 15_000});
 
-  // Tile renders with status=active.
-  const tile = page.locator('[data-batch-row="' + batchId + '"]');
-  await expect(tile).toBeVisible();
-  await expect(tile).toHaveAttribute('data-batch-status', 'active');
-
-  // Expand and try to mark complete with weights still missing — expect alert.
-  await tile.locator('> div').first().click();
   // Auto-complete fires on full hanging weights, so let's enter both:
   const w1 = page.locator('[data-batch-hanging-weight="F1"]');
   await w1.fill('660');
   await w1.blur();
-  // Wait briefly for first save round-trip.
   await page.waitForTimeout(400);
   const w2 = page.locator('[data-batch-hanging-weight="F-AT-MAX"]');
   await w2.fill('870');
   await w2.blur();
 
-  // After both weights, the helper auto-flips to complete. The tile moves
-  // from the Active section into the (collapsed) Completed section, so the
-  // active-section locator becomes detached from the DOM. Verify via the
-  // header counter and DB before re-opening Completed.
-  await expect(page.getByText(/^Active \(0\)/)).toBeVisible({timeout: 10_000});
+  // After both weights, the helper auto-flips to complete. Verify via DB.
   await expect
     .poll(
       async () => {
@@ -850,8 +839,7 @@ test('batches: active auto-flips to complete on full hanging weights; reopen res
     .toBe('complete');
 
   // Hotfix lock: auto-complete must stamp actual_process_date from the
-  // planned date when the seed had none. Before the fix, this row landed in
-  // Processed with no displayed date.
+  // planned date when the seed had none.
   const stampedR = await supabaseAdmin
     .from('cattle_processing_batches')
     .select('actual_process_date')
@@ -859,24 +847,140 @@ test('batches: active auto-flips to complete on full hanging weights; reopen res
     .single();
   expect(stampedR.data?.actual_process_date).toBe(plannedDate);
 
-  // Expand Completed section so the tile is in the DOM again. The tile was
-  // already expanded from the earlier weight-entry step (expandedBatchId
-  // state survives the auto-flip), so its detail panel re-renders along
-  // with the section. Clicking the tile header again would TOGGLE IT
-  // CLOSED — don't.
-  await page.locator('[data-batches-section="processed"]').locator('> div').first().click();
-  const completedTile = page.locator('[data-batch-row="' + batchId + '"]');
-  await expect(completedTile).toHaveAttribute('data-batch-status', 'complete');
-  await expect(completedTile).toContainText('processed 05/04/26');
-
+  // Reopen from the record page
   const reopen = page.locator('[data-reopen="' + batchId + '"]');
-  await expect(reopen).toBeVisible();
+  await expect(reopen).toBeVisible({timeout: 5_000});
   await reopen.click();
 
-  // After reopen, the tile flips back to active. The Active counter shows 1.
-  await expect(page.getByText(/^Active \(1\)/)).toBeVisible({timeout: 5_000});
-  const r = await supabaseAdmin.from('cattle_processing_batches').select('status').eq('id', batchId).single();
-  expect(r.data.status).toBe('active');
+  // After reopen, status flips back to active
+  await expect
+    .poll(
+      async () => {
+        const r = await supabaseAdmin.from('cattle_processing_batches').select('status').eq('id', batchId).single();
+        return r.data?.status;
+      },
+      {timeout: 5_000},
+    )
+    .toBe('active');
+});
+
+// --------------------------------------------------------------------------
+// Test 7b — Scheduled batch record page: date edit persists + unschedule
+// --------------------------------------------------------------------------
+test('scheduled batch record page: date edit persists after reload; unschedule navigates to list', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  const scheduledId = 'cpb-sched-test-1';
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  await supabaseAdmin.from('cattle_processing_batches').insert({
+    id: scheduledId,
+    name: 'C-26-99',
+    status: 'scheduled',
+    planned_process_date: tomorrow,
+    cows_detail: [],
+    documents: [],
+  });
+
+  // Navigate to the record page
+  await page.goto('/cattle/batches/' + scheduledId);
+  await expect(page.locator('[data-record-title="1"]')).toBeVisible({timeout: 15_000});
+
+  // Edit the scheduled date
+  const nextDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const dateInput = page.locator('[data-scheduled-batch-date="' + scheduledId + '"]');
+  await dateInput.fill(nextDate);
+  await dateInput.blur();
+
+  // Verify date persisted in DB
+  await expect
+    .poll(
+      async () => {
+        const r = await supabaseAdmin
+          .from('cattle_processing_batches')
+          .select('planned_process_date')
+          .eq('id', scheduledId)
+          .single();
+        return r.data?.planned_process_date;
+      },
+      {timeout: 10_000},
+    )
+    .toBe(nextDate);
+
+  // Reload and verify date persistence in the UI
+  await page.reload();
+  await expect(page.locator('[data-record-title="1"]')).toBeVisible({timeout: 15_000});
+  await expect(page.locator('[data-scheduled-batch-date="' + scheduledId + '"]')).toHaveValue(nextDate);
+
+  // Unschedule via two-step confirmation
+  await page.locator('[data-scheduled-batch-unschedule="' + scheduledId + '"]').click();
+  await expect(page.locator('[data-scheduled-batch-unschedule-warning="' + scheduledId + '"]')).toBeVisible();
+  await page.locator('[data-scheduled-batch-unschedule-confirm="' + scheduledId + '"]').click();
+
+  // Should navigate back to the list
+  await expect(page).toHaveURL(/\/cattle\/batches$/);
+  await expect(page.locator('[data-cattle-batches-root]')).toBeVisible({timeout: 10_000});
+
+  // Batch is deleted from DB
+  const {data: check} = await supabaseAdmin
+    .from('cattle_processing_batches')
+    .select('id')
+    .eq('id', scheduledId)
+    .maybeSingle();
+  expect(check).toBeNull();
+});
+
+// --------------------------------------------------------------------------
+// Test 7c — Complete batch: weights visible but disabled, reopen unlocks.
+// --------------------------------------------------------------------------
+test('complete batch record page: weights visible + disabled; reopen unlocks editing', async ({
+  page,
+  cattleForecastScenario,
+  supabaseAdmin,
+}) => {
+  const batchId = 'b-complete-test-1';
+  await supabaseAdmin.from('cattle_processing_batches').insert({
+    id: batchId,
+    name: 'C-26-98',
+    status: 'complete',
+    actual_process_date: '2026-05-01',
+    cows_detail: [
+      {cattle_id: 'F1', tag: '1001', live_weight: 1100, hanging_weight: 660},
+      {cattle_id: 'F-AT-MAX', tag: '1002', live_weight: 1450, hanging_weight: 870},
+    ],
+    total_live_weight: 2550,
+    total_hanging_weight: 1530,
+  });
+
+  await page.goto('/cattle/batches/' + batchId);
+  await expect(page.locator('[data-record-title="1"]')).toBeVisible({timeout: 15_000});
+
+  // Weight values are visible
+  const liveInput = page.locator('[data-batch-live-weight="F1"]');
+  const hangInput = page.locator('[data-batch-hanging-weight="F1"]');
+  await expect(liveInput).toHaveValue('1100');
+  await expect(hangInput).toHaveValue('660');
+
+  // Inputs are disabled while complete
+  await expect(liveInput).toBeDisabled();
+  await expect(hangInput).toBeDisabled();
+
+  // Reopen to active
+  await page.locator('[data-reopen="' + batchId + '"]').click();
+  await expect
+    .poll(
+      async () => {
+        const r = await supabaseAdmin.from('cattle_processing_batches').select('status').eq('id', batchId).single();
+        return r.data?.status;
+      },
+      {timeout: 5_000},
+    )
+    .toBe('active');
+
+  // After reopen, inputs are enabled
+  await expect(liveInput).toBeEnabled({timeout: 5_000});
+  await expect(hangInput).toBeEnabled();
 });
 
 // --------------------------------------------------------------------------

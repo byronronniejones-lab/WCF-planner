@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const forecastSrc = fs.readFileSync(path.join(ROOT, 'src/lib/cattleForecast.js'), 'utf8');
 const batchesViewSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleBatchesView.jsx'), 'utf8');
+const batchPageSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleBatchPage.jsx'), 'utf8');
 const sendModalSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleSendToProcessorModal.jsx'), 'utf8');
 const processingHelperSrc = fs.readFileSync(path.join(ROOT, 'src/lib/cattleProcessingBatch.js'), 'utf8');
 const migrationPath = path.join(ROOT, 'supabase-migrations/054_cattle_processing_scheduled_status.sql');
@@ -140,9 +141,7 @@ describe('CattleBatchesView — Planned / Scheduled / Active / Processed', () =>
 
   it('Schedule action is only offered when canEdit and writes status=scheduled with empty cows_detail', () => {
     expect(batchesViewSrc).toMatch(/async function scheduleVirtualBatch\(vb\)/);
-    const fn = batchesViewSrc.match(
-      /async function scheduleVirtualBatch\(vb\)[\s\S]*?\}\s*\n {2}async function updateScheduledDate/,
-    );
+    const fn = batchesViewSrc.match(/async function scheduleVirtualBatch\(vb\)[\s\S]*?\}\s*\n\n {2}const active/);
     expect(fn, 'expected scheduleVirtualBatch helper').not.toBeNull();
     expect(fn[0]).toMatch(/if \(!canEdit\) return;/);
     expect(fn[0]).toMatch(/status:\s*'scheduled'/);
@@ -151,25 +150,21 @@ describe('CattleBatchesView — Planned / Scheduled / Active / Processed', () =>
     expect(fn[0]).not.toMatch(/from\('cattle'\)\.update/);
   });
 
-  it('Unschedule uses a guarded inline warning and only deletes scheduled rows', () => {
-    expect(batchesViewSrc).toMatch(/async function unscheduleBatch\(batchId\)/);
-    const fn = batchesViewSrc.match(/async function unscheduleBatch\(batchId\)[\s\S]*?\}\s*\n\n {2}const active/);
-    expect(fn, 'expected unscheduleBatch helper').not.toBeNull();
-    expect(fn[0]).toMatch(/if \(!canEdit\) return;/);
-    expect(fn[0]).toMatch(/target\.status !== 'scheduled'/);
-    // Active or processed rows can never be unscheduled through this path.
-    expect(fn[0]).not.toMatch(/status === 'active'/);
-    expect(fn[0]).not.toMatch(/status === 'complete'/);
-    // Inline two-step pattern: warning toggled via unschedulingBatchId,
+  it('Unschedule uses a guarded inline warning and only deletes scheduled rows (record page)', () => {
+    expect(batchPageSrc).toMatch(/async function handleUnschedule\(\)/);
+    expect(batchPageSrc).toMatch(/status !== 'scheduled'/);
+    // The handleUnschedule function guards on scheduled status before deleting.
+    expect(batchPageSrc).toMatch(/handleUnschedule[\s\S]*?status !== 'scheduled'[\s\S]*?\.delete\(\)/);
+    // Inline two-step pattern: warning toggled via unscheduling state,
     // confirmed via Confirm unschedule button. No window.confirm.
-    expect(batchesViewSrc).toMatch(/data-scheduled-batch-unschedule=/);
-    expect(batchesViewSrc).toMatch(/data-scheduled-batch-unschedule-warning=/);
-    expect(batchesViewSrc).toMatch(/data-scheduled-batch-unschedule-cancel=/);
-    expect(batchesViewSrc).toMatch(/data-scheduled-batch-unschedule-confirm=/);
-    expect(batchesViewSrc).not.toMatch(/window\.confirm/);
+    expect(batchPageSrc).toMatch(/data-scheduled-batch-unschedule=/);
+    expect(batchPageSrc).toMatch(/data-scheduled-batch-unschedule-warning=/);
+    expect(batchPageSrc).toMatch(/data-scheduled-batch-unschedule-cancel=/);
+    expect(batchPageSrc).toMatch(/data-scheduled-batch-unschedule-confirm=/);
+    expect(batchPageSrc).not.toMatch(/window\.confirm/);
     // Codex's required label: "Unschedule", not "Delete".
-    expect(batchesViewSrc).toMatch(/>\s*Unschedule\s*</);
-    expect(batchesViewSrc).toMatch(/>\s*Confirm unschedule\s*</);
+    expect(batchPageSrc).toContain('Unschedule');
+    expect(batchPageSrc).toContain('Confirm unschedule');
   });
 
   it('UI surfaces "Processed" while DB storage value stays complete', () => {

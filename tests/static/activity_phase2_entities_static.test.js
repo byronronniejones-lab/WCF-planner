@@ -11,6 +11,7 @@ const mig064 = fs.readFileSync(path.join(ROOT, 'supabase-migrations/064_activity
 const registrySrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
 const pigBatches = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchesView.jsx'), 'utf8');
 const cattleBatches = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleBatchesView.jsx'), 'utf8');
+const cattleBatchPage = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleBatchPage.jsx'), 'utf8');
 const sheepBatches = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepBatchesView.jsx'), 'utf8');
 
 const NEW_TYPES = ['pig.batch', 'cattle.processing', 'sheep.processing'];
@@ -70,10 +71,9 @@ describe('Migration 064 — Phase 2 resolvers', () => {
   });
 });
 
-describe('Activity wiring — Phase 2 surfaces', () => {
+describe('Activity wiring — Phase 2 surfaces (list views with inline ActivityPanel)', () => {
   const surfaces = [
     {name: 'PigBatchesView', src: pigBatches, entity: 'pig.batch'},
-    {name: 'CattleBatchesView', src: cattleBatches, entity: 'cattle.processing'},
     {name: 'SheepBatchesView', src: sheepBatches, entity: 'sheep.processing'},
   ];
 
@@ -107,11 +107,35 @@ describe('Activity wiring — Phase 2 surfaces', () => {
     expect(pigBatches).toMatch(/entityId:\s*g\.id/);
   });
 
-  it('cattle.processing uses batch.id as entityId', () => {
-    expect(cattleBatches).toMatch(/entityId:\s*batch\.id/);
-  });
-
   it('sheep.processing uses b.id as entityId', () => {
     expect(sheepBatches).toMatch(/entityId:\s*b\.id/);
+  });
+});
+
+describe('cattle.processing — migrated to record page', () => {
+  it('CattleBatchesView no longer has ActivityPanel or ActivityModal', () => {
+    expect(cattleBatches).not.toContain('ActivityPanel');
+    expect(cattleBatches).not.toContain('ActivityModal');
+    expect(cattleBatches).not.toContain('activityTarget');
+  });
+
+  it('CattleBatchPage uses CommentsSection + RecordActivityLog', () => {
+    expect(cattleBatchPage).toContain('CommentsSection');
+    expect(cattleBatchPage).toContain('RecordActivityLog');
+    expect(cattleBatchPage).toContain('entityType="cattle.processing"');
+  });
+
+  it('CattleBatchPage does not use ActivityPanel or ActivityModal', () => {
+    expect(cattleBatchPage).not.toContain('ActivityPanel');
+    expect(cattleBatchPage).not.toContain('ActivityModal');
+  });
+
+  it('CattleBatchesView navigates to /cattle/batches/<id> for real batches', () => {
+    expect(cattleBatches).toContain("navigate('/cattle/batches/' + b.id)");
+  });
+
+  it('CattleBatchesView has CattleBatchesRouter wrapper', () => {
+    expect(cattleBatches).toContain('CattleBatchesRouter');
+    expect(cattleBatches).toContain("location.pathname.startsWith('/cattle/batches/')");
   });
 });

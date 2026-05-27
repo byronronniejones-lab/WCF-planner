@@ -1,0 +1,728 @@
+import React from 'react';
+import {useNavigate, useLocation} from 'react-router-dom';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import CommentsSection from '../shared/CommentsSection.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import InlineNotice from '../shared/InlineNotice.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import RecordActivityLog from '../shared/RecordActivityLog.jsx';
+import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
+import {batchHasAllHangingWeights, batchMissingHangingTags, validateRealBatchRename} from '../lib/cattleForecast.js';
+import {markBatchComplete, reopenBatch} from '../lib/cattleForecastApi.js';
+import {todayCentralISO} from '../lib/dateUtils.js';
+import {invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
+import {recordStatusChange, recordActivityEvent} from '../lib/entityMutations.js';
+
+function resolveProcessedDate(batch) {
+  if (batch && batch.actual_process_date) return batch.actual_process_date;
+  if (batch && batch.planned_process_date) return batch.planned_process_date;
+  return todayCentralISO();
+}
+
+export default function CattleBatchPage({sb, fmt, authState, Header}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  function logStatus(batchObj, from, to) {
+    recordStatusChange(sb, {
+      entityType: 'cattle.processing',
+      entityId: batchObj.id,
+      entityLabel: batchObj.name,
+      from,
+      to,
+    }).catch(() => {});
+  }
+  function logEvent(batchObj, body) {
+    recordActivityEvent(sb, {
+      entityType: 'cattle.processing',
+      entityId: batchObj.id,
+      eventType: 'field.updated',
+      entityLabel: batchObj.name,
+      body,
+    }).catch(() => {});
+  }
+  const batchId = location.pathname.slice('/cattle/batches/'.length);
+
+  const [batch, setBatch] = React.useState(null);
+  const [allBatches, setAllBatches] = React.useState([]);
+  const [cattle, setCattle] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [notice, setNotice] = React.useState(null);
+  const [cowDraft, setCowDraft] = React.useState({});
+  const [renameDraft, setRenameDraft] = React.useState('');
+  const [renameErr, setRenameErr] = React.useState(null);
+  const [scheduledDateDraft, setScheduledDateDraft] = React.useState('');
+  const [unscheduling, setUnscheduling] = React.useState(false);
+
+  const role = authState && authState.role;
+  const canEdit = role === 'admin' || role === 'management';
+
+  async function loadAll() {
+    const [bR, cR, allR] = await Promise.all([
+      sb.from('cattle_processing_batches').select('*').eq('id', batchId).single(),
+      sb.from('cattle').select('*').is('deleted_at', null),
+      sb.from('cattle_processing_batches').select('id, name, status'),
+    ]);
+    if (bR.data) {
+      setBatch(bR.data);
+      setRenameDraft(bR.data.name || '');
+      setScheduledDateDraft(bR.data.planned_process_date || '');
+    }
+    if (cR.data) setCattle(cR.data);
+    if (allR.data) setAllBatches(allR.data);
+    setLoading(false);
+  }
+
+  React.useEffect(() => {
+    setBatch(null);
+    setLoading(true);
+    setNotice(null);
+    loadAll();
+  }, [batchId, authState]);
+
+  React.useEffect(() => {
+    if (!loading && location.hash) {
+      const anchor = location.hash.slice(1);
+      setTimeout(() => {
+        const el = document.getElementById(anchor);
+        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+      }, 200);
+    }
+  }, [loading, location.hash]);
+
+  function cowsDetail() {
+    return Array.isArray(batch.cows_detail) ? batch.cows_detail : [];
+  }
+  function recomputeTotals(rows) {
+    const live = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
+    const hang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
+    return {
+      total_live_weight: live > 0 ? Math.round(live * 10) / 10 : null,
+      total_hanging_weight: hang > 0 ? Math.round(hang * 10) / 10 : null,
+    };
+  }
+
+  async function saveCowWeight(cattleId, field, value) {
+    if (!canEdit || !batch) return;
+    setNotice(null);
+    const rows = cowsDetail().map((r) =>
+      r.cattle_id === cattleId ? {...r, [field]: value === '' || value == null ? null : parseFloat(value)} : r,
+    );
+    const totals = recomputeTotals(rows);
+    const {error} = await sb
+      .from('cattle_processing_batches')
+      .update({cows_detail: rows, ...totals})
+      .eq('id', batch.id);
+    if (error) {
+      setNotice({kind: 'error', message: 'Weight save failed: ' + error.message});
+      return;
+    }
+    const nextBatch = {...batch, cows_detail: rows, ...totals};
+    setBatch(nextBatch);
+    if (field === 'hanging_weight' && nextBatch.status === 'active' && batchHasAllHangingWeights(nextBatch)) {
+      const processedDate = resolveProcessedDate(nextBatch);
+      try {
+        await markBatchComplete(sb, batch.id, {processedDate});
+        setBatch((prev) => ({...prev, status: 'complete', actual_process_date: processedDate}));
+        logStatus(batch, 'active', 'complete');
+      } catch (e) {
+        setNotice({kind: 'error', message: 'Auto-complete failed: ' + (e.message || e)});
+      }
+    }
+  }
+
+  async function handleMarkComplete() {
+    if (!canEdit || !batch) return;
+    setNotice(null);
+    if (!batchHasAllHangingWeights(batch)) {
+      const missing = batchMissingHangingTags(batch);
+      setNotice({
+        kind: 'error',
+        message:
+          'Cannot mark complete — these tags are missing hanging weights:\n\n#' +
+          missing.join('  #') +
+          "\n\nEnter every cow's hanging weight first.",
+      });
+      return;
+    }
+    const processedDate = resolveProcessedDate(batch);
+    try {
+      await markBatchComplete(sb, batch.id, {processedDate});
+      setBatch((prev) => ({...prev, status: 'complete', actual_process_date: processedDate}));
+      logStatus(batch, 'active', 'complete');
+    } catch (e) {
+      setNotice({kind: 'error', message: 'Mark complete failed: ' + (e.message || e)});
+    }
+  }
+
+  async function handleReopen() {
+    if (!canEdit || !batch) return;
+    setNotice(null);
+    try {
+      await reopenBatch(sb, batch.id);
+      setBatch((prev) => ({...prev, status: 'active'}));
+      logStatus(batch, 'complete', 'active');
+    } catch (e) {
+      setNotice({kind: 'error', message: 'Reopen failed: ' + (e.message || e)});
+    }
+  }
+
+  async function handleSaveRename() {
+    if (!canEdit || !batch) return;
+    setNotice(null);
+    const proposed = (renameDraft || '').trim();
+    if (!proposed || proposed === batch.name) {
+      setRenameErr(null);
+      return;
+    }
+    const v = validateRealBatchRename({proposedName: proposed, currentName: batch.name, realBatches: allBatches});
+    if (!v.ok) {
+      setRenameErr(v.reason);
+      return;
+    }
+    const r = await sb.from('cattle_processing_batches').update({name: proposed}).eq('id', batch.id);
+    if (r.error) {
+      setRenameErr('db_error');
+      setNotice({kind: 'error', message: 'Rename failed: ' + r.error.message});
+      return;
+    }
+    const oldName = batch.name;
+    setBatch((prev) => ({...prev, name: proposed}));
+    setRenameErr(null);
+    logEvent(batch, 'Renamed ' + oldName + ' → ' + proposed);
+  }
+
+  async function handleDetach(cow) {
+    if (!canEdit || !batch || !cow || !cow.id) return;
+    setNotice(null);
+    const r = await detachCowFromBatch(sb, cow.id, batch.id, {
+      teamMember: authState && authState.name ? authState.name : null,
+    });
+    if (!r.ok) {
+      const tag = cow.tag || r.cow?.tag || '?';
+      if (r.reason === 'no_prior_herd') {
+        setNotice({
+          kind: 'warning',
+          message: 'Cannot auto-detach #' + tag + ': no prior herd recorded. Manually move via the Herds tab.',
+        });
+      } else {
+        setNotice({kind: 'error', message: 'Detach failed for #' + tag + ': ' + r.reason});
+      }
+      return;
+    }
+    logEvent(batch, 'Detached #' + (cow.tag || '?') + ' from batch');
+    invalidateCattleWeighInsCache();
+    await loadAll();
+  }
+
+  async function handleUpdateScheduledDate() {
+    if (!canEdit || !batch || batch.status !== 'scheduled') return;
+    const nextDate = (scheduledDateDraft || '').trim();
+    if (!nextDate || !/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) return;
+    if (nextDate === batch.planned_process_date) return;
+    setNotice(null);
+    const r = await sb.from('cattle_processing_batches').update({planned_process_date: nextDate}).eq('id', batch.id);
+    if (r.error) {
+      setNotice({kind: 'error', message: 'Date update failed: ' + r.error.message});
+      return;
+    }
+    const oldDate = batch.planned_process_date;
+    setBatch((prev) => ({...prev, planned_process_date: nextDate}));
+    logEvent(batch, 'Scheduled date ' + (oldDate || '(none)') + ' → ' + nextDate);
+  }
+
+  async function handleUnschedule() {
+    if (!canEdit || !batch || batch.status !== 'scheduled') return;
+    setNotice(null);
+    const r = await sb.from('cattle_processing_batches').delete().eq('id', batch.id);
+    if (r.error) {
+      setNotice({kind: 'error', message: 'Unschedule failed: ' + r.error.message});
+      return;
+    }
+    navigate('/cattle/batches');
+  }
+
+  if (loading) {
+    return (
+      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+        {Header && <Header />}
+        <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>
+      </div>
+    );
+  }
+
+  if (!batch) {
+    return (
+      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+        {Header && <Header />}
+        <div style={{padding: 24}}>
+          <button
+            type="button"
+            onClick={() => navigate('/cattle/batches')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#1d4ed8',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontFamily: 'inherit',
+              padding: 0,
+            }}
+          >
+            ← Back to Processing Batches
+          </button>
+          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>Batch not found.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const rows = cowsDetail();
+  const totalLive = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
+  const totalHang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
+  const yieldPct = totalLive > 0 && totalHang > 0 ? Math.round((totalHang / totalLive) * 1000) / 10 : null;
+  const isComplete = batch.status === 'complete';
+  const isScheduled = batch.status === 'scheduled';
+  const entityLabel = batch.name || batchId;
+  const draftKey = (cid, field) => `${batch.id}|${cid}|${field}`;
+  const draftVal = (cid, field, curr) => {
+    const k = draftKey(cid, field);
+    return cowDraft[k] != null ? cowDraft[k] : curr != null ? String(curr) : '';
+  };
+
+  return (
+    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+      {Header && <Header />}
+      <div style={{maxWidth: 900, margin: '0 auto', padding: '12px 16px'}}>
+        <div style={{marginBottom: 12}}>
+          <button
+            type="button"
+            onClick={() => navigate('/cattle/batches')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#1d4ed8',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontFamily: 'inherit',
+              padding: 0,
+              fontWeight: 500,
+            }}
+          >
+            ← Back to Processing Batches
+          </button>
+        </div>
+
+        <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12}}>
+          <h1 data-record-title="1" style={{fontSize: 24, fontWeight: 700, color: '#111827', margin: 0}}>
+            {batch.name}
+          </h1>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 10,
+              background: isComplete ? '#374151' : isScheduled ? '#fef3c7' : '#1d4ed8',
+              color: isScheduled ? '#92400e' : 'white',
+              textTransform: 'uppercase',
+            }}
+          >
+            {batch.status}
+          </span>
+          {!isScheduled && (
+            <span style={{fontSize: 12, color: '#6b7280'}}>
+              {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
+            </span>
+          )}
+          {(batch.actual_process_date || batch.planned_process_date) && (
+            <span style={{fontSize: 12, color: '#065f46'}}>
+              {isScheduled ? 'scheduled' : 'processed'} {fmt(batch.actual_process_date || batch.planned_process_date)}
+            </span>
+          )}
+          {yieldPct && <span style={{fontSize: 12, fontWeight: 600, color: '#065f46'}}>{yieldPct + '% yield'}</span>}
+        </div>
+
+        {notice && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
+
+        {/* Scheduled batch controls */}
+        {isScheduled && canEdit && (
+          <div
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              padding: '14px 18px',
+              marginBottom: 12,
+            }}
+          >
+            <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10}}>
+              <label style={{fontSize: 12, color: '#374151', fontWeight: 600}}>Processor date:</label>
+              <input
+                type="date"
+                value={scheduledDateDraft}
+                onChange={(e) => setScheduledDateDraft(e.target.value)}
+                onBlur={handleUpdateScheduledDate}
+                data-scheduled-batch-date={batch.id}
+                style={{
+                  fontSize: 13,
+                  padding: '5px 9px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 5,
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+            {!unscheduling ? (
+              <button
+                type="button"
+                onClick={() => setUnscheduling(true)}
+                data-scheduled-batch-unschedule={batch.id}
+                style={{
+                  fontSize: 12,
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  border: '1px solid #fca5a5',
+                  background: 'white',
+                  color: '#b91c1c',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Unschedule
+              </button>
+            ) : (
+              <div
+                data-scheduled-batch-unschedule-warning={batch.id}
+                style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}
+              >
+                <span style={{fontSize: 12, color: '#b91c1c'}}>Remove this scheduled batch?</span>
+                <button
+                  type="button"
+                  onClick={() => setUnscheduling(false)}
+                  data-scheduled-batch-unschedule-cancel={batch.id}
+                  style={{
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 5,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#374151',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUnschedule}
+                  data-scheduled-batch-unschedule-confirm={batch.id}
+                  style={{
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 5,
+                    border: 'none',
+                    background: '#b91c1c',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontWeight: 600,
+                  }}
+                >
+                  Confirm unschedule
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Active/complete batch workspace */}
+        {!isScheduled && (
+          <div
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              padding: '14px 18px',
+              marginBottom: 12,
+            }}
+          >
+            {canEdit && (
+              <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10}}>
+                <label style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Name:</label>
+                <input
+                  type="text"
+                  value={renameDraft}
+                  onChange={(e) => {
+                    setRenameDraft(e.target.value);
+                    setRenameErr(null);
+                  }}
+                  data-rename-input={batch.id}
+                  style={{
+                    fontSize: 13,
+                    padding: '5px 9px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: 5,
+                    fontFamily: 'inherit',
+                    width: 130,
+                  }}
+                />
+                <button
+                  onClick={handleSaveRename}
+                  data-save-rename={batch.id}
+                  style={{
+                    fontSize: 11,
+                    padding: '5px 11px',
+                    borderRadius: 5,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#374151',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontWeight: 600,
+                  }}
+                >
+                  Save name
+                </button>
+                {renameErr && (
+                  <span style={{fontSize: 11, color: '#b91c1c'}} data-rename-err={batch.id}>
+                    {renameErr === 'format' && 'Use C-YY-NN'}
+                    {renameErr === 'duplicate' && 'Name already used'}
+                    {renameErr === 'sequence_gap' && 'Would skip a sequence number'}
+                    {renameErr === 'new_year_must_start_at_01' && 'New year must start at 01'}
+                    {renameErr === 'db_error' && 'Save error'}
+                  </span>
+                )}
+                <span style={{flex: 1}} />
+                {!isComplete ? (
+                  <button
+                    onClick={handleMarkComplete}
+                    data-mark-complete={batch.id}
+                    style={{
+                      fontSize: 12,
+                      padding: '6px 14px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: '#374151',
+                      color: 'white',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Mark complete
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleReopen}
+                    data-reopen={batch.id}
+                    style={{
+                      fontSize: 12,
+                      padding: '6px 14px',
+                      borderRadius: 6,
+                      border: '1px solid #1d4ed8',
+                      background: 'white',
+                      color: '#1d4ed8',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Reopen to active
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                gap: 8,
+                fontSize: 11,
+                color: '#4b5563',
+                marginBottom: 10,
+              }}
+            >
+              <Stat
+                label="Live wt total"
+                value={totalLive > 0 ? Math.round(totalLive).toLocaleString() + ' lb' : '—'}
+              />
+              <Stat label="Hanging wt" value={totalHang > 0 ? Math.round(totalHang).toLocaleString() + ' lb' : '—'} />
+              <Stat label="Yield" value={yieldPct ? yieldPct + '%' : '—'} color={yieldPct ? '#065f46' : '#9ca3af'} />
+              <Stat label="Cost" value={batch.processing_cost ? '$' + batch.processing_cost.toLocaleString() : '—'} />
+            </div>
+
+            {rows.length > 0 && (
+              <div style={{border: '1px solid #f3f4f6', borderRadius: 8, overflow: 'hidden', marginBottom: 8}}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '70px 90px 1fr 1fr 60px 28px',
+                    gap: 6,
+                    background: '#f9fafb',
+                    padding: '6px 10px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#6b7280',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                    alignItems: 'center',
+                  }}
+                >
+                  <div>Tag</div>
+                  <div>Breed</div>
+                  <div>Live wt (lb)</div>
+                  <div>Hanging wt (lb)</div>
+                  <div style={{textAlign: 'right'}}>Yield</div>
+                  <div></div>
+                </div>
+                {rows.map((r) => {
+                  const cow = cattle.find((c) => c.id === r.cattle_id);
+                  const lv = parseFloat(r.live_weight);
+                  const hw = parseFloat(r.hanging_weight);
+                  const y = lv > 0 && hw > 0 ? Math.round((hw / lv) * 1000) / 10 : null;
+                  return (
+                    <div
+                      key={r.cattle_id}
+                      data-batch-cow-row={r.cattle_id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '70px 90px 1fr 1fr 60px 28px',
+                        gap: 6,
+                        padding: '5px 10px',
+                        fontSize: 12,
+                        borderTop: '1px solid #f3f4f6',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div style={{fontWeight: 700, color: '#111827'}}>{'#' + (r.tag || cow?.tag || '?')}</div>
+                      <div style={{fontSize: 11, color: '#6b7280'}}>{cow?.breed || '—'}</div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        placeholder="—"
+                        value={draftVal(r.cattle_id, 'live', r.live_weight)}
+                        disabled={!canEdit || isComplete}
+                        data-batch-live-weight={r.cattle_id}
+                        onChange={(e) => setCowDraft((p) => ({...p, [draftKey(r.cattle_id, 'live')]: e.target.value}))}
+                        onBlur={(e) => {
+                          saveCowWeight(r.cattle_id, 'live_weight', e.target.value);
+                          setCowDraft((p) => {
+                            const x = {...p};
+                            delete x[draftKey(r.cattle_id, 'live')];
+                            return x;
+                          });
+                        }}
+                        style={{
+                          fontSize: 12,
+                          padding: '4px 8px',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: 5,
+                          fontFamily: 'inherit',
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          background: canEdit && !isComplete ? 'white' : '#f9fafb',
+                        }}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        placeholder="—"
+                        value={draftVal(r.cattle_id, 'hanging', r.hanging_weight)}
+                        disabled={!canEdit || isComplete}
+                        data-batch-hanging-weight={r.cattle_id}
+                        onChange={(e) =>
+                          setCowDraft((p) => ({...p, [draftKey(r.cattle_id, 'hanging')]: e.target.value}))
+                        }
+                        onBlur={(e) => {
+                          saveCowWeight(r.cattle_id, 'hanging_weight', e.target.value);
+                          setCowDraft((p) => {
+                            const x = {...p};
+                            delete x[draftKey(r.cattle_id, 'hanging')];
+                            return x;
+                          });
+                        }}
+                        style={{
+                          fontSize: 12,
+                          padding: '4px 8px',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: 5,
+                          fontFamily: 'inherit',
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          background: canEdit && !isComplete ? 'white' : '#f9fafb',
+                        }}
+                      />
+                      <div
+                        style={{
+                          textAlign: 'right',
+                          fontSize: 11,
+                          color: y ? '#065f46' : '#9ca3af',
+                          fontWeight: y ? 600 : 400,
+                        }}
+                      >
+                        {y ? y + '%' : '—'}
+                      </div>
+                      {canEdit ? (
+                        <button
+                          onClick={() => handleDetach(cow || {id: r.cattle_id, tag: r.tag})}
+                          title="Detach cow from batch (reverts herd)"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#b91c1c',
+                            cursor: 'pointer',
+                            fontSize: 14,
+                            lineHeight: 1,
+                            padding: '0 2px',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          ×
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {rows.length === 0 && !isScheduled && (
+              <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No cows attached yet.</div>
+            )}
+            {batch.notes && (
+              <div style={{marginTop: 6, fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>{batch.notes}</div>
+            )}
+          </div>
+        )}
+
+        <div style={{marginTop: 16}}>
+          <CommentsSection
+            sb={sb}
+            authState={authState}
+            entityType="cattle.processing"
+            entityId={batch.id}
+            entityLabel={entityLabel}
+          />
+        </div>
+        <div style={{marginTop: 16}}>
+          <RecordActivityLog sb={sb} entityType="cattle.processing" entityId={batch.id} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({label, value, color = '#111827'}) {
+  return (
+    <div>
+      <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>{label}</div>
+      <div style={{fontWeight: 600, color}}>{value}</div>
+    </div>
+  );
+}

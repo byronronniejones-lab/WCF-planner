@@ -1,0 +1,184 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {describe, it, expect} from 'vitest';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..', '..');
+
+const pageSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleBatchPage.jsx'), 'utf8');
+const listSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleBatchesView.jsx'), 'utf8');
+const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
+const registrySrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
+const headerSrc = fs.readFileSync(path.join(ROOT, 'src/shared/Header.jsx'), 'utf8');
+
+describe('main.jsx — /cattle/batches/<id> route', () => {
+  it('detects isCattleBatchesSubpath', () => {
+    expect(mainSrc).toContain("location.pathname.startsWith('/cattle/batches/')");
+  });
+  it('maps subpath to cattlebatches view', () => {
+    expect(mainSrc).toContain('isCattleBatchesSubpath');
+    expect(mainSrc).toContain("? 'cattlebatches'");
+  });
+  it('guards subpath from view-to-URL clobber', () => {
+    expect(mainSrc).toContain("view === 'cattlebatches' && location.pathname.startsWith('/cattle/batches/')");
+  });
+});
+
+describe('activityRegistry — cattle.processing route', () => {
+  it('routes cattle.processing to /cattle/batches/<id>', () => {
+    expect(registrySrc).toMatch(/CATTLE_PROCESSING[\s\S]*?route:\s*\(id\)\s*=>\s*'\/cattle\/batches\/'\s*\+\s*id/);
+  });
+  it('routeToView handles /cattle/batches/ subpath', () => {
+    expect(registrySrc).toContain("path.startsWith('/cattle/batches/')");
+  });
+});
+
+describe('Header — direct-route allowlist', () => {
+  it('includes /cattle/batches/ in record-page route check', () => {
+    expect(headerSrc).toContain("route.startsWith('/cattle/batches/')");
+  });
+});
+
+describe('CattleBatchPage — record page structure', () => {
+  it('loads cattle_processing_batches by id', () => {
+    expect(pageSrc).toContain("from('cattle_processing_batches')");
+    expect(pageSrc).toContain(".eq('id', batchId)");
+  });
+  it('has data-record-title marker', () => {
+    expect(pageSrc).toContain('data-record-title="1"');
+  });
+  it('renders CommentsSection with cattle.processing entityType', () => {
+    expect(pageSrc).toContain('CommentsSection');
+    expect(pageSrc).toContain('entityType="cattle.processing"');
+  });
+  it('renders RecordActivityLog with cattle.processing entityType', () => {
+    expect(pageSrc).toContain('RecordActivityLog');
+    expect(pageSrc).toContain('entityType="cattle.processing"');
+  });
+  it('does not use ActivityPanel or ActivityModal', () => {
+    expect(pageSrc).not.toContain('ActivityPanel');
+    expect(pageSrc).not.toContain('ActivityModal');
+  });
+  it('has hash-scroll for comment deep-links', () => {
+    expect(pageSrc).toContain('location.hash');
+    expect(pageSrc).toContain('scrollIntoView');
+  });
+  it('has back link to /cattle/batches', () => {
+    expect(pageSrc).toContain("navigate('/cattle/batches')");
+    expect(pageSrc).toContain('Back to Processing Batches');
+  });
+  it('has batch-not-found state', () => {
+    expect(pageSrc).toContain('Batch not found');
+  });
+});
+
+describe('CattleBatchPage — scheduled batch support', () => {
+  it('shows scheduled date editor', () => {
+    expect(pageSrc).toContain('data-scheduled-batch-date');
+    expect(pageSrc).toContain('handleUpdateScheduledDate');
+  });
+  it('has unschedule flow with two-step confirmation', () => {
+    expect(pageSrc).toContain('data-scheduled-batch-unschedule');
+    expect(pageSrc).toContain('data-scheduled-batch-unschedule-warning');
+    expect(pageSrc).toContain('data-scheduled-batch-unschedule-confirm');
+    expect(pageSrc).toContain('Confirm unschedule');
+  });
+  it('unschedule only works for scheduled status', () => {
+    expect(pageSrc).toMatch(/handleUnschedule[\s\S]*?status !== 'scheduled'/);
+  });
+  it('navigates back to list after unschedule', () => {
+    expect(pageSrc).toMatch(/handleUnschedule[\s\S]*?navigate\('\/cattle\/batches'\)/);
+  });
+});
+
+describe('CattleBatchPage — active/complete batch support', () => {
+  it('has rename with validation', () => {
+    expect(pageSrc).toContain('handleSaveRename');
+    expect(pageSrc).toContain('validateRealBatchRename');
+    expect(pageSrc).toContain('data-rename-input');
+    expect(pageSrc).toContain('data-save-rename');
+  });
+  it('has hanging weight editing', () => {
+    expect(pageSrc).toContain('data-batch-hanging-weight');
+    expect(pageSrc).toContain('data-batch-live-weight');
+    expect(pageSrc).toContain('saveCowWeight');
+  });
+  it('weight inputs are disabled when batch is complete', () => {
+    expect(pageSrc).toMatch(/disabled=\{!canEdit \|\| isComplete\}[\s\S]*?data-batch-live-weight/);
+    expect(pageSrc).toMatch(/disabled=\{!canEdit \|\| isComplete\}[\s\S]*?data-batch-hanging-weight/);
+  });
+  it('has mark complete and reopen', () => {
+    expect(pageSrc).toContain('data-mark-complete');
+    expect(pageSrc).toContain('data-reopen');
+    expect(pageSrc).toContain('handleMarkComplete');
+    expect(pageSrc).toContain('handleReopen');
+  });
+  it('has auto-complete on last hanging weight', () => {
+    expect(pageSrc).toContain('batchHasAllHangingWeights');
+    expect(pageSrc).toContain('markBatchComplete');
+  });
+  it('saveCowWeight checks update result and blocks auto-complete on failure', () => {
+    expect(pageSrc).toMatch(/saveCowWeight[\s\S]*?\{error\}[\s\S]*?if \(error\)[\s\S]*?return[\s\S]*?setBatch/);
+  });
+  it('has cow detach', () => {
+    expect(pageSrc).toContain('handleDetach');
+    expect(pageSrc).toContain('detachCowFromBatch');
+    expect(pageSrc).toContain('data-batch-cow-row');
+  });
+  it('logs Activity for complete, reopen, rename, detach, and date edit', () => {
+    expect(pageSrc).toContain('recordStatusChange');
+    expect(pageSrc).toContain('recordActivityEvent');
+    expect(pageSrc).toMatch(/handleMarkComplete[\s\S]*?logStatus/);
+    expect(pageSrc).toMatch(/handleReopen[\s\S]*?logStatus/);
+    expect(pageSrc).toMatch(/handleSaveRename[\s\S]*?logEvent[\s\S]*?Renamed/);
+    expect(pageSrc).toMatch(/handleDetach[\s\S]*?logEvent[\s\S]*?Detached/);
+    expect(pageSrc).toMatch(/handleUpdateScheduledDate[\s\S]*?logEvent[\s\S]*?Scheduled date/);
+  });
+  it('shows stats: live weight, hanging weight, yield, cost', () => {
+    expect(pageSrc).toContain('Live wt total');
+    expect(pageSrc).toContain('Hanging wt');
+    expect(pageSrc).toContain('Yield');
+    expect(pageSrc).toContain('Cost');
+  });
+});
+
+describe('CattleBatchesView — cleaned list view', () => {
+  it('has CattleBatchesRouter that delegates to record page', () => {
+    expect(listSrc).toContain('CattleBatchesRouter');
+    expect(listSrc).toContain('CattleBatchPage');
+  });
+  it('real batch tiles navigate to /cattle/batches/<id>', () => {
+    expect(listSrc).toContain("navigate('/cattle/batches/' + b.id)");
+  });
+  it('scheduled batch tiles navigate to /cattle/batches/<id>', () => {
+    expect(listSrc).toContain("navigate('/cattle/batches/' + sb2.id)");
+  });
+  it('does not have expandedBatchId state', () => {
+    expect(listSrc).not.toContain('expandedBatchId');
+  });
+  it('does not have BatchTile component', () => {
+    expect(listSrc).not.toContain('function BatchTile');
+  });
+  it('does not import ActivityPanel or ActivityModal', () => {
+    expect(listSrc).not.toContain('ActivityPanel');
+    expect(listSrc).not.toContain('ActivityModal');
+  });
+  it('does not have cow editing state', () => {
+    expect(listSrc).not.toContain('cowDraft');
+    expect(listSrc).not.toContain('saveCowWeight');
+  });
+  it('still has virtual planned section with schedule action', () => {
+    expect(listSrc).toContain('data-virtual-batch');
+    expect(listSrc).toContain('scheduleVirtualBatch');
+  });
+  it('still has status filter (planned, scheduled, active, processed)', () => {
+    expect(listSrc).toContain('data-cattle-batches-root');
+    expect(listSrc).toContain('scheduled');
+    expect(listSrc).toContain('active');
+    expect(listSrc).toContain('processed');
+  });
+  it('schedule navigates to record page', () => {
+    expect(listSrc).toMatch(/scheduleVirtualBatch[\s\S]*?navigate\('\/cattle\/batches\/' \+ rowId\)/);
+  });
+});
