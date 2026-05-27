@@ -68,21 +68,6 @@ export default function PigBatchesView({
 }) {
   const [activityTarget, setActivityTarget] = React.useState(null);
 
-  React.useEffect(() => {
-    function onEntityDeepLink() {
-      const dl = window._wcfEntityDeepLink;
-      if (!dl || dl.entityType !== 'pig.batch') return;
-      const g = (feederGroups || []).find((x) => x.id === dl.entityId);
-      if (g) {
-        window._wcfEntityDeepLink = null;
-        setActivityTarget({entityType: 'pig.batch', entityId: g.id, entityLabel: g.batchName});
-      }
-    }
-    onEntityDeepLink();
-    window.addEventListener('wcf-entity-deep-link', onEntityDeepLink);
-    return () => window.removeEventListener('wcf-entity-deep-link', onEntityDeepLink);
-  }, [feederGroups]);
-
   const [showSubForm, setShowSubForm] = React.useState(null); // batchId or null
   const [subForm, setSubForm] = React.useState({name: '', giltCount: 0, boarCount: 0, originalPigCount: 0, notes: ''});
   const [editSubId, setEditSubId] = React.useState(null);
@@ -121,6 +106,22 @@ export default function PigBatchesView({
   } = usePig();
   const {pigDailys} = useDailysRecent();
   const {setView} = useUI();
+
+  React.useEffect(() => {
+    function onEntityDeepLink() {
+      const dl = window._wcfEntityDeepLink;
+      if (!dl || dl.entityType !== 'pig.batch') return;
+      const g = (feederGroups || []).find((x) => x.id === dl.entityId);
+      if (g) {
+        window._wcfEntityDeepLink = null;
+        setActivityTarget({entityType: 'pig.batch', entityId: g.id, entityLabel: g.batchName});
+      }
+    }
+    onEntityDeepLink();
+    window.addEventListener('wcf-entity-deep-link', onEntityDeepLink);
+    return () => window.removeEventListener('wcf-entity-deep-link', onEntityDeepLink);
+  }, [feederGroups]);
+
   const statusColors = {active: {bg: '#085041', tx: 'white'}, processed: {bg: '#4b5563', tx: 'white'}};
   const cycleSeqMap = buildCycleSeqMap(breedingCycles);
   // Trip source tracking: for each processing trip, which weigh-in session(s)

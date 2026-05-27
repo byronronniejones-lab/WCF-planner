@@ -142,10 +142,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
     ],
   };
   must(
-    await supabaseAdmin.from('app_store').upsert({
-      key: 'ppp-feeders-v1',
-      data: [feederGroup],
-    }),
+    await supabaseAdmin.from('app_store').upsert({key: 'ppp-feeders-v1', data: [feederGroup]}, {onConflict: 'key'}),
     'app_store ppp-feeders-v1 upsert',
   );
 
@@ -197,10 +194,7 @@ export async function seedP2601Scenario(supabaseAdmin) {
     },
   ];
   must(
-    await supabaseAdmin.from('app_store').upsert({
-      key: 'ppp-breeders-v1',
-      data: breeders,
-    }),
+    await supabaseAdmin.from('app_store').upsert({key: 'ppp-breeders-v1', data: breeders}, {onConflict: 'key'}),
     'app_store ppp-breeders-v1 upsert',
   );
 
