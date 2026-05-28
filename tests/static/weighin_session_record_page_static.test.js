@@ -62,19 +62,19 @@ describe('WeighInSessionPage — data loading', () => {
     expect(pageSrc).toContain('accessDenied');
     expect(pageSrc).toContain('data-access-denied');
   });
-  it('does not render CommentsSection or RecordActivityLog when access denied', () => {
-    expect(pageSrc).toMatch(/accessDenied[\s\S]*?return[\s\S]*?CommentsSection/);
+  it('does not render the collaboration section when access denied', () => {
+    expect(pageSrc).toMatch(/accessDenied[\s\S]*?return[\s\S]*?RecordCollaborationSection/);
   });
 });
 
-describe('WeighInSessionPage — CommentsSection + RecordActivityLog', () => {
-  it('renders CommentsSection with weighin.session entityType', () => {
-    expect(pageSrc).toContain('CommentsSection');
+describe('WeighInSessionPage — RecordCollaborationSection', () => {
+  it('renders RecordCollaborationSection with weighin.session entityType', () => {
+    expect(pageSrc).toContain('RecordCollaborationSection');
     expect(pageSrc).toContain('entityType="weighin.session"');
   });
-  it('renders RecordActivityLog with weighin.session entityType', () => {
-    expect(pageSrc).toContain('RecordActivityLog');
-    expect(pageSrc).toContain('entityType="weighin.session"');
+  it('does not import CommentsSection or RecordActivityLog directly', () => {
+    expect(pageSrc).not.toContain("from '../shared/CommentsSection.jsx'");
+    expect(pageSrc).not.toContain("from '../shared/RecordActivityLog.jsx'");
   });
   it('has hash-scroll for comment deep-links', () => {
     expect(pageSrc).toContain('location.hash');

@@ -82,8 +82,8 @@ describe('CattleAnimalPage — app header', () => {
 });
 
 describe('CattleAnimalPage — record page structure', () => {
-  it('renders CommentsSection', () => {
-    expect(animalPage).toContain('CommentsSection');
+  it('renders RecordCollaborationSection with cattle.animal', () => {
+    expect(animalPage).toContain('RecordCollaborationSection');
     expect(animalPage).toContain('entityType="cattle.animal"');
   });
   it('does not import ActivityPanel or ActivityModal', () => {
@@ -94,9 +94,9 @@ describe('CattleAnimalPage — record page structure', () => {
     expect(animalPage).not.toContain('postActivityComment');
     expect(animalPage).not.toContain('data-activity-compose');
   });
-  it('uses shared RecordActivityLog for audit log', () => {
-    expect(animalPage).toContain('RecordActivityLog');
-    expect(animalPage).toContain('entityType="cattle.animal"');
+  it('does not import CommentsSection or RecordActivityLog directly', () => {
+    expect(animalPage).not.toContain("from '../shared/CommentsSection.jsx'");
+    expect(animalPage).not.toContain("from '../shared/RecordActivityLog.jsx'");
   });
   it('does not load cattle_comments', () => {
     expect(animalPage).not.toContain("from('cattle_comments')");

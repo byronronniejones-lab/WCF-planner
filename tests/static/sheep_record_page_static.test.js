@@ -78,17 +78,17 @@ describe('SheepAnimalPage — app header', () => {
 });
 
 describe('SheepAnimalPage — record page structure', () => {
-  it('renders CommentsSection with sheep.animal', () => {
-    expect(animalPage).toContain('CommentsSection');
+  it('renders RecordCollaborationSection with sheep.animal', () => {
+    expect(animalPage).toContain('RecordCollaborationSection');
     expect(animalPage).toContain('entityType="sheep.animal"');
   });
   it('does not import ActivityPanel or ActivityModal', () => {
     expect(animalPage).not.toMatch(/^import ActivityPanel/m);
     expect(animalPage).not.toMatch(/^import ActivityModal/m);
   });
-  it('uses shared RecordActivityLog for audit log', () => {
-    expect(animalPage).toContain('RecordActivityLog');
-    expect(animalPage).toContain('entityType="sheep.animal"');
+  it('does not import CommentsSection or RecordActivityLog directly', () => {
+    expect(animalPage).not.toContain("from '../shared/CommentsSection.jsx'");
+    expect(animalPage).not.toContain("from '../shared/RecordActivityLog.jsx'");
   });
   it('does not load sheep_comments', () => {
     expect(animalPage).not.toContain("from('sheep_comments')");

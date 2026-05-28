@@ -1,11 +1,9 @@
 import React from 'react';
 import {useNavigate, useLocation} from 'react-router-dom';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import CommentsSection from '../shared/CommentsSection.jsx';
+import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import RecordActivityLog from '../shared/RecordActivityLog.jsx';
 import {
   loadTaskInstanceById,
   loadEligibleProfilesById,
@@ -410,19 +408,14 @@ export default function TaskInstancePage({sb, authState, Header}) {
               )}
             </div>
 
-            <div style={{marginTop: 0}}>
-              <CommentsSection
-                sb={sb}
-                authState={authState}
-                entityType="task.instance"
-                entityId={record.id}
-                entityLabel={record.title}
-              />
-            </div>
-
-            <div style={{marginTop: 0}}>
-              <RecordActivityLog sb={sb} entityType="task.instance" entityId={record.id} />
-            </div>
+            <RecordCollaborationSection
+              sb={sb}
+              authState={authState}
+              entityType="task.instance"
+              entityId={record.id}
+              entityLabel={record.title}
+              spacing={0}
+            />
 
             {React.createElement(CompleteTaskModal, {
               sb,

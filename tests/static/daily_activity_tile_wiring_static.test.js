@@ -90,13 +90,13 @@ describe('Daily record pages — structure', () => {
   ];
 
   for (const p of pages) {
-    it(`${p.name} renders CommentsSection with ${p.entity}`, () => {
-      expect(p.src).toContain('CommentsSection');
+    it(`${p.name} renders RecordCollaborationSection with ${p.entity}`, () => {
+      expect(p.src).toContain('RecordCollaborationSection');
       expect(p.src).toContain(`entityType="${p.entity}"`);
     });
-    it(`${p.name} uses shared RecordActivityLog`, () => {
-      expect(p.src).toContain('RecordActivityLog');
-      expect(p.src).toContain(`entityType="${p.entity}"`);
+    it(`${p.name} does not import CommentsSection or RecordActivityLog directly`, () => {
+      expect(p.src).not.toContain("from '../shared/CommentsSection.jsx'");
+      expect(p.src).not.toContain("from '../shared/RecordActivityLog.jsx'");
     });
     it(`${p.name} has data-record-title`, () => {
       expect(p.src).toContain('data-record-title');

@@ -119,9 +119,8 @@ describe('cattle.processing — migrated to record page', () => {
     expect(cattleBatches).not.toContain('activityTarget');
   });
 
-  it('CattleBatchPage uses CommentsSection + RecordActivityLog', () => {
-    expect(cattleBatchPage).toContain('CommentsSection');
-    expect(cattleBatchPage).toContain('RecordActivityLog');
+  it('CattleBatchPage uses RecordCollaborationSection for Comments + Activity', () => {
+    expect(cattleBatchPage).toContain('RecordCollaborationSection');
     expect(cattleBatchPage).toContain('entityType="cattle.processing"');
   });
 

@@ -59,8 +59,8 @@ describe('EquipmentDetail — pilot migration to runMutation', () => {
     expect(eqDetailSrc).toContain('runMutation');
   });
 
-  it('uses shared RecordActivityLog for audit log', () => {
-    expect(eqDetailSrc).toContain('RecordActivityLog');
+  it('uses shared RecordCollaborationSection for Comments + audit log', () => {
+    expect(eqDetailSrc).toContain('RecordCollaborationSection');
     expect(eqDetailSrc).not.toContain("from '../lib/activityApi.js'");
   });
 

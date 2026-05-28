@@ -16,17 +16,17 @@ const apiSrc = fs.readFileSync(path.join(ROOT, 'src/lib/tasksCenterApi.js'), 'ut
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
 
 describe('TaskInstancePage — record page structure', () => {
-  it('renders CommentsSection with task.instance entityType', () => {
-    expect(pageSrc).toContain('CommentsSection');
+  it('renders RecordCollaborationSection with task.instance entityType', () => {
+    expect(pageSrc).toContain('RecordCollaborationSection');
     expect(pageSrc).toContain('entityType="task.instance"');
   });
-  it('passes entityId and entityLabel to CommentsSection', () => {
+  it('passes entityId and entityLabel to the collaboration section', () => {
     expect(pageSrc).toContain('entityId={record.id}');
     expect(pageSrc).toContain('entityLabel={record.title}');
   });
-  it('uses shared RecordActivityLog for audit log', () => {
-    expect(pageSrc).toContain('RecordActivityLog');
-    expect(pageSrc).toContain('entityType="task.instance"');
+  it('does not import CommentsSection or RecordActivityLog directly', () => {
+    expect(pageSrc).not.toContain("from '../shared/CommentsSection.jsx'");
+    expect(pageSrc).not.toContain("from '../shared/RecordActivityLog.jsx'");
   });
   it('handles hash anchors for comment deep-links', () => {
     expect(pageSrc).toContain('location.hash');

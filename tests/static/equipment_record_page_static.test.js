@@ -33,11 +33,11 @@ describe('EquipmentFleetView — no legacy Activity surfaces', () => {
 });
 
 describe('EquipmentDetail — record page structure', () => {
-  it('renders CommentsSection', () => {
-    expect(detail).toContain('CommentsSection');
+  it('renders RecordCollaborationSection with equipment.item', () => {
+    expect(detail).toContain('RecordCollaborationSection');
     expect(detail).toContain('entityType="equipment.item"');
   });
-  it('passes entityId and entityLabel to CommentsSection', () => {
+  it('passes entityId and entityLabel to the collaboration section', () => {
     expect(detail).toContain('entityId={eq.id}');
     expect(detail).toContain('entityLabel={eq.name}');
   });
@@ -45,9 +45,9 @@ describe('EquipmentDetail — record page structure', () => {
     expect(detail).not.toMatch(/^import ActivityPanel/m);
     expect(detail).not.toMatch(/^import ActivityModal/m);
   });
-  it('uses shared RecordActivityLog for audit log', () => {
-    expect(detail).toContain('RecordActivityLog');
-    expect(detail).toContain('entityType="equipment.item"');
+  it('does not import CommentsSection or RecordActivityLog directly', () => {
+    expect(detail).not.toContain("from '../shared/CommentsSection.jsx'");
+    expect(detail).not.toContain("from '../shared/RecordActivityLog.jsx'");
   });
   it('imports useLocation for hash-scroll', () => {
     expect(detail).toContain("from 'react-router-dom'");

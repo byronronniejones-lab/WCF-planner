@@ -1,11 +1,9 @@
 import React from 'react';
 import {useNavigate, useLocation} from 'react-router-dom';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import CommentsSection from '../shared/CommentsSection.jsx';
+import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import RecordActivityLog from '../shared/RecordActivityLog.jsx';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
 import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
@@ -2271,19 +2269,13 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           </div>
         )}
 
-        <div style={{marginTop: 16}}>
-          <CommentsSection
-            sb={sb}
-            authState={authState}
-            entityType="weighin.session"
-            entityId={session.id}
-            entityLabel={entityLabel}
-          />
-        </div>
-
-        <div style={{marginTop: 16}}>
-          <RecordActivityLog sb={sb} entityType="weighin.session" entityId={session.id} />
-        </div>
+        <RecordCollaborationSection
+          sb={sb}
+          authState={authState}
+          entityType="weighin.session"
+          entityId={session.id}
+          entityLabel={entityLabel}
+        />
       </div>
 
       {sessionForModal &&

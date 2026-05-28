@@ -45,7 +45,7 @@ describe('RecordActivityLog — shared component contract', () => {
   });
 });
 
-describe('Record pages use shared RecordActivityLog', () => {
+describe('Record pages use shared RecordCollaborationSection (Comments + RecordActivityLog)', () => {
   const pages = [
     {name: 'CattleDailyPage', path: 'src/cattle/CattleDailyPage.jsx', entity: 'cattle.daily'},
     {name: 'CattleAnimalPage', path: 'src/cattle/CattleAnimalPage.jsx', entity: 'cattle.animal'},
@@ -61,11 +61,15 @@ describe('Record pages use shared RecordActivityLog', () => {
 
   for (const p of pages) {
     const src = fs.readFileSync(path.join(ROOT, p.path), 'utf8');
-    it(`${p.name} imports RecordActivityLog`, () => {
-      expect(src).toContain('RecordActivityLog');
+    it(`${p.name} imports RecordCollaborationSection`, () => {
+      expect(src).toContain('RecordCollaborationSection');
     });
     it(`${p.name} passes entityType="${p.entity}"`, () => {
       expect(src).toContain(`entityType="${p.entity}"`);
+    });
+    it(`${p.name} does not import CommentsSection or RecordActivityLog directly`, () => {
+      expect(src).not.toContain("from '../shared/CommentsSection.jsx'");
+      expect(src).not.toContain("from '../shared/RecordActivityLog.jsx'");
     });
     it(`${p.name} does not directly import listActivityEvents`, () => {
       expect(src).not.toContain('listActivityEvents');

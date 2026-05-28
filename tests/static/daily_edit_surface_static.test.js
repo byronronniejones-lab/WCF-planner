@@ -47,11 +47,13 @@ describe('All daily record pages — editable surface', () => {
       expect(src).toContain('buildChanges');
       expect(src).toContain(`entityType: '${p.entity}'`);
     });
-    it(`${p.name} preserves CommentsSection`, () => {
-      expect(src).toContain('CommentsSection');
+    it(`${p.name} preserves Comments + Activity via RecordCollaborationSection`, () => {
+      expect(src).toContain('RecordCollaborationSection');
+      expect(src).toContain(`entityType="${p.entity}"`);
     });
-    it(`${p.name} preserves RecordActivityLog`, () => {
-      expect(src).toContain('RecordActivityLog');
+    it(`${p.name} does not import CommentsSection or RecordActivityLog directly`, () => {
+      expect(src).not.toContain("from '../shared/CommentsSection.jsx'");
+      expect(src).not.toContain("from '../shared/RecordActivityLog.jsx'");
     });
     it(`${p.name} does not import ActivityPanel or ActivityModal`, () => {
       expect(src).not.toMatch(/import ActivityPanel/);

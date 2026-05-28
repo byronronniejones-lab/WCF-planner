@@ -48,13 +48,13 @@ describe('CattleBatchPage — record page structure', () => {
   it('has data-record-title marker', () => {
     expect(pageSrc).toContain('data-record-title="1"');
   });
-  it('renders CommentsSection with cattle.processing entityType', () => {
-    expect(pageSrc).toContain('CommentsSection');
+  it('renders RecordCollaborationSection with cattle.processing entityType', () => {
+    expect(pageSrc).toContain('RecordCollaborationSection');
     expect(pageSrc).toContain('entityType="cattle.processing"');
   });
-  it('renders RecordActivityLog with cattle.processing entityType', () => {
-    expect(pageSrc).toContain('RecordActivityLog');
-    expect(pageSrc).toContain('entityType="cattle.processing"');
+  it('does not import CommentsSection or RecordActivityLog directly', () => {
+    expect(pageSrc).not.toContain("from '../shared/CommentsSection.jsx'");
+    expect(pageSrc).not.toContain("from '../shared/RecordActivityLog.jsx'");
   });
   it('does not use ActivityPanel or ActivityModal', () => {
     expect(pageSrc).not.toContain('ActivityPanel');

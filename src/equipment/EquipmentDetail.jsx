@@ -23,9 +23,7 @@ import ManualsCard from './ManualsCard.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import CommentsSection from '../shared/CommentsSection.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import RecordActivityLog from '../shared/RecordActivityLog.jsx';
+import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 import {runMutation, recordStatusChange} from '../lib/entityMutations.js';
 
 export default function EquipmentDetail({
@@ -1257,19 +1255,14 @@ export default function EquipmentDetail({
         />
       )}
 
-      <div style={{marginTop: 0}}>
-        <CommentsSection
-          sb={sb}
-          authState={authState}
-          entityType="equipment.item"
-          entityId={eq.id}
-          entityLabel={eq.name}
-        />
-      </div>
-
-      <div style={{marginTop: 0}}>
-        <RecordActivityLog sb={sb} entityType="equipment.item" entityId={eq.id} />
-      </div>
+      <RecordCollaborationSection
+        sb={sb}
+        authState={authState}
+        entityType="equipment.item"
+        entityId={eq.id}
+        entityLabel={eq.name}
+        spacing={0}
+      />
 
       {/* Photo lightbox — full-screen viewer with prev/next/close. Esc closes;
           ← → arrow keys navigate; click backdrop to close. */}

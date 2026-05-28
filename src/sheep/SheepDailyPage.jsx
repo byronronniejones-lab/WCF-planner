@@ -1,11 +1,9 @@
 import React from 'react';
 import {useNavigate, useLocation} from 'react-router-dom';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import CommentsSection from '../shared/CommentsSection.jsx';
+import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import RecordActivityLog from '../shared/RecordActivityLog.jsx';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
 import {buildChanges} from '../lib/activityChangeDiff.js';
@@ -586,19 +584,13 @@ export default function SheepDailyPage({sb, fmt, authState, Header}) {
           </button>
         )}
 
-        <div style={{marginTop: 16}}>
-          <CommentsSection
-            sb={sb}
-            authState={authState}
-            entityType="sheep.daily"
-            entityId={record.id}
-            entityLabel={entityLabel}
-          />
-        </div>
-
-        <div style={{marginTop: 16}}>
-          <RecordActivityLog sb={sb} entityType="sheep.daily" entityId={record.id} />
-        </div>
+        <RecordCollaborationSection
+          sb={sb}
+          authState={authState}
+          entityType="sheep.daily"
+          entityId={record.id}
+          entityLabel={entityLabel}
+        />
       </div>
     </div>
   );
