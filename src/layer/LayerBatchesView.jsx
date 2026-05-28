@@ -10,6 +10,7 @@
 import React from 'react';
 import {toISO, addDays} from '../lib/dateUtils.js';
 import {computeProjectedCount, computeHousingDisplayCount, computeLayerFeedCost} from '../lib/layerHousing.js';
+import {getHousingCap, computeBatchStats, computeHousingStats} from './layerBatchStats.js';
 import {BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps} from '../lib/broiler.js';
 import {S} from '../lib/styles.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -80,22 +81,6 @@ const LayerBatchesView = ({
 
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const HOUSING_CAPS = {
-    'Layer Schooner': 450,
-    'Eggmobile 1': 250,
-    'Eggmobile 2': 250,
-    'Eggmobile 3': 250,
-    'Eggmobile 4': 250,
-    'Retirement Home': 9999,
-  };
-  const getHousingCap = (name) => {
-    if (!name) return 9999;
-    for (const [k, v] of Object.entries(HOUSING_CAPS)) {
-      if (name.toLowerCase().includes(k.toLowerCase())) return v;
-    }
-    return 9999;
-  };
 
   const EMPTY_BATCH = {
     name: '',
@@ -183,123 +168,8 @@ const LayerBatchesView = ({
       ),
     ]).then(([ld, ed]) => {
       setRawLayerDailys(ld);
-      // Date range helper — only count records within a housing's active period
-      function inRange(date, start, end) {
-        if (!date) return false;
-        if (start && date < start) return false;
-        if (end && date > end) return false;
-        return true;
-      }
-      // Live layer feed phase calc — bird age from brooder_entry_date.
-      // Days 0-20 = STARTER, 21-139 = GROWER, 140+ = LAYER.
-      // Falls back to stored feed_type if anchor date is unknown.
-      function calcPhaseFromAge(reportDate, brooderEntry, storedType) {
-        if (!brooderEntry || !reportDate) return storedType || 'LAYER';
-        try {
-          const days = Math.floor(
-            (new Date(reportDate + 'T12:00:00') - new Date(brooderEntry + 'T12:00:00')) / 86400000,
-          );
-          if (days < 21) return 'STARTER';
-          if (days < 140) return 'GROWER';
-          return 'LAYER';
-        } catch (e) {
-          return storedType || 'LAYER';
-        }
-      }
-      // Stats per batch — batch_id-based attribution.
-      // Every layer_dailys row has a batch_id linking it to exactly one layer_batch.
-      // This is set at submit time (for new reports) or backfilled (for historical data).
-      // batch_id is the source of truth — NOT batch_label text matching.
-      const stats = {};
-      layerBatches.forEach((batch) => {
-        const anchor = batch.brooder_entry_date || batch.arrival_date || null;
-        const bHousings = layerHousings.filter((h) => h.batch_id === batch.id);
-        const myReports = ld.filter((d) => d.batch_id === batch.id);
-        let totalFeed = 0,
-          totalMort = 0,
-          starterFeed = 0,
-          growerFeed = 0,
-          layerFeed = 0;
-        myReports.forEach((d) => {
-          const f = parseFloat(d.feed_lbs) || 0;
-          totalFeed += f;
-          totalMort += parseInt(d.mortality_count) || 0;
-          const phase = calcPhaseFromAge(d.date, anchor, d.feed_type);
-          if (phase === 'STARTER') starterFeed += f;
-          else if (phase === 'GROWER') growerFeed += f;
-          else layerFeed += f;
-        });
-        let totalEggs = 0;
-        bHousings.forEach((h) => {
-          totalEggs += ed.reduce((s, d) => {
-            if (!inRange(d.date, h.start_date, h.retired_date)) return s;
-            let e = 0;
-            [
-              [d.group1_name, d.group1_count],
-              [d.group2_name, d.group2_count],
-              [d.group3_name, d.group3_count],
-              [d.group4_name, d.group4_count],
-            ].forEach(([n, c]) => {
-              if (n === h.housing_name) e += parseInt(c) || 0;
-            });
-            return s + e;
-          }, 0);
-        });
-        stats[batch.id] = {totalFeed, totalMort, totalEggs, starterFeed, growerFeed, layerFeed};
-      });
-      setBatchStats(stats);
-      // Stats per housing — uses batch_id from each report's parent batch for phase calc
-      const batchById = Object.fromEntries(layerBatches.map((b) => [b.id, b]));
-      const hStats = {};
-      layerHousings.forEach((h) => {
-        const parent = h.batch_id ? batchById[h.batch_id] : null;
-        const anchor = parent ? parent.brooder_entry_date || parent.arrival_date || null : null;
-        const hd = ld.filter(
-          (d) =>
-            String(d.batch_label || '')
-              .toLowerCase()
-              .trim() ===
-              String(h.housing_name || '')
-                .toLowerCase()
-                .trim() && inRange(d.date, h.start_date, h.retired_date),
-        );
-        let totalFeed = 0,
-          totalMort = 0,
-          starterFeedH = 0,
-          growerFeedH = 0,
-          layerFeedH = 0;
-        hd.forEach((d) => {
-          const f = parseFloat(d.feed_lbs) || 0;
-          totalFeed += f;
-          totalMort += parseInt(d.mortality_count) || 0;
-          const phase = calcPhaseFromAge(d.date, anchor, d.feed_type);
-          if (phase === 'STARTER') starterFeedH += f;
-          else if (phase === 'GROWER') growerFeedH += f;
-          else layerFeedH += f;
-        });
-        const totalEggs = ed.reduce((s, d) => {
-          if (!inRange(d.date, h.start_date, h.retired_date)) return s;
-          let e = 0;
-          [
-            [d.group1_name, d.group1_count],
-            [d.group2_name, d.group2_count],
-            [d.group3_name, d.group3_count],
-            [d.group4_name, d.group4_count],
-          ].forEach(([n, c]) => {
-            if (n === h.housing_name) e += parseInt(c) || 0;
-          });
-          return s + e;
-        }, 0);
-        hStats[h.id] = {
-          totalFeed,
-          totalMort,
-          totalEggs,
-          starterFeed: starterFeedH,
-          growerFeed: growerFeedH,
-          layerFeed: layerFeedH,
-        };
-      });
-      setHousingStats(hStats);
+      setBatchStats(computeBatchStats(layerBatches, layerHousings, ld, ed));
+      setHousingStats(computeHousingStats(layerBatches, layerHousings, ld, ed));
       setLoading(false);
     });
   }, [layerBatches, layerHousings]);
