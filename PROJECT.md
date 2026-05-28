@@ -27,22 +27,23 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest pushed checkpoint on `origin/main`: `1e863b6 feat(layer): layer.batch +
-  layer.housing record pages at /layer/batches|housings/<id>`.
-- Local-only ahead of `origin/main`: `967e1fe feat(broiler): broiler.batch
-  record page at /broiler/batches/<encoded name>` (Codex cleared commit;
-  push gate pending Ronnie approval).
-- Open gates: push approval for `967e1fe` broiler commit and for the
-  session-end docs wrap that introduces this line.
+- Latest pushed checkpoint on `origin/main`: `b33e7fe docs: add webform
+  identity roadmap + section for next-session hotfix`.
+- Latest shipped code checkpoint on `origin/main`: `967e1fe feat(broiler):
+  broiler.batch record page at /broiler/batches/<encoded name>`.
+- Local-only ahead of `origin/main`: none expected.
+- Open gates: none for the record-page/docs wrap. The task notification +
+  weekly email hotfix is planned but not started and will require explicit
+  migration/deploy gates.
 - Operational record-page coverage as of this wrap: live for `cattle.animal`,
   `sheep.animal`, all 6 daily report types, `equipment.item`, `task.instance`,
   `weighin.session` for all 4 species, `cattle.processing` at
   `/cattle/batches/<id>`, `sheep.processing` at `/sheep/batches/<id>`,
   `layer.batch` at `/layer/batches/<id>`, `layer.housing` at
   `/layer/housings/<id>`, and `broiler.batch` at
-  `/broiler/batches/<encoded name>` (the last pending push). `pig.batch` is
-  the only legacy inline ActivityPanel batch surface remaining; its
-  record-page migration is deferred to a dedicated lane.
+  `/broiler/batches/<encoded name>`. `pig.batch` is the only legacy inline
+  ActivityPanel batch surface remaining; its record-page migration is
+  deferred to a dedicated lane.
   Comment-photos Storage RLS hotfix is live (migration 073).
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
@@ -234,7 +235,7 @@ What was built:
 | Sheep processing batch record page | Live at `/sheep/batches/<id>`. `SheepBatchesView` is a navigation-only hub + router; the record page owns metadata edit (blur-save with field.updated Activity), per-sheep weight rows, detach via `detachSheepFromBatch`, and hard delete with the detach loop. Blocked-detach warnings hand off via navigation state so the hub re-surfaces them after navigate. `pinnedId` survives rename. Existing send-to-processor Playwright coverage (13 tests) intact. |
 | LayerBatchStats helper | Live. `src/layer/layerBatchStats.js` extracts `HOUSING_CAPS`, `getHousingCap`, `inRange`, `calcPhaseFromAge`, `computeBatchStats`, `computeHousingStats` as pure helpers. `LayerBatchesView` calls them instead of re-inlining stat derivation; later layer.batch + layer.housing record-page migrations reuse the same helpers. Feed phase thresholds (21 day STARTER→GROWER, 140 day GROWER→LAYER) and housing active/retired date filtering preserved verbatim. |
 | Layer batch + housing record pages | Live at `/layer/batches/<id>` and `/layer/housings/<id>`. `LayerBatchesView` is hub + router. `LayerBatchPage` owns metadata edit (autosave brooder/schooner with conflict detection, feed cost rates, notes field.updated Activity, Delete Batch with housings cascade) and renders housings as nav-only tiles. `LayerHousingPage` owns metadata edit + Retire (via `window._wcfConfirm`). `setLayerHousings` calls pass concrete arrays so `persistLayerHousings` + `syncWebformConfig` keep `housing_batch_map` / `full_config` in sync. |
-| Broiler batch record page | Local-only on `967e1fe` (pending push). Live at `/broiler/batches/<encoded name>` once pushed. `BroilerListView` is hub + router; row/card/timeline clicks navigate to the record page. `BroilerBatchPage` mounts `BatchForm` in embedded mode (Header skipped, modal overlay dropped) with `onClose` / `onNavigatePrev` / `onNavigateNext` overrides that drive URL navigation. `submit()` returns true/false; `closeForm()` propagates; `handleClose` guards `navigate()` so refused saves (blank name / hard conflict without override) keep the form open with `formNotice` instead of silently abandoning the user's edit. `pinnedId` + a URL-sync `navigate.replace` keep rename survival working; dirty form state cannot unmount BatchForm or replay `openEdit`. broiler.batch identity stays `batch.name` to preserve the existing Activity entityId contract; routes use `encodeURIComponent`. ActivityPanel/ActivityModal/wcf-entity-deep-link retired from BroilerListView. pig.batch remains the sole legacy inline batch ActivityPanel surface. |
+| Broiler batch record page | Live at `/broiler/batches/<encoded name>` on `origin/main` via `967e1fe`. `BroilerListView` is hub + router; row/card/timeline clicks navigate to the record page. `BroilerBatchPage` mounts `BatchForm` in embedded mode (Header skipped, modal overlay dropped) with `onClose` / `onNavigatePrev` / `onNavigateNext` overrides that drive URL navigation. `submit()` returns true/false; `closeForm()` propagates; `handleClose` guards `navigate()` so refused saves (blank name / hard conflict without override) keep the form open with `formNotice` instead of silently abandoning the user's edit. `pinnedId` + a URL-sync `navigate.replace` keep rename survival working; dirty form state cannot unmount BatchForm or replay `openEdit`. broiler.batch identity stays `batch.name` to preserve the existing Activity entityId contract; routes use `encodeURIComponent`. ActivityPanel/ActivityModal/wcf-entity-deep-link retired from BroilerListView. pig.batch remains the sole legacy inline batch ActivityPanel surface. |
 
 ### Parked WIP Stash
 
@@ -566,7 +567,7 @@ record-page foundation.
 | pig.daily | UUID | date + batch_label | `pig_dailys` | direct | soft (SECDEF) | Live | comments + deleted/restored events |
 | cattle.daily | UUID | date + herd | `cattle_dailys` | direct | soft (SECDEF) | Live | comments + deleted/restored events |
 | sheep.daily | UUID | date + flock | `sheep_dailys` | direct | soft (SECDEF) | Live | comments + deleted/restored events |
-| broiler.batch | name (string) | batch name | `app_store` ppp-v4 | direct (upsert) | TBD | Live at `/broiler/batches/<encoded name>` (pending push of `967e1fe`); BatchForm mounts in embedded mode under BroilerBatchPage; identity still batch.name (preserves Activity entityId contract) | partial - delete unlogged; routine field.updated via BatchForm's notes-change wiring |
+| broiler.batch | name (string) | batch name | `app_store` ppp-v4 | direct (upsert) | TBD | Live at `/broiler/batches/<encoded name>` via `967e1fe`; BatchForm mounts in embedded mode under BroilerBatchPage; identity still batch.name (preserves Activity entityId contract) | partial - delete unlogged; routine field.updated via BatchForm's notes-change wiring |
 | pig.batch | group id | batchName | `app_store` ppp-feeders-v1 | direct (upsert) | TBD | Planned batch phase; sole remaining legacy inline ActivityPanel batch surface | partial |
 | layer.batch | UUID | name | `layer_batches` | direct | hard-cascade (housings) | Live at `/layer/batches/<id>`; BatchForm-style metadata edit modal + housings nav tiles + Add Housing helper | comments + routine field.updated for notes + status.changed on save |
 | layer.housing | UUID | housing_name | `layer_housings` | direct | hard (via batch cascade) | Live at `/layer/housings/<id>`; metadata edit + Retire via `_wcfConfirm` | comments + routine field.updated on metadata edit |
@@ -628,7 +629,7 @@ Operational entity types with record pages:
 `cattle.processing` at `/cattle/batches/<id>`, `sheep.processing` at
 `/sheep/batches/<id>`, `layer.batch` at `/layer/batches/<id>`,
 `layer.housing` at `/layer/housings/<id>`, and `broiler.batch` at
-`/broiler/batches/<encoded name>` (broiler pending push of `967e1fe`).
+`/broiler/batches/<encoded name>`.
 
 Planned rollout order:
 
