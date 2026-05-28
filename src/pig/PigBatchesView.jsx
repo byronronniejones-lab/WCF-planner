@@ -29,6 +29,9 @@ import {
   parseLiveWeights,
   tripTotalLive,
   tripYield,
+  computeSubLedgerCurrent,
+  computeSubCurrentCount,
+  computeBatchCurrentCount,
 } from '../lib/pig.js';
 import {
   PLANNED_TRIP_MIN_SIZE,
@@ -40,6 +43,7 @@ import {
   movePigsBetweenTrips,
   addPlannedTrip,
   deletePlannedTripWithReconciliation,
+  deleteReconciliationRecipient,
 } from '../lib/pigForecast.js';
 import UsersModal from '../auth/UsersModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -393,27 +397,9 @@ export default function PigBatchesView({
     persistPlannedTripLocks(next);
     setUnlockingTripId(null);
   }
-  // Reconciliation recipient for a delete — mirrors
-  // deletePlannedTripWithReconciliation: pigs flow onto the NEXT chain
-  // trip, falling back to PREVIOUS if the deleted trip is last in the
-  // (subBatchId, sex) chain. Returns the recipient trip object, or null.
-  function deleteReconciliationRecipient(plannedTrips, tripId) {
-    if (!Array.isArray(plannedTrips)) return null;
-    const target = plannedTrips.find((t) => t.id === tripId);
-    if (!target) return null;
-    const chain = plannedTrips
-      .filter((t) => t.subBatchId === target.subBatchId && t.sex === target.sex)
-      .slice()
-      .sort((a, b) => {
-        const dA = a.date || '';
-        const dB = b.date || '';
-        if (dA === dB) return (a.order || 0) - (b.order || 0);
-        return dA.localeCompare(dB);
-      });
-    const idx = chain.findIndex((t) => t.id === tripId);
-    if (idx < 0) return null;
-    return chain[idx + 1] || chain[idx - 1] || null;
-  }
+  // deleteReconciliationRecipient (the NEXT-then-PREVIOUS recipient preview for
+  // a planned-trip delete) now lives in lib/pigForecast.js next to
+  // deletePlannedTripWithReconciliation.
 
   // Planned-trip date edit for a single trip. Updates the matching trip's
   // date field and persists. Other fields are preserved via {...t}; the
@@ -1982,8 +1968,10 @@ export default function PigBatchesView({
               const tripPigs = pigTripPigsForSub(g.processingTrips || [], sb.id);
               const mortality = pigMortalityForSub(g, sb.name);
               const started = (parseInt(sb.giltCount) || 0) + (parseInt(sb.boarCount) || 0);
-              const ledgerCurrent = Math.max(0, started - tripPigs - transfers.count - mortality);
-              const currentCount = sb.status === 'processed' ? 0 : ledgerCurrent;
+              // Ledger current + processed-aware current via the shared lib
+              // helpers so hub + future record page derive these identically.
+              const ledgerCurrent = computeSubLedgerCurrent(g, sb, breeders);
+              const currentCount = computeSubCurrentCount(g, sb, breeders);
               const dailyCount = latest?.pig_count;
               const adjustedFeed = Math.max(0, rawFeedSub - transfers.feedAllocLbs);
               return {
@@ -2029,19 +2017,12 @@ export default function PigBatchesView({
                   (a, b) => b.date.localeCompare(a.date) || b.submitted_at?.localeCompare(a.submitted_at || '') || 0,
                 );
             const latestDaily = sortedDailys[0] || null;
-            let currentPigCount;
-            if (hasSubBatches) {
-              currentPigCount = subFeedTotals.reduce((s, sf) => s + (sf.currentCount || 0), 0);
-            } else {
-              const parentTrips = (g.processingTrips || []).reduce((s, t) => s + (parseInt(t.pigCount) || 0), 0);
-              const parentTransfers = parentTransferAgg.count;
-              const parentMort = pigMortalityForBatch(g);
-              const parentStarted = (parseInt(g.giltCount) || 0) + (parseInt(g.boarCount) || 0);
-              currentPigCount =
-                parentStarted > 0
-                  ? Math.max(0, parentStarted - parentTrips - parentTransfers - parentMort)
-                  : (latestDaily?.pig_count ?? null);
-            }
+            // Ledger-derived current count via the shared lib helper (sums
+            // active sub currents when sub-batched; parent-only ledger with a
+            // latest-daily fallback otherwise). One source for hub + record page.
+            const currentPigCount = computeBatchCurrentCount(g, breeders, {
+              latestDailyPigCount: latestDaily?.pig_count ?? null,
+            });
             // Freeze age once the batch is empty AND has at least one
             // processor trip — pin the reference date to the latest trip
             // so age stops advancing while the batch lingers archived.

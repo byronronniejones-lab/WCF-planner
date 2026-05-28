@@ -351,3 +351,29 @@ describe('Pig planned-trip locks — UI affordances', () => {
     expect(viewSrc).toMatch(/disabled=\{boarChainLocked\}/);
   });
 });
+
+describe('CP2 — pig.batch record-page helper extraction (no re-inlining)', () => {
+  it('imports current-count ledger helpers from lib/pig.js', () => {
+    expect(viewSrc).toMatch(/computeSubLedgerCurrent/);
+    expect(viewSrc).toMatch(/computeSubCurrentCount/);
+    expect(viewSrc).toMatch(/computeBatchCurrentCount/);
+  });
+
+  it('imports deleteReconciliationRecipient from lib/pigForecast.js', () => {
+    expect(viewSrc).toMatch(
+      /import \{[\s\S]*?deleteReconciliationRecipient[\s\S]*?\} from '\.\.\/lib\/pigForecast\.js'/,
+    );
+    expect(forecastSrc).toMatch(/export function deleteReconciliationRecipient\(/);
+  });
+
+  it('no longer defines deleteReconciliationRecipient locally', () => {
+    expect(viewSrc).not.toMatch(/function deleteReconciliationRecipient\(/);
+  });
+
+  it('no longer re-inlines the parent-only current-count ledger branch', () => {
+    // The parentStarted/parentTrips else-branch moved into computeBatchCurrentCount.
+    expect(viewSrc).not.toMatch(/const parentStarted =/);
+    expect(viewSrc).not.toMatch(/parentStarted > 0/);
+    expect(viewSrc).toMatch(/computeBatchCurrentCount\(g, breeders, \{/);
+  });
+});

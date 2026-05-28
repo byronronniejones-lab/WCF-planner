@@ -14,6 +14,7 @@ import {
   recalculateProjections,
   addPlannedTrip,
   deletePlannedTripWithReconciliation,
+  deleteReconciliationRecipient,
   reconcilePlannedTripsForSend,
   formatAgeRange,
   formatFeedPerPig,
@@ -753,6 +754,39 @@ describe('deletePlannedTripWithReconciliation', () => {
 
   it('refuses when tripId not found', () => {
     expect(deletePlannedTripWithReconciliation(chain, 'missing').error).toMatch(/not found/);
+  });
+});
+
+describe('deleteReconciliationRecipient', () => {
+  const chain = [
+    {id: 't-a', date: '2026-06-01', sex: 'gilt', subBatchId: 'sub-1', plannedCount: 10, order: 0},
+    {id: 't-b', date: '2026-06-15', sex: 'gilt', subBatchId: 'sub-1', plannedCount: 8, order: 1},
+    {id: 't-c', date: '2026-06-29', sex: 'gilt', subBatchId: 'sub-1', plannedCount: 6, order: 2},
+    {id: 't-other', date: '2026-06-15', sex: 'boar', subBatchId: 'sub-1', plannedCount: 5, order: 0},
+  ];
+
+  it('returns the NEXT chain trip when one follows the deleted trip', () => {
+    expect(deleteReconciliationRecipient(chain, 't-b').id).toBe('t-c');
+    expect(deleteReconciliationRecipient(chain, 't-a').id).toBe('t-b');
+  });
+
+  it('falls back to the PREVIOUS trip when deleting the last in chain', () => {
+    expect(deleteReconciliationRecipient(chain, 't-c').id).toBe('t-b');
+  });
+
+  it('scopes the chain to the same (subBatchId, sex) pair', () => {
+    // t-other is the only boar trip — no recipient in its own chain.
+    expect(deleteReconciliationRecipient(chain, 't-other')).toBeNull();
+  });
+
+  it('returns null for a single-trip chain (no recipient)', () => {
+    const single = [{id: 's-1', date: '2026-06-01', sex: 'gilt', subBatchId: 'sub-9', plannedCount: 5, order: 0}];
+    expect(deleteReconciliationRecipient(single, 's-1')).toBeNull();
+  });
+
+  it('returns null for missing tripId or non-array input', () => {
+    expect(deleteReconciliationRecipient(chain, 'missing')).toBeNull();
+    expect(deleteReconciliationRecipient(null, 't-a')).toBeNull();
   });
 });
 

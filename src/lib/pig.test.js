@@ -7,6 +7,9 @@ import {
   parseLiveWeights,
   tripTotalLive,
   tripYield,
+  computeSubLedgerCurrent,
+  computeSubCurrentCount,
+  computeBatchCurrentCount,
 } from './pig.js';
 
 describe('daysToMWD', () => {
@@ -315,5 +318,101 @@ describe('tripYield', () => {
     expect(tripYield({liveWeights: '400 400', hangingWeight: 0})).toBeNull();
     expect(tripYield({liveWeights: '400 400'})).toBeNull();
     expect(tripYield({})).toBeNull();
+  });
+});
+
+// Shared ledger fixture mirroring the p2601 scenario: parent P-26-01 with
+// gilts/boars 10/10, sub A (gilts) with 1 mortality + 2 transferred + 5 trip
+// pigs, sub B (boars) untouched.
+const ledgerBreeders = [
+  {sex: 'Gilt', transferredFromBatch: {batchName: 'P-26-01', subBatchName: 'P-26-01A', feedAllocationLbs: 500}},
+  {sex: 'Gilt', transferredFromBatch: {batchName: 'P-26-01', subBatchName: 'P-26-01A', feedAllocationLbs: 500}},
+];
+function ledgerGroup(overrides = {}) {
+  return {
+    batchName: 'P-26-01',
+    giltCount: 10,
+    boarCount: 10,
+    pigMortalities: [{sub_batch_name: 'P-26-01A', count: 1}],
+    processingTrips: [{id: 't1', pigCount: 5, subAttributions: [{subId: 'a', count: 5}]}],
+    subBatches: [
+      {id: 'a', name: 'P-26-01A', status: 'active', giltCount: 10, boarCount: 0},
+      {id: 'b', name: 'P-26-01B', status: 'active', giltCount: 0, boarCount: 10},
+    ],
+    ...overrides,
+  };
+}
+
+describe('computeSubLedgerCurrent', () => {
+  it('derives started − trip pigs − transfers − mortality (p2601 sub A = 2)', () => {
+    const g = ledgerGroup();
+    expect(computeSubLedgerCurrent(g, g.subBatches[0], ledgerBreeders)).toBe(2); // 10 − 5 − 2 − 1
+  });
+
+  it('returns the full started count for an untouched sub (sub B = 10)', () => {
+    const g = ledgerGroup();
+    expect(computeSubLedgerCurrent(g, g.subBatches[1], ledgerBreeders)).toBe(10);
+  });
+
+  it('clamps to 0 when events exceed started (never negative)', () => {
+    const g = ledgerGroup({
+      processingTrips: [{id: 't1', pigCount: 99, subAttributions: [{subId: 'a', count: 99}]}],
+    });
+    expect(computeSubLedgerCurrent(g, g.subBatches[0], ledgerBreeders)).toBe(0);
+  });
+
+  it('ignores the processed status (raw ledger, pre-override)', () => {
+    const g = ledgerGroup();
+    const processedA = {...g.subBatches[0], status: 'processed'};
+    expect(computeSubLedgerCurrent(g, processedA, ledgerBreeders)).toBe(2);
+  });
+});
+
+describe('computeSubCurrentCount', () => {
+  it('equals the ledger current for an active sub', () => {
+    const g = ledgerGroup();
+    expect(computeSubCurrentCount(g, g.subBatches[0], ledgerBreeders)).toBe(2);
+  });
+
+  it('is 0 for a processed sub regardless of ledger', () => {
+    const g = ledgerGroup();
+    const processedA = {...g.subBatches[0], status: 'processed'};
+    expect(computeSubCurrentCount(g, processedA, ledgerBreeders)).toBe(0);
+  });
+});
+
+describe('computeBatchCurrentCount', () => {
+  it('sums active sub currents when sub-batched (p2601 parent = 12)', () => {
+    expect(computeBatchCurrentCount(ledgerGroup(), ledgerBreeders)).toBe(12); // 2 + 10
+  });
+
+  it('treats processed subs as 0 in the parent sum', () => {
+    const g = ledgerGroup();
+    g.subBatches[1] = {...g.subBatches[1], status: 'processed'};
+    expect(computeBatchCurrentCount(g, ledgerBreeders)).toBe(2); // 2 + 0
+  });
+
+  it('uses the parent-only ledger (raw pigCount trips) when there are no subs', () => {
+    const parentOnly = {
+      batchName: 'P-25-09',
+      giltCount: 8,
+      boarCount: 4,
+      pigMortalities: [{count: 1}],
+      processingTrips: [{pigCount: 3}, {pigCount: 2}], // raw sum = 5, no subAttributions
+      subBatches: [],
+    };
+    expect(computeBatchCurrentCount(parentOnly, [])).toBe(6); // 12 − 5 − 0 − 1
+  });
+
+  it('clamps the parent-only ledger to 0', () => {
+    const parentOnly = {batchName: 'Y', giltCount: 3, boarCount: 0, processingTrips: [{pigCount: 9}], subBatches: []};
+    expect(computeBatchCurrentCount(parentOnly, [])).toBe(0);
+  });
+
+  it('falls back to latestDailyPigCount when parent has no started count', () => {
+    const parentZero = {batchName: 'Z', giltCount: 0, boarCount: 0, processingTrips: [], subBatches: []};
+    expect(computeBatchCurrentCount(parentZero, [], {latestDailyPigCount: 42})).toBe(42);
+    expect(computeBatchCurrentCount(parentZero, [], {latestDailyPigCount: 0})).toBe(0); // 0 is a real count
+    expect(computeBatchCurrentCount(parentZero, [])).toBeNull();
   });
 });

@@ -300,6 +300,52 @@ export function pigMortalityForBatch(group) {
   return n;
 }
 
+// ── CURRENT-COUNT LEDGER HELPERS (extracted from PigBatchesView) ─────────────
+// Current count is ledger-derived (never a persisted currentCount): started
+// minus the audit-log events. These three helpers are the single source so the
+// pig hub tiles and the future /pig/batches/<id> record page can't drift.
+
+// Per-sub ledger current: started − trip pigs − transfers − mortality, clamped
+// to >= 0. This is the raw ledger remainder BEFORE the processed-status
+// override (callers that need the discrepancy check read this directly).
+export function computeSubLedgerCurrent(group, sub, breeders) {
+  const started = (parseInt(sub.giltCount) || 0) + (parseInt(sub.boarCount) || 0);
+  const tripPigs = pigTripPigsForSub((group && group.processingTrips) || [], sub.id);
+  const transfers = pigTransfersForSub(breeders, group && group.batchName, sub.name);
+  const mortality = pigMortalityForSub(group, sub.name);
+  return Math.max(0, started - tripPigs - transfers.count - mortality);
+}
+
+// Per-sub current count for display: 0 when the sub is processed, otherwise the
+// ledger current.
+export function computeSubCurrentCount(group, sub, breeders) {
+  return sub.status === 'processed' ? 0 : computeSubLedgerCurrent(group, sub, breeders);
+}
+
+// Batch (parent feeder group) current count.
+//   - With sub-batches: sum of each sub's current count (processed subs = 0).
+//   - Parent-only (no subs): parentStarted − parent trip pigs − transfers −
+//     mortality, clamped >= 0. When parentStarted is 0 (no stored gilt/boar
+//     counts) fall back to the latest daily pig_count the caller passes in, or
+//     null. NOTE the parent-only trip count is the raw sum of
+//     processingTrips[].pigCount (NOT subAttribution-based) — there is no
+//     sub-level attribution to draw from on a parent-only batch; this matches
+//     the existing parent-only render path exactly.
+export function computeBatchCurrentCount(group, breeders, {latestDailyPigCount = null} = {}) {
+  const subs = (group && group.subBatches) || [];
+  if (subs.length > 0) {
+    return subs.reduce((s, sub) => s + computeSubCurrentCount(group, sub, breeders), 0);
+  }
+  const parentTrips = ((group && group.processingTrips) || []).reduce((s, t) => s + (parseInt(t.pigCount) || 0), 0);
+  const parentTransfers = pigTransfersForBatch(breeders, group && group.batchName).count;
+  const parentMort = pigMortalityForBatch(group);
+  const parentStarted = (parseInt(group && group.giltCount) || 0) + (parseInt(group && group.boarCount) || 0);
+  if (parentStarted > 0) {
+    return Math.max(0, parentStarted - parentTrips - parentTransfers - parentMort);
+  }
+  return latestDailyPigCount ?? null;
+}
+
 // Reconcile sub-batches against parent. Auto-load repair is intentionally
 // NARROW: it only enforces the deterministic invariant
 //   sub.originalPigCount === sub.giltCount + sub.boarCount

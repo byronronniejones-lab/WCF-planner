@@ -410,6 +410,37 @@ export function deletePlannedTripWithReconciliation(trips, tripId) {
 }
 
 /**
+ * Reconciliation recipient PREVIEW for a planned-trip delete — the trip that
+ * deletePlannedTripWithReconciliation would fold the deleted trip's
+ * plannedCount onto: NEXT in the (subBatchId, sex) chain, falling back to
+ * PREVIOUS when the deleted trip is last. Returns the recipient trip object,
+ * or null (target missing, or chain has only the target).
+ *
+ * The UI uses this to label the delete confirmation before committing. Sort is
+ * kept inline (date asc, then order asc; missing-date sorts first) verbatim
+ * from PigBatchesView rather than reusing planedTripSortFn — the two agree for
+ * the locked planned-trip shape (date always present) but differ on
+ * missing-date trips, so this preserves the prior behavior exactly.
+ */
+export function deleteReconciliationRecipient(plannedTrips, tripId) {
+  if (!Array.isArray(plannedTrips)) return null;
+  const target = plannedTrips.find((t) => t.id === tripId);
+  if (!target) return null;
+  const chain = plannedTrips
+    .filter((t) => t.subBatchId === target.subBatchId && t.sex === target.sex)
+    .slice()
+    .sort((a, b) => {
+      const dA = a.date || '';
+      const dB = b.date || '';
+      if (dA === dB) return (a.order || 0) - (b.order || 0);
+      return dA.localeCompare(dB);
+    });
+  const idx = chain.findIndex((t) => t.id === tripId);
+  if (idx < 0) return null;
+  return chain[idx + 1] || chain[idx - 1] || null;
+}
+
+/**
  * Reconcile planned trips for a weigh-in send. Resolves the target planned
  * trip (next future date in the (subBatchId, sex) chain; falls back to
  * earliest if all dates are in the past) and folds sendCount onto the
