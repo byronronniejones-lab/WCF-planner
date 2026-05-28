@@ -1310,6 +1310,7 @@ function App() {
     const isEggDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/eggs/');
     const isLayerBatchesSubpath = !exactPathView && location.pathname.startsWith('/layer/batches/');
     const isLayerHousingsSubpath = !exactPathView && location.pathname.startsWith('/layer/housings/');
+    const isBroilerBatchesSubpath = !exactPathView && location.pathname.startsWith('/broiler/batches/');
     const isTasksSubpath = !exactPathView && location.pathname.startsWith('/tasks/');
     const isWeighInSessionSubpath = !exactPathView && location.pathname.startsWith('/weigh-in-sessions/');
     const viewFromUrl = isWebformSubpath
@@ -1342,11 +1343,13 @@ function App() {
                                 ? 'layerbatches'
                                 : isLayerHousingsSubpath
                                   ? 'layerbatches'
-                                  : isTasksSubpath
-                                    ? 'tasks'
-                                    : isWeighInSessionSubpath
-                                      ? 'weighinsessions'
-                                      : exactPathView;
+                                  : isBroilerBatchesSubpath
+                                    ? 'list'
+                                    : isTasksSubpath
+                                      ? 'tasks'
+                                      : isWeighInSessionSubpath
+                                        ? 'weighinsessions'
+                                        : exactPathView;
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -1402,6 +1405,8 @@ function App() {
     // Don't clobber /layer/batches/<id> or /layer/housings/<id> sub-paths — LayerBatchesRouter owns them.
     if (view === 'layerbatches' && location.pathname.startsWith('/layer/batches/')) return;
     if (view === 'layerbatches' && location.pathname.startsWith('/layer/housings/')) return;
+    // Don't clobber /broiler/batches/<id> sub-paths — BroilerListRouter owns them.
+    if (view === 'list' && location.pathname.startsWith('/broiler/batches/')) return;
     if (view === 'tasks' && location.pathname.startsWith('/tasks/')) return;
     if (view === 'weighinsessions' && location.pathname.startsWith('/weigh-in-sessions/')) return;
     const pathFromView = VIEW_TO_PATH[view];
@@ -3129,18 +3134,25 @@ function App() {
         'totalLbsCuts',
       ];
       const changed = keys.some((k) => String(form[k] || '') !== String(originalForm[k] || ''));
-      if (changed) submit(false);
-      else setShowForm(false);
-    } else {
+      if (changed) {
+        const ok = submit(false);
+        // submit() refused (blank name / hard conflicts) — keep the form
+        // open and surface formNotice. Callers (BroilerBatchPage.handleClose)
+        // must check this return value before navigating away.
+        return ok !== false;
+      }
       setShowForm(false);
+      return true;
     }
+    setShowForm(false);
+    return true;
   }
 
   function submit(force) {
     setFormNotice(null);
     if (!form.name.trim()) {
       setFormNotice({kind: 'error', message: 'Please enter a batch name.'});
-      return;
+      return false;
     }
     // Block on hard conflicts unless force=true. Soft (layer) conflicts always pass.
     const hardConflicts = (conflicts || []).filter((c) => !c.soft);
@@ -3149,7 +3161,7 @@ function App() {
         kind: 'error',
         message: 'There are scheduling conflicts. Use the Override & Save Anyway button if you really want to save.',
       });
-      return;
+      return false;
     }
     const tl = calcTimeline(form.hatchDate, form.breed, form.processingDate);
     // Parse numeric form fields back to numbers (form state holds raw strings during typing)
@@ -3204,6 +3216,7 @@ function App() {
     setOriginalForm(null);
     setShowForm(false);
     setOverride(false);
+    return true;
   }
 
   function del(id) {
@@ -3323,7 +3336,11 @@ function App() {
   // Phase 2 Round 6 tail: body moved to src/broiler/BatchForm.jsx. Every
   // form-state piece lives in BatchesContext; every operational helper
   // stays in App() and is threaded as a prop.
-  if (showForm)
+  //
+  // Record-page guard: when the URL is /broiler/batches/<id>, BroilerBatchPage
+  // owns the render and mounts BatchForm in embedded mode. We skip the
+  // full-screen branch here so the URL is the source of truth.
+  if (showForm && !location.pathname.startsWith('/broiler/batches/'))
     return React.createElement(BatchForm, {
       Header,
       loadUsers,

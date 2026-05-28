@@ -85,7 +85,11 @@ describe('Header — resolved entity routing', () => {
 });
 
 describe('Per-surface deep-link handlers', () => {
-  const modalSurfaces = [{name: 'BroilerListView', src: broilerList, entity: 'broiler.batch'}];
+  // BroilerListView retired wcf-entity-deep-link with the broiler.batch
+  // record-page migration; pig.batch is the only remaining inline-modal
+  // entity that still uses the deep-link listener pattern.
+  const pigBatches = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchesView.jsx'), 'utf8');
+  const modalSurfaces = [{name: 'PigBatchesView', src: pigBatches, entity: 'pig.batch'}];
 
   for (const s of modalSurfaces) {
     it(`${s.name} listens for wcf-entity-deep-link`, () => {
@@ -102,6 +106,17 @@ describe('Per-surface deep-link handlers', () => {
       expect(s.src).toContain('setActivityTarget');
     });
   }
+
+  it('BroilerListView no longer wires wcf-entity-deep-link', () => {
+    expect(broilerList).not.toContain('wcf-entity-deep-link');
+  });
+
+  it('broiler.batch routes by encoded name to record page (registry)', () => {
+    const registrySrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
+    expect(registrySrc).toMatch(
+      /BROILER_BATCH[\s\S]*?route:\s*\(id\)\s*=>\s*'\/broiler\/batches\/'\s*\+\s*encodeURIComponent\(id\)/,
+    );
+  });
 
   it('CattleHerdsView deep-link navigates to record page', () => {
     expect(cattleHerds).toContain('wcf-entity-deep-link');

@@ -48,6 +48,18 @@ export default function BatchForm({
   parseProcessorXlsx,
   confirmDelete,
   persist,
+  // Optional overrides for record-page mode. When provided, the prev/next
+  // side buttons and close handlers route through these instead of the
+  // closeForm+setTimeout(openEdit) dance — keeps the URL the source of
+  // truth on BroilerBatchPage.
+  onClose,
+  onNavigatePrev,
+  onNavigateNext,
+  // When true, parent (BroilerBatchPage) already renders Header and supplies
+  // its own page chrome; BatchForm skips its own Header render and drops the
+  // semi-transparent modal-overlay background so the form sits flush in the
+  // record-page layout.
+  embedded = false,
 }) {
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {
@@ -92,15 +104,15 @@ export default function BatchForm({
           loadUsers={loadUsers}
         />
       )}
-      <Header />
+      {!embedded && <Header />}
       <div
         style={{
-          background: 'rgba(0,0,0,.45)',
-          minHeight: '100vh',
+          background: embedded ? 'transparent' : 'rgba(0,0,0,.45)',
+          minHeight: embedded ? 'auto' : '100vh',
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'center',
-          padding: '1.5rem 1rem',
+          padding: embedded ? '0' : '1.5rem 1rem',
         }}
         className="no-print"
       >
@@ -136,13 +148,26 @@ export default function BatchForm({
               },
               onClick: on ? onClick : undefined,
             });
+            const handlePrev = () => {
+              if (typeof onNavigatePrev === 'function') {
+                onNavigatePrev(prev);
+                return;
+              }
+              closeForm();
+              setTimeout(() => openEdit(prev), 50);
+            };
+            const handleNext = () => {
+              if (typeof onNavigateNext === 'function') {
+                onNavigateNext(next);
+                return;
+              }
+              closeForm();
+              setTimeout(() => openEdit(next), 50);
+            };
             return (
               <>
                 <button
-                  {...sideBtn(!!prev, prev?.name, () => {
-                    closeForm();
-                    setTimeout(() => openEdit(prev), 50);
-                  })}
+                  {...sideBtn(!!prev, prev?.name, handlePrev)}
                   style={{...sideBtn(!!prev).style, left: 'max(8px, calc(50% - 430px - 60px))'}}
                 >
                   <span style={{fontSize: 20, lineHeight: 1}}>‹</span>
@@ -162,10 +187,7 @@ export default function BatchForm({
                   )}
                 </button>
                 <button
-                  {...sideBtn(!!next, next?.name, () => {
-                    closeForm();
-                    setTimeout(() => openEdit(next), 50);
-                  })}
+                  {...sideBtn(!!next, next?.name, handleNext)}
                   style={{...sideBtn(!!next).style, right: 'max(8px, calc(50% - 430px - 60px))'}}
                 >
                   <span style={{fontSize: 20, lineHeight: 1}}>›</span>
@@ -233,7 +255,10 @@ export default function BatchForm({
               )}
             </div>
             <button
-              onClick={closeForm}
+              onClick={() => {
+                if (typeof onClose === 'function') onClose();
+                else closeForm();
+              }}
               style={{
                 background: 'none',
                 border: 'none',
@@ -1309,7 +1334,8 @@ export default function BatchForm({
                 style={S.btnDanger}
                 onClick={() => {
                   del(editId);
-                  closeForm();
+                  if (typeof onClose === 'function') onClose();
+                  else closeForm();
                 }}
               >
                 Delete
@@ -1319,7 +1345,13 @@ export default function BatchForm({
                 Add batch
               </button>
             )}
-            <button style={S.btnGhost} onClick={closeForm}>
+            <button
+              style={S.btnGhost}
+              onClick={() => {
+                if (typeof onClose === 'function') onClose();
+                else closeForm();
+              }}
+            >
               Close
             </button>
             {editId && <div style={{marginLeft: 'auto', fontSize: 11, color: '#9ca3af'}}>Auto-saves as you type</div>}

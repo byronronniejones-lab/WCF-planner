@@ -34,7 +34,7 @@ export const ACTIVITY_REGISTRY = {
   },
   [ENTITY_TYPES.BROILER_BATCH]: {
     displayLabel: (id, ctx) => (ctx && ctx.name ? ctx.name : id),
-    route: (_id) => '/broiler/batches',
+    route: (id) => '/broiler/batches/' + encodeURIComponent(id),
     program: 'broiler',
   },
   [ENTITY_TYPES.LAYER_BATCH]: {
@@ -187,6 +187,7 @@ export function routeToView(routePath) {
   if (path.startsWith('/layer/eggs/')) return {view: 'eggdailys', search: search || ''};
   if (path.startsWith('/layer/batches/')) return {view: 'layerbatches', search: search || ''};
   if (path.startsWith('/layer/housings/')) return {view: 'layerbatches', search: search || ''};
+  if (path.startsWith('/broiler/batches/')) return {view: 'list', search: search || ''};
   if (path.startsWith('/weigh-in-sessions/')) return {view: 'weighinsessions', search: search || ''};
   return {view: VIEW_MAP[path] || 'home', search: search || ''};
 }

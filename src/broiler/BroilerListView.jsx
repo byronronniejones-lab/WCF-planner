@@ -1,12 +1,14 @@
 ﻿// ============================================================================
-// src/broiler/BroilerListView.jsx  —  Phase 2 Round 6
+// src/broiler/BroilerListView.jsx — hub + router
 // ----------------------------------------------------------------------------
-// Broiler batches list/table view (planned+active on top, processed at
-// bottom). Closed over App-scope openAdd/openEdit helpers + role-derived
-// isMgmt flag; we take openAdd/openEdit as props (they mutate App state
-// that hasn't been lifted yet) and derive isMgmt locally from authState.
+// Hub is a navigation-only list of broiler batches. Row/card clicks navigate
+// to /broiler/batches/<encoded name>, where BroilerBatchPage mounts BatchForm
+// in embedded mode. Comments + collapsed Activity now live on the record
+// page via RecordCollaborationSection. broiler.batch identity stays as
+// batch.name to preserve the existing Activity entityId contract.
 // ============================================================================
 import React from 'react';
+import {useNavigate, useLocation} from 'react-router-dom';
 import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, todayISO} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
@@ -25,50 +27,32 @@ import UsersModal from '../auth/UsersModal.jsx';
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityPanel from '../shared/ActivityPanel.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
+import BroilerBatchPage from './BroilerBatchPage.jsx';
 
-export default function BroilerListView({
-  Header,
-  loadUsers,
-  openAdd,
-  openEdit,
-  persist,
-  del,
-  confirmDelete,
-  canDeleteAnything,
-}) {
+function broilerBatchHref(b) {
+  return '/broiler/batches/' + encodeURIComponent(b && b.name ? b.name : '');
+}
+
+function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything}) {
+  const navigate = useNavigate();
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {batches, setBatches} = useBatches();
   const {broilerDailys} = useDailysRecent();
   const {feedCosts} = useFeedCosts();
   const {setView, showAllComparison, setShowAllComparison} = useUI();
-  const [activityTarget, setActivityTarget] = React.useState(null);
-
-  React.useEffect(() => {
-    function onEntityDeepLink() {
-      const dl = window._wcfEntityDeepLink;
-      if (!dl || dl.entityType !== 'broiler.batch') return;
-      const b = batches.find((x) => x.name === dl.entityId);
-      if (b) {
-        window._wcfEntityDeepLink = null;
-        setActivityTarget({entityType: 'broiler.batch', entityId: b.name, entityLabel: b.name});
-      }
-    }
-    onEntityDeepLink();
-    window.addEventListener('wcf-entity-deep-link', onEntityDeepLink);
-    return () => window.removeEventListener('wcf-entity-deep-link', onEntityDeepLink);
-  }, [batches]);
 
   const role = authState?.role;
   const isAdmin = role === 'admin';
   const isMgmt = role === 'management' || role === 'admin';
   const [listNotice, setListNotice] = React.useState(null);
+
+  function openBatch(b) {
+    if (!b || !b.name) return;
+    navigate(broilerBatchHref(b));
+  }
 
   return (
     <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -167,7 +151,7 @@ export default function BroilerListView({
                   return (
                     <tr
                       key={b.id}
-                      onClick={() => openEdit(b)}
+                      onClick={() => openBatch(b)}
                       style={{
                         borderBottom: '1px solid #e5e7eb',
                         background: i % 2 === 0 ? 'white' : '#fafafa',
@@ -187,21 +171,6 @@ export default function BroilerListView({
                           }}
                         />
                         {b.name}
-                        <span
-                          onClick={(e) => e.stopPropagation()}
-                          style={{marginLeft: 6}}
-                          data-activity-surface="broiler.batch"
-                        >
-                          {React.createElement(ActivityPanel, {
-                            sb,
-                            authState,
-                            entityType: 'broiler.batch',
-                            entityId: b.name,
-                            entityLabel: b.name,
-                            mode: 'compact',
-                            onCompactClick: setActivityTarget,
-                          })}
-                        </span>
                       </td>
                       <td style={{padding: '8px 10px'}}>
                         <span style={S.badge(B2.bg, B2.tx)}>{b.breed}</span>
@@ -504,7 +473,7 @@ export default function BroilerListView({
                       return (
                         <tr
                           key={b.id}
-                          onClick={() => openEdit(b)}
+                          onClick={() => openBatch(b)}
                           style={{
                             borderBottom: '1px solid #e5e7eb',
                             background: i % 2 === 0 ? 'white' : '#fafafa',
@@ -635,7 +604,7 @@ export default function BroilerListView({
                 return (
                   <div
                     key={b.id}
-                    onClick={() => openEdit(b)}
+                    onClick={() => openBatch(b)}
                     style={{
                       background: 'white',
                       border: '1px solid #e5e7eb',
@@ -885,12 +854,16 @@ export default function BroilerListView({
           </div>
         )}
       </div>
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 }
+
+function BroilerListRouter(props) {
+  const location = useLocation();
+  if (location.pathname.startsWith('/broiler/batches/')) {
+    return React.createElement(BroilerBatchPage, props);
+  }
+  return React.createElement(BroilerListHub, props);
+}
+
+export default BroilerListRouter;

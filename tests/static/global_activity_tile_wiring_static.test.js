@@ -12,10 +12,12 @@ const cattleHerds = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.
 const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
 const activityPanel = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityPanel.jsx'), 'utf8');
 
-// CattleHerdsView, SheepFlocksView, EquipmentFleetView, SheepBatchesView, and
-// LayerBatchesView no longer render Activity chips/modal — they use dedicated
-// record pages with inline Comments + Activity sections.
-const SURFACES = [{name: 'BroilerListView', src: broilerList, entity: 'broiler.batch', idField: 'b.name'}];
+// CattleHerdsView, SheepFlocksView, EquipmentFleetView, SheepBatchesView,
+// LayerBatchesView, and BroilerListView no longer render Activity chips/modal
+// — they use dedicated record pages with RecordCollaborationSection. pig.batch
+// remains the sole legacy inline ActivityPanel surface (PigBatchesView).
+const pigBatches = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchesView.jsx'), 'utf8');
+const SURFACES = [{name: 'PigBatchesView', src: pigBatches, entity: 'pig.batch', idField: 'g.id'}];
 
 describe('Activity tile wiring — compact chips', () => {
   for (const s of SURFACES) {
@@ -28,18 +30,10 @@ describe('Activity tile wiring — compact chips', () => {
 });
 
 describe('Activity tile wiring — ActivityModal', () => {
-  for (const {name, src} of [{name: 'BroilerListView', src: broilerList}]) {
+  for (const {name, src} of [{name: 'PigBatchesView', src: pigBatches}]) {
     it(`${name} renders ActivityModal`, () => {
       expect(src).toContain('ActivityModal');
       expect(src).toContain('activityTarget');
-    });
-  }
-});
-
-describe('Activity tile wiring — stopPropagation', () => {
-  for (const s of SURFACES) {
-    it(`${s.name} has stopPropagation on ${s.entity} chip`, () => {
-      expect(s.src).toContain('stopPropagation');
     });
   }
 });
@@ -53,13 +47,13 @@ describe('Activity tile wiring — data hooks', () => {
 });
 
 describe('Activity tile wiring — entity IDs', () => {
-  it('broiler.batch uses batch.name as entityId', () => {
-    expect(broilerList).toMatch(/entityId:\s*b\.name/);
+  it('pig.batch uses g.id as entityId', () => {
+    expect(pigBatches).toMatch(/entityId:\s*g\.id/);
   });
 });
 
 describe('Activity tile wiring — authState', () => {
-  for (const {name, src} of [{name: 'BroilerListView', src: broilerList}]) {
+  for (const {name, src} of [{name: 'PigBatchesView', src: pigBatches}]) {
     it(`${name} passes authState to ActivityModal/Panel`, () => {
       expect(src).toContain('authState');
     });
@@ -78,6 +72,34 @@ describe('LayerBatchesView — retired legacy Activity surfaces', () => {
   });
   it('LayerBatchesView no longer listens for wcf-entity-deep-link', () => {
     expect(layerBatches).not.toContain('wcf-entity-deep-link');
+  });
+});
+
+describe('BroilerListView — retired legacy Activity surfaces', () => {
+  it('BroilerListView no longer imports or renders ActivityPanel', () => {
+    expect(broilerList).not.toContain('ActivityPanel');
+  });
+  it('BroilerListView no longer imports or renders ActivityModal', () => {
+    expect(broilerList).not.toContain('ActivityModal');
+  });
+  it('BroilerListView has no activityTarget state', () => {
+    expect(broilerList).not.toContain('activityTarget');
+  });
+  it('BroilerListView no longer listens for wcf-entity-deep-link', () => {
+    expect(broilerList).not.toContain('wcf-entity-deep-link');
+  });
+});
+
+describe('pig.batch remains the only legacy inline ActivityPanel batch surface', () => {
+  it('PigBatchesView still renders the compact ActivityPanel for pig.batch tiles', () => {
+    expect(pigBatches).toContain("entityType: 'pig.batch'");
+    expect(pigBatches).toContain("mode: 'compact'");
+    expect(pigBatches).toContain('ActivityModal');
+  });
+  it('No other batch view still imports ActivityPanel/Modal in this lane', () => {
+    // PigBatchesView is the lone tolerated holder until its own record-page lane.
+    expect(broilerList).not.toContain('ActivityPanel');
+    expect(layerBatches).not.toContain('ActivityPanel');
   });
 });
 

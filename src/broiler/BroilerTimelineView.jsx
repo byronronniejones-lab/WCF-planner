@@ -10,6 +10,7 @@
 // first paint. Vertical "today" line is preserved.
 // ============================================================================
 import React, {useRef, useEffect, useMemo} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {sb} from '../lib/supabase.js';
 import {toISO, addDays, fmt, fmtS, todayISO} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
@@ -21,10 +22,19 @@ import {useLayer} from '../contexts/LayerContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
 export default function BroilerTimelineView({Header, loadUsers, openEdit}) {
+  const navigate = useNavigate();
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {batches, tooltip, setTooltip} = useBatches();
   const {layerBatches} = useLayer();
   const {setView, setPendingEdit} = useUI();
+
+  function openBroilerBatch(b) {
+    if (b && b.name) {
+      navigate('/broiler/batches/' + encodeURIComponent(b.name));
+    } else if (typeof openEdit === 'function') {
+      openEdit(b);
+    }
+  }
 
   const today = todayISO();
   const tlStart = toISO(addDays(today, -90));
@@ -381,7 +391,7 @@ export default function BroilerTimelineView({Header, loadUsers, openEdit}) {
                       return (
                         <div
                           key={b.id}
-                          onClick={() => openEdit(b)}
+                          onClick={() => openBroilerBatch(b)}
                           onMouseEnter={(e) => {
                             const barRect = e.currentTarget.getBoundingClientRect();
                             setTooltip({
