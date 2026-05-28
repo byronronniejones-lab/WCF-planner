@@ -1,5 +1,13 @@
 import {describe, it, expect} from 'vitest';
-import {daysToMWD, cycleRecords, calcAgeRange, activePigFeederDailyTargets} from './pig.js';
+import {
+  daysToMWD,
+  cycleRecords,
+  calcAgeRange,
+  activePigFeederDailyTargets,
+  parseLiveWeights,
+  tripTotalLive,
+  tripYield,
+} from './pig.js';
 
 describe('daysToMWD', () => {
   it('returns null for 0 or negative day counts', () => {
@@ -254,5 +262,58 @@ describe('activePigFeederDailyTargets', () => {
       },
     ];
     expect(activePigFeederDailyTargets(groups).map((t) => t.name)).toEqual(['B1A', 'B3A', 'B3B']);
+  });
+});
+
+describe('parseLiveWeights', () => {
+  it('returns [] for empty/missing input', () => {
+    expect(parseLiveWeights('')).toEqual([]);
+    expect(parseLiveWeights(null)).toEqual([]);
+    expect(parseLiveWeights(undefined)).toEqual([]);
+  });
+
+  it('splits on spaces and commas, parsing floats', () => {
+    expect(parseLiveWeights('250 260, 270')).toEqual([250, 260, 270]);
+    expect(parseLiveWeights('250.5,260.25')).toEqual([250.5, 260.25]);
+  });
+
+  it('drops zero, negative, and non-numeric tokens', () => {
+    expect(parseLiveWeights('250 0 -5 abc 260')).toEqual([250, 260]);
+  });
+
+  it('tolerates extra/leading/trailing separators', () => {
+    expect(parseLiveWeights('  250 ,, 260  ')).toEqual([250, 260]);
+  });
+});
+
+describe('tripTotalLive', () => {
+  it('sums the parsed live weights', () => {
+    expect(tripTotalLive({liveWeights: '250 260 270'})).toBe(780);
+  });
+
+  it('returns 0 for missing/empty/undefined trip or weights', () => {
+    expect(tripTotalLive({liveWeights: ''})).toBe(0);
+    expect(tripTotalLive({})).toBe(0);
+    expect(tripTotalLive(undefined)).toBe(0);
+  });
+});
+
+describe('tripYield', () => {
+  it('returns carcass yield % (hanging ÷ total live) to one decimal', () => {
+    // 600 hanging / 800 live = 0.75 → 75.0
+    expect(tripYield({liveWeights: '400 400', hangingWeight: 600})).toBe(75);
+    // 555 / 800 = 0.69375 → 69.4 (rounded to one decimal)
+    expect(tripYield({liveWeights: '400 400', hangingWeight: 555})).toBe(69.4);
+  });
+
+  it('accepts a string hangingWeight', () => {
+    expect(tripYield({liveWeights: '400 400', hangingWeight: '600'})).toBe(75);
+  });
+
+  it('returns null when live or hanging weight is missing/zero', () => {
+    expect(tripYield({liveWeights: '', hangingWeight: 600})).toBeNull();
+    expect(tripYield({liveWeights: '400 400', hangingWeight: 0})).toBeNull();
+    expect(tripYield({liveWeights: '400 400'})).toBeNull();
+    expect(tripYield({})).toBeNull();
   });
 });

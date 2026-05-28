@@ -26,6 +26,9 @@ import {
   computePigBatchFCR,
   calcAgeRange as libCalcAgeRange,
   pigSlug,
+  parseLiveWeights,
+  tripTotalLive,
+  tripYield,
 } from '../lib/pig.js';
 import {
   PLANNED_TRIP_MIN_SIZE,
@@ -873,22 +876,8 @@ export default function PigBatchesView({
     return libCalcAgeRange(cycleId, asOfDate, breedingCycles, farrowingRecs);
   }
 
-  // Trip helpers
-  function parseLiveWeights(str) {
-    return (str || '')
-      .split(/[\s,]+/)
-      .map((v) => parseFloat(v))
-      .filter((v) => !isNaN(v) && v > 0);
-  }
-  function tripTotalLive(t) {
-    return parseLiveWeights(t.liveWeights).reduce((a, b) => a + b, 0);
-  }
-  function tripYield(t) {
-    const live = tripTotalLive(t);
-    const hang = parseFloat(t.hangingWeight) || 0;
-    if (!live || !hang) return null;
-    return Math.round((hang / live) * 1000) / 10;
-  }
+  // Trip yield helpers (parseLiveWeights / tripTotalLive / tripYield) now live
+  // in lib/pig.js as pure helpers, shared with computePigBatchFCR.
 
   function persistTrip(batchId, formSnapshot, currentTripId) {
     if (!formSnapshot.date) return;

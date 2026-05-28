@@ -223,6 +223,28 @@ export function pigTripPigsAttributed(trips) {
   return n;
 }
 
+// ── TRIP YIELD HELPERS (extracted from PigBatchesView) ──────────────────────
+// Pure parsers/derivations over a processing trip's weight fields. Live weights
+// are entered as a free-form string (space/comma separated); parseLiveWeights
+// is the single source for that parse so PigBatchesView and computePigBatchFCR
+// below can't drift. tripTotalLive sums them; tripYield returns carcass yield %
+// (hanging ÷ total live) to one decimal, or null when either side is missing.
+export function parseLiveWeights(str) {
+  return (str || '')
+    .split(/[\s,]+/)
+    .map((v) => parseFloat(v))
+    .filter((v) => !isNaN(v) && v > 0);
+}
+export function tripTotalLive(trip) {
+  return parseLiveWeights(trip && trip.liveWeights).reduce((a, b) => a + b, 0);
+}
+export function tripYield(trip) {
+  const live = tripTotalLive(trip);
+  const hang = parseFloat(trip && trip.hangingWeight) || 0;
+  if (!live || !hang) return null;
+  return Math.round((hang / live) * 1000) / 10;
+}
+
 // FCR (feed conversion ratio) for a pig feeder group: adjusted feed
 // (raw − transfer credits) ÷ total live weight produced by completed trips.
 // Returns null when no trips have happened yet — caller falls back to the
@@ -240,11 +262,7 @@ export function computePigBatchFCR(group, dailysForName, breeders) {
   const trips = group.processingTrips || [];
   let totalLive = 0;
   for (const t of trips) {
-    const wts = (t.liveWeights || '')
-      .split(/[\s,]+/)
-      .map(parseFloat)
-      .filter((v) => !isNaN(v) && v > 0);
-    totalLive += wts.reduce((a, b) => a + b, 0);
+    totalLive += tripTotalLive(t);
   }
   if (!(totalLive > 0)) return null;
   const subs = group.subBatches || [];
