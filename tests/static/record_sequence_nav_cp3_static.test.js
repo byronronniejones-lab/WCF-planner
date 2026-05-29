@@ -121,6 +121,9 @@ describe('CP3 sequence nav — equipment.item', () => {
     expect(fleet).toContain('const fleetSeqRows =');
     expect(fleet).toContain('onOpen(eq.slug, fleetSeqRows)');
   });
+  it('fleet tiles carry a data-equipment-tile hook (CP4 test hook)', () => {
+    expect(fleet).toContain('data-equipment-tile={eq.slug}');
+  });
   it('home imports helpers and builds slug-keyed labeled items', () => {
     expect(home).toContain(HELPER_IMPORT);
     expect(home).toContain("labeledSeqItems(items, 'name', 'slug')");
@@ -140,9 +143,10 @@ describe('CP3 — broiler.batch deferred (existing BatchForm prev/next)', () => 
     const src = read('src/broiler/BroilerBatchPage.jsx');
     expect(src).not.toContain('RecordSequenceNav');
   });
-  it('BatchForm retains its embedded prev/next props', () => {
+  it('BatchForm retains its embedded prev/next props + side-nav hook', () => {
     const src = read('src/broiler/BatchForm.jsx');
     expect(src).toContain('onNavigatePrev');
     expect(src).toContain('onNavigateNext');
+    expect(src).toContain('data-batchform-side-nav');
   });
 });

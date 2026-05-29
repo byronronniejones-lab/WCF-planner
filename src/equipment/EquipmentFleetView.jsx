@@ -82,6 +82,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
     return (
       <div
         key={eq.id}
+        data-equipment-tile={eq.slug}
         onClick={() => onOpen(eq.slug, fleetSeqRows)}
         className="hoverable-tile"
         style={{
@@ -212,6 +213,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
             {sold.map((eq) => (
               <div
                 key={eq.id}
+                data-equipment-tile={eq.slug}
                 onClick={() => onOpen(eq.slug, fleetSeqRows)}
                 className="hoverable-tile"
                 style={{
