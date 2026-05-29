@@ -23,7 +23,6 @@ import {
   pigTripPigsAttributed,
   pigMortalityForSub,
   pigMortalityForBatch,
-  computePigBatchFCR,
   calcAgeRange as libCalcAgeRange,
   pigSlug,
   parseLiveWeights,
@@ -57,6 +56,7 @@ import PigBatchHubTile from './PigBatchHubTile.jsx';
 import {usePigMortality} from './usePigMortality.js';
 import {usePigSubBatches} from './usePigSubBatches.js';
 import {usePigPlannedTrips} from './usePigPlannedTrips.js';
+import {usePigProcessingTrips} from './usePigProcessingTrips.js';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
@@ -162,6 +162,23 @@ export default function PigBatchesView({
     addPlannedTripById,
     deletePlannedTripById,
   } = usePigPlannedTrips({feederGroups, persistFeeders, authState, isManager});
+  // Processing-trip workflow — trip-source tracking + add/edit/close/delete live
+  // in usePigProcessingTrips (CP10). Trip FORM state stays owned by PigContext
+  // (threaded in). dailysForName is hoisted (function decl) so it's available here.
+  const {tripSourceCounts, updTrip, closeTripForm, deleteTrip} = usePigProcessingTrips({
+    feederGroups,
+    persistFeeders,
+    confirmDelete,
+    tripAutoSaveTimer,
+    breeders,
+    dailysForName,
+    activeTripBatchId,
+    setActiveTripBatchId,
+    tripForm,
+    setTripForm,
+    editTripId,
+    setEditTripId,
+  });
   const {pigDailys} = useDailysRecent();
   const {setView} = useUI();
   const navigate = useNavigate();
@@ -188,38 +205,8 @@ export default function PigBatchesView({
 
   const statusColors = {active: {bg: '#085041', tx: 'white'}, processed: {bg: '#4b5563', tx: 'white'}};
   const cycleSeqMap = buildCycleSeqMap(breedingCycles);
-  // Trip source tracking: for each processing trip, which weigh-in session(s)
-  // contributed pigs. Pulled from weigh_ins (sent_to_trip_id) + sessions (batch_id).
-  const [tripSentWeighins, setTripSentWeighins] = React.useState([]);
-  const [tripSessionBatch, setTripSessionBatch] = React.useState({}); // session_id -> batch_id
-  React.useEffect(() => {
-    (async () => {
-      const {data: sent} = await sb
-        .from('weigh_ins')
-        .select('id, session_id, sent_to_trip_id, weight')
-        .not('sent_to_trip_id', 'is', null);
-      if (!sent) return;
-      setTripSentWeighins(sent);
-      const ids = [...new Set(sent.map((e) => e.session_id).filter(Boolean))];
-      if (ids.length === 0) return;
-      const {data: sess} = await sb.from('weigh_in_sessions').select('id, batch_id').in('id', ids);
-      const m = {};
-      (sess || []).forEach((s) => {
-        m[s.id] = s.batch_id;
-      });
-      setTripSessionBatch(m);
-    })();
-  }, []);
-  function tripSourceCounts(tripId) {
-    if (!tripId) return {};
-    const counts = {};
-    tripSentWeighins.forEach((e) => {
-      if (e.sent_to_trip_id !== tripId) return;
-      const name = tripSessionBatch[e.session_id] || 'Unknown session';
-      counts[name] = (counts[name] || 0) + 1;
-    });
-    return counts;
-  }
+  // Processing-trip source tracking + handlers live in usePigProcessingTrips
+  // (CP10); tripSourceCounts is consumed by the trip JSX via the hook.
 
   // ── Planned-trip forecasting infrastructure (commit 4a) ─────────────────
   // Global ADG: app_store key ppp-pig-global-adg-v1, shape
@@ -537,78 +524,8 @@ export default function PigBatchesView({
   // Trip yield helpers (parseLiveWeights / tripTotalLive / tripYield) now live
   // in lib/pig.js as pure helpers, shared with computePigBatchFCR.
 
-  function persistTrip(batchId, formSnapshot, currentTripId) {
-    if (!formSnapshot.date) return;
-    const tripFormNum = {...formSnapshot};
-    ['pigCount', 'hangingWeight'].forEach((key) => {
-      const v = tripFormNum[key];
-      tripFormNum[key] = v === '' || v == null ? 0 : parseFloat(v) || 0;
-    });
-    const tripId = currentTripId || String(Date.now());
-    const nb = feederGroups.map((g) => {
-      if (g.id !== batchId) return g;
-      const trips = g.processingTrips || [];
-      // Preserve fields not present in the form (subAttributions, any
-      // future ad-hoc keys) by spreading the existing trip first when
-      // editing. Same shape rule as persistSubBatch.
-      const existing = currentTripId ? trips.find((t) => t.id === currentTripId) || {} : {};
-      const trip = {...existing, ...tripFormNum, id: tripId};
-      const updated = currentTripId ? trips.map((t) => (t.id === currentTripId ? trip : t)) : [...trips, trip];
-      updated.sort((a, b) => a.date.localeCompare(b.date));
-      const next = {...g, processingTrips: updated};
-      // Stamp parent.fcrCached so Transfer-to-Breeding (which reads it
-      // from the persisted record) gets the real adjusted-feed / total-
-      // live-weight ratio instead of falling back to the 3.5 industry
-      // default. Recomputed here on every trip add/edit because the
-      // numerator (raw feed) and denominator (trip live wt) both change
-      // when trips change. If the helper returns null (no valid trips
-      // remaining, or rawFeed <= credits), CLEAR the cache so the transfer
-      // flow falls back to the default rather than using a stale ratio.
-      const fcr = computePigBatchFCR(next, dailysForName, breeders);
-      if (fcr != null) next.fcrCached = fcr;
-      else delete next.fcrCached;
-      return next;
-    });
-    persistFeeders(nb);
-    if (!editTripId) setEditTripId(tripId);
-    return tripId;
-  }
-  function updTrip(k, v) {
-    const next = {...tripForm, [k]: v};
-    setTripForm(next);
-    if (!next.date) return;
-    clearTimeout(tripAutoSaveTimer.current);
-    tripAutoSaveTimer.current = setTimeout(() => {
-      persistTrip(activeTripBatchId, next, editTripId);
-    }, 1500);
-  }
-  function closeTripForm() {
-    clearTimeout(tripAutoSaveTimer.current);
-    if (tripForm.date && activeTripBatchId) {
-      persistTrip(activeTripBatchId, tripForm, editTripId);
-    }
-    setTripForm({date: '', pigCount: 0, liveWeights: '', hangingWeight: 0, notes: ''});
-    setEditTripId(null);
-    setActiveTripBatchId(null);
-  }
-
-  function deleteTrip(batchId, tripId) {
-    confirmDelete('Delete this processing trip? This cannot be undone.', () => {
-      const nb = feederGroups.map((g) => {
-        if (g.id !== batchId) return g;
-        const next = {...g, processingTrips: (g.processingTrips || []).filter((t) => t.id !== tripId)};
-        // Recompute fcrCached after the trip's live weight is removed.
-        // If no valid trips remain, CLEAR the cache so the transfer flow
-        // falls back to the 3.5 industry default rather than driving
-        // future allocations off a stale ratio.
-        const fcr = computePigBatchFCR(next, dailysForName, breeders);
-        if (fcr != null) next.fcrCached = fcr;
-        else delete next.fcrCached;
-        return next;
-      });
-      persistFeeders(nb);
-    });
-  }
+  // Processing-trip handlers (persistTrip/updTrip/closeTripForm/deleteTrip) live
+  // in usePigProcessingTrips (CP10); the trip form + list JSX consume them.
 
   // updSubPartition (the in-modal partition-count editor) also lives in
   // usePigSubBatches (CP8); it shares partitionDirtyRef with closeFeederForm.

@@ -28,6 +28,7 @@ const tileSrc = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchHubTile.jsx'), 
 const mortalityHookSrc = fs.readFileSync(path.join(ROOT, 'src/pig/usePigMortality.js'), 'utf8');
 const subHookSrc = fs.readFileSync(path.join(ROOT, 'src/pig/usePigSubBatches.js'), 'utf8');
 const plannedHookSrc = fs.readFileSync(path.join(ROOT, 'src/pig/usePigPlannedTrips.js'), 'utf8');
+const procHookSrc = fs.readFileSync(path.join(ROOT, 'src/pig/usePigProcessingTrips.js'), 'utf8');
 
 describe('Commit 4a — Global ADG persistence + role gate', () => {
   it('PigBatchesView reads/writes app_store key ppp-pig-global-adg-v1', () => {
@@ -545,5 +546,51 @@ describe('CP9 — planned-trip workflow extracted to usePigPlannedTrips', () => 
       /import \{[\s\S]*?addPlannedTrip,[\s\S]*?movePigsBetweenTrips,[\s\S]*?deletePlannedTripWithReconciliation,[\s\S]*?deleteReconciliationRecipient,[\s\S]*?\} from '\.\.\/lib\/pigForecast\.js'/,
     );
     expect(plannedHookSrc).toMatch(/plannedProcessingTrips/);
+  });
+});
+
+describe('CP10 — processing-trip workflow extracted to usePigProcessingTrips', () => {
+  it('PigBatchesView imports and wires the usePigProcessingTrips hook (PigContext form state threaded in)', () => {
+    expect(viewSrc).toMatch(/import \{usePigProcessingTrips\} from '\.\/usePigProcessingTrips\.js'/);
+    expect(viewSrc).toMatch(
+      /usePigProcessingTrips\(\{[\s\S]*?activeTripBatchId,[\s\S]*?tripForm,[\s\S]*?editTripId,[\s\S]*?\}\)/,
+    );
+  });
+
+  it('PigBatchesView no longer declares the moved processing-trip state/handlers/helper', () => {
+    expect(viewSrc).not.toMatch(/const \[tripSentWeighins, setTripSentWeighins\] = React\.useState/);
+    expect(viewSrc).not.toMatch(/const \[tripSessionBatch, setTripSessionBatch\] = React\.useState/);
+    expect(viewSrc).not.toMatch(/function tripSourceCounts\(/);
+    expect(viewSrc).not.toMatch(/function persistTrip\(/);
+    expect(viewSrc).not.toMatch(/function updTrip\(/);
+    expect(viewSrc).not.toMatch(/function closeTripForm\(/);
+    expect(viewSrc).not.toMatch(/function deleteTrip\(/);
+  });
+
+  it('the hook keeps the explicit dependency signature (PigContext form setters threaded)', () => {
+    expect(procHookSrc).toMatch(
+      /export function usePigProcessingTrips\(\{[\s\S]*?activeTripBatchId,\s*setActiveTripBatchId,\s*tripForm,\s*setTripForm,\s*editTripId,\s*setEditTripId,?\s*\}\)/,
+    );
+  });
+
+  it('preserves the processingTrips persistence + fcrCached set/delete contract', () => {
+    expect(procHookSrc).toContain('processingTrips');
+    expect(procHookSrc).toMatch(/persistFeeders\(nb\)/);
+    expect(procHookSrc).toMatch(/computePigBatchFCR\(next, dailysForName, breeders\)/);
+    expect(procHookSrc).toMatch(/if \(fcr != null\) next\.fcrCached = fcr;/);
+    expect(procHookSrc).toMatch(/else delete next\.fcrCached;/);
+  });
+
+  it('preserves subAttributions via the existing-trip spread + numeric coercion + date guard', () => {
+    expect(procHookSrc).toMatch(/const trip = \{\.\.\.existing, \.\.\.tripFormNum, id: tripId\}/);
+    expect(procHookSrc).toMatch(/\['pigCount', 'hangingWeight'\]\.forEach/);
+    expect(procHookSrc).toMatch(/if \(!formSnapshot\.date\) return;/);
+    expect(procHookSrc).toMatch(/updated\.sort\(\(a, b\) => a\.date\.localeCompare\(b\.date\)\)/);
+  });
+
+  it('preserves the delete confirmation + the sent_to_trip_id source-count load path', () => {
+    expect(procHookSrc).toContain('Delete this processing trip? This cannot be undone.');
+    expect(procHookSrc).toMatch(/\.not\('sent_to_trip_id', 'is', null\)/);
+    expect(procHookSrc).toMatch(/from\('weigh_in_sessions'\)/);
   });
 });
