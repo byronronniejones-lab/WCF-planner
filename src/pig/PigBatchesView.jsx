@@ -8,7 +8,7 @@
 // ============================================================================
 import React from 'react';
 import {sb} from '../lib/supabase.js';
-import {addDays, fmt, fmtS, todayISO, toISO} from '../lib/dateUtils.js';
+import {fmt, fmtS, todayISO} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
 import {
   calcBreedingTimeline,
@@ -40,10 +40,6 @@ import {
   allocatePlannedTrips,
   recalculateProjections,
   seedGlobalADG,
-  movePigsBetweenTrips,
-  addPlannedTrip,
-  deletePlannedTripWithReconciliation,
-  deleteReconciliationRecipient,
 } from '../lib/pigForecast.js';
 import UsersModal from '../auth/UsersModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -60,6 +56,7 @@ import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx
 import PigBatchHubTile from './PigBatchHubTile.jsx';
 import {usePigMortality} from './usePigMortality.js';
 import {usePigSubBatches} from './usePigSubBatches.js';
+import {usePigPlannedTrips} from './usePigPlannedTrips.js';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
@@ -134,6 +131,37 @@ export default function PigBatchesView({
     pigAutoSaveTimer,
     partitionDirtyRef,
   });
+  // Manager gate (admin OR management) — used by the planned-trip workflow plus
+  // the Global ADG editor + planned-trip JSX. Computed here so the hook below
+  // and the later JSX share one source.
+  const isManager = !!(authState && (authState.role === 'admin' || authState.role === 'management'));
+  // Planned-processing-trip workflow — state + lock sidecar + handlers live in
+  // usePigPlannedTrips (CP9). Planned-trip JSX below consumes these.
+  const {
+    editingPlannedTripId,
+    setEditingPlannedTripId,
+    editingPlannedTripDate,
+    setEditingPlannedTripDate,
+    addingTripFor,
+    setAddingTripFor,
+    addingTripDate,
+    setAddingTripDate,
+    addingTripCount,
+    setAddingTripCount,
+    addingTripError,
+    setAddingTripError,
+    plannedTripLocks,
+    unlockingTripId,
+    setUnlockingTripId,
+    isChainLocked,
+    lockPlannedTrip,
+    unlockPlannedTrip,
+    setPlannedTripDateById,
+    shiftPlannedTripDateById,
+    movePlannedTripPigsById,
+    addPlannedTripById,
+    deletePlannedTripById,
+  } = usePigPlannedTrips({feederGroups, persistFeeders, authState, isManager});
   const {pigDailys} = useDailysRecent();
   const {setView} = useUI();
   const navigate = useNavigate();
@@ -206,25 +234,7 @@ export default function PigBatchesView({
   const [adgEditing, setAdgEditing] = React.useState(false);
   const [adgInput, setAdgInput] = React.useState('');
   const [adgSaving, setAdgSaving] = React.useState(false);
-  // Planned-trip calendar picker state. The date input is exposed one card
-  // at a time; picker changes and day-step buttons autosave immediately.
-  const [editingPlannedTripId, setEditingPlannedTripId] = React.useState(null);
-  const [editingPlannedTripDate, setEditingPlannedTripDate] = React.useState('');
-  // Manual + Add planned-trip form (single open at a time per sub).
-  // {groupId, subBatchId, sex} identifies the open form; date and count
-  // are the user inputs.
-  const [addingTripFor, setAddingTripFor] = React.useState(null);
-  const [addingTripDate, setAddingTripDate] = React.useState('');
-  const [addingTripCount, setAddingTripCount] = React.useState('');
-  const [addingTripError, setAddingTripError] = React.useState('');
-  // Planned-trip locks sidecar (Codex pig planned trips lane). Sidecar
-  // key: ppp-pig-planned-trip-locks-v1. Shape:
-  //   { [tripId]: { locked: true, lockedByName, lockedByUserId, lockedAt } }
-  // Locks ride OUTSIDE plannedProcessingTrips so the documented six-key
-  // shape (id, date, sex, subBatchId, plannedCount, order) is preserved
-  // byte-identical on persisted rows.
-  const [plannedTripLocks, setPlannedTripLocks] = React.useState({});
-  const [unlockingTripId, setUnlockingTripId] = React.useState(null);
+  // Planned-trip state + lock sidecar live in usePigPlannedTrips (CP9).
   React.useEffect(() => {
     sb.from('app_store')
       .select('data')
@@ -235,19 +245,6 @@ export default function PigBatchesView({
           setGlobalAdgRow(data.data);
         } else {
           setGlobalAdgRow({manualValue: null, updatedAt: null, updatedBy: null});
-        }
-      });
-  }, []);
-  React.useEffect(() => {
-    sb.from('app_store')
-      .select('data')
-      .eq('key', 'ppp-pig-planned-trip-locks-v1')
-      .maybeSingle()
-      .then(({data}) => {
-        if (data && data.data && typeof data.data === 'object') {
-          setPlannedTripLocks(data.data);
-        } else {
-          setPlannedTripLocks({});
         }
       });
   }, []);
@@ -391,143 +388,8 @@ export default function PigBatchesView({
   // manual date / count / add / delete mutation in this view — the
   // processor date a trip was scheduled with stays intact through
   // fulfillment.
-  function isTripLocked(tripId) {
-    if (!tripId) return false;
-    const entry = plannedTripLocks && plannedTripLocks[tripId];
-    return !!(entry && entry.locked);
-  }
-  function isChainLocked(plannedTrips, subBatchId, sex) {
-    if (!Array.isArray(plannedTrips)) return false;
-    return plannedTrips.filter((t) => t.subBatchId === subBatchId && t.sex === sex).some((t) => isTripLocked(t.id));
-  }
-  function persistPlannedTripLocks(next) {
-    sb.from('app_store')
-      .upsert({key: 'ppp-pig-planned-trip-locks-v1', data: next}, {onConflict: 'key'})
-      .then(({error}) => {
-        if (error) console.warn('persistPlannedTripLocks error:', error.message || error);
-      });
-  }
-  function lockPlannedTrip(tripId) {
-    if (!isManager) return;
-    if (!tripId) return;
-    const name = (authState && authState.name) || (authState && authState.user && authState.user.email) || 'Unknown';
-    const userId = (authState && authState.user && authState.user.id) || null;
-    const record = {locked: true, lockedByName: name, lockedByUserId: userId, lockedAt: new Date().toISOString()};
-    const next = {...(plannedTripLocks || {}), [tripId]: record};
-    setPlannedTripLocks(next);
-    persistPlannedTripLocks(next);
-  }
-  function unlockPlannedTrip(tripId) {
-    if (!isManager) return;
-    if (!tripId) return;
-    const next = {...(plannedTripLocks || {})};
-    delete next[tripId];
-    setPlannedTripLocks(next);
-    persistPlannedTripLocks(next);
-    setUnlockingTripId(null);
-  }
-  // deleteReconciliationRecipient (the NEXT-then-PREVIOUS recipient preview for
-  // a planned-trip delete) now lives in lib/pigForecast.js next to
-  // deletePlannedTripWithReconciliation.
-
-  // Planned-trip date edit for a single trip. Updates the matching trip's
-  // date field and persists. Other fields are preserved via {...t}; the
-  // persistable shape stays minimal (id, date, sex, subBatchId,
-  // plannedCount, order). recalculateProjections re-runs on the next
-  // render with the new daysUntil.
-  function setPlannedTripDateById(groupId, tripId, newDate) {
-    if (!isManager) return;
-    if (isTripLocked(tripId)) return; // Lock guard: target trip locked.
-    if (typeof newDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return;
-    const nb = feederGroups.map((fg) => {
-      if (fg.id !== groupId) return fg;
-      return {
-        ...fg,
-        plannedProcessingTrips: (fg.plannedProcessingTrips || []).map((t) =>
-          t.id === tripId ? {...t, date: newDate} : t,
-        ),
-      };
-    });
-    persistFeeders(nb);
-  }
-
-  function shiftPlannedTripDateById(groupId, tripId, currentDate, deltaDays) {
-    if (!isManager) return;
-    if (isTripLocked(tripId)) return; // Lock guard: target trip locked.
-    if (typeof currentDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(currentDate)) return;
-    const nextDate = toISO(addDays(currentDate, deltaDays));
-    if (editingPlannedTripId === tripId) setEditingPlannedTripDate(nextDate);
-    setPlannedTripDateById(groupId, tripId, nextDate);
-  }
-
-  // Commit 4b — admin count move between two planned trips in the same
-  // (subBatchId, sex) pair. Caller already scoped the to-trip to the
-  // adjacent same-pair sibling, so the cross-pair guard inside
-  // movePigsBetweenTrips is structurally unreachable from this UI; the
-  // guard remains as defense in depth. Single-pig moves only for v1
-  // (Codex W1); zero-count trips stay visible (Codex W2).
-  function movePlannedTripPigsById(groupId, fromTripId, toTripId) {
-    if (!isManager) return;
-    // Lock guard: blocked when source OR target is locked. Mirrors Codex's
-    // neighbor-mutation rule — even a lock on the receiving trip prevents
-    // an indirect change.
-    if (isTripLocked(fromTripId) || isTripLocked(toTripId)) return;
-    const fg = feederGroups.find((g) => g.id === groupId);
-    if (!fg) return;
-    const r = movePigsBetweenTrips(fg.plannedProcessingTrips || [], fromTripId, toTripId, 1);
-    if (r.error) {
-      console.warn('movePlannedTripPigsById:', r.error);
-      return;
-    }
-    const nb = feederGroups.map((g) => (g.id !== groupId ? g : {...g, plannedProcessingTrips: r.trips}));
-    persistFeeders(nb);
-  }
-
-  // Manual add (admin/management) — appends a planned trip to the
-  // (subBatchId, sex) chain. order = max(existing order in chain) + 1.
-  // Date is whatever the user typed; recalculateProjections sorts by
-  // date+order so out-of-order dates still render correctly.
-  function addPlannedTripById(groupId, {subBatchId, sex, date, plannedCount}) {
-    if (!isManager) return {error: 'gated'};
-    const fg = feederGroups.find((g) => g.id === groupId);
-    if (!fg) return {error: 'group not found'};
-    // Lock guard: disable Add when ANY existing trip in the same
-    // (subBatchId, sex) chain is locked — Codex's "if the add would draw
-    // pigs from a locked trip, block it; safest UI is disable Add for
-    // that sex chain when any trip in that chain is locked."
-    if (isChainLocked(fg.plannedProcessingTrips || [], subBatchId, sex)) {
-      return {error: 'chain locked'};
-    }
-    const r = addPlannedTrip(fg.plannedProcessingTrips || [], {subBatchId, sex, date, plannedCount});
-    if (r.error) return r;
-    const nb = feederGroups.map((g) => (g.id !== groupId ? g : {...g, plannedProcessingTrips: r.trips}));
-    persistFeeders(nb);
-    return {ok: true};
-  }
-
-  // Delete with reconciliation (admin/management) — removes the trip and
-  // moves its plannedCount onto the NEXT chain trip (or PREVIOUS if last).
-  // Refuses when chain has only one trip.
-  function deletePlannedTripById(groupId, tripId) {
-    if (!isManager) return {error: 'gated'};
-    const fg = feederGroups.find((g) => g.id === groupId);
-    if (!fg) return {error: 'group not found'};
-    // Lock guard: refuse when the deleted trip OR its reconciliation
-    // recipient is locked. Codex's neighbor-mutation rule applies
-    // because delete reconciles the deleted trip's plannedCount onto
-    // the next (or previous) chain trip.
-    if (isTripLocked(tripId)) return {error: 'locked'};
-    const recipient = deleteReconciliationRecipient(fg.plannedProcessingTrips || [], tripId);
-    if (recipient && isTripLocked(recipient.id)) return {error: 'recipient locked'};
-    const r = deletePlannedTripWithReconciliation(fg.plannedProcessingTrips || [], tripId);
-    if (r.error) {
-      console.warn('deletePlannedTripById:', r.error);
-      return r;
-    }
-    const nb = feederGroups.map((g) => (g.id !== groupId ? g : {...g, plannedProcessingTrips: r.trips}));
-    persistFeeders(nb);
-    return {ok: true};
-  }
+  // Planned-trip lock helpers + add/move/delete/date handlers live in
+  // usePigPlannedTrips (CP9). The planned-trip JSX consumes them via the hook.
 
   // Auto-allocate planned trips for any (sub, sex) pair that satisfies all
   // requirements (Codex Q2). Idempotent and narrow: never overwrites an
@@ -837,10 +699,8 @@ export default function PigBatchesView({
     setOriginalFeederForm(null);
   }
 
-  // Planned-trip mutation gate: admin OR management can mutate, farm_team
-  // is read-only. Per Codex's pig-planned-trips lane spec — applies to the
-  // inline date editor, manual Add, Delete, and the ← / → move arrows.
-  const isManager = !!(authState && (authState.role === 'admin' || authState.role === 'management'));
+  // isManager (admin/management mutation gate) is computed once near the top,
+  // alongside the usePigPlannedTrips hook that consumes it.
   return (
     <div>
       <Header />

@@ -27,6 +27,7 @@ const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
 const tileSrc = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchHubTile.jsx'), 'utf8');
 const mortalityHookSrc = fs.readFileSync(path.join(ROOT, 'src/pig/usePigMortality.js'), 'utf8');
 const subHookSrc = fs.readFileSync(path.join(ROOT, 'src/pig/usePigSubBatches.js'), 'utf8');
+const plannedHookSrc = fs.readFileSync(path.join(ROOT, 'src/pig/usePigPlannedTrips.js'), 'utf8');
 
 describe('Commit 4a — Global ADG persistence + role gate', () => {
   it('PigBatchesView reads/writes app_store key ppp-pig-global-adg-v1', () => {
@@ -108,9 +109,11 @@ describe('Commit 4a — Persisted shape stays minimal', () => {
 });
 
 describe('Commit 4b — date edit + count move handler hard gates', () => {
-  // Anchor on the handler bodies so unrelated JSX doesn't false-match.
-  const dateHandler = viewSrc.match(/function setPlannedTripDateById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
-  const moveHandler = viewSrc.match(/function movePlannedTripPigsById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
+  // Anchor on the handler bodies so unrelated JSX doesn't false-match. As of
+  // CP9 the handlers live in usePigPlannedTrips; the JSX (data-attrs, isManager
+  // gating) stays in PigBatchesView and is asserted against viewSrc below.
+  const dateHandler = plannedHookSrc.match(/function setPlannedTripDateById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
+  const moveHandler = plannedHookSrc.match(/function movePlannedTripPigsById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
 
   it('setPlannedTripDateById exists', () => {
     expect(dateHandler, 'expected setPlannedTripDateById handler').not.toBeNull();
@@ -234,34 +237,32 @@ describe('Commit 4a — calcAgeRange numeric bounds extension', () => {
 // ============================================================================
 
 describe('Pig planned-trip locks — sidecar persistence', () => {
+  // CP9: the lock sidecar + handlers live in usePigPlannedTrips (plannedHookSrc).
   it('uses app_store key ppp-pig-planned-trip-locks-v1', () => {
-    expect(viewSrc).toMatch(/['"]ppp-pig-planned-trip-locks-v1['"]/);
+    expect(plannedHookSrc).toMatch(/['"]ppp-pig-planned-trip-locks-v1['"]/);
   });
 
   it('does not expand the six-key plannedProcessingTrips shape', () => {
-    // The sidecar lives in a separate app_store key so persisted trip
-    // rows stay byte-identical (id, date, sex, subBatchId, plannedCount,
-    // order). The forecast allocator still returns only those six keys
-    // — that lock is in the prior commit-4a block. Here, just make sure
-    // no handler writes additional keys onto a planned trip when
-    // persisting feederGroups.
-    expect(viewSrc).not.toMatch(/plannedProcessingTrips:\s*[\s\S]*?lockedAt:/);
-    expect(viewSrc).not.toMatch(/plannedProcessingTrips:\s*[\s\S]*?lockedByName:/);
-    expect(viewSrc).not.toMatch(/plannedProcessingTrips:\s*[\s\S]*?locked:\s*true/);
+    // The sidecar lives in a separate app_store key so persisted trip rows stay
+    // byte-identical (id, date, sex, subBatchId, plannedCount, order). No handler
+    // writes lock keys onto a planned trip when persisting feederGroups.
+    expect(plannedHookSrc).not.toMatch(/plannedProcessingTrips:\s*[\s\S]*?lockedAt:/);
+    expect(plannedHookSrc).not.toMatch(/plannedProcessingTrips:\s*[\s\S]*?lockedByName:/);
+    expect(plannedHookSrc).not.toMatch(/plannedProcessingTrips:\s*[\s\S]*?locked:\s*true/);
   });
 
   it('locks read from / write to the sidecar key, not to ppp-feeders-v1', () => {
     // The lockPlannedTrip helper upserts to ppp-pig-planned-trip-locks-v1.
-    expect(viewSrc).toMatch(/upsert\(\{key:\s*'ppp-pig-planned-trip-locks-v1',\s*data:\s*next\}/);
+    expect(plannedHookSrc).toMatch(/upsert\(\{key:\s*'ppp-pig-planned-trip-locks-v1',\s*data:\s*next\}/);
     // Lock records carry the four documented fields.
-    expect(viewSrc).toMatch(/locked:\s*true/);
-    expect(viewSrc).toMatch(/lockedByName/);
-    expect(viewSrc).toMatch(/lockedByUserId/);
-    expect(viewSrc).toMatch(/lockedAt/);
+    expect(plannedHookSrc).toMatch(/locked:\s*true/);
+    expect(plannedHookSrc).toMatch(/lockedByName/);
+    expect(plannedHookSrc).toMatch(/lockedByUserId/);
+    expect(plannedHookSrc).toMatch(/lockedAt/);
   });
 
   it('lock display name falls back authState.name → user.email → "Unknown"', () => {
-    expect(viewSrc).toMatch(
+    expect(plannedHookSrc).toMatch(
       /\(authState && authState\.name\)\s*\|\|\s*\(authState && authState\.user && authState\.user\.email\)\s*\|\|\s*'Unknown'/,
     );
   });
@@ -271,11 +272,11 @@ describe('Pig planned-trip locks — neighbor mutation guards live in handlers',
   // Codex's correction: the locked state must block mutations end-to-end,
   // not just hide JSX affordances. Each handler refuses early before
   // touching feederGroups.
-  const dateHandler = viewSrc.match(/function setPlannedTripDateById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
-  const shiftHandler = viewSrc.match(/function shiftPlannedTripDateById\([\s\S]*?\}\s*\n/);
-  const moveHandler = viewSrc.match(/function movePlannedTripPigsById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
-  const addHandler = viewSrc.match(/function addPlannedTripById\([\s\S]*?return \{ok: true\};\s*\}/);
-  const deleteHandler = viewSrc.match(/function deletePlannedTripById\([\s\S]*?return \{ok: true\};\s*\}/);
+  const dateHandler = plannedHookSrc.match(/function setPlannedTripDateById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
+  const shiftHandler = plannedHookSrc.match(/function shiftPlannedTripDateById\([\s\S]*?\}\s*\n/);
+  const moveHandler = plannedHookSrc.match(/function movePlannedTripPigsById\([\s\S]*?persistFeeders\(nb\);\s*\}/);
+  const addHandler = plannedHookSrc.match(/function addPlannedTripById\([\s\S]*?return \{ok: true\};\s*\}/);
+  const deleteHandler = plannedHookSrc.match(/function deletePlannedTripById\([\s\S]*?return \{ok: true\};\s*\}/);
 
   it('setPlannedTripDateById refuses when target trip is locked', () => {
     expect(dateHandler[0]).toMatch(/if \(isTripLocked\(tripId\)\) return;/);
@@ -303,7 +304,7 @@ describe('Pig planned-trip locks — neighbor mutation guards live in handlers',
   });
 
   it('isChainLocked helper returns true if any same-sex chain trip is locked', () => {
-    const fn = viewSrc.match(/function isChainLocked\([\s\S]*?\}\s*\n/);
+    const fn = plannedHookSrc.match(/function isChainLocked\([\s\S]*?\}\s*\n/);
     expect(fn, 'expected isChainLocked helper').not.toBeNull();
     expect(fn[0]).toMatch(/subBatchId === subBatchId && t\.sex === sex/);
     expect(fn[0]).toMatch(/\.some\(\(t\) => isTripLocked\(t\.id\)\)/);
@@ -363,8 +364,10 @@ describe('CP2 — pig.batch record-page helper extraction (no re-inlining)', () 
     expect(viewSrc).toMatch(/computeBatchCurrentCount/);
   });
 
-  it('imports deleteReconciliationRecipient from lib/pigForecast.js', () => {
-    expect(viewSrc).toMatch(
+  it('deleteReconciliationRecipient is provided by lib/pigForecast.js and consumed by the planned-trip hook (CP9)', () => {
+    // CP9 moved the planned-trip delete handler (and this import) from
+    // PigBatchesView into usePigPlannedTrips.
+    expect(plannedHookSrc).toMatch(
       /import \{[\s\S]*?deleteReconciliationRecipient[\s\S]*?\} from '\.\.\/lib\/pigForecast\.js'/,
     );
     expect(forecastSrc).toMatch(/export function deleteReconciliationRecipient\(/);
@@ -510,5 +513,37 @@ describe('CP8 — sub-batch workflow extracted to usePigSubBatches', () => {
     expect(subHookSrc).toMatch(/available on parent batch/);
     expect(subHookSrc).toMatch(/persistFeeders\(nb\)/);
     expect(subHookSrc).toMatch(/partitionDirtyRef\.current = true/);
+  });
+});
+
+describe('CP9 — planned-trip workflow extracted to usePigPlannedTrips', () => {
+  it('PigBatchesView imports and wires the usePigPlannedTrips hook', () => {
+    expect(viewSrc).toMatch(/import \{usePigPlannedTrips\} from '\.\/usePigPlannedTrips\.js'/);
+    expect(viewSrc).toMatch(/usePigPlannedTrips\(\{feederGroups, persistFeeders, authState, isManager\}\)/);
+  });
+
+  it('PigBatchesView no longer declares the moved planned-trip state/handlers/lock-load', () => {
+    expect(viewSrc).not.toMatch(/const \[plannedTripLocks, setPlannedTripLocks\] = React\.useState/);
+    expect(viewSrc).not.toMatch(/const \[editingPlannedTripId, setEditingPlannedTripId\] = React\.useState/);
+    expect(viewSrc).not.toMatch(/const \[addingTripFor, setAddingTripFor\] = React\.useState/);
+    expect(viewSrc).not.toMatch(/function setPlannedTripDateById\(/);
+    expect(viewSrc).not.toMatch(/function addPlannedTripById\(/);
+    expect(viewSrc).not.toMatch(/function deletePlannedTripById\(/);
+    expect(viewSrc).not.toMatch(/function lockPlannedTrip\(/);
+    // The lock-sidecar load effect moved into the hook.
+    expect(viewSrc).not.toMatch(/eq\('key', 'ppp-pig-planned-trip-locks-v1'\)/);
+  });
+
+  it('the hook keeps the explicit dependency signature (React-context-free)', () => {
+    expect(plannedHookSrc).toMatch(
+      /export function usePigPlannedTrips\(\{feederGroups, persistFeeders, authState, isManager\}\)/,
+    );
+  });
+
+  it('the hook still uses the pigForecast pure cores for add/move/delete/reconcile', () => {
+    expect(plannedHookSrc).toMatch(
+      /import \{[\s\S]*?addPlannedTrip,[\s\S]*?movePigsBetweenTrips,[\s\S]*?deletePlannedTripWithReconciliation,[\s\S]*?deleteReconciliationRecipient,[\s\S]*?\} from '\.\.\/lib\/pigForecast\.js'/,
+    );
+    expect(plannedHookSrc).toMatch(/plannedProcessingTrips/);
   });
 });
