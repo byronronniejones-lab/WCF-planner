@@ -3593,6 +3593,13 @@ function App() {
       del,
       confirmDelete,
       canDeleteAnything,
+      // Forwarded through BroilerListRouter to BroilerBatchPage → BatchForm so
+      // the record page's fields are editable. Without these, BatchForm's upd
+      // is undefined and text/select edits do not stick (record-page hotfix).
+      upd,
+      closeForm,
+      submit,
+      parseProcessorXlsx,
     });
 
   // ── POULTRY FEED VIEW ──

@@ -30,6 +30,19 @@ describe('main.jsx — /broiler/batches/<encoded name> route', () => {
       /if \(showForm && !location\.pathname\.startsWith\('\/broiler\/batches\/'\)\)[\s\S]*?return React\.createElement\(BatchForm/,
     );
   });
+  it('passes the form-edit helpers to BroilerListView so the record page form is editable', () => {
+    // Hotfix lock: without upd/closeForm/submit/parseProcessorXlsx flowing
+    // through BroilerListRouter to BroilerBatchPage → BatchForm, the record
+    // page fields are read-only (BatchForm.upd undefined → edits don't stick).
+    const listCall = mainSrc.match(/React\.createElement\(BroilerListView,\s*\{[\s\S]*?\}\)/);
+    expect(listCall, 'expected BroilerListView render call').not.toBeNull();
+    for (const prop of ['upd', 'closeForm', 'submit', 'parseProcessorXlsx', 'openEdit', 'del']) {
+      expect(listCall[0]).toContain(prop);
+    }
+  });
+  it('BroilerListRouter forwards its props to BroilerBatchPage', () => {
+    expect(listSrc).toMatch(/React\.createElement\(BroilerBatchPage,\s*props\)/);
+  });
 });
 
 describe('activityRegistry — broiler.batch route by encoded name', () => {
