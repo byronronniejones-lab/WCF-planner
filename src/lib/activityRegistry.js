@@ -64,7 +64,7 @@ export const ACTIVITY_REGISTRY = {
   },
   [ENTITY_TYPES.PIG_BATCH]: {
     displayLabel: (id, ctx) => (ctx && ctx.batchName ? ctx.batchName : id),
-    route: (_id) => '/pig/batches',
+    route: (id) => '/pig/batches/' + encodeURIComponent(id),
     program: 'pig',
   },
   [ENTITY_TYPES.CATTLE_PROCESSING]: {
@@ -180,6 +180,7 @@ export function routeToView(routePath) {
   if (path.startsWith('/sheep/flocks/')) return {view: 'sheepflocks', search: search || ''};
   if (path.startsWith('/sheep/batches/')) return {view: 'sheepbatches', search: search || ''};
   if (path.startsWith('/broiler/dailys/')) return {view: 'broilerdailys', search: search || ''};
+  if (path.startsWith('/pig/batches/')) return {view: 'pigbatches', search: search || ''};
   if (path.startsWith('/pig/dailys/')) return {view: 'pigdailys', search: search || ''};
   if (path.startsWith('/cattle/dailys/')) return {view: 'cattledailys', search: search || ''};
   if (path.startsWith('/sheep/dailys/')) return {view: 'sheepdailys', search: search || ''};

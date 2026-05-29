@@ -55,9 +55,7 @@ import {useNavigate, useLocation} from 'react-router-dom';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityPanel from '../shared/ActivityPanel.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
+import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
@@ -74,8 +72,6 @@ export default function PigBatchesView({
   collapsedMonths,
   setCollapsedMonths,
 }) {
-  const [activityTarget, setActivityTarget] = React.useState(null);
-
   const [showSubForm, setShowSubForm] = React.useState(null); // batchId or null
   const [subForm, setSubForm] = React.useState({name: '', giltCount: 0, boarCount: 0, originalPigCount: 0, notes: ''});
   const [editSubId, setEditSubId] = React.useState(null);
@@ -135,21 +131,6 @@ export default function PigBatchesView({
   const recordGroup = recordMode ? (feederGroups || []).find((g) => g.id === recordId) : null;
   const goToBatch = (id) => navigate('/pig/batches/' + encodeURIComponent(id));
   const goToHub = () => navigate('/pig/batches');
-
-  React.useEffect(() => {
-    function onEntityDeepLink() {
-      const dl = window._wcfEntityDeepLink;
-      if (!dl || dl.entityType !== 'pig.batch') return;
-      const g = (feederGroups || []).find((x) => x.id === dl.entityId);
-      if (g) {
-        window._wcfEntityDeepLink = null;
-        setActivityTarget({entityType: 'pig.batch', entityId: g.id, entityLabel: g.batchName});
-      }
-    }
-    onEntityDeepLink();
-    window.addEventListener('wcf-entity-deep-link', onEntityDeepLink);
-    return () => window.removeEventListener('wcf-entity-deep-link', onEntityDeepLink);
-  }, [feederGroups]);
 
   const statusColors = {active: {bg: '#085041', tx: 'white'}, processed: {bg: '#4b5563', tx: 'white'}};
   const cycleSeqMap = buildCycleSeqMap(breedingCycles);
@@ -1973,8 +1954,16 @@ export default function PigBatchesView({
           </div>
         )}
 
-        {/* Record-page not-found: unknown id in the URL. */}
-        {recordMode && !recordGroup && (
+        {/* Record-page loading: feederGroups not populated yet. Showing the
+            not-found state during this window would flash "Batch not found" on
+            a valid deep-link before data loads (and races record-page tests). */}
+        {recordMode && !recordGroup && feederGroups.length === 0 && (
+          <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>Loading…</div>
+        )}
+
+        {/* Record-page not-found: data loaded, but the URL id is genuinely
+            absent from the feeder groups. */}
+        {recordMode && !recordGroup && feederGroups.length > 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
             Batch not found.{' '}
             <button
@@ -2212,17 +2201,6 @@ export default function PigBatchesView({
                       }}
                     >
                       <strong style={{fontSize: 14, color: ht}}>{g.batchName}</strong>
-                      <span onClick={(e) => e.stopPropagation()} data-activity-surface="pig.batch">
-                        {React.createElement(ActivityPanel, {
-                          sb,
-                          authState,
-                          entityType: 'pig.batch',
-                          entityId: g.id,
-                          entityLabel: g.batchName,
-                          mode: 'compact',
-                          onCompactClick: setActivityTarget,
-                        })}
-                      </span>
                       <span style={S.badge('#065f46', 'white')}>Gilts: {g.giltCount}</span>
                       <span style={S.badge('#1e40af', 'white')}>Boars: {g.boarCount}</span>
                       {currentPigCount !== null ? (
@@ -3945,13 +3923,20 @@ export default function PigBatchesView({
               </div>
             );
           })}
+
+        {/* Comments + collapsed Activity for the pig.batch record (CP5). The
+            legacy inline compact-activity chip + modal are retired; pig.batch
+            activity/comment notifications now open this record page directly. */}
+        {recordMode && recordGroup && (
+          <RecordCollaborationSection
+            sb={sb}
+            authState={authState}
+            entityType="pig.batch"
+            entityId={recordGroup.id}
+            entityLabel={recordGroup.batchName}
+          />
+        )}
       </div>
-      {React.createElement(ActivityModal, {
-        sb,
-        authState,
-        target: activityTarget,
-        onClose: () => setActivityTarget(null),
-      })}
     </div>
   );
 }

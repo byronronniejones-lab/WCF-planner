@@ -612,6 +612,7 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
                               route.startsWith('/layer/batches/') ||
                               route.startsWith('/layer/housings/') ||
                               route.startsWith('/broiler/batches/') ||
+                              route.startsWith('/pig/batches/') ||
                               route.startsWith('/broiler/dailys/') ||
                               route.startsWith('/layer/dailys/') ||
                               route.startsWith('/layer/eggs/') ||

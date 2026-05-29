@@ -85,27 +85,22 @@ describe('Header — resolved entity routing', () => {
 });
 
 describe('Per-surface deep-link handlers', () => {
-  // BroilerListView retired wcf-entity-deep-link with the broiler.batch
-  // record-page migration; pig.batch is the only remaining inline-modal
-  // entity that still uses the deep-link listener pattern.
+  // pig.batch retired its inline-modal deep-link path in CP5 — its
+  // activity/comment notifications now route straight to /pig/batches/<id>.
   const pigBatches = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchesView.jsx'), 'utf8');
-  const modalSurfaces = [{name: 'PigBatchesView', src: pigBatches, entity: 'pig.batch'}];
 
-  for (const s of modalSurfaces) {
-    it(`${s.name} listens for wcf-entity-deep-link`, () => {
-      expect(s.src).toContain('wcf-entity-deep-link');
-      expect(s.src).toContain('addEventListener');
-    });
+  it('PigBatchesView no longer wires wcf-entity-deep-link, ActivityModal, or setActivityTarget', () => {
+    expect(pigBatches).not.toContain('wcf-entity-deep-link');
+    expect(pigBatches).not.toContain('ActivityModal');
+    expect(pigBatches).not.toContain('setActivityTarget');
+  });
 
-    it(`${s.name} checks for ${s.entity} entity type`, () => {
-      expect(s.src).toContain(`'${s.entity}'`);
-      expect(s.src).toContain('_wcfEntityDeepLink');
-    });
-
-    it(`${s.name} opens ActivityModal on deep-link match`, () => {
-      expect(s.src).toContain('setActivityTarget');
-    });
-  }
+  it('pig.batch routes by encoded id to its record page (registry)', () => {
+    const registrySrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
+    expect(registrySrc).toMatch(
+      /PIG_BATCH[\s\S]*?route:\s*\(id\)\s*=>\s*'\/pig\/batches\/'\s*\+\s*encodeURIComponent\(id\)/,
+    );
+  });
 
   it('BroilerListView no longer wires wcf-entity-deep-link', () => {
     expect(broilerList).not.toContain('wcf-entity-deep-link');

@@ -12,52 +12,28 @@ const cattleHerds = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.
 const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
 const activityPanel = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityPanel.jsx'), 'utf8');
 
-// CattleHerdsView, SheepFlocksView, EquipmentFleetView, SheepBatchesView,
-// LayerBatchesView, and BroilerListView no longer render Activity chips/modal
-// — they use dedicated record pages with RecordCollaborationSection. pig.batch
-// remains the sole legacy inline ActivityPanel surface (PigBatchesView).
+// All operational batch/list surfaces now use dedicated record pages with
+// RecordCollaborationSection — none render inline Activity chips/modal. As of
+// CP5 that includes PigBatchesView (pig.batch was the last inline holdout).
 const pigBatches = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchesView.jsx'), 'utf8');
-const SURFACES = [{name: 'PigBatchesView', src: pigBatches, entity: 'pig.batch', idField: 'g.id'}];
 
-describe('Activity tile wiring — compact chips', () => {
-  for (const s of SURFACES) {
-    it(`${s.name} renders ActivityPanel compact for ${s.entity}`, () => {
-      expect(s.src).toContain('ActivityPanel');
-      expect(s.src).toContain(`entityType: '${s.entity}'`);
-      expect(s.src).toContain("mode: 'compact'");
-    });
-  }
-});
-
-describe('Activity tile wiring — ActivityModal', () => {
-  for (const {name, src} of [{name: 'PigBatchesView', src: pigBatches}]) {
-    it(`${name} renders ActivityModal`, () => {
-      expect(src).toContain('ActivityModal');
-      expect(src).toContain('activityTarget');
-    });
-  }
-});
-
-describe('Activity tile wiring — data hooks', () => {
-  for (const s of SURFACES) {
-    it(`${s.name} has data-activity-surface for ${s.entity}`, () => {
-      expect(s.src).toContain(`data-activity-surface="${s.entity}"`);
-    });
-  }
-});
-
-describe('Activity tile wiring — entity IDs', () => {
-  it('pig.batch uses g.id as entityId', () => {
-    expect(pigBatches).toMatch(/entityId:\s*g\.id/);
+describe('PigBatchesView — retired legacy Activity surfaces (CP5)', () => {
+  it('no longer imports or renders ActivityPanel', () => {
+    expect(pigBatches).not.toContain('ActivityPanel');
   });
-});
-
-describe('Activity tile wiring — authState', () => {
-  for (const {name, src} of [{name: 'PigBatchesView', src: pigBatches}]) {
-    it(`${name} passes authState to ActivityModal/Panel`, () => {
-      expect(src).toContain('authState');
-    });
-  }
+  it('no longer imports or renders ActivityModal', () => {
+    expect(pigBatches).not.toContain('ActivityModal');
+  });
+  it('has no activityTarget state', () => {
+    expect(pigBatches).not.toContain('activityTarget');
+  });
+  it('no longer listens for wcf-entity-deep-link', () => {
+    expect(pigBatches).not.toContain('wcf-entity-deep-link');
+  });
+  it('uses RecordCollaborationSection for pig.batch Comments + Activity', () => {
+    expect(pigBatches).toContain('RecordCollaborationSection');
+    expect(pigBatches).toContain('entityType="pig.batch"');
+  });
 });
 
 describe('LayerBatchesView — retired legacy Activity surfaces', () => {
@@ -90,14 +66,9 @@ describe('BroilerListView — retired legacy Activity surfaces', () => {
   });
 });
 
-describe('pig.batch remains the only legacy inline ActivityPanel batch surface', () => {
-  it('PigBatchesView still renders the compact ActivityPanel for pig.batch tiles', () => {
-    expect(pigBatches).toContain("entityType: 'pig.batch'");
-    expect(pigBatches).toContain("mode: 'compact'");
-    expect(pigBatches).toContain('ActivityModal');
-  });
-  it('No other batch view still imports ActivityPanel/Modal in this lane', () => {
-    // PigBatchesView is the lone tolerated holder until its own record-page lane.
+describe('no batch/list view retains an inline ActivityPanel surface (CP5)', () => {
+  it('pig, broiler, and layer batch views are all free of ActivityPanel', () => {
+    expect(pigBatches).not.toContain('ActivityPanel');
     expect(broilerList).not.toContain('ActivityPanel');
     expect(layerBatches).not.toContain('ActivityPanel');
   });

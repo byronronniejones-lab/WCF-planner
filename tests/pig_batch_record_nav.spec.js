@@ -107,6 +107,8 @@ test('pig.batch hub tiles navigate to the record page; unknown id is not-found',
   await expect(page.locator('text=← Pig Batches').first()).toBeVisible();
   // Sub-batch rows render on the record page (workspace moved here).
   await expect(page.locator('text=P-26-91A').first()).toBeVisible();
+  // CP5: Comments + collapsed Activity collaboration section renders here.
+  await expect(page.locator('[data-record-collaboration-section]').first()).toBeVisible({timeout: 15_000});
 
   // Mobile viewport still renders the record workspace.
   await page.setViewportSize({width: 390, height: 844});

@@ -72,33 +72,25 @@ describe('Migration 064 — Phase 2 resolvers', () => {
   });
 });
 
-describe('Activity wiring — Phase 2 legacy surfaces (pig.batch remains inline ActivityPanel)', () => {
-  it('PigBatchesView renders ActivityPanel compact for pig.batch', () => {
-    expect(pigBatches).toContain("entityType: 'pig.batch'");
-    expect(pigBatches).toContain("mode: 'compact'");
+describe('pig.batch — migrated to record page (CP5)', () => {
+  it('PigBatchesView no longer renders ActivityPanel, ActivityModal, or activityTarget', () => {
+    expect(pigBatches).not.toContain('ActivityPanel');
+    expect(pigBatches).not.toContain('ActivityModal');
+    expect(pigBatches).not.toContain('activityTarget');
   });
 
-  it('PigBatchesView renders ActivityModal', () => {
-    expect(pigBatches).toContain('ActivityModal');
-    expect(pigBatches).toContain('activityTarget');
+  it('PigBatchesView no longer listens for wcf-entity-deep-link', () => {
+    expect(pigBatches).not.toContain('wcf-entity-deep-link');
   });
 
-  it('PigBatchesView has data-activity-surface hook', () => {
-    expect(pigBatches).toContain('pig.batch');
-    expect(pigBatches).toContain('data-activity-surface');
+  it('PigBatchesView uses RecordCollaborationSection for pig.batch Comments + Activity', () => {
+    expect(pigBatches).toContain('RecordCollaborationSection');
+    expect(pigBatches).toContain('entityType="pig.batch"');
   });
 
-  it('PigBatchesView has stopPropagation on chip', () => {
-    expect(pigBatches).toContain('stopPropagation');
-  });
-
-  it('PigBatchesView has deep-link listener', () => {
-    expect(pigBatches).toContain('wcf-entity-deep-link');
-    expect(pigBatches).toContain('addEventListener');
-  });
-
-  it('pig.batch uses g.id as entityId', () => {
-    expect(pigBatches).toMatch(/entityId:\s*g\.id/);
+  it('activityRegistry routes pig.batch to its record page', () => {
+    expect(ACTIVITY_REGISTRY['pig.batch'].route('group-7')).toBe('/pig/batches/group-7');
+    expect(registrySrc).toContain("if (path.startsWith('/pig/batches/')) return {view: 'pigbatches'");
   });
 });
 
