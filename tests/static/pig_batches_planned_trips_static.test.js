@@ -24,6 +24,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const viewSrc = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchesView.jsx'), 'utf8');
 const forecastSrc = fs.readFileSync(path.join(ROOT, 'src/lib/pigForecast.js'), 'utf8');
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
+const tileSrc = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchHubTile.jsx'), 'utf8');
 
 describe('Commit 4a — Global ADG persistence + role gate', () => {
   it('PigBatchesView reads/writes app_store key ppp-pig-global-adg-v1', () => {
@@ -388,9 +389,12 @@ describe('CP3 — /pig/batches/<id> record-page routing + hub/record branch', ()
     );
   });
 
-  it('uses group.id as the encoded route identity for tile navigation', () => {
+  it('uses group.id as the encoded route identity for tile navigation (via PigBatchHubTile)', () => {
     expect(viewSrc).toMatch(/navigate\('\/pig\/batches\/' \+ encodeURIComponent\(id\)\)/);
-    expect(viewSrc).toMatch(/data-pig-batch-tile=\{g\.id\}/);
+    // CP6: the hub renders the extracted presentational tile and routes on open
+    // by group.id; the tile carries the data-pig-batch-tile hook.
+    expect(viewSrc).toMatch(/<PigBatchHubTile[\s\S]*?group=\{g\}[\s\S]*?onOpen=\{\(\) => goToBatch\(g\.id\)\}/);
+    expect(tileSrc).toMatch(/data-pig-batch-tile=\{group\.id\}/);
   });
 
   it('renders a not-found state for an unknown id', () => {
@@ -421,5 +425,31 @@ describe('CP3 — /pig/batches/<id> record-page routing + hub/record branch', ()
     );
     expect(mainSrc).toMatch(/isPigBatchesSubpath\s*\?\s*'pigbatches'/);
     expect(mainSrc).toMatch(/view === 'pigbatches' && location\.pathname\.startsWith\('\/pig\/batches\/'\)\) return/);
+  });
+});
+
+describe('CP6 — presentational extraction (behavior unchanged)', () => {
+  it('PigBatchHubTile is a render-only component carrying the tile hook + open handler', () => {
+    expect(tileSrc).toMatch(
+      /export default function PigBatchHubTile\(\{group, current, started, statusColor, onOpen\}\)/,
+    );
+    expect(tileSrc).toMatch(/data-pig-batch-tile=\{group\.id\}/);
+    expect(tileSrc).toMatch(/onClick=\{onOpen\}/);
+    // Presentational only — no data/hooks/mutations leaked into the tile.
+    expect(tileSrc).not.toContain('useState');
+    expect(tileSrc).not.toContain('computeBatchCurrentCount');
+    expect(tileSrc).not.toContain("from('app_store')");
+  });
+
+  it('record page still mounts RecordCollaborationSection with the pig.batch entity contract', () => {
+    expect(viewSrc).toMatch(
+      /<RecordCollaborationSection[\s\S]*?entityType="pig\.batch"[\s\S]*?entityId=\{recordGroup\.id\}[\s\S]*?entityLabel=\{recordGroup\.batchName\}/,
+    );
+  });
+
+  it('legacy inline activity surface stays absent from PigBatchesView', () => {
+    expect(viewSrc).not.toContain('ActivityPanel');
+    expect(viewSrc).not.toContain('ActivityModal');
+    expect(viewSrc).not.toContain('wcf-entity-deep-link');
   });
 });

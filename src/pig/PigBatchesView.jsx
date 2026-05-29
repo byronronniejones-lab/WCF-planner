@@ -56,6 +56,8 @@ import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import PigBatchHubTile from './PigBatchHubTile.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
@@ -2003,34 +2005,14 @@ export default function PigBatchesView({
               const current = computeBatchCurrentCount(g, breeders, {latestDailyPigCount});
               const started = (parseInt(g.giltCount) || 0) + (parseInt(g.boarCount) || 0);
               return (
-                <div
+                <PigBatchHubTile
                   key={g.id}
-                  data-pig-batch-tile={g.id}
-                  onClick={() => goToBatch(g.id)}
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 12,
-                    padding: '12px 16px',
-                    marginBottom: 10,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '6px 16px',
-                    alignItems: 'center',
-                  }}
-                >
-                  <strong style={{fontSize: 14, color: '#111827'}}>{g.batchName}</strong>
-                  <span style={S.badge(sc.bg, sc.tx)}>{g.status}</span>
-                  {current !== null ? (
-                    <span style={{fontSize: 13, color: '#374151'}}>
-                      Current: <strong>{current}</strong>
-                    </span>
-                  ) : (
-                    started > 0 && <span style={{fontSize: 13, color: '#6b7280'}}>Started: {started}</span>
-                  )}
-                  <span style={{marginLeft: 'auto', fontSize: 12, color: '#085041', fontWeight: 600}}>{'Open →'}</span>
-                </div>
+                  group={g}
+                  current={current}
+                  started={started}
+                  statusColor={sc}
+                  onOpen={() => goToBatch(g.id)}
+                />
               );
             })}
 
