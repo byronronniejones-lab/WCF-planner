@@ -1,4 +1,5 @@
 import {test, expect} from './fixtures.js';
+import {waitForPigFeedersLoaded} from './helpers/pigReady.js';
 
 // ============================================================================
 // Pig batch math regression spec — Phase A4
@@ -79,6 +80,7 @@ test('Send-to-Trip stamps subAttributions, persists trip, ledger shows correct c
 
   // --- UI assertions: /pig/batches ledger math ---
   await page.goto('/pig/batches/p2601-test');
+  await waitForPigFeedersLoaded(page);
 
   // Current count: 20 started − 5 trip − 2 transferred − 1 mortality = 12
   await expect(page.getByText(new RegExp(`Current:\\s*${expected.postTripCurrent}\\b`))).toBeVisible({timeout: 15_000});

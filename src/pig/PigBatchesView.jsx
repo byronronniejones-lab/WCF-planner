@@ -73,6 +73,7 @@ export default function PigBatchesView({
     farrowingRecs,
     feederGroups,
     setFeederGroups,
+    feedersLoaded,
     feederForm,
     setFeederForm,
     originalFeederForm,
@@ -583,7 +584,7 @@ export default function PigBatchesView({
     ...processingTrips,
   };
   return (
-    <div>
+    <div data-pig-feeders-loaded={feedersLoaded ? 'true' : 'false'}>
       <Header />
       <div style={{padding: '0 12px'}}>
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
@@ -1295,16 +1296,19 @@ export default function PigBatchesView({
           </div>
         )}
 
-        {/* Record-page loading: feederGroups not populated yet. Showing the
-            not-found state during this window would flash "Batch not found" on
-            a valid deep-link before data loads (and races record-page tests). */}
-        {recordMode && !recordGroup && feederGroups.length === 0 && (
+        {/* Record-page loading: pig feeders haven't finished loading yet.
+            Keyed on the real readiness signal (feedersLoaded) — NOT
+            feederGroups.length, which can't tell "still loading" from "loaded
+            and genuinely empty" and races record-page tests on cold start.
+            Showing the not-found state during this window would flash
+            "Batch not found" on a valid deep-link before data loads. */}
+        {recordMode && !recordGroup && !feedersLoaded && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>Loading…</div>
         )}
 
         {/* Record-page not-found: data loaded, but the URL id is genuinely
             absent from the feeder groups. */}
-        {recordMode && !recordGroup && feederGroups.length > 0 && (
+        {recordMode && !recordGroup && feedersLoaded && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
             Batch not found.{' '}
             <button

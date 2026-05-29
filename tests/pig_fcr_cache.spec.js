@@ -1,4 +1,5 @@
 import {test, expect} from './fixtures.js';
+import {waitForPigFeedersLoaded} from './helpers/pigReady.js';
 
 // ============================================================================
 // Pig FCR cache spec — Phase A9
@@ -82,6 +83,7 @@ test('persistTrip populates fcrCached on close, preserves subAttributions', asyn
   expect(before.processingTrips[0].subAttributions).toEqual(seededSubAttributions);
 
   await page.goto('/pig/batches/fg-test-fcr-01');
+  await waitForPigFeedersLoaded(page);
 
   // Trip row visible = batch loaded. Date is fmt('2026-04-01') = '04/01/26'.
   const row = tripRow(page, '04/01/26', 3);
@@ -138,6 +140,7 @@ test('persistTrip deletes fcrCached (not null) when adjFeed reaches zero via cre
   expect(before.fcrCached).toBe(9.99);
 
   await page.goto('/pig/batches/fg-test-fcr-01');
+  await waitForPigFeedersLoaded(page);
 
   const row = tripRow(page, '04/01/26', 3);
   await expect(row).toBeVisible({timeout: 15_000});
@@ -191,6 +194,7 @@ test('deleteTrip deletes fcrCached when last trip is removed', async ({page, pig
   expect(before.processingTrips[0].id).toBe(tripId);
 
   await page.goto('/pig/batches/fg-test-fcr-01');
+  await waitForPigFeedersLoaded(page);
 
   const row = tripRow(page, '04/01/26', 3);
   await expect(row).toBeVisible({timeout: 15_000});

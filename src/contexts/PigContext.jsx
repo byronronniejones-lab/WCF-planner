@@ -157,6 +157,16 @@ export function PigProvider({children, initialFarrowing, initialBreeders, breedT
       return [];
     }
   });
+  // Readiness signal for the pig.batch hub + record pages. The app-level
+  // `dataLoaded` flag (AuthContext) flips true after the dailys load, but
+  // feederGroups is set in an earlier tick of loadAllData — so there is a
+  // brief window where dataLoaded is true while feederGroups is still its
+  // initial value. The record page previously bridged that window with a
+  // `feederGroups.length === 0` Loading guard, which is wrong for a genuinely
+  // empty farm and gives tests no reliable "data actually loaded" signal.
+  // App.loadAllData() sets this true in the SAME batch as setFeederGroups, so
+  // when it is true feederGroups is guaranteed populated. Reset on sign-out.
+  const [feedersLoaded, setFeedersLoaded] = useState(false);
   const [showFeederForm, setShowFeederForm] = useState(false);
   const [editFeederId, setEditFeederId] = useState(null);
   const [feederForm, setFeederForm] = useState(EMPTY_FEEDER_FORM);
@@ -205,6 +215,8 @@ export function PigProvider({children, initialFarrowing, initialBreeders, breedT
     setFarrowFilter,
     feederGroups,
     setFeederGroups,
+    feedersLoaded,
+    setFeedersLoaded,
     showFeederForm,
     setShowFeederForm,
     editFeederId,

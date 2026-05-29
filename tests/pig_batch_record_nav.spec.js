@@ -1,4 +1,5 @@
 import {test, expect} from './fixtures.js';
+import {waitForPigFeedersLoaded} from './helpers/pigReady.js';
 
 // ============================================================================
 // CP3+CP4 smoke: pig.batch hub (nav-only tiles) -> record-page navigation.
@@ -93,7 +94,7 @@ test('pig.batch hub tiles navigate to the record page; unknown id is not-found',
 
   // Hub: nav-only tiles with the ledger current count (G1 = 10 + 6 − 1 = 15).
   await page.goto('/pig/batches');
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await waitForPigFeedersLoaded(page);
   const tile1 = page.locator(`[data-pig-batch-tile="${G1}"]`);
   await expect(tile1).toBeVisible({timeout: 15_000});
   await expect(page.locator(`[data-pig-batch-tile="${G2}"]`)).toBeVisible();
@@ -113,11 +114,11 @@ test('pig.batch hub tiles navigate to the record page; unknown id is not-found',
   // Mobile viewport still renders the record workspace.
   await page.setViewportSize({width: 390, height: 844});
   await page.goto(`/pig/batches/${G1}`);
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await waitForPigFeedersLoaded(page);
   await expect(page.locator('text=P-26-91').first()).toBeVisible({timeout: 15_000});
 
   // Unknown id → not-found state.
   await page.goto('/pig/batches/does-not-exist');
-  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await waitForPigFeedersLoaded(page);
   await expect(page.locator('text=Batch not found').first()).toBeVisible({timeout: 15_000});
 });

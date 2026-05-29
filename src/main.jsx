@@ -1147,6 +1147,7 @@ function App() {
     setFarrowFilter,
     feederGroups,
     setFeederGroups,
+    setFeedersLoaded,
     showFeederForm,
     setShowFeederForm,
     editFeederId,
@@ -1793,6 +1794,7 @@ function App() {
       if (event === 'SIGNED_OUT') {
         setAuthState(false);
         setDataLoaded(false);
+        setFeedersLoaded(false);
         setPwRecovery(false);
       }
       // Password-reset / invite link landed — hold the user on SetPasswordScreen
@@ -1862,6 +1864,9 @@ function App() {
     } catch (e) {
       console.error('loadUser error:', e);
       setAuthState({user, role: 'admin', name: user.email});
+      // loadAllData never ran on this path; resolve the pig readiness signal
+      // so the record page can show not-found instead of Loading forever.
+      setFeedersLoaded(true);
       setDataLoaded(true);
     }
   }
@@ -2374,6 +2379,21 @@ function App() {
         // No data yet - init farrowing with historical records
         setFarrowingRecs(INITIAL_FARROWING);
       }
+      // Flip the pig readiness signal in this SAME tick as setFeederGroups so
+      // the two updates batch into one commit — the pig.batch hub + record
+      // pages can trust that feedersLoaded === true means feederGroups is
+      // populated, with no transient empty window. Done before the dailys
+      // await so readiness is not gated on the (slower) daily report load.
+      //
+      // UNCONDITIONAL — covers all three app_store outcomes:
+      //   • success + data  → feederGroups set above
+      //   • success + empty → genuinely no pig data (record page → not-found)
+      //   • {error}         → pig data unavailable. Supabase query errors come
+      //     back as {error}, NOT a throw, so the catch below never sees them;
+      //     gating this on `!error` would strand feedersLoaded false and
+      //     recreate the "Loading forever" state. The record page must reach
+      //     its not-found/error state instead.
+      setFeedersLoaded(true);
       // Load pig_dailys (paginated) and poultry_dailys in parallel. Both previously
       // ran serially, blocking the app on every cold start — see PROJECT.md §14.5 #3.
       const pigDailysPromise = (async () => {
@@ -2423,6 +2443,10 @@ function App() {
       setDataLoaded(true);
     } catch (e) {
       console.error('loadAllData error:', e);
+      // Don't strand the pig readiness signal false on a hard load failure —
+      // the record page would otherwise show Loading forever. Mark it resolved
+      // so the genuine "Batch not found" state can surface.
+      setFeedersLoaded(true);
       setDataLoaded(true);
     }
   }
