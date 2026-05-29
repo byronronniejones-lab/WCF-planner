@@ -1,10 +1,8 @@
 import React from 'react';
+import {useNavigate} from 'react-router-dom';
 import {sb} from '../lib/supabase.js';
 import {loadGlobalActivity} from '../lib/globalActivityApi.js';
 import {getActivityEntityMeta} from '../lib/activityRegistry.js';
-import {useAuth} from '../contexts/AuthContext.jsx';
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-import ActivityModal from '../shared/ActivityModal.jsx';
 
 const ENTITY_TYPE_LABELS = {
   'task.instance': 'Task',
@@ -58,13 +56,12 @@ const ENTITY_FILTERS = [
 ];
 
 export default function ActivityLogView({Header}) {
-  const {authState} = useAuth();
+  const navigate = useNavigate();
   const [rows, setRows] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [entityFilter, setEntityFilter] = React.useState('');
-  const [activityTarget, setActivityTarget] = React.useState(null);
   const [hasMore, setHasMore] = React.useState(false);
 
   const load = React.useCallback(
@@ -102,14 +99,17 @@ export default function ActivityLogView({Header}) {
     load(false);
   }
 
+  // Global Activity Log is read-only audit history. A row click navigates to
+  // the entity's dedicated record page (where Comments + the scoped Activity
+  // log live) instead of opening a legacy composer. Rows whose entity_type has
+  // no registered route are inert.
   function handleRowClick(row) {
     const meta = getActivityEntityMeta(row.entity_type);
-    if (meta) {
-      setActivityTarget({
-        entityType: row.entity_type,
-        entityId: row.entity_id,
-        entityLabel: row.entity_label || row.entity_id,
-      });
+    if (!meta || typeof meta.route !== 'function') return;
+    try {
+      navigate(meta.route(row.entity_id));
+    } catch (_e) {
+      /* malformed id — leave the row inert rather than crashing the view */
     }
   }
 
@@ -214,18 +214,20 @@ export default function ActivityLogView({Header}) {
         React.createElement(
           'div',
           {style: {display: 'flex', flexDirection: 'column', gap: 2}},
-          rows.map((r) =>
-            React.createElement(
+          rows.map((r) => {
+            const routeMeta = getActivityEntityMeta(r.entity_type);
+            const routable = !!(routeMeta && typeof routeMeta.route === 'function');
+            return React.createElement(
               'div',
               {
                 key: r.id,
-                onClick: () => handleRowClick(r),
+                onClick: routable ? () => handleRowClick(r) : undefined,
                 style: {
                   padding: '10px 14px',
                   background: r.deleted_at ? '#fafafa' : 'white',
                   border: '1px solid #f3f4f6',
                   borderRadius: 6,
-                  cursor: 'pointer',
+                  cursor: routable ? 'pointer' : 'default',
                   display: 'flex',
                   gap: 10,
                   alignItems: 'flex-start',
@@ -233,6 +235,7 @@ export default function ActivityLogView({Header}) {
                   opacity: r.deleted_at ? 0.5 : 1,
                 },
                 'data-activity-log-row': r.id,
+                'data-activity-log-routable': routable ? '1' : '0',
               },
               // Left: actor + time
               React.createElement(
@@ -299,8 +302,8 @@ export default function ActivityLogView({Header}) {
                     '@' + r.mentioned_profile_names.filter(Boolean).join(' @'),
                   ),
               ),
-            ),
-          ),
+            );
+          }),
         ),
 
       // Load more
@@ -327,11 +330,5 @@ export default function ActivityLogView({Header}) {
           ),
         ),
     ),
-    React.createElement(ActivityModal, {
-      sb,
-      authState,
-      target: activityTarget,
-      onClose: () => setActivityTarget(null),
-    }),
   );
 }

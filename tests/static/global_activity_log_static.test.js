@@ -88,9 +88,21 @@ describe('ActivityLogView', () => {
     expect(viewSrc).toContain('hasMore');
   });
 
-  it('opens ActivityModal on row click', () => {
-    expect(viewSrc).toContain('ActivityModal');
-    expect(viewSrc).toContain('setActivityTarget');
+  it('navigates to the entity record page on row click (no legacy modal)', () => {
+    // Global Activity Log is read-only audit history. Rows route to the
+    // entity's dedicated record page via the registry; the legacy
+    // ActivityModal/ActivityPanel composer is gone.
+    expect(viewSrc).not.toContain('ActivityModal');
+    expect(viewSrc).not.toContain('setActivityTarget');
+    expect(viewSrc).toContain('useNavigate');
+    expect(viewSrc).toContain('getActivityEntityMeta');
+    expect(viewSrc).toMatch(/navigate\(meta\.route\(/);
+  });
+
+  it('marks non-routable rows inert (no pointer cursor, no onClick)', () => {
+    expect(viewSrc).toContain('data-activity-log-routable');
+    expect(viewSrc).toMatch(/routable \? 'pointer' : 'default'/);
+    expect(viewSrc).toMatch(/routable \? \(\) => handleRowClick\(r\) : undefined/);
   });
 
   it('shows empty/loading/error states', () => {

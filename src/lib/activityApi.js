@@ -1,29 +1,36 @@
-// Activity + @Mentions client API — read + comment + edit + soft-delete.
+// Activity Layer client API — read-only audit history + audit-event writes.
 //
-// Backed by 4 SECURITY DEFINER RPCs (mig 058 + mig 060 contract change):
-//   list_activity_events(entity_type, entity_id, limit)
-//     → returns rows with mentioned_profile_ids[] + mentioned_profile_names[]
-//   post_activity_comment(entity_type, entity_id, body, entity_label, mentions[])
-//   edit_activity_event(event_id, body, mentions[])
-//   delete_activity_event(event_id)
+// This is the LIVE surface today:
+//   * listActivityEvents → list_activity_events(entity_type, entity_id,
+//     limit). Audit reads for a single entity; rows carry
+//     mentioned_profile_ids[] + mentioned_profile_names[]. Used by
+//     RecordActivityLog (the read-only Activity log on record pages).
+//   * recordActivityEvent / recordFieldChange / recordStatusChange →
+//     record_activity_event(...). Audit writes (field.updated,
+//     status.changed, record.created/deleted/restored). Best-effort,
+//     not transactional (mig 066).
+//   * renderMentionSegments → pure renderer that chips "@Name" spans by
+//     matching mentioned_profile_names[]; reused by the Comments layer.
+//
+// The legacy global Activity composer (ActivityModal/ActivityPanel) was
+// retired. Its client helpers — countActivityForEntity, postActivityComment,
+// editActivityEvent, deleteActivityEvent — were removed. User discussion now
+// lives in CommentsSection (the comments_foundation layer, mig 071); Activity
+// is read-only audit/system history. The underlying post/edit/delete/count
+// SECDEF RPCs still exist in PROD (historical migrations 058/060) but have no
+// client caller.
 //
 // The platform contract: clients NEVER hit `.from('activity_events')` or
-// `.from('activity_mentions')` directly. RLS lockdown on the tables
-// blocks it anyway (REVOKE ALL from authenticated), but the static lock
-// also rejects any such reference in src/. The RPC layer is the only
-// path; the SECDEF resolver re-checks the source entity's read gate.
+// `.from('activity_mentions')` directly. RLS lockdown on the tables blocks it
+// anyway (REVOKE ALL from authenticated), but the static lock also rejects any
+// such reference in src/. The RPC layer is the only path; the SECDEF resolver
+// re-checks the source entity's read gate.
 //
-// Mention contract (mig 060):
-//   * The visible body is freeform plain text. Users only ever see
-//     "@DisplayName" — uuids are NEVER shown.
-//   * p_mentions[] is the AUTHORITATIVE mention identity. The server
-//     validates each uuid (exists + not inactive + ≤10 cap + caller has
-//     write permission) and fans out notifications. The body text is no
-//     longer parsed for uuid tokens.
-//   * Renderer chips "@Name" spans by matching mentioned_profile_names[]
-//     returned from list_activity_events. Best-effort: ambiguous names
-//     (two teammates with the same display name) all render as chips;
-//     notifications still go to whichever uuid the user picked.
+// Mention rendering (mig 060 contract): the visible body is freeform plain
+// text — users only ever see "@DisplayName", never uuids. renderMentionSegments
+// chips "@Name" spans by matching mentioned_profile_names[] returned from
+// list_activity_events. Best-effort: ambiguous names (two teammates with the
+// same display name) all render as chips with the first matching profile id.
 
 export const ACTIVITY_CHANGE_EVENT = 'wcf-activity-change';
 
@@ -52,75 +59,6 @@ export async function listActivityEvents(sb, entityType, entityId, {limit = 50} 
   });
   if (error) throw new Error(`listActivityEvents: ${error.message || String(error)}`);
   return data || [];
-}
-
-/**
- * Count of NON-soft-deleted activity events for one entity. Used by the
- * compact chip on dense list rows. Lazy-loaded — never eager-batched in
- * Phase 1.
- */
-export async function countActivityForEntity(sb, entityType, entityId) {
-  if (!sb || !entityType || !entityId) return 0;
-  const {data, error} = await sb.rpc('count_activity_for_entity', {
-    p_entity_type: entityType,
-    p_entity_id: entityId,
-  });
-  if (error) throw new Error(`countActivityForEntity: ${error.message || String(error)}`);
-  return typeof data === 'number' ? data : Number(data) || 0;
-}
-
-/**
- * Post a comment. `mentions` is the array of profile uuids the user
- * picked from the @ popover — the authoritative mention identity. The
- * visible body is freeform plain text; uuids never appear in it.
- *
- * `entityLabel` is included so the resulting `mention` notifications
- * can render "X mentioned you on <label>" without having to round-trip
- * back to the entity table. Pass the cow tag, task title, equipment
- * name, etc. — whatever the registry's displayLabel resolver would
- * return.
- */
-export async function postActivityComment(sb, {entityType, entityId, body, entityLabel, mentions = []}) {
-  if (!sb) throw new Error('postActivityComment: sb required');
-  if (!entityType || !entityId) throw new Error('postActivityComment: entityType + entityId required');
-  if (!body || !body.trim()) throw new Error('postActivityComment: body required');
-  const {data, error} = await sb.rpc('post_activity_comment', {
-    p_entity_type: entityType,
-    p_entity_id: entityId,
-    p_body: body,
-    p_entity_label: entityLabel || null,
-    p_mentions: Array.isArray(mentions) ? mentions : [],
-  });
-  if (error) throw new Error(`postActivityComment: ${error.message || String(error)}`);
-  fireActivityChangeEvent(entityType, entityId);
-  return data;
-}
-
-/**
- * Edit your own comment. Server enforces author-only.
- */
-export async function editActivityEvent(sb, {eventId, body, mentions = []}) {
-  if (!sb || !eventId) throw new Error('editActivityEvent: sb + eventId required');
-  const {data, error} = await sb.rpc('edit_activity_event', {
-    p_event_id: eventId,
-    p_body: body,
-    p_mentions: Array.isArray(mentions) ? mentions : [],
-  });
-  if (error) throw new Error(`editActivityEvent: ${error.message || String(error)}`);
-  fireActivityChangeEvent(null, null); // unknown entity at this point; just nudge
-  return data;
-}
-
-/**
- * Soft-delete a comment. Author or admin only (RPC enforces).
- * Idempotent on already-deleted rows.
- */
-export async function deleteActivityEvent(sb, eventId) {
-  if (!sb || !eventId) throw new Error('deleteActivityEvent: sb + eventId required');
-  const {data, error} = await sb.rpc('delete_activity_event', {p_event_id: eventId});
-  if (error) throw new Error(`deleteActivityEvent: ${error.message || String(error)}`);
-  fireActivityChangeEvent(null, null);
-  return data;
 }
 
 // ── Activity Layer: general event recording (mig 066) ───────────────────

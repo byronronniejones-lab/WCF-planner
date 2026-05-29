@@ -10,7 +10,6 @@ const broilerList = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerListView
 const layerBatches = fs.readFileSync(path.join(ROOT, 'src/layer/LayerBatchesView.jsx'), 'utf8');
 const cattleHerds = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
 const sheepFlocks = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepFlocksView.jsx'), 'utf8');
-const activityPanel = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityPanel.jsx'), 'utf8');
 
 // All operational batch/list surfaces now use dedicated record pages with
 // RecordCollaborationSection — none render inline Activity chips/modal. As of
@@ -96,11 +95,5 @@ describe('Cattle + sheep wired in both flat and grouped modes', () => {
     const groupedChip = cattleHerds.indexOf("entityType: 'cattle.animal'", flatChip + 1);
     expect(flatChip).toBeGreaterThan(-1);
     expect(groupedChip).toBeGreaterThan(flatChip);
-  });
-});
-
-describe('ActivityPanel compact click includes entityCtx', () => {
-  it('onCompactClick payload includes entityCtx', () => {
-    expect(activityPanel).toContain('entityCtx, entityRoute');
   });
 });

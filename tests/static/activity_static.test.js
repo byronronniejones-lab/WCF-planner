@@ -6,12 +6,12 @@
 //   * mig 058 ships the table shapes, RLS lockdown, grant shape, the
 //     four SECDEF RPCs, the task.completed trigger, and the notifications
 //     widen (CHECK + activity_event_id column).
-//   * activityApi.js exposes the helpers + parser + change-event name.
+//   * activityApi.js exposes only the LIVE audit helpers + mention
+//     renderer + change-event name. The legacy composer client helpers
+//     (post/edit/delete/count) were removed with ActivityPanel/
+//     ActivityModal; Comments are the discussion path now.
 //   * activityRegistry.js carries the task.instance entry and the route
 //     resolver.
-//   * The UI components carry the data-* hooks the Playwright spec uses
-//     and the ActivityPanel never references the underlying tables
-//     directly.
 //   * No src/ file directly reads or writes public.activity_events /
 //     public.activity_mentions — the SECDEF RPC layer is the only path.
 
@@ -27,9 +27,7 @@ const mig058 = fs.readFileSync(path.join(ROOT, 'supabase-migrations/058_activity
 const mig060 = fs.readFileSync(path.join(ROOT, 'supabase-migrations/060_activity_mention_contract.sql'), 'utf8');
 const apiSrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityApi.js'), 'utf8');
 const regSrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
-const panelSrc = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityPanel.jsx'), 'utf8');
 const taSrc = fs.readFileSync(path.join(ROOT, 'src/shared/MentionTextarea.jsx'), 'utf8');
-const modalSrc = fs.readFileSync(path.join(ROOT, 'src/shared/ActivityModal.jsx'), 'utf8');
 const completeTaskModalSrc = fs.readFileSync(path.join(ROOT, 'src/tasks/CompleteTaskModal.jsx'), 'utf8');
 const myTasksTabSrc = fs.readFileSync(path.join(ROOT, 'src/tasks/MyTasksTab.jsx'), 'utf8');
 
@@ -225,20 +223,28 @@ describe('mig 058 — task.completed trigger', () => {
 });
 
 describe('src/lib/activityApi.js — helpers + parser', () => {
-  it('exports the Activity Layer helpers + change event name', () => {
+  it('exports the live Activity Layer helpers + change event name', () => {
     expect(apiSrc).toMatch(/export async function listActivityEvents/);
-    expect(apiSrc).toMatch(/export async function countActivityForEntity/);
-    expect(apiSrc).toMatch(/export async function postActivityComment/);
-    expect(apiSrc).toMatch(/export async function editActivityEvent/);
-    expect(apiSrc).toMatch(/export async function deleteActivityEvent/);
     expect(apiSrc).toMatch(/export async function recordActivityEvent/);
     expect(apiSrc).toMatch(/export async function recordFieldChange/);
     expect(apiSrc).toMatch(/export async function recordStatusChange/);
     expect(apiSrc).toMatch(/export function buildFieldChangeSummary/);
+    expect(apiSrc).toMatch(/export function renderMentionSegments/);
     expect(apiSrc).toMatch(/export const ACTIVITY_CHANGE_EVENT = 'wcf-activity-change'/);
   });
 
-  it('all helpers route through .rpc() — no direct .from() on activity tables', () => {
+  it('no longer exports the retired legacy-composer helpers', () => {
+    // The legacy global Activity composer (ActivityModal/ActivityPanel) was
+    // retired. Comments are the live discussion path now; Activity is
+    // read-only audit/system history. These client helpers were the only
+    // callers of the legacy comment write/edit/delete/count RPCs.
+    expect(apiSrc).not.toMatch(/export async function countActivityForEntity/);
+    expect(apiSrc).not.toMatch(/export async function postActivityComment/);
+    expect(apiSrc).not.toMatch(/export async function editActivityEvent/);
+    expect(apiSrc).not.toMatch(/export async function deleteActivityEvent/);
+  });
+
+  it('live helpers route through .rpc() — no direct .from() on activity tables', () => {
     // Strip JSDoc comments before scanning so the platform-contract
     // comment that names the forbidden patterns doesn't itself trigger
     // the lock.
@@ -246,11 +252,12 @@ describe('src/lib/activityApi.js — helpers + parser', () => {
     expect(code).not.toMatch(/\.from\(\s*['"]activity_events['"]\s*\)/);
     expect(code).not.toMatch(/\.from\(\s*['"]activity_mentions['"]\s*\)/);
     expect(apiSrc).toMatch(/\.rpc\('list_activity_events'/);
-    expect(apiSrc).toMatch(/\.rpc\('count_activity_for_entity'/);
-    expect(apiSrc).toMatch(/\.rpc\('post_activity_comment'/);
-    expect(apiSrc).toMatch(/\.rpc\('edit_activity_event'/);
-    expect(apiSrc).toMatch(/\.rpc\('delete_activity_event'/);
     expect(apiSrc).toMatch(/\.rpc\('record_activity_event'/);
+    // The legacy comment write/edit/delete/count RPC calls are gone.
+    expect(apiSrc).not.toMatch(/\.rpc\('count_activity_for_entity'/);
+    expect(apiSrc).not.toMatch(/\.rpc\('post_activity_comment'/);
+    expect(apiSrc).not.toMatch(/\.rpc\('edit_activity_event'/);
+    expect(apiSrc).not.toMatch(/\.rpc\('delete_activity_event'/);
   });
 
   it('mention renderer uses name-array chipping; no uuid token markup', () => {
@@ -329,63 +336,6 @@ describe('src/lib/activityRegistry.js — registry + route resolver', () => {
   });
 });
 
-describe('src/shared/ActivityPanel.jsx — wire + data hooks', () => {
-  it('imports only the activityApi helpers (no direct table access)', () => {
-    const code = panelSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
-    expect(code).not.toMatch(/\.from\(\s*['"]activity_events['"]\s*\)/);
-    expect(code).not.toMatch(/\.from\(\s*['"]activity_mentions['"]\s*\)/);
-    expect(panelSrc).toMatch(/from '\.\.\/lib\/activityApi\.js'/);
-  });
-
-  it('exposes the data-* hooks the Playwright spec uses', () => {
-    for (const hook of [
-      'data-activity-panel="1"',
-      'data-activity-mode',
-      'data-activity-entity-type',
-      'data-activity-entity-id',
-      'data-activity-compose',
-      'data-activity-post-button',
-      'data-activity-list',
-      'data-activity-event-row',
-      'data-activity-event-type',
-      'data-activity-event-actor',
-      'data-activity-deleted',
-      'data-activity-delete-button',
-      'data-activity-empty',
-      'data-activity-count',
-      'data-activity-compact-chip',
-    ]) {
-      expect(panelSrc, `missing data-* hook: ${hook}`).toContain(hook);
-    }
-  });
-
-  it('renders actor name from ev.actor_display_name with system / unknown fallback', () => {
-    // The old "User" placeholder is gone. The renderer chooses:
-    //   1. "(deleted)" when isDeleted
-    //   2. ev.actor_display_name (from the RPC's profiles join)
-    //   3. "System" when actor_profile_id is null (trigger-emitted)
-    //   4. "Unknown user" when actor_profile_id is set but the profile
-    //      has been deleted (FK SET NULL → display_name NULL)
-    expect(panelSrc).not.toMatch(/isDeleted \? '\(deleted\)' : 'User'/);
-    expect(panelSrc).toMatch(/ev\.actor_display_name/);
-    expect(panelSrc).toMatch(/ev\.actor_profile_id \? 'Unknown user' : 'System'/);
-  });
-
-  it('compact mode is a button + carries the entity id/type hooks', () => {
-    expect(panelSrc).toMatch(
-      /data-activity-compact-chip="1"[\s\S]*?data-activity-entity-type=\{entityType\}[\s\S]*?data-activity-entity-id=\{entityId\}/,
-    );
-  });
-
-  it('renderEventBody passes mentioned_profile_names + ids to the renderer', () => {
-    // Mig 060 contract: chips are driven by the names array returned in
-    // list_activity_events, not by parsing the body for uuid tokens.
-    expect(panelSrc).toMatch(/renderEventBody\(ev\.body, ev\.mentioned_profile_names, ev\.mentioned_profile_ids\)/);
-    // Negative: no fallback to parsing body for the dead canonical token.
-    expect(panelSrc).not.toMatch(/MENTION_INLINE_RE/);
-  });
-});
-
 describe('src/shared/MentionTextarea.jsx — picker', () => {
   it('loads eligible profiles via the canonical Tasks v2 helper', () => {
     expect(taSrc).toMatch(/import \{loadTaskAssignableProfilesById\} from '\.\.\/lib\/tasksCenterApi\.js'/);
@@ -418,15 +368,6 @@ describe('src/shared/MentionTextarea.jsx — picker', () => {
     // mutate mentions. The picker append step dedupes by uuid.
     expect(taSrc).not.toMatch(/extractMentionUuids/);
     expect(taSrc).toMatch(/mentions\.includes\(profile\.id\)/);
-  });
-});
-
-describe('src/shared/ActivityModal.jsx — wrapper', () => {
-  it('renders ActivityPanel mode="full" and exposes data-activity-modal hook', () => {
-    expect(modalSrc).toMatch(/data-activity-modal="1"/);
-    expect(modalSrc).toMatch(/data-activity-modal-close="1"/);
-    expect(modalSrc).toMatch(/import ActivityPanel from '\.\/ActivityPanel\.jsx'/);
-    expect(modalSrc).toMatch(/mode="full"/);
   });
 });
 
@@ -534,12 +475,6 @@ describe('Activity Layer — event type labels', () => {
   const logSrc = fs.readFileSync(path.join(ROOT, 'src/activity/ActivityLogView.jsx'), 'utf8');
   const EVENT_TYPES = ['field.updated', 'status.changed', 'record.created', 'record.deleted', 'record.restored'];
 
-  it('ActivityPanel eventTypeLabel handles all Activity Layer event types', () => {
-    for (const t of EVENT_TYPES) {
-      expect(panelSrc, `missing eventTypeLabel for ${t}`).toContain(`'${t}'`);
-    }
-  });
-
   it('ActivityLogView EVENT_TYPE_LABELS covers all Activity Layer event types', () => {
     for (const t of EVENT_TYPES) {
       expect(logSrc, `missing EVENT_TYPE_LABELS for ${t}`).toContain(`'${t}'`);
@@ -577,12 +512,6 @@ describe('Activity Layer — pilot surface: equipment status (status.changed)', 
   it('fires status change event on equipment status toggle', () => {
     expect(eqSrc).toContain('recordStatusChange(sb');
     expect(eqSrc).toContain("entityType: 'equipment.item'");
-  });
-});
-
-describe('Compact chip zero-count shows actionable label', () => {
-  it('zero-count displays "Activity" text', () => {
-    expect(panelSrc).toContain("count > 0 ? count : 'Activity'");
   });
 });
 

@@ -16,7 +16,7 @@ import {createClient} from '@supabase/supabase-js';
 //   8  Direct authenticated DELETE is blocked by RLS
 //   9  Direct UPDATE setting deleted_at is blocked by RLS
 //  10  record.deleted + record.restored visible in global Activity
-//  11  Cow Activity modal shows delete/restore events after restore
+//  11  Record-page Activity log shows delete/restore events after restore
 // ============================================================================
 
 const TEST_ADMIN_EMAIL = process.env.VITE_TEST_ADMIN_EMAIL;
@@ -360,9 +360,9 @@ test('Activity: delete/restore events visible in global Activity', async ({page,
 });
 
 // --------------------------------------------------------------------------
-// Test 11 — Cow Activity modal shows delete/restore events after restore
+// Test 11 — Record-page Activity log shows delete/restore events after restore
 // --------------------------------------------------------------------------
-test('Activity modal: delete/restore events on restored cow', async ({page, cattleSoftDeleteScenario}) => {
+test('record-page Activity log: delete/restore events on restored cow', async ({page, cattleSoftDeleteScenario}) => {
   const ids = cattleSoftDeleteScenario;
 
   const adminSb = await newAdminAuthedClient();
@@ -375,31 +375,16 @@ test('Activity modal: delete/restore events on restored cow', async ({page, catt
     p_entity_label: ids.delCowTag,
   });
 
-  await page.goto('/cattle/herds');
-  await waitForCattleLoaded(page);
+  // The legacy Activity compact-chip + modal were retired. A cow's audit
+  // history now lives on its dedicated record page behind the read-only
+  // Activity log toggle.
+  await page.goto('/cattle/herds/' + ids.delCowId);
+  await expect(page.locator('[data-cattle-animal-page="1"]')).toBeVisible({timeout: 15_000});
 
-  await expandHerd(page, 'mommas');
-  await expect(page.locator('[data-cow-row-tag="SD-100"]')).toBeVisible();
+  await page.locator('[data-activity-log-toggle="1"]').click();
 
-  // Click the Activity compact chip on SD-100.
-  const activityChip = page.locator('[data-cow-row-tag="SD-100"] [data-activity-compact-chip="1"]');
-  // The chip may need the row to be visible first. If inside collapsed row,
-  // click the row first to expand.
-  if (await activityChip.isVisible().catch(() => false)) {
-    await activityChip.click();
-  } else {
-    // Expand the cow first, then find the chip.
-    await page.locator('[data-cow-row-tag="SD-100"]').click();
-    await expect(page.locator('[data-cow-detail]')).toBeVisible();
-    const detailChip = page.locator('[data-activity-compact-chip="1"]').first();
-    await detailChip.click();
-  }
-
-  // ActivityModal should open.
-  await expect(page.locator('[data-activity-modal="1"]')).toBeVisible({timeout: 10_000});
-
-  // Both events should be in the modal.
-  const modal = page.locator('[data-activity-modal="1"]');
-  await expect(modal.getByText(/Deleted cattle animal/)).toBeVisible({timeout: 10_000});
-  await expect(modal.getByText(/Restored cattle animal/)).toBeVisible();
+  const audit = page.locator('[data-activity-audit-log="1"]');
+  await expect(audit).toBeVisible();
+  await expect(audit.getByText(/Deleted cattle animal.*SD-100/)).toBeVisible({timeout: 10_000});
+  await expect(audit.getByText(/Restored cattle animal.*SD-100/)).toBeVisible();
 });
