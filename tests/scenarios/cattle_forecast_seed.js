@@ -205,6 +205,15 @@ const ORIGINS = [
   {id: 'or-jones', label: 'Jones Ranch', active: true},
 ];
 
+// Every insert here uses a fixed id and upsert(onConflict:'id') rather than a
+// plain insert. resetTestDatabase TRUNCATEs cattle before this runs, so the
+// table is normally empty — but Playwright starts a fresh worker process after
+// any test failure (its default clean-state behavior), and that worker handoff
+// can race the shared single test DB: a dying worker's in-flight cattle.insert
+// can land AFTER the new worker's TRUNCATE, leaving stale seed rows that made a
+// plain insert trip cattle_pkey intermittently. Upsert makes the seed
+// idempotent against that race without retries, sleeps, or masking assertions
+// (the rows carry identical data, so re-writing them is a no-op).
 export async function seedCattleForecast(supabaseAdmin) {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   await ensureAdminProfile(supabaseAdmin);
@@ -214,25 +223,28 @@ export async function seedCattleForecast(supabaseAdmin) {
   must(await supabaseAdmin.from('cattle_breeds').upsert(BREEDS, {onConflict: 'id'}), 'cattle_breeds upsert');
   must(await supabaseAdmin.from('cattle_origins').upsert(ORIGINS, {onConflict: 'id'}), 'cattle_origins upsert');
 
-  must(await supabaseAdmin.from('cattle').insert(COWS), 'cattle insert');
+  must(await supabaseAdmin.from('cattle').upsert(COWS, {onConflict: 'id'}), 'cattle upsert');
 
   // Synthesize a cattle weigh-in session so the cattle cache returns the
   // weigh-ins via its two-query loader.
   must(
-    await supabaseAdmin.from('weigh_in_sessions').insert({
-      id: SESSION_ID,
-      species: 'cattle',
-      date: TODAY_ISO,
-      team_member: process.env.VITE_TEST_ADMIN_EMAIL,
-      herd: 'finishers',
-      status: 'complete',
-      started_at: NINETY_DAYS_AGO + 'T08:00:00Z',
-      completed_at: TODAY_ISO + 'T12:00:00Z',
-    }),
-    'weigh_in_sessions insert',
+    await supabaseAdmin.from('weigh_in_sessions').upsert(
+      {
+        id: SESSION_ID,
+        species: 'cattle',
+        date: TODAY_ISO,
+        team_member: process.env.VITE_TEST_ADMIN_EMAIL,
+        herd: 'finishers',
+        status: 'complete',
+        started_at: NINETY_DAYS_AGO + 'T08:00:00Z',
+        completed_at: TODAY_ISO + 'T12:00:00Z',
+      },
+      {onConflict: 'id'},
+    ),
+    'weigh_in_sessions upsert',
   );
   must(
-    await supabaseAdmin.from('weigh_ins').insert(
+    await supabaseAdmin.from('weigh_ins').upsert(
       WEIGH_INS.map((w, i) => ({
         id: 'wi-cattle-forecast-' + i,
         session_id: SESSION_ID,
@@ -245,8 +257,9 @@ export async function seedCattleForecast(supabaseAdmin) {
         prior_herd_or_flock: null,
         entered_at: w.entered_at,
       })),
+      {onConflict: 'id'},
     ),
-    'weigh_ins insert',
+    'weigh_ins upsert',
   );
 
   return {
@@ -266,48 +279,54 @@ export async function seedCattleForecastSendFlow(supabaseAdmin) {
   // and verify the gate rejects when its tag is outside the allowed set.
   const drafSessionId = 'wsess-cattle-forecast-send-draft';
   must(
-    await supabaseAdmin.from('weigh_in_sessions').insert({
-      id: drafSessionId,
-      species: 'cattle',
-      date: base.today,
-      team_member: process.env.VITE_TEST_ADMIN_EMAIL,
-      herd: 'finishers',
-      status: 'draft',
-      started_at: base.today + 'T08:00:00Z',
-    }),
-    'send-flow draft session insert',
+    await supabaseAdmin.from('weigh_in_sessions').upsert(
+      {
+        id: drafSessionId,
+        species: 'cattle',
+        date: base.today,
+        team_member: process.env.VITE_TEST_ADMIN_EMAIL,
+        herd: 'finishers',
+        status: 'draft',
+        started_at: base.today + 'T08:00:00Z',
+      },
+      {onConflict: 'id'},
+    ),
+    'send-flow draft session upsert',
   );
   must(
-    await supabaseAdmin.from('weigh_ins').insert([
-      {
-        id: 'wi-send-F1',
-        session_id: drafSessionId,
-        tag: '1001',
-        weight: 1100,
-        send_to_processor: true,
-        new_tag_flag: false,
-        entered_at: base.today + 'T08:00:00Z',
-      },
-      {
-        id: 'wi-send-F-AT-MAX',
-        session_id: drafSessionId,
-        tag: '1002',
-        weight: 1450,
-        send_to_processor: true,
-        new_tag_flag: false,
-        entered_at: base.today + 'T08:01:00Z',
-      },
-      {
-        id: 'wi-send-F-HIDE',
-        session_id: drafSessionId,
-        tag: '1003',
-        weight: 950,
-        send_to_processor: true,
-        new_tag_flag: false,
-        entered_at: base.today + 'T08:02:00Z',
-      },
-    ]),
-    'send-flow weigh_ins insert',
+    await supabaseAdmin.from('weigh_ins').upsert(
+      [
+        {
+          id: 'wi-send-F1',
+          session_id: drafSessionId,
+          tag: '1001',
+          weight: 1100,
+          send_to_processor: true,
+          new_tag_flag: false,
+          entered_at: base.today + 'T08:00:00Z',
+        },
+        {
+          id: 'wi-send-F-AT-MAX',
+          session_id: drafSessionId,
+          tag: '1002',
+          weight: 1450,
+          send_to_processor: true,
+          new_tag_flag: false,
+          entered_at: base.today + 'T08:01:00Z',
+        },
+        {
+          id: 'wi-send-F-HIDE',
+          session_id: drafSessionId,
+          tag: '1003',
+          weight: 950,
+          send_to_processor: true,
+          new_tag_flag: false,
+          entered_at: base.today + 'T08:02:00Z',
+        },
+      ],
+      {onConflict: 'id'},
+    ),
+    'send-flow weigh_ins upsert',
   );
 
   return {...base, draftSessionId: drafSessionId};
