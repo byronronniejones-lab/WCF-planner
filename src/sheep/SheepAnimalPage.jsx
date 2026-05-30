@@ -5,6 +5,16 @@ import SheepDetail from './SheepDetail.jsx';
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+/* eslint-disable no-unused-vars -- shell primitives are used in JSX only */
+import {
+  RecordPageFrame,
+  RecordPageLoading,
+  RecordPageNotFound,
+  RecordPageBody,
+  RecordBackLink,
+  RecordTitle,
+} from '../shared/RecordPageShell.jsx';
+/* eslint-enable no-unused-vars */
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
@@ -256,39 +266,17 @@ export default function SheepAnimalPage({sb, fmt, authState, Header}) {
   }
 
   if (loading) {
-    return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>
-      </div>
-    );
+    return <RecordPageLoading Header={Header} />;
   }
 
   if (!animal) {
     return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24}}>
-          <button
-            type="button"
-            onClick={() => navigate('/sheep/flocks')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            ← Back to Flocks
-          </button>
-          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>
-            Sheep record not found. It may have been deleted.
-          </div>
-        </div>
-      </div>
+      <RecordPageNotFound
+        Header={Header}
+        backLabel="Back to Flocks"
+        onBack={() => navigate('/sheep/flocks')}
+        message="Sheep record not found. It may have been deleted."
+      />
     );
   }
 
@@ -298,42 +286,13 @@ export default function SheepAnimalPage({sb, fmt, authState, Header}) {
   });
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-      {Header && <Header />}
-      <div data-sheep-animal-page="1" style={{maxWidth: 800, margin: '0 auto', padding: '12px 16px'}}>
-        <div style={{marginBottom: 12}}>
-          <button
-            type="button"
-            onClick={() => navigate('/sheep/flocks')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-              fontWeight: 500,
-            }}
-          >
-            ← Back to Flocks
-          </button>
-        </div>
+    <RecordPageFrame Header={Header}>
+      <RecordPageBody data-sheep-animal-page="1">
+        <RecordBackLink label="Back to Flocks" onBack={() => navigate('/sheep/flocks')} />
 
         <RecordSequenceNav seq={recordSeq} currentId={sheepId} onNavigate={navigateSeq} />
 
-        <h1
-          data-record-title="1"
-          style={{
-            fontSize: 28,
-            fontWeight: 700,
-            color: '#111827',
-            margin: '0 0 12px',
-            lineHeight: 1.2,
-          }}
-        >
-          {animal.tag ? '#' + animal.tag : 'Untagged animal'}
-        </h1>
+        <RecordTitle>{animal.tag ? '#' + animal.tag : 'Untagged animal'}</RecordTitle>
 
         {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
 
@@ -377,7 +336,7 @@ export default function SheepAnimalPage({sb, fmt, authState, Header}) {
           entityId={animal.id}
           entityLabel={animal.tag || animal.id}
         />
-      </div>
-    </div>
+      </RecordPageBody>
+    </RecordPageFrame>
   );
 }

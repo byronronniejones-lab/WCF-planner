@@ -5,6 +5,16 @@ import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+/* eslint-disable no-unused-vars -- shell primitives are used in JSX only */
+import {
+  RecordPageFrame,
+  RecordPageLoading,
+  RecordPageNotFound,
+  RecordPageBody,
+  RecordBackLink,
+  RecordTitle,
+} from '../shared/RecordPageShell.jsx';
+/* eslint-enable no-unused-vars */
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
@@ -315,39 +325,17 @@ export default function SheepDailyPage({sb, fmt, authState, Header}) {
   }
 
   if (loading) {
-    return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>
-      </div>
-    );
+    return <RecordPageLoading Header={Header} />;
   }
 
   if (!record) {
     return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24}}>
-          <button
-            type="button"
-            onClick={() => navigate('/sheep/dailys')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            ← Back to Daily Reports
-          </button>
-          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>
-            Daily report not found. It may have been deleted.
-          </div>
-        </div>
-      </div>
+      <RecordPageNotFound
+        Header={Header}
+        backLabel="Back to Daily Reports"
+        onBack={() => navigate('/sheep/dailys')}
+        message="Daily report not found. It may have been deleted."
+      />
     );
   }
 
@@ -362,36 +350,13 @@ export default function SheepDailyPage({sb, fmt, authState, Header}) {
   }, {});
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-      {Header && <Header />}
-      <div style={{maxWidth: 800, margin: '0 auto', padding: '12px 16px'}}>
-        <div style={{marginBottom: 12}}>
-          <button
-            type="button"
-            onClick={() => navigate('/sheep/dailys')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-              fontWeight: 500,
-            }}
-          >
-            ← Back to Daily Reports
-          </button>
-        </div>
+    <RecordPageFrame Header={Header}>
+      <RecordPageBody>
+        <RecordBackLink label="Back to Daily Reports" onBack={() => navigate('/sheep/dailys')} />
 
         <RecordSequenceNav seq={recordSeq} currentId={recordId} onNavigate={navigateSeq} />
 
-        <h1
-          data-record-title="1"
-          style={{fontSize: 28, fontWeight: 700, color: '#111827', margin: '0 0 12px', lineHeight: 1.2}}
-        >
-          {entityLabel}
-        </h1>
+        <RecordTitle>{entityLabel}</RecordTitle>
 
         {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
 
@@ -602,7 +567,7 @@ export default function SheepDailyPage({sb, fmt, authState, Header}) {
           entityId={record.id}
           entityLabel={entityLabel}
         />
-      </div>
-    </div>
+      </RecordPageBody>
+    </RecordPageFrame>
   );
 }

@@ -5,6 +5,16 @@ import CowDetail from './CowDetail.jsx';
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+/* eslint-disable no-unused-vars -- shell primitives are used in JSX only */
+import {
+  RecordPageFrame,
+  RecordPageLoading,
+  RecordPageNotFound,
+  RecordPageBody,
+  RecordBackLink,
+  RecordTitle,
+} from '../shared/RecordPageShell.jsx';
+/* eslint-enable no-unused-vars */
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
@@ -244,39 +254,17 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
   }
 
   if (loading) {
-    return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>
-      </div>
-    );
+    return <RecordPageLoading Header={Header} />;
   }
 
   if (!cow) {
     return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24}}>
-          <button
-            type="button"
-            onClick={() => navigate('/cattle/herds')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            ← Back to Herds
-          </button>
-          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>
-            Cattle record not found. It may have been deleted.
-          </div>
-        </div>
-      </div>
+      <RecordPageNotFound
+        Header={Header}
+        backLabel="Back to Herds"
+        onBack={() => navigate('/cattle/herds')}
+        message="Cattle record not found. It may have been deleted."
+      />
     );
   }
 
@@ -286,42 +274,13 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
   });
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-      {Header && <Header />}
-      <div data-cattle-animal-page="1" style={{maxWidth: 800, margin: '0 auto', padding: '12px 16px'}}>
-        <div style={{marginBottom: 12}}>
-          <button
-            type="button"
-            onClick={() => navigate('/cattle/herds')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-              fontWeight: 500,
-            }}
-          >
-            ← Back to Herds
-          </button>
-        </div>
+    <RecordPageFrame Header={Header}>
+      <RecordPageBody data-cattle-animal-page="1">
+        <RecordBackLink label="Back to Herds" onBack={() => navigate('/cattle/herds')} />
 
         <RecordSequenceNav seq={recordSeq} currentId={cattleId} onNavigate={navigateSeq} />
 
-        <h1
-          data-record-title="1"
-          style={{
-            fontSize: 28,
-            fontWeight: 700,
-            color: '#111827',
-            margin: '0 0 12px',
-            lineHeight: 1.2,
-          }}
-        >
-          {cow.tag ? '#' + cow.tag : 'Untagged animal'}
-        </h1>
+        <RecordTitle>{cow.tag ? '#' + cow.tag : 'Untagged animal'}</RecordTitle>
 
         {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
 
@@ -365,7 +324,7 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
           entityId={cow.id}
           entityLabel={cow.tag || cow.id}
         />
-      </div>
-    </div>
+      </RecordPageBody>
+    </RecordPageFrame>
   );
 }

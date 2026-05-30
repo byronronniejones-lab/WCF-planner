@@ -79,8 +79,11 @@ describe('SheepAnimalPage — app header', () => {
   it('accepts Header prop', () => {
     expect(animalPage).toMatch(/SheepAnimalPage\(\{[^}]*Header/);
   });
-  it('renders Header component', () => {
-    expect(animalPage).toContain('{Header && <Header />}');
+  it('renders Header through the shared record-page chrome', () => {
+    // The literal {Header && <Header />} now lives in RecordPageShell; the page
+    // hands Header to the shared frame/loading/not-found primitives.
+    expect(animalPage).toContain('RecordPageFrame');
+    expect(animalPage).toContain('Header={Header}');
   });
 });
 
@@ -116,8 +119,9 @@ describe('SheepAnimalPage — record page title', () => {
   it('shows tag as the page title', () => {
     expect(animalPage).toContain("animal.tag ? '#' + animal.tag : 'Untagged animal'");
   });
-  it('has a data-record-title marker', () => {
-    expect(animalPage).toContain('data-record-title');
+  it('renders the title through the shared RecordTitle', () => {
+    // The data-record-title marker now lives in RecordPageShell's RecordTitle.
+    expect(animalPage).toContain('<RecordTitle>');
   });
 });
 

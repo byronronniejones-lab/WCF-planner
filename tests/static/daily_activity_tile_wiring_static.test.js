@@ -143,11 +143,14 @@ describe('Daily record pages — structure', () => {
       expect(p.src).not.toContain("from '../shared/CommentsSection.jsx'");
       expect(p.src).not.toContain("from '../shared/RecordActivityLog.jsx'");
     });
-    it(`${p.name} has data-record-title`, () => {
-      expect(p.src).toContain('data-record-title');
+    it(`${p.name} renders the title through the shared RecordTitle`, () => {
+      // The data-record-title marker now lives in RecordPageShell's RecordTitle.
+      expect(p.src).toContain('<RecordTitle>');
     });
-    it(`${p.name} renders Header`, () => {
-      expect(p.src).toContain('{Header && <Header />}');
+    it(`${p.name} renders Header through the shared record-page chrome`, () => {
+      // The literal {Header && <Header />} now lives in RecordPageShell.
+      expect(p.src).toContain('RecordPageFrame');
+      expect(p.src).toContain('Header={Header}');
     });
     it(`${p.name} uses softDeleteDailyReport`, () => {
       expect(p.src).toContain('softDeleteDailyReport');
