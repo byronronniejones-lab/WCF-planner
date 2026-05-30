@@ -2345,23 +2345,35 @@ function App() {
         if (store['ppp-feed-orders-v1']) setFeedOrders(store['ppp-feed-orders-v1']);
         if (store['ppp-pig-feed-inventory-v1']) setPigFeedInventory(store['ppp-pig-feed-inventory-v1']);
         if (store['ppp-poultry-feed-inventory-v1']) setPoultryFeedInventory(store['ppp-poultry-feed-inventory-v1']);
-        // Load layer batches and housings from dedicated tables, THEN sync webform config
+        // Load layer batches and housings from dedicated tables, THEN sync
+        // webform config. Captured as a named promise and awaited before
+        // setDataLoaded(true) (see the final boot await) so layer routes never
+        // render with empty layerBatches/layerHousings on a cold direct load.
+        // Kept parallel with the daily loads — it is added to the existing
+        // await, not serialized. A query error falls back to empty arrays so
+        // boot still completes (dataLoaded must not strand on Loading).
         var lbPromise = sb.from('layer_batches').select('*').order('name');
         var lhPromise = sb.from('layer_housings').select('*').order('start_date');
-        Promise.all([lbPromise, lhPromise]).then(function (results) {
-          var lbData = results[0].data || [];
-          var lhData2 = results[1].data || [];
-          setLayerBatches(lbData);
-          setLayerHousings(lhData2);
-          // Now sync webform config with actual layer data available
-          syncWebformConfig(
-            store['ppp-webforms-v1'] || null,
-            store['ppp-feeders-v1'] || null,
-            store['ppp-v4'] || [],
-            store['ppp-layer-groups-v1'] || [],
-            lhData2,
-          );
-        });
+        var layerDataPromise = Promise.all([lbPromise, lhPromise])
+          .then(function (results) {
+            var lbData = results[0].data || [];
+            var lhData2 = results[1].data || [];
+            setLayerBatches(lbData);
+            setLayerHousings(lhData2);
+            // Now sync webform config with actual layer data available
+            syncWebformConfig(
+              store['ppp-webforms-v1'] || null,
+              store['ppp-feeders-v1'] || null,
+              store['ppp-v4'] || [],
+              store['ppp-layer-groups-v1'] || [],
+              lhData2,
+            );
+          })
+          .catch(function (e) {
+            console.warn('layer data load error:', e && e.message ? e.message : e);
+            setLayerBatches([]);
+            setLayerHousings([]);
+          });
         // Sync broiler groups + per-batch schooner metadata to webform_config
         // for anon webform access. Both keys are derived from the same filtered
         // list (status === 'active') via buildBroilerPublicMirror so they
@@ -2435,7 +2447,15 @@ function App() {
           console.warn('poultry_dailys load error:', e.message);
           return [];
         });
-      const [pigDailysRows, poultryDailysRows] = await Promise.all([pigDailysPromise, poultryDailysPromise]);
+      // Await the layer load alongside the dailys so dataLoaded is not flipped
+      // until layerBatches/layerHousings are actually populated. layerDataPromise
+      // catches its own errors (resolves to undefined), so a layer query failure
+      // cannot reject this Promise.all or strand boot on "Loading your farm data".
+      const [pigDailysRows, poultryDailysRows] = await Promise.all([
+        pigDailysPromise,
+        poultryDailysPromise,
+        layerDataPromise,
+      ]);
       if (pigDailysRows) setPigDailys(pigDailysRows);
       setBroilerDailys(poultryDailysRows);
       const labels = [...new Set(poultryDailysRows.map((d) => d.batch_label).filter(Boolean))].sort();

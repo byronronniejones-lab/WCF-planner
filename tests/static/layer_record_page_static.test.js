@@ -50,9 +50,13 @@ describe('Header — direct-route allowlist', () => {
 });
 
 describe('LayerBatchPage — record page structure', () => {
-  it('loads layer_batches by id', () => {
-    expect(batchPage).toContain("from('layer_batches')");
-    expect(batchPage).toContain(".eq('id', batchId)");
+  it('derives the batch from the layerBatches prop, not a by-id load gate', () => {
+    // main.jsx guarantees layerBatches is loaded before layer routes render, so
+    // the record/not-found gate must read the prop — never an empty by-id read.
+    expect(batchPage).toMatch(
+      /const batch = React\.useMemo\(\s*\(\) => \(layerBatches \|\| \[\]\)\.find\(\(b\) => b\.id === batchId\)/,
+    );
+    expect(batchPage).not.toContain(".eq('id', batchId).maybeSingle()");
   });
   it('renders the title through the shared RecordTitle', () => {
     // data-record-title now lives in RecordPageShell's RecordTitle.
@@ -154,10 +158,14 @@ describe('LayerBatchPage — + Add Housing helper navigates to record page', () 
 });
 
 describe('LayerHousingPage — record page structure', () => {
-  it('loads layer_housings by id and resolves parent batch', () => {
-    expect(housingPage).toContain("from('layer_housings')");
-    expect(housingPage).toContain(".eq('id', housingId)");
-    expect(housingPage).toContain("from('layer_batches')");
+  it('derives housing from layerHousings and parent batch from layerBatches, not a by-id load gate', () => {
+    expect(housingPage).toMatch(
+      /const housing = React\.useMemo\([\s\S]*?\(layerHousings \|\| \[\]\)\.find\(\(h\) => h\.id === housingId\)/,
+    );
+    expect(housingPage).toMatch(
+      /const parentBatch = React\.useMemo\([\s\S]*?\(layerBatches \|\| \[\]\)\.find\(\(b\) => b\.id === bid\)/,
+    );
+    expect(housingPage).not.toContain(".eq('id', housingId).maybeSingle()");
   });
   it('renders the title through the shared RecordTitle', () => {
     // data-record-title now lives in RecordPageShell's RecordTitle.

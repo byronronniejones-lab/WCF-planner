@@ -74,7 +74,13 @@ export default function LayerBatchPage({
   const role = authState && authState.role;
   const canEdit = role === 'admin' || role === 'management';
 
-  const [batch, setBatch] = React.useState(null);
+  // Resolve the batch from the already-loaded layerBatches prop. main.jsx
+  // guarantees layerBatches is populated before any layer route renders, so this
+  // never races an empty by-id read on a cold direct load to /layer/batches/<id>.
+  const batch = React.useMemo(
+    () => (layerBatches || []).find((b) => b.id === batchId) || null,
+    [layerBatches, batchId],
+  );
   const [rawLayerDailys, setRawLayerDailys] = React.useState([]);
   const [rawEggDailys, setRawEggDailys] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
@@ -119,9 +125,6 @@ export default function LayerBatchPage({
       }
       return all;
     }
-    const bR = await sb.from('layer_batches').select('*').eq('id', batchId).maybeSingle();
-    if (bR.data) setBatch(bR.data);
-    else setBatch(null);
     const [ld, ed] = await Promise.all([
       fetchAll('layer_dailys', 'batch_label,batch_id,feed_lbs,grit_lbs,mortality_count,layer_count,date,feed_type'),
       fetchAll(
@@ -135,7 +138,6 @@ export default function LayerBatchPage({
   }
 
   React.useEffect(() => {
-    setBatch(null);
     setLoading(true);
     setNotice(null);
     loadAll();
@@ -183,7 +185,6 @@ export default function LayerBatchPage({
       setErr('Could not save: ' + error.message);
       return false;
     }
-    setBatch(rec);
     if (typeof setLayerBatches === 'function') {
       setLayerBatches((prev) => {
         const exists = prev.find((b) => b.id === rec.id);

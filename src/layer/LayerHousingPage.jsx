@@ -57,8 +57,18 @@ export default function LayerHousingPage({
   const role = authState && authState.role;
   const canEdit = role === 'admin' || role === 'management';
 
-  const [housing, setHousing] = React.useState(null);
-  const [parentBatch, setParentBatch] = React.useState(null);
+  // Resolve housing + parent batch from the already-loaded props. main.jsx
+  // guarantees layerHousings/layerBatches are populated before any layer route
+  // renders, so this never races an empty by-id read on a cold direct load to
+  // /layer/housings/<id>.
+  const housing = React.useMemo(
+    () => (layerHousings || []).find((h) => h.id === housingId) || null,
+    [layerHousings, housingId],
+  );
+  const parentBatch = React.useMemo(() => {
+    const bid = housing && housing.batch_id;
+    return bid ? (layerBatches || []).find((b) => b.id === bid) || null : null;
+  }, [layerBatches, housing]);
   const [rawLayerDailys, setRawLayerDailys] = React.useState([]);
   const [rawEggDailys, setRawEggDailys] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
@@ -92,16 +102,6 @@ export default function LayerHousingPage({
       }
       return all;
     }
-    const hR = await sb.from('layer_housings').select('*').eq('id', housingId).maybeSingle();
-    if (hR.data) {
-      setHousing(hR.data);
-      if (hR.data.batch_id) {
-        const bR = await sb.from('layer_batches').select('*').eq('id', hR.data.batch_id).maybeSingle();
-        if (bR.data) setParentBatch(bR.data);
-      }
-    } else {
-      setHousing(null);
-    }
     const [ld, ed] = await Promise.all([
       fetchAll('layer_dailys', 'batch_label,batch_id,feed_lbs,grit_lbs,mortality_count,layer_count,date,feed_type'),
       fetchAll(
@@ -115,8 +115,6 @@ export default function LayerHousingPage({
   }
 
   React.useEffect(() => {
-    setHousing(null);
-    setParentBatch(null);
     setLoading(true);
     setNotice(null);
     loadAll();
@@ -181,7 +179,6 @@ export default function LayerHousingPage({
       setErr('Could not save: ' + error.message);
       return false;
     }
-    setHousing(rec);
     if (typeof setLayerHousings === 'function') {
       const nextHousings = (layerHousings || []).map((x) => (x.id === rec.id ? rec : x));
       setLayerHousings(nextHousings);
@@ -235,7 +232,6 @@ export default function LayerHousingPage({
       setNotice({kind: 'error', message: 'Could not retire: ' + error.message});
       return;
     }
-    setHousing(updated);
     if (typeof setLayerHousings === 'function') {
       const nextHousings = (layerHousings || []).map((x) => (x.id === updated.id ? updated : x));
       setLayerHousings(nextHousings);
