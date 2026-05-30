@@ -54,8 +54,9 @@ describe('LayerBatchPage — record page structure', () => {
     expect(batchPage).toContain("from('layer_batches')");
     expect(batchPage).toContain(".eq('id', batchId)");
   });
-  it('has data-record-title marker', () => {
-    expect(batchPage).toContain('data-record-title="1"');
+  it('renders the title through the shared RecordTitle', () => {
+    // data-record-title now lives in RecordPageShell's RecordTitle.
+    expect(batchPage).toContain('<RecordTitle');
   });
   it('renders RecordCollaborationSection with layer.batch entityType', () => {
     expect(batchPage).toContain('RecordCollaborationSection');
@@ -158,8 +159,9 @@ describe('LayerHousingPage — record page structure', () => {
     expect(housingPage).toContain(".eq('id', housingId)");
     expect(housingPage).toContain("from('layer_batches')");
   });
-  it('has data-record-title marker', () => {
-    expect(housingPage).toContain('data-record-title="1"');
+  it('renders the title through the shared RecordTitle', () => {
+    // data-record-title now lives in RecordPageShell's RecordTitle.
+    expect(housingPage).toContain('<RecordTitle');
   });
   it('renders RecordCollaborationSection with layer.housing entityType', () => {
     expect(housingPage).toContain('RecordCollaborationSection');

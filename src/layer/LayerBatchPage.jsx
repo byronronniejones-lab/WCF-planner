@@ -7,6 +7,16 @@ import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
 import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
+/* eslint-disable no-unused-vars -- shell primitives are used in JSX only */
+import {
+  RecordPageFrame,
+  RecordPageLoading,
+  RecordPageNotFound,
+  RecordPageBody,
+  RecordBackLink,
+  RecordTitle,
+} from '../shared/RecordPageShell.jsx';
+/* eslint-enable no-unused-vars */
 import {S} from '../lib/styles.js';
 import {toISO, addDays} from '../lib/dateUtils.js';
 import {BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps} from '../lib/broiler.js';
@@ -325,37 +335,17 @@ export default function LayerBatchPage({
   }
 
   if (loading) {
-    return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>
-      </div>
-    );
+    return <RecordPageLoading Header={Header} />;
   }
 
   if (!batch) {
     return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24}}>
-          <button
-            type="button"
-            onClick={() => navigate('/layer/batches')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            ← Back to Layer Batches
-          </button>
-          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>Batch not found.</div>
-        </div>
-      </div>
+      <RecordPageNotFound
+        Header={Header}
+        backLabel="Back to Layer Batches"
+        onBack={() => navigate('/layer/batches')}
+        message="Batch not found."
+      />
     );
   }
 
@@ -474,34 +464,16 @@ export default function LayerBatchPage({
   }
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-      {Header && <Header />}
-      <div style={{maxWidth: 1100, margin: '0 auto', padding: '12px 16px'}}>
-        <div style={{marginBottom: 12}}>
-          <button
-            type="button"
-            onClick={() => navigate('/layer/batches')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-              fontWeight: 500,
-            }}
-          >
-            ← Back to Layer Batches
-          </button>
-        </div>
+    <RecordPageFrame Header={Header}>
+      <RecordPageBody maxWidth={1100}>
+        <RecordBackLink label="Back to Layer Batches" onBack={() => navigate('/layer/batches')} />
 
         <RecordSequenceNav seq={recordSeq} currentId={batchId} onNavigate={navigateSeq} />
 
         <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12}}>
-          <h1 data-record-title="1" style={{fontSize: 24, fontWeight: 700, color: '#111827', margin: 0}}>
+          <RecordTitle fontSize={24} margin={0}>
             {batch.name}
-          </h1>
+          </RecordTitle>
           <span
             style={{
               fontSize: 10,
@@ -943,7 +915,7 @@ export default function LayerBatchPage({
           entityId={batch.id}
           entityLabel={batch.name}
         />
-      </div>
+      </RecordPageBody>
 
       {/* + Add Housing helper modal */}
       {showAddHousing && (
@@ -1513,6 +1485,6 @@ export default function LayerBatchPage({
           </div>
         </div>
       )}
-    </div>
+    </RecordPageFrame>
   );
 }

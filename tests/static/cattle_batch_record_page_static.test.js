@@ -45,8 +45,9 @@ describe('CattleBatchPage — record page structure', () => {
     expect(pageSrc).toContain("from('cattle_processing_batches')");
     expect(pageSrc).toContain(".eq('id', batchId)");
   });
-  it('has data-record-title marker', () => {
-    expect(pageSrc).toContain('data-record-title="1"');
+  it('renders the title through the shared RecordTitle', () => {
+    // data-record-title now lives in RecordPageShell's RecordTitle.
+    expect(pageSrc).toContain('<RecordTitle');
   });
   it('renders RecordCollaborationSection with cattle.processing entityType', () => {
     expect(pageSrc).toContain('RecordCollaborationSection');

@@ -8,7 +8,8 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 const shell = fs.readFileSync(path.join(ROOT, 'src/shared/RecordPageShell.jsx'), 'utf8');
 
-// Every operational record page migrated onto the shared chrome in this slice.
+// Every operational record page migrated onto the shared chrome (CP1 animal +
+// daily pages, CP2 batch/processing/housing pages).
 const pages = [
   {name: 'CattleAnimalPage', path: 'src/cattle/CattleAnimalPage.jsx'},
   {name: 'SheepAnimalPage', path: 'src/sheep/SheepAnimalPage.jsx'},
@@ -18,6 +19,11 @@ const pages = [
   {name: 'PigDailyPage', path: 'src/pig/PigDailyPage.jsx'},
   {name: 'CattleDailyPage', path: 'src/cattle/CattleDailyPage.jsx'},
   {name: 'SheepDailyPage', path: 'src/sheep/SheepDailyPage.jsx'},
+  {name: 'CattleBatchPage', path: 'src/cattle/CattleBatchPage.jsx'},
+  {name: 'SheepBatchPage', path: 'src/sheep/SheepBatchPage.jsx'},
+  {name: 'LayerBatchPage', path: 'src/layer/LayerBatchPage.jsx'},
+  {name: 'LayerHousingPage', path: 'src/layer/LayerHousingPage.jsx'},
+  {name: 'BroilerBatchPage', path: 'src/broiler/BroilerBatchPage.jsx'},
 ];
 const srcs = {};
 for (const p of pages) {
@@ -49,6 +55,10 @@ describe('RecordPageShell — owns the shared chrome markup', () => {
   });
   it('owns the data-record-title marker', () => {
     expect(shell).toContain('data-record-title="1"');
+  });
+  it('makes RecordTitle fontSize and margin configurable with CP1 defaults', () => {
+    // Animal/daily pages keep 28 / '0 0 12px'; batch title rows opt into 24 / 0.
+    expect(shell).toMatch(/RecordTitle\(\{[^}]*fontSize = 28[^}]*margin = '0 0 12px'[^}]*\}\)/);
   });
   it('defaults the content body to maxWidth 800', () => {
     expect(shell).toContain('maxWidth = 800');

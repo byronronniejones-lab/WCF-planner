@@ -19,6 +19,16 @@ import {sb} from '../lib/supabase.js';
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import BatchForm from './BatchForm.jsx';
+/* eslint-disable no-unused-vars -- shell primitives are used in JSX only */
+import {
+  RecordPageFrame,
+  RecordPageLoading,
+  RecordPageNotFound,
+  RecordPageBody,
+  RecordBackLink,
+  RecordTitle,
+} from '../shared/RecordPageShell.jsx';
+/* eslint-enable no-unused-vars */
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 
@@ -142,37 +152,17 @@ export default function BroilerBatchPage({
   }
 
   if (!Array.isArray(batches) || batches.length === 0) {
-    return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14}}>Loading…</div>
-      </div>
-    );
+    return <RecordPageLoading Header={Header} />;
   }
 
   if (!batch) {
     return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-        {Header && <Header />}
-        <div style={{padding: 24}}>
-          <button
-            type="button"
-            onClick={handleClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            ← Back to Broiler Batches
-          </button>
-          <div style={{marginTop: 16, color: '#6b7280', fontSize: 14}}>Batch not found.</div>
-        </div>
-      </div>
+      <RecordPageNotFound
+        Header={Header}
+        backLabel="Back to Broiler Batches"
+        onBack={handleClose}
+        message="Batch not found."
+      />
     );
   }
 
@@ -183,32 +173,14 @@ export default function BroilerBatchPage({
   const formReady = editId === batch.id;
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
-      {Header && <Header />}
-      <div style={{maxWidth: 1100, margin: '0 auto', padding: '12px 16px'}}>
-        <div style={{marginBottom: 12}}>
-          <button
-            type="button"
-            onClick={handleClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1d4ed8',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              padding: 0,
-              fontWeight: 500,
-            }}
-          >
-            ← Back to Broiler Batches
-          </button>
-        </div>
+    <RecordPageFrame Header={Header}>
+      <RecordPageBody maxWidth={1100}>
+        <RecordBackLink label="Back to Broiler Batches" onBack={handleClose} />
 
         <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12}}>
-          <h1 data-record-title="1" style={{fontSize: 24, fontWeight: 700, color: '#111827', margin: 0}}>
+          <RecordTitle fontSize={24} margin={0}>
             {batch.name}
-          </h1>
+          </RecordTitle>
           <span
             style={{
               fontSize: 10,
@@ -252,7 +224,7 @@ export default function BroilerBatchPage({
           entityId={batch.name}
           entityLabel={batch.name}
         />
-      </div>
-    </div>
+      </RecordPageBody>
+    </RecordPageFrame>
   );
 }

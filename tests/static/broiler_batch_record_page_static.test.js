@@ -79,8 +79,9 @@ describe('BroilerBatchPage — record page structure', () => {
     expect(pageSrc).not.toMatch(/entityId=\{batch\.id\}/);
     expect(pageSrc).not.toMatch(/\/broiler\/batches\/' \+ encodeURIComponent\(batch\.id\)/);
   });
-  it('has data-record-title marker', () => {
-    expect(pageSrc).toContain('data-record-title="1"');
+  it('renders the title through the shared RecordTitle', () => {
+    // data-record-title now lives in RecordPageShell's RecordTitle.
+    expect(pageSrc).toContain('<RecordTitle');
   });
   it('renders RecordCollaborationSection with broiler.batch entityType', () => {
     expect(pageSrc).toContain('RecordCollaborationSection');
@@ -138,8 +139,10 @@ describe('BroilerBatchPage — showForm cleanup on leave', () => {
     expect(pageSrc).toMatch(/handleClose[\s\S]*?setShowForm\(false\)[\s\S]*?navigate\('\/broiler\/batches'\)/);
   });
   it('back link buttons route through handleClose, not bare navigate', () => {
+    // Back link/not-found now use the shared RecordBackLink/RecordPageNotFound;
+    // both still route through handleClose (which clears showForm) via onBack.
     expect(pageSrc).not.toMatch(/onClick=\{\(\)\s*=>\s*navigate\('\/broiler\/batches'\)\}/);
-    expect(pageSrc).toMatch(/onClick=\{handleClose\}/);
+    expect(pageSrc).toMatch(/onBack=\{handleClose\}/);
   });
   it('unmount effect clears showForm so Header/browser-Back navigation is safe', () => {
     expect(pageSrc).toMatch(/useEffect\([\s\S]*?return\s*\(\)\s*=>\s*\{\s*setShowForm\(false\);\s*\};[\s\S]*?\[\]\)/);
