@@ -187,7 +187,11 @@ const LayerBatchesHub = ({
   return (
     <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
       <Header />
-      <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}} data-layer-batches-hub>
+      <div
+        style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}
+        data-layer-batches-hub
+        data-layer-batches-loaded={loading ? 'false' : 'true'}
+      >
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}}>
           <div style={{fontSize: 20, fontWeight: 700, color: '#111827'}}>

@@ -1,7 +1,16 @@
 import {test, expect} from './fixtures.js';
+import {
+  waitForLayerBatchesHubLoaded,
+  waitForLayerBatchRecordLoaded,
+  waitForLayerHousingRecordLoaded,
+} from './helpers/layerReady.js';
 
 // CP4 — record-page sequence navigation for layer.batch (/layer/batches/<id>)
 // and the NESTED layer.housing (/layer/housings/<id>, reached from a batch page).
+//
+// Each navigation waits on a real per-view readiness marker (see
+// helpers/layerReady.js) before asserting, so the spec no longer races a cold
+// Vite compile + the app's farm-data load against per-assertion timeouts.
 
 async function seedLayerBatch(supabaseAdmin, {id, name, status = 'active'}) {
   const {error} = await supabaseAdmin.from('layer_batches').insert({id, name, status});
@@ -26,10 +35,13 @@ test.describe('Layer batch record-page sequence navigation', () => {
     await seedLayerBatch(supabaseAdmin, {id: 'lb-2', name: 'LB-Two'});
 
     await page.goto('/layer/batches');
-    await expect(page.locator('[data-layer-batch-tile]').first()).toBeVisible({timeout: 15_000});
+    await waitForLayerBatchesHubLoaded(page);
+    // Both seeded batches must be present before clicking the first.
+    await expect(page.locator('[data-layer-batch-tile]')).toHaveCount(2);
     await page.locator('[data-layer-batch-tile]').first().click();
 
     await expect(page).toHaveURL(/\/layer\/batches\/lb-/, {timeout: 10_000});
+    await waitForLayerBatchRecordLoaded(page);
     await expect(page.locator('[data-record-seq-nav="1"]')).toBeVisible();
     await expect(page.locator('[data-record-seq-position="1"]')).toHaveText('1 of 2');
     await expect(page.locator('[data-record-seq-prev="1"]')).toBeDisabled();
@@ -39,7 +51,8 @@ test.describe('Layer batch record-page sequence navigation', () => {
     expect(nextLabel).toMatch(/^LB-/);
 
     await nextBtn.click();
-    await expect(page.locator('[data-record-title="1"]')).toHaveText(nextLabel, {timeout: 10_000});
+    await waitForLayerBatchRecordLoaded(page);
+    await expect(page.locator('[data-record-title="1"]')).toHaveText(nextLabel);
     await expect(page.locator('[data-record-seq-position="1"]')).toHaveText('2 of 2');
   });
 
@@ -49,7 +62,8 @@ test.describe('Layer batch record-page sequence navigation', () => {
     await seedLayerBatch(supabaseAdmin, {id: 'lb-2', name: 'LB-Two'});
 
     await page.goto('/layer/batches/lb-1');
-    await expect(page.locator('[data-record-title="1"]')).toHaveText('LB-One', {timeout: 15_000});
+    await waitForLayerBatchRecordLoaded(page);
+    await expect(page.locator('[data-record-title="1"]')).toHaveText('LB-One');
     await expect(page.locator('[data-record-seq-nav="1"]')).toHaveCount(0);
   });
 });
@@ -68,10 +82,12 @@ test.describe('Layer housing record-page sequence navigation (nested)', () => {
 
     // Open the batch record page directly (no batch sequence), then click a housing.
     await page.goto('/layer/batches/lb-1');
-    await expect(page.locator('[data-layer-housing-tile]').first()).toBeVisible({timeout: 15_000});
+    await waitForLayerBatchRecordLoaded(page);
+    await expect(page.locator('[data-layer-housing-tile]')).toHaveCount(3);
     await page.locator('[data-layer-housing-tile]').first().click();
 
     await expect(page).toHaveURL(/\/layer\/housings\/lh-/, {timeout: 10_000});
+    await waitForLayerHousingRecordLoaded(page);
     await expect(page.locator('[data-record-seq-nav="1"]')).toBeVisible();
     await expect(page.locator('[data-record-seq-position="1"]')).toHaveText('1 of 3');
     await expect(page.locator('[data-record-seq-prev="1"]')).toBeDisabled();
@@ -81,8 +97,9 @@ test.describe('Layer housing record-page sequence navigation (nested)', () => {
     expect(nextLabel).toMatch(/^Barn /);
 
     await nextBtn.click();
+    await waitForLayerHousingRecordLoaded(page);
     // Housing title is "🏠 <housing_name>".
-    await expect(page.locator('[data-record-title="1"]')).toContainText(nextLabel, {timeout: 10_000});
+    await expect(page.locator('[data-record-title="1"]')).toContainText(nextLabel);
     await expect(page.locator('[data-record-seq-position="1"]')).toHaveText('2 of 3');
     await expect(page.locator('[data-record-seq-prev="1"]')).toBeEnabled();
   });
@@ -94,7 +111,8 @@ test.describe('Layer housing record-page sequence navigation (nested)', () => {
     await seedHousing(supabaseAdmin, {id: 'lh-2', batchId: 'lb-1', name: 'Barn B'});
 
     await page.goto('/layer/housings/lh-1');
-    await expect(page.locator('[data-record-title="1"]')).toContainText('Barn A', {timeout: 15_000});
+    await waitForLayerHousingRecordLoaded(page);
+    await expect(page.locator('[data-record-title="1"]')).toContainText('Barn A');
     await expect(page.locator('[data-record-seq-nav="1"]')).toHaveCount(0);
   });
 });

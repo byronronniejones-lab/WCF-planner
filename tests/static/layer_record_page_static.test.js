@@ -246,6 +246,19 @@ describe('LayerBatchPage + LayerHousingPage — setLayerHousings shape', () => {
   });
 });
 
+describe('Layer readiness markers — CI determinism (see helpers/layerReady.js)', () => {
+  it('hub exposes data-layer-batches-loaded keyed on its load state', () => {
+    expect(listSrc).toMatch(/data-layer-batches-loaded=\{loading \? 'false' : 'true'\}/);
+  });
+  it('batch record page exposes data-layer-batch-record-loaded only on the loaded body', () => {
+    // Marker rides RecordPageBody, which only renders past the loading/not-found guards.
+    expect(batchPage).toMatch(/<RecordPageBody[^>]*data-layer-batch-record-loaded="true"/);
+  });
+  it('housing record page exposes data-layer-housing-record-loaded only on the loaded body', () => {
+    expect(housingPage).toMatch(/<RecordPageBody[^>]*data-layer-housing-record-loaded="true"/);
+  });
+});
+
 describe('LayerBatchesView — cleaned hub', () => {
   it('has LayerBatchesRouter that delegates to LayerBatchPage and LayerHousingPage', () => {
     expect(listSrc).toContain('LayerBatchesRouter');

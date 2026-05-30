@@ -465,7 +465,7 @@ export default function LayerBatchPage({
 
   return (
     <RecordPageFrame Header={Header}>
-      <RecordPageBody maxWidth={1100}>
+      <RecordPageBody maxWidth={1100} data-layer-batch-record-loaded="true">
         <RecordBackLink label="Back to Layer Batches" onBack={() => navigate('/layer/batches')} />
 
         <RecordSequenceNav seq={recordSeq} currentId={batchId} onNavigate={navigateSeq} />

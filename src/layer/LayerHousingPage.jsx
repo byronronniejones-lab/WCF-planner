@@ -279,7 +279,7 @@ export default function LayerHousingPage({
 
   return (
     <RecordPageFrame Header={Header}>
-      <RecordPageBody maxWidth={900}>
+      <RecordPageBody maxWidth={900} data-layer-housing-record-loaded="true">
         <RecordBackLink label={backLabel} onBack={() => navigate(backTarget)} />
 
         <RecordSequenceNav seq={recordSeq} currentId={housingId} onNavigate={navigateSeq} />
