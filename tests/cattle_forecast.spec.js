@@ -45,23 +45,14 @@ async function finishCandidateCount(page) {
   return m ? Number(m[1].replace(/,/g, '')) : 0;
 }
 
-// Robust load wait. The forecast view loads its inputs once on mount (mount-once
-// useEffect), so a cold-boot raced/empty read leaves 0 finish candidates with no
-// in-page recovery — the old panel-only wait accepted that empty read. Wait for
-// real seeded data; if a mount-once load raced empty, reload to re-mount and
-// re-fetch (bounded). Warm boots load on the first attempt with no reload.
+// Robust load wait. CattleForecastView now self-heals a raced/transient
+// cold-boot empty read in source (bounded retry in its mount effect), so the
+// test no longer reloads to re-mount and re-fetch. Still wait on REAL seeded
+// data (finish candidates > 0), not just shell/panel render — the panel
+// renders even on a raced empty read.
 async function waitForForecastData(page) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await waitForForecastLoaded(page);
-    try {
-      await expect.poll(() => finishCandidateCount(page), {timeout: 12_000}).toBeGreaterThan(0);
-      return;
-    } catch {
-      if (attempt < 2) await page.reload();
-    }
-  }
-  // Surface a clear failure if still empty after retries.
-  expect(await finishCandidateCount(page)).toBeGreaterThan(0);
+  await waitForForecastLoaded(page);
+  await expect.poll(() => finishCandidateCount(page), {timeout: 15_000}).toBeGreaterThan(0);
 }
 
 // F-HIDE projects into a forecast year that may differ from the default

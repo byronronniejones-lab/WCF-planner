@@ -10,7 +10,7 @@
 import React from 'react';
 import UsersModal from '../auth/UsersModal.jsx';
 import CowDetail from './CowDetail.jsx';
-import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
+import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
 import {
   buildForecast,
   monthLabel,
@@ -192,7 +192,11 @@ const CattleForecastView = ({
     return candidates.some((c) => c.includes(tagSearchTrim));
   }
 
-  async function loadAll() {
+  // Fetch every forecast input in one round. Throws if any of the
+  // throw-on-error loaders (settings/heifer/hidden) fails OR any direct read
+  // returns a PostgREST response error, so callers can retry or surface the
+  // failure instead of silently rendering empty.
+  async function fetchForecastInputs() {
     const [cR, wAll, calR, comR, brR, orR, bR, s, inc, hid] = await Promise.all([
       sb.from('cattle').select('*').is('deleted_at', null).order('tag'),
       loadCattleWeighInsCached(sb),
@@ -205,24 +209,102 @@ const CattleForecastView = ({
       loadHeiferIncludes(sb),
       loadHidden(sb),
     ]);
-    if (cR.data) setCattle(cR.data);
-    setWeighIns(wAll || []);
-    if (calR.data) setCalvingRecs(calR.data);
-    if (comR.data) setComments(comR.data);
-    if (brR.data) setBreedOpts(brR.data);
-    if (orR.data) setOriginOpts(orR.data);
-    if (bR.data) setRealBatches(bR.data);
-    setSettings(s);
-    setSettingsDraft(s);
-    setIncludes(inc);
-    setHidden(hid);
+    // Direct PostgREST reads return {data, error} instead of throwing. Surface
+    // any response error as a thrown Error so a cold-boot RLS/network/PostgREST
+    // failure routes through the same bounded retry + recoverable-notice path
+    // as the throwing loaders — rather than landing as a null `data` the caller
+    // mistakes for an empty farm. A null error with an empty array stays a
+    // legit empty farm (no throw), preserving the bounded retry-then-settle.
+    const directReads = [
+      ['cattle', cR],
+      ['cattle_calving_records', calR],
+      ['cattle_comments', comR],
+      ['cattle_breeds', brR],
+      ['cattle_origins', orR],
+      ['cattle_processing_batches', bR],
+    ];
+    for (const [label, r] of directReads) {
+      if (r && r.error) throw new Error('fetchForecastInputs ' + label + ': ' + (r.error.message || r.error));
+    }
+    return {cR, wAll, calR, comR, brR, orR, bR, s, inc, hid};
+  }
+
+  // Commit a fetched payload to state. setLoading(false) here is the single
+  // honest "forecast load resolved" boundary the page renders behind.
+  function applyForecastInputs(p) {
+    if (p.cR.data) setCattle(p.cR.data);
+    setWeighIns(p.wAll || []);
+    if (p.calR.data) setCalvingRecs(p.calR.data);
+    if (p.comR.data) setComments(p.comR.data);
+    if (p.brR.data) setBreedOpts(p.brR.data);
+    if (p.orR.data) setOriginOpts(p.orR.data);
+    if (p.bR.data) setRealBatches(p.bR.data);
+    setSettings(p.s);
+    setSettingsDraft(p.s);
+    setIncludes(p.inc);
+    setHidden(p.hid);
     setLoading(false);
   }
 
+  // Single-shot reload used by the Include Heifers modal after a CowDetail
+  // save. User-initiated refresh of an already-loaded page — no cold-boot
+  // recovery needed here.
+  async function loadAll() {
+    applyForecastInputs(await fetchForecastInputs());
+  }
+
+  // Mount load WITH bounded cold-boot recovery. The forecast loads its inputs
+  // once on mount; a raced/transient cold-boot read can resolve with an empty
+  // `cattle` spine (→ 0 finish candidates) or one of the throw-on-error
+  // loaders can reject (→ stranded "Loading…" forever). Both self-heal here:
+  //  - empty core read: keep the spinner up, drop any poisoned weigh-in cache,
+  //    re-fetch after a short backoff (a genuinely empty farm settles empty
+  //    after the bounded retries — small one-time cost, no infinite loop).
+  //  - thrown read: retry on the same bounded schedule, then settle into a
+  //    recoverable error notice so the page never strands on Loading.
   useEffect(() => {
-    loadAll();
-    // loadAll captured in a stable closure — disable exhaustive-deps for the
-    // mount-once contract that matches the rest of the cattle module.
+    let cancelled = false;
+    const RETRY_BACKOFFS_MS = [350, 800];
+    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const payload = await fetchForecastInputs();
+          if (cancelled) return;
+          const coreEmpty = !(payload.cR.data && payload.cR.data.length > 0);
+          if (coreEmpty && attempt < RETRY_BACKOFFS_MS.length) {
+            // Suspicious cold-boot empty read — re-fetch fresh (clear the
+            // weigh-in cache so a co-raced empty cache can't pin us empty).
+            invalidateCattleWeighInsCache();
+            await delay(RETRY_BACKOFFS_MS[attempt]);
+            if (cancelled) return;
+            continue;
+          }
+          applyForecastInputs(payload);
+          return;
+        } catch (e) {
+          if (cancelled) return;
+          if (attempt < RETRY_BACKOFFS_MS.length) {
+            invalidateCattleWeighInsCache();
+            await delay(RETRY_BACKOFFS_MS[attempt]);
+            if (cancelled) return;
+            continue;
+          }
+          // Exhausted — never strand on Loading. Surface a recoverable error.
+          console.error('CattleForecast load failed after retries:', e);
+          setLoading(false);
+          setNotice({
+            kind: 'error',
+            message: 'Could not load forecast data. Please refresh the page. (' + (e.message || e) + ')',
+          });
+          return;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Mount-once cold-boot recovery; stable closures over sb/setters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
