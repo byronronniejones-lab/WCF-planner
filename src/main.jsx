@@ -3748,7 +3748,14 @@ function App() {
 
   // ── FARROWING RECORDS VIEW ──
   if (view === 'farrowing')
-    return React.createElement(FarrowingView, {Header, loadUsers, persistFarrowing, confirmDelete, resolveSire});
+    return React.createElement(FarrowingView, {
+      Header,
+      loadUsers,
+      persistFarrowing,
+      persistFeeders,
+      confirmDelete,
+      resolveSire,
+    });
 
   // ── BREEDING PIGS TAB ──
   if (view === 'sows')

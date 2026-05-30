@@ -331,6 +331,16 @@ export function computeSubCurrentCount(group, sub, breeders) {
 //     processingTrips[].pigCount (NOT subAttribution-based) — there is no
 //     sub-level attribution to draw from on a parent-only batch; this matches
 //     the existing parent-only render path exactly.
+// Started count for a parent feeder group. Normally gilt + boar started
+// counts; farm-born batches carry no sex split, so they fall back to the
+// neutral originalPigCount (set from alive farrowing records at creation).
+export function batchStartedCount(group) {
+  const gb = (parseInt(group && group.giltCount) || 0) + (parseInt(group && group.boarCount) || 0);
+  if (gb > 0) return gb;
+  if (group && group.farmBorn) return parseInt(group.originalPigCount) || 0;
+  return 0;
+}
+
 export function computeBatchCurrentCount(group, breeders, {latestDailyPigCount = null} = {}) {
   const subs = (group && group.subBatches) || [];
   if (subs.length > 0) {
@@ -339,7 +349,7 @@ export function computeBatchCurrentCount(group, breeders, {latestDailyPigCount =
   const parentTrips = ((group && group.processingTrips) || []).reduce((s, t) => s + (parseInt(t.pigCount) || 0), 0);
   const parentTransfers = pigTransfersForBatch(breeders, group && group.batchName).count;
   const parentMort = pigMortalityForBatch(group);
-  const parentStarted = (parseInt(group && group.giltCount) || 0) + (parseInt(group && group.boarCount) || 0);
+  const parentStarted = batchStartedCount(group);
   if (parentStarted > 0) {
     return Math.max(0, parentStarted - parentTrips - parentTransfers - parentMort);
   }

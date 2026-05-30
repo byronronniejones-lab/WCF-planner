@@ -22,6 +22,7 @@ import {
   calcAgeRange as libCalcAgeRange,
   pigSlug,
   computeBatchCurrentCount,
+  batchStartedCount,
 } from '../lib/pig.js';
 import {PLANNED_TRIP_TARGET_WEIGHT_LBS, allocatePlannedTrips, seedGlobalADG} from '../lib/pigForecast.js';
 import UsersModal from '../auth/UsersModal.jsx';
@@ -802,7 +803,7 @@ export default function PigBatchesView({
                   fontFamily: 'inherit',
                 }}
               >
-                + Add Batch
+                + Add Manual Batch
               </button>
             </div>
           </div>
@@ -973,55 +974,48 @@ export default function PigBatchesView({
                       placeholder="e.g. Group 2 Fall 2025"
                     />
                   </div>
-                  <div>
-                    <label style={S.label}>
-                      Linked breeding cycle <span style={{color: '#dc2626'}}>*</span>
-                    </label>
-                    <select
-                      value={feederForm.cycleId}
-                      onChange={(e) => updFeeder('cycleId', e.target.value)}
-                      data-feeder-cycle-select
-                    >
-                      <option value="">{'\u2014 Select \u2014'}</option>
-                      {breedingCycles
-                        .filter((c) => {
-                          // Commit 5 — hide cycles already linked to ANOTHER
-                          // pig batch. Edit mode keeps the self-batch's
-                          // cycle visible by excluding self from the link
-                          // set. Empty cycleId entries are ignored.
-                          if (!editFeederId) {
-                            // Add mode: any other batch linking this cycle hides it.
-                            return !(feederGroups || []).some((fg) => fg.cycleId === c.id);
-                          }
-                          // Edit mode: only exclude OTHER batches.
-                          return !(feederGroups || []).some((fg) => fg.id !== editFeederId && fg.cycleId === c.id);
-                        })
-                        .map((c) => {
-                          const tl = calcBreedingTimeline(c.exposureStart);
-                          return (
-                            <option key={c.id} value={c.id}>
-                              {cycleLabel(c, cycleSeqMap)} —{' '}
-                              {tl ? fmtS(tl.farrowingStart) + ' to ' + fmtS(tl.farrowingEnd) : fmtS(c.exposureStart)}
-                            </option>
-                          );
-                        })}
-                    </select>
-                    {/* Commit 5 empty-state hint: shown only in Add mode
+                  {/* Farm-born batches are created from the first farrowing record
+                      (FarrowingView), not here. Add Manual Batch offers no cycle
+                      selector; in Edit mode the linked cycle is read-only/fixed. */}
+                  {editFeederId && feederForm.cycleId && (
+                    <div>
+                      <label style={S.label}>Linked breeding cycle (fixed)</label>
+                      <select
+                        value={feederForm.cycleId}
+                        onChange={(e) => updFeeder('cycleId', e.target.value)}
+                        data-feeder-cycle-select
+                        disabled
+                      >
+                        <option value="">{'\u2014 Select \u2014'}</option>
+                        {breedingCycles
+                          .filter((c) => {
+                            // Commit 5 — hide cycles already linked to ANOTHER
+                            // pig batch. Edit mode keeps the self-batch's
+                            // cycle visible by excluding self from the link
+                            // set. Empty cycleId entries are ignored.
+                            if (!editFeederId) {
+                              // Add mode: any other batch linking this cycle hides it.
+                              return !(feederGroups || []).some((fg) => fg.cycleId === c.id);
+                            }
+                            // Edit mode: only exclude OTHER batches.
+                            return !(feederGroups || []).some((fg) => fg.id !== editFeederId && fg.cycleId === c.id);
+                          })
+                          .map((c) => {
+                            const tl = calcBreedingTimeline(c.exposureStart);
+                            return (
+                              <option key={c.id} value={c.id}>
+                                {cycleLabel(c, cycleSeqMap)} —{' '}
+                                {tl ? fmtS(tl.farrowingStart) + ' to ' + fmtS(tl.farrowingEnd) : fmtS(c.exposureStart)}
+                              </option>
+                            );
+                          })}
+                      </select>
+                      {/* Commit 5 empty-state hint: shown only in Add mode
                       when every breeding cycle is already linked. Edit
                       mode never hits this branch because the self batch's
                       own cycle stays visible. */}
-                    {!editFeederId &&
-                      breedingCycles.filter((c) => !(feederGroups || []).some((fg) => fg.cycleId === c.id)).length ===
-                        0 && (
-                        <div
-                          data-feeder-cycle-empty-hint
-                          style={{fontSize: 11, color: '#92400e', fontStyle: 'italic', marginTop: 4}}
-                        >
-                          All breeding cycles are already linked to a pig batch. Add a new breeding cycle in the
-                          Breeding tab before creating another batch.
-                        </div>
-                      )}
-                  </div>
+                    </div>
+                  )}
                   <div>
                     <label style={S.label}>
                       Status <span style={{color: '#dc2626'}}>*</span>
@@ -1285,7 +1279,8 @@ export default function PigBatchesView({
 
         {!recordMode && feederGroups.filter((g) => g.status !== 'processed').length === 0 && !showFeederForm && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
-            No pig batches yet — click "+ Add Batch" to get started
+            No pig batches yet — farm-born batches appear here once you record the cycle's first farrowing; use "+ Add
+            Manual Batch" for manual/admin batches.
           </div>
         )}
 
@@ -1357,7 +1352,7 @@ export default function PigBatchesView({
                     return sorted[0]?.pig_count ?? null;
                   })();
             const current = computeBatchCurrentCount(g, breeders, {latestDailyPigCount});
-            const started = (parseInt(g.giltCount) || 0) + (parseInt(g.boarCount) || 0);
+            const started = batchStartedCount(g);
             return (
               <PigBatchHubTile
                 key={g.id}

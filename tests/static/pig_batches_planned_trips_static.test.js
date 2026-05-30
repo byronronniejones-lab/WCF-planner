@@ -196,34 +196,22 @@ describe('Commit 4b — date edit + count move handler hard gates', () => {
   });
 });
 
-describe('Commit 5 — Add Batch breeding-cycle filter', () => {
-  // Filter shape: cycles already linked to OTHER feederGroups are hidden.
-  // In Add mode (no editFeederId), any link hides. In Edit mode, only
-  // links from OTHER batches hide; the self batch's own cycle stays
-  // visible.
-  it('breedingCycles is filtered before being mapped into <option> rows', () => {
-    expect(viewSrc).toMatch(/breedingCycles\s*\.filter\(/);
+describe('Farrowing-created batches CP1 — Add Manual Batch retires the cycle selector', () => {
+  // Normal farm-born batches are now created from the first farrowing record
+  // (FarrowingView), so the /pig/batches Add flow is manual/admin only: no
+  // breeding-cycle selector in Add mode, and the linked cycle is read-only in
+  // Edit mode. The old commit-5 empty-state hint is gone.
+  it('the Add button is renamed to "Add Manual Batch"', () => {
+    expect(viewSrc).toContain('+ Add Manual Batch');
   });
-
-  it('Add mode hides any cycle linked by any feederGroup', () => {
-    expect(viewSrc).toMatch(/!editFeederId/);
-    expect(viewSrc).toMatch(/feederGroups[\s\S]*?\.some\(\s*\(fg\)\s*=>\s*fg\.cycleId\s*===\s*c\.id\s*\)/);
+  it('the breeding-cycle field is gated to Edit mode with an existing linked cycle', () => {
+    expect(viewSrc).toMatch(/editFeederId && feederForm\.cycleId && \(/);
   });
-
-  it('Edit mode keeps self-batch cycle visible by excluding self from the link check', () => {
-    expect(viewSrc).toMatch(/fg\.id !== editFeederId/);
+  it('the linked-cycle select is read-only (disabled) in Edit mode', () => {
+    expect(viewSrc).toMatch(/data-feeder-cycle-select[\s\S]*?disabled/);
   });
-
-  it('renders the empty-state hint only in Add mode when no available cycles remain', () => {
-    expect(viewSrc).toMatch(/data-feeder-cycle-empty-hint/);
-    // Whitespace/newlines tolerated so Prettier wrap doesn't false-fail.
-    expect(viewSrc).toMatch(
-      /All breeding cycles are already linked to a pig batch\.\s+Add a new breeding cycle in the\s+Breeding tab before creating another batch\./,
-    );
-  });
-
-  it('the filtered <select> exposes data-feeder-cycle-select for tests', () => {
-    expect(viewSrc).toMatch(/data-feeder-cycle-select/);
+  it('the retired Add-mode empty-state hint is removed', () => {
+    expect(viewSrc).not.toMatch(/data-feeder-cycle-empty-hint/);
   });
 });
 

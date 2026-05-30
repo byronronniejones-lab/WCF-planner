@@ -16,6 +16,7 @@ import {
   PIG_GROUP_COLORS,
   getReadableText,
 } from '../lib/pig.js';
+import {matchCycleForFarrowing, ensureFarrowBatchForCycle} from '../lib/pigFarrowBatch.js';
 import UsersModal from '../auth/UsersModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
@@ -23,10 +24,18 @@ import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
-export default function FarrowingView({Header, loadUsers, persistFarrowing, confirmDelete, resolveSire}) {
+export default function FarrowingView({
+  Header,
+  loadUsers,
+  persistFarrowing,
+  persistFeeders,
+  confirmDelete,
+  resolveSire,
+}) {
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {
     breedingCycles,
+    feederGroups,
     farrowingRecs,
     setFarrowingRecs,
     boarNames,
@@ -91,6 +100,14 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
     nb.sort((a, b) => b.farrowingDate.localeCompare(a.farrowingDate));
     setFarrowingRecs(nb);
     persistFarrowing(nb);
+    // Farm-born batch creation: ensure exactly one feeder group exists for this
+    // record's breeding cycle. Create-only + idempotent — existing/manual linked
+    // batches are reused untouched; deleting/editing-away never removes a batch.
+    const cycle = matchCycleForFarrowing(rec, breedingCycles);
+    if (cycle && typeof persistFeeders === 'function') {
+      const {next, created} = ensureFarrowBatchForCycle(feederGroups, cycle, nb, breedingCycles);
+      if (created) persistFeeders(next);
+    }
     setShowFarrowForm(false);
     setEditFarrowId(null);
   }
@@ -489,6 +506,7 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
                     React.createElement('label', {style: S.label}, 'Farrowing date'),
                     React.createElement('input', {
                       type: 'date',
+                      'data-farrow-date': '1',
                       value: farrowForm.farrowingDate,
                       onChange: function (e) {
                         var newDate = e.target.value;
@@ -523,6 +541,7 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
                       ? React.createElement(
                           'select',
                           {
+                            'data-farrow-sow': '1',
                             value: farrowForm.sow,
                             onChange: function (e) {
                               setFarrowForm({...farrowForm, sow: e.target.value});
@@ -534,6 +553,7 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
                           }),
                         )
                       : React.createElement('input', {
+                          'data-farrow-sow': '1',
                           value: farrowForm.sow,
                           onChange: function (e) {
                             setFarrowForm({...farrowForm, sow: e.target.value});
@@ -617,6 +637,7 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
                     React.createElement('input', {
                       type: 'number',
                       min: '0',
+                      'data-farrow-total-born': '1',
                       value: farrowForm.totalBorn || '',
                       onChange: function (e) {
                         setFarrowForm({...farrowForm, totalBorn: e.target.value});
@@ -630,6 +651,7 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
                     React.createElement('input', {
                       type: 'number',
                       min: '0',
+                      'data-farrow-deaths': '1',
                       value: farrowForm.deaths || '',
                       onChange: function (e) {
                         setFarrowForm({...farrowForm, deaths: e.target.value});
@@ -712,7 +734,7 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
               </div>
             </div>
             <div style={{padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8}}>
-              <button onClick={saveFarrowForm} style={S.btnPrimary}>
+              <button onClick={saveFarrowForm} style={S.btnPrimary} data-farrow-save="1">
                 {editFarrowId ? 'Save changes' : 'Add record'}
               </button>
               {editFarrowId && (
@@ -845,6 +867,7 @@ export default function FarrowingView({Header, loadUsers, persistFarrowing, conf
                   );
                 })()}
                 <button
+                  data-farrow-add-record={c.id}
                   onClick={() => {
                     setFarrowForm({
                       ...EMPTY_FARROW,

@@ -479,8 +479,11 @@ export default function PigBatchPage({group, view}) {
                   }}
                 >
                   <strong style={{fontSize: 14, color: ht}}>{g.batchName}</strong>
-                  <span style={S.badge('#065f46', 'white')}>Gilts: {g.giltCount}</span>
-                  <span style={S.badge('#1e40af', 'white')}>Boars: {g.boarCount}</span>
+                  {/* Farm-born batches carry no sex split — suppress the
+                      misleading "Gilts: 0 / Boars: 0"; the neutral Started/Current
+                      count below conveys the size. */}
+                  {!g.farmBorn && <span style={S.badge('#065f46', 'white')}>Gilts: {g.giltCount}</span>}
+                  {!g.farmBorn && <span style={S.badge('#1e40af', 'white')}>Boars: {g.boarCount}</span>}
                   {currentPigCount !== null ? (
                     <span style={{color: ht, fontWeight: 500}}>
                       Current: <strong>{currentPigCount}</strong>
