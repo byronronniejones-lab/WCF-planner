@@ -128,6 +128,36 @@ describe('Activity change logging - diff helper', () => {
   });
 });
 
+describe('Custom editable-table Activity — cattle forecast hide/unhide (CP1)', () => {
+  it('CattleForecastView imports recordActivityEvent from entityMutations', () => {
+    expect(cattleForecast).toMatch(/import \{[^}]*recordActivityEvent[^}]*\} from '\.\.\/lib\/entityMutations\.js'/);
+  });
+  it('has a recordForecastHiddenActivity helper', () => {
+    expect(cattleForecast).toContain('async function recordForecastHiddenActivity(');
+  });
+  it('logs against cattle.animal with field.updated', () => {
+    expect(cattleForecast).toMatch(
+      /recordActivityEvent\(sb, \{[\s\S]*?entityType: 'cattle\.animal'[\s\S]*?eventType: 'field\.updated'/,
+    );
+  });
+  it('uses the cattle id as entity_id and prefers #<tag> with id fallback for the label', () => {
+    expect(cattleForecast).toContain('entityId: cattleId');
+    expect(cattleForecast).toContain("cow && cow.tag ? '#' + cow.tag : cattleId");
+  });
+  it('body + payload make the month and visible<->hidden action clear', () => {
+    expect(cattleForecast).toContain('const month = monthLabel(monthKey)');
+    expect(cattleForecast).toContain("const from = nowHidden ? 'visible' : 'hidden'");
+    expect(cattleForecast).toContain("const to = nowHidden ? 'hidden' : 'visible'");
+    expect(cattleForecast).toContain("'Forecast month ' + month + ' changed '");
+    expect(cattleForecast).toContain('forecast_month_visibility');
+  });
+  it('toggleHidden logs only AFTER a successful write (returns on write error first)', () => {
+    expect(cattleForecast).toMatch(
+      /Could not update hide state[\s\S]*?return;[\s\S]*?recordForecastHiddenActivity\(cattleId, monthKey, !currentlyHidden\)/,
+    );
+  });
+});
+
 describe('Activity change logging - no direct table access', () => {
   const allSrc = [cattleHerds, cattleForecast, sheepFlocks, eqAdmin];
   for (const src of allSrc) {

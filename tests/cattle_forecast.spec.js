@@ -35,6 +35,56 @@ async function waitForForecastLoaded(page) {
   await expect(page.locator('[data-next-processor-panel]')).toBeVisible({timeout: 15_000});
 }
 
+// Non-throwing finish-candidate count for polling — returns 0 until the summary
+// strip renders with real data.
+async function finishCandidateCount(page) {
+  const strip = page.locator('[data-forecast-summary-strip]');
+  if ((await strip.count()) === 0) return 0;
+  const text = await strip.innerText().catch(() => '');
+  const m = /(\d[\d,]*)\s+finish candidates on farm/i.exec(text);
+  return m ? Number(m[1].replace(/,/g, '')) : 0;
+}
+
+// Robust load wait. The forecast view loads its inputs once on mount (mount-once
+// useEffect), so a cold-boot raced/empty read leaves 0 finish candidates with no
+// in-page recovery — the old panel-only wait accepted that empty read. Wait for
+// real seeded data; if a mount-once load raced empty, reload to re-mount and
+// re-fetch (bounded). Warm boots load on the first attempt with no reload.
+async function waitForForecastData(page) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await waitForForecastLoaded(page);
+    try {
+      await expect.poll(() => finishCandidateCount(page), {timeout: 12_000}).toBeGreaterThan(0);
+      return;
+    } catch {
+      if (attempt < 2) await page.reload();
+    }
+  }
+  // Surface a clear failure if still empty after retries.
+  expect(await finishCandidateCount(page)).toBeGreaterThan(0);
+}
+
+// F-HIDE projects into a forecast year that may differ from the default
+// current-year view. Click through the year buttons until its assigned row
+// renders, then return the (visible) row locator.
+async function revealFHideRow(page) {
+  const row = page.locator('[data-month-row="F-HIDE"]').first();
+  if (await row.isVisible().catch(() => false)) return row;
+  const years = page.locator('[data-year-button]');
+  const n = await years.count();
+  for (let i = 0; i < n; i++) {
+    await years.nth(i).click();
+    try {
+      await expect(row).toBeVisible({timeout: 2_500});
+      return row;
+    } catch {
+      /* not this year — try the next */
+    }
+  }
+  await expect(row).toBeVisible({timeout: 8_000});
+  return row;
+}
+
 async function setRoleOverride(page, role) {
   // The DEV-only sentinel in main.jsx reads
   // window.localStorage.getItem('wcf-test-role-override') and applies it on
@@ -111,13 +161,12 @@ test('forecast: hide a cow, reveal under Show hidden, unhide from same month', a
   supabaseAdmin,
 }) => {
   await page.goto(FORECAST_PATH);
-  await waitForForecastLoaded(page);
+  // Wait for real seeded forecast data (cold-boot resilient), not just the panel.
+  await waitForForecastData(page);
 
-  // Current + future tiles default-expanded (Codex 2026-05-04). F-HIDE's
-  // assigned row is therefore already in the DOM somewhere. Find it and
-  // read its parent month-bucket attribute.
-  const fHideRow = page.locator('[data-month-row="F-HIDE"]').first();
-  await expect(fHideRow).toBeVisible({timeout: 10_000});
+  // F-HIDE projects into a forecast year that may differ from the default
+  // current-year view — select the year containing it, then read its month.
+  const fHideRow = await revealFHideRow(page);
   const hiddenMonth = await fHideRow.evaluate((el) => {
     const bucket = el.closest('[data-month-bucket]');
     return bucket ? bucket.getAttribute('data-month-bucket') : null;
@@ -163,6 +212,35 @@ test('forecast: hide a cow, reveal under Show hidden, unhide from same month', a
   // DB row removed.
   const after = await supabaseAdmin.from('cattle_forecast_hidden').select('cattle_id').eq('cattle_id', 'F-HIDE');
   expect(after.data?.length).toBe(0);
+
+  // Activity audit (CP1): the hide logged one cattle.animal field.updated row
+  // and the unhide logged a second. Activity is async (best-effort after each
+  // successful write) — poll until both rows land.
+  await expect
+    .poll(
+      async () => {
+        const r = await supabaseAdmin
+          .from('activity_events')
+          .select('body')
+          .eq('entity_id', 'F-HIDE')
+          .eq('entity_type', 'cattle.animal')
+          .eq('event_type', 'field.updated');
+        return (r.data || []).length;
+      },
+      {timeout: 10_000},
+    )
+    .toBe(2);
+
+  const acts = await supabaseAdmin
+    .from('activity_events')
+    .select('body')
+    .eq('entity_id', 'F-HIDE')
+    .eq('entity_type', 'cattle.animal')
+    .eq('event_type', 'field.updated');
+  const bodies = (acts.data || []).map((e) => e.body || '');
+  // One hide (… → hidden) and one unhide (… → visible).
+  expect(bodies.some((b) => b.includes('→ hidden'))).toBe(true);
+  expect(bodies.some((b) => b.includes('→ visible'))).toBe(true);
 });
 
 // --------------------------------------------------------------------------

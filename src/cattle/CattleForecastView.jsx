@@ -38,7 +38,7 @@ import {
 import {CATTLE_HERD_KEYS, cowTagSet} from '../lib/cattleHerdFilters.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
+import {runMutation, recordFieldChange, recordActivityEvent} from '../lib/entityMutations.js';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 
 const CATTLE_EXCLUDE = ['herd', 'processing_batch_id'];
@@ -279,6 +279,43 @@ const CattleForecastView = ({
   }
 
   // ── hide/unhide ────────────────────────────────────────────────────────────
+  // Best-effort Activity audit for a forecast month hide/unhide. Logged against
+  // the cattle.animal entity (field.updated) ONLY after the hide/unhide table
+  // write succeeds. A failure here never rolls back the write or surfaces a
+  // product error — audit logging is best-effort.
+  async function recordForecastHiddenActivity(cattleId, monthKey, nowHidden) {
+    try {
+      const cow = cowsById.get(cattleId);
+      const entityLabel = cow && cow.tag ? '#' + cow.tag : cattleId;
+      const month = monthLabel(monthKey);
+      const from = nowHidden ? 'visible' : 'hidden';
+      const to = nowHidden ? 'hidden' : 'visible';
+      await recordActivityEvent(sb, {
+        entityType: 'cattle.animal',
+        entityId: cattleId,
+        eventType: 'field.updated',
+        entityLabel,
+        body: 'Forecast month ' + month + ' changed ' + from + ' → ' + to,
+        payload: {
+          month_key: monthKey,
+          changes: [
+            {
+              field: 'forecast_month_visibility',
+              label: 'Forecast month ' + month,
+              from,
+              to,
+              old_present: true,
+              new_present: true,
+            },
+          ],
+        },
+      });
+    } catch (e) {
+      // Swallow — the hide/unhide already succeeded; do not surface noisy errors.
+      console.warn('forecast hide/unhide Activity log failed:', e && e.message ? e.message : e);
+    }
+  }
+
   async function toggleHidden(cattleId, monthKey, currentlyHidden) {
     if (!canEdit) return;
     setNotice(null);
@@ -293,7 +330,10 @@ const CattleForecastView = ({
       }
     } catch (e) {
       setNotice({kind: 'error', message: 'Could not update hide state: ' + (e.message || e)});
+      return;
     }
+    // Audit only after the write above succeeded; best-effort (self-catching).
+    await recordForecastHiddenActivity(cattleId, monthKey, !currentlyHidden);
   }
 
   // ── heifer-modal save ─────────────────────────────────────────────────────
