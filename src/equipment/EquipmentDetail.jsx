@@ -24,6 +24,7 @@ import ManualsCard from './ManualsCard.jsx';
 import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
+import {recordControl, recordTextarea} from '../shared/recordPageControls.jsx';
 import {runMutation, recordStatusChange} from '../lib/entityMutations.js';
 
 export default function EquipmentDetail({
@@ -732,15 +733,7 @@ export default function EquipmentDetail({
                             type="date"
                             defaultValue={f.date || ''}
                             onChange={(e) => queueFuelingSave(f.id, 'date', e.target.value, 'text')}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 7px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              width: '100%',
-                              boxSizing: 'border-box',
-                            }}
+                            style={recordControl}
                           />
                         </div>
                         <div>
@@ -756,16 +749,7 @@ export default function EquipmentDetail({
                                 defaultValue={cur}
                                 disabled={noOptions}
                                 onChange={(e) => queueFuelingSave(f.id, 'team_member', e.target.value, 'text')}
-                                style={{
-                                  fontSize: 12,
-                                  padding: '4px 7px',
-                                  border: '1px solid #d1d5db',
-                                  borderRadius: 5,
-                                  fontFamily: 'inherit',
-                                  width: '100%',
-                                  boxSizing: 'border-box',
-                                  background: noOptions ? '#f3f4f6' : 'white',
-                                }}
+                                style={{...recordControl, background: noOptions ? '#f3f4f6' : 'white'}}
                               >
                                 <option value="">{noOptions ? 'No team members assigned' : 'Select…'}</option>
                                 {isLegacy && <option value={cur}>{cur} (legacy — not currently assigned)</option>}
@@ -786,15 +770,7 @@ export default function EquipmentDetail({
                             step="0.1"
                             defaultValue={f.gallons != null ? f.gallons : ''}
                             onChange={(e) => queueFuelingSave(f.id, 'gallons', e.target.value, 'number')}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 7px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              width: '100%',
-                              boxSizing: 'border-box',
-                            }}
+                            style={recordControl}
                           />
                         </div>
                         {eq.takes_def && (
@@ -806,15 +782,7 @@ export default function EquipmentDetail({
                               step="0.1"
                               defaultValue={f.def_gallons != null ? f.def_gallons : ''}
                               onChange={(e) => queueFuelingSave(f.id, 'def_gallons', e.target.value, 'number')}
-                              style={{
-                                fontSize: 12,
-                                padding: '4px 7px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: 5,
-                                fontFamily: 'inherit',
-                                width: '100%',
-                                boxSizing: 'border-box',
-                              }}
+                              style={recordControl}
                             />
                           </div>
                         )}
@@ -833,15 +801,7 @@ export default function EquipmentDetail({
                                 'number',
                               )
                             }
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 7px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 5,
-                              fontFamily: 'inherit',
-                              width: '100%',
-                              boxSizing: 'border-box',
-                            }}
+                            style={recordControl}
                           />
                         </div>
                       </div>
@@ -851,16 +811,7 @@ export default function EquipmentDetail({
                           defaultValue={stripPodioHtml(f.comments) || ''}
                           onChange={(e) => queueFuelingSave(f.id, 'comments', e.target.value, 'text')}
                           rows={2}
-                          style={{
-                            fontSize: 12,
-                            padding: '4px 7px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: 5,
-                            fontFamily: 'inherit',
-                            width: '100%',
-                            boxSizing: 'border-box',
-                            resize: 'vertical',
-                          }}
+                          style={{...recordTextarea, minHeight: 60}}
                         />
                       </div>
                       {(() => {
