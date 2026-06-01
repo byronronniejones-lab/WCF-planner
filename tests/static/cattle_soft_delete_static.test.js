@@ -11,6 +11,7 @@ const apiSrc = fs.readFileSync(path.join(ROOT, 'src/lib/cattleDeleteApi.js'), 'u
 const herdsSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
 const cowDetailSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CowDetail.jsx'), 'utf8');
 const batchSrc = fs.readFileSync(path.join(ROOT, 'src/lib/cattleProcessingBatch.js'), 'utf8');
+const e2eSrc = fs.readFileSync(path.join(ROOT, 'tests/cattle_soft_delete.spec.js'), 'utf8');
 
 // ── Migration 069 — schema: deleted_at + deleted_by columns ─────────────
 
@@ -186,6 +187,23 @@ describe('CattleHerdsView — admin-gated delete + restore', () => {
   it('does not have Recently Deleted UI on herds page', () => {
     expect(herdsSrc).not.toContain('Recently Deleted');
     expect(herdsSrc).not.toContain('restoreCattleAnimal');
+  });
+});
+
+// cattle_soft_delete.spec - current record-page/recovery contract.
+
+describe('cattle_soft_delete.spec - current record-page/recovery contract', () => {
+  it('drives delete from the dedicated cattle record page, not inline herd expansion', () => {
+    expect(e2eSrc).toContain("'/cattle/herds/' + ids.delCowId");
+    expect(e2eSrc).toContain('[data-cattle-animal-page="1"]');
+    expect(e2eSrc).not.toContain('await page.locator(\'[data-cow-row-tag="SD-100"]\').click()');
+  });
+
+  it('covers restore and restore-conflict through the backend RPC contract', () => {
+    expect(e2eSrc).toContain("adminSb.rpc('restore_cattle_animal'");
+    expect(e2eSrc).toContain('restore conflict: tag reuse returns backend error');
+    expect(e2eSrc).toContain('restoreResult.error.message');
+    expect(e2eSrc).not.toContain('Restore failed');
   });
 });
 

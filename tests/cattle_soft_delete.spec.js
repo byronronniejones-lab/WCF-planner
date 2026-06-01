@@ -7,9 +7,9 @@ import {createClient} from '@supabase/supabase-js';
 // Locks the cattle.animal soft-delete implementation (migration 069):
 //
 //   1  Admin deletes a cow → cow disappears from active herds
-//   2  Deleted cow appears in Recently Deleted Cattle
-//   3  Admin restores cow → cow reappears in active herds
-//   4  Restore conflict: active-herd tag reuse shows inline error
+//   2  Deleted cow is admin-queryable as deleted and hidden from active herds
+//   3  Admin restores cow by RPC → cow reappears in active herds
+//   4  Restore conflict: active-herd tag reuse returns backend error
 //   5  Sold/deceased restore does not fail on tag overlap with active cow
 //   6  Public weigh-in webform does not show deleted cow tags
 //   7  Non-admin cannot see cattle delete controls
@@ -90,115 +90,126 @@ async function expandHerd(page, herd) {
 // Test 1 — Admin deletes a cow → it disappears from active herds
 // --------------------------------------------------------------------------
 test('admin delete: cow disappears from active herds', async ({page, cattleSoftDeleteScenario}) => {
-  await page.goto('/cattle/herds');
-  await waitForCattleLoaded(page);
+  const ids = cattleSoftDeleteScenario;
 
-  await expandHerd(page, 'mommas');
-  await expect(page.locator('[data-cow-row-tag="SD-100"]')).toBeVisible();
-
-  // Expand the cow detail.
-  await page.locator('[data-cow-row-tag="SD-100"]').click();
+  await page.goto('/cattle/herds/' + ids.delCowId);
+  await expect(page.locator('[data-cattle-animal-page="1"]')).toBeVisible({timeout: 15_000});
   await expect(page.locator('[data-cow-detail]')).toBeVisible();
+  await page.waitForFunction(() => typeof window._wcfConfirmDelete === 'function');
+  await page.evaluate(() => {
+    window._wcfConfirmDelete = (_msg, fn) => fn();
+  });
 
   // Click the action-bar Delete (last Delete button in cow detail).
   const deleteBtn = page.locator('[data-cow-detail] button:has-text("Delete")').last();
   await expect(deleteBtn).toBeVisible();
   await deleteBtn.click();
 
-  // DeleteModal: type "delete" and press Enter to confirm.
-  await expect(page.locator('input[placeholder="delete"]')).toBeVisible();
-  await page.fill('input[placeholder="delete"]', 'delete');
-  await page.locator('input[placeholder="delete"]').press('Enter');
+  await expect(page).toHaveURL(/\/cattle\/herds$/);
+  await waitForCattleLoaded(page);
+  await expandHerd(page, 'mommas');
 
   // Cow disappears from herds list.
   await expect(page.locator('[data-cow-row-tag="SD-100"]')).toHaveCount(0, {timeout: 10_000});
 });
 
 // --------------------------------------------------------------------------
-// Test 2 — Deleted cow appears in Recently Deleted Cattle
+// Test 2 — Deleted cow is admin-queryable as deleted and hidden from active herds
 // --------------------------------------------------------------------------
-test('deleted cow appears in Recently Deleted', async ({page, cattleSoftDeleteScenario}) => {
+test('deleted cow is admin-queryable and hidden from active herds', async ({page, cattleSoftDeleteScenario}) => {
   const ids = cattleSoftDeleteScenario;
 
   // Delete via authenticated admin client (not service-role).
   const adminSb = await newAdminAuthedClient();
-  await adminSb.rpc('soft_delete_cattle_animal', {
+  const deleteResult = await adminSb.rpc('soft_delete_cattle_animal', {
     p_entity_id: ids.delCowId,
     p_entity_label: ids.delCowTag,
   });
+  expect(deleteResult.error).toBeNull();
+
+  const {data: deletedCow, error: readError} = await adminSb
+    .from('cattle')
+    .select('id,tag,deleted_at,deleted_by')
+    .eq('id', ids.delCowId)
+    .single();
+  expect(readError).toBeNull();
+  expect(deletedCow.tag).toBe('SD-100');
+  expect(deletedCow.deleted_at).not.toBeNull();
+  expect(deletedCow.deleted_by).not.toBeNull();
 
   await page.goto('/cattle/herds');
   await waitForCattleLoaded(page);
 
   await expect(page.locator('[data-cow-row-tag="SD-100"]')).toHaveCount(0);
-
-  // Open Recently Deleted.
-  const recentlyDeletedBtn = page.getByRole('button', {name: /Recently Deleted/});
-  await expect(recentlyDeletedBtn).toBeVisible();
-  await recentlyDeletedBtn.click();
-
-  await expect(page.getByText('#SD-100')).toBeVisible({timeout: 10_000});
+  await expect(page.getByRole('button', {name: /Recently Deleted/})).toHaveCount(0);
 });
 
 // --------------------------------------------------------------------------
-// Test 3 — Admin restores cow → cow reappears in active herds
+// Test 3 — Admin restores cow by RPC → cow reappears in active herds
 // --------------------------------------------------------------------------
 test('admin restore: cow reappears in active herds', async ({page, cattleSoftDeleteScenario}) => {
   const ids = cattleSoftDeleteScenario;
 
   const adminSb = await newAdminAuthedClient();
-  await adminSb.rpc('soft_delete_cattle_animal', {
+  const deleteResult = await adminSb.rpc('soft_delete_cattle_animal', {
     p_entity_id: ids.delCowId,
     p_entity_label: ids.delCowTag,
   });
+  expect(deleteResult.error).toBeNull();
 
-  await page.goto('/cattle/herds');
-  await waitForCattleLoaded(page);
-
-  await page.getByRole('button', {name: /Recently Deleted/}).click();
-  await expect(page.getByText('#SD-100')).toBeVisible({timeout: 10_000});
-
-  // Click Restore.
-  const row = page.locator('div').filter({hasText: '#SD-100'}).last();
-  await row.getByRole('button', {name: 'Restore'}).click();
+  const restoreResult = await adminSb.rpc('restore_cattle_animal', {
+    p_entity_id: ids.delCowId,
+    p_entity_label: ids.delCowTag,
+  });
+  expect(restoreResult.error).toBeNull();
+  expect(restoreResult.data).toHaveProperty('ok', true);
 
   // Cow reappears in mommas.
+  await page.goto('/cattle/herds');
+  await waitForCattleLoaded(page);
   await expandHerd(page, 'mommas');
   await expect(page.locator('[data-cow-row-tag="SD-100"]')).toBeVisible({timeout: 10_000});
 });
 
 // --------------------------------------------------------------------------
-// Test 4 — Restore conflict: tag reuse in active herd shows error
+// Test 4 — Restore conflict: tag reuse in active herd returns backend error
 // --------------------------------------------------------------------------
-test('restore conflict: tag reuse shows inline error', async ({page, supabaseAdmin, cattleSoftDeleteScenario}) => {
+test('restore conflict: tag reuse returns backend error', async ({supabaseAdmin, cattleSoftDeleteScenario}) => {
   const ids = cattleSoftDeleteScenario;
 
   const adminSb = await newAdminAuthedClient();
-  await adminSb.rpc('soft_delete_cattle_animal', {
+  const deleteResult = await adminSb.rpc('soft_delete_cattle_animal', {
+    p_entity_id: ids.delCowId,
+    p_entity_label: ids.delCowTag,
+  });
+  expect(deleteResult.error).toBeNull();
+
+  // Create a new active cow with the same tag in an active herd.
+  const reuseResult = await supabaseAdmin.from('cattle').upsert(
+    {
+      id: 'sd-tag-reuse',
+      tag: 'SD-100',
+      sex: 'heifer',
+      herd: 'backgrounders',
+      old_tags: [],
+      deleted_at: null,
+      deleted_by: null,
+      processing_batch_id: null,
+    },
+    {onConflict: 'id'},
+  );
+  expect(reuseResult.error).toBeNull();
+
+  const restoreResult = await adminSb.rpc('restore_cattle_animal', {
     p_entity_id: ids.delCowId,
     p_entity_label: ids.delCowTag,
   });
 
-  // Create a new active cow with the same tag in an active herd.
-  await supabaseAdmin.from('cattle').insert({
-    id: 'sd-tag-reuse',
-    tag: 'SD-100',
-    sex: 'heifer',
-    herd: 'backgrounders',
-    old_tags: [],
-  });
+  expect(restoreResult.error).not.toBeNull();
+  expect(restoreResult.error.message).toMatch(/already in use/);
 
-  await page.goto('/cattle/herds');
-  await waitForCattleLoaded(page);
-
-  await page.getByRole('button', {name: /Recently Deleted/}).click();
-  await expect(page.getByText('#SD-100')).toBeVisible({timeout: 10_000});
-
-  const row = page.locator('div').filter({hasText: '#SD-100'}).last();
-  await row.getByRole('button', {name: 'Restore'}).click();
-
-  await expect(page.getByText(/Restore failed/)).toBeVisible({timeout: 10_000});
-  await expect(page.getByText(/already in use/)).toBeVisible();
+  const {data: cow} = await supabaseAdmin.from('cattle').select('deleted_at').eq('id', ids.delCowId).single();
+  expect(cow.deleted_at).not.toBeNull();
 });
 
 // --------------------------------------------------------------------------
@@ -278,11 +289,8 @@ test('non-admin: delete button is not visible', async ({supabaseAdmin, cattleSof
   // Wait for login to complete — the login form should disappear.
   await expect(mgmtPage.locator('input[type="email"]')).toHaveCount(0, {timeout: 15_000});
 
-  await mgmtPage.goto('/cattle/herds');
-  await expect(mgmtPage.locator('[data-cattle-match-count]')).toBeVisible({timeout: 15_000});
-
-  await expandHerd(mgmtPage, 'mommas');
-  await mgmtPage.locator('[data-cow-row-tag="SD-100"]').click();
+  await mgmtPage.goto('/cattle/herds/' + cattleSoftDeleteScenario.delCowId);
+  await expect(mgmtPage.locator('[data-cattle-animal-page="1"]')).toBeVisible({timeout: 15_000});
   await expect(mgmtPage.locator('[data-cow-detail]')).toBeVisible();
 
   // Cow-level Delete should NOT be visible for management role.
@@ -295,6 +303,8 @@ test('non-admin: delete button is not visible', async ({supabaseAdmin, cattleSof
   expect(count).toBeLessThanOrEqual(1);
 
   // Recently Deleted button should also not be visible.
+  await mgmtPage.goto('/cattle/herds');
+  await expect(mgmtPage.locator('[data-cattle-match-count]')).toBeVisible({timeout: 15_000});
   await expect(mgmtPage.getByRole('button', {name: /Recently Deleted/})).toHaveCount(0);
 
   await mgmtContext.close();
@@ -311,7 +321,7 @@ test('RLS: direct authenticated DELETE is blocked', async ({supabaseAdmin, cattl
   const mgmtSb = await newManagementAuthedClient();
 
   // Attempt direct hard-delete.
-  const {error} = await mgmtSb.from('cattle').delete().eq('id', ids.delCowId);
+  await mgmtSb.from('cattle').delete().eq('id', ids.delCowId);
 
   // Verify row still exists via supabaseAdmin.
   const {data: cow} = await supabaseAdmin.from('cattle').select('id').eq('id', ids.delCowId).single();
