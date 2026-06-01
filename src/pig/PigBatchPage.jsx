@@ -2,6 +2,7 @@ import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, todayISO} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
+import {recordFieldRowClass, recordFieldLabel, recordControl, recordTextarea} from '../shared/recordPageControls.jsx';
 import {
   PIG_GROUP_COLORS,
   getReadableText,
@@ -203,21 +204,12 @@ export default function PigBatchPage({group, view}) {
                 </div>
                 <div style={{padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12}}>
                   <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
-                  <div>
-                    <label style={S.label}>Sub-batch (optional)</label>
+                  <div className={recordFieldRowClass}>
+                    <span style={recordFieldLabel}>Sub-batch (optional)</span>
                     <select
                       value={mortalityForm.sub_batch_id}
                       onChange={(e) => setMortalityForm({...mortalityForm, sub_batch_id: e.target.value})}
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: 13,
-                        border: '1px solid #d1d5db',
-                        borderRadius: 6,
-                        fontFamily: 'inherit',
-                        boxSizing: 'border-box',
-                        background: 'white',
-                      }}
+                      style={recordControl}
                     >
                       <option value="">{'— Whole batch (no sub) —'}</option>
                       {subs.map((s) => (
@@ -227,8 +219,8 @@ export default function PigBatchPage({group, view}) {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label style={S.label}>{'Count *'}</label>
+                  <div className={recordFieldRowClass}>
+                    <span style={recordFieldLabel}>{'Count *'}</span>
                     <input
                       type="number"
                       min="1"
@@ -236,34 +228,17 @@ export default function PigBatchPage({group, view}) {
                       value={mortalityForm.count}
                       onChange={(e) => setMortalityForm({...mortalityForm, count: e.target.value})}
                       placeholder="e.g. 1"
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: 13,
-                        border: '1px solid #d1d5db',
-                        borderRadius: 6,
-                        fontFamily: 'inherit',
-                        boxSizing: 'border-box',
-                      }}
+                      style={recordControl}
                     />
                   </div>
-                  <div>
-                    <label style={S.label}>Comment / cause (optional)</label>
+                  <div className={recordFieldRowClass}>
+                    <span style={recordFieldLabel}>Comment / cause (optional)</span>
                     <textarea
                       value={mortalityForm.comment}
                       onChange={(e) => setMortalityForm({...mortalityForm, comment: e.target.value})}
                       rows={2}
                       placeholder="e.g. found dead in pen, suspected respiratory"
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        fontSize: 13,
-                        border: '1px solid #d1d5db',
-                        borderRadius: 6,
-                        fontFamily: 'inherit',
-                        boxSizing: 'border-box',
-                        resize: 'vertical',
-                      }}
+                      style={recordTextarea}
                     />
                   </div>
                   <div style={{fontSize: 11, color: '#6b7280'}}>
@@ -862,40 +837,45 @@ export default function PigBatchPage({group, view}) {
                         ×
                       </button>
                     </div>
-                    <div style={{padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
-                      <div style={{gridColumn: '1/-1'}}>
+                    <div style={{padding: '16px 20px'}}>
+                      <div style={{marginBottom: 10}}>
                         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
                       </div>
-                      <div style={{gridColumn: '1/-1'}}>
-                        <label style={S.label}>Sub-batch name *</label>
-                        <input
-                          value={subForm.name}
-                          onChange={(e) => updSub(g.id, 'name', e.target.value)}
-                          placeholder="e.g. P-26-01 A (GILTS)"
-                        />
-                        <div style={{fontSize: 10, color: '#9ca3af', marginTop: 2}}>
-                          Must match the label used on daily reports
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>Sub-batch name *</span>
+                        <div>
+                          <input
+                            value={subForm.name}
+                            onChange={(e) => updSub(g.id, 'name', e.target.value)}
+                            placeholder="e.g. P-26-01 A (GILTS)"
+                            style={recordControl}
+                          />
+                          <div style={{fontSize: 10, color: '#9ca3af', marginTop: 2}}>
+                            Must match the label used on daily reports
+                          </div>
                         </div>
                       </div>
                       {!editSubId ? (
                         <>
-                          <div>
-                            <label style={S.label}>Sex *</label>
+                          <div className={recordFieldRowClass}>
+                            <span style={recordFieldLabel}>Sex *</span>
                             <select
                               value={subForm.sex || 'Gilts'}
                               onChange={(e) => updSub(g.id, 'sex', e.target.value)}
+                              style={recordControl}
                             >
                               <option value="Gilts">Gilts</option>
                               <option value="Boars">Boars</option>
                             </select>
                           </div>
-                          <div>
-                            <label style={S.label}>Count *</label>
+                          <div className={recordFieldRowClass}>
+                            <span style={recordFieldLabel}>Count *</span>
                             <input
                               type="number"
                               min="0"
                               value={subForm.count || ''}
                               onChange={(e) => updSub(g.id, 'count', e.target.value)}
+                              style={recordControl}
                               placeholder={(() => {
                                 const sex = subForm.sex || 'Gilts';
                                 const parentTotal =
@@ -941,12 +921,13 @@ export default function PigBatchPage({group, view}) {
                           </div>
                         </>
                       )}
-                      <div style={{gridColumn: '1/-1'}}>
-                        <label style={S.label}>Notes</label>
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>Notes</span>
                         <input
                           value={subForm.notes}
                           onChange={(e) => updSub(g.id, 'notes', e.target.value)}
                           placeholder="Optional"
+                          style={recordControl}
                         />
                       </div>
                     </div>
@@ -1878,83 +1859,97 @@ export default function PigBatchPage({group, view}) {
                         ×
                       </button>
                     </div>
-                    <div style={{padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
-                      <div>
-                        <label style={S.label}>Processing date</label>
-                        <input type="date" value={tripForm.date} onChange={(e) => updTrip('date', e.target.value)} />
+                    <div style={{padding: '16px 20px'}}>
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>Processing date</span>
+                        <input
+                          type="date"
+                          value={tripForm.date}
+                          onChange={(e) => updTrip('date', e.target.value)}
+                          style={recordControl}
+                        />
                       </div>
-                      <div>
-                        <label style={S.label}>Number of pigs</label>
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>Number of pigs</span>
                         <input
                           type="number"
                           min="0"
                           value={tripForm.pigCount || ''}
                           onChange={(e) => updTrip('pigCount', e.target.value)}
+                          style={recordControl}
                         />
                       </div>
-                      <div style={{gridColumn: '1/-1'}}>
-                        <label style={S.label}>
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>
                           Live weights — enter each pig's weight separated by commas or spaces
-                        </label>
-                        <input
-                          value={tripForm.liveWeights}
-                          onChange={(e) => updTrip('liveWeights', e.target.value)}
-                          placeholder="e.g. 245, 268, 231, 255, 240"
-                        />
-                        {tripForm.liveWeights &&
-                          (() => {
-                            const wts = parseLiveWeights(tripForm.liveWeights);
-                            const total = wts.reduce((a, b) => a + b, 0);
-                            const avg = wts.length > 0 ? Math.round(total / wts.length) : 0;
-                            return wts.length > 0 ? (
-                              <div style={{fontSize: 11, color: '#085041', marginTop: 3}}>
-                                {wts.length} pigs {'\u00b7'} Total: {Math.round(total)} lbs{'\u00b7'} Avg: {avg} lbs/pig
-                              </div>
-                            ) : null;
-                          })()}
-                        {editTripId &&
-                          (() => {
-                            const counts = tripSourceCounts(editTripId);
-                            const keys = Object.keys(counts);
-                            if (keys.length === 0) return null;
-                            return (
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  color: '#065f46',
-                                  marginTop: 6,
-                                  padding: '5px 9px',
-                                  background: '#ecfdf5',
-                                  border: '1px solid #a7f3d0',
-                                  borderRadius: 5,
-                                }}
-                              >
-                                <strong>Sources:</strong> {keys.map((k) => k + ' (' + counts[k] + ')').join(', ')}
-                              </div>
-                            );
-                          })()}
+                        </span>
+                        <div>
+                          <input
+                            value={tripForm.liveWeights}
+                            onChange={(e) => updTrip('liveWeights', e.target.value)}
+                            placeholder="e.g. 245, 268, 231, 255, 240"
+                            style={recordControl}
+                          />
+                          {tripForm.liveWeights &&
+                            (() => {
+                              const wts = parseLiveWeights(tripForm.liveWeights);
+                              const total = wts.reduce((a, b) => a + b, 0);
+                              const avg = wts.length > 0 ? Math.round(total / wts.length) : 0;
+                              return wts.length > 0 ? (
+                                <div style={{fontSize: 11, color: '#085041', marginTop: 3}}>
+                                  {wts.length} pigs {'\u00b7'} Total: {Math.round(total)} lbs{'\u00b7'} Avg: {avg}{' '}
+                                  lbs/pig
+                                </div>
+                              ) : null;
+                            })()}
+                          {editTripId &&
+                            (() => {
+                              const counts = tripSourceCounts(editTripId);
+                              const keys = Object.keys(counts);
+                              if (keys.length === 0) return null;
+                              return (
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: '#065f46',
+                                    marginTop: 6,
+                                    padding: '5px 9px',
+                                    background: '#ecfdf5',
+                                    border: '1px solid #a7f3d0',
+                                    borderRadius: 5,
+                                  }}
+                                >
+                                  <strong>Sources:</strong> {keys.map((k) => k + ' (' + counts[k] + ')').join(', ')}
+                                </div>
+                              );
+                            })()}
+                        </div>
                       </div>
-                      <div>
-                        <label style={S.label}>Hanging weight (lbs) — total for this trip</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={tripForm.hangingWeight || ''}
-                          onChange={(e) => updTrip('hangingWeight', e.target.value)}
-                        />
-                        {tripForm.hangingWeight > 0 && tripTotalLive(tripForm) > 0 && (
-                          <div style={{fontSize: 11, color: '#16a34a', marginTop: 3}}>
-                            Carcass yield: {tripYield(tripForm)}%
-                          </div>
-                        )}
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>Hanging weight (lbs) — total for this trip</span>
+                        <div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={tripForm.hangingWeight || ''}
+                            onChange={(e) => updTrip('hangingWeight', e.target.value)}
+                            style={recordControl}
+                          />
+                          {tripForm.hangingWeight > 0 && tripTotalLive(tripForm) > 0 && (
+                            <div style={{fontSize: 11, color: '#16a34a', marginTop: 3}}>
+                              Carcass yield: {tripYield(tripForm)}%
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <label style={S.label}>Notes</label>
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>Notes</span>
                         <input
                           value={tripForm.notes}
                           onChange={(e) => updTrip('notes', e.target.value)}
                           placeholder="Any notes for this trip..."
+                          style={recordControl}
                         />
                       </div>
                     </div>
