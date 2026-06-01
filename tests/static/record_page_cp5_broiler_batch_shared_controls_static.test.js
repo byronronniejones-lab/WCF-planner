@@ -1,0 +1,68 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {describe, it, expect} from 'vitest';
+
+// Record Page Visual Consistency CP5 — the broiler batch BatchForm adopts the
+// shared record-page control styling on its visible inputs/selects/textarea/
+// checkboxes, keeping its dense grid/step-card layout and WITHOUT changing
+// scheduling, processor math, document upload, autosave, navigation, or modals.
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..', '..');
+const src = fs.readFileSync(path.join(ROOT, 'src/broiler/BatchForm.jsx'), 'utf8');
+
+describe('CP5: BatchForm adopts shared record-page controls', () => {
+  it('imports the shared control primitives', () => {
+    expect(src).toContain("from '../shared/recordPageControls.jsx'");
+    for (const name of ['recordControl', 'recordTextarea', 'recordFieldLabel', 'recordCheckbox']) {
+      expect(src).toContain(name);
+    }
+  });
+
+  it('styles visible controls with the shared primitives', () => {
+    expect(src).toContain('style={recordControl}');
+    expect(src).toContain('style={recordTextarea}');
+    expect(src).toContain('style={recordCheckbox}');
+    // Labels migrated, incl. the colored step-card labels (spread + override).
+    expect(src).toContain('style={recordFieldLabel}');
+    expect(src).toMatch(/\{\.\.\.recordFieldLabel, color:/);
+  });
+
+  it('drops the old S.label styling but keeps S for buttons/layout helpers', () => {
+    expect(src).not.toContain('S.label');
+    // S is still imported + used for existing buttons / field-group helpers.
+    expect(src).toContain("import {S} from '../lib/styles.js'");
+    expect(src).toMatch(/S\.(btnPrimary|btnGhost|btnDanger|fieldGroup)/);
+  });
+
+  it('stacks the main Batch details fieldGroup full-width on mobile', () => {
+    // The two-column S.fieldGroup wrapper must opt into the app's mobile
+    // single-column override so selects (Brooder/Schooner assigned) are not
+    // cramped/truncated on phones.
+    expect(src).toContain('<div data-mobile-1col="1" style={S.fieldGroup}>');
+  });
+
+  it('keeps the hidden file input hidden (not record-controlled)', () => {
+    expect(src).toContain('type="file"');
+    expect(src).toContain("display: 'none'");
+  });
+
+  it('preserves embedded mode + record-page navigation overrides', () => {
+    expect(src).toContain("embedded ? 'transparent'");
+    expect(src).toContain('onNavigatePrev');
+    expect(src).toContain('onNavigateNext');
+    expect(src).toContain('onClose');
+  });
+
+  it('preserves the critical broiler workflows + math', () => {
+    expect(src).toContain('parseProcessorXlsx');
+    expect(src).toContain('docUploading');
+    expect(src).toContain('batch-documents');
+    expect(src).toContain('calcBroilerStatsFromDailys');
+    expect(src).toContain('calcTimeline');
+    expect(src).toContain('setShowLegacy');
+    expect(src).toMatch(/Override.*Save Anyway/);
+    expect(src).toContain('Auto-saves as you type');
+  });
+});

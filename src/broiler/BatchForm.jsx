@@ -14,6 +14,7 @@ import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {fmt, toISO, addDays} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
+import {recordControl, recordTextarea, recordFieldLabel, recordCheckbox} from '../shared/recordPageControls.jsx';
 import {
   BROODERS,
   SCHOONERS,
@@ -369,8 +370,8 @@ export default function BatchForm({
                 style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8}}
               >
                 <div>
-                  <label style={{...S.label, color: '#085041'}}>Breed</label>
-                  <select value={form.breed} onChange={(e) => upd('breed', e.target.value)}>
+                  <label style={{...recordFieldLabel, color: '#085041'}}>Breed</label>
+                  <select style={recordControl} value={form.breed} onChange={(e) => upd('breed', e.target.value)}>
                     <option value="CC">Cornish Cross {'\u2014'} 7 weeks</option>
                     <option value="WR">White Ranger {'\u2014'} 8 weeks</option>
                     {form.status === 'processed' && showLegacy && (
@@ -408,8 +409,9 @@ export default function BatchForm({
                   )}
                 </div>
                 <div>
-                  <label style={{...S.label, color: '#085041'}}>Processing date</label>
+                  <label style={{...recordFieldLabel, color: '#085041'}}>Processing date</label>
                   <input
+                    style={recordControl}
                     type="date"
                     value={form.processingDate}
                     onChange={(e) => upd('processingDate', e.target.value)}
@@ -465,8 +467,13 @@ export default function BatchForm({
                 Step 2 — Confirm hatch date with hatchery
               </div>
               <div>
-                <label style={{...S.label, color: '#1d4ed8'}}>Confirmed hatch date</label>
-                <input type="date" value={form.hatchDate} onChange={(e) => upd('hatchDate', e.target.value)} />
+                <label style={{...recordFieldLabel, color: '#1d4ed8'}}>Confirmed hatch date</label>
+                <input
+                  style={recordControl}
+                  type="date"
+                  value={form.hatchDate}
+                  onChange={(e) => upd('hatchDate', e.target.value)}
+                />
                 {hatchWarn && (
                   <div style={{fontSize: 11, color: '#92400e', marginTop: 3}}>⚠ Within 1 day of a major holiday</div>
                 )}
@@ -504,17 +511,18 @@ export default function BatchForm({
             </div>
             {/* Batch details */}
             <div>
-              <label style={S.label}>Batch name</label>
+              <label style={recordFieldLabel}>Batch name</label>
               <input
+                style={recordControl}
                 value={form.name}
                 onChange={(e) => upd('name', e.target.value)}
                 placeholder="e.g. 26-01 CC BROILERS"
               />
             </div>
-            <div style={S.fieldGroup}>
+            <div data-mobile-1col="1" style={S.fieldGroup}>
               <div>
-                <label style={S.label}>Hatchery</label>
-                <select value={form.hatchery} onChange={(e) => upd('hatchery', e.target.value)}>
+                <label style={recordFieldLabel}>Hatchery</label>
+                <select style={recordControl} value={form.hatchery} onChange={(e) => upd('hatchery', e.target.value)}>
                   {hatcheries.map((h) =>
                     h === '__SEP__' ? (
                       <option key="sep" disabled value="__sep__">
@@ -529,13 +537,19 @@ export default function BatchForm({
                 </select>
               </div>
               <div>
-                <label style={S.label}>Birds ordered</label>
-                <input type="number" value={form.birdCount || ''} onChange={(e) => upd('birdCount', e.target.value)} />
+                <label style={recordFieldLabel}>Birds ordered</label>
+                <input
+                  style={recordControl}
+                  type="number"
+                  value={form.birdCount || ''}
+                  onChange={(e) => upd('birdCount', e.target.value)}
+                />
                 <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>Standard 750 · Schooner 1 solo: 650</div>
               </div>
               <div>
-                <label style={S.label}>Birds arrived</label>
+                <label style={recordFieldLabel}>Birds arrived</label>
                 <input
+                  style={recordControl}
                   type="number"
                   value={form.birdCountActual || ''}
                   onChange={(e) => upd('birdCountActual', e.target.value)}
@@ -546,8 +560,9 @@ export default function BatchForm({
                 </div>
               </div>
               <div>
-                <label style={S.label}>Chick purchase cost ($)</label>
+                <label style={recordFieldLabel}>Chick purchase cost ($)</label>
                 <input
+                  style={recordControl}
                   type="number"
                   min="0"
                   step="0.01"
@@ -561,8 +576,8 @@ export default function BatchForm({
               </div>
 
               <div>
-                <label style={S.label}>Brooder assigned</label>
-                <select value={form.brooder} onChange={(e) => upd('brooder', e.target.value)}>
+                <label style={recordFieldLabel}>Brooder assigned</label>
+                <select style={recordControl} value={form.brooder} onChange={(e) => upd('brooder', e.target.value)}>
                   {BROODERS.map((b) => (
                     <option key={b} value={b}>
                       Brooder {b} — max 750 birds
@@ -571,8 +586,8 @@ export default function BatchForm({
                 </select>
               </div>
               <div>
-                <label style={S.label}>Schooner assigned</label>
-                <select value={form.schooner} onChange={(e) => upd('schooner', e.target.value)}>
+                <label style={recordFieldLabel}>Schooner assigned</label>
+                <select style={recordControl} value={form.schooner} onChange={(e) => upd('schooner', e.target.value)}>
                   {SCHOONERS.map((s) => (
                     <option key={s} value={s}>
                       Schooner {s}
@@ -583,8 +598,8 @@ export default function BatchForm({
               </div>
 
               <div>
-                <label style={S.label}>Status</label>
-                <select value={form.status} onChange={(e) => upd('status', e.target.value)}>
+                <label style={recordFieldLabel}>Status</label>
+                <select style={recordControl} value={form.status} onChange={(e) => upd('status', e.target.value)}>
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -594,8 +609,9 @@ export default function BatchForm({
               </div>
             </div>
             <div>
-              <label style={S.label}>Notes</label>
+              <label style={recordFieldLabel}>Notes</label>
               <textarea
+                style={recordTextarea}
                 value={form.notes}
                 onChange={(e) => upd('notes', e.target.value)}
                 rows={2}
@@ -609,17 +625,28 @@ export default function BatchForm({
               </div>
               <div data-mobile-1col="1" style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10}}>
                 <div>
-                  <label style={S.label}>Date In Brooder</label>
-                  <input type="date" value={form.brooderIn} onChange={(e) => upd('brooderIn', e.target.value)} />
+                  <label style={recordFieldLabel}>Date In Brooder</label>
+                  <input
+                    style={recordControl}
+                    type="date"
+                    value={form.brooderIn}
+                    onChange={(e) => upd('brooderIn', e.target.value)}
+                  />
                   <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>Defaults to hatch date + 1 day</div>
                 </div>
                 <div>
-                  <label style={S.label}>Date Out of Brooder</label>
-                  <input type="date" value={form.brooderOut} onChange={(e) => upd('brooderOut', e.target.value)} />
+                  <label style={recordFieldLabel}>Date Out of Brooder</label>
+                  <input
+                    style={recordControl}
+                    type="date"
+                    value={form.brooderOut}
+                    onChange={(e) => upd('brooderOut', e.target.value)}
+                  />
                 </div>
                 <div>
-                  <label style={S.label}>4-Week Weight (lbs)</label>
+                  <label style={recordFieldLabel}>4-Week Weight (lbs)</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.01"
@@ -628,8 +655,9 @@ export default function BatchForm({
                   />
                 </div>
                 <div>
-                  <label style={S.label}>6-Week Weight (lbs)</label>
+                  <label style={recordFieldLabel}>6-Week Weight (lbs)</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.01"
@@ -642,8 +670,9 @@ export default function BatchForm({
                   if (stats.legacy) {
                     return (
                       <div>
-                        <label style={S.label}>Mortality Cumulative</label>
+                        <label style={recordFieldLabel}>Mortality Cumulative</label>
                         <input
+                          style={recordControl}
                           type="number"
                           min="0"
                           value={form.mortalityCumulative || ''}
@@ -654,7 +683,7 @@ export default function BatchForm({
                   }
                   return (
                     <div>
-                      <label style={S.label}>Mortality (from daily reports)</label>
+                      <label style={recordFieldLabel}>Mortality (from daily reports)</label>
                       <div
                         style={{
                           padding: '8px 11px',
@@ -751,8 +780,9 @@ export default function BatchForm({
                   return (
                     <div data-mobile-1col="1" style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10}}>
                       <div>
-                        <label style={S.label}>Brooder Feed (lbs)</label>
+                        <label style={recordFieldLabel}>Brooder Feed (lbs)</label>
                         <input
+                          style={recordControl}
                           type="number"
                           min="0"
                           value={form.brooderFeedLbs || ''}
@@ -760,8 +790,9 @@ export default function BatchForm({
                         />
                       </div>
                       <div>
-                        <label style={S.label}>Schooner Feed (lbs)</label>
+                        <label style={recordFieldLabel}>Schooner Feed (lbs)</label>
                         <input
+                          style={recordControl}
                           type="number"
                           min="0"
                           value={form.schoonerFeedLbs || ''}
@@ -769,8 +800,9 @@ export default function BatchForm({
                         />
                       </div>
                       <div>
-                        <label style={S.label}>Grit (lbs)</label>
+                        <label style={recordFieldLabel}>Grit (lbs)</label>
                         <input
+                          style={recordControl}
                           type="number"
                           min="0"
                           value={form.gritLbs || ''}
@@ -783,7 +815,7 @@ export default function BatchForm({
                 // Modern batches: read-only display sourced live from daily reports
                 const ro = (label, val, suffix) => (
                   <div>
-                    <label style={S.label}>
+                    <label style={recordFieldLabel}>
                       {label} <span style={{fontWeight: 400, color: '#9ca3af'}}>(from daily reports)</span>
                     </label>
                     <div
@@ -864,8 +896,9 @@ export default function BatchForm({
               </div>
               <div data-mobile-1col="1" style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
                 <div>
-                  <label style={S.label}>Birds to Processor</label>
+                  <label style={recordFieldLabel}>Birds to Processor</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     value={form.totalToProcessor || ''}
@@ -873,8 +906,9 @@ export default function BatchForm({
                   />
                 </div>
                 <div>
-                  <label style={S.label}>Processing Cost ($)</label>
+                  <label style={recordFieldLabel}>Processing Cost ($)</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.01"
@@ -883,7 +917,7 @@ export default function BatchForm({
                   />
                 </div>
                 <div>
-                  <label style={S.label}>Feed per Bird (lbs)</label>
+                  <label style={recordFieldLabel}>Feed per Bird (lbs)</label>
                   <div
                     style={{
                       padding: '8px 10px',
@@ -909,8 +943,9 @@ export default function BatchForm({
                   </div>
                 </div>
                 <div>
-                  <label style={S.label}>Avg Breast (lbs)</label>
+                  <label style={recordFieldLabel}>Avg Breast (lbs)</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.01"
@@ -919,8 +954,9 @@ export default function BatchForm({
                   />
                 </div>
                 <div>
-                  <label style={S.label}>Avg Thighs (lbs)</label>
+                  <label style={recordFieldLabel}>Avg Thighs (lbs)</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.01"
@@ -929,8 +965,9 @@ export default function BatchForm({
                   />
                 </div>
                 <div style={{gridColumn: '1/-1'}}>
-                  <label style={S.label}>Avg Dressed Bird (lbs)</label>
+                  <label style={recordFieldLabel}>Avg Dressed Bird (lbs)</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.01"
@@ -946,8 +983,9 @@ export default function BatchForm({
               </div>
               <div data-mobile-1col="1" style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
                 <div>
-                  <label style={S.label}>Total Lbs — Whole Birds</label>
+                  <label style={recordFieldLabel}>Total Lbs — Whole Birds</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.1"
@@ -956,8 +994,9 @@ export default function BatchForm({
                   />
                 </div>
                 <div>
-                  <label style={S.label}>Total Lbs — Cuts</label>
+                  <label style={recordFieldLabel}>Total Lbs — Cuts</label>
                   <input
+                    style={recordControl}
                     type="number"
                     min="0"
                     step="0.1"
@@ -1016,12 +1055,7 @@ export default function BatchForm({
                           key={f.key}
                           style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer'}}
                         >
-                          <input
-                            type="checkbox"
-                            defaultChecked={true}
-                            id={`pp_${f.key}`}
-                            style={{width: 14, height: 14, cursor: 'pointer'}}
-                          />
+                          <input type="checkbox" defaultChecked={true} id={`pp_${f.key}`} style={recordCheckbox} />
                           <span style={{fontSize: 12, color: '#1e40af', minWidth: 160}}>{f.label}</span>
                           <span style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>{f.fmt(f.val)}</span>
                         </label>
