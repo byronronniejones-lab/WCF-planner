@@ -431,6 +431,27 @@ export default function BroilerFeedView({
     : anyCurrentCount
       ? 'vs Actual On Hand where counted; otherwise End of ' + prevLabel + ' Est.'
       : 'vs End of ' + prevLabel + ' Est.';
+  // Second summary tile. Once the active month has a current-month physical
+  // count, that type's prev-month estimate is stale/misleading, so show its
+  // projected END OF ACTIVE month (the count-anchored active ledger end)
+  // instead. Non-counted types keep the previous-month end. Display only — the
+  // order recommendation basis is unchanged.
+  // Active-month end per type from the PERSISTED ledger (saved order only). The
+  // Est. tile updates when an order is saved, not while typing an unsaved draft.
+  const endOfActive = {};
+  TYPE_KEYS.forEach((type) => {
+    const lg = pLedger[type][activeYM];
+    endOfActive[type] = lg ? lg.end : null;
+  });
+  const estTileValues = {};
+  TYPE_KEYS.forEach((type) => {
+    estTileValues[type] = basisIsCount[type] ? endOfActive[type] : endOfPrev[type];
+  });
+  const estTileLabel = allCurrentCount
+    ? 'End of ' + activeLabel + ' Est.'
+    : anyCurrentCount
+      ? 'Current / Prior Est.'
+      : 'End of ' + prevLabel + ' Est.';
 
   // Top tiles render three stacked per-type rows so each feed type's
   // value scans on its own. The order matches the active card's per-type
@@ -482,8 +503,8 @@ export default function BroilerFeedView({
   // ── Active-card live overrides for End-of-Month while typing ────────────
   // For each feed type, splice the operator's typed draft (or the
   // recommendation-zero implicit save) into the active ledger entry so
-  // the equation's End updates as they type. Top tiles still derive from
-  // the persisted-only ledger.
+  // the equation's End updates as they type. Top tiles (incl. the count-aware
+  // Est. tile) still derive from the persisted-only ledger.
   function activeDraftEnd(type) {
     const orderKey = type === 'layer' ? 'layerfeed' : type;
     const lg = pLedger[type][activeYM];
@@ -886,10 +907,10 @@ export default function BroilerFeedView({
             {renderTileRows(actualOnHand, (v) => (v > 0 ? '#065f46' : '#b91c1c'))}
           </div>
 
-          {/* End of [prev] Est */}
+          {/* Est. tile — active-month end for counted types, else prev-month end */}
           <div style={tileShellS}>
-            <div style={tileLabelS}>{'End of ' + prevLabel + ' Est.'}</div>
-            {renderTileRows(endOfPrev, (v) => (v > 0 ? '#065f46' : '#b91c1c'))}
+            <div style={tileLabelS}>{estTileLabel}</div>
+            {renderTileRows(estTileValues, (v) => (v > 0 ? '#065f46' : '#b91c1c'))}
           </div>
 
           {/* Order for [active] — amber regardless of value */}

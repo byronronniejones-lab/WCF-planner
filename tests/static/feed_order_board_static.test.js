@@ -273,7 +273,7 @@ describe('BroilerFeedView — minimal ledger contract', () => {
     expect(broilerSrc).toMatch(/\{key:\s*'layer',\s*label:\s*'Layer Feed'/);
     expect(broilerSrc).toMatch(/function renderTileRows\(perType, valueColorFn\)/);
     expect(broilerSrc).toMatch(/renderTileRows\(actualOnHand,/);
-    expect(broilerSrc).toMatch(/renderTileRows\(endOfPrev,/);
+    expect(broilerSrc).toMatch(/renderTileRows\(estTileValues,/);
     expect(broilerSrc).toMatch(/renderTileRows\(recommendedOrder, \(\) => '#92400e'\)/);
     expect(broilerSrc).toMatch(/renderTileRows\(needThruNext,/);
   });
@@ -522,5 +522,40 @@ describe('BroilerFeedView — minimal ledger contract', () => {
     expect(broilerSrc).toMatch(/Broiler Feed Estimate Per Batch/);
     expect(broilerSrc).toMatch(/Layer Feed Estimate Per Batch/);
     expect(broilerSrc).toMatch(/renderBroilerBatchFeed/);
+  });
+});
+
+// ── Count-aware second summary tile (dynamic Est. label + persisted active end) ──
+describe('Feed boards — count-aware Est. tile', () => {
+  it('Broiler: second tile shows active-month end (persisted) for counted types, prev-month for others', () => {
+    // Per-type basis: counted types use the active end; others keep prev end.
+    expect(broilerSrc).toMatch(
+      /estTileValues\[type\]\s*=\s*basisIsCount\[type\]\s*\?\s*endOfActive\[type\]\s*:\s*endOfPrev\[type\]/,
+    );
+    // Active end is the PERSISTED ledger end (updates on save, NOT from the
+    // typed-but-unsaved draft).
+    expect(broilerSrc).toMatch(/const lg = pLedger\[type\]\[activeYM\];\s*endOfActive\[type\] = lg \? lg\.end : null/);
+    expect(broilerSrc).not.toMatch(/endOfActive\[type\]\s*=\s*activeDraftEnd/);
+    // Three-way label: all counted / mixed / none.
+    expect(broilerSrc).toMatch(/allCurrentCount[\s\S]*?'End of ' \+ activeLabel \+ ' Est\.'/);
+    expect(broilerSrc).toMatch(/'Current \/ Prior Est\.'/);
+    expect(broilerSrc).toMatch(/: 'End of ' \+ prevLabel \+ ' Est\.'/);
+    // The tile renders the per-type est values, not the raw prev-month ledger.
+    expect(broilerSrc).toMatch(/renderTileRows\(estTileValues,/);
+    expect(broilerSrc).not.toMatch(/renderTileRows\(endOfPrev,/);
+  });
+
+  it('Pig: second tile shows active-month end (persisted) after a current-month count', () => {
+    // Persisted active ledger end (activeLg), NOT the draft-spliced activeCardLg.
+    expect(pigSrc).toMatch(
+      /estTileValue\s*=\s*hasCurrentCount\s*\?\s*\(activeLg \? activeLg\.end : null\)\s*:\s*endOfPrevEst/,
+    );
+    expect(pigSrc).not.toMatch(/estTileValue\s*=\s*hasCurrentCount\s*\?\s*\(activeCardLg/);
+    expect(pigSrc).toMatch(
+      /estTileLabel\s*=\s*hasCurrentCount\s*\?\s*'End of ' \+ activeLabel \+ ' Est\.'\s*:\s*'End of ' \+ prevLabel \+ ' Est\.'/,
+    );
+    // Tile renders the dynamic label + value, not the hardcoded prev-month one.
+    expect(pigSrc).toMatch(/\{estTileLabel\}/);
+    expect(pigSrc).toMatch(/estTileValue != null \? estTileValue\.toLocaleString\(\)/);
   });
 });

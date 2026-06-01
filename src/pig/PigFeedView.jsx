@@ -356,7 +356,6 @@ export default function PigFeedView({
     actualOnHand: feedOnHand,
     endOfPrevEst,
   });
-
   // Live End-of-Month estimate for the active card only, splicing the
   // typed draft into the ledger's saved value.
   const activeLg = pigLedger[activeYM];
@@ -369,6 +368,14 @@ export default function PigFeedView({
           end: Math.round(activeLg.start - activeLg.consumed + activeDraftN),
         }
       : activeLg;
+
+  // Second summary tile. When the active month has a current-month physical
+  // count, show its projected END OF ACTIVE month from the PERSISTED ledger
+  // (saved order only — updates on save, not while typing an unsaved draft)
+  // instead of the stale previous-month estimate. Display only — the order
+  // recommendation basis is unchanged.
+  const estTileValue = hasCurrentCount ? (activeLg ? activeLg.end : null) : endOfPrevEst;
+  const estTileLabel = hasCurrentCount ? 'End of ' + activeLabel + ' Est.' : 'End of ' + prevLabel + ' Est.';
 
   // ── Per-group breakdown via feedPlanner helpers ──────────────────────────
   function projectedFeedByGroup(ym) {
@@ -512,18 +519,18 @@ export default function PigFeedView({
             )}
           </div>
 
-          {/* End of [prev] Est */}
+          {/* Est. tile — active-month end after a current-month count, else prev-month end */}
           <div style={tileShellS}>
-            <div style={tileLabelS}>{'End of ' + prevLabel + ' Est.'}</div>
+            <div style={tileLabelS}>{estTileLabel}</div>
             <div
               style={{
                 fontSize: 28,
                 fontWeight: 700,
-                color: endOfPrevEst != null ? (endOfPrevEst > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
+                color: estTileValue != null ? (estTileValue > 0 ? '#065f46' : '#b91c1c') : '#9ca3af',
                 lineHeight: 1,
               }}
             >
-              {endOfPrevEst != null ? endOfPrevEst.toLocaleString() + ' lbs' : '—'}
+              {estTileValue != null ? estTileValue.toLocaleString() + ' lbs' : '—'}
             </div>
           </div>
 
