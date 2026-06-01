@@ -78,23 +78,47 @@ async function seedFeederGraph(supabaseAdmin) {
 }
 
 async function seedPigSession(supabaseAdmin, {sessionId, date, status, weights}) {
-  await supabaseAdmin.from('weigh_in_sessions').insert({
-    id: sessionId,
-    species: 'pig',
-    date,
-    batch_id: SUB_SLUG,
-    started_at: new Date().toISOString(),
-    team_member: 'BMAN',
-    status,
-  });
+  const startedAt = `${date}T08:00:00.000Z`;
+  const completedAt = status === 'complete' ? `${date}T08:30:00.000Z` : null;
+  const sessionResult = await supabaseAdmin.from('weigh_in_sessions').upsert(
+    {
+      id: sessionId,
+      species: 'pig',
+      herd: null,
+      date,
+      batch_id: SUB_SLUG,
+      broiler_week: null,
+      started_at: startedAt,
+      completed_at: completedAt,
+      team_member: 'BMAN',
+      status,
+      notes: null,
+      client_submission_id: null,
+    },
+    {onConflict: 'id'},
+  );
+  if (sessionResult.error) throw new Error(`weigh_in_sessions upsert: ${sessionResult.error.message}`);
   if (weights.length > 0) {
     const rows = weights.map((w, i) => ({
       id: `${sessionId}-e${i + 1}`,
       session_id: sessionId,
+      tag: null,
       weight: w,
+      note: null,
+      new_tag_flag: false,
+      entered_at: `${date}T08:00:${String(i).padStart(2, '0')}.000Z`,
+      client_submission_id: null,
+      sent_to_trip_id: null,
+      sent_to_group_id: null,
+      send_to_processor: false,
+      target_processing_batch_id: null,
+      transferred_to_breeding: false,
+      transfer_breeder_id: null,
+      feed_allocation_lbs: null,
+      prior_herd_or_flock: null,
     }));
-    const {error} = await supabaseAdmin.from('weigh_ins').insert(rows);
-    if (error) throw new Error(`weigh_ins insert: ${error.message}`);
+    const {error} = await supabaseAdmin.from('weigh_ins').upsert(rows, {onConflict: 'id'});
+    if (error) throw new Error(`weigh_ins upsert: ${error.message}`);
   }
 }
 

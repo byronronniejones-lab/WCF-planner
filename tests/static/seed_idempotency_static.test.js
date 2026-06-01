@@ -213,3 +213,67 @@ describe('CP5: inline broiler metadata seeds reset known mutable columns', () =>
     expect(src).toMatch(/prior_herd_or_flock:\s*null/);
   });
 });
+
+// CP6: inline pig metrics Playwright/RPC spec seeds.
+const CP6_SPEC_FILES = [
+  'tests/pig_weighin_metrics_public.spec.js',
+  'tests/pig_weighin_metrics_admin.spec.js',
+  'tests/pig_session_metrics_rpc.spec.js',
+];
+
+describe('CP6: inline pig metrics spec seeds are idempotent', () => {
+  for (const rel of CP6_SPEC_FILES) {
+    const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+    it(`${rel} contains no plain .insert( calls`, () => {
+      expect(src).not.toMatch(/\.insert\(/);
+    });
+
+    it(`${rel} writes fixed-id rows via upsert(..., {onConflict: 'id'})`, () => {
+      expect(src).toMatch(/\.upsert\(/);
+      expect(src).toMatch(/onConflict:\s*'id'/);
+    });
+
+    it(`${rel} does not rely on ignoreDuplicates`, () => {
+      expect(src).not.toMatch(/ignoreDuplicates/);
+    });
+  }
+});
+
+describe('CP6: inline pig metrics seeds reset known mutable columns', () => {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+  for (const rel of CP6_SPEC_FILES) {
+    it(`${rel} resets weigh_in_sessions mutable columns`, () => {
+      const src = read(rel);
+      expect(src).toMatch(/herd:\s*null/);
+      expect(src).toMatch(/broiler_week:\s*null/);
+      expect(src).toMatch(/completed_at:\s*/);
+      expect(src).toMatch(/notes:\s*null/);
+      expect(src).toMatch(/client_submission_id:\s*null/);
+    });
+
+    it(`${rel} resets weigh_ins runtime columns`, () => {
+      const src = read(rel);
+      expect(src).toMatch(/sent_to_trip_id:\s*null/);
+      expect(src).toMatch(/sent_to_group_id:\s*null/);
+      expect(src).toMatch(/send_to_processor:\s*false/);
+      expect(src).toMatch(/target_processing_batch_id:\s*null/);
+      expect(src).toMatch(/transferred_to_breeding:\s*false/);
+      expect(src).toMatch(/transfer_breeder_id:\s*null/);
+      expect(src).toMatch(/feed_allocation_lbs:\s*null/);
+      expect(src).toMatch(/prior_herd_or_flock:\s*null/);
+      expect(src).toMatch(/client_submission_id:\s*null/);
+    });
+  }
+
+  it('pig_session_metrics_rpc.spec.js resets pig_dailys stale-state columns', () => {
+    const src = read('tests/pig_session_metrics_rpc.spec.js');
+    expect(src).toMatch(/deleted_at:\s*null/);
+    expect(src).toMatch(/deleted_by:\s*null/);
+    expect(src).toMatch(/photos:\s*\[\]/);
+    expect(src).toMatch(/source:\s*null/);
+    expect(src).toMatch(/daily_submission_id:\s*null/);
+    expect(src).toMatch(/client_submission_id:\s*null/);
+  });
+});

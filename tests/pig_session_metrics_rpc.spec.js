@@ -94,34 +94,64 @@ async function seedSession(
   supabaseAdmin,
   {sessionId, batchId, status = 'draft', species = 'pig', date = SESSION_DATE, weights = []},
 ) {
-  await supabaseAdmin.from('weigh_in_sessions').insert({
-    id: sessionId,
-    species,
-    date,
-    batch_id: batchId,
-    started_at: new Date().toISOString(),
-    team_member: 'BMAN',
-    status,
-  });
+  const sessionResult = await supabaseAdmin.from('weigh_in_sessions').upsert(
+    {
+      id: sessionId,
+      species,
+      herd: null,
+      date,
+      batch_id: batchId,
+      broiler_week: null,
+      started_at: `${date}T08:00:00.000Z`,
+      completed_at: status === 'complete' ? `${date}T08:30:00.000Z` : null,
+      team_member: 'BMAN',
+      status,
+      notes: null,
+      client_submission_id: null,
+    },
+    {onConflict: 'id'},
+  );
+  if (sessionResult.error) throw new Error(`weigh_in_sessions upsert: ${sessionResult.error.message}`);
   if (weights.length > 0) {
     const rows = weights.map((w, i) => ({
       id: `${sessionId}-e${i + 1}`,
       session_id: sessionId,
+      tag: null,
       weight: w,
+      note: null,
+      new_tag_flag: false,
+      entered_at: `${date}T08:00:${String(i).padStart(2, '0')}.000Z`,
+      client_submission_id: null,
+      sent_to_trip_id: null,
+      sent_to_group_id: null,
+      send_to_processor: false,
+      target_processing_batch_id: null,
+      transferred_to_breeding: false,
+      transfer_breeder_id: null,
+      feed_allocation_lbs: null,
+      prior_herd_or_flock: null,
     }));
-    const {error} = await supabaseAdmin.from('weigh_ins').insert(rows);
-    if (error) throw new Error(`weigh_ins insert: ${error.message}`);
+    const {error} = await supabaseAdmin.from('weigh_ins').upsert(rows, {onConflict: 'id'});
+    if (error) throw new Error(`weigh_ins upsert: ${error.message}`);
   }
 }
 
 async function seedPigDailys(supabaseAdmin, rows) {
   if (!rows.length) return;
-  await supabaseAdmin.from('pig_dailys').insert(
+  const {error} = await supabaseAdmin.from('pig_dailys').upsert(
     rows.map((r, i) => ({
-      id: `pdr-${i + 1}-${Date.now()}`,
+      id: `pdr-${i + 1}-${String(r.date || 'unknown').replace(/[^a-z0-9]+/gi, '-')}`,
       ...r,
+      deleted_at: null,
+      deleted_by: null,
+      client_submission_id: null,
+      photos: [],
+      source: null,
+      daily_submission_id: null,
     })),
+    {onConflict: 'id'},
   );
+  if (error) throw new Error(`pig_dailys upsert: ${error.message}`);
 }
 
 // ── Anon scope tests ────────────────────────────────────────────────────────

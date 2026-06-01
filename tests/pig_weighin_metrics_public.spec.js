@@ -98,27 +98,51 @@ async function seedActiveDraftSession(supabaseAdmin) {
   // Entered_at order is the load order (#N tags); display will sort DESC
   // by weight (282 > 263 > 250 > 244 > 221).
   const sessionId = 's-public-current';
-  await supabaseAdmin.from('weigh_in_sessions').insert({
-    id: sessionId,
-    species: 'pig',
-    date: sessionDate,
-    batch_id: SUB_SLUG,
-    started_at: new Date().toISOString(),
-    team_member: 'BMAN',
-    status: 'draft',
-  });
+  const sessionResult = await supabaseAdmin.from('weigh_in_sessions').upsert(
+    {
+      id: sessionId,
+      species: 'pig',
+      herd: null,
+      date: sessionDate,
+      batch_id: SUB_SLUG,
+      broiler_week: null,
+      started_at: `${sessionDate}T08:00:00.000Z`,
+      completed_at: null,
+      team_member: 'BMAN',
+      status: 'draft',
+      notes: null,
+      client_submission_id: null,
+    },
+    {onConflict: 'id'},
+  );
+  if (sessionResult.error) throw new Error(`weigh_in_sessions upsert: ${sessionResult.error.message}`);
   // Insert in a known order so #N tags are stable: 221 first → #1, etc.
   // Avg weight = 252, so the metrics row's "Avg weight" cell shows 252 lb;
   // pick entry weights that don't equal 252 to avoid filter collisions in
   // assertions.
   const weights = [221, 282, 244, 263, 250];
-  await supabaseAdmin.from('weigh_ins').insert(
+  const weighInsResult = await supabaseAdmin.from('weigh_ins').upsert(
     weights.map((w, i) => ({
       id: `${sessionId}-e${i + 1}`,
       session_id: sessionId,
+      tag: null,
       weight: w,
+      note: null,
+      new_tag_flag: false,
+      entered_at: `${sessionDate}T08:00:${String(i).padStart(2, '0')}.000Z`,
+      client_submission_id: null,
+      sent_to_trip_id: null,
+      sent_to_group_id: null,
+      send_to_processor: false,
+      target_processing_batch_id: null,
+      transferred_to_breeding: false,
+      transfer_breeder_id: null,
+      feed_allocation_lbs: null,
+      prior_herd_or_flock: null,
     })),
+    {onConflict: 'id'},
   );
+  if (weighInsResult.error) throw new Error(`weigh_ins upsert: ${weighInsResult.error.message}`);
 }
 
 test('public form: metrics block renders above Recent entries with stable #N descending sort', async ({
