@@ -85,25 +85,28 @@ export async function seedSheepSendToProcessor(supabaseAdmin, {flock = 'feeders'
   const adminEmail = await ensureAdminProfile(supabaseAdmin);
 
   must(
-    await supabaseAdmin.from('sheep_processing_batches').insert({
-      id: BATCH_ID,
-      name: BATCH_NAME,
-      planned_process_date: '2026-05-15',
-      actual_process_date: null,
-      processing_cost: null,
-      notes: null,
-      status: 'planned',
-      sheep_detail: [],
-      total_live_weight: null,
-      total_hanging_weight: null,
-    }),
+    await supabaseAdmin.from('sheep_processing_batches').upsert(
+      {
+        id: BATCH_ID,
+        name: BATCH_NAME,
+        planned_process_date: '2026-05-15',
+        actual_process_date: null,
+        processing_cost: null,
+        notes: null,
+        status: 'planned',
+        sheep_detail: [],
+        total_live_weight: null,
+        total_hanging_weight: null,
+      },
+      {onConflict: 'id'},
+    ),
     'sheep_processing_batches insert',
   );
 
   // 3 sheep in the requested flock. flock='feeders' is the typical
   // happy-path; flock='rams' is the looser-gate regression check.
   must(
-    await supabaseAdmin.from('sheep').insert(
+    await supabaseAdmin.from('sheep').upsert(
       SHEEP_ROWS.map((s) => ({
         id: s.id,
         tag: s.tag,
@@ -111,21 +114,25 @@ export async function seedSheepSendToProcessor(supabaseAdmin, {flock = 'feeders'
         flock,
         old_tags: [],
       })),
+      {onConflict: 'id'},
     ),
     'sheep insert',
   );
 
   // Draft session, herd matches the flock under test.
   must(
-    await supabaseAdmin.from('weigh_in_sessions').insert({
-      id: SESSION_ID,
-      species: 'sheep',
-      date: '2026-04-28',
-      team_member: adminEmail,
-      herd: flock,
-      status: 'draft',
-      started_at: '2026-04-28T08:00:00Z',
-    }),
+    await supabaseAdmin.from('weigh_in_sessions').upsert(
+      {
+        id: SESSION_ID,
+        species: 'sheep',
+        date: '2026-04-28',
+        team_member: adminEmail,
+        herd: flock,
+        status: 'draft',
+        started_at: '2026-04-28T08:00:00Z',
+      },
+      {onConflict: 'id'},
+    ),
     'weigh_in_sessions insert',
   );
 
@@ -141,7 +148,7 @@ export async function seedSheepSendToProcessor(supabaseAdmin, {flock = 'feeders'
     prior_herd_or_flock: null,
     entered_at: `2026-04-28T08:0${i}:00Z`,
   }));
-  must(await supabaseAdmin.from('weigh_ins').insert(weighIns), 'weigh_ins insert');
+  must(await supabaseAdmin.from('weigh_ins').upsert(weighIns, {onConflict: 'id'}), 'weigh_ins insert');
 
   return {
     batchId: BATCH_ID,
@@ -166,23 +173,26 @@ export async function seedSheepBatchPreAttached(supabaseAdmin) {
   }));
   const totalLive = sheepDetail.reduce((s, r) => s + r.live_weight, 0);
   must(
-    await supabaseAdmin.from('sheep_processing_batches').insert({
-      id: BATCH_ID,
-      name: BATCH_NAME,
-      planned_process_date: '2026-05-15',
-      actual_process_date: null,
-      processing_cost: null,
-      notes: null,
-      status: 'planned',
-      sheep_detail: sheepDetail,
-      total_live_weight: Math.round(totalLive * 10) / 10,
-      total_hanging_weight: null,
-    }),
+    await supabaseAdmin.from('sheep_processing_batches').upsert(
+      {
+        id: BATCH_ID,
+        name: BATCH_NAME,
+        planned_process_date: '2026-05-15',
+        actual_process_date: null,
+        processing_cost: null,
+        notes: null,
+        status: 'planned',
+        sheep_detail: sheepDetail,
+        total_live_weight: Math.round(totalLive * 10) / 10,
+        total_hanging_weight: null,
+      },
+      {onConflict: 'id'},
+    ),
     'sheep_processing_batches insert (multi-sheep pre-attached)',
   );
 
   must(
-    await supabaseAdmin.from('sheep').insert(
+    await supabaseAdmin.from('sheep').upsert(
       SHEEP_ROWS.map((s) => ({
         id: s.id,
         tag: s.tag,
@@ -191,21 +201,25 @@ export async function seedSheepBatchPreAttached(supabaseAdmin) {
         processing_batch_id: BATCH_ID,
         old_tags: [],
       })),
+      {onConflict: 'id'},
     ),
     'sheep insert (multi-sheep pre-attached)',
   );
 
   must(
-    await supabaseAdmin.from('weigh_in_sessions').insert({
-      id: SESSION_ID,
-      species: 'sheep',
-      date: '2026-04-28',
-      team_member: adminEmail,
-      herd: 'feeders',
-      status: 'complete',
-      started_at: '2026-04-28T08:00:00Z',
-      completed_at: '2026-04-28T09:00:00Z',
-    }),
+    await supabaseAdmin.from('weigh_in_sessions').upsert(
+      {
+        id: SESSION_ID,
+        species: 'sheep',
+        date: '2026-04-28',
+        team_member: adminEmail,
+        herd: 'feeders',
+        status: 'complete',
+        started_at: '2026-04-28T08:00:00Z',
+        completed_at: '2026-04-28T09:00:00Z',
+      },
+      {onConflict: 'id'},
+    ),
     'weigh_in_sessions insert (multi-sheep pre-attached)',
   );
 
@@ -224,12 +238,15 @@ export async function seedSheepBatchPreAttached(supabaseAdmin) {
     prior_herd_or_flock: 'feeders',
     entered_at: `2026-04-28T08:0${i}:00Z`,
   }));
-  must(await supabaseAdmin.from('weigh_ins').insert(weighIns), 'weigh_ins insert (multi-sheep pre-attached)');
+  must(
+    await supabaseAdmin.from('weigh_ins').upsert(weighIns, {onConflict: 'id'}),
+    'weigh_ins insert (multi-sheep pre-attached)',
+  );
 
   // Matching audit rows — what attach would have written. Including them
   // keeps the seed faithful to a real post-attach state.
   must(
-    await supabaseAdmin.from('sheep_transfers').insert(
+    await supabaseAdmin.from('sheep_transfers').upsert(
       SHEEP_ROWS.map((s) => ({
         id: `xfer-test-${s.tag}`,
         sheep_id: s.id,
@@ -239,6 +256,7 @@ export async function seedSheepBatchPreAttached(supabaseAdmin) {
         reference_id: BATCH_ID,
         team_member: adminEmail,
       })),
+      {onConflict: 'id'},
     ),
     'sheep_transfers insert (multi-sheep pre-attached)',
   );
@@ -266,76 +284,91 @@ export async function seedSheepPreAttachedForFallback(supabaseAdmin, {mode} = {}
   const sheep = SHEEP_ROWS[0];
 
   must(
-    await supabaseAdmin.from('sheep_processing_batches').insert({
-      id: BATCH_ID,
-      name: BATCH_NAME,
-      planned_process_date: '2026-05-15',
-      actual_process_date: null,
-      processing_cost: null,
-      notes: null,
-      status: 'planned',
-      sheep_detail: [{sheep_id: sheep.id, tag: sheep.tag, live_weight: 90, hanging_weight: null}],
-      total_live_weight: 90,
-      total_hanging_weight: null,
-    }),
+    await supabaseAdmin.from('sheep_processing_batches').upsert(
+      {
+        id: BATCH_ID,
+        name: BATCH_NAME,
+        planned_process_date: '2026-05-15',
+        actual_process_date: null,
+        processing_cost: null,
+        notes: null,
+        status: 'planned',
+        sheep_detail: [{sheep_id: sheep.id, tag: sheep.tag, live_weight: 90, hanging_weight: null}],
+        total_live_weight: 90,
+        total_hanging_weight: null,
+      },
+      {onConflict: 'id'},
+    ),
     'sheep_processing_batches insert (pre-attached)',
   );
 
   must(
-    await supabaseAdmin.from('sheep').insert({
-      id: sheep.id,
-      tag: sheep.tag,
-      breed: sheep.breed,
-      flock: 'processed',
-      processing_batch_id: BATCH_ID,
-      old_tags: [],
-    }),
+    await supabaseAdmin.from('sheep').upsert(
+      {
+        id: sheep.id,
+        tag: sheep.tag,
+        breed: sheep.breed,
+        flock: 'processed',
+        processing_batch_id: BATCH_ID,
+        old_tags: [],
+      },
+      {onConflict: 'id'},
+    ),
     'sheep insert (pre-attached)',
   );
 
   must(
-    await supabaseAdmin.from('weigh_in_sessions').insert({
-      id: SESSION_ID,
-      species: 'sheep',
-      date: '2026-04-28',
-      team_member: adminEmail,
-      herd: 'feeders',
-      status: 'complete',
-      started_at: '2026-04-28T08:00:00Z',
-      completed_at: '2026-04-28T09:00:00Z',
-    }),
+    await supabaseAdmin.from('weigh_in_sessions').upsert(
+      {
+        id: SESSION_ID,
+        species: 'sheep',
+        date: '2026-04-28',
+        team_member: adminEmail,
+        herd: 'feeders',
+        status: 'complete',
+        started_at: '2026-04-28T08:00:00Z',
+        completed_at: '2026-04-28T09:00:00Z',
+      },
+      {onConflict: 'id'},
+    ),
     'weigh_in_sessions insert (pre-attached)',
   );
 
   const entryId = `wi-test-sheep-${sheep.tag}`;
   must(
-    await supabaseAdmin.from('weigh_ins').insert({
-      id: entryId,
-      session_id: SESSION_ID,
-      tag: sheep.tag,
-      weight: 90,
-      note: null,
-      new_tag_flag: false,
-      send_to_processor: true,
-      target_processing_batch_id: BATCH_ID,
-      // prior_herd_or_flock left null — that's the gap the fallback exercises.
-      prior_herd_or_flock: null,
-      entered_at: '2026-04-28T08:00:00Z',
-    }),
+    await supabaseAdmin.from('weigh_ins').upsert(
+      {
+        id: entryId,
+        session_id: SESSION_ID,
+        tag: sheep.tag,
+        weight: 90,
+        note: null,
+        new_tag_flag: false,
+        send_to_processor: true,
+        target_processing_batch_id: BATCH_ID,
+        // prior_herd_or_flock left null — that's the gap the fallback exercises.
+        prior_herd_or_flock: null,
+        entered_at: '2026-04-28T08:00:00Z',
+      },
+      {onConflict: 'id'},
+    ),
     'weigh_ins insert (pre-attached)',
   );
 
   if (mode === 'with_audit_row' || mode === 'null_from_flock') {
     must(
-      await supabaseAdmin.from('sheep_transfers').insert({
-        id: `xfer-test-${sheep.tag}`,
-        sheep_id: sheep.id,
-        from_flock: mode === 'null_from_flock' ? null : 'feeders',
-        to_flock: 'processed',
-        reason: 'processing_batch',
-        reference_id: BATCH_ID,
-        team_member: adminEmail,
-      }),
+      await supabaseAdmin.from('sheep_transfers').upsert(
+        {
+          id: `xfer-test-${sheep.tag}`,
+          sheep_id: sheep.id,
+          from_flock: mode === 'null_from_flock' ? null : 'feeders',
+          to_flock: 'processed',
+          reason: 'processing_batch',
+          reference_id: BATCH_ID,
+          team_member: adminEmail,
+        },
+        {onConflict: 'id'},
+      ),
       `sheep_transfers insert (${mode})`,
     );
   }
