@@ -517,23 +517,39 @@ test('forecast: current and future month tiles default to expanded; past months 
   cattleForecastScenario,
 }) => {
   await page.goto(FORECAST_PATH);
-  await waitForForecastLoaded(page);
+  await waitForForecastData(page);
 
   const nowYm = new Date().toISOString().slice(0, 7);
-  const tile = page.locator(`[data-month-bucket="${nowYm}"]`);
-  await expect(tile).toBeVisible();
-  // Current month tile renders the inner table without a click.
-  await expect(tile.locator('[data-month-bucket-table]')).toBeVisible({timeout: 5_000});
 
-  // Pick a past month in the same year that the tile renders for.
-  const pastYm = nowYm.slice(0, 5) + '01'; // YYYY-01
-  if (pastYm < nowYm) {
-    const past = page.locator(`[data-month-bucket="${pastYm}"]`);
-    if ((await past.count()) > 0) {
-      // Past month tile starts collapsed → no inner table rendered yet.
-      await expect(past.locator('[data-month-bucket-table]')).toHaveCount(0);
+  // Enumerate every rendered month bucket with its key + default expand state.
+  // The header chevron (▼ expanded / ▶ collapsed) encodes expansion regardless
+  // of whether the bucket projects any rows, so this assertion does not depend
+  // on which month the seed happens to land cattle in (the old test hardcoded
+  // the literal current-month bucket having a populated table, which goes red
+  // once the calendar rolls past the seed's notional month).
+  const buckets = await page.locator('[data-month-bucket]').evaluateAll((els) =>
+    els.map((el) => ({
+      monthKey: el.getAttribute('data-month-bucket'),
+      // ▼ only renders in the header span when the tile is expanded.
+      expanded: (el.textContent || '').includes('▼'),
+    })),
+  );
+  expect(buckets.length).toBeGreaterThan(0);
+
+  // Product behavior: current/future months default expanded; past collapsed.
+  for (const b of buckets) {
+    if (b.monthKey >= nowYm) {
+      expect(b.expanded, `current/future bucket ${b.monthKey} should default expanded`).toBe(true);
+    } else {
+      expect(b.expanded, `past bucket ${b.monthKey} should default collapsed`).toBe(false);
     }
   }
+
+  // At least one current/future bucket renders its inner table without a click.
+  // Tables only render inside expanded buckets, and past buckets are collapsed,
+  // so any visible table belongs to an expanded current-or-future tile — the
+  // generalized form of the old "current month renders its table" check.
+  await expect(page.locator('[data-month-bucket-table]').first()).toBeVisible({timeout: 5_000});
 });
 
 test('forecast: per-cow row shows ADG value + calc text', async ({page, cattleForecastScenario}) => {
