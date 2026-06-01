@@ -1677,3 +1677,65 @@ test('forecast: include-heifers modal prunes staged heifer if she becomes inelig
     .eq('cattle_id', 'M-HEIFER-MIDFLIGHT');
   expect((after.data || []).length).toBe(0);
 });
+
+// --------------------------------------------------------------------------
+// Test 18 — Cold-Boot Readiness CP2: a raced/errored FIRST cattle weigh-ins
+// read self-heals to seeded finish candidates without a manual reload.
+// --------------------------------------------------------------------------
+// The cattle weigh-ins loader is a two-query read (weigh_in_sessions[cattle]
+// → weigh_ins). On cold boot either query can race empty or error, poisoning
+// the forecast with 0 finish candidates until the operator reloads. CP2: the
+// loader now surfaces a hard read failure (throwOnError) AND the mount effect
+// retries a cattle-present-but-weigh-ins-empty payload on its bounded
+// schedule, invalidating the weigh-in cache before each re-fetch. These specs
+// break ONLY the first cattle sessions read (empty, then errored) and confirm
+// the page recovers real data on its own. main.jsx does not pre-read cattle
+// weigh-ins at boot, so the forecast loader's read is the first such GET on
+// this route and the retry is the second.
+function breakFirstCattleSessionsRead(page, mode) {
+  let hits = 0;
+  return page.route('**/rest/v1/weigh_in_sessions**', async (route) => {
+    const req = route.request();
+    // Only target the cattle-scoped sessions read the forecast loader issues.
+    if (req.method() !== 'GET' || !req.url().includes('species=eq.cattle')) {
+      await route.continue();
+      return;
+    }
+    hits += 1;
+    if (hits > 1) {
+      await route.continue(); // the retry passes through to real data
+      return;
+    }
+    if (mode === 'error') {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({message: 'cold-boot race'}),
+      });
+    } else {
+      // 200 with an empty array — the poisoned-read symptom with no HTTP error.
+      await route.fulfill({status: 200, contentType: 'application/json', body: '[]'});
+    }
+  });
+}
+
+test('forecast cold-boot: a raced EMPTY first weigh-ins read self-heals to finish candidates (no reload)', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await breakFirstCattleSessionsRead(page, 'empty');
+  await page.goto(FORECAST_PATH);
+  // No manual reload — the mount effect's bounded retry must recover real data.
+  await waitForForecastData(page);
+  expect(await readFinishCandidateCount(page)).toBeGreaterThan(0);
+});
+
+test('forecast cold-boot: an ERRORED first weigh-ins read self-heals to finish candidates (no reload)', async ({
+  page,
+  cattleForecastScenario,
+}) => {
+  await breakFirstCattleSessionsRead(page, 'error');
+  await page.goto(FORECAST_PATH);
+  await waitForForecastData(page);
+  expect(await readFinishCandidateCount(page)).toBeGreaterThan(0);
+});

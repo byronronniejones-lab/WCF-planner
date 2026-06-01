@@ -199,7 +199,12 @@ const CattleForecastView = ({
   async function fetchForecastInputs() {
     const [cR, wAll, calR, comR, brR, orR, bR, s, inc, hid] = await Promise.all([
       sb.from('cattle').select('*').is('deleted_at', null).order('tag'),
-      loadCattleWeighInsCached(sb),
+      // throwOnError: a raced/errored cold-boot weigh-ins read surfaces as a
+      // thrown Error here (routed through the mount effect's bounded retry +
+      // recoverable notice) instead of silently caching [] and poisoning the
+      // forecast with 0 finish candidates. A genuinely weigh-in-less farm still
+      // resolves to [] without throwing.
+      loadCattleWeighInsCached(sb, {throwOnError: true}),
       sb.from('cattle_calving_records').select('*').order('calving_date', {ascending: false}),
       sb.from('cattle_comments').select('*').order('created_at', {ascending: false}),
       sb.from('cattle_breeds').select('*').order('label'),
@@ -272,7 +277,12 @@ const CattleForecastView = ({
           const payload = await fetchForecastInputs();
           if (cancelled) return;
           const coreEmpty = !(payload.cR.data && payload.cR.data.length > 0);
-          if (coreEmpty && attempt < RETRY_BACKOFFS_MS.length) {
+          // CP2: cattle present but weigh-ins came back empty is the poisoned
+          // cold-boot symptom (→ 0 finish candidates until reload). Retry it on
+          // the same bounded schedule; a genuinely weigh-in-less farm settles
+          // empty after the retries — small one-time cost, no infinite loop.
+          const weighInsSuspectEmpty = !coreEmpty && !(payload.wAll && payload.wAll.length > 0);
+          if ((coreEmpty || weighInsSuspectEmpty) && attempt < RETRY_BACKOFFS_MS.length) {
             // Suspicious cold-boot empty read — re-fetch fresh (clear the
             // weigh-in cache so a co-raced empty cache can't pin us empty).
             invalidateCattleWeighInsCache();
