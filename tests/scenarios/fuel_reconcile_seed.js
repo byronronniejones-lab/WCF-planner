@@ -86,15 +86,18 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
 
   // Equipment row — minimum FK target for equipment_fuelings.
   must(
-    await supabaseAdmin.from('equipment').insert({
-      id: 'eq-recon-test',
-      name: 'Recon Test Tractor',
-      slug: 'recon-test-tractor',
-      category: 'tractors',
-      tracking_unit: 'hours',
-      status: 'active',
-      fuel_type: fuelType,
-    }),
+    await supabaseAdmin.from('equipment').upsert(
+      {
+        id: 'eq-recon-test',
+        name: 'Recon Test Tractor',
+        slug: 'recon-test-tractor',
+        category: 'tractors',
+        tracking_unit: 'hours',
+        status: 'active',
+        fuel_type: fuelType,
+      },
+      {onConflict: 'id'},
+    ),
     'equipment insert',
   );
 
@@ -103,34 +106,43 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
   const unitPrice = 4;
   const subtotal = target.purchased * unitPrice;
   must(
-    await supabaseAdmin.from('fuel_bills').insert({
-      id: 'b-recon-1',
-      supplier: 'Recon Test Supplier',
-      invoice_number: 'RECON-001',
-      invoice_date: DELIVERY_DATE,
-      delivery_date: DELIVERY_DATE,
-      bol_number: 'RECON-BOL',
-      subtotal,
-      tax_total: 0,
-      total: subtotal,
-      pdf_path: 'fb-recon/test.pdf', // placeholder — never fetched in this spec
-    }),
+    await supabaseAdmin.from('fuel_bills').upsert(
+      {
+        id: 'b-recon-1',
+        supplier: 'Recon Test Supplier',
+        invoice_number: 'RECON-001',
+        invoice_date: DELIVERY_DATE,
+        delivery_date: DELIVERY_DATE,
+        bol_number: 'RECON-BOL',
+        subtotal,
+        tax_total: 0,
+        total: subtotal,
+        pdf_path: 'fb-recon/test.pdf', // placeholder — never fetched in this spec
+        // Explicit resets so an upsert overwrites a stale worker row exactly.
+        parsed_data: null,
+        notes: null,
+      },
+      {onConflict: 'id'},
+    ),
     'fuel_bills insert',
   );
   must(
-    await supabaseAdmin.from('fuel_bill_lines').insert({
-      id: 'bl-recon-1',
-      bill_id: 'b-recon-1',
-      description: `Recon ${fuelType}`,
-      fuel_type: fuelType,
-      gross_units: target.purchased,
-      net_units: target.purchased,
-      unit_price: unitPrice,
-      line_subtotal: subtotal,
-      allocated_tax: 0,
-      line_total: subtotal,
-      effective_per_gal: unitPrice,
-    }),
+    await supabaseAdmin.from('fuel_bill_lines').upsert(
+      {
+        id: 'bl-recon-1',
+        bill_id: 'b-recon-1',
+        description: `Recon ${fuelType}`,
+        fuel_type: fuelType,
+        gross_units: target.purchased,
+        net_units: target.purchased,
+        unit_price: unitPrice,
+        line_subtotal: subtotal,
+        allocated_tax: 0,
+        line_total: subtotal,
+        effective_per_gal: unitPrice,
+      },
+      {onConflict: 'id'},
+    ),
     'fuel_bill_lines insert',
   );
 
@@ -139,41 +151,66 @@ export async function seedFuelReconcile(supabaseAdmin, opts = {}) {
   const halfA = Math.floor(target.consumed / 2);
   const halfB = target.consumed - halfA;
   must(
-    await supabaseAdmin.from('equipment_fuelings').insert([
-      {
-        id: 'ef-recon-1',
-        equipment_id: 'eq-recon-test',
-        date: '2026-01-10',
-        fuel_type: fuelType,
-        gallons: halfA,
-        suppressed: false,
-        source: 'admin_add',
-      },
-      {
-        id: 'ef-recon-2',
-        equipment_id: 'eq-recon-test',
-        date: '2026-01-22',
-        fuel_type: fuelType,
-        gallons: halfB,
-        suppressed: false,
-        source: 'admin_add',
-      },
-    ]),
+    await supabaseAdmin.from('equipment_fuelings').upsert(
+      [
+        {
+          id: 'ef-recon-1',
+          equipment_id: 'eq-recon-test',
+          date: '2026-01-10',
+          fuel_type: fuelType,
+          gallons: halfA,
+          // Reset every mutable column the fueling write/suppress paths touch
+          // so a stale worker row can't survive into this seed's intended shape.
+          suppressed: false,
+          def_gallons: null,
+          client_submission_id: null,
+          photos: [],
+          every_fillup_check: [],
+          service_intervals_completed: [],
+          comments: null,
+          podio_source_app: null,
+          source: 'admin_add',
+        },
+        {
+          id: 'ef-recon-2',
+          equipment_id: 'eq-recon-test',
+          date: '2026-01-22',
+          fuel_type: fuelType,
+          gallons: halfB,
+          suppressed: false,
+          def_gallons: null,
+          client_submission_id: null,
+          photos: [],
+          every_fillup_check: [],
+          service_intervals_completed: [],
+          comments: null,
+          podio_source_app: null,
+          source: 'admin_add',
+        },
+      ],
+      {onConflict: 'id'},
+    ),
     'equipment_fuelings insert',
   );
 
   // Optional cell-destination fuel_supplies row (Test 4).
   if (includeCellRow) {
     must(
-      await supabaseAdmin.from('fuel_supplies').insert({
-        id: 'fs-recon-cell',
-        date: '2026-01-20',
-        gallons: CELL_GALLONS,
-        fuel_type: fuelType,
-        destination: 'cell',
-        team_member: 'Test',
-        source: 'manual',
-      }),
+      await supabaseAdmin.from('fuel_supplies').upsert(
+        {
+          id: 'fs-recon-cell',
+          date: '2026-01-20',
+          gallons: CELL_GALLONS,
+          fuel_type: fuelType,
+          destination: 'cell',
+          team_member: 'Test',
+          // Explicit resets so an upsert overwrites a stale worker row exactly.
+          client_submission_id: null,
+          notes: null,
+          source: 'manual',
+        },
+        {onConflict: 'id'},
+      ),
       'fuel_supplies cell insert',
     );
   }

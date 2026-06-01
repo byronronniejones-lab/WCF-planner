@@ -221,11 +221,17 @@ export async function seedP2601Scenario(supabaseAdmin) {
         nipple_drinker_working: true,
         troughs_moved: true,
         fence_walked: true,
+        // Resets so an upsert overwrites a stale worker row's mutable state
+        // (soft-delete + offline-submission columns) into the intended shape.
+        deleted_at: null,
+        deleted_by: null,
+        client_submission_id: null,
+        photos: [],
         source: null,
       });
     }
   }
-  must(await supabaseAdmin.from('pig_dailys').insert(dailyRows), 'pig_dailys insert');
+  must(await supabaseAdmin.from('pig_dailys').upsert(dailyRows, {onConflict: 'id'}), 'pig_dailys insert');
 
   // --- 5. Draft weigh_in_session for pigs + 5 weigh_ins on sub A.
   // Entries are NOT flagged sent_to_trip — the spec drives that via UI.
@@ -240,16 +246,24 @@ export async function seedP2601Scenario(supabaseAdmin) {
   // belong to by matching pigSlug(session.batch_id) against pigSlug(sb.name)
   // — without this, subAttributions stays empty.
   must(
-    await supabaseAdmin.from('weigh_in_sessions').insert({
-      id: sessionId,
-      species: 'pig',
-      date: '2026-04-26',
-      team_member: adminEmail,
-      herd: BATCH_NAME,
-      batch_id: 'p-26-01a',
-      status: 'draft',
-      started_at: '2026-04-26T08:00:00Z',
-    }),
+    await supabaseAdmin.from('weigh_in_sessions').upsert(
+      {
+        id: sessionId,
+        species: 'pig',
+        date: '2026-04-26',
+        team_member: adminEmail,
+        herd: BATCH_NAME,
+        batch_id: 'p-26-01a',
+        status: 'draft',
+        started_at: '2026-04-26T08:00:00Z',
+        // Resets so a stale worker row a prior run completed/annotated is
+        // overwritten back into the intended draft state.
+        completed_at: null,
+        notes: null,
+        client_submission_id: null,
+      },
+      {onConflict: 'id'},
+    ),
     'weigh_in_sessions insert',
   );
   const weighIns = [];
@@ -262,9 +276,22 @@ export async function seedP2601Scenario(supabaseAdmin) {
       note: null,
       new_tag_flag: false,
       entered_at: '2026-04-26T08:00:00Z',
+      // CRITICAL reset: the spec drives Send-to-Trip via the UI, which stamps
+      // sent_to_trip_id/sent_to_group_id, and asserts these are null pre-trip.
+      // A stale flagged worker row would poison the pre-trip math, so reset
+      // every side-effect column the pig trip/breeding/processor flows write.
+      sent_to_trip_id: null,
+      sent_to_group_id: null,
+      send_to_processor: false,
+      target_processing_batch_id: null,
+      transferred_to_breeding: false,
+      transfer_breeder_id: null,
+      feed_allocation_lbs: null,
+      prior_herd_or_flock: null,
+      client_submission_id: null,
     });
   }
-  must(await supabaseAdmin.from('weigh_ins').insert(weighIns), 'weigh_ins insert');
+  must(await supabaseAdmin.from('weigh_ins').upsert(weighIns, {onConflict: 'id'}), 'weigh_ins insert');
 
   return {
     batchId: BATCH_ID,

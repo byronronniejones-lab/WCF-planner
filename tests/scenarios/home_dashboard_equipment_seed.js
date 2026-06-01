@@ -25,6 +25,16 @@
 // negative seeds still produce equipment shaped like the legacy thresholds
 // (>14 days since fueling; ≤50 hours until next_due) so the negative lock
 // proves the new behavior even against the old trigger conditions.
+//
+// Idempotency (Seed Idempotency CP3): all writes upsert on the primary id so a
+// shared-DB worker-restart race can't trip a duplicate id. equipment.slug is
+// UNIQUE, so the per-kind slug is derived from the per-kind id (slug = id) —
+// a shared slug would collide on the slug unique constraint, which an
+// upsert(onConflict:'id') cannot resolve. Each payload also resets the
+// attention-trigger / mutable columns to a neutral baseline (EQUIP_RESET /
+// EF_RESET) and overrides only what the kind intentionally trips, so a stale
+// row that a prior test/RPC mutated can't leak a trigger into the kind under
+// test.
 // ============================================================================
 
 import {assertTestDatabase} from '../setup/assertTestDatabase.js';
@@ -50,6 +60,33 @@ function daysFromNow(n) {
   return d.toISOString().slice(0, 10);
 }
 
+// Attention-trigger columns reset to a neutral baseline. Per-kind payloads
+// spread this FIRST, then override only the columns that kind intentionally
+// trips — so a stale row (same id) a prior test/RPC mutated cannot leak a
+// trigger (warranty_expiration, service_intervals, every_fillup_items, …) into
+// the kind under test.
+const EQUIP_RESET = {
+  current_hours: null,
+  current_km: null,
+  warranty_expiration: null,
+  service_intervals: [],
+  attachment_checklists: [],
+  every_fillup_items: [],
+  notes: null,
+};
+// Same idea for fueling rows: reset the mutable / soft-delete-ish / submission
+// columns. Rows override every_fillup_check when they intentionally set one.
+const EF_RESET = {
+  suppressed: false,
+  def_gallons: null,
+  client_submission_id: null,
+  photos: [],
+  comments: null,
+  every_fillup_check: [],
+  service_intervals_completed: [],
+  podio_source_app: null,
+};
+
 export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
   assertTestDatabase(process.env.VITE_SUPABASE_URL || '');
   const {kind} = opts;
@@ -74,23 +111,30 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     'profiles upsert',
   );
 
-  const slug = 'eq-attention-test';
   const id = 'eq-attention-' + kind;
+  // slug is UNIQUE in equipment; derive it from the per-kind id so upsert on id
+  // fully protects against a stale worker row of another kind (a shared slug
+  // would 23505 on the slug unique constraint, which upsert-on-id can't fix).
+  const slug = id;
 
   // Per-kind seed.
   if (kind === 'overdue') {
     // current_hours=110, interval=100h, no completions → next_due=100, 10h overdue.
     must(
-      await supabaseAdmin.from('equipment').insert({
-        id,
-        name: 'Overdue Test Tractor',
-        slug,
-        category: 'tractors',
-        tracking_unit: 'hours',
-        status: 'active',
-        current_hours: 110,
-        service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
-      }),
+      await supabaseAdmin.from('equipment').upsert(
+        {
+          ...EQUIP_RESET,
+          id,
+          name: 'Overdue Test Tractor',
+          slug,
+          category: 'tractors',
+          tracking_unit: 'hours',
+          status: 'active',
+          current_hours: 110,
+          service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
+        },
+        {onConflict: 'id'},
+      ),
       'equipment insert (overdue)',
     );
     return {
@@ -110,16 +154,20 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     // it no longer does. Equipment maintenance is hour/km-based, not
     // calendar-based, so near-due forecasts deliberately don't render.
     must(
-      await supabaseAdmin.from('equipment').insert({
-        id,
-        name: 'Upcoming Test Tractor',
-        slug,
-        category: 'tractors',
-        tracking_unit: 'hours',
-        status: 'active',
-        current_hours: 60,
-        service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
-      }),
+      await supabaseAdmin.from('equipment').upsert(
+        {
+          ...EQUIP_RESET,
+          id,
+          name: 'Upcoming Test Tractor',
+          slug,
+          category: 'tractors',
+          tracking_unit: 'hours',
+          status: 'active',
+          current_hours: 60,
+          service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
+        },
+        {onConflict: 'id'},
+      ),
       'equipment insert (upcoming)',
     );
     return {slug, kind};
@@ -133,28 +181,35 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     // doesn't surface here. Animal dailies are the calendar workflow.
     const fuelDate = daysAgo(20);
     must(
-      await supabaseAdmin.from('equipment').insert({
-        id,
-        name: 'Stale Test Tractor',
-        slug,
-        category: 'tractors',
-        tracking_unit: 'hours',
-        status: 'active',
-        current_hours: 100,
-      }),
+      await supabaseAdmin.from('equipment').upsert(
+        {
+          ...EQUIP_RESET,
+          id,
+          name: 'Stale Test Tractor',
+          slug,
+          category: 'tractors',
+          tracking_unit: 'hours',
+          status: 'active',
+          current_hours: 100,
+        },
+        {onConflict: 'id'},
+      ),
       'equipment insert (missed_fueling)',
     );
     must(
-      await supabaseAdmin.from('equipment_fuelings').insert({
-        id: 'ef-stale-1',
-        equipment_id: id,
-        date: fuelDate,
-        team_member: 'Stale Tester',
-        fuel_type: 'diesel',
-        gallons: 5,
-        suppressed: false,
-        source: 'admin_add',
-      }),
+      await supabaseAdmin.from('equipment_fuelings').upsert(
+        {
+          ...EF_RESET,
+          id: 'ef-stale-1',
+          equipment_id: id,
+          date: fuelDate,
+          team_member: 'Stale Tester',
+          fuel_type: 'diesel',
+          gallons: 5,
+          source: 'admin_add',
+        },
+        {onConflict: 'id'},
+      ),
       'equipment_fuelings insert (missed_fueling)',
     );
     return {slug, kind, seededFuelDate: fuelDate};
@@ -166,43 +221,50 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     // Recent fueling dates (within 14 days) so missed_fueling does NOT also
     // trigger.
     must(
-      await supabaseAdmin.from('equipment').insert({
-        id,
-        name: 'Streak Test Tractor',
-        slug,
-        category: 'tractors',
-        tracking_unit: 'hours',
-        status: 'active',
-        current_hours: 100,
-        every_fillup_items: [{id: 'oil', label: 'Oil OK'}],
-      }),
+      await supabaseAdmin.from('equipment').upsert(
+        {
+          ...EQUIP_RESET,
+          id,
+          name: 'Streak Test Tractor',
+          slug,
+          category: 'tractors',
+          tracking_unit: 'hours',
+          status: 'active',
+          current_hours: 100,
+          every_fillup_items: [{id: 'oil', label: 'Oil OK'}],
+        },
+        {onConflict: 'id'},
+      ),
       'equipment insert (fillup_streak)',
     );
     must(
-      await supabaseAdmin.from('equipment_fuelings').insert([
-        {
-          id: 'ef-streak-1',
-          equipment_id: id,
-          date: daysAgo(2),
-          fuel_type: 'diesel',
-          gallons: 5,
-          hours_reading: 100,
-          every_fillup_check: [{id: 'tires', ok: true}], // 'oil' NOT ticked
-          suppressed: false,
-          source: 'admin_add',
-        },
-        {
-          id: 'ef-streak-2',
-          equipment_id: id,
-          date: daysAgo(5),
-          fuel_type: 'diesel',
-          gallons: 5,
-          hours_reading: 95,
-          every_fillup_check: [{id: 'tires', ok: true}], // 'oil' NOT ticked
-          suppressed: false,
-          source: 'admin_add',
-        },
-      ]),
+      await supabaseAdmin.from('equipment_fuelings').upsert(
+        [
+          {
+            ...EF_RESET,
+            id: 'ef-streak-1',
+            equipment_id: id,
+            date: daysAgo(2),
+            fuel_type: 'diesel',
+            gallons: 5,
+            hours_reading: 100,
+            every_fillup_check: [{id: 'tires', ok: true}], // 'oil' NOT ticked
+            source: 'admin_add',
+          },
+          {
+            ...EF_RESET,
+            id: 'ef-streak-2',
+            equipment_id: id,
+            date: daysAgo(5),
+            fuel_type: 'diesel',
+            gallons: 5,
+            hours_reading: 95,
+            every_fillup_check: [{id: 'tires', ok: true}], // 'oil' NOT ticked
+            source: 'admin_add',
+          },
+        ],
+        {onConflict: 'id'},
+      ),
       'equipment_fuelings insert (fillup_streak)',
     );
     return {
@@ -218,16 +280,20 @@ export async function seedHomeDashboardEquipment(supabaseAdmin, opts = {}) {
     // service_intervals / fillup_items / fuelings → only the warranty
     // path triggers.
     must(
-      await supabaseAdmin.from('equipment').insert({
-        id,
-        name: 'Warranty Test Tractor',
-        slug,
-        category: 'tractors',
-        tracking_unit: 'hours',
-        status: 'active',
-        current_hours: 100,
-        warranty_expiration: daysFromNow(30),
-      }),
+      await supabaseAdmin.from('equipment').upsert(
+        {
+          ...EQUIP_RESET,
+          id,
+          name: 'Warranty Test Tractor',
+          slug,
+          category: 'tractors',
+          tracking_unit: 'hours',
+          status: 'active',
+          current_hours: 100,
+          warranty_expiration: daysFromNow(30),
+        },
+        {onConflict: 'id'},
+      ),
       'equipment insert (warranty)',
     );
     return {
@@ -290,16 +356,20 @@ export async function seedHomeDashboardEquipmentMix(supabaseAdmin) {
   // Overdue: current_hours=110, interval=100h, no completions -> 10h overdue.
   // No every_fillup_items -> no fillup_streak. No warranty_expiration.
   must(
-    await supabaseAdmin.from('equipment').insert({
-      id: overdueSlug,
-      name: 'Mix Overdue Tractor',
-      slug: overdueSlug,
-      category: 'tractors',
-      tracking_unit: 'hours',
-      status: 'active',
-      current_hours: 110,
-      service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
-    }),
+    await supabaseAdmin.from('equipment').upsert(
+      {
+        ...EQUIP_RESET,
+        id: overdueSlug,
+        name: 'Mix Overdue Tractor',
+        slug: overdueSlug,
+        category: 'tractors',
+        tracking_unit: 'hours',
+        status: 'active',
+        current_hours: 110,
+        service_intervals: [{hours_or_km: 100, kind: 'hours', label: '100hr service', tasks: []}],
+      },
+      {onConflict: 'id'},
+    ),
     'equipment insert (mix overdue)',
   );
 
@@ -307,43 +377,50 @@ export async function seedHomeDashboardEquipmentMix(supabaseAdmin) {
   // the 14-day stale-fueling window with the 'oil' tick missing. No service
   // intervals -> no overdue. No warranty_expiration.
   must(
-    await supabaseAdmin.from('equipment').insert({
-      id: streakSlug,
-      name: 'Mix Streak Tractor',
-      slug: streakSlug,
-      category: 'tractors',
-      tracking_unit: 'hours',
-      status: 'active',
-      current_hours: 100,
-      every_fillup_items: [{id: 'oil', label: 'Oil OK'}],
-    }),
+    await supabaseAdmin.from('equipment').upsert(
+      {
+        ...EQUIP_RESET,
+        id: streakSlug,
+        name: 'Mix Streak Tractor',
+        slug: streakSlug,
+        category: 'tractors',
+        tracking_unit: 'hours',
+        status: 'active',
+        current_hours: 100,
+        every_fillup_items: [{id: 'oil', label: 'Oil OK'}],
+      },
+      {onConflict: 'id'},
+    ),
     'equipment insert (mix fillup_streak)',
   );
   must(
-    await supabaseAdmin.from('equipment_fuelings').insert([
-      {
-        id: 'ef-mix-streak-1',
-        equipment_id: streakSlug,
-        date: daysAgo(2),
-        fuel_type: 'diesel',
-        gallons: 5,
-        hours_reading: 100,
-        every_fillup_check: [{id: 'tires', ok: true}],
-        suppressed: false,
-        source: 'admin_add',
-      },
-      {
-        id: 'ef-mix-streak-2',
-        equipment_id: streakSlug,
-        date: daysAgo(5),
-        fuel_type: 'diesel',
-        gallons: 5,
-        hours_reading: 95,
-        every_fillup_check: [{id: 'tires', ok: true}],
-        suppressed: false,
-        source: 'admin_add',
-      },
-    ]),
+    await supabaseAdmin.from('equipment_fuelings').upsert(
+      [
+        {
+          ...EF_RESET,
+          id: 'ef-mix-streak-1',
+          equipment_id: streakSlug,
+          date: daysAgo(2),
+          fuel_type: 'diesel',
+          gallons: 5,
+          hours_reading: 100,
+          every_fillup_check: [{id: 'tires', ok: true}],
+          source: 'admin_add',
+        },
+        {
+          ...EF_RESET,
+          id: 'ef-mix-streak-2',
+          equipment_id: streakSlug,
+          date: daysAgo(5),
+          fuel_type: 'diesel',
+          gallons: 5,
+          hours_reading: 95,
+          every_fillup_check: [{id: 'tires', ok: true}],
+          source: 'admin_add',
+        },
+      ],
+      {onConflict: 'id'},
+    ),
     'equipment_fuelings insert (mix fillup_streak)',
   );
 
@@ -351,16 +428,20 @@ export async function seedHomeDashboardEquipmentMix(supabaseAdmin) {
   // window). No service intervals, no fillup items, no fuelings -> only
   // the warranty path triggers.
   must(
-    await supabaseAdmin.from('equipment').insert({
-      id: warrantySlug,
-      name: 'Mix Warranty Tractor',
-      slug: warrantySlug,
-      category: 'tractors',
-      tracking_unit: 'hours',
-      status: 'active',
-      current_hours: 100,
-      warranty_expiration: daysFromNow(30),
-    }),
+    await supabaseAdmin.from('equipment').upsert(
+      {
+        ...EQUIP_RESET,
+        id: warrantySlug,
+        name: 'Mix Warranty Tractor',
+        slug: warrantySlug,
+        category: 'tractors',
+        tracking_unit: 'hours',
+        status: 'active',
+        current_hours: 100,
+        warranty_expiration: daysFromNow(30),
+      },
+      {onConflict: 'id'},
+    ),
     'equipment insert (mix warranty)',
   );
 

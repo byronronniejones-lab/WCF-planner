@@ -21,6 +21,9 @@ const SEED_FILES = [
   'tests/scenarios/cattle_soft_delete_seed.js',
   'tests/scenarios/admin_broiler_session_meta_seed.js',
   'tests/scenarios/broiler_timeline_seed.js',
+  'tests/scenarios/fuel_reconcile_seed.js',
+  'tests/scenarios/home_dashboard_equipment_seed.js',
+  'tests/scenarios/p2601_seed.js',
 ];
 
 describe('processor scenario seeds are idempotent (upsert, not insert)', () => {
@@ -64,5 +67,43 @@ describe('CP2: upsert payloads reset known mutable stale columns', () => {
     const src = read('tests/scenarios/admin_broiler_session_meta_seed.js');
     expect(src).toMatch(/completed_at:\s*null/);
     expect(src).toMatch(/notes:\s*null/);
+  });
+});
+
+// ── CP3: fuel / equipment / pig seeds — unique slug + mutable-column resets ───
+describe('CP3: upsert payloads reset known mutable stale columns', () => {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+  it('home_dashboard_equipment_seed.js derives a UNIQUE per-kind slug from id (not a shared slug)', () => {
+    const src = read('tests/scenarios/home_dashboard_equipment_seed.js');
+    // equipment.slug is UNIQUE; a shared slug would 23505 under upsert-on-id.
+    expect(src).toMatch(/const slug = id/);
+    expect(src).not.toMatch(/'eq-attention-test'/);
+  });
+
+  it('home_dashboard_equipment_seed.js resets attention-trigger + fueling columns', () => {
+    const src = read('tests/scenarios/home_dashboard_equipment_seed.js');
+    expect(src).toMatch(/warranty_expiration:\s*null/);
+    expect(src).toMatch(/service_intervals:\s*\[\]/);
+    expect(src).toMatch(/every_fillup_items:\s*\[\]/);
+    expect(src).toMatch(/service_intervals_completed:\s*\[\]/);
+    expect(src).toMatch(/photos:\s*\[\]/);
+  });
+
+  it('fuel_reconcile_seed.js resets fueling + bill mutable columns', () => {
+    const src = read('tests/scenarios/fuel_reconcile_seed.js');
+    expect(src).toMatch(/parsed_data:\s*null/);
+    expect(src).toMatch(/photos:\s*\[\]/);
+    expect(src).toMatch(/podio_source_app:\s*null/);
+    expect(src).toMatch(/client_submission_id:\s*null/);
+  });
+
+  it('p2601_seed.js resets pig Send-to-Trip / breeding / soft-delete columns', () => {
+    const src = read('tests/scenarios/p2601_seed.js');
+    expect(src).toMatch(/sent_to_trip_id:\s*null/);
+    expect(src).toMatch(/sent_to_group_id:\s*null/);
+    expect(src).toMatch(/transferred_to_breeding:\s*false/);
+    expect(src).toMatch(/completed_at:\s*null/);
+    expect(src).toMatch(/deleted_at:\s*null/);
   });
 });
