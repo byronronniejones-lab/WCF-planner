@@ -30,29 +30,57 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest shipped code/test checkpoint on `origin/main`: `c34e6e8`
-  `style(records): broiler batch form adopts shared controls (CP5)`. Verify
-  exact hashes with `git log` when a lane needs them.
-- Latest shipped code checkpoints this run: Hardening CP1 retired the legacy
-  `wcf-entity-deep-link` / `_wcfEntityDeepLink` bridge; Cold-Boot Readiness
-  CP2 hardened Cattle Forecast weigh-ins cold boot; Cattle Forecast rollover
-  test was de-brittled; Seed Idempotency CP1-CP4 converted the highest-risk
-  scenario/inline fixed-ID seeds to `upsert(..., {onConflict:'id'})` with
-  stale-column resets; the daily-report hotfix routed Home Last-5-Days tiles
-  directly to record pages and added photos/dropdowns/shared controls; Record
-  Page Visual Consistency is shipped through CP5.
-- Local-only ahead of `origin/main`: none expected. Local screenshot folders
-  such as `cp5-shots/` may exist after UI review and should not be staged.
-- Open gates: none. Public webform submitter completion notices are not a
-  hotfix; they are deferred to the webform-light identity lane because today's
-  public roster has no profile/email recipient.
-- Next-session queue: finish the Record Page Visual Consistency lane before
-  returning to hardening unless Ronnie redirects. Remaining visual builds:
-  CP6 `LayerBatchPage`, CP7 `PigBatchPage`, CP8 `CowDetail` + `SheepDetail`
-  if safely shared, then a final sweep/static lock. Hardening resumes after
-  that with remaining seed-idempotency audit, the deterministic
-  `cattle_soft_delete.spec.js:173` red, and broader cold-boot/source
-  robustness.
+- Latest shipped code/test checkpoint on `origin/main`: `07eb038`
+  `fix(feed): Est. tile shows End of [active] Est. after a current-month count`.
+  Verify exact hashes with `git log` when a lane needs them.
+- Latest shipped code checkpoints this run: Record Page Visual Consistency
+  closed through CP8 plus the final static lock; daily record pages now use
+  Group dropdowns consistent with their entry forms; cattle soft-delete E2E now
+  matches the record-page/backend restore contract; cattle delete confirmation
+  copy no longer references a removed Recently Deleted UI; Seed Idempotency
+  CP5-CP7 hardened broiler session metadata, pig metrics, and equipment
+  Playwright seeds; the feed-order current-count hotfix shipped (`a91ccf2`
+  count-aware order math + basis caption, `07eb038` count-aware Est. tile).
+- Feed-order current-count hotfix: SHIPPED and live. Poultry and pig feed
+  recommendations now subtract the count-aware Actual On Hand when a
+  current-month physical count exists (else the previous-month estimate). The
+  production symptom was Poultry Feed showing `Order for Jun` from stale
+  `End of May Est.` even after a same-day count; expected math from Ronnie's
+  2026-06-01 screenshot now holds: Starter `5571 - 5500 = 71`, Grower
+  `31000 - 13117 = 17883`, Layer Feed `8599 - 8500 = 99`. The basis math lives
+  in the shared, unit-tested `src/lib/feedOrderBasis.js` (used by both
+  `BroilerFeedView` and `PigFeedView`); poultry resolves it per feed type. The
+  "Order for [active]" tile carries a basis caption (`vs Actual On Hand` /
+  `vs End of [prev] Est.`, three-way for poultry mixed state). The second
+  summary tile ALWAYS follows the active/calendar feed-order month — it reads
+  `End of [active] Est.` (e.g. "End of Jun Est.") and shows that month's
+  persisted ledger end, whether or not a physical count exists. A physical
+  count changes only the projected end NUMBERS (it anchors the active ledger),
+  never the tile's month/label. The tile updates when a feed order is SAVED,
+  not while typing an unsaved draft.
+- Local-only / dirty state: `main` is in sync with `origin/main` at `07eb038`.
+  The only working-tree change is this `PROJECT.md` docs update. Untracked
+  screenshot folders `cp5-shots/` / `cp6-shots/` may exist after UI review and
+  must not be staged.
+- Open gates: none on `main`. Public webform submitter completion notices are
+  not a hotfix; they are deferred to the webform-light identity lane because
+  today's public roster has no profile/email recipient.
+- Parked, NOT shipped: `hotfix/eggmobile3-layer-count` worktree at
+  `C:\Users\Ronni\WCF-planner-hotfix-eggmobile3`. It is a real but stale fix
+  (derive a layer housing's count from the latest matching daily report
+  when `current_count` is unset, plus tighter housing<->report matching incl.
+  `batch_id` + date window). Its working changes sit on a 144-commit-old base
+  (`5f88b02`) over files that diverged heavily on `main` (LayerBatchesView ~2681
+  diff lines), so it CANNOT be applied as-is — it needs reimplementation on
+  current `main` as its own reviewed lane. Codex was tasked to investigate it.
+  Do not bundle it into routine pushes.
+- Next-session queue: resume hardening/cleanup (Record Page Visual Consistency
+  is closed — do not restart CP6/CP7/CP8 unless a regression is found). Start
+  with remaining seed-idempotency audit/classification, broader
+  cold-boot/readiness robustness, and source cleanup of deprecated paths;
+  the eggmobile3 layer-count fix is a candidate reimplementation lane. Keep
+  cattle/sheep delete/restore strategy and public webform-light identity as
+  planned product lanes, not surprise hotfixes.
 - Operational record-page coverage as of this wrap: live for `cattle.animal`,
   `sheep.animal`, all 6 daily report types, `equipment.item`, `task.instance`,
   `weighin.session` for all 4 species, `cattle.processing` at
@@ -70,12 +98,14 @@ only when Ronnie explicitly assigns it.
   embedded prev/next instead of adding duplicate RecordSequenceNav controls.
   Comment-photos Storage RLS hotfix is live (migration 073).
 - Record-page visual standard: `src/shared/recordPageControls.jsx` is the
-  shared controls layer for record-page forms. Shipped consumers include all
-  six daily pages, task instance shell rows, broiler weigh-in metadata,
-  sheep/cattle batch contained editors, layer housing edit modal, equipment
-  fueling edit row, and broiler `BatchForm`. Remaining non-migrated heavy
-  surfaces are `LayerBatchPage`, `PigBatchPage`, and animal detail forms
-  (`CowDetail` / `SheepDetail`).
+  shared controls layer for record-page forms. The lane is complete through
+  CP8 and locked by
+  `tests/static/record_page_visual_consistency_final_static.test.js`. Migrated
+  surfaces include all six daily pages, task instance, equipment, weigh-in
+  session, broiler `BatchForm`, cattle/sheep processing pages, layer batch,
+  layer housing, pig batch modals, and CowDetail/SheepDetail calving/lambing
+  sub-forms. CowDetail/SheepDetail dense chip-bar headers and 120px info grids
+  are intentional exceptions.
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
@@ -258,7 +288,9 @@ What was built:
 | Animal transfer handler hardening | Live. Cattle/sheep animal transfer handlers now check primary animal update errors before writing transfer audit rows, surface warning notices when audit insert fails after a successful move, and no-op when destination matches the current herd/flock. |
 | Weigh-in session record pages | Live for cattle, sheep, pig, and broiler at `/weigh-in-sessions/<id>`. All 4 list views are navigation-only. Pig send-to-trip and transfer-to-breeding, broiler metadata/grid/ppp-v4 side effects all live on the record page. Focused Playwright hardening shipped for all species. |
 | Record-page sequence navigation | Live. `src/shared/RecordSequenceNav.jsx` + `src/lib/recordSequence.js` thread visible list order through route state. Controls show neighbor labels and position only when a reliable sequence exists; direct URL, notification, create-flow, and deep-link opens hide them. E2E coverage exists for animals, dailys, weigh-ins, tasks, processing/batches, equipment, layer housing, and pig batches. `broiler.batch` intentionally uses BatchForm's embedded prev/next. |
-| Record-page visual consistency | In progress. Daily-report hotfix established `src/shared/recordPageControls.jsx` as the shared form-control layer, then CP2-CP5 migrated contained sheep/cattle/layer/equipment/task/weigh-in/broiler surfaces without changing persistence or workflow semantics. Remaining heavy pages: `LayerBatchPage`, `PigBatchPage`, `CowDetail`, `SheepDetail`, then a final sweep/static lock. |
+| Record-page visual consistency | Complete. CP1-CP8 plus Daily Group dropdown consistency and the final static lock are live. `src/shared/recordPageControls.jsx` is the shared form-control layer for migrated record-page surfaces; `tests/static/record_page_visual_consistency_final_static.test.js` locks the contract and the CowDetail/SheepDetail dense-surface exceptions. |
+| Daily Group dropdown consistency | Live. Broiler, layer, and pig daily record pages use `Group` copy and dropdowns matching their entry forms, preserving historical inactive/current labels. Layer uses `src/layer/layerDailyGroups.js` as the single option and `batch_id` resolution source for both `LayerDailyPage` and `LayerDailysHub`. |
+| Feed-order current-count hotfix | Live (`a91ccf2`, `07eb038`). Poultry and pig feed recommendations subtract the count-aware Actual On Hand when a current-month physical count exists, else the previous-month ending estimate. Per feed type for poultry. Shared math in `src/lib/feedOrderBasis.js` (unit-tested). The Order tile carries a basis caption; the second tile always shows `End of [active] Est.` (active-month ledger end, count changes numbers only) and updates only on save. |
 | Codebase hardening and cleanup | Planned. Cleanup is a first-class roadmap track: retire deprecated UI/data paths as entities migrate, remove dead code with proof, extract shared record-page/list patterns, and document what remains intentionally legacy. |
 | Error Resilience Phase 1 | Live. App-root ErrorBoundary, global `error` and `unhandledrejection` capture, and durable redacted client error events through `record_client_error` SECDEF RPC / `client_error_events` table. |
 | Activity change logging | Live. Routine saved edits on migrated record pages record `field.updated`/`status.changed`/lifecycle Activity events where wired, including `cattle.animal`, `sheep.animal`, `equipment.item`, daily records, task instances, and cattle/sheep/pig weigh-in sessions. Cattle delete/restore is transactional/audited; sheep delete/restore, lifecycle/move actions, equipment child records, and admin-only documents remain deferred. |
@@ -276,58 +308,67 @@ What was built:
 | Farrowing-created pig batches | Live CP1. Saving the first farrowing record for a breeding cycle creates one `ppp-feeders-v1` farm-born `pig.batch` with deterministic id `farrowing-cycle-<cycle.id>`, `cycleId`, `farmBorn:true`, neutral `originalPigCount` from alive piglets, no fake gilt/boar split, and `startDate` from the earliest cycle farrowing date. Existing cycle-linked batches are reused untouched; later farrowing records do not duplicate or overwrite; delete/edit-away does not remove the batch. |
 | Cold-Boot Readiness CP1/CP2 (Cattle Forecast) | Live (`a84a8d3`, `c4c120a`). `CattleForecastView` self-heals cold-boot data loads instead of relying on reloads. CP1 split the mount load into `fetchForecastInputs` + `applyForecastInputs`, throws on helper/direct PostgREST errors, and retries the `cattle` spine under bounded backoffs `[350, 800]`. CP2 added `loadCattleWeighInsCached(sb, {throwOnError:true})`, prevents raced/errored weigh-in reads from poisoning cache, retries cattle-present-but-weigh-ins-empty, and then settles into real data, legit empty/no-weigh-in state, or recoverable `InlineNotice`. `loadAll` stays single-shot for the heifer modal. Empty-farm/no-weigh-in cost is a bounded one-time ~1.15s. |
 | Cattle Forecast E2E seed-flake fix | Live (`34ba80a`, test-only). Full `tests/cattle_forecast.spec.js` intermittently failed at the seed's `cattle.insert` with `duplicate key "cattle_pkey"`. Root cause: Playwright spawns a fresh worker after any test failure, and that handoff races the shared single test DB — a dying worker's in-flight `cattle` insert lands after the new worker's TRUNCATE (verified `count=0` post-reset), so the next seed collides; this cascaded across restarts. Fix: fixed-id seed rows in `tests/scenarios/cattle_forecast_seed.js` now use idempotent `upsert(onConflict:'id')` (cattle + weigh-in sessions/weigh-ins, base + send-flow). Proven with 5 consecutive full-spec runs at 35/35, zero dup hits (prior failure rate ~2/3). |
-| Seed Idempotency CP1-CP4 | Live test-infra hardening (`9771645`, `5f5607b`, `93977b8`, `7045bb1`). Highest-risk fixed-ID scenario and inline record/sequence seeds now use `upsert(..., {onConflict:'id'})`, never `ignoreDuplicates`, with stale-column resets for mutable fields and unique slug fixes where required. This reduces duplicate-PK worker-restart cascades but does not yet cover every remaining test `.insert(`. |
+| Seed Idempotency CP1-CP7 | Live test-infra hardening. CP1-CP4 covered the highest-risk fixed-ID scenario and inline record/sequence seeds; CP5 hardened broiler session metadata; CP6 hardened pig metrics seeds; CP7 hardened equipment Playwright seeds. Converted lanes use `upsert(..., {onConflict:'id'})`, never `ignoreDuplicates`, with stale-column resets for mutable fields and run-scoped unique values where fixed IDs would collide on unique columns. This reduces duplicate-PK / stale-row worker-restart cascades but does not yet cover every remaining test `.insert(`. |
 
 ### Parked WIP Stash
 
 Stash numbers can change if new stashes are added; always verify with
 `git stash list` before acting. Do not pop or drop blindly.
 
-No parked WIP stashes are expected as of 2026-05-28. The prior three
+No parked WIP git stashes are expected as of 2026-05-28. The prior three
 superseded stashes were audited and dropped during stash hygiene.
+
+Parked WIP does exist as uncommitted working changes in the
+`hotfix/eggmobile3-layer-count` worktree (not a git stash) — see the
+"Parked, NOT shipped" entry under Current State. It needs reimplementation on
+current `main`, not direct application.
 
 ---
 
 ## Active Roadmap
 
-Near-term selected path as of 2026-06-01: finish the Record Page Visual
-Consistency lane before returning to hardening, unless Ronnie redirects. The
-remaining visual queue is `LayerBatchPage`, `PigBatchPage`, `CowDetail` /
-`SheepDetail`, then a final sweep/static lock. After that, resume hardening at
-remaining seed idempotency, the deterministic `cattle_soft_delete` red, and
-broader cold-boot/source robustness.
+Near-term selected path as of 2026-06-01: the feed-order current-count hotfix
+shipped (`a91ccf2`, `07eb038`) and Record Page Visual Consistency is closed (do
+not restart CP6/CP7/CP8 or the final sweep unless a regression is found). Resume
+hardening at remaining seed-idempotency classification, broader
+cold-boot/source robustness, and deprecated-path cleanup. The parked
+`hotfix/eggmobile3-layer-count` layer-count fix is a candidate reimplementation
+lane (see Current State — it must be rebuilt on current `main`, not applied as-is).
 
 1. Codebase hardening and cleanup - remove deprecated patterns as each entity
    migrates, classify legacy/import/test-only code, and reduce context burn for
    future sessions.
-2. Record Page foundation stewardship - keep operational entities on the
+2. Feed planning correctness - keep feed recommendations tied to the latest
+   physical-count anchor when one exists (shipped); next is the parked
+   eggmobile3 layer-count reimplementation when prioritized.
+3. Record Page foundation stewardship - keep operational entities on the
    dedicated record-page pattern; no new Activity bubbles, inline record
    workspaces, or modal-based record workspaces.
-3. Shared record-page shell / contracts - extract only what is proven from
+4. Shared record-page shell / contracts - extract only what is proven from
    shipped record pages: header/back/title/loading/not-found conventions,
    sequence navigation placement, Comments placement, collapsed Activity audit
    log placement, and route/deep-link expectations.
-4. Sheep delete/restore strategy design - decide source-row soft-delete vs
+5. Sheep delete/restore strategy design - decide source-row soft-delete vs
    tombstone/resolver model before implementation.
-5. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
+6. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
    mutation + Activity must be atomic.
-6. Custom editable-table Activity - after record pages exist, add scoped
+7. Custom editable-table Activity - after record pages exist, add scoped
    history for operational tables such as cattle forecast month hide/unhide,
    feed forecast edits, breeding schedule edits, and similar table workflows.
-7. Critical workflow Playwright matrix - define coverage targets, write specs
+8. Critical workflow Playwright matrix - define coverage targets, write specs
    for highest-risk uncovered paths.
-8. Incremental mutation cleanup - domain by domain per Identity Map. Choose
+9. Incremental mutation cleanup - domain by domain per Identity Map. Choose
    direct / `runMutation` / SECDEF per entity risk.
-9. Shared UI extraction - extract filter bar, summary row, loading/empty/error
+10. Shared UI extraction - extract filter bar, summary row, loading/empty/error
    patterns from views that repeat them 3+ times.
-10. Deferred: webform-light user identities - replace anonymous public
+11. Deferred: webform-light user identities - replace anonymous public
    webform submitter fields with lightweight authenticated field users.
    Submitter/requester identity should come from the logged-in user, access
    can be disabled when an employee leaves, and light users should get the
    read-only field portal scope defined below.
-11. Deferred: code-splitting - only when field-device measurements or
+12. Deferred: code-splitting - only when field-device measurements or
    operator pain justify it.
-12. Deferred: TypeScript - gradual `allowJs` + JSDoc approach if/when
+13. Deferred: TypeScript - gradual `allowJs` + JSDoc approach if/when
    started.
 
 ---
@@ -819,10 +860,30 @@ flake diary.
 - Test-infra reliability: shared-DB worker-restart race. Playwright spawns a
   fresh worker after any test failure; with one shared test DB that handoff can
   race reset+seed and trip fixed-id `*_pkey` duplicates. Cattle forecast and
-  Seed Idempotency CP1-CP4 now cover the highest-risk fixed-ID scenario/inline
-  seeds with idempotent upserts plus stale-column resets. Remaining `.insert(`
-  calls in tests still need classification before any broad conversion; do not
-  blindly convert generated/unique/negative-case inserts.
+  Seed Idempotency CP1-CP7 now cover the highest-risk fixed-ID scenario/inline
+  seeds plus broiler session metadata, pig metrics, and equipment specs with
+  idempotent upserts, stale-column resets, and run-scoped unique values where
+  required. Remaining `.insert(` calls in tests still need classification
+  before any broad conversion; do not blindly convert generated/unique/negative
+  case inserts.
+- E2E run discipline (learned this session). Run Playwright specs ONE file per
+  `npx playwright test` invocation. Bundling several files lets Playwright run
+  multiple workers whose concurrent `resetDb()` calls stomp the shared TEST DB,
+  producing transient seed failures (e.g. `app_store/ppp-feeders-v1` reads
+  returning 0 rows, missing hub tiles) that look like code regressions but
+  aren't. To check a suspected regression, run the single file on the stashed
+  baseline. The repo config is `workers:1, fullyParallel:false,
+  reuseExistingServer:false`, so a single-file run is serial and isolated.
+- Parallel Codex worktrees lack the gitignored env files. `.env.test` and
+  `.env.test.local` (TEST `VITE_SUPABASE_URL` / anon key / admin creds /
+  service-role key) are NOT checked out into the `WCF-planner-codex-*` /
+  `WCF-planner-hotfix-*` worktrees, so Playwright there fails at
+  `global.setup: authenticate as admin` with "VITE_SUPABASE_URL/ADMIN... must
+  be set". That is missing-env, NOT a degraded TEST DB. To run e2e in a Codex
+  worktree, copy `.env.test` + `.env.test.local` from the main worktree first
+  (they stay gitignored); remove the copies afterward to avoid service-role-key
+  sprawl. Also free port 5173 (`reuseExistingServer:false` means each run starts
+  its own Vite server) if a prior run left one bound.
 - Likely future source-level robustness lane. Several views still load their own
   data once with no recovery. A small scoped lane could add a shared recovery —
   re-fetch-on-empty, or an auth/session-keyed load retry that ensures the session
@@ -1009,7 +1070,10 @@ Aliases:
 | Notifications | `src/lib/notificationsApi.js`, `src/shared/Header.jsx` |
 | Activity | `src/lib/activityApi.js`, `src/lib/activityRegistry.js`, `src/lib/globalActivityApi.js`, `src/activity/ActivityLogView.jsx` |
 | Comments foundation | `src/lib/commentsApi.js`, `src/shared/CommentsSection.jsx`, and reusable record comments APIs keyed by `entity_type` + `entity_id`; `src/shared/MentionTextarea.jsx` remains the mention composer primitive. |
+| Record page controls | `src/shared/recordPageControls.jsx`, `tests/static/record_page_visual_consistency_final_static.test.js` |
 | Record sequence nav | `src/lib/recordSequence.js`, `src/shared/RecordSequenceNav.jsx` |
+| Daily group dropdowns | `src/layer/layerDailyGroups.js`, daily record pages, daily entry hubs |
+| Feed planning | `src/lib/feedPlanner.js`, `src/broiler/BroilerFeedView.jsx`, `src/pig/PigFeedView.jsx`, `tests/static/feed_order_board_static.test.js` |
 | Pig farrowing batches | `src/lib/pigFarrowBatch.js`, `src/pig/FarrowingView.jsx`, `src/pig/PigBatchesView.jsx` |
 | Entity mutations | `src/lib/entityMutations.js` |
 | Daily reports API | `src/lib/dailyReportsApi.js`, `src/admin/RecentlyDeletedDailyReports.jsx` |
@@ -1220,6 +1284,12 @@ Read the relevant contract before editing its files.
   discussion to `CommentsSection`, keep Activity as collapsed audit history,
   retire daily Activity chips/modal UI, and open directly editable without a
   separate edit-mode button.
+- Broiler, layer, and pig daily record pages use `Group` user-facing copy, not
+  `Batch`, and the group field is a dropdown, not free text. The dropdown must
+  preserve the current/historical saved value even when inactive. Layer daily
+  group options and `batch_id` resolution must go through
+  `src/layer/layerDailyGroups.js` on both `LayerDailyPage` and
+  `LayerDailysHub` so entry form and record page cannot drift.
 - Pig feeder daily targets come only from active sub-batches of active feeder
   groups. A parent feeder batch with zero sub-batches must not appear in the
   Daily Report webform active_groups or Home missed-report notifications.
@@ -1285,6 +1355,25 @@ Read the relevant contract before editing its files.
 - Snapshot counts are anchors; today's on-hand subtracts consumption since the
   snapshot date.
 - Poultry burn uses existing broiler/layer schedule helpers.
+- Feed-order recommendations must use the latest active-month physical-count
+  basis when one exists. Do not keep subtracting previous-month ending estimate
+  after a same-month physical count has been saved.
+- Poultry feed-order math is per feed type. A current-month count for
+  `starter`, `grower`, or `layerfeed` affects only that type's recommendation.
+- Preserve the `Count includes <month> order` semantics: if the physical count
+  already includes the active-month delivery, do not double-count that order.
+- If no current-month physical count exists for a feed type, the prior
+  previous-month-ending-estimate basis may remain the fallback.
+- The "Order for [active]" tile carries a basis caption naming what it
+  subtracts (`vs Actual On Hand` when count-aware, else `vs End of [prev]
+  Est.`; poultry uses a three-way caption for the mixed per-type state). Do not
+  label a current-count-based recommendation as `End of <previous month> Est.`.
+- The SECOND summary tile is separate from the order basis: it ALWAYS follows
+  the active/calendar feed-order month (`End of [active] Est.`) and shows that
+  month's persisted active-ledger end. A physical count changes only the
+  numbers (it anchors the active ledger), never the tile's month/label, and
+  there is no `Current / Prior Est.` mixed label. It updates on save, not from
+  an unsaved typed draft.
 
 ### Cattle And Sheep
 
@@ -1363,6 +1452,7 @@ Focused starting points:
 | Daily reports | `tests/static/daily_soft_delete_static.test.js`, `tests/static/daily_duplicate_prevention_static.test.js` |
 | Broiler | `src/lib/broiler.test.js`, `tests/broiler_*.spec.js`, `tests/static/weighinswebform_no_app_store.test.js` |
 | Pig | `src/lib/pigForecast.test.js`, `tests/pig_*.spec.js` |
+| Feed planning | `src/lib/feedPlanner.test.js`, `tests/static/feed_order_board_static.test.js` |
 | Cattle | `src/lib/cattleForecast.test.js`, `tests/static/cattle_soft_delete_static.test.js`, `tests/cattle_*.spec.js` |
 | Sheep | `tests/sheep_send_to_processor.spec.js` |
 | Equipment | `tests/equipment_*.spec.js`, `tests/static/equipment_materials.test.js` |
