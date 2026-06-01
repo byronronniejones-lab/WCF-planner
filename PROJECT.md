@@ -7,15 +7,18 @@ This file is project-specific truth: current state, active roadmap,
 architecture map, and load-bearing contracts. Workflow, gates, and relay format
 live in [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-05-30.
+Last updated: 2026-06-01.
 
 ---
 
 ## Start Here
 
-1. Read [HO.md](HO.md).
-2. Read this file's Current State, Active Roadmap, and relevant Contracts.
-3. Inspect `git status --short`, recent git log, and the files in the lane.
+1. New/unclear session: read [HO.md](HO.md), then this file's Current State,
+   Active Roadmap, and relevant Contracts.
+2. Codex-authored build prompt: do not reread all of HO.md / PROJECT.md unless
+   the prompt asks for it. Use the prompt, `git status --short`, recent git
+   log, and only the relevant PROJECT sections for the lane.
+3. Inspect the files in scope before editing.
 
 Default ownership: Codex plans/reviews; CC builds/validates. Codex edits source
 only when Ronnie explicitly assigns it.
@@ -27,22 +30,29 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest shipped code/test checkpoint on `origin/main`: `34ba80a`
-  `test(cattle): make forecast seed idempotent`. Cold-Boot Readiness CP1 is the
-  prior checkpoint `a84a8d3`. This excludes the eventual docs-wrap commit;
-  verify exact hashes with `git log` when a lane needs them.
-- Latest shipped code checkpoints this session: legacy ActivityModal /
-  ActivityPanel composer retirement from the global Activity Log, record-page
-  sequence navigation CP1-CP4, pig farrowing-created batch CP1, Cold-Boot
-  Readiness CP1 (Cattle Forecast self-healing load), and the cattle_forecast
-  E2E seed-flake stabilization.
-- Local-only ahead of `origin/main`: none expected.
-- Open gates: none for the session wrap. Public webform submitter
-  completion notices are not a hotfix; they are deferred to the webform-light
-  identity lane because today's public roster has no profile/email recipient.
-- Next-session queue: no paused build lane. Start from the Active Roadmap and
-  Ronnie's chosen priority. Do not treat Cold-Boot CP2 ideas or suite-wide seed
-  idempotency as active scope until Ronnie selects that lane.
+- Latest shipped code/test checkpoint on `origin/main`: `c34e6e8`
+  `style(records): broiler batch form adopts shared controls (CP5)`. Verify
+  exact hashes with `git log` when a lane needs them.
+- Latest shipped code checkpoints this run: Hardening CP1 retired the legacy
+  `wcf-entity-deep-link` / `_wcfEntityDeepLink` bridge; Cold-Boot Readiness
+  CP2 hardened Cattle Forecast weigh-ins cold boot; Cattle Forecast rollover
+  test was de-brittled; Seed Idempotency CP1-CP4 converted the highest-risk
+  scenario/inline fixed-ID seeds to `upsert(..., {onConflict:'id'})` with
+  stale-column resets; the daily-report hotfix routed Home Last-5-Days tiles
+  directly to record pages and added photos/dropdowns/shared controls; Record
+  Page Visual Consistency is shipped through CP5.
+- Local-only ahead of `origin/main`: none expected. Local screenshot folders
+  such as `cp5-shots/` may exist after UI review and should not be staged.
+- Open gates: none. Public webform submitter completion notices are not a
+  hotfix; they are deferred to the webform-light identity lane because today's
+  public roster has no profile/email recipient.
+- Next-session queue: finish the Record Page Visual Consistency lane before
+  returning to hardening unless Ronnie redirects. Remaining visual builds:
+  CP6 `LayerBatchPage`, CP7 `PigBatchPage`, CP8 `CowDetail` + `SheepDetail`
+  if safely shared, then a final sweep/static lock. Hardening resumes after
+  that with remaining seed-idempotency audit, the deterministic
+  `cattle_soft_delete.spec.js:173` red, and broader cold-boot/source
+  robustness.
 - Operational record-page coverage as of this wrap: live for `cattle.animal`,
   `sheep.animal`, all 6 daily report types, `equipment.item`, `task.instance`,
   `weighin.session` for all 4 species, `cattle.processing` at
@@ -59,6 +69,13 @@ only when Ronnie explicitly assigns it.
   direct/deep-link opens. `broiler.batch` intentionally keeps BatchForm's
   embedded prev/next instead of adding duplicate RecordSequenceNav controls.
   Comment-photos Storage RLS hotfix is live (migration 073).
+- Record-page visual standard: `src/shared/recordPageControls.jsx` is the
+  shared controls layer for record-page forms. Shipped consumers include all
+  six daily pages, task instance shell rows, broiler weigh-in metadata,
+  sheep/cattle batch contained editors, layer housing edit modal, equipment
+  fueling edit row, and broiler `BatchForm`. Remaining non-migrated heavy
+  surfaces are `LayerBatchPage`, `PigBatchPage`, and animal detail forms
+  (`CowDetail` / `SheepDetail`).
 - PROD migrations live: `057` notifications, `058` activity events,
   `060` mention contract, `062` activity entity expansion, `063`
   notification activity resolution, `064` activity Phase 2 entities, `065`
@@ -241,6 +258,7 @@ What was built:
 | Animal transfer handler hardening | Live. Cattle/sheep animal transfer handlers now check primary animal update errors before writing transfer audit rows, surface warning notices when audit insert fails after a successful move, and no-op when destination matches the current herd/flock. |
 | Weigh-in session record pages | Live for cattle, sheep, pig, and broiler at `/weigh-in-sessions/<id>`. All 4 list views are navigation-only. Pig send-to-trip and transfer-to-breeding, broiler metadata/grid/ppp-v4 side effects all live on the record page. Focused Playwright hardening shipped for all species. |
 | Record-page sequence navigation | Live. `src/shared/RecordSequenceNav.jsx` + `src/lib/recordSequence.js` thread visible list order through route state. Controls show neighbor labels and position only when a reliable sequence exists; direct URL, notification, create-flow, and deep-link opens hide them. E2E coverage exists for animals, dailys, weigh-ins, tasks, processing/batches, equipment, layer housing, and pig batches. `broiler.batch` intentionally uses BatchForm's embedded prev/next. |
+| Record-page visual consistency | In progress. Daily-report hotfix established `src/shared/recordPageControls.jsx` as the shared form-control layer, then CP2-CP5 migrated contained sheep/cattle/layer/equipment/task/weigh-in/broiler surfaces without changing persistence or workflow semantics. Remaining heavy pages: `LayerBatchPage`, `PigBatchPage`, `CowDetail`, `SheepDetail`, then a final sweep/static lock. |
 | Codebase hardening and cleanup | Planned. Cleanup is a first-class roadmap track: retire deprecated UI/data paths as entities migrate, remove dead code with proof, extract shared record-page/list patterns, and document what remains intentionally legacy. |
 | Error Resilience Phase 1 | Live. App-root ErrorBoundary, global `error` and `unhandledrejection` capture, and durable redacted client error events through `record_client_error` SECDEF RPC / `client_error_events` table. |
 | Activity change logging | Live. Routine saved edits on migrated record pages record `field.updated`/`status.changed`/lifecycle Activity events where wired, including `cattle.animal`, `sheep.animal`, `equipment.item`, daily records, task instances, and cattle/sheep/pig weigh-in sessions. Cattle delete/restore is transactional/audited; sheep delete/restore, lifecycle/move actions, equipment child records, and admin-only documents remain deferred. |
@@ -256,8 +274,9 @@ What was built:
 | Pig batch record page | Live at `/pig/batches/<group id>`. `/pig/batches` is a nav-only hub with Global ADG, Add Manual Batch, archive toggle, and `PigBatchHubTile`; the record page owns the single-batch workspace, metadata edit, sub-batches, mortality, planned trips + locks, processing trips + FCR cache, forecast/current/FCR display, send-to-trip source display, sequence navigation, and `RecordCollaborationSection` for `pig.batch`. ActivityPanel/ActivityModal/wcf-entity-deep-link retired for pig.batch. Workflows were split into `usePigMortality`, `usePigSubBatches`, `usePigPlannedTrips`, `usePigProcessingTrips`, and `PigBatchPage`. |
 | Pig batch readiness stabilization | Live. `PigContext.feedersLoaded` is the real readiness signal for pig hub/record pages. `loadAllData()` resolves it in the same run as feeder app_store load, including success-with-data, success-empty, returned `{error}`, hard catch, and loadUser catch; SIGNED_OUT resets it. `PigBatchesView` exposes `data-pig-feeders-loaded` and gates Loading/not-found on `feedersLoaded`, fixing the cold-start record-page race and the empty-farm Loading-forever edge. Pig Playwright specs wait via `tests/helpers/pigReady.js`. |
 | Farrowing-created pig batches | Live CP1. Saving the first farrowing record for a breeding cycle creates one `ppp-feeders-v1` farm-born `pig.batch` with deterministic id `farrowing-cycle-<cycle.id>`, `cycleId`, `farmBorn:true`, neutral `originalPigCount` from alive piglets, no fake gilt/boar split, and `startDate` from the earliest cycle farrowing date. Existing cycle-linked batches are reused untouched; later farrowing records do not duplicate or overwrite; delete/edit-away does not remove the batch. |
-| Cold-Boot Readiness CP1 (Cattle Forecast) | Live (`a84a8d3`). `CattleForecastView` self-heals a cold-boot data load instead of relying on test-side reloads. The mount-once load is split into `fetchForecastInputs` (throws on any helper failure OR any direct PostgREST response error from the six `cattle*` reads) + `applyForecastInputs`, run under bounded recovery (backoffs `[350, 800]`): an empty `cattle` spine or a thrown/errored read keeps the spinner up, drops any poisoned weigh-in cache, and re-fetches, then settles into data, a legit empty farm, or a recoverable `InlineNotice` — the page never strands on Loading. `loadAll` stays single-shot for the heifer modal. Empty-farm cost is a bounded one-time ~1.15s. Known gap: recovery keys on the `cattle` spine only; a raced empty weigh-ins read (cattle present, 0 finish candidates) is not yet covered (CP2 candidate). |
+| Cold-Boot Readiness CP1/CP2 (Cattle Forecast) | Live (`a84a8d3`, `c4c120a`). `CattleForecastView` self-heals cold-boot data loads instead of relying on reloads. CP1 split the mount load into `fetchForecastInputs` + `applyForecastInputs`, throws on helper/direct PostgREST errors, and retries the `cattle` spine under bounded backoffs `[350, 800]`. CP2 added `loadCattleWeighInsCached(sb, {throwOnError:true})`, prevents raced/errored weigh-in reads from poisoning cache, retries cattle-present-but-weigh-ins-empty, and then settles into real data, legit empty/no-weigh-in state, or recoverable `InlineNotice`. `loadAll` stays single-shot for the heifer modal. Empty-farm/no-weigh-in cost is a bounded one-time ~1.15s. |
 | Cattle Forecast E2E seed-flake fix | Live (`34ba80a`, test-only). Full `tests/cattle_forecast.spec.js` intermittently failed at the seed's `cattle.insert` with `duplicate key "cattle_pkey"`. Root cause: Playwright spawns a fresh worker after any test failure, and that handoff races the shared single test DB — a dying worker's in-flight `cattle` insert lands after the new worker's TRUNCATE (verified `count=0` post-reset), so the next seed collides; this cascaded across restarts. Fix: fixed-id seed rows in `tests/scenarios/cattle_forecast_seed.js` now use idempotent `upsert(onConflict:'id')` (cattle + weigh-in sessions/weigh-ins, base + send-flow). Proven with 5 consecutive full-spec runs at 35/35, zero dup hits (prior failure rate ~2/3). |
+| Seed Idempotency CP1-CP4 | Live test-infra hardening (`9771645`, `5f5607b`, `93977b8`, `7045bb1`). Highest-risk fixed-ID scenario and inline record/sequence seeds now use `upsert(..., {onConflict:'id'})`, never `ignoreDuplicates`, with stale-column resets for mutable fields and unique slug fixes where required. This reduces duplicate-PK worker-restart cascades but does not yet cover every remaining test `.insert(`. |
 
 ### Parked WIP Stash
 
@@ -270,6 +289,13 @@ superseded stashes were audited and dropped during stash hygiene.
 ---
 
 ## Active Roadmap
+
+Near-term selected path as of 2026-06-01: finish the Record Page Visual
+Consistency lane before returning to hardening, unless Ronnie redirects. The
+remaining visual queue is `LayerBatchPage`, `PigBatchPage`, `CowDetail` /
+`SheepDetail`, then a final sweep/static lock. After that, resume hardening at
+remaining seed idempotency, the deterministic `cattle_soft_delete` red, and
+broader cold-boot/source robustness.
 
 1. Codebase hardening and cleanup - remove deprecated patterns as each entity
    migrates, classify legacy/import/test-only code, and reduce context burn for
@@ -784,21 +810,19 @@ flake diary.
   now awaits the layer global load before `setDataLoaded(true)`, and the layer
   record pages derive their record from the loaded props instead of a per-record
   by-id read.
-- Cattle Forecast now self-heals (CP1 shipped, `a84a8d3`). `CattleForecastView`
-  no longer depends on test-side reloads: the mount load runs under bounded
-  recovery and throws on direct PostgREST response errors too (see Recent
-  Shipped Work). The hide/unhide spec wait dropped its reload fallback and now
-  waits only on real seeded data (non-zero finish-candidate count). E2E specs
-  must still wait on real data, not shell/panel render — the panel renders even
-  on an empty raced read. Remaining CP2 gap: recovery keys on the `cattle`
-  spine; a raced empty weigh-ins read (cattle present, 0 finish candidates) is
-  not yet covered.
+- Cattle Forecast now self-heals through CP2 (`a84a8d3`, `c4c120a`).
+  `CattleForecastView` no longer depends on test-side reloads: the mount load
+  runs under bounded recovery, throws on direct PostgREST response errors, and
+  treats cattle-present-but-weigh-ins-empty as suspect until bounded retries
+  are exhausted. E2E specs must still wait on real data, not shell/panel render
+  — the panel can render before candidates exist.
 - Test-infra reliability: shared-DB worker-restart race. Playwright spawns a
   fresh worker after any test failure; with one shared test DB that handoff can
-  race reset+seed and trip fixed-id `*_pkey` duplicates (root-caused and fixed
-  for cattle_forecast via idempotent seed upsert, `34ba80a`). Other spec seeds
-  (sheep/cattle processor, etc.) still use plain fixed-id inserts and share the
-  same theoretical exposure — suite-wide seed idempotency is not yet generalized.
+  race reset+seed and trip fixed-id `*_pkey` duplicates. Cattle forecast and
+  Seed Idempotency CP1-CP4 now cover the highest-risk fixed-ID scenario/inline
+  seeds with idempotent upserts plus stale-column resets. Remaining `.insert(`
+  calls in tests still need classification before any broad conversion; do not
+  blindly convert generated/unique/negative-case inserts.
 - Likely future source-level robustness lane. Several views still load their own
   data once with no recovery. A small scoped lane could add a shared recovery —
   re-fetch-on-empty, or an auth/session-keyed load retry that ensures the session
