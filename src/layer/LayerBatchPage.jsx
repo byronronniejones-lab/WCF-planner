@@ -18,6 +18,7 @@ import {
 } from '../shared/RecordPageShell.jsx';
 /* eslint-enable no-unused-vars */
 import {S} from '../lib/styles.js';
+import {recordFieldRowClass, recordFieldLabel, recordControl, recordTextarea} from '../shared/recordPageControls.jsx';
 import {toISO, addDays} from '../lib/dateUtils.js';
 import {BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps} from '../lib/broiler.js';
 import {computeProjectedCount, computeHousingDisplayCount, computeLayerFeedCost} from '../lib/layerHousing.js';
@@ -967,10 +968,14 @@ export default function LayerBatchPage({
                 ×
               </button>
             </div>
-            <div style={{padding: '16px 20px', display: 'grid', gap: 10}}>
-              <div>
-                <label style={S.label}>Housing (Layer Group) *</label>
-                <select value={addHousingName} onChange={(e) => setAddHousingName(e.target.value)}>
+            <div style={{padding: '16px 20px'}}>
+              <div className={recordFieldRowClass}>
+                <span style={recordFieldLabel}>Housing (Layer Group) *</span>
+                <select
+                  value={addHousingName}
+                  onChange={(e) => setAddHousingName(e.target.value)}
+                  style={recordControl}
+                >
                   <option value="">{'Select housing…'}</option>
                   {(layerGroups || []).map((g) => {
                     const owning = (layerHousings || []).find(
@@ -987,9 +992,14 @@ export default function LayerBatchPage({
                   })}
                 </select>
               </div>
-              <div>
-                <label style={S.label}>Start Date</label>
-                <input type="date" value={addHousingStart} onChange={(e) => setAddHousingStart(e.target.value)} />
+              <div className={recordFieldRowClass}>
+                <span style={recordFieldLabel}>Start Date</span>
+                <input
+                  type="date"
+                  value={addHousingStart}
+                  onChange={(e) => setAddHousingStart(e.target.value)}
+                  style={recordControl}
+                />
               </div>
               <div
                 style={{
@@ -1109,56 +1119,57 @@ export default function LayerBatchPage({
                 </button>
               </div>
             </div>
-            <div
-              style={{
-                padding: '16px 20px',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 10,
-                maxHeight: '70vh',
-                overflowY: 'auto',
-              }}
-            >
-              <div style={{gridColumn: '1/-1'}}>
-                <label style={S.label}>Batch Name *</label>
+            <div style={{padding: '16px 20px', maxHeight: '70vh', overflowY: 'auto'}}>
+              <div className={recordFieldRowClass}>
+                <span style={recordFieldLabel}>Batch Name *</span>
                 <input
                   value={bForm.name}
                   onChange={(e) => updBatch((f) => ({...f, name: e.target.value}))}
                   placeholder="e.g. L-26-01"
+                  style={recordControl}
                 />
               </div>
-              <div>
-                <label style={S.label}>Status</label>
-                <select value={bForm.status} onChange={(e) => updBatch((f) => ({...f, status: e.target.value}))}>
+              <div className={recordFieldRowClass}>
+                <span style={recordFieldLabel}>Status</span>
+                <select
+                  value={bForm.status}
+                  onChange={(e) => updBatch((f) => ({...f, status: e.target.value}))}
+                  style={recordControl}
+                >
                   <option value="active">Active</option>
                   <option value="retired">Retired</option>
                 </select>
               </div>
               {bForm.name !== 'Retirement Home' && (
-                <div>
-                  <label style={S.label}>Original Count</label>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>Original Count</span>
                   <input
                     type="number"
                     min="0"
                     value={bForm.original_count || ''}
                     onChange={(e) => updBatch((f) => ({...f, original_count: e.target.value}))}
+                    style={recordControl}
                   />
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div>
-                  <label style={S.label}>Supplier</label>
-                  <input value={bForm.supplier} onChange={(e) => updBatch((f) => ({...f, supplier: e.target.value}))} />
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>Supplier</span>
+                  <input
+                    value={bForm.supplier}
+                    onChange={(e) => updBatch((f) => ({...f, supplier: e.target.value}))}
+                    style={recordControl}
+                  />
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div style={{gridColumn: '1/-1'}}>
-                  <label style={S.label}>Cost per Bird ($)</label>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>Cost per Bird ($)</span>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
-                    style={{maxWidth: 160}}
+                    style={{...recordControl, maxWidth: 160}}
                     value={bForm.cost_per_bird || ''}
                     onChange={(e) => updBatch((f) => ({...f, cost_per_bird: e.target.value}))}
                   />
@@ -1167,7 +1178,7 @@ export default function LayerBatchPage({
 
               {/* Feed cost rates (read-only) */}
               {bForm.name !== 'Retirement Home' && (
-                <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 10, marginTop: 4}}>
+                <div style={{borderTop: '1px solid #e5e7eb', paddingTop: 10, marginTop: 4}}>
                   <div style={{fontSize: 11, fontWeight: 700, color: '#4b5563', letterSpacing: 0.5, marginBottom: 6}}>
                     {'💰 FEED COST RATES'}{' '}
                     <span style={{fontWeight: 400, color: '#9ca3af'}}>{'(locked — set in Admin › Feed Costs)'}</span>
@@ -1216,7 +1227,6 @@ export default function LayerBatchPage({
               {bForm.name !== 'Retirement Home' && (
                 <div
                   style={{
-                    gridColumn: '1/-1',
                     borderTop: '1px solid #e5e7eb',
                     paddingTop: 10,
                     marginTop: 4,
@@ -1230,10 +1240,11 @@ export default function LayerBatchPage({
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div style={{gridColumn: '1/-1'}}>
-                  <label style={S.label}>Brooder</label>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>Brooder</span>
                   <select
                     value={bForm.brooder_name}
+                    style={recordControl}
                     onChange={(e) => {
                       const val = e.target.value;
                       const entry = bForm.brooder_entry_date;
@@ -1296,10 +1307,11 @@ export default function LayerBatchPage({
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div>
-                  <label style={S.label}>Date in Brooder</label>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>Date in Brooder</span>
                   <input
                     type="date"
+                    style={recordControl}
                     value={bForm.brooder_entry_date}
                     onChange={(e) => {
                       const entry = e.target.value;
@@ -1318,15 +1330,15 @@ export default function LayerBatchPage({
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div>
-                  <label style={S.label}>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>
                     Exit Date <span style={{color: '#9ca3af', fontWeight: 400}}>(auto)</span>
-                  </label>
+                  </span>
                   <input
                     type="date"
                     value={bForm.brooder_exit_date}
                     readOnly
-                    style={{background: '#f9fafb', color: '#6b7280'}}
+                    style={{...recordControl, background: '#f9fafb', color: '#6b7280'}}
                   />
                 </div>
               )}
@@ -1335,7 +1347,6 @@ export default function LayerBatchPage({
               {bForm.name !== 'Retirement Home' && (
                 <div
                   style={{
-                    gridColumn: '1/-1',
                     borderTop: '1px solid #e5e7eb',
                     paddingTop: 10,
                     marginTop: 4,
@@ -1349,11 +1360,12 @@ export default function LayerBatchPage({
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div style={{gridColumn: '1/-1'}}>
-                  <label style={S.label}>Schooner</label>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>Schooner</span>
                   <select
                     value={bForm.schooner_name}
                     onChange={(e) => updBatch((f) => ({...f, schooner_name: e.target.value}))}
+                    style={recordControl}
                   >
                     <option value="">Select schooner…</option>
                     {SCHOONERS.map((sc) => {
@@ -1405,12 +1417,13 @@ export default function LayerBatchPage({
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div>
-                  <label style={S.label}>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>
                     Entry Date <span style={{color: '#9ca3af', fontWeight: 400}}>(auto)</span>
-                  </label>
+                  </span>
                   <input
                     type="date"
+                    style={recordControl}
                     value={bForm.schooner_entry_date}
                     onChange={(e) => {
                       const entry = e.target.value;
@@ -1421,12 +1434,13 @@ export default function LayerBatchPage({
                 </div>
               )}
               {bForm.name !== 'Retirement Home' && (
-                <div>
-                  <label style={S.label}>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>
                     Exit Date <span style={{color: '#9ca3af', fontWeight: 400}}>(editable)</span>
-                  </label>
+                  </span>
                   <input
                     type="date"
+                    style={recordControl}
                     value={bForm.schooner_exit_date}
                     onChange={(e) => updBatch((f) => ({...f, schooner_exit_date: e.target.value}))}
                   />
@@ -1445,7 +1459,6 @@ export default function LayerBatchPage({
                   return (
                     <div
                       style={{
-                        gridColumn: '1/-1',
                         fontSize: 11,
                         padding: '4px 8px',
                         borderRadius: 5,
@@ -1460,16 +1473,18 @@ export default function LayerBatchPage({
                   );
                 })()}
 
-              <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 10, marginTop: 4}}>
-                <label style={S.label}>Notes</label>
-                <textarea
-                  value={bForm.notes}
-                  onChange={(e) => updBatch((f) => ({...f, notes: e.target.value}))}
-                  rows={2}
-                  style={{resize: 'vertical'}}
-                />
+              <div style={{borderTop: '1px solid #e5e7eb', paddingTop: 10, marginTop: 4}}>
+                <div className={recordFieldRowClass} style={{borderBottom: 'none'}}>
+                  <span style={recordFieldLabel}>Notes</span>
+                  <textarea
+                    value={bForm.notes}
+                    onChange={(e) => updBatch((f) => ({...f, notes: e.target.value}))}
+                    rows={2}
+                    style={recordTextarea}
+                  />
+                </div>
               </div>
-              {err && <div style={{gridColumn: '1/-1', color: '#b91c1c', fontSize: 12, fontWeight: 600}}>{err}</div>}
+              {err && <div style={{color: '#b91c1c', fontSize: 12, fontWeight: 600}}>{err}</div>}
             </div>
             {!isRetHome && (
               <div style={{padding: '12px 20px', borderTop: '1px solid #e5e7eb'}}>
