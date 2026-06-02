@@ -36,7 +36,6 @@ const PigDailysHub = ({
   fmt,
   Header,
   authState,
-  pigDailys,
   setPigDailys,
   feederGroups,
   pendingEdit,
@@ -72,8 +71,12 @@ const PigDailysHub = ({
   };
   const [form, setForm] = useState(EMPTY);
   const [notice, setNotice] = useState(null);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const fromRecords = [...new Set(pigDailys.map((d) => d.batch_label).filter(Boolean))].sort();
+  const fromRecords = [...new Set(records.map((d) => d.batch_label).filter(Boolean))].sort();
   const groupList = [
     ...new Set(
       [
@@ -84,21 +87,75 @@ const PigDailysHub = ({
   ].sort();
 
   useEffect(() => {
-    loadRoster(sb).then((roster) => setTeamMembers(activeNames(roster)));
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    (async () => {
+      const all = [];
+      const PAGE = 1000;
+      let from = 0;
+      while (true) {
+        const {data, error} = await sb
+          .from('pig_dailys')
+          .select('*')
+          .is('deleted_at', null)
+          .order('date', {ascending: false})
+          .range(from, from + PAGE - 1);
+        if (error) throw new Error('pig_dailys: ' + (error.message || error));
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      if (cancelled) return;
+      setRecords(all);
+      setPigDailys && setPigDailys(all);
+      if (pendingEdit?.viewName === 'pigdailys' && pendingEdit?.id) {
+        const rec = all.find((r) => r.id === pendingEdit.id);
+        if (rec) {
+          openEdit(rec);
+          setPendingEdit(null);
+        }
+      }
+      setLoading(false);
+    })().catch((e) => {
+      if (cancelled) return;
+      setRecords([]);
+      setPigDailys && setPigDailys([]);
+      setLoadError({
+        kind: 'error',
+        message: 'Could not load daily reports. Please refresh the page. (' + ((e && e.message) || e) + ')',
+      });
+      setLoading(false);
+    });
+    loadRoster(sb)
+      .then((roster) => {
+        if (!cancelled) setTeamMembers(activeNames(roster));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reloadKey is the user-gated retry trigger.
+  }, [reloadKey]);
   useEffect(() => {
-    if (pendingEdit?.viewName === 'pigdailys' && pendingEdit?.id && pigDailys.length > 0) {
-      const rec = pigDailys.find((r) => r.id === pendingEdit.id);
+    if (pendingEdit?.viewName === 'pigdailys' && pendingEdit?.id && records.length > 0) {
+      const rec = records.find((r) => r.id === pendingEdit.id);
       if (rec) {
         openEdit(rec);
         setPendingEdit(null);
       }
     }
-  }, [pendingEdit, pigDailys]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openEdit is a local form hydrator; records is the readiness source.
+  }, [pendingEdit, records]);
 
   const navigate = useNavigate();
 
   const [editSource, setEditSource] = useState(null);
+  function updateRecords(updater) {
+    setRecords(updater);
+    setPigDailys && setPigDailys(updater);
+  }
   function openEdit(d) {
     setNotice(null);
     setForm({
@@ -158,7 +215,7 @@ const PigDailysHub = ({
           }
           refreshDailys && refreshDailys('pig');
         });
-      setPigDailys((p) => p.map((r) => (r.id === editId ? {...r, ...rec} : r)));
+      updateRecords((p) => p.map((r) => (r.id === editId ? {...r, ...rec} : r)));
       setShowForm(false);
       setEditId(null);
     } else {
@@ -180,7 +237,7 @@ const PigDailysHub = ({
       if (error) {
         setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       } else if (data) {
-        setPigDailys((p) => [data, ...p]);
+        updateRecords((p) => [data, ...p]);
         refreshDailys && refreshDailys('pig');
       }
       setShowForm(false);
@@ -189,18 +246,18 @@ const PigDailysHub = ({
   }
   function del(id) {
     window._wcfConfirmDelete?.('Delete this daily report?', async () => {
-      const rec = pigDailys.find((r) => r.id === id);
+      const rec = records.find((r) => r.id === id);
       const label = rec ? rec.date + (rec.batch_label ? ' · ' + rec.batch_label : '') : id;
       await softDeleteDailyReport(sb, 'pig_dailys', id, label);
-      setPigDailys((p) => p.filter((r) => r.id !== id));
+      updateRecords((p) => p.filter((r) => r.id !== id));
       refreshDailys && refreshDailys('pig');
       setShowForm(false);
       setEditId(null);
     });
   }
 
-  const teamOpts = [...new Set(pigDailys.map((r) => r.team_member).filter(Boolean))].sort();
-  let filtered = pigDailys.filter(
+  const teamOpts = [...new Set(records.map((r) => r.team_member).filter(Boolean))].sort();
+  let filtered = records.filter(
     (r) =>
       (!fBatch || r.batch_label === fBatch) &&
       (!fTeam || r.team_member === fTeam) &&
@@ -223,7 +280,10 @@ const PigDailysHub = ({
   };
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      data-pig-dailys-loaded={loading || loadError ? 'false' : 'true'}
+    >
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
         <div
@@ -238,7 +298,7 @@ const PigDailysHub = ({
         >
           <div>
             <div style={{fontSize: 15, fontWeight: 700, color: '#111827'}}>Daily Reports</div>
-            <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>{pigDailys.length.toLocaleString()} total</div>
+            <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>{records.length.toLocaleString()} total</div>
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
@@ -268,7 +328,7 @@ const PigDailysHub = ({
             formType="pig"
             onClose={() => setShowAddModal(false)}
             onSaved={(recs) => {
-              setPigDailys((p) => [...recs, ...p]);
+              updateRecords((p) => [...recs, ...p]);
               refreshDailys && refreshDailys('pig');
             }}
           />
@@ -336,18 +396,41 @@ const PigDailysHub = ({
             })}
           </div>
         </div>
+        <InlineNotice notice={loadError} />
+        {loadError && (
+          <button
+            type="button"
+            data-daily-list-retry="1"
+            onClick={() => setReloadKey((k) => k + 1)}
+            style={{
+              marginBottom: 12,
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#374151',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Retry
+          </button>
+        )}
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
-        {pigDailys.length === 0 && (
+        {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading...</div>}
+        {!loading && !loadError && records.length === 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
             No pig daily reports yet
           </div>
         )}
-        {pigDailys.length > 0 && filtered.length === 0 && (
+        {!loading && !loadError && records.length > 0 && filtered.length === 0 && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
             No records match the current filters
           </div>
         )}
-        {filtered.length > 0 && (
+        {!loading && !loadError && filtered.length > 0 && (
           <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
             {(() => {
               const dates = [...new Set(filtered.map((r) => r.date))];

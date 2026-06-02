@@ -159,19 +159,24 @@ describe('Daily hub/list views - cold-boot readiness', () => {
   }
 });
 
-// ── PigDailysView is prop-driven; readiness is upstream (feedersLoaded) ─────
-describe('PigDailysView - prop-driven readiness (no local list load)', () => {
+// ── PigDailysView owns local list readiness ─────────────────────────────────
+describe('PigDailysView - local cold-boot readiness', () => {
   const src = read('src/pig/PigDailysView.jsx');
 
-  it('renders the list from the pigDailys prop, not a local select', () => {
-    expect(src).toContain('pigDailys');
-    // No paginated list select of pig_dailys lives in this view.
-    expect(src).not.toMatch(/from\('pig_dailys'\)[\s\S]{0,120}?\.range\(/);
+  it('renders the list from local records loaded from pig_dailys', () => {
+    expect(src).toContain('const [records, setRecords] = useState([]);');
+    expect(src).toMatch(/from\('pig_dailys'\)[\s\S]*?\.select\('\*'\)[\s\S]*?\.is\('deleted_at', null\)/);
+    expect(src).toMatch(/\.order\('date', \{ascending: false\}\)[\s\S]*?\.range\(from, from \+ PAGE - 1\)/);
+    expect(src).toContain('setPigDailys && setPigDailys(all);');
   });
 
-  it('only touches pig_dailys for save mutations (update/insert), not a list read', () => {
+  it('keeps save mutations intact and fails closed on list-read errors', () => {
     expect(src).toMatch(/from\('pig_dailys'\)[\s\S]{0,40}?\.update\(/);
     expect(src).toMatch(/from\('pig_dailys'\)[\s\S]{0,40}?\.insert\(/);
+    expect(src).toContain('setRecords([]);');
+    expect(src).toContain("data-pig-dailys-loaded={loading || loadError ? 'false' : 'true'}");
+    expect(src).toContain('<InlineNotice notice={loadError} />');
+    expect(src).toContain('data-daily-list-retry="1"');
   });
 });
 
