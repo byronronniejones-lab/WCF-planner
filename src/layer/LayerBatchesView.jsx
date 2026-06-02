@@ -45,6 +45,7 @@ const LayerBatchesHub = ({
   const [rawLayerDailys, setRawLayerDailys] = useState([]);
   const [rawEggDailys, setRawEggDailys] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [notice, setNotice] = useState(null);
 
   const [showAddBatch, setShowAddBatch] = useState(false);
@@ -62,9 +63,9 @@ const LayerBatchesHub = ({
     return `L-${yr}-${next}`;
   }
 
-  useEffect(() => {
+  const loadLayerMetrics = React.useCallback(async () => {
+    const PAGE = 1000;
     async function fetchAll(table, columns) {
-      const PAGE = 1000;
       let all = [];
       let offset = 0;
       let done = false;
@@ -74,7 +75,10 @@ const LayerBatchesHub = ({
           .select(columns)
           .is('deleted_at', null)
           .range(offset, offset + PAGE - 1);
-        if (error || !data || data.length === 0) {
+        if (error) {
+          throw new Error(`${table}: ${error.message}`);
+        }
+        if (!data || data.length === 0) {
           done = true;
           break;
         }
@@ -84,18 +88,30 @@ const LayerBatchesHub = ({
       }
       return all;
     }
-    Promise.all([
-      fetchAll('layer_dailys', 'batch_label,batch_id,feed_lbs,grit_lbs,mortality_count,layer_count,date,feed_type'),
-      fetchAll(
-        'egg_dailys',
-        'group1_name,group1_count,group2_name,group2_count,group3_name,group3_count,group4_name,group4_count,date',
-      ),
-    ]).then(([ld, ed]) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [ld, ed] = await Promise.all([
+        fetchAll('layer_dailys', 'batch_label,batch_id,feed_lbs,grit_lbs,mortality_count,layer_count,date,feed_type'),
+        fetchAll(
+          'egg_dailys',
+          'group1_name,group1_count,group2_name,group2_count,group3_name,group3_count,group4_name,group4_count,date',
+        ),
+      ]);
       setRawLayerDailys(ld);
       setRawEggDailys(ed);
+    } catch (e) {
+      setRawLayerDailys([]);
+      setRawEggDailys([]);
+      setLoadError({kind: 'error', message: 'Could not load layer batch metrics: ' + (e?.message || e)});
+    } finally {
       setLoading(false);
-    });
-  }, [layerBatches, layerHousings]);
+    }
+  }, [sb]);
+
+  useEffect(() => {
+    loadLayerMetrics();
+  }, [layerBatches, layerHousings, loadLayerMetrics]);
 
   // Pick up notice handed via navigation state (e.g. delete report from
   // record page if blocked detaches need surfacing on the hub).
@@ -190,9 +206,30 @@ const LayerBatchesHub = ({
       <div
         style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}
         data-layer-batches-hub
-        data-layer-batches-loaded={loading ? 'false' : 'true'}
+        data-layer-batches-loaded={loading || loadError ? 'false' : 'true'}
       >
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+        <InlineNotice notice={loadError} />
+        {loadError && (
+          <button
+            type="button"
+            onClick={loadLayerMetrics}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#085041',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 12,
+            }}
+          >
+            Retry
+          </button>
+        )}
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}}>
           <div style={{fontSize: 20, fontWeight: 700, color: '#111827'}}>
             Layer Batches
@@ -223,7 +260,7 @@ const LayerBatchesHub = ({
 
         {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading...</div>}
 
-        {!loading && (
+        {!loading && !loadError && (
           <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
             {activeBatches.map((batch, bi) => {
               const stats = batchStats[batch.id] || {};

@@ -238,6 +238,21 @@ describe('closeForm() returns submit(false) on the dirty-edit branch', () => {
   });
 });
 
+describe('Broiler batch cold-boot readiness markers', () => {
+  it('record page consumes dataLoaded so a genuinely empty loaded batch context reaches not-found, not infinite loading', () => {
+    expect(pageSrc).toMatch(/const \{authState, dataLoaded\} = useAuth\(\);/);
+    expect(pageSrc).toMatch(/!Array\.isArray\(batches\) \|\| \(!dataLoaded && batches\.length === 0\)/);
+  });
+
+  it('record page exposes data-broiler-batch-record-loaded only on the resolved record body', () => {
+    expect(pageSrc).toMatch(/<RecordPageBody[^>]*data-broiler-batch-record-loaded="true"/);
+  });
+
+  it('hub exposes a stable data-broiler-batches-loaded marker for browser readiness checks', () => {
+    expect(listSrc).toContain('data-broiler-batches-loaded="true"');
+  });
+});
+
 describe('BroilerBatchPage.handleClose guards navigation on closeForm refusal', () => {
   // Codex P1 follow-up: handleClose must not navigate or clear showForm
   // when closeForm refused (blank name / hard conflict without override).

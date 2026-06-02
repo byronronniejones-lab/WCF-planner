@@ -125,3 +125,23 @@ describe('Playwright readiness helper — waits on the real signal, not boot-loa
     }
   });
 });
+
+describe('PigBatchesView sidecar readiness', () => {
+  it('global ADG app_store read failure falls back to projection defaults with a warning notice', () => {
+    expect(viewSrc).toMatch(/\.then\(\(\{data, error\}\) => \{/);
+    expect(viewSrc).toContain('setGlobalAdgRow({manualValue: null, updatedAt: null, updatedBy: null})');
+    expect(viewSrc).toContain('Global ADG override could not be loaded');
+    expect(viewSrc).toMatch(/\.catch\(\(e\) => \{[\s\S]*?setGlobalAdgRow\(\{manualValue: null/);
+  });
+
+  it('forecast weigh-in sidecar checks sessions and entries errors', () => {
+    expect(viewSrc).toMatch(/if \(sessionsError\) throw new Error\('weigh_in_sessions: ' \+ sessionsError\.message\)/);
+    expect(viewSrc).toMatch(/if \(entriesError\) throw new Error\('weigh_ins: ' \+ entriesError\.message\)/);
+  });
+
+  it('forecast weigh-in sidecar clears stale arrays and warns without blocking feedersLoaded', () => {
+    expect(viewSrc).toMatch(/setPigSessionsForForecast\(\[\]\);\s*\n\s*setPigEntriesForForecast\(\[\]\);/);
+    expect(viewSrc).toContain('Pig forecast weigh-ins could not be loaded');
+    expect(viewSrc).toMatch(/data-pig-feeders-loaded=\{feedersLoaded \? 'true' : 'false'\}/);
+  });
+});

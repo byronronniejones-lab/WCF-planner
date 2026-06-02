@@ -67,7 +67,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
         />
       )}
       <Header />
-      <div style={{padding: '1rem'}}>
+      <div style={{padding: '1rem'}} data-broiler-batches-loaded="true">
         <div style={{display: 'flex', justifyContent: 'flex-end', marginBottom: 10}}>
           <button
             style={{

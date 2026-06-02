@@ -76,3 +76,28 @@ describe('activityRegistry — equipment.item route', () => {
     expect(registry).not.toMatch(/EQUIPMENT_ITEM[\s\S]*?ctx\.slug/);
   });
 });
+
+describe('EquipmentHome cold-boot readiness', () => {
+  it('tracks loadError separately from the intentional missing-schema banner', () => {
+    expect(home).toMatch(/const \[loadError, setLoadError\] = React\.useState\(null\)/);
+    expect(home).toMatch(/const \[missingSchema, setMissingSchema\] = React\.useState\(false\)/);
+    expect(home).toContain('data-equipment-load-error="true"');
+  });
+
+  it('checks all required equipment query errors before rendering fleet/detail data', () => {
+    expect(home).toMatch(/if \(eR\.error\) throw new Error\('equipment: ' \+ eR\.error\.message\)/);
+    expect(home).toMatch(/if \(fR\.error\) throw new Error\('equipment_fuelings: ' \+ fR\.error\.message\)/);
+    expect(home).toMatch(/if \(mR\.error\) throw new Error\('equipment_maintenance_events: ' \+ mR\.error\.message\)/);
+  });
+
+  it('clears stale equipment arrays on load failure and gates subviews on !loadError', () => {
+    expect(home).toMatch(/setEquipment\(\[\]\);\s*\n\s*setFuelings\(\[\]\);\s*\n\s*setMaintenance\(\[\]\);/);
+    expect(home).toMatch(/setLoadError\(\{kind: 'error', message: 'Could not load equipment data: '/);
+    expect(home).toMatch(/!loading && !missingSchema && !loadError && subView === 'fleet'/);
+    expect(home).toMatch(/!loading && !missingSchema && !loadError && subView === 'detail'/);
+  });
+
+  it('exposes a loaded marker only when not loading, not schema-missing, and not in loadError', () => {
+    expect(home).toMatch(/data-equipment-home-loaded=\{!loading && !loadError && !missingSchema \? 'true' : 'false'\}/);
+  });
+});

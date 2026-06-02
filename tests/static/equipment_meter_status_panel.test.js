@@ -133,7 +133,7 @@ describe('EquipmentHome.loadAll — quiet reload option', () => {
     const homeSrc = readFileSync(homePath, 'utf-8');
     // Signature must default-destructure so legacy callers (useEffect mount,
     // existing onReload props) still work without an argument.
-    expect(homeSrc).toMatch(/async function loadAll\(\{quiet = false\} = \{\}\)/);
+    expect(homeSrc).toMatch(/const loadAll = React\.useCallback\(\s*async \(\{quiet = false\} = \{\}\) =>/);
     // The setLoading(true) branch must be gated on !quiet so quiet callers
     // don't trigger the loading spinner that unmounts child detail panels.
     expect(homeSrc).toMatch(/if \(!quiet\) setLoading\(true\)/);

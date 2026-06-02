@@ -72,6 +72,7 @@ export default function LayerHousingPage({
   const [rawLayerDailys, setRawLayerDailys] = React.useState([]);
   const [rawEggDailys, setRawEggDailys] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState(null);
   const [notice, setNotice] = React.useState(null);
   const [showForm, setShowForm] = React.useState(false);
   const [hForm, setHForm] = React.useState(EMPTY_HOUSING_DRAFT);
@@ -81,6 +82,8 @@ export default function LayerHousingPage({
   const housingAutoSaveTimer = React.useRef(null);
 
   async function loadAll() {
+    setLoading(true);
+    setLoadError(null);
     const PAGE = 1000;
     async function fetchAll(table, columns) {
       let all = [];
@@ -92,7 +95,10 @@ export default function LayerHousingPage({
           .select(columns)
           .is('deleted_at', null)
           .range(offset, offset + PAGE - 1);
-        if (error || !data || data.length === 0) {
+        if (error) {
+          throw new Error(`${table}: ${error.message}`);
+        }
+        if (!data || data.length === 0) {
           done = true;
           break;
         }
@@ -102,20 +108,26 @@ export default function LayerHousingPage({
       }
       return all;
     }
-    const [ld, ed] = await Promise.all([
-      fetchAll('layer_dailys', 'batch_label,batch_id,feed_lbs,grit_lbs,mortality_count,layer_count,date,feed_type'),
-      fetchAll(
-        'egg_dailys',
-        'group1_name,group1_count,group2_name,group2_count,group3_name,group3_count,group4_name,group4_count,date',
-      ),
-    ]);
-    setRawLayerDailys(ld);
-    setRawEggDailys(ed);
-    setLoading(false);
+    try {
+      const [ld, ed] = await Promise.all([
+        fetchAll('layer_dailys', 'batch_label,batch_id,feed_lbs,grit_lbs,mortality_count,layer_count,date,feed_type'),
+        fetchAll(
+          'egg_dailys',
+          'group1_name,group1_count,group2_name,group2_count,group3_name,group3_count,group4_name,group4_count,date',
+        ),
+      ]);
+      setRawLayerDailys(ld);
+      setRawEggDailys(ed);
+    } catch (e) {
+      setRawLayerDailys([]);
+      setRawEggDailys([]);
+      setLoadError({kind: 'error', message: 'Could not load layer housing metrics: ' + (e?.message || e)});
+    } finally {
+      setLoading(false);
+    }
   }
 
   React.useEffect(() => {
-    setLoading(true);
     setNotice(null);
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,6 +261,34 @@ export default function LayerHousingPage({
 
   if (loading) {
     return <RecordPageLoading Header={Header} />;
+  }
+
+  if (loadError) {
+    return (
+      <RecordPageFrame Header={Header}>
+        <RecordPageBody maxWidth={900} data-layer-housing-load-error="true">
+          <RecordBackLink label="Back to Layer Batches" onBack={() => navigate('/layer/batches')} />
+          <InlineNotice notice={loadError} />
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#085041',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Retry
+          </button>
+        </RecordPageBody>
+      </RecordPageFrame>
+    );
   }
 
   if (!housing) {

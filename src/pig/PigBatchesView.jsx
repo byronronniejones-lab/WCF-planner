@@ -191,12 +191,21 @@ export default function PigBatchesView({
       .select('data')
       .eq('key', 'ppp-pig-global-adg-v1')
       .maybeSingle()
-      .then(({data}) => {
+      .then(({data, error}) => {
+        if (error) {
+          setGlobalAdgRow({manualValue: null, updatedAt: null, updatedBy: null});
+          setNotice({kind: 'warning', message: 'Global ADG override could not be loaded: ' + error.message});
+          return;
+        }
         if (data && data.data && typeof data.data === 'object') {
           setGlobalAdgRow(data.data);
         } else {
           setGlobalAdgRow({manualValue: null, updatedAt: null, updatedBy: null});
         }
+      })
+      .catch((e) => {
+        setGlobalAdgRow({manualValue: null, updatedAt: null, updatedBy: null});
+        setNotice({kind: 'warning', message: 'Global ADG override could not be loaded: ' + (e?.message || e)});
       });
   }, []);
 
@@ -208,21 +217,33 @@ export default function PigBatchesView({
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      const {data: sessions} = await sb
-        .from('weigh_in_sessions')
-        .select('id, batch_id, date, status, started_at')
-        .eq('species', 'pig')
-        .order('date', {ascending: false});
-      if (cancelled) return;
-      setPigSessionsForForecast(sessions || []);
-      const ids = (sessions || []).map((s) => s.id);
-      if (ids.length === 0) {
+      try {
+        const {data: sessions, error: sessionsError} = await sb
+          .from('weigh_in_sessions')
+          .select('id, batch_id, date, status, started_at')
+          .eq('species', 'pig')
+          .order('date', {ascending: false});
+        if (sessionsError) throw new Error('weigh_in_sessions: ' + sessionsError.message);
+        if (cancelled) return;
+        setPigSessionsForForecast(sessions || []);
+        const ids = (sessions || []).map((s) => s.id);
+        if (ids.length === 0) {
+          setPigEntriesForForecast([]);
+          return;
+        }
+        const {data: ents, error: entriesError} = await sb
+          .from('weigh_ins')
+          .select('session_id, weight')
+          .in('session_id', ids);
+        if (entriesError) throw new Error('weigh_ins: ' + entriesError.message);
+        if (cancelled) return;
+        setPigEntriesForForecast(ents || []);
+      } catch (e) {
+        if (cancelled) return;
+        setPigSessionsForForecast([]);
         setPigEntriesForForecast([]);
-        return;
+        setNotice({kind: 'warning', message: 'Pig forecast weigh-ins could not be loaded: ' + (e?.message || e)});
       }
-      const {data: ents} = await sb.from('weigh_ins').select('session_id, weight').in('session_id', ids);
-      if (cancelled) return;
-      setPigEntriesForForecast(ents || []);
     })();
     return () => {
       cancelled = true;

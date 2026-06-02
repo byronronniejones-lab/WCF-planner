@@ -47,7 +47,7 @@ export default function BroilerBatchPage({
   const navigate = useNavigate();
   const location = useLocation();
   const {batches, editId, setShowForm} = useBatches();
-  const {authState} = useAuth();
+  const {authState, dataLoaded} = useAuth();
 
   const encodedName = location.pathname.slice('/broiler/batches/'.length);
   const batchName = (() => {
@@ -151,7 +151,7 @@ export default function BroilerBatchPage({
     navigate('/broiler/batches/' + encodeURIComponent(targetBatch.name));
   }
 
-  if (!Array.isArray(batches) || batches.length === 0) {
+  if (!Array.isArray(batches) || (!dataLoaded && batches.length === 0)) {
     return <RecordPageLoading Header={Header} />;
   }
 
@@ -174,7 +174,7 @@ export default function BroilerBatchPage({
 
   return (
     <RecordPageFrame Header={Header}>
-      <RecordPageBody maxWidth={1100}>
+      <RecordPageBody maxWidth={1100} data-broiler-batch-record-loaded="true">
         <RecordBackLink label="Back to Broiler Batches" onBack={handleClose} />
 
         <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12}}>
