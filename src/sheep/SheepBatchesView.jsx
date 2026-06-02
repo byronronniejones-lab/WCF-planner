@@ -23,6 +23,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
 
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -30,7 +31,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
 
   async function loadAll() {
     setLoading(true);
-    setNotice(null);
+    setLoadError(null);
     try {
       const bR = await sb
         .from('sheep_processing_batches')
@@ -41,7 +42,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
       setBatches((bR.data || []).slice().sort((a, b) => byDate(b).localeCompare(byDate(a))));
     } catch (e) {
       setBatches([]);
-      setNotice({
+      setLoadError({
         kind: 'error',
         message: 'Could not load sheep processing batches. Please refresh the page. (' + ((e && e.message) || e) + ')',
       });
@@ -135,7 +136,10 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
   const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}} data-sheep-batches-loaded={loading ? 'false' : 'true'}>
+    <div
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      data-sheep-batches-loaded={loading || loadError ? 'false' : 'true'}
+    >
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -148,6 +152,27 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
+        {!showForm && <InlineNotice notice={loadError} />}
+        {!showForm && loadError && (
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#0f766e',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 12,
+            }}
+          >
+            Retry
+          </button>
+        )}
         {!showForm && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
         <div
           style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}
@@ -182,7 +207,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
 
         {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'…'}</div>}
 
-        {!loading && batches.length === 0 && (
+        {!loading && !loadError && batches.length === 0 && (
           <div
             style={{
               background: 'white',
@@ -199,7 +224,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
           </div>
         )}
 
-        {!loading && planned.length > 0 && (
+        {!loading && !loadError && planned.length > 0 && (
           <div style={{marginTop: 4}}>
             <div
               style={{
@@ -228,7 +253,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
           </div>
         )}
 
-        {!loading && completed.length > 0 && (
+        {!loading && !loadError && completed.length > 0 && (
           <div style={{marginTop: 14}}>
             <div
               style={{

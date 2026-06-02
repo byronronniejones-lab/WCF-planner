@@ -78,8 +78,8 @@ describe('SheepBatchesHub - cold-boot readiness', () => {
   const loadAllMatch = listSrc.match(/async function loadAll\(\)[\s\S]*?\n {2}useEffect/);
   const loadAllSrc = loadAllMatch ? loadAllMatch[0] : '';
 
-  it('exposes a readiness marker keyed on loading state', () => {
-    expect(listSrc).toMatch(/data-sheep-batches-loaded=\{loading \? 'false' : 'true'\}/);
+  it('exposes a readiness marker keyed on loading or loadError', () => {
+    expect(listSrc).toMatch(/data-sheep-batches-loaded=\{loading \|\| loadError \? 'false' : 'true'\}/);
   });
 
   it('never strands the sheep processing hub in Loading after a failed boot read', () => {
@@ -89,10 +89,19 @@ describe('SheepBatchesHub - cold-boot readiness', () => {
   });
 
   it('surfaces sheep_processing_batches read failures and clears stale rows', () => {
+    expect(listSrc).toContain('const [loadError, setLoadError] = useState(null);');
     expect(loadAllSrc).toContain("throw new Error('sheep_processing_batches: '");
     expect(loadAllSrc).toContain('Could not load sheep processing batches');
     expect(loadAllSrc).toContain('setBatches([]);');
+    expect(listSrc).toContain('<InlineNotice notice={loadError} />');
     expect(listSrc).toContain('<InlineNotice notice={notice} onDismiss={() => setNotice(null)} />');
+  });
+
+  it('keeps load failures non-dismissible with a retry action and blocks hub rows', () => {
+    expect(listSrc).toMatch(/\{!showForm && loadError && \([\s\S]*?onClick=\{loadAll\}[\s\S]*?Retry/);
+    expect(listSrc).toMatch(/!loading && !loadError && batches\.length === 0/);
+    expect(listSrc).toMatch(/!loading && !loadError && planned\.length > 0/);
+    expect(listSrc).toMatch(/!loading && !loadError && completed\.length > 0/);
   });
 });
 

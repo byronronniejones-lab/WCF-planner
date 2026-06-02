@@ -207,11 +207,27 @@ describe('CattleBatchesView - cold-boot readiness', () => {
     expect(loadAllSrc).toMatch(/finally\s*\{[\s\S]*?setLoading\(false\);[\s\S]*?\}/);
   });
 
-  it('surfaces essential processing read errors instead of silently rendering stale state', () => {
+  it('exposes a readiness marker keyed on loading or loadError', () => {
+    expect(listSrc).toMatch(/data-cattle-batches-loaded=\{loading \|\| loadError \? 'false' : 'true'\}/);
+  });
+
+  it('surfaces essential processing read errors and clears stale state', () => {
+    expect(listSrc).toContain('const [loadError, setLoadError] = useState(null);');
     expect(loadAllSrc).toContain("throw new Error('cattle_processing_batches: '");
     expect(loadAllSrc).toContain("throw new Error('cattle: '");
     expect(loadAllSrc).toContain("throw new Error('cattle_calving_records: '");
     expect(loadAllSrc).toContain('Could not load cattle processing batches. Please refresh the page.');
+    expect(loadAllSrc).toContain('setBatches([]);');
+    expect(loadAllSrc).toContain('setCattle([]);');
+    expect(loadAllSrc).toContain('setWeighIns([]);');
+    expect(loadAllSrc).toContain('setCalvingRecs([]);');
+  });
+
+  it('keeps load failures non-dismissible with a retry action and blocks hub sections', () => {
+    expect(listSrc).toContain('<InlineNotice notice={loadError} />');
+    expect(listSrc).toMatch(/\{loadError && \([\s\S]*?onClick=\{loadAll\}[\s\S]*?Retry/);
+    expect(listSrc).toMatch(/!loading && !loadError && \(/);
+    expect(listSrc).toMatch(/!loading && !loadError && scheduledList\.length > 0/);
   });
 
   it('degrades forecast sidecar failures without blocking real batch rows', () => {
