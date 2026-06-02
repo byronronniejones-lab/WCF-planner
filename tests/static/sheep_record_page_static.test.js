@@ -247,6 +247,13 @@ describe('SheepAnimalPage - cold-boot readiness', () => {
     expect(animalPage).toMatch(/if \(loadError\)[\s\S]*?<InlineNotice notice=\{loadError\}/);
   });
 
+  it('keeps load failures non-dismissible with a retry action', () => {
+    expect(animalPage).toContain('data-sheep-animal-load-error="true"');
+    expect(animalPage).toContain('<InlineNotice notice={loadError} />');
+    expect(animalPage).not.toContain('<InlineNotice notice={loadError} onDismiss');
+    expect(animalPage).toMatch(/onClick=\{loadAll\}[\s\S]*?Retry/);
+  });
+
   it('keeps the resolved record body marker used by Playwright helpers', () => {
     expect(animalPage).toContain('data-sheep-animal-page="1"');
   });

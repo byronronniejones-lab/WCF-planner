@@ -164,9 +164,27 @@ export default function TaskInstancePage({sb, authState, Header}) {
   if (loadError) {
     return (
       <RecordPageFrame Header={Header}>
-        <RecordPageBody maxWidth={760}>
+        <RecordPageBody maxWidth={760} data-task-instance-load-error="true">
           <RecordBackLink label="Back to Task Center" onBack={() => navigate('/tasks')} />
-          <InlineNotice notice={loadError} onDismiss={() => setLoadError(null)} />
+          <InlineNotice notice={loadError} />
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#085041',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginTop: 10,
+            }}
+          >
+            Retry
+          </button>
         </RecordPageBody>
       </RecordPageFrame>
     );

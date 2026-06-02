@@ -291,9 +291,27 @@ export default function SheepAnimalPage({sb, fmt, authState, Header}) {
   if (loadError) {
     return (
       <RecordPageFrame Header={Header}>
-        <RecordPageBody>
+        <RecordPageBody data-sheep-animal-load-error="true">
           <RecordBackLink label="Back to Flocks" onBack={() => navigate('/sheep/flocks')} />
-          <InlineNotice notice={loadError} onDismiss={() => setLoadError(null)} />
+          <InlineNotice notice={loadError} />
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#0f766e',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginTop: 10,
+            }}
+          >
+            Retry
+          </button>
         </RecordPageBody>
       </RecordPageFrame>
     );
