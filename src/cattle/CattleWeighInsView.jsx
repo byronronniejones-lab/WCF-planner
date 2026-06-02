@@ -92,9 +92,13 @@ const CattleWeighInsView = ({
   const filtered = tagQ ? statusFiltered.filter((s) => (entries[s.id] || []).some(entryMatchesTag)) : statusFiltered;
   const totalEntries = filtered.reduce((s, sess) => s + (entries[sess.id] || []).length, 0);
   const matchedSessionCount = tagQ ? filtered.length : null;
+  const loadFailed = !!notice;
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}} data-weighin-list-loaded={loading ? 'false' : 'true'}>
+    <div
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      data-weighin-list-loaded={loading || loadFailed ? 'false' : 'true'}
+    >
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -107,7 +111,27 @@ const CattleWeighInsView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
-        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+        <InlineNotice notice={notice} />
+        {loadFailed && (
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#1e40af',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 12,
+            }}
+          >
+            Retry
+          </button>
+        )}
         <div
           style={{
             display: 'flex',
@@ -227,7 +251,7 @@ const CattleWeighInsView = ({
         </div>
 
         {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'…'}</div>}
-        {!loading && filtered.length === 0 && (
+        {!loading && !loadFailed && filtered.length === 0 && (
           <div
             style={{
               background: 'white',
@@ -244,76 +268,77 @@ const CattleWeighInsView = ({
         )}
 
         <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
-          {filtered.map((s) => {
-            const sEntriesAll = entries[s.id] || [];
-            const countLabel = tagQ
-              ? sEntriesAll.filter(entryMatchesTag).length + ' of ' + sEntriesAll.length + ' match'
-              : sEntriesAll.length + ' ' + (sEntriesAll.length === 1 ? 'entry' : 'entries');
-            const newTagCount = sEntriesAll.filter((e) => e.new_tag_flag).length;
-            return (
-              <div
-                key={s.id}
-                data-weighin-session-tile={s.id}
-                onClick={() =>
-                  navigate(
-                    '/weigh-in-sessions/' + s.id,
-                    recordSeqNavOptions(
-                      filtered.map((r) => ({
-                        id: r.id,
-                        label: (r.date || '') + ' · ' + (HERD_LABELS[r.herd] || r.herd || 'cattle'),
-                      })),
-                    ),
-                  )
-                }
-                className="hoverable-tile"
-                style={{
-                  background: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 10,
-                  padding: '10px 16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
-                  {HERD_LABELS[s.herd] || s.herd || 'Unknown herd'}
-                </span>
-                <span
+          {!loadFailed &&
+            filtered.map((s) => {
+              const sEntriesAll = entries[s.id] || [];
+              const countLabel = tagQ
+                ? sEntriesAll.filter(entryMatchesTag).length + ' of ' + sEntriesAll.length + ' match'
+                : sEntriesAll.length + ' ' + (sEntriesAll.length === 1 ? 'entry' : 'entries');
+              const newTagCount = sEntriesAll.filter((e) => e.new_tag_flag).length;
+              return (
+                <div
+                  key={s.id}
+                  data-weighin-session-tile={s.id}
+                  onClick={() =>
+                    navigate(
+                      '/weigh-in-sessions/' + s.id,
+                      recordSeqNavOptions(
+                        filtered.map((r) => ({
+                          id: r.id,
+                          label: (r.date || '') + ' · ' + (HERD_LABELS[r.herd] || r.herd || 'cattle'),
+                        })),
+                      ),
+                    )
+                  }
+                  className="hoverable-tile"
                   style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    padding: '2px 8px',
+                    background: 'white',
+                    border: '1px solid #e5e7eb',
                     borderRadius: 10,
-                    background: s.status === 'complete' ? '#d1fae5' : '#fef3c7',
-                    color: s.status === 'complete' ? '#065f46' : '#92400e',
-                    textTransform: 'uppercase',
+                    padding: '10px 16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
                   }}
                 >
-                  {s.status}
-                </span>
-                <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
-                <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
-                <span style={{fontSize: 11, fontWeight: 600, color: tagQ ? '#065f46' : '#1e40af'}}>{countLabel}</span>
-                {newTagCount > 0 && !tagQ && (
+                  <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
+                    {HERD_LABELS[s.herd] || s.herd || 'Unknown herd'}
+                  </span>
                   <span
                     style={{
                       fontSize: 10,
                       fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      background: '#fef2f2',
-                      color: '#b91c1c',
+                      padding: '2px 8px',
+                      borderRadius: 10,
+                      background: s.status === 'complete' ? '#d1fae5' : '#fef3c7',
+                      color: s.status === 'complete' ? '#065f46' : '#92400e',
+                      textTransform: 'uppercase',
                     }}
                   >
-                    {newTagCount + ' new tags'}
+                    {s.status}
                   </span>
-                )}
-              </div>
-            );
-          })}
+                  <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
+                  <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
+                  <span style={{fontSize: 11, fontWeight: 600, color: tagQ ? '#065f46' : '#1e40af'}}>{countLabel}</span>
+                  {newTagCount > 0 && !tagQ && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: '#fef2f2',
+                        color: '#b91c1c',
+                      }}
+                    >
+                      {newTagCount + ' new tags'}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
         </div>
       </div>
       {showNewModal && (

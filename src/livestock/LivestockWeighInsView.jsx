@@ -112,9 +112,13 @@ const LivestockWeighInsView = ({
 
   const filtered = sessions.filter((s) => statusFilter === 'all' || s.status === statusFilter);
   const totalEntries = filtered.reduce((s, sess) => s + (entries[sess.id] ? entries[sess.id].length : 0), 0);
+  const loadFailed = !!notice;
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}} data-weighin-list-loaded={loading ? 'false' : 'true'}>
+    <div
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      data-weighin-list-loaded={loading || loadFailed ? 'false' : 'true'}
+    >
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -127,7 +131,27 @@ const LivestockWeighInsView = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
-        <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+        <InlineNotice notice={notice} />
+        {loadFailed && (
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#1e40af',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 12,
+            }}
+          >
+            Retry
+          </button>
+        )}
         <div
           style={{
             display: 'flex',
@@ -205,7 +229,7 @@ const LivestockWeighInsView = ({
         )}
 
         {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'…'}</div>}
-        {!loading && filtered.length === 0 && (
+        {!loading && !loadFailed && filtered.length === 0 && (
           <div
             style={{
               background: 'white',
@@ -222,141 +246,142 @@ const LivestockWeighInsView = ({
         )}
 
         <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
-          {filtered.map((s) => {
-            const sEntries = entries[s.id] || [];
-            const avgWeight =
-              sEntries.length > 0
-                ? sEntries.reduce((sum, e) => sum + (parseFloat(e.weight) || 0), 0) / sEntries.length
-                : 0;
-            const isComplete = s.status === 'complete';
-            return (
-              <div
-                key={s.id}
-                style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden'}}
-              >
+          {!loadFailed &&
+            filtered.map((s) => {
+              const sEntries = entries[s.id] || [];
+              const avgWeight =
+                sEntries.length > 0
+                  ? sEntries.reduce((sum, e) => sum + (parseFloat(e.weight) || 0), 0) / sEntries.length
+                  : 0;
+              const isComplete = s.status === 'complete';
+              return (
                 <div
-                  data-weighin-session-tile={s.id}
-                  onClick={() =>
-                    navigate(
-                      '/weigh-in-sessions/' + s.id,
-                      recordSeqNavOptions(
-                        filtered.map((r) => ({id: r.id, label: (r.date || '') + ' · ' + (r.batch_id || species)})),
-                      ),
-                    )
-                  }
-                  style={{
-                    padding: '10px 16px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                  }}
-                  className="hoverable-tile"
+                  key={s.id}
+                  style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden'}}
                 >
-                  <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
-                    {s.batch_id || 'Unknown batch'}
-                  </span>
-                  {species === 'broiler' && s.broiler_week && (
+                  <div
+                    data-weighin-session-tile={s.id}
+                    onClick={() =>
+                      navigate(
+                        '/weigh-in-sessions/' + s.id,
+                        recordSeqNavOptions(
+                          filtered.map((r) => ({id: r.id, label: (r.date || '') + ' · ' + (r.batch_id || species)})),
+                        ),
+                      )
+                    }
+                    style={{
+                      padding: '10px 16px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      flexWrap: 'wrap',
+                    }}
+                    className="hoverable-tile"
+                  >
+                    <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
+                      {s.batch_id || 'Unknown batch'}
+                    </span>
+                    {species === 'broiler' && s.broiler_week && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: 10,
+                          background: '#fef3c7',
+                          color: '#92400e',
+                        }}
+                      >
+                        {'WK ' + s.broiler_week}
+                      </span>
+                    )}
                     <span
                       style={{
                         fontSize: 10,
                         fontWeight: 700,
                         padding: '2px 8px',
                         borderRadius: 10,
-                        background: '#fef3c7',
-                        color: '#92400e',
+                        background: isComplete ? '#d1fae5' : '#fef3c7',
+                        color: isComplete ? '#065f46' : '#92400e',
+                        textTransform: 'uppercase',
                       }}
                     >
-                      {'WK ' + s.broiler_week}
+                      {s.status}
                     </span>
-                  )}
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: 10,
-                      background: isComplete ? '#d1fae5' : '#fef3c7',
-                      color: isComplete ? '#065f46' : '#92400e',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {s.status}
-                  </span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
-                  <span style={{fontSize: 11, fontWeight: 600, color: '#1e40af'}}>
-                    {sEntries.length} {sEntries.length === 1 ? 'entry' : 'entries'}
-                  </span>
-                  {species !== 'pig' && avgWeight > 0 && (
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: '#065f46',
-                        padding: '2px 10px',
-                        borderRadius: 10,
-                        background: '#d1fae5',
-                      }}
-                    >
-                      avg {Math.round(avgWeight * 100) / 100} lb
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
+                    <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
+                    <span style={{fontSize: 11, fontWeight: 600, color: '#1e40af'}}>
+                      {sEntries.length} {sEntries.length === 1 ? 'entry' : 'entries'}
                     </span>
-                  )}
-                  {species === 'broiler' && avgWeight > 0 && s.broiler_week && (
-                    <span style={{fontSize: 10, color: '#6b7280', fontStyle: 'italic'}}>
-                      {'→ batch wk' + s.broiler_week + 'Lbs'}
-                    </span>
-                  )}
+                    {species !== 'pig' && avgWeight > 0 && (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: '#065f46',
+                          padding: '2px 10px',
+                          borderRadius: 10,
+                          background: '#d1fae5',
+                        }}
+                      >
+                        avg {Math.round(avgWeight * 100) / 100} lb
+                      </span>
+                    )}
+                    {species === 'broiler' && avgWeight > 0 && s.broiler_week && (
+                      <span style={{fontSize: 10, color: '#6b7280', fontStyle: 'italic'}}>
+                        {'→ batch wk' + s.broiler_week + 'Lbs'}
+                      </span>
+                    )}
+                  </div>
+                  {species === 'pig' &&
+                    sEntries.length > 0 &&
+                    pigMetricsBySession[s.id] &&
+                    pigMetricsBySession[s.id].available && (
+                      <div
+                        data-pig-metrics-row={s.id}
+                        style={{
+                          padding: '8px 16px',
+                          borderTop: '1px solid #f3f4f6',
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                          gap: 8,
+                          background: '#fafafa',
+                        }}
+                      >
+                        <div data-pig-metric="age">
+                          <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Age at weigh-in</div>
+                          <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                            {formatAgeRange({
+                              minDays: pigMetricsBySession[s.id].age_min_days,
+                              maxDays: pigMetricsBySession[s.id].age_max_days,
+                              hasActual: pigMetricsBySession[s.id].has_actual_farrowing,
+                            })}
+                          </div>
+                        </div>
+                        <div data-pig-metric="feed">
+                          <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Feed/pig</div>
+                          <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                            {formatFeedPerPig(pigMetricsBySession[s.id].feed_per_pig_lbs)}
+                          </div>
+                        </div>
+                        <div data-pig-metric="adg">
+                          <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Group ADG</div>
+                          <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                            {formatGroupAdg(pigMetricsBySession[s.id].group_adg_lbs_per_day)}
+                          </div>
+                        </div>
+                        <div data-pig-metric="avg">
+                          <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Avg weight</div>
+                          <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
+                            {formatAvgWeight(pigMetricsBySession[s.id].avg_weight_lbs)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                 </div>
-                {species === 'pig' &&
-                  sEntries.length > 0 &&
-                  pigMetricsBySession[s.id] &&
-                  pigMetricsBySession[s.id].available && (
-                    <div
-                      data-pig-metrics-row={s.id}
-                      style={{
-                        padding: '8px 16px',
-                        borderTop: '1px solid #f3f4f6',
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                        gap: 8,
-                        background: '#fafafa',
-                      }}
-                    >
-                      <div data-pig-metric="age">
-                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Age at weigh-in</div>
-                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
-                          {formatAgeRange({
-                            minDays: pigMetricsBySession[s.id].age_min_days,
-                            maxDays: pigMetricsBySession[s.id].age_max_days,
-                            hasActual: pigMetricsBySession[s.id].has_actual_farrowing,
-                          })}
-                        </div>
-                      </div>
-                      <div data-pig-metric="feed">
-                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Feed/pig</div>
-                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
-                          {formatFeedPerPig(pigMetricsBySession[s.id].feed_per_pig_lbs)}
-                        </div>
-                      </div>
-                      <div data-pig-metric="adg">
-                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Group ADG</div>
-                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
-                          {formatGroupAdg(pigMetricsBySession[s.id].group_adg_lbs_per_day)}
-                        </div>
-                      </div>
-                      <div data-pig-metric="avg">
-                        <div style={{fontSize: 9, color: '#6b7280', textTransform: 'uppercase'}}>Avg weight</div>
-                        <div style={{fontSize: 12, fontWeight: 700, color: '#111827'}}>
-                          {formatAvgWeight(pigMetricsBySession[s.id].avg_weight_lbs)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       </div>
     </div>

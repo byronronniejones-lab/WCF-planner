@@ -560,9 +560,9 @@ describe('Weigh-in readiness markers — CI determinism (see helpers/weighInRead
   it('record page exposes data-weighin-session-record-loaded only on the loaded body', () => {
     expect(pageSrc).toMatch(/<RecordPageBody[^>]*data-weighin-session-record-loaded="true"/);
   });
-  it('cattle / sheep / livestock list views expose data-weighin-list-loaded keyed on load state', () => {
+  it('cattle / sheep / livestock list views expose data-weighin-list-loaded keyed on load/error state', () => {
     for (const src of [listSrc, sheepListSrc, livestockSrc]) {
-      expect(src).toMatch(/data-weighin-list-loaded=\{loading \? 'false' : 'true'\}/);
+      expect(src).toMatch(/data-weighin-list-loaded=\{loading \|\| loadFailed \? 'false' : 'true'\}/);
     }
   });
 });
@@ -579,7 +579,7 @@ describe('LivestockWeighInsView - cold-boot readiness', () => {
 
   it('surfaces session and entry read failures through InlineNotice and clears stale rows', () => {
     expect(livestockSrc).toContain("import InlineNotice from '../shared/InlineNotice.jsx'");
-    expect(livestockSrc).toContain('<InlineNotice notice={notice} onDismiss={() => setNotice(null)} />');
+    expect(livestockSrc).toContain('<InlineNotice notice={notice} />');
     expect(loadAllSrc).toContain("throw new Error('weigh_in_sessions: '");
     expect(loadAllSrc).toContain("throw new Error('weigh_ins: '");
     expect(loadAllSrc).toContain('Could not load ');
@@ -607,7 +607,7 @@ describe('CattleWeighInsView - cold-boot readiness', () => {
 
   it('surfaces cattle sessions/cache failures through InlineNotice and clears stale rows', () => {
     expect(listSrc).toContain("import InlineNotice from '../shared/InlineNotice.jsx'");
-    expect(listSrc).toContain('<InlineNotice notice={notice} onDismiss={() => setNotice(null)} />');
+    expect(listSrc).toContain('<InlineNotice notice={notice} />');
     expect(loadAllSrc).toContain('loadCattleWeighInsCached(sb, {throwOnError: true})');
     expect(loadAllSrc).toContain("throw new Error('weigh_in_sessions: '");
     expect(loadAllSrc).toContain('Could not load cattle weigh-in sessions');
@@ -628,12 +628,28 @@ describe('SheepWeighInsView - cold-boot readiness', () => {
 
   it('surfaces sheep sessions/cache failures through InlineNotice and clears stale rows', () => {
     expect(sheepListSrc).toContain("import InlineNotice from '../shared/InlineNotice.jsx'");
-    expect(sheepListSrc).toContain('<InlineNotice notice={notice} onDismiss={() => setNotice(null)} />');
+    expect(sheepListSrc).toContain('<InlineNotice notice={notice} />');
     expect(loadAllSrc).toContain('loadSheepWeighInsCached(sb, {throwOnError: true})');
     expect(loadAllSrc).toContain("throw new Error('weigh_in_sessions: '");
     expect(loadAllSrc).toContain('Could not load sheep weigh-in sessions');
     expect(loadAllSrc).toContain('setSessions([]);');
     expect(loadAllSrc).toContain('setEntries({});');
+  });
+});
+
+describe('Weigh-in list load-error states', () => {
+  it('keeps failed reads non-dismissible with a retry action', () => {
+    for (const src of [listSrc, sheepListSrc, livestockSrc]) {
+      expect(src).toContain('const loadFailed = !!notice;');
+      expect(src).toMatch(/\{loadFailed && \([\s\S]*?onClick=\{loadAll\}[\s\S]*?Retry/);
+    }
+  });
+
+  it('does not render empty-state or tiles while a load failure is active', () => {
+    for (const src of [listSrc, sheepListSrc, livestockSrc]) {
+      expect(src).toMatch(/!loading && !loadFailed && filtered\.length === 0/);
+      expect(src).toMatch(/!loadFailed &&\s*filtered\.map/);
+    }
   });
 });
 
