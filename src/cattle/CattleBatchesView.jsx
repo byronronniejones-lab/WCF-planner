@@ -34,6 +34,7 @@ const CattleBatchesHub = ({
   const [heiferIncludes, setHeiferIncludes] = useState(new Set());
   const [hidden, setHidden] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const [showPlanned, setShowPlanned] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -42,6 +43,7 @@ const CattleBatchesHub = ({
 
   async function loadAll() {
     setLoading(true);
+    setLoadError(null);
     try {
       const [bR, cR, wAll, calR] = await Promise.all([
         sb.from('cattle_processing_batches').select('*').order('actual_process_date', {ascending: false}),
@@ -87,7 +89,14 @@ const CattleBatchesHub = ({
         );
       }
     } catch (e) {
-      setNotice({
+      setBatches([]);
+      setCattle([]);
+      setWeighIns([]);
+      setCalvingRecs([]);
+      setForecastSettings(null);
+      setHeiferIncludes(new Set());
+      setHidden([]);
+      setLoadError({
         kind: 'error',
         message: 'Could not load cattle processing batches. Please refresh the page. (' + (e.message || e) + ')',
       });
@@ -165,7 +174,10 @@ const CattleBatchesHub = ({
   const batchSeqRows = [...scheduledList, ...active, ...(showCompleted ? completed : [])];
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      data-cattle-batches-loaded={loading || loadError ? 'false' : 'true'}
+    >
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -178,6 +190,27 @@ const CattleBatchesHub = ({
       )}
       <Header />
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
+        <InlineNotice notice={loadError} />
+        {loadError && (
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#1d4ed8',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 12,
+            }}
+          >
+            Retry
+          </button>
+        )}
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
           <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}} data-cattle-batches-root>
@@ -206,7 +239,7 @@ const CattleBatchesHub = ({
         {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'…'}</div>}
 
         {/* Show Planned Batches (virtual, top, collapsed) */}
-        {!loading && (
+        {!loading && !loadError && (
           <CollapsibleSection
             label="Show Planned Batches"
             count={virtualPlanned.length}
@@ -313,7 +346,7 @@ const CattleBatchesHub = ({
         )}
 
         {/* Scheduled batches — navigate to record page */}
-        {!loading && scheduledList.length > 0 && (
+        {!loading && !loadError && scheduledList.length > 0 && (
           <div style={{marginTop: 12}} data-scheduled-section>
             <div
               style={{
@@ -380,7 +413,7 @@ const CattleBatchesHub = ({
         )}
 
         {/* Active batches — navigate to record page */}
-        {!loading && (
+        {!loading && !loadError && (
           <div style={{marginTop: 12}}>
             <div
               style={{
@@ -471,7 +504,7 @@ const CattleBatchesHub = ({
         )}
 
         {/* Processed batches — navigate to record page */}
-        {!loading && (
+        {!loading && !loadError && (
           <div style={{marginTop: 14}}>
             <CollapsibleSection
               label="Show Processed Batches"
