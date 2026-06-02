@@ -65,20 +65,10 @@ only when Ronnie explicitly assigns it.
 - Open gates: none on `main`. Public webform submitter completion notices are
   not a hotfix; they are deferred to the webform-light identity lane because
   today's public roster has no profile/email recipient.
-- Parked, NOT shipped: `hotfix/eggmobile3-layer-count` worktree at
-  `C:\Users\Ronni\WCF-planner-hotfix-eggmobile3`. It is a real but stale fix
-  (derive a layer housing's count from the latest matching daily report
-  when `current_count` is unset, plus tighter housing<->report matching incl.
-  `batch_id` + date window). Its working changes sit on a 144-commit-old base
-  (`5f88b02`) over files that diverged heavily on `main` (LayerBatchesView ~2681
-  diff lines), so it CANNOT be applied as-is — it needs reimplementation on
-  current `main` as its own reviewed lane. Codex was tasked to investigate it.
-  Do not bundle it into routine pushes.
 - Next-session queue: resume hardening/cleanup (Record Page Visual Consistency
   is closed — do not restart CP6/CP7/CP8 unless a regression is found). Start
   with remaining seed-idempotency audit/classification, broader
-  cold-boot/readiness robustness, and source cleanup of deprecated paths;
-  the eggmobile3 layer-count fix is a candidate reimplementation lane. Keep
+  cold-boot/readiness robustness, and source cleanup of deprecated paths. Keep
   cattle/sheep delete/restore strategy and public webform-light identity as
   planned product lanes, not surprise hotfixes.
 - Operational record-page coverage as of this wrap: live for `cattle.animal`,
@@ -269,7 +259,6 @@ What was built:
 
 | Area | State |
 |---|---|
-| Eggmobile 3 fallback | Live. Layer housing count fallback restored Eggmobile 3 and active layer totals. |
 | Daily duplicate prevention | Live. Pre-submit duplicate guards are merged; DB unique-index migration `059` remains unapplied. |
 | Broiler batch location labels | Live. Broiler daily/report dropdowns show current housing/location labels while storing the plain batch name. |
 | Home Weather | Live. Tomorrow.io forecast proxy, 10-day forecast, rain/freeze focus, and animated radar are on Home. |
@@ -315,13 +304,8 @@ What was built:
 Stash numbers can change if new stashes are added; always verify with
 `git stash list` before acting. Do not pop or drop blindly.
 
-No parked WIP git stashes are expected as of 2026-05-28. The prior three
-superseded stashes were audited and dropped during stash hygiene.
-
-Parked WIP does exist as uncommitted working changes in the
-`hotfix/eggmobile3-layer-count` worktree (not a git stash) — see the
-"Parked, NOT shipped" entry under Current State. It needs reimplementation on
-current `main`, not direct application.
+No parked WIP git stashes or worktree lanes are expected as of 2026-06-02. The
+prior superseded stashes were audited and dropped during stash hygiene.
 
 ---
 
@@ -331,16 +315,14 @@ Near-term selected path as of 2026-06-01: the feed-order current-count hotfix
 shipped (`a91ccf2`, `07eb038`) and Record Page Visual Consistency is closed (do
 not restart CP6/CP7/CP8 or the final sweep unless a regression is found). Resume
 hardening at remaining seed-idempotency classification, broader
-cold-boot/source robustness, and deprecated-path cleanup. The parked
-`hotfix/eggmobile3-layer-count` layer-count fix is a candidate reimplementation
-lane (see Current State — it must be rebuilt on current `main`, not applied as-is).
+cold-boot/source robustness, and deprecated-path cleanup.
 
 1. Codebase hardening and cleanup - remove deprecated patterns as each entity
    migrates, classify legacy/import/test-only code, and reduce context burn for
    future sessions.
 2. Feed planning correctness - keep feed recommendations tied to the latest
-   physical-count anchor when one exists (shipped); next is the parked
-   eggmobile3 layer-count reimplementation when prioritized.
+   physical-count anchor when one exists and investigate only concrete
+   regressions against the shipped behavior.
 3. Record Page foundation stewardship - keep operational entities on the
    dedicated record-page pattern; no new Activity bubbles, inline record
    workspaces, or modal-based record workspaces.
