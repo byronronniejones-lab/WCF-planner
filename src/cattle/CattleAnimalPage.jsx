@@ -286,9 +286,27 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
   if (loadError) {
     return (
       <RecordPageFrame Header={Header}>
-        <RecordPageBody>
+        <RecordPageBody data-cattle-animal-load-error="true">
           <RecordBackLink label="Back to Herds" onBack={() => navigate('/cattle/herds')} />
-          <InlineNotice notice={loadError} onDismiss={() => setLoadError(null)} />
+          <InlineNotice notice={loadError} />
+          <button
+            type="button"
+            onClick={loadAll}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid #d1d5db',
+              background: 'white',
+              color: '#085041',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginTop: 10,
+            }}
+          >
+            Retry
+          </button>
         </RecordPageBody>
       </RecordPageFrame>
     );
