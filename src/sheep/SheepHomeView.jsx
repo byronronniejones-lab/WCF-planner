@@ -4,6 +4,8 @@ import UsersModal from '../auth/UsersModal.jsx';
 import {toISO} from '../lib/dateUtils.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 const SheepHomeView = ({
   sb,
@@ -23,6 +25,7 @@ const SheepHomeView = ({
   const [weighIns, setWeighIns] = useState([]);
   const [batchCounts, setBatchCounts] = useState({total: 0, planned: 0});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [period, setPeriod] = useState(30);
   const FLOCKS = ['rams', 'ewes', 'feeders'];
   const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
@@ -32,32 +35,55 @@ const SheepHomeView = ({
   const cutoff120 = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
   const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-  useEffect(() => {
-    (async () => {
+  async function loadAll() {
+    setLoading(true);
+    setLoadError(null);
+    try {
       const sessR = await sb.from('weigh_in_sessions').select('id').eq('species', 'sheep');
+      if (sessR.error) throw new Error('weigh_in_sessions: ' + (sessR.error.message || sessR.error));
       const sessIds = (sessR.data || []).map((s) => s.id);
       const wR = sessIds.length > 0 ? await sb.from('weigh_ins').select('*').in('session_id', sessIds) : {data: []};
+      if (wR.error) throw new Error('weigh_ins: ' + (wR.error.message || wR.error));
       const [sR, dR] = await Promise.all([
         sb.from('sheep').select('*'),
         sb.from('sheep_dailys').select('*').is('deleted_at', null).gte('date', cutoff120),
       ]);
-      if (sR.data) setSheep(sR.data);
-      if (dR.data) setDailys(dR.data);
-      if (wR.data) setWeighIns(wR.data);
+      if (sR.error) throw new Error('sheep: ' + (sR.error.message || sR.error));
+      if (dR.error) throw new Error('sheep_dailys: ' + (dR.error.message || dR.error));
+
+      setSheep(sR.data || []);
+      setDailys(dR.data || []);
+      setWeighIns(wR.data || []);
+      setBatchCounts({total: 0, planned: 0});
+
       // Processing batch counts for the dashboard tile. Tolerate missing
       // table on legacy schemas (pre-migration-028).
       try {
         const bR = await sb.from('sheep_processing_batches').select('id,status');
-        if (bR.data) {
-          const all = bR.data.length;
-          const planned = bR.data.filter((b) => b.status === 'planned').length;
-          setBatchCounts({total: all, planned});
-        }
-      } catch (e) {
-        /* table only exists post-migration-028 */
+        if (bR.error) throw bR.error;
+        const all = (bR.data || []).length;
+        const planned = (bR.data || []).filter((b) => b.status === 'planned').length;
+        setBatchCounts({total: all, planned});
+      } catch {
+        setBatchCounts({total: 0, planned: 0});
       }
+    } catch (e) {
+      setSheep([]);
+      setDailys([]);
+      setWeighIns([]);
+      setBatchCounts({total: 0, planned: 0});
+      setLoadError({
+        kind: 'error',
+        message: 'Could not load sheep dashboard. Please retry. (' + ((e && e.message) || e) + ')',
+      });
+    } finally {
       setLoading(false);
-    })();
+    }
+  }
+
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function lastWeight(s) {
@@ -206,7 +232,10 @@ const SheepHomeView = ({
   );
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      data-sheep-home-loaded={loading || loadError ? 'false' : 'true'}
+    >
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -228,94 +257,123 @@ const SheepHomeView = ({
           gap: '1.5rem',
         }}
       >
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10}}>
-          <StatTile label="Sheep on Farm" val={totalSheep.toLocaleString()} />
-          <StatTile
-            label="Total Live Weight"
-            val={totalWeight > 0 ? Math.round(totalWeight).toLocaleString() + ' lbs' : '\u2014'}
-            sub={totalEstimated > 0 ? totalEstimated + ' est.' : null}
-          />
-          <StatTile
-            label="Mortality 30d"
-            val={totalMort30.toString()}
-            color={totalMort30 > 0 ? '#b91c1c' : '#374151'}
-          />
-          <StatTile label="Reports 30d" val={totalReports30.toString()} color="#374151" />
-        </div>
-
-        <div>
-          <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', marginBottom: 8, letterSpacing: 0.3}}>
-            FLOCK BREAKDOWN
-          </div>
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10}}>
-            {/* Processing-batches shortcut tile — discoverable nav alongside flock tiles. */}
-            <div
-              onClick={() => setView('sheepbatches')}
+        {loadError && (
+          <div>
+            <InlineNotice notice={loadError} />
+            <button
+              type="button"
+              data-sheep-home-load-retry="1"
+              onClick={loadAll}
               style={{
+                padding: '7px 14px',
+                borderRadius: 8,
+                border: '1px solid #991b1b',
                 background: 'white',
-                border: '1px solid #5eead4',
-                borderLeft: '4px solid #0f766e',
-                borderRadius: 12,
-                padding: '14px 16px',
+                color: '#991b1b',
                 cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                fontWeight: 700,
               }}
-              className="hoverable-tile"
             >
-              <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
-                <span style={{fontSize: 14, fontWeight: 700, color: '#0f766e'}}>Processing Batches</span>
-                <span style={{fontSize: 11, color: '#6b7280'}}>
-                  {batchCounts.total} {batchCounts.total === 1 ? 'batch' : 'batches'}
-                </span>
-              </div>
-              <div style={{fontSize: 12, color: '#374151'}}>
-                {batchCounts.planned > 0 ? (
-                  <span>
-                    <strong>{batchCounts.planned}</strong> planned
-                  </span>
-                ) : (
-                  <span style={{color: '#9ca3af'}}>No planned batches</span>
-                )}
-              </div>
-              <div style={{fontSize: 11, color: '#9ca3af', marginTop: 4}}>
-                Sheep enter via the Send-to-Processor flag on a sheep weigh-in.
-              </div>
+              Retry
+            </button>
+          </div>
+        )}
+        {!loadError && (
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10}}>
+            <StatTile label="Sheep on Farm" val={totalSheep.toLocaleString()} />
+            <StatTile
+              label="Total Live Weight"
+              val={totalWeight > 0 ? Math.round(totalWeight).toLocaleString() + ' lbs' : '\u2014'}
+              sub={totalEstimated > 0 ? totalEstimated + ' est.' : null}
+            />
+            <StatTile
+              label="Mortality 30d"
+              val={totalMort30.toString()}
+              color={totalMort30 > 0 ? '#b91c1c' : '#374151'}
+            />
+            <StatTile label="Reports 30d" val={totalReports30.toString()} color="#374151" />
+          </div>
+        )}
+
+        {!loadError && (
+          <div>
+            <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', marginBottom: 8, letterSpacing: 0.3}}>
+              FLOCK BREAKDOWN
             </div>
-            {FLOCKS.map((f) => {
-              const flockSheep = sheep.filter((s) => s.flock === f);
-              const lw = flockTotalWeight(f);
-              const est = flockEstCount(f);
-              return (
-                <div
-                  key={f}
-                  onClick={() => setView('sheepflocks')}
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 12,
-                    padding: '14px 16px',
-                    cursor: 'pointer',
-                  }}
-                  className="hoverable-tile"
-                >
-                  <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
-                    <span style={{fontSize: 14, fontWeight: 700, color: FLOCK_COLORS[f]}}>{FLOCK_LABELS[f]}</span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>
-                      {flockSheep.length} {flockSheep.length === 1 ? 'sheep' : 'sheep'}
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10}}>
+              {/* Processing-batches shortcut tile — discoverable nav alongside flock tiles. */}
+              <div
+                onClick={() => setView('sheepbatches')}
+                style={{
+                  background: 'white',
+                  border: '1px solid #5eead4',
+                  borderLeft: '4px solid #0f766e',
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                }}
+                className="hoverable-tile"
+              >
+                <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
+                  <span style={{fontSize: 14, fontWeight: 700, color: '#0f766e'}}>Processing Batches</span>
+                  <span style={{fontSize: 11, color: '#6b7280'}}>
+                    {batchCounts.total} {batchCounts.total === 1 ? 'batch' : 'batches'}
+                  </span>
+                </div>
+                <div style={{fontSize: 12, color: '#374151'}}>
+                  {batchCounts.planned > 0 ? (
+                    <span>
+                      <strong>{batchCounts.planned}</strong> planned
                     </span>
-                  </div>
-                  <div style={{fontSize: 12, color: '#374151'}}>
-                    Live wt: <strong>{lw > 0 ? Math.round(lw).toLocaleString() + ' lbs' : '\u2014'}</strong>
-                  </div>
-                  {est > 0 && (
-                    <div style={{fontSize: 11, color: '#92400e', marginTop: 2}}>{est + ' est. (no weigh-in yet)'}</div>
+                  ) : (
+                    <span style={{color: '#9ca3af'}}>No planned batches</span>
                   )}
                 </div>
-              );
-            })}
+                <div style={{fontSize: 11, color: '#9ca3af', marginTop: 4}}>
+                  Sheep enter via the Send-to-Processor flag on a sheep weigh-in.
+                </div>
+              </div>
+              {FLOCKS.map((f) => {
+                const flockSheep = sheep.filter((s) => s.flock === f);
+                const lw = flockTotalWeight(f);
+                const est = flockEstCount(f);
+                return (
+                  <div
+                    key={f}
+                    onClick={() => setView('sheepflocks')}
+                    style={{
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 12,
+                      padding: '14px 16px',
+                      cursor: 'pointer',
+                    }}
+                    className="hoverable-tile"
+                  >
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
+                      <span style={{fontSize: 14, fontWeight: 700, color: FLOCK_COLORS[f]}}>{FLOCK_LABELS[f]}</span>
+                      <span style={{fontSize: 11, color: '#6b7280'}}>
+                        {flockSheep.length} {flockSheep.length === 1 ? 'sheep' : 'sheep'}
+                      </span>
+                    </div>
+                    <div style={{fontSize: 12, color: '#374151'}}>
+                      Live wt: <strong>{lw > 0 ? Math.round(lw).toLocaleString() + ' lbs' : '\u2014'}</strong>
+                    </div>
+                    {est > 0 && (
+                      <div style={{fontSize: 11, color: '#92400e', marginTop: 2}}>
+                        {est + ' est. (no weigh-in yet)'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
-        {!loading && (
+        {!loading && !loadError && (
           <div>
             <div style={{display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10}}>
               <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', letterSpacing: 0.3}}>
@@ -429,7 +487,7 @@ const SheepHomeView = ({
         {loading && (
           <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af', fontSize: 13}}>Loading{'\u2026'}</div>
         )}
-        {!loading && totalSheep === 0 && (
+        {!loading && !loadError && totalSheep === 0 && (
           <div
             style={{
               background: 'white',
