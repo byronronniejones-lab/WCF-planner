@@ -10,6 +10,8 @@ import {toISO} from '../lib/dateUtils.js';
 import {buildForecast} from '../lib/cattleForecast.js';
 import {loadForecastSettings, loadHeiferIncludes, loadHidden} from '../lib/cattleForecastApi.js';
 import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import InlineNotice from '../shared/InlineNotice.jsx';
 const CattleHomeView = ({
   sb,
   fmt,
@@ -29,6 +31,7 @@ const CattleHomeView = ({
   const [calving, setCalving] = useState([]);
   const [targets, setTargets] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [cattleDashPeriod, setCattleDashPeriod] = useState(30);
   const [forecastTile, setForecastTile] = useState(null);
   const HERDS = ['mommas', 'backgrounders', 'finishers', 'bulls'];
@@ -39,35 +42,44 @@ const CattleHomeView = ({
   const cutoff120 = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
   const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-  useEffect(() => {
-    Promise.all([
-      sb.from('cattle').select('*').is('deleted_at', null),
-      sb.from('cattle_dailys').select('*').is('deleted_at', null).gte('date', cutoff120),
-      loadCattleWeighInsCached(sb),
-      sb.from('cattle_calving_records').select('*'),
-      sb.from('cattle_nutrition_targets').select('*'),
-      sb.from('cattle_processing_batches').select('*'),
-      loadForecastSettings(sb).catch(() => null),
-      loadHeiferIncludes(sb).catch(() => new Set()),
-      loadHidden(sb).catch(() => []),
-    ]).then(([cR, dR, wAll, calvR, tR, bR, settings, includes, hidden]) => {
-      if (cR.data) setCattle(cR.data);
-      if (dR.data) setDailys(dR.data);
-      setWeighIns(wAll);
-      if (calvR.data) setCalving(calvR.data);
-      if (tR.data) {
-        const m = {};
-        tR.data.forEach((r) => {
-          m[r.herd] = r;
-        });
-        setTargets(m);
-      }
+  async function loadAll() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [cR, dR, wAll, calvR, tR, bR, settings, includes, hidden] = await Promise.all([
+        sb.from('cattle').select('*').is('deleted_at', null),
+        sb.from('cattle_dailys').select('*').is('deleted_at', null).gte('date', cutoff120),
+        loadCattleWeighInsCached(sb, {throwOnError: true}),
+        sb.from('cattle_calving_records').select('*'),
+        sb.from('cattle_nutrition_targets').select('*'),
+        sb.from('cattle_processing_batches').select('*'),
+        loadForecastSettings(sb).catch(() => null),
+        loadHeiferIncludes(sb).catch(() => new Set()),
+        loadHidden(sb).catch(() => []),
+      ]);
+      if (cR.error) throw new Error('cattle: ' + (cR.error.message || cR.error));
+      if (dR.error) throw new Error('cattle_dailys: ' + (dR.error.message || dR.error));
+      if (calvR.error) throw new Error('cattle_calving_records: ' + (calvR.error.message || calvR.error));
+      if (tR.error) throw new Error('cattle_nutrition_targets: ' + (tR.error.message || tR.error));
+      if (bR.error) throw new Error('cattle_processing_batches: ' + (bR.error.message || bR.error));
+
+      const targetMap = {};
+      (tR.data || []).forEach((r) => {
+        targetMap[r.herd] = r;
+      });
+
+      setCattle(cR.data || []);
+      setDailys(dR.data || []);
+      setWeighIns(wAll || []);
+      setCalving(calvR.data || []);
+      setTargets(targetMap);
+      setForecastTile(null);
       // Forecast tile — next processor batch + current-year ready count.
-      if (settings && cR.data) {
+      if (settings) {
         try {
           const allBatches = bR.data || [];
           const f = buildForecast({
-            cattle: cR.data,
+            cattle: cR.data || [],
             weighIns: wAll || [],
             settings,
             includes,
@@ -81,11 +93,28 @@ const CattleHomeView = ({
             currentYearReady: f.summary.readyThisYear,
           });
         } catch {
-          /* tolerate forecast errors on the home tile */
+          setForecastTile(null);
         }
       }
+    } catch (e) {
+      setCattle([]);
+      setDailys([]);
+      setWeighIns([]);
+      setCalving([]);
+      setTargets({});
+      setForecastTile(null);
+      setLoadError({
+        kind: 'error',
+        message: 'Could not load cattle dashboard. Please retry. (' + ((e && e.message) || e) + ')',
+      });
+    } finally {
       setLoading(false);
-    });
+    }
+  }
+
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Weigh-ins sorted newest-first so .find() returns the globally latest
@@ -383,7 +412,10 @@ const CattleHomeView = ({
   );
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      data-cattle-home-loaded={loading || loadError ? 'false' : 'true'}
+    >
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -405,34 +437,59 @@ const CattleHomeView = ({
           gap: '1.5rem',
         }}
       >
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10}}>
-          <StatTile label="Cattle on Farm" val={totalCattle.toLocaleString()} />
-          <StatTile
-            label="Total Live Weight"
-            val={totalLiveWeight > 0 ? Math.round(totalLiveWeight).toLocaleString() + ' lbs' : '\u2014'}
-            sub={totalEstimatedCows > 0 ? totalEstimatedCows + ' est. @ 1,000 lb' : null}
-            color="#991b1b"
-          />
-          <StatTile
-            label="Cow Units (1,000 lb)"
-            val={totalLiveWeight > 0 ? (totalLiveWeight / 1000).toFixed(1) : '\u2014'}
-            sub={totalEstimatedCows > 0 ? totalEstimatedCows + ' est.' : null}
-            color="#7f1d1d"
-          />
-          <StatTile
-            label="Mortality 30d"
-            val={totalMort30.toString()}
-            color={totalMort30 > 0 ? '#b91c1c' : '#374151'}
-          />
-          <StatTile label="Reports 30d" val={dailys.length.toString()} color="#374151" />
-          <StatTile
-            label="Feed Cost 30d"
-            val={totalFeedCost30 > 0 ? '$' + Math.round(totalFeedCost30).toLocaleString() : '\u2014'}
-            color="#92400e"
-          />
-        </div>
+        {loadError && (
+          <div>
+            <InlineNotice notice={loadError} />
+            <button
+              type="button"
+              data-cattle-home-load-retry="1"
+              onClick={loadAll}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 8,
+                border: '1px solid #991b1b',
+                background: 'white',
+                color: '#991b1b',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!loadError && (
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10}}>
+            <StatTile label="Cattle on Farm" val={totalCattle.toLocaleString()} />
+            <StatTile
+              label="Total Live Weight"
+              val={totalLiveWeight > 0 ? Math.round(totalLiveWeight).toLocaleString() + ' lbs' : '\u2014'}
+              sub={totalEstimatedCows > 0 ? totalEstimatedCows + ' est. @ 1,000 lb' : null}
+              color="#991b1b"
+            />
+            <StatTile
+              label="Cow Units (1,000 lb)"
+              val={totalLiveWeight > 0 ? (totalLiveWeight / 1000).toFixed(1) : '\u2014'}
+              sub={totalEstimatedCows > 0 ? totalEstimatedCows + ' est.' : null}
+              color="#7f1d1d"
+            />
+            <StatTile
+              label="Mortality 30d"
+              val={totalMort30.toString()}
+              color={totalMort30 > 0 ? '#b91c1c' : '#374151'}
+            />
+            <StatTile label="Reports 30d" val={dailys.length.toString()} color="#374151" />
+            <StatTile
+              label="Feed Cost 30d"
+              val={totalFeedCost30 > 0 ? '$' + Math.round(totalFeedCost30).toLocaleString() : '\u2014'}
+              color="#92400e"
+            />
+          </div>
+        )}
 
-        {forecastTile && (
+        {!loadError && forecastTile && (
           <div
             data-cattle-home-forecast-tile
             onClick={() => setView('cattleforecast')}
@@ -486,66 +543,68 @@ const CattleHomeView = ({
         )}
 
         {/* Per-herd breakdown */}
-        <div>
-          <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', marginBottom: 8, letterSpacing: 0.3}}>
-            HERD BREAKDOWN
-          </div>
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10}}>
-            {HERDS.map((h) => {
-              const cows = cattle.filter((c) => c.herd === h);
-              const lw = herdLiveWeight(h);
-              const cu = lw / 1000;
-              const est = herdEstimatedCount(h);
-              const t = targets[h];
-              return (
-                <div
-                  key={h}
-                  onClick={() => setView('cattleherds')}
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 12,
-                    padding: '14px 16px',
-                    cursor: 'pointer',
-                  }}
-                  className="hoverable-tile"
-                >
-                  <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
-                    <span style={{fontSize: 14, fontWeight: 700, color: HERD_COLORS[h]}}>{HERD_LABELS[h]}</span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>
-                      {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
-                    </span>
-                  </div>
-                  <div style={{fontSize: 12, color: '#374151'}}>
-                    Live wt: <strong>{lw > 0 ? Math.round(lw).toLocaleString() + ' lbs' : '\u2014'}</strong>
-                  </div>
-                  <div style={{fontSize: 12, color: '#374151'}}>
-                    Cow units: <strong>{cu > 0 ? cu.toFixed(1) : '\u2014'}</strong>
-                  </div>
-                  {est > 0 && (
-                    <div style={{fontSize: 11, color: '#92400e', marginTop: 2}}>
-                      {est + ' est. @ 1,000 lb (no weigh-in yet)'}
+        {!loadError && (
+          <div>
+            <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', marginBottom: 8, letterSpacing: 0.3}}>
+              HERD BREAKDOWN
+            </div>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10}}>
+              {HERDS.map((h) => {
+                const cows = cattle.filter((c) => c.herd === h);
+                const lw = herdLiveWeight(h);
+                const cu = lw / 1000;
+                const est = herdEstimatedCount(h);
+                const t = targets[h];
+                return (
+                  <div
+                    key={h}
+                    onClick={() => setView('cattleherds')}
+                    style={{
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 12,
+                      padding: '14px 16px',
+                      cursor: 'pointer',
+                    }}
+                    className="hoverable-tile"
+                  >
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
+                      <span style={{fontSize: 14, fontWeight: 700, color: HERD_COLORS[h]}}>{HERD_LABELS[h]}</span>
+                      <span style={{fontSize: 11, color: '#6b7280'}}>
+                        {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
+                      </span>
                     </div>
-                  )}
-                  {t && (
-                    <div style={{fontSize: 11, color: '#9ca3af', marginTop: 4}}>
-                      {'Target: DM ' +
-                        t.target_dm_pct_body +
-                        '% \u00b7 CP ' +
-                        t.target_cp_pct_dm +
-                        '% \u00b7 NFC ' +
-                        t.target_nfc_pct_dm +
-                        '%'}
+                    <div style={{fontSize: 12, color: '#374151'}}>
+                      Live wt: <strong>{lw > 0 ? Math.round(lw).toLocaleString() + ' lbs' : '\u2014'}</strong>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div style={{fontSize: 12, color: '#374151'}}>
+                      Cow units: <strong>{cu > 0 ? cu.toFixed(1) : '\u2014'}</strong>
+                    </div>
+                    {est > 0 && (
+                      <div style={{fontSize: 11, color: '#92400e', marginTop: 2}}>
+                        {est + ' est. @ 1,000 lb (no weigh-in yet)'}
+                      </div>
+                    )}
+                    {t && (
+                      <div style={{fontSize: 11, color: '#9ca3af', marginTop: 4}}>
+                        {'Target: DM ' +
+                          t.target_dm_pct_body +
+                          '% \u00b7 CP ' +
+                          t.target_cp_pct_dm +
+                          '% \u00b7 NFC ' +
+                          t.target_nfc_pct_dm +
+                          '%'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Rolling-window per-herd cards — same pattern as the Layers dashboard */}
-        {activeHerdsWithCows.length > 0 && (
+        {!loadError && activeHerdsWithCows.length > 0 && (
           <div>
             <div style={{display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10}}>
               <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', letterSpacing: 0.3}}>
@@ -639,7 +698,7 @@ const CattleHomeView = ({
           <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af', fontSize: 13}}>Loading{'\u2026'}</div>
         )}
 
-        {!loading && totalCattle === 0 && (
+        {!loading && !loadError && totalCattle === 0 && (
           <div
             style={{
               background: 'white',
