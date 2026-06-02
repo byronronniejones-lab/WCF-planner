@@ -18,6 +18,8 @@ import EquipmentFleetView from './EquipmentFleetView.jsx';
 import EquipmentFuelLogView from './EquipmentFuelLogView.jsx';
 import EquipmentDetail from './EquipmentDetail.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
+import InlineNotice from '../shared/InlineNotice.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
 import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
 import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -39,6 +41,7 @@ export default function EquipmentHome({
   const [fuelings, setFuelings] = React.useState([]);
   const [maintenance, setMaintenance] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState(null);
   const [missingSchema, setMissingSchema] = React.useState(false);
 
   const location = useLocation();
@@ -54,28 +57,47 @@ export default function EquipmentHome({
   // user action (e.g. the meter-status Sync button) can preserve their own
   // inline notice — otherwise the detail page unmounts under the loading
   // spinner and any "Synced" banner disappears before it can be read.
-  async function loadAll({quiet = false} = {}) {
-    if (!quiet) setLoading(true);
-    const [eR, fR, mR] = await Promise.all([
-      sb.from('equipment').select('*').order('name'),
-      sb.from('equipment_fuelings').select('*').order('date', {ascending: false}).limit(5000),
-      sb.from('equipment_maintenance_events').select('*').order('event_date', {ascending: false}).limit(500),
-    ]);
-    // If migration 016 hasn't been applied, the tables won't exist. Show a
-    // friendly banner instead of crashing.
-    if (eR.error && /does not exist|relation/i.test(eR.error.message || '')) {
-      setMissingSchema(true);
-      setLoading(false);
-      return;
-    }
-    if (eR.data) setEquipment(eR.data);
-    if (fR && fR.data) setFuelings(fR.data);
-    if (mR && mR.data) setMaintenance(mR.data);
-    setLoading(false);
-  }
+  const loadAll = React.useCallback(
+    async ({quiet = false} = {}) => {
+      if (!quiet) setLoading(true);
+      setLoadError(null);
+      try {
+        const [eR, fR, mR] = await Promise.all([
+          sb.from('equipment').select('*').order('name'),
+          sb.from('equipment_fuelings').select('*').order('date', {ascending: false}).limit(5000),
+          sb.from('equipment_maintenance_events').select('*').order('event_date', {ascending: false}).limit(500),
+        ]);
+        // If migration 016 hasn't been applied, the tables won't exist. Show a
+        // friendly banner instead of crashing.
+        if (eR.error && /does not exist|relation/i.test(eR.error.message || '')) {
+          setMissingSchema(true);
+          setEquipment([]);
+          setFuelings([]);
+          setMaintenance([]);
+          return;
+        }
+        if (eR.error) throw new Error('equipment: ' + eR.error.message);
+        if (fR.error) throw new Error('equipment_fuelings: ' + fR.error.message);
+        if (mR.error) throw new Error('equipment_maintenance_events: ' + mR.error.message);
+        setMissingSchema(false);
+        setEquipment(eR.data || []);
+        setFuelings(fR.data || []);
+        setMaintenance(mR.data || []);
+      } catch (e) {
+        setMissingSchema(false);
+        setEquipment([]);
+        setFuelings([]);
+        setMaintenance([]);
+        setLoadError({kind: 'error', message: 'Could not load equipment data: ' + (e?.message || e)});
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sb],
+  );
   React.useEffect(() => {
     loadAll();
-  }, []);
+  }, [loadAll]);
 
   const path = location.pathname;
   let subView = 'fleet';
@@ -193,7 +215,10 @@ export default function EquipmentHome({
         )}
       </div>
 
-      <div style={{padding: '1rem', maxWidth: 1200, margin: '0 auto'}}>
+      <div
+        style={{padding: '1rem', maxWidth: 1200, margin: '0 auto'}}
+        data-equipment-home-loaded={!loading && !loadError && !missingSchema ? 'true' : 'false'}
+      >
         {missingSchema && (
           <div
             style={{
@@ -216,7 +241,30 @@ export default function EquipmentHome({
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>
         )}
 
-        {!loading && !missingSchema && subView === 'fleet' && !isEquipmentTech && (
+        {!loading && !missingSchema && loadError && (
+          <div data-equipment-load-error="true">
+            <InlineNotice notice={loadError} />
+            <button
+              type="button"
+              onClick={() => loadAll()}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 7,
+                border: '1px solid #d1d5db',
+                background: 'white',
+                color: '#57534e',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!loading && !missingSchema && !loadError && subView === 'fleet' && !isEquipmentTech && (
           <EquipmentFleetView
             sb={sb}
             equipment={equipment}
@@ -231,7 +279,7 @@ export default function EquipmentHome({
             onReload={loadAll}
           />
         )}
-        {!loading && !missingSchema && subView === 'fleet' && isEquipmentTech && (
+        {!loading && !missingSchema && !loadError && subView === 'fleet' && isEquipmentTech && (
           <div
             style={{
               background: 'white',
@@ -246,10 +294,10 @@ export default function EquipmentHome({
             Pick a piece of equipment above.
           </div>
         )}
-        {!loading && !missingSchema && subView === 'fuel-log' && !isEquipmentTech && (
+        {!loading && !missingSchema && !loadError && subView === 'fuel-log' && !isEquipmentTech && (
           <EquipmentFuelLogView equipment={equipment} fuelings={fuelings} fmt={fmt} />
         )}
-        {!loading && !missingSchema && subView === 'detail' && activeEq && (
+        {!loading && !missingSchema && !loadError && subView === 'detail' && activeEq && (
           <>
             <RecordSequenceNav seq={recordSeq} currentId={detailSlug} onNavigate={navigateSeq} />
             <EquipmentDetail
@@ -264,7 +312,7 @@ export default function EquipmentHome({
             />
           </>
         )}
-        {!loading && !missingSchema && subView === 'detail' && !activeEq && (
+        {!loading && !missingSchema && !loadError && subView === 'detail' && !activeEq && (
           <div
             style={{
               background: 'white',

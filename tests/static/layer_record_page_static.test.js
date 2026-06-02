@@ -256,7 +256,7 @@ describe('LayerBatchPage + LayerHousingPage — setLayerHousings shape', () => {
 
 describe('Layer readiness markers — CI determinism (see helpers/layerReady.js)', () => {
   it('hub exposes data-layer-batches-loaded keyed on its load state', () => {
-    expect(listSrc).toMatch(/data-layer-batches-loaded=\{loading \? 'false' : 'true'\}/);
+    expect(listSrc).toMatch(/data-layer-batches-loaded=\{loading \|\| loadError \? 'false' : 'true'\}/);
   });
   it('batch record page exposes data-layer-batch-record-loaded only on the loaded body', () => {
     // Marker rides RecordPageBody, which only renders past the loading/not-found guards.
@@ -304,5 +304,38 @@ describe('LayerBatchesView — cleaned hub', () => {
   });
   it('pendingEdit deep-link from timeline navigates to /layer/batches/<id>', () => {
     expect(listSrc).toMatch(/pendingEdit[\s\S]*?navigate\('\/layer\/batches\/' \+ id\)/);
+  });
+});
+
+describe('Layer cold-boot readiness required metric reads', () => {
+  it('hub throws on layer_dailys / egg_dailys query errors instead of caching empty metrics', () => {
+    expect(listSrc).toMatch(/if \(error\) \{\s*throw new Error\(`\$\{table\}: \$\{error\.message\}`\);/);
+    expect(listSrc).toContain("setLoadError({kind: 'error', message: 'Could not load layer batch metrics: '");
+  });
+
+  it('hub clears stale metric state and blocks metric-backed tiles while loadError is active', () => {
+    expect(listSrc).toMatch(/setRawLayerDailys\(\[\]\);\s*\n\s*setRawEggDailys\(\[\]\);/);
+    expect(listSrc).toMatch(/!loading && !loadError && \(/);
+    expect(listSrc).toContain("data-layer-batches-loaded={loading || loadError ? 'false' : 'true'}");
+  });
+
+  it('batch record page renders a retryable load-error state before not-found/record content', () => {
+    const loadErrorIdx = batchPage.indexOf('if (loadError)');
+    const notFoundIdx = batchPage.indexOf('if (!batch)');
+    expect(loadErrorIdx).toBeGreaterThan(-1);
+    expect(notFoundIdx).toBeGreaterThan(loadErrorIdx);
+    expect(batchPage).toContain('data-layer-batch-load-error="true"');
+    expect(batchPage).toMatch(/<InlineNotice notice=\{loadError\} \/>/);
+    expect(batchPage).toMatch(/onClick=\{loadAll\}[\s\S]*?Retry/);
+  });
+
+  it('housing record page renders a retryable load-error state before not-found/record content', () => {
+    const loadErrorIdx = housingPage.indexOf('if (loadError)');
+    const notFoundIdx = housingPage.indexOf('if (!housing)');
+    expect(loadErrorIdx).toBeGreaterThan(-1);
+    expect(notFoundIdx).toBeGreaterThan(loadErrorIdx);
+    expect(housingPage).toContain('data-layer-housing-load-error="true"');
+    expect(housingPage).toMatch(/<InlineNotice notice=\{loadError\} \/>/);
+    expect(housingPage).toMatch(/onClick=\{loadAll\}[\s\S]*?Retry/);
   });
 });
