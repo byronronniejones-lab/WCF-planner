@@ -38,7 +38,7 @@ function broilerBatchHref(b) {
 
 function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything}) {
   const navigate = useNavigate();
-  const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
+  const {authState, dataLoaded, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {batches, setBatches} = useBatches();
   const {broilerDailys} = useDailysRecent();
   const {feedCosts} = useFeedCosts();
@@ -67,7 +67,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
         />
       )}
       <Header />
-      <div style={{padding: '1rem'}} data-broiler-batches-loaded="true">
+      <div style={{padding: '1rem'}} data-broiler-batches-loaded={dataLoaded ? 'true' : 'false'}>
         <div style={{display: 'flex', justifyContent: 'flex-end', marginBottom: 10}}>
           <button
             style={{

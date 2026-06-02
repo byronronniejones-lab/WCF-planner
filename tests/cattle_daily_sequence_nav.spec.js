@@ -36,18 +36,18 @@ test.describe('Cattle daily record-page sequence navigation', () => {
     await page.locator('[data-daily-row="cd-1"]').click();
 
     // Title is date + " · herd"; we open at position 1 so Prev is disabled.
-    await expect(page.locator('[data-record-title="1"]')).toHaveText('2026-05-03 · finishers', {timeout: 10_000});
+    await expect(page.locator('[data-record-title="1"]')).toHaveText('05/03/2026 · finishers', {timeout: 10_000});
     await expect(page.locator('[data-record-seq-nav="1"]')).toBeVisible();
     await expect(page.locator('[data-record-seq-position="1"]')).toHaveText('1 of 3');
     await expect(page.locator('[data-record-seq-prev="1"]')).toBeDisabled();
 
     const nextBtn = page.locator('[data-record-seq-next="1"]');
     const nextLabel = (await nextBtn.innerText()).replace(/[‹›]/g, '').trim();
-    expect(nextLabel).toBe('2026-05-02 · finishers');
+    expect(nextLabel).toBe('05/02/2026 · finishers');
 
     await nextBtn.click();
     await expect(page).toHaveURL(/\/cattle\/dailys\/cd-2$/, {timeout: 10_000});
-    await expect(page.locator('[data-record-title="1"]')).toHaveText('2026-05-02 · finishers');
+    await expect(page.locator('[data-record-title="1"]')).toHaveText('05/02/2026 · finishers');
     await expect(page.locator('[data-record-seq-position="1"]')).toHaveText('2 of 3');
     await expect(page.locator('[data-record-seq-prev="1"]')).toBeEnabled();
   });
@@ -58,7 +58,7 @@ test.describe('Cattle daily record-page sequence navigation', () => {
     await seedDaily(supabaseAdmin, {id: 'cd-2', date: '2026-05-02'});
 
     await page.goto('/cattle/dailys/cd-1');
-    await expect(page.locator('[data-record-title="1"]')).toHaveText('2026-05-03 · finishers', {timeout: 15_000});
+    await expect(page.locator('[data-record-title="1"]')).toHaveText('05/03/2026 · finishers', {timeout: 15_000});
     await expect(page.locator('[data-record-seq-nav="1"]')).toHaveCount(0);
   });
 });

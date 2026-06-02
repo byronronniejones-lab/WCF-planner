@@ -364,7 +364,7 @@ export default function CattleDailyPage({sb, authState, Header}) {
 
         <RecordTitle>{entityLabel}</RecordTitle>
 
-        {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
+        {notice && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
 
         <div data-daily-edit-form="1" key={record.id} style={recordFormCard}>
           {/* ---- Core fields ---- */}

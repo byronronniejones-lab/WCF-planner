@@ -417,7 +417,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
 
         <RecordTitle>{entityLabel}</RecordTitle>
 
-        {notice && <InlineNotice kind={notice.kind} message={notice.message} onDismiss={() => setNotice(null)} />}
+        {notice && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
 
         <div key={record.id} data-daily-edit-form="1" style={recordFormCard}>
           <div className={fieldRowClass}>

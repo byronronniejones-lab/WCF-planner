@@ -248,8 +248,9 @@ describe('Broiler batch cold-boot readiness markers', () => {
     expect(pageSrc).toMatch(/<RecordPageBody[^>]*data-broiler-batch-record-loaded="true"/);
   });
 
-  it('hub exposes a stable data-broiler-batches-loaded marker for browser readiness checks', () => {
-    expect(listSrc).toContain('data-broiler-batches-loaded="true"');
+  it('hub drives the data-broiler-batches-loaded marker from real boot readiness (dataLoaded)', () => {
+    expect(listSrc).toContain("data-broiler-batches-loaded={dataLoaded ? 'true' : 'false'}");
+    expect(listSrc).not.toContain('data-broiler-batches-loaded="true"');
   });
 });
 

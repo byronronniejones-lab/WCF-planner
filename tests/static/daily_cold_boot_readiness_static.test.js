@@ -216,3 +216,28 @@ describe('Daily hub/list views - Retry affordance (user-gated reloadKey)', () =>
     });
   }
 });
+
+// ── Cleanup combo: mutation notices use the current InlineNotice API ────────
+// Daily record pages previously passed kind=/message= props that the current
+// InlineNotice ({notice, onDismiss}) ignores, so save/delete notices silently
+// never rendered. Lock that they now pass the dismissible notice object — while
+// the readiness loadError stays non-dismissible (asserted above).
+describe('Daily record pages - mutation notice uses current InlineNotice API', () => {
+  for (const {file} of RECORD_PAGES) {
+    const src = read(file);
+    it(`${file} renders the mutation notice via notice={notice} (not ignored kind=/message=)`, () => {
+      expect(src).toContain('<InlineNotice notice={notice} onDismiss={() => setNotice(null)} />');
+      expect(src).not.toContain('kind={notice.kind}');
+      expect(src).not.toContain('message={notice.message}');
+    });
+  }
+});
+
+// ── Cleanup combo: BroilerListView marker reflects real load state ──────────
+describe('BroilerListView - readiness marker reflects real load state', () => {
+  const src = read('src/broiler/BroilerListView.jsx');
+  it('drives data-broiler-batches-loaded from dataLoaded, not a static literal', () => {
+    expect(src).toContain("data-broiler-batches-loaded={dataLoaded ? 'true' : 'false'}");
+    expect(src).not.toContain('data-broiler-batches-loaded="true"');
+  });
+});
