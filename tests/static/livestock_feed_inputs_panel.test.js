@@ -62,8 +62,10 @@ describe('LivestockFeedInputsPanel active/inactive feed visibility', () => {
 
     expect(closeBody).toMatch(/clearTimeout\(autoSaveTimer\.current\)/);
     expect(closeBody).toMatch(/const changed = JSON\.stringify\(form\) !== JSON\.stringify\(originalForm\);/);
-    expect(closeBody).toMatch(/if \(changed\) await saveFeed\(form, editingId\);/);
-    expect(closeBody).toMatch(/await saveFeed\(form, null\);/);
+    expect(closeBody).toMatch(/if \(changed\) \{/);
+    expect(closeBody).toMatch(/recordActivity: true/);
+    expect(closeBody).toMatch(/previousFeed: buildFeedRecord\(originalForm, editingId\)/);
+    expect(closeBody).toMatch(/await saveFeed\(form, null, \{recordActivity: true\}\);/);
   });
 
   it('maps inactive status to cattle and sheep public webform dropdowns', () => {
