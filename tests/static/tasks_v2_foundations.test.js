@@ -23,6 +23,48 @@ const mig051 = fs.readFileSync(path.join(ROOT, 'supabase-migrations/051_tasks_v2
 const mig052 = fs.readFileSync(path.join(ROOT, 'supabase-migrations/052_tasks_v2_system_rules.sql'), 'utf8');
 const mig053 = fs.readFileSync(path.join(ROOT, 'supabase-migrations/053_tasks_v2_rls_and_rpcs.sql'), 'utf8');
 
+function stripComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
+}
+
+function listRuntimeSourceFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...listRuntimeSourceFiles(full));
+      continue;
+    }
+    if (!entry.isFile() || !/\.(jsx?|cjs|mjs)$/.test(entry.name)) continue;
+    if (/\.(test|spec)\.(jsx?|cjs|mjs)$/.test(entry.name)) continue;
+    out.push(full);
+  }
+  return out;
+}
+
+describe('src/ tasks v2 API boundary', () => {
+  it('keeps direct task_instances table access inside task API modules only', () => {
+    const allowed = new Set(['src/lib/tasksAdminApi.js', 'src/lib/tasksCenterApi.js', 'src/lib/tasksUserApi.js']);
+    const offenders = [];
+    for (const file of listRuntimeSourceFiles(path.join(ROOT, 'src'))) {
+      const rel = path.relative(ROOT, file).replace(/\\/g, '/');
+      const code = stripComments(fs.readFileSync(file, 'utf8'));
+      if (/from\(['"]task_instances['"]\)/.test(code) && !allowed.has(rel)) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('does not call generate_system_task_instance from runtime source', () => {
+    const offenders = [];
+    for (const file of listRuntimeSourceFiles(path.join(ROOT, 'src'))) {
+      const rel = path.relative(ROOT, file).replace(/\\/g, '/');
+      const code = stripComments(fs.readFileSync(file, 'utf8'));
+      if (/rpc\(['"]generate_system_task_instance['"]/.test(code)) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('Mig 050 — task_instances v2 columns', () => {
   it('adds the eight new columns including from_system_source_event_key', () => {
     expect(mig050).toMatch(/ADD COLUMN IF NOT EXISTS completion_note text/);
