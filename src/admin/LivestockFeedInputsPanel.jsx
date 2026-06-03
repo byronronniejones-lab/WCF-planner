@@ -1,10 +1,124 @@
 // Phase 2 Round 4 extraction (verbatim).
 import React from 'react';
 import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
+import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
+import {recordActivityEvent} from '../lib/entityMutations.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 
 const FEED_GRID_COLUMNS = '2fr 80px 80px 70px 60px 60px 70px 120px';
+const FEED_ACTIVITY_ENTITY = {
+  entityType: 'cattle.forecast',
+  entityId: 'cattle-forecast',
+  entityLabel: 'Cattle Forecast',
+};
+const FEED_CHANGE_LABELS = {
+  name: 'Name',
+  category: 'Category',
+  unit: 'Unit',
+  unit_weight_lbs: 'Unit weight',
+  cost_per_unit: 'Cost per unit',
+  freight_per_truck: 'Freight per truck',
+  units_per_truck: 'Units per truck',
+  moisture_pct: 'Moisture',
+  nfc_pct: 'NFC',
+  protein_pct: 'Crude protein',
+  status: 'Status',
+  herd_scope: 'Herd / flock scope',
+  notes: 'Notes',
+};
+const FEED_TEST_CHANGE_LABELS = {
+  effective_date: 'Effective date',
+  moisture_pct: 'Moisture',
+  nfc_pct: 'NFC',
+  protein_pct: 'Crude protein',
+  bale_weight_lbs: 'Bale weight',
+  pdf_file_name: 'PDF',
+  notes: 'Notes',
+};
+
+function numberOrNull(value) {
+  if (value === '' || value == null) return null;
+  const n = Number.parseFloat(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function integerOrNull(value) {
+  if (value === '' || value == null) return null;
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatNumber(value) {
+  if (value == null || value === '') return null;
+  const n = Number.parseFloat(value);
+  return Number.isFinite(n) ? String(n) : String(value);
+}
+
+function formatMoney(value) {
+  if (value == null || value === '') return null;
+  const n = Number.parseFloat(value);
+  return Number.isFinite(n) ? '$' + n.toFixed(2) : String(value);
+}
+
+function formatPercent(value) {
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n)) return value == null || value === '' ? null : String(value);
+  return String(n) + '%';
+}
+
+function formatPounds(value) {
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n)) return value == null || value === '' ? null : String(value);
+  return String(n) + ' lb';
+}
+
+function formatList(value) {
+  const values = Array.isArray(value) ? value : [];
+  if (values.length === 0) return null;
+  return countSummary(values, 'entry') + ': ' + values.join(', ');
+}
+
+function feedLabel(feed) {
+  return (feed && feed.name) || 'Unnamed feed';
+}
+
+function buildFeedRecord(feedData, id) {
+  const rec = {
+    name: (feedData.name || '').trim(),
+    category: feedData.category,
+    unit: feedData.unit,
+    unit_weight_lbs: numberOrNull(feedData.unit_weight_lbs),
+    cost_per_unit: numberOrNull(feedData.cost_per_unit),
+    freight_per_truck: numberOrNull(feedData.freight_per_truck),
+    units_per_truck: integerOrNull(feedData.units_per_truck),
+    moisture_pct: numberOrNull(feedData.moisture_pct),
+    nfc_pct: numberOrNull(feedData.nfc_pct),
+    protein_pct: numberOrNull(feedData.protein_pct),
+    status: feedData.status || 'active',
+    herd_scope: feedData.herd_scope || [],
+    notes: feedData.notes || null,
+  };
+  if (id) rec.id = id;
+  return rec;
+}
+
+const FEED_CHANGE_FORMATTERS = {
+  unit_weight_lbs: formatPounds,
+  cost_per_unit: formatMoney,
+  freight_per_truck: formatMoney,
+  units_per_truck: formatNumber,
+  moisture_pct: formatPercent,
+  nfc_pct: formatPercent,
+  protein_pct: formatPercent,
+  herd_scope: formatList,
+};
+const FEED_TEST_CHANGE_FORMATTERS = {
+  moisture_pct: formatPercent,
+  nfc_pct: formatPercent,
+  protein_pct: formatPercent,
+  bale_weight_lbs: formatPounds,
+};
 
 const LivestockFeedInputsPanel = ({sb}) => {
   const [feeds, setFeeds] = React.useState([]);
@@ -84,6 +198,96 @@ const LivestockFeedInputsPanel = ({sb}) => {
     if (cost === 0 && freight === 0) return null;
     const perUnit = cost + (units > 0 ? freight / units : 0);
     return perUnit / wt;
+  }
+
+  async function recordFeedInputActivity({eventType, body, payload}) {
+    try {
+      await recordActivityEvent(sb, {
+        ...FEED_ACTIVITY_ENTITY,
+        eventType,
+        body,
+        payload,
+      });
+    } catch (e) {
+      console.warn('feed input Activity log failed:', e && e.message ? e.message : e);
+    }
+  }
+
+  async function recordFeedInputSavedActivity(previousFeed, nextFeed, {created = false, action = null} = {}) {
+    const changes = buildChanges(previousFeed, nextFeed, {
+      exclude: ['id'],
+      labels: FEED_CHANGE_LABELS,
+      formatters: FEED_CHANGE_FORMATTERS,
+    });
+    if (!created && changes.length === 0) return;
+    const feedName = feedLabel(nextFeed || previousFeed);
+    const feedAction = action || (created ? 'created' : 'updated');
+    await recordFeedInputActivity({
+      eventType: created ? 'record.created' : 'field.updated',
+      body: created
+        ? 'Feed input ' + feedName + ' added'
+        : 'Feed input ' + feedName + ' updated: ' + countSummary(changes, 'field'),
+      payload: {
+        feed_input_action: feedAction,
+        feed_input_id: (nextFeed && nextFeed.id) || (previousFeed && previousFeed.id),
+        feed_name: feedName,
+        changes,
+      },
+    });
+  }
+
+  async function recordFeedInputDeletedActivity(feed) {
+    if (!feed) return;
+    await recordFeedInputActivity({
+      eventType: 'record.deleted',
+      body: 'Feed input ' + feedLabel(feed) + ' deleted',
+      payload: {
+        feed_input_action: 'deleted',
+        feed_input_id: feed.id,
+        feed_name: feedLabel(feed),
+      },
+    });
+  }
+
+  async function recordFeedTestSavedActivity(feed, previousTest, nextTest, {created = false} = {}) {
+    const changes = buildChanges(previousTest, nextTest, {
+      exclude: ['id', 'feed_input_id', 'pdf_path'],
+      labels: FEED_TEST_CHANGE_LABELS,
+      formatters: FEED_TEST_CHANGE_FORMATTERS,
+    });
+    if (!created && changes.length === 0) return;
+    const feedName = feedLabel(feed);
+    const dateLabel = nextTest.effective_date || 'unknown date';
+    await recordFeedInputActivity({
+      eventType: created ? 'record.created' : 'field.updated',
+      body: created
+        ? 'Feed test for ' + feedName + ' added (' + dateLabel + ')'
+        : 'Feed test for ' + feedName + ' updated (' + dateLabel + '): ' + countSummary(changes, 'field'),
+      payload: {
+        feed_test_action: created ? 'created' : 'updated',
+        feed_input_id: nextTest.feed_input_id,
+        feed_name: feedName,
+        feed_test_id: nextTest.id,
+        effective_date: nextTest.effective_date || null,
+        changes,
+      },
+    });
+  }
+
+  async function recordFeedTestDeletedActivity(feed, test) {
+    if (!test) return;
+    const feedName = feedLabel(feed);
+    await recordFeedInputActivity({
+      eventType: 'record.deleted',
+      body: 'Feed test for ' + feedName + ' deleted (' + (test.effective_date || 'unknown date') + ')',
+      payload: {
+        feed_test_action: 'deleted',
+        feed_input_id: test.feed_input_id || (feed && feed.id),
+        feed_name: feedName,
+        feed_test_id: test.id,
+        effective_date: test.effective_date || null,
+      },
+    });
   }
 
   function openAdd() {
@@ -224,6 +428,10 @@ const LivestockFeedInputsPanel = ({sb}) => {
       pdf_file_name: pdfFileName,
       notes: testForm.notes || null,
     };
+    const currentFeed =
+      feeds.find((f) => f.id === editingId) ||
+      (form ? buildFeedRecord(form, editingId) : {id: editingId, name: editingId});
+    const previousTest = editingTestId ? feedTests.find((t) => t.id === editingTestId) : null;
     let rec;
     if (editingTestId) {
       const {error} = await sb.from('cattle_feed_tests').update(payload).eq('id', editingTestId);
@@ -243,6 +451,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
         return;
       }
     }
+    await recordFeedTestSavedActivity(currentFeed, previousTest, rec, {created: !editingTestId});
     // Re-sync parent feed's nutrition values if the freshly saved test is now the most recent
     const others = feedTests.filter((t) => t.id !== rec.id);
     const all = [rec, ...others].sort((a, b) => (b.effective_date || '').localeCompare(a.effective_date || ''));
@@ -253,14 +462,23 @@ const LivestockFeedInputsPanel = ({sb}) => {
       if (rec.protein_pct != null) feedUpdate.protein_pct = rec.protein_pct;
       if (rec.bale_weight_lbs != null) feedUpdate.unit_weight_lbs = rec.bale_weight_lbs;
       if (Object.keys(feedUpdate).length > 0) {
-        await sb.from('cattle_feed_inputs').update(feedUpdate).eq('id', editingId);
-        const refreshed = {...form};
-        if (rec.moisture_pct != null) refreshed.moisture_pct = String(rec.moisture_pct);
-        if (rec.nfc_pct != null) refreshed.nfc_pct = String(rec.nfc_pct);
-        if (rec.protein_pct != null) refreshed.protein_pct = String(rec.protein_pct);
-        if (rec.bale_weight_lbs != null) refreshed.unit_weight_lbs = String(rec.bale_weight_lbs);
-        setForm(refreshed);
-        setOriginalForm(refreshed);
+        const {error: feedUpdateError} = await sb.from('cattle_feed_inputs').update(feedUpdate).eq('id', editingId);
+        if (!feedUpdateError) {
+          await recordFeedInputSavedActivity(
+            currentFeed,
+            {...currentFeed, ...feedUpdate},
+            {action: 'synced_from_feed_test'},
+          );
+          const refreshed = {...form};
+          if (rec.moisture_pct != null) refreshed.moisture_pct = String(rec.moisture_pct);
+          if (rec.nfc_pct != null) refreshed.nfc_pct = String(rec.nfc_pct);
+          if (rec.protein_pct != null) refreshed.protein_pct = String(rec.protein_pct);
+          if (rec.bale_weight_lbs != null) refreshed.unit_weight_lbs = String(rec.bale_weight_lbs);
+          setForm(refreshed);
+          setOriginalForm(refreshed);
+        } else {
+          console.warn('feed nutrition sync failed:', feedUpdateError.message || feedUpdateError);
+        }
       }
     }
     await loadTests(editingId);
@@ -273,6 +491,10 @@ const LivestockFeedInputsPanel = ({sb}) => {
   async function deleteTest(testId, pdfPath) {
     if (!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this test result? PDF will also be removed. This cannot be undone.', async () => {
+      const currentFeed =
+        feeds.find((f) => f.id === editingId) ||
+        (form ? buildFeedRecord(form, editingId) : {id: editingId, name: editingId});
+      const test = feedTests.find((t) => t.id === testId);
       if (pdfPath) {
         try {
           await sb.storage.from('cattle-feed-pdfs').remove([pdfPath]);
@@ -280,7 +502,12 @@ const LivestockFeedInputsPanel = ({sb}) => {
           /* best-effort storage cleanup */
         }
       }
-      await sb.from('cattle_feed_tests').delete().eq('id', testId);
+      const {error} = await sb.from('cattle_feed_tests').delete().eq('id', testId);
+      if (error) {
+        setTestNotice({kind: 'error', message: 'Could not delete test: ' + error.message});
+        return;
+      }
+      await recordFeedTestDeletedActivity(currentFeed, test);
       await loadTests(editingId);
     });
   }
@@ -292,6 +519,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
       'Permanently delete this feed? All historical test results and PDFs will be removed. Daily reports already submitted keep their snapshot values. This cannot be undone.',
       async () => {
         setNotice(null);
+        const feed = feeds.find((f) => f.id === id) || (form ? buildFeedRecord(form, id) : {id, name: id});
         const {data: tests} = await sb.from('cattle_feed_tests').select('pdf_path').eq('feed_input_id', id);
         const pdfPaths = (tests || []).map((t) => t.pdf_path).filter(Boolean);
         if (pdfPaths.length > 0) {
@@ -306,6 +534,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
           setNotice({kind: 'error', message: 'Could not delete: ' + error.message});
           return;
         }
+        await recordFeedInputDeletedActivity(feed);
         await loadFeeds();
         cancelForm();
       },
@@ -326,27 +555,11 @@ const LivestockFeedInputsPanel = ({sb}) => {
     upd('herd_scope', next);
   }
 
-  async function saveFeed(feedData, id) {
+  async function saveFeed(feedData, id, {recordActivity = false, previousFeed = null} = {}) {
     setNotice(null);
     setSaving(true);
-    const rec = {
-      name: (feedData.name || '').trim(),
-      category: feedData.category,
-      unit: feedData.unit,
-      unit_weight_lbs: feedData.unit_weight_lbs !== '' ? parseFloat(feedData.unit_weight_lbs) : null,
-      cost_per_unit: feedData.cost_per_unit !== '' ? parseFloat(feedData.cost_per_unit) : null,
-      freight_per_truck: feedData.freight_per_truck !== '' ? parseFloat(feedData.freight_per_truck) : null,
-      units_per_truck: feedData.units_per_truck !== '' ? parseInt(feedData.units_per_truck) : null,
-      moisture_pct: feedData.moisture_pct !== '' ? parseFloat(feedData.moisture_pct) : null,
-      nfc_pct: feedData.nfc_pct !== '' ? parseFloat(feedData.nfc_pct) : null,
-      protein_pct: feedData.protein_pct !== '' ? parseFloat(feedData.protein_pct) : null,
-      status: feedData.status || 'active',
-      herd_scope: feedData.herd_scope || [],
-      notes: feedData.notes || null,
-    };
-    if (id) {
-      rec.id = id;
-    } else {
+    const rec = buildFeedRecord(feedData, id);
+    if (!id) {
       if (!rec.name) {
         setSaving(false);
         setNotice({kind: 'error', message: 'Feed name is required.'});
@@ -369,6 +582,9 @@ const LivestockFeedInputsPanel = ({sb}) => {
       return null;
     }
     setSaving(false);
+    if (recordActivity) {
+      await recordFeedInputSavedActivity(previousFeed || null, rec, {created: !id});
+    }
     await loadFeeds();
     if (!id) setEditingId(rec.id);
     return rec.id;
@@ -380,9 +596,14 @@ const LivestockFeedInputsPanel = ({sb}) => {
     setTestNotice(null);
     if (editingId && form && originalForm) {
       const changed = JSON.stringify(form) !== JSON.stringify(originalForm);
-      if (changed) await saveFeed(form, editingId);
+      if (changed) {
+        await saveFeed(form, editingId, {
+          recordActivity: true,
+          previousFeed: buildFeedRecord(originalForm, editingId),
+        });
+      }
     } else if (!editingId && form && form.name && form.name.trim()) {
-      await saveFeed(form, null);
+      await saveFeed(form, null, {recordActivity: true});
     }
     setShowForm(false);
     setEditingId(null);
