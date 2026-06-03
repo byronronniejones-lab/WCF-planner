@@ -114,6 +114,14 @@ describe('TasksWebform component', () => {
     expect(stripped).not.toMatch(/setRecurrence\b/);
     expect(stripped).not.toMatch(/Recurrence\s*\*/);
   });
+
+  it('keeps public submitter attribution as roster display-name only until webform-light identity ships', () => {
+    const stripped = formSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(stripped).toMatch(/submitted_by_team_member:\s*submittedBy/);
+    expect(stripped).toMatch(/availableNamesFor\(\s*'tasks-public',\s*roster,\s*availability\)/);
+    expect(stripped).not.toMatch(/requester_profile_id|submitted_by_profile_id|submitted_by_email|requester_email/);
+    expect(stripped).not.toMatch(/profiles[\s\S]{0,80}full_name|full_name[\s\S]{0,80}submittedBy/);
+  });
 });
 
 describe('offlineRpcForms task_submit registry', () => {
@@ -258,6 +266,18 @@ describe('Mig 041 RPC contracts', () => {
     expect(body).toMatch(/ON CONFLICT \(client_submission_id\) DO NOTHING/);
     // Returns idempotent_replay flag.
     expect(body).toMatch(/idempotent_replay/);
+    expect(body).not.toMatch(/requester_profile_id|submitted_by_profile_id|submitted_by_email|requester_email/);
+  });
+
+  it('submit_task_instance does not name-match public submitters to profiles or create completion-notice recipients', () => {
+    const fn = migSrc.match(
+      /CREATE OR REPLACE FUNCTION public\.submit_task_instance\(parent_in jsonb\)[\s\S]*?\$submit_task_instance\$;/,
+    );
+    expect(fn, 'expected submit_task_instance definition').not.toBeNull();
+    const body = fn[0];
+    expect(body).not.toMatch(/profiles[\s\S]{0,200}full_name[\s\S]{0,200}submitted_by_team_member/);
+    expect(body).not.toMatch(/submitted_by_team_member[\s\S]{0,200}profiles[\s\S]{0,200}full_name/);
+    expect(body).not.toMatch(/INSERT INTO public\.notifications/);
   });
 
   it('submit_task_instance grants EXECUTE to anon + authenticated', () => {
