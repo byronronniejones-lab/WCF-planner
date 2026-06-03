@@ -84,6 +84,33 @@ function isDuplicateCsidViolation(err) {
   return /client_submission_id/i.test(msg);
 }
 
+// 23505 on the active-daily-identity UNIQUE indexes (mig 084): a DIFFERENT
+// active report already occupies this date+identity. Unlike a csid replay this
+// is not the same row — but the queued row can never succeed, so on replay it
+// is treated as superseded (discarded as synced) rather than stuck forever.
+function isDailySupersededViolation(err) {
+  if (!err) return false;
+  if (String(err.code) !== DUPLICATE_KEY_CODE) return false;
+  return /_active_daily_identity_uq/i.test(String(err.message || ''));
+}
+
+function dailySupersededMessage(record = {}) {
+  const label = record.batch_label || record.herd || record.flock || '';
+  const date = record.date || '';
+  return label
+    ? `A report already exists for ${label} on ${date}. Edit the existing report instead.`
+    : `A report already exists for ${date}. Edit the existing report instead.`;
+}
+
+// Build a schema-class error carrying a friendly message so the live-submit
+// catch paths re-raise it to the caller (classifyError keys on the 23 code)
+// instead of silently queueing it for a retry that can never succeed.
+function dailySupersededError(record) {
+  const e = new Error(dailySupersededMessage(record));
+  e.code = DUPLICATE_KEY_CODE;
+  return e;
+}
+
 function classifyError(err) {
   // Plain network failure — fetch throws TypeError ("Failed to fetch") on
   // offline / DNS / aborted-connection.
@@ -329,6 +356,11 @@ async function _runFlatSubmit({formKind, payload, csid, id, refresh}) {
     if (isDuplicateCsidViolation(error)) {
       return {state: 'synced', csid, id, record};
     }
+    if (isDailySupersededViolation(error)) {
+      // A different active report already holds this date+identity (raced past
+      // the pre-submit guard). Surface the friendly message; do not queue.
+      throw dailySupersededError(record);
+    }
     const kind = classifyError(error);
     if (kind === 'schema') {
       throw new Error(`offlineSubmit: schema/validation error: ${error.message ?? error.code ?? 'unknown'}`);
@@ -422,6 +454,12 @@ async function _runSubmitWithPhotos({formKind, payload, photoFiles, csid, id, re
     if (isDuplicateCsidViolation(error)) {
       // Already-synced replay. Same IDB story.
       return {state: 'synced', csid, id, record};
+    }
+    if (isDailySupersededViolation(error)) {
+      // Superseded by an existing active report. Re-raise as schema-class so
+      // the catch below routes it to STUCK with the friendly message (photos
+      // are already uploaded; the operator can discard the redundant row).
+      throw dailySupersededError(record);
     }
     const kind = classifyError(error);
     if (kind === 'schema') {
@@ -585,7 +623,10 @@ export async function _syncQueuedEntry(formKind, entry, sbClient = sb) {
   try {
     const {error} = await sbClient.from(cfg.table).insert(entry.record);
     if (error) {
-      if (isDuplicateCsidViolation(error)) {
+      if (isDuplicateCsidViolation(error) || isDailySupersededViolation(error)) {
+        // csid replay = already synced; identity collision = superseded by an
+        // existing active report. Either way the queued row is redundant and
+        // can never succeed — discard as synced instead of sticking forever.
         await markSynced(entry.csid);
         return;
       }

@@ -10,7 +10,12 @@ import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
 import {formatBroilerBatchLabel} from '../lib/broilerBatchMeta.js';
-import {checkDailyDuplicate, checkInSubmissionDuplicates, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
+import {
+  checkDailyDuplicate,
+  checkInSubmissionDuplicates,
+  formatDuplicateError,
+  friendlyDailyDbError,
+} from '../lib/dailyDuplicateCheck.js';
 import DailyPhotoCapture from './DailyPhotoCapture.jsx';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 import AppSetupModal from './AppSetupModal.jsx';
@@ -658,7 +663,7 @@ const WebformHub = ({
       const {error} = await sb.from('poultry_dailys').insert(recs);
       setSubmitting(false);
       if (error) {
-        setErr('Could not save: ' + error.message);
+        setErr('Could not save: ' + friendlyDailyDbError(error, 'poultry_dailys', recs[0]));
         return;
       }
       // Multi-row email behavior preserved (Codex amendment 4).
@@ -718,7 +723,10 @@ const WebformHub = ({
       setDoneState(result.state);
       setDone(true);
     } catch (e) {
-      setErr('Could not save: ' + (e?.message || e));
+      setErr(
+        'Could not save: ' +
+          friendlyDailyDbError(e, 'poultry_dailys', {date: bForm.date, batch_label: bForm.batchLabel}),
+      );
       if (bPhotos.length > 0) setBPhotoStatuses(bPhotos.map(() => 'failed'));
     } finally {
       setSubmitting(false);
@@ -863,7 +871,7 @@ const WebformHub = ({
           photoMeta.map((p) => p.path),
         );
       }
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'layer_dailys', recs[0]));
       return;
     }
     // Check starter feed threshold for STARTER layer records (same alert as broilers)
@@ -998,7 +1006,7 @@ const WebformHub = ({
       const {error} = await sb.from('pig_dailys').insert(recs);
       setSubmitting(false);
       if (error) {
-        setErr('Could not save: ' + error.message);
+        setErr('Could not save: ' + friendlyDailyDbError(error, 'pig_dailys', recs[0]));
         return;
       }
       setLastGroup(pForm.batchLabel);
@@ -1047,7 +1055,9 @@ const WebformHub = ({
       setDoneState(result.state);
       setDone(true);
     } catch (e) {
-      setErr('Could not save: ' + (e?.message || e));
+      setErr(
+        'Could not save: ' + friendlyDailyDbError(e, 'pig_dailys', {date: pForm.date, batch_label: pForm.batchLabel}),
+      );
       if (pPhotos.length > 0) setPPhotoStatuses(pPhotos.map(() => 'failed'));
     } finally {
       setSubmitting(false);
@@ -1115,7 +1125,7 @@ const WebformHub = ({
     const {error} = await sb.from('egg_dailys').insert(rec);
     setSubmitting(false);
     if (error) {
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'egg_dailys', rec));
       return;
     }
     // Send egg report email (fire-and-forget)
@@ -1223,7 +1233,7 @@ const WebformHub = ({
       setDoneState(result.state);
       setDone(true);
     } catch (e) {
-      setErr('Could not save: ' + (e?.message || e));
+      setErr('Could not save: ' + friendlyDailyDbError(e, 'cattle_dailys', {date: cForm.date, herd: cForm.herd}));
       if (cPhotos.length > 0) setCPhotoStatuses(cPhotos.map(() => 'failed'));
     } finally {
       setSubmitting(false);
@@ -1300,7 +1310,7 @@ const WebformHub = ({
       setDoneState(result.state);
       setDone(true);
     } catch (e) {
-      setErr('Could not save: ' + (e?.message || e));
+      setErr('Could not save: ' + friendlyDailyDbError(e, 'sheep_dailys', {date: sForm.date, flock: sForm.flock}));
       if (shPhotos.length > 0) setShPhotoStatuses(shPhotos.map(() => 'failed'));
     } finally {
       setSubmitting(false);

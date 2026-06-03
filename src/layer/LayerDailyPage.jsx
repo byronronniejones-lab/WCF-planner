@@ -32,6 +32,7 @@ import {
 import {fmtMDY} from '../lib/dateUtils.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
+import {friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import {buildChanges} from '../lib/activityChangeDiff.js';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
 import {buildLayerDailyGroupOptions, resolveLayerDailyBatchId} from './layerDailyGroups.js';
@@ -201,7 +202,8 @@ export default function LayerDailyPage({
           changes,
         });
       },
-      onError: (msg) => setNotice({kind: 'error', message: 'Save failed: ' + msg}),
+      onError: (msg) =>
+        setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(msg, 'layer_dailys', rec)}),
     });
     setSaving(false);
     if (result.ok) {

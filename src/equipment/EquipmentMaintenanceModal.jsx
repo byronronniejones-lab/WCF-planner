@@ -3,6 +3,7 @@
 // 'equipment-maintenance-docs' Storage bucket.
 import React from 'react';
 import {EQUIPMENT_COLOR} from '../lib/equipment.js';
+import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 
 export default function EquipmentMaintenanceModal({sb, equipment, existing, authState, onClose, onSaved}) {
   const [form, setForm] = React.useState(
@@ -20,6 +21,13 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
   const [saving, setSaving] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // Stable idempotency key for this modal instance. A double-tap / in-flight
+  // re-submit of the SAME new event replays the same id and collapses to a
+  // no-op via the equipment_maintenance_events client_submission_id unique
+  // index (mig 086) instead of inserting a duplicate row. Re-opening the modal
+  // for a genuinely new event mints a fresh id, so legitimate multiple
+  // same-day events are unaffected.
+  const csidRef = React.useRef(newClientSubmissionId());
 
   async function uploadPhoto(file) {
     setUploading(true);
@@ -78,9 +86,18 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
       ({error} = await sb.from('equipment_maintenance_events').update(rec).eq('id', existing.id));
     } else {
       const id = 'emev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-      ({error} = await sb.from('equipment_maintenance_events').insert({id, ...rec}));
+      ({error} = await sb
+        .from('equipment_maintenance_events')
+        .insert({id, client_submission_id: csidRef.current, ...rec}));
     }
     if (error) {
+      // A duplicate client_submission_id means this exact event was already
+      // saved by a prior in-flight submit — treat as success, not an error.
+      if (String(error.code) === '23505' && /client_submission_id/i.test(error.message || '')) {
+        setSaving(false);
+        onSaved();
+        return;
+      }
       setErr('Save failed: ' + error.message);
       setSaving(false);
       return;

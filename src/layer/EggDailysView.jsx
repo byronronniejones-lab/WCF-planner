@@ -4,7 +4,7 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import {recordSeqNavOptions, dailySeqItems} from '../lib/recordSequence.js';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
-import {checkDailyDuplicate, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
+import {checkDailyDuplicate, formatDuplicateError, friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -192,7 +192,7 @@ const EggDailysHub = ({sb, fmt, Header, authState, layerGroups, pendingEdit, set
         .eq('id', editId)
         .then(({error}) => {
           if (error) {
-            setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+            setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'egg_dailys', rec)});
             return;
           }
           refreshDailys && refreshDailys('egg');
@@ -217,7 +217,7 @@ const EggDailysHub = ({sb, fmt, Header, authState, layerGroups, pendingEdit, set
         .select()
         .single();
       if (error) {
-        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+        setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'egg_dailys', rec)});
       } else if (data) {
         setRecords((p) => [data, ...p]);
         refreshDailys && refreshDailys('egg');

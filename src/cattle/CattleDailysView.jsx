@@ -5,6 +5,7 @@ import {recordSeqNavOptions, dailySeqItems} from '../lib/recordSequence.js';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
+import {friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
@@ -248,7 +249,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
     };
     const {error} = await sb.from('cattle_dailys').update(rec).eq('id', editId);
     if (error) {
-      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+      setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'cattle_dailys', rec)});
       return;
     }
     setRecords((p) => p.map((r) => (r.id === editId ? {...r, ...rec} : r)));
