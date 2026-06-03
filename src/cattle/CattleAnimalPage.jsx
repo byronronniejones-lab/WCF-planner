@@ -23,6 +23,7 @@ import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 import {softDeleteCattleAnimal} from '../lib/cattleDeleteApi.js';
 import {transferCattleAnimal} from '../lib/animalTransferApi.js';
+import {deleteCattleCalvingRecord} from '../lib/cattleCalvingApi.js';
 
 const HERD_LABELS = {
   mommas: 'Mommas',
@@ -233,8 +234,14 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
   async function deleteCalvingRecord(recId) {
     if (!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this calving record?', async () => {
-      await sb.from('cattle_calving_records').delete().eq('id', recId);
-      await loadAll();
+      try {
+        // Transactional RPC: deletes the row + logs a deletion Activity event
+        // scoped to the dam, atomically.
+        await deleteCattleCalvingRecord(sb, recId, authState && authState.name ? authState.name : null);
+        await loadAll();
+      } catch (e) {
+        setNotice({kind: 'error', message: 'Delete failed: ' + (e.message || String(e))});
+      }
     });
   }
 
