@@ -32,6 +32,7 @@ import {
 import {fmtMDY} from '../lib/dateUtils.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
+import {friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import {buildChanges} from '../lib/activityChangeDiff.js';
 
 // Shared daily record-page layout primitives.
@@ -327,7 +328,8 @@ export default function SheepDailyPage({sb, authState, Header}) {
             entityLabel,
             changes,
           }),
-        onError: (msg) => setNotice({kind: 'error', message: 'Save failed: ' + msg}),
+        onError: (msg) =>
+          setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(msg, 'sheep_dailys', updates)}),
       },
     );
 

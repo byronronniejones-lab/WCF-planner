@@ -117,7 +117,9 @@ describe('mig 085 daily duplicate cleanup (084 prerequisite)', () => {
     expect(mig085).toContain('COALESCE(t.feed_lbs,0) + COALESCE(t.grit_lbs,0) + COALESCE(t.mortality_count,0)'); // poultry/layer
     expect(mig085).toMatch(/COALESCE\(t\.feed_lbs,0\)::numeric AS score/); // pig (feed only)
     expect(mig085).toMatch(/COALESCE\(t\.mortality_count,0\)::numeric AS score/); // cattle
-    expect(mig085).toContain('COALESCE(t.bales_of_hay,0) + COALESCE(t.lbs_of_alfalfa,0) + COALESCE(t.mortality_count,0)'); // sheep
+    expect(mig085).toContain(
+      'COALESCE(t.bales_of_hay,0) + COALESCE(t.lbs_of_alfalfa,0) + COALESCE(t.mortality_count,0)',
+    ); // sheep
   });
 
   it('dedupes by date+identity (ignores submitter) with deterministic tie-breaks', () => {

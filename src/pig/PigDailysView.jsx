@@ -4,7 +4,7 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import {recordSeqNavOptions, dailySeqItems} from '../lib/recordSequence.js';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
-import {checkDailyDuplicate, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
+import {checkDailyDuplicate, formatDuplicateError, friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
@@ -210,7 +210,7 @@ const PigDailysHub = ({
         .eq('id', editId)
         .then(({error}) => {
           if (error) {
-            setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+            setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'pig_dailys', rec)});
             return;
           }
           refreshDailys && refreshDailys('pig');
@@ -235,7 +235,7 @@ const PigDailysHub = ({
         .select()
         .single();
       if (error) {
-        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+        setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'pig_dailys', rec)});
       } else if (data) {
         updateRecords((p) => [data, ...p]);
         refreshDailys && refreshDailys('pig');

@@ -13,7 +13,12 @@ import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {formatBroilerBatchLabel} from '../lib/broilerBatchMeta.js';
 import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
-import {checkDailyDuplicate, checkInSubmissionDuplicates, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
+import {
+  checkDailyDuplicate,
+  checkInSubmissionDuplicates,
+  formatDuplicateError,
+  friendlyDailyDbError,
+} from '../lib/dailyDuplicateCheck.js';
 const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
   const [loadedConfig, setLoadedConfig] = React.useState(null);
   const [broilerGroupsFromDb, setBroilerGroupsFromDb] = React.useState([]);
@@ -313,7 +318,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
     const {data, error} = await sb.from('poultry_dailys').insert(recs).select();
     setSubmitting(false);
     if (error) {
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'poultry_dailys', base));
       return;
     }
     // Check starter feed threshold for each STARTER record (fire-and-forget)
@@ -409,7 +414,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
     const {data, error} = await sb.from('layer_dailys').insert(recs).select();
     setSubmitting(false);
     if (error) {
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'layer_dailys', base));
       return;
     }
     // Check starter feed threshold for STARTER layer records
@@ -472,7 +477,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
     const {data, error} = await sb.from('egg_dailys').insert(rec).select().single();
     setSubmitting(false);
     if (error) {
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'egg_dailys', rec));
       return;
     }
     // Send egg report email (fire-and-forget)
@@ -552,7 +557,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
     const {data, error} = await sb.from('pig_dailys').insert(recs).select();
     setSubmitting(false);
     if (error) {
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'pig_dailys', base));
       return;
     }
     if (data) onSaved(data);
@@ -623,7 +628,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
     const {data, error} = await sb.from('cattle_dailys').insert(rec).select();
     setSubmitting(false);
     if (error) {
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'cattle_dailys', rec));
       return;
     }
     if (data) onSaved(data);
@@ -698,7 +703,7 @@ const AdminAddReportModal = ({sb, formType, onClose, onSaved}) => {
     const {data, error} = await sb.from('sheep_dailys').insert(rec).select();
     setSubmitting(false);
     if (error) {
-      setErr('Could not save: ' + error.message);
+      setErr('Could not save: ' + friendlyDailyDbError(error, 'sheep_dailys', rec));
       return;
     }
     if (data) onSaved(data);

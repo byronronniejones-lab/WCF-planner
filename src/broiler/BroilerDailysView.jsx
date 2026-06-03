@@ -5,7 +5,7 @@ import {recordSeqNavOptions, dailySeqItems} from '../lib/recordSequence.js';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
 import {formatBroilerBatchLabel, splitSchooners} from '../lib/broilerBatchMeta.js';
-import {checkDailyDuplicate, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
+import {checkDailyDuplicate, formatDuplicateError, friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
@@ -199,7 +199,7 @@ const BroilerDailysHub = ({sb, fmt, Header, authState, batches, pendingEdit, set
         .eq('id', editId)
         .then(({error}) => {
           if (error) {
-            setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+            setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'poultry_dailys', rec)});
             return;
           }
           refreshDailys && refreshDailys('broiler');
@@ -224,7 +224,7 @@ const BroilerDailysHub = ({sb, fmt, Header, authState, batches, pendingEdit, set
         .select()
         .single();
       if (error) {
-        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+        setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'poultry_dailys', rec)});
       } else if (data) {
         setRecords((p) => [data, ...p]);
         refreshDailys && refreshDailys('broiler');

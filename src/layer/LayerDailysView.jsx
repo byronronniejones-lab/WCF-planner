@@ -4,7 +4,7 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import {recordSeqNavOptions, dailySeqItems} from '../lib/recordSequence.js';
 import {S} from '../lib/styles.js';
 import {loadRoster, activeNames} from '../lib/teamMembers.js';
-import {checkDailyDuplicate, formatDuplicateError} from '../lib/dailyDuplicateCheck.js';
+import {checkDailyDuplicate, formatDuplicateError, friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
@@ -216,7 +216,7 @@ const LayerDailysHub = ({
     if (editId) {
       const {error} = await sb.from('layer_dailys').update(rec).eq('id', editId);
       if (error) {
-        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+        setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'layer_dailys', rec)});
         return;
       }
       setRecords((p) => p.map((r) => (r.id === editId ? {...r, ...rec} : r)));
@@ -267,7 +267,7 @@ const LayerDailysHub = ({
         .select()
         .single();
       if (error) {
-        setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+        setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(error, 'layer_dailys', rec)});
         return;
       }
       if (data) {

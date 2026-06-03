@@ -32,6 +32,7 @@ import {
 import {fmtMDY} from '../lib/dateUtils.js';
 import {softDeleteDailyReport, canDeleteDailyReport} from '../lib/dailyReportsApi.js';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
+import {friendlyDailyDbError} from '../lib/dailyDuplicateCheck.js';
 import {buildChanges} from '../lib/activityChangeDiff.js';
 import {formatBroilerBatchLabel, splitSchooners} from '../lib/broilerBatchMeta.js';
 
@@ -202,7 +203,8 @@ export default function PoultryDailyPage({sb, authState, Header, batches = []}) 
           changes,
         });
       },
-      onError: (msg) => setNotice({kind: 'error', message: 'Save failed: ' + msg}),
+      onError: (msg) =>
+        setNotice({kind: 'error', message: 'Save failed: ' + friendlyDailyDbError(msg, 'poultry_dailys', rec)}),
     });
     setSaving(false);
     if (result.ok) {

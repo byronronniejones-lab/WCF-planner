@@ -13,6 +13,8 @@ const layerView = fs.readFileSync(path.join(ROOT, 'src/layer/LayerDailysView.jsx
 const eggView = fs.readFileSync(path.join(ROOT, 'src/layer/EggDailysView.jsx'), 'utf8');
 const adminModal = fs.readFileSync(path.join(ROOT, 'src/shared/AdminAddReportModal.jsx'), 'utf8');
 const webformHub = fs.readFileSync(path.join(ROOT, 'src/webforms/WebformHub.jsx'), 'utf8');
+const offlineSrc = fs.readFileSync(path.join(ROOT, 'src/lib/useOfflineSubmit.js'), 'utf8');
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const TABLES = ['poultry_dailys', 'pig_dailys', 'layer_dailys', 'egg_dailys', 'cattle_dailys', 'sheep_dailys'];
 
@@ -97,4 +99,47 @@ describe('WebformHub duplicate checks', () => {
       expect(webformHub).toContain(`checkInSubmissionDuplicates('${table}'`);
     });
   }
+});
+
+// The pre-submit guard can be bypassed (edit-to-collide, races, offline
+// replay), so the DB UNIQUE indexes (mig 084) are the backstop. These lock the
+// friendly handling of the resulting 23505 so users never see raw SQL and
+// offline rows don't stick forever.
+describe('daily identity-violation (mig 084) friendly handling', () => {
+  it('helper detects the identity-index 23505 and maps it to the friendly message', () => {
+    expect(checkSrc).toContain('export function isDailyIdentityViolation');
+    expect(checkSrc).toContain('export function friendlyDailyDbError');
+    expect(checkSrc).toContain('_active_daily_identity_uq');
+    expect(checkSrc).toMatch(/friendlyDailyDbError[\s\S]*?formatDuplicateError/);
+  });
+
+  for (const [name, rel] of [
+    ['CattleDailyPage', 'src/cattle/CattleDailyPage.jsx'],
+    ['SheepDailyPage', 'src/sheep/SheepDailyPage.jsx'],
+    ['PoultryDailyPage', 'src/broiler/PoultryDailyPage.jsx'],
+    ['LayerDailyPage', 'src/layer/LayerDailyPage.jsx'],
+    ['PigDailyPage', 'src/pig/PigDailyPage.jsx'],
+    ['CattleDailysView', 'src/cattle/CattleDailysView.jsx'],
+    ['SheepDailysView', 'src/sheep/SheepDailysView.jsx'],
+    ['BroilerDailysView', 'src/broiler/BroilerDailysView.jsx'],
+    ['PigDailysView', 'src/pig/PigDailysView.jsx'],
+    ['LayerDailysView', 'src/layer/LayerDailysView.jsx'],
+    ['EggDailysView', 'src/layer/EggDailysView.jsx'],
+    ['AdminAddReportModal', 'src/shared/AdminAddReportModal.jsx'],
+    ['WebformHub', 'src/webforms/WebformHub.jsx'],
+  ]) {
+    it(`${name} routes save errors through friendlyDailyDbError`, () => {
+      expect(read(rel)).toContain('friendlyDailyDbError');
+    });
+  }
+
+  it('offline replay treats an identity collision as superseded (synced), not stuck', () => {
+    expect(offlineSrc).toContain('isDailySupersededViolation');
+    expect(offlineSrc).toMatch(/isDailySupersededViolation\(error\)[\s\S]*?markSynced/);
+  });
+
+  it('offline live-submit re-raises identity collisions as a friendly schema-class error', () => {
+    expect(offlineSrc).toContain('dailySupersededError');
+    expect(offlineSrc).toMatch(/e\.code = DUPLICATE_KEY_CODE/);
+  });
 });

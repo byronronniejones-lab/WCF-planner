@@ -61,3 +61,26 @@ export function formatDuplicateError(table, record) {
   }
   return `A report already exists for ${date}. Edit the existing report if changes are needed.`;
 }
+
+// True when a Supabase error is a violation of the active-daily-identity
+// UNIQUE indexes added in migration 084 (date + batch_label/herd/flock).
+// Accepts either a Supabase error object ({code, message}) or a bare message
+// string (runMutation's onError passes only error.message). The constraint
+// name is the reliable signal — Postgres includes it in the 23505 message.
+export function isDailyIdentityViolation(errOrMsg) {
+  if (!errOrMsg) return false;
+  const msg = typeof errOrMsg === 'string' ? errOrMsg : String(errOrMsg.message || '');
+  const code = typeof errOrMsg === 'object' && errOrMsg ? String(errOrMsg.code || '') : '';
+  return /_active_daily_identity_uq/i.test(msg) || (code === '23505' && /_active_daily_identity_uq/i.test(msg));
+}
+
+// Maps a Supabase write error to a user-facing message: the friendly
+// "report already exists" copy when it's an identity-index collision, else the
+// raw error message unchanged. `record` is best-effort (date + identity) for
+// the friendly copy; missing fields fall back to the date-only phrasing.
+export function friendlyDailyDbError(errOrMsg, table, record = {}) {
+  if (isDailyIdentityViolation(errOrMsg)) {
+    return formatDuplicateError(table, record);
+  }
+  return typeof errOrMsg === 'string' ? errOrMsg : String((errOrMsg && errOrMsg.message) || errOrMsg);
+}
