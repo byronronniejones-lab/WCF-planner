@@ -474,8 +474,14 @@ describe('CP8 follow-up: completion + edit-history stale-state resets', () => {
 const CP9_RAW_INSERT_SPEC_ALLOWLIST = [
   'tests/broiler_weigh_in_schooners.spec.js',
   'tests/cattle_calf_dam_link.spec.js',
+  // Audited: seeds a dam + calving record (fixed ids, delete-first) for the
+  // delete_cattle_calving_record RPC spec; idempotent under the worker race.
+  'tests/cattle_calving_delete.spec.js',
   'tests/cattle_heifer_promote.spec.js',
   'tests/generate_task_instances_rpc.spec.js',
+  // Audited: seeds a one-time task (fixed ids, delete-first) for the
+  // task_completed cross-user notification spec; idempotent under the race.
+  'tests/notifications_task_completed.spec.js',
   'tests/offline_queue_dedup.spec.js',
   'tests/offline_queue_pig_dailys_photos.spec.js',
   'tests/pig_dailys_offline.spec.js',

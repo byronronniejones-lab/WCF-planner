@@ -8,6 +8,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 const EXPECTED_READY_MARKERS = new Map([
   ['src/activity/ActivityLogView.jsx', ['data-activity-log-loaded']],
+  ['src/admin/ClientErrorsView.jsx', ['data-client-errors-loaded']],
   ['src/broiler/BroilerBatchPage.jsx', ['data-broiler-batch-record-loaded']],
   ['src/broiler/BroilerDailysView.jsx', ['data-broiler-dailys-loaded']],
   ['src/broiler/BroilerListView.jsx', ['data-broiler-batches-loaded']],
@@ -47,6 +48,7 @@ const EXPECTED_READY_MARKERS = new Map([
 
 const EXPECTED_LOAD_ERROR_SURFACES = new Map([
   ['src/activity/ActivityLogView.jsx', {retry: true, inlineNotice: true}],
+  ['src/admin/ClientErrorsView.jsx', {retry: true, inlineNotice: true}],
   ['src/broiler/BroilerDailysView.jsx', {retry: true, inlineNotice: true}],
   ['src/broiler/PoultryDailyPage.jsx', {retry: true, inlineNotice: true}],
   ['src/cattle/CattleAnimalPage.jsx', {retry: true, inlineNotice: true}],

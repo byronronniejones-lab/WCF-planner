@@ -30,21 +30,19 @@ async function seed(supabaseAdmin) {
   const {data: u} = await supabaseAdmin.auth.admin.listUsers();
   const au = (u?.users || []).find((x) => (x.email || '').toLowerCase() === TEST_ADMIN_EMAIL.toLowerCase());
   await supabaseAdmin.from('profiles').upsert({id: au.id, email: au.email, role: 'admin'}, {onConflict: 'id'});
-  await supabaseAdmin
-    .from('cattle')
-    .upsert(
-      {
-        id: 'cv-dam',
-        tag: 'CV-DAM-1',
-        sex: 'cow',
-        herd: 'mommas',
-        old_tags: [],
-        deleted_at: null,
-        deleted_by: null,
-        processing_batch_id: null,
-      },
-      {onConflict: 'id'},
-    );
+  await supabaseAdmin.from('cattle').upsert(
+    {
+      id: 'cv-dam',
+      tag: 'CV-DAM-1',
+      sex: 'cow',
+      herd: 'mommas',
+      old_tags: [],
+      deleted_at: null,
+      deleted_by: null,
+      processing_batch_id: null,
+    },
+    {onConflict: 'id'},
+  );
   await supabaseAdmin.from('cattle_calving_records').delete().eq('id', 'cv-rec-1');
   await supabaseAdmin
     .from('cattle_calving_records')
