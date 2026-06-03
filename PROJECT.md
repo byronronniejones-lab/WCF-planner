@@ -8,7 +8,8 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-03.
-Current production checkpoint: `origin/main @ f4c4d3f`.
+Current production checkpoint: `origin/main @ 957f577` (docs refresh commits
+sit on top without changing the build).
 Production URL: https://wcfplanner.com.
 
 ---
@@ -32,7 +33,7 @@ history and tests for detailed lane history.
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source of truth: `origin/main @ f4c4d3f`.
+- Source of truth: `origin/main @ 957f577`.
 - Open gates for the shipped tree: none.
 - PROD-applied numbered migration series is live through `086`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
@@ -419,9 +420,10 @@ There are no current no-retry loadError gaps; this is locked by
 - No direct client `.from('activity_events')` or
   `.from('activity_mentions')`.
 - No direct client `.from('comments')` or `.from('comment_edits')`.
-- Legacy Activity composer RPCs remain in historical SQL but have no runtime
-  callers: `post_activity_comment`, `edit_activity_event`,
-  `delete_activity_event`, `count_activity_for_entity`. Do not use them.
+- Legacy Activity composer/count RPCs (`post_activity_comment`,
+  `edit_activity_event`, `delete_activity_event`, `count_activity_for_entity`)
+  remain defined in historical SQL with no runtime callers, and migration `080`
+  revoked client execute for anon and authenticated. Do not use them.
 - `RecordActivityLog` filters `comment.posted` and shows audit only.
 - `CommentsSection` owns user discussion, attachments, edit history, soft
   delete, and mentions.
@@ -505,13 +507,16 @@ Workflow singleton entities:
 - Daily reports have dedicated record pages for poultry, layer, egg, pig, cattle,
   and sheep.
 - All six open directly editable; no edit-mode toggle.
-- Daily duplicate prevention:
-  - poultry/pig/layer: date + batch_label.
-  - cattle: date + herd.
-  - sheep: date + flock.
-  - Add Feed rows are excluded.
-  - `egg_dailys` currently use warning/pre-submit guard rather than hard unique
-    index.
+- Daily duplicate prevention (identity = date + batch_label for poultry/pig/
+  layer, date + herd for cattle, date + flock for sheep; Add Feed rows excluded):
+  - DB-enforced for those five tables by partial unique indexes (`084`); the
+    one-time historical duplicate cleanup (`085`) ran first in PROD.
+  - The client pre-submit guard (`src/lib/dailyDuplicateCheck.js`) still runs;
+    the indexes are the backstop for edit-to-collide, races, and offline replay.
+  - A constraint violation surfaces a friendly "report already exists" message
+    across edit/create surfaces, and offline replay discards superseded
+    duplicate dailys instead of sticking (`086` lane).
+  - `egg_dailys` is intentionally NOT indexed — warning/pre-submit guard only.
 - Add Feed quick-log rows are not full daily reports.
 - Missed-report checks exclude `source='add_feed_webform'`.
 - Delete visibility uses `canDeleteDailyReport(authState)`: any role except
@@ -589,6 +594,11 @@ Workflow singleton entities:
 - Equipment checklist/material edits must not reload, lose focus, or reorder list
   items on click/edit.
 - Rolling material clears are bucketed by due service cycle.
+- `equipment_maintenance_events` has `client_submission_id` idempotency (`086`):
+  a double-tap "Add Event" collapses to a no-op. This is idempotency, not
+  date-uniqueness — multiple legitimate same-day service events are still
+  allowed. Fuelings and `fuel_supplies` already had `client_submission_id`
+  idempotency (`030`).
 - Backlog: home equipment tiles should show caught-up notices when all equipment
   maintenance and equipment materials are current, mirroring the "no missing
   daily reports" state.
