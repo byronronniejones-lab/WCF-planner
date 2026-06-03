@@ -12,10 +12,11 @@ const EXPECTED_DELETE_OWNERS = new Map([
   ['src/admin/FuelLogAdmin.jsx', 1],
   ['src/admin/LivestockFeedInputsPanel.jsx', 2],
   ['src/auth/UsersModal.jsx', 1],
-  ['src/cattle/CattleAnimalPage.jsx', 1],
+  // CattleAnimalPage + CattleHerdsView no longer hard-delete calving records
+  // directly — that moved to the delete_cattle_calving_record SECDEF RPC
+  // (migration 079), so neither file has a runtime .delete() anymore.
   ['src/cattle/CattleBatchPage.jsx', 1],
   ['src/cattle/CattleBreedingView.jsx', 1],
-  ['src/cattle/CattleHerdsView.jsx', 1],
   ['src/equipment/EquipmentDetail.jsx', 2],
   ['src/layer/LayerBatchPage.jsx', 2],
   ['src/lib/cattleForecastApi.js', 2],
@@ -29,7 +30,8 @@ const EXPECTED_DELETE_OWNERS = new Map([
 
 const EXPECTED_DELETE_TABLES = new Map([
   ['cattle_breeding_cycles', 1],
-  ['cattle_calving_records', 2],
+  // cattle_calving_records deletes moved to the delete_cattle_calving_record
+  // SECDEF RPC (migration 079); no runtime client delete remains.
   ['cattle_comments', 2],
   ['cattle_feed_inputs', 1],
   ['cattle_feed_tests', 1],
@@ -109,7 +111,7 @@ describe('Supabase hard-delete owner boundary', () => {
     const {owners, total} = collectSupabaseDeletes();
     const {unexpected, missing, wrongCounts} = diffMap(EXPECTED_DELETE_OWNERS, owners);
 
-    expect(total).toBe(30);
+    expect(total).toBe(28);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
