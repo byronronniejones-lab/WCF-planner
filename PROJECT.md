@@ -48,25 +48,10 @@ history and tests for detailed lane history.
 The following work is merged to `main` and PROD-ready or PROD-applied where
 listed:
 
-- `sheep.animal` soft-delete + restore, migration `074`, PROD. Mirrors cattle
-  `069`. Adds `deleted_at`/`deleted_by`, admin-only soft-delete/restore RPCs,
-  cattle-parity sheep RLS policy shape, deleted-row hiding for anon/non-admin
-  reads, restore active-tag conflict protection, and e2e parity coverage.
-- Manual cattle/sheep transfer RPCs, migration `075`, PROD.
-  `transfer_cattle_animal` and `transfer_sheep_animal` atomically update the
-  animal row, insert transfer audit rows, and log `status.changed` Activity.
-- Cattle forecast Activity, migration `076`, PROD. Hide/unhide now logs to the
-  singleton `cattle.forecast` workflow entity instead of `cattle.animal`.
-- Runtime observability Phase 2, migration `077`, PROD. Admin-only
-  `/admin/client-errors` reads redacted `client_error_events` through
-  `list_client_errors`; the table is not read directly from client code.
-- Critical Playwright matrix: `tests/notifications_task_completed.spec.js`
-  covers `task_completed` cross-user notification and self-completion exclusion.
-- Cattle breeding Activity, migration `078`, PROD. Breeding-cycle
-  create/edit/delete logs to singleton `cattle.breeding` Activity.
-- Cattle calving-record delete RPC, migration `079`, PROD.
-  `delete_cattle_calving_record` replaces bare client `cattle_calving_records`
-  deletes with an atomic delete plus dam-scoped `record.deleted` Activity.
+Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
+Migrations below and in git history; this list keeps the most recent shipped
+work (the 2026-06-03 hardening sequence):
+
 - Legacy Activity composer RPC retirement, migration `080`, PROD. Historical
   composer/count functions remain in SQL but client execute is revoked for anon
   and authenticated roles.
@@ -83,6 +68,10 @@ listed:
   duplicate dailys as non-stuck, and equipment maintenance events have
   `client_submission_id` idempotency protection against accidental double
   submits without blocking legitimate same-day service entries.
+- Cattle forecast Activity log UI, commit `957f577`. `/cattle/forecast` now
+  renders the `cattle.forecast` Activity log through `RecordCollaborationSection`
+  in Activity-only mode (new `showComments={false}` prop; no comments on the
+  forecast workflow surface).
 - Static hardening and inventory guards. The current tree locks source-wide
   table/bucket/env/local storage/API boundaries plus mutation/delete/load/UI
   inventories. Treat the matching static guards as the source of truth for
@@ -131,68 +120,32 @@ Treat these as product lanes, not hotfixes, unless Ronnie says otherwise:
 8. Follow-on audited RPCs where remaining flows still have partial-state or
    audit gaps.
 
-### Queued Next-Session CC Prompt
+### Lane 1 detail — authenticated Light-user portal
 
-When Ronnie asks for the next CC prompt, provide this block:
+Locked product direction (do not re-litigate without Ronnie): authenticated-only
+submission is the durable path. Lane 5 / migration `083` stays shelved; do NOT
+build roster-id -> profile-id mapping.
 
-```text
-From Codex:
+Scope:
+- Add a real authenticated `Light` role; admins manage Light users with the same
+  authority pattern as current user management.
+- Existing form URLs stay valid but require login; logged-out access redirects
+  through login and returns to the requested URL.
+- Submitter/team-member shows the signed-in user, locked; remove submitter
+  dropdowns wherever session identity replaces them.
+- Light uses the normal shell/sidebar but sees only accessible nav; Light home is
+  a portal with tabs for the allowed daily/form areas plus the Equipment tab.
+- Contained to allowed report/form surfaces plus Tasks (current non-admin
+  permissions). No herd/flock/batch/detail browsing or broader data access.
+- Can read all allowed report records (including legacy anonymous rows) and
+  create them; can edit/delete only self-created records; Activity logs actions.
+- Light sees only the minimal lookup/reference data current anonymous forms need.
+- Allowed areas: daily report/forms, Add Feed, Equipment fueling/checklist, Tasks.
 
-Next build lane: Authenticated Light-user webforms/report portal.
-
-Start by reading HO.md and PROJECT.md, then run git status/log. Important:
-preserve any local Codex changes already present, especially the Forecast
-Activity UI fix and PROJECT.md wrap updates, unless Ronnie explicitly decides to
-split them.
-
-Product direction is locked:
-- Lane 5 / migration 083 stays shelved.
-- Do not build roster-id -> profile-id mapping.
-- The durable direction is authenticated-only submission.
-
-Build goals:
-- Add/support a real authenticated Light role.
-- Admins only manage Light users, same authority pattern as current user
-  management.
-- Existing form URLs stay valid but require login.
-- If logged out, opening an existing form URL should redirect through login and
-  then return to that same URL.
-- Submitter/team member should display as the signed-in user and be locked/not
-  editable.
-- Remove submitter/team-member dropdowns wherever session identity replaces
-  them.
-- Light users use the normal app shell/sidebar, but only see nav items they can
-  actually access.
-- Light home should be a modified portal with tabs for the allowed daily
-  report/form areas plus the same Equipment tab currently on the home page.
-- Light users are contained to allowed report/form surfaces plus Tasks. No
-  herd/flock/batch/detail browsing and no broader operational data access.
-- Light users can see all existing allowed report records, including legacy
-  anonymous rows.
-- Light users can create allowed report records.
-- Light users can edit/delete only records they personally created.
-- Activity log should record anything they do.
-- Light users get the same Tasks permissions as current non-admin users.
-- Light users may see only the same minimal lookup/reference data current
-  anonymous forms need to submit reports.
-- Direct forbidden URLs should hard-block/redirect.
-- No forbidden/locked nav items should be visible.
-
-Allowed Light areas:
-- Daily report/form areas.
-- Add Feed.
-- Equipment fueling/checklist flows.
-- Tasks page with current non-admin permissions.
-
-Validation expectations:
-- Add/update RLS/RPC enforcement, not only hidden UI.
-- Add static guards for route/nav/access boundaries.
-- Add focused tests for login-required existing URLs, locked submitter, Light
-  nav filtering, own-record edit/delete, forbidden route blocking, and current
-  non-admin Tasks parity.
-- Run focused tests plus full relevant static suite/build before requesting
-  review.
-```
+Validation: enforce access via RLS/RPC (not hidden UI only); add static guards
+for route/nav/access boundaries; add focused tests for login-required URLs,
+locked submitter, Light nav filtering, own-record edit/delete, forbidden-route
+blocking, and non-admin Tasks parity.
 
 ---
 
