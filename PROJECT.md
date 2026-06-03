@@ -7,7 +7,7 @@ This file is project-specific truth: current state, active roadmap,
 architecture map, and load-bearing contracts. Workflow, gates, and relay format
 live in [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-02.
+Last updated: 2026-06-03.
 
 ---
 
@@ -30,30 +30,51 @@ only when Ronnie explicitly assigns it.
 - Production: `https://wcfplanner.com`
 - Deploy: Netlify auto-deploy from `main`
 - Production source: `origin/main` via Netlify auto-deploy.
-- Latest shipped on `origin/main`: a large cold-boot / fail-closed readiness
-  rollout plus seed-idempotency hardening (2026-06-02 session). Verify exact
+- Latest shipped on `origin/main` (HEAD `dc10b41`, 2026-06-03 session): three
+  PROD migrations plus a large source-wide static-guard suite. Verify exact
   hashes with `git log`. Shipped this session, in order:
-  - Seed Idempotency CP8 (`6631c50`): remaining fixed-id Playwright spec seeds
-    converted to `upsert(onConflict)` with stale-column resets; trigger /
-    anon-constraint / run-unique inserts intentionally kept. CP9 (`d22ee91`)
-    adds an allowlist that fails if any new unjustified raw `.insert(` spec
-    appears (8 audited exceptions documented).
-  - Cold-boot readiness builds 1-10 (`71e1626`): fail-closed loads on non-daily
-    record pages/hubs (layer batch/housing/batches, equipment, pig/broiler),
-    weigh-in lists, processing hubs, animal/task records, Task Center tabs, and
-    cattle/sheep home dashboards. Foundation: `loadCattleWeighInsCached` /
-    `loadSheepWeighInsCached` gained `{throwOnError:true}`.
-  - Daily record/hubs readiness (`ce6419f`) + cleanup combo (`f42bfb2`): all 6
-    daily record pages + 5 daily hubs fail closed; daily record titles render
-    mm/dd/yyyy via `fmtMDY`; the daily mutation `InlineNotice` API drift
-    (`kind=/message=` ignored by the current component) is fixed.
-  - Readiness follow-ups: PigDailysView now owns a local `pig_dailys` load
-    (`5f26d2f`) — this SUPERSEDES the earlier "leave PigDailysView prop-driven"
-    decision; Global Activity Log (`f008eb9`); Notifications panel (`d32e069`);
-    and a behavior-preserving route-alias resolver refactor (`b0f2516`,
-    `resolvePathAlias()` de-dupes the main.jsx URL adapter).
-  - Feed-order current-count hotfix (`a91ccf2` + `07eb038`) remains live.
-  - Record Page Visual Consistency stays closed through CP8 + final static lock.
+  - Global Activity Log "Load more" append-error fix (`5431247`): a failed
+    pagination append no longer hides already-loaded rows (separate
+    `appendError` state + retry control); initial/search/filter loads still
+    fail closed.
+  - PigDailys dead-prop cleanup (`4215796`): removed the unused `pigDailys`
+    prop still passed to PigDailysView (it owns its local `pig_dailys` load).
+  - sheep.animal soft-delete + restore (migration `074`, applied to PROD):
+    mirrors cattle `069` — adds `deleted_at`/`deleted_by`, rescopes the active
+    tag-unique index to `deleted_at IS NULL`, replaces RLS with the cattle
+    six-policy set (no DELETE path; deleted rows hidden from anon + non-admin),
+    and admin-only SECDEF `soft_delete_sheep_animal` / `restore_sheep_animal`
+    (row mutate + `record.deleted`/`record.restored` Activity in one txn; restore
+    rejects active tag conflicts). Read sites filter `deleted_at`. Full e2e
+    parity in `tests/sheep_soft_delete.spec.js`.
+  - Manual animal transfer RPCs (migration `075`, applied to PROD):
+    transactional `transfer_cattle_animal` / `transfer_sheep_animal` — row
+    update + `cattle_transfers`/`sheep_transfers` audit row + `status.changed`
+    Activity in ONE transaction (no more "moved but audit failed" state); no-op
+    on same destination, sets death/sale dates, validates destination incl.
+    outcome states. Operational permission (authenticated + active, not
+    admin-only). Record pages call `src/lib/animalTransferApi.js`; the dead
+    client `transferCow` in CattleHerdsView was removed.
+  - Cattle forecast hide/unhide Activity (migration `076`, applied to PROD):
+    first Custom editable-table Activity lane — re-scopes the audit to a
+    `cattle.forecast` workflow entity (singleton id `cattle-forecast`) instead
+    of the cattle.animal record; `076` extends `_activity_can_read` with a
+    program-gated `cattle.forecast` branch (full-replace preserving all
+    branches); registry + global Activity label/filter added.
+  - Source-wide static-guard suite (~26 Codex lanes, all test-only): boundary/
+    owner/count locks over notifications, `task_instances`, comments/activity
+    tables, `app_store`, `webform_config`, `profiles`, localStorage,
+    client-error reporting, browser secrets, Supabase client creation,
+    IndexedDB/offline-queue, hard-delete owners (30 calls), and public webforms;
+    plus append-only upload locks (daily/task/comment/equipment-docs/fuel-bills/
+    cattle-feed-pdfs/batch-documents), signed-vs-public URL ownership, the
+    Storage mutation boundary, image-file-input capture, and retired-Activity /
+    route-alias / webform-identity locks. These pin counts/owners — any new
+    upload/delete/table-access site must update the matching guard.
+  - Prior context: the 2026-06-02 cold-boot/fail-closed readiness rollout +
+    seed idempotency (CP8/CP9) remain shipped and locked; Record Page Visual
+    Consistency stays closed through CP8 + final static lock; the feed-order
+    current-count hotfix (`a91ccf2`, `07eb038`) remains live.
 - Feed-order current-count hotfix: SHIPPED and live. Poultry and pig feed
   recommendations now subtract the count-aware Actual On Hand when a
   current-month physical count exists (else the previous-month estimate). The
@@ -71,23 +92,49 @@ only when Ronnie explicitly assigns it.
   count changes only the projected end NUMBERS (it anchors the active ledger),
   never the tile's month/label. The tile updates when a feed order is SAVED,
   not while typing an unsaved draft.
-- Local-only / dirty state: `main` is in sync with `origin/main` after the
-  2026-06-02 readiness wrap (this `PROJECT.md` update is the only pending change
-  at wrap time). The `cp5-shots/` / `cp6-shots/` review folders were removed.
-  Several merged `codex/*` readiness branches exist on origin and can be pruned.
-  Other parallel Codex worktrees may exist on disk (`WCF-planner-codex-*`);
-  leftover `node`/`vite` processes there can slow local Playwright cold-starts —
-  clear stray processes if a test run hangs on `goto localhost:5173`.
-- Open gates: none on `main`. Public webform submitter completion notices are
-  not a hotfix; they are deferred to the webform-light identity lane because
-  today's public roster has no profile/email recipient.
-- Next-session queue: cold-boot/fail-closed readiness is now broadly rolled out
-  (see the Cold-Boot Readiness section) and seed idempotency is locked through
-  CP9 — do not re-open these unless a regression appears. Open follow-ups: the
-  Global Activity Log "Load more" fail-closed tweak (see that section); whether
-  to drop the now-unused `pigDailys` prop the app still passes to PigDailysView;
-  sheep/cattle delete/restore strategy; public webform-light identity. Keep
-  those as planned product lanes, not surprise hotfixes.
+- Local-only / dirty state: `main` is in sync with `origin/main` at `dc10b41`
+  (this `PROJECT.md` wrap update is the only pending change at wrap time). Many
+  merged `codex/*` and `feature/*` branches exist and can be pruned. Parallel
+  worktrees exist on disk (`WCF-planner-codex-*`, `WCF-planner-cc-*`); leftover
+  `node`/`vite` processes there can slow local Playwright cold-starts — clear
+  stray processes if a run hangs on `goto localhost:5173` (this recurred this
+  session; once cleared, Playwright runs healthy).
+- In-flight (committed on isolated branches/worktrees, NOT merged to `main`,
+  migrations applied to TEST only — awaiting merge + explicit PROD gate):
+  - CC Lane 1 — Runtime Observability Phase 2 (`feature/client-error-review-
+    surface`): admin-only `/admin/client-errors` read-only review surface over
+    `client_error_events` via a new admin-gated `list_client_errors` SECDEF RPC
+    (migration `077`, TEST). Never reads the table directly (boundary-locked).
+  - CC Lane 2 — Critical Playwright matrix (`feature/critical-playwright-
+    matrix`, test-only): e2e for the `task_completed` cross-user notification +
+    self-completion exclusion (`tests/notifications_task_completed.spec.js`).
+  - CC Lane 3 — Custom editable-table Activity Phase B (`feature/cattle-
+    breeding-activity`): cattle breeding-cycle create/edit/delete log audit to a
+    `cattle.breeding` workflow entity; migration `078` (TEST) extends
+    `_activity_can_read` with a program-gated `cattle.breeding` branch.
+  - CC Lane 4 — Audit-grade SECDEF RPC Phase A (`feature/cattle-calving-delete-
+    rpc`): `delete_cattle_calving_record` (migration `079`, TEST) replaces the
+    bare client `cattle_calving_records` hard delete with an atomic delete +
+    dam-scoped `record.deleted` Activity. Self-updates the hard-delete-owner
+    guard (30→28). The preferred cattle-processing detach target was NOT used —
+    it is called from the anon public webform, so a SECDEF detach would need an
+    anon grant and has no profile actor (documented pivot).
+  - Five Codex inventory lanes (mutation-semantics, delete-recovery,
+    legacy-activity, load-retry, shared-ui) — already rebaselined by Codex for
+    the post-CC numbers (literal mutations 232→230, hard-deletes 30→28, +the
+    ClientErrorsView readiness marker). Merge order with the CC lanes is now
+    flexible.
+- Open gates: nothing pending on `main`. The in-flight lanes above need (a) a
+  merge decision and (b) an explicit PROD gate for migrations `077`/`078`/`079`
+  (all additive; verified on TEST). Public webform submitter completion notices
+  remain deferred to the webform-light identity lane (no profile/email recipient
+  on today's public roster).
+- Next-session queue: merge the in-flight CC + Codex inventory lanes and apply
+  `077`/`078`/`079` to PROD when gated. Open product lanes: cattle-processing
+  detach as an authenticated-only audited flow (the anon-webform path blocked a
+  clean SECDEF conversion); sheep equivalents of the cattle audit RPCs;
+  remaining Custom editable-table Activity tables (feed forecast edits, etc.);
+  public webform-light identity. Keep these as planned lanes, not hotfixes.
 - Operational record-page coverage as of this wrap: live for `cattle.animal`,
   `sheep.animal`, all 6 daily report types, `equipment.item`, `task.instance`,
   `weighin.session` for all 4 species, `cattle.processing` at
@@ -120,7 +167,13 @@ only when Ronnie explicitly assigns it.
   `068` client error events / durable client error reporting, `069` cattle
   animal soft-delete / restore, `070` daily delete for active roles, `071`
   comments foundation, `072` weigh-in session Activity entity, `073`
-  comment-photos Storage RLS.
+  comment-photos Storage RLS, `074` sheep animal soft-delete / restore,
+  `075` animal transfer RPCs (`transfer_cattle_animal` / `transfer_sheep_animal`),
+  `076` cattle.forecast Activity entity (`_activity_can_read` extension).
+- TEST-applied but NOT yet PROD (in-flight, need the PROD gate): `077`
+  `list_client_errors` admin read RPC, `078` cattle.breeding Activity entity
+  (`_activity_can_read` extension), `079` `delete_cattle_calving_record` SECDEF
+  RPC. All three are additive and were verified on TEST.
 - PROD migrations drafted/stashed only: `059_daily_unique_indexes.sql` is not
   applied. `061_daily_report_soft_delete_restore.sql` is superseded by `067`.
 - CI note: pig.batch cold-start record-page flakes were stabilized with a real
@@ -368,41 +421,49 @@ prior superseded stashes were audited and dropped during stash hygiene.
 
 ## Active Roadmap
 
-Near-term selected path as of 2026-06-02: the cold-boot/fail-closed readiness
-rollout (builds 1-10 + daily + the follow-up readiness lanes) and seed
-idempotency (CP8 + CP9) are SHIPPED and locked — do not re-open unless a
-regression appears. Record Page Visual Consistency stays closed (do not restart
-CP6/CP7/CP8 or the final sweep). The feed-order current-count hotfix
-(`a91ccf2`, `07eb038`) is live. Remaining near-term: the Global Activity Log
-"Load more" fail-closed tweak, optional removal of the now-unused `pigDailys`
-prop passed to PigDailysView, and deprecated-path cleanup.
+Near-term selected path as of 2026-06-03: the cold-boot/fail-closed readiness
+rollout and seed idempotency (CP8/CP9) remain SHIPPED and locked. The 2026-06-03
+session shipped sheep soft-delete (`074`), animal transfer RPCs (`075`), cattle
+forecast Activity (`076`), and a large source-wide static-guard suite — all on
+`origin/main`. In-flight (committed, TEST-only, awaiting merge + PROD gate):
+runtime observability Phase 2 (`077`), cattle breeding Activity (`078`), and the
+calving-delete SECDEF RPC (`079`); see Current State. Do not re-open shipped
+lanes unless a regression appears.
 
-1. Codebase hardening and cleanup - remove deprecated patterns as each entity
-   migrates, classify legacy/import/test-only code, and reduce context burn for
-   future sessions.
+1. Codebase hardening and cleanup - IN PROGRESS. A large source-wide
+   static-guard suite now locks mutation/delete owners, table-access boundaries,
+   storage upload/URL ownership, Supabase-client/secret/IndexedDB boundaries,
+   and shared-UI ownership. New mutation/delete/upload/table-access sites must
+   update the matching guard.
 2. Feed planning correctness - keep feed recommendations tied to the latest
    physical-count anchor when one exists and investigate only concrete
-   regressions against the shipped behavior.
+   regressions against the shipped behavior. (No feed-order e2e exists yet; the
+   basis math is unit-tested in `feedOrderBasis.test.js`.)
 3. Record Page foundation stewardship - keep operational entities on the
    dedicated record-page pattern; no new Activity bubbles, inline record
    workspaces, or modal-based record workspaces.
-4. Shared record-page shell / contracts - extract only what is proven from
-   shipped record pages: header/back/title/loading/not-found conventions,
-   sequence navigation placement, Comments placement, collapsed Activity audit
-   log placement, and route/deep-link expectations.
-5. Sheep delete/restore strategy design - decide source-row soft-delete vs
-   tombstone/resolver model before implementation.
-6. Audit-grade SECDEF RPCs - cattle/sheep lifecycle/status/move actions where
-   mutation + Activity must be atomic.
-7. Custom editable-table Activity - after record pages exist, add scoped
-   history for operational tables such as cattle forecast month hide/unhide,
-   feed forecast edits, breeding schedule edits, and similar table workflows.
-8. Critical workflow Playwright matrix - define coverage targets, write specs
-   for highest-risk uncovered paths.
+4. Shared record-page shell / contracts - DONE for now; ownership of
+   RecordPageShell / RecordCollaborationSection / RecordSequenceNav and the
+   Comments+Activity composition is locked by
+   `shared_ui_extraction_contract_static.test.js` (in-flight Codex lane).
+5. Sheep delete/restore strategy - DONE. Source-row soft-delete chosen and
+   shipped (mirrors cattle `069`); migration `074` live in PROD. Tombstone/
+   resolver model was rejected (the source row can be preserved cleanly).
+6. Audit-grade SECDEF RPCs - IN PROGRESS. Shipped: transfer RPCs (`075`, PROD).
+   In-flight (TEST): `delete_cattle_calving_record` (`079`, Phase A). Next:
+   authenticated-only cattle-processing detach (the anon-webform path blocked a
+   clean SECDEF conversion); sheep equivalents.
+7. Custom editable-table Activity - IN PROGRESS. Phase A: cattle forecast
+   hide/unhide -> `cattle.forecast` entity (`076`, PROD). Phase B (in-flight,
+   TEST): cattle breeding cycles -> `cattle.breeding` entity (`078`). Next: feed
+   forecast edits and similar editable tables.
+8. Critical workflow Playwright matrix - IN PROGRESS. Added the `task_completed`
+   cross-user notification e2e (in-flight CC lane). Highest-value remaining gap:
+   the feed-order count-aware basis (heavy to seed; deferred).
 9. Incremental mutation cleanup - domain by domain per Identity Map. Choose
-   direct / `runMutation` / SECDEF per entity risk.
-10. Shared UI extraction - extract filter bar, summary row, loading/empty/error
-   patterns from views that repeat them 3+ times.
+   direct / `runMutation` / SECDEF per entity risk. The mutation inventory is
+   now locked by `mutation_semantics_inventory_static.test.js` (in-flight).
+10. Shared UI extraction - locked by the shared-UI contract guard (see item 4).
 11. Deferred: webform-light user identities - replace anonymous public
    webform submitter fields with lightweight authenticated field users.
    Submitter/requester identity should come from the logged-in user, access
@@ -1240,7 +1301,10 @@ Read the relevant contract before editing its files.
   `count_activity_for_entity` remain in PROD from historical migrations but
   have zero client callers after ActivityModal/ActivityPanel retirement. Do
   not use them for new operational record pages; a future migration may revoke
-  or retire them in its own lane.
+  or retire them in its own lane. The retired composer identifiers
+  (`ActivityModal`, `setActivityTarget`, deep-link bridge) and a guard that
+  newer migrations don't redefine those legacy RPCs are locked by static tests
+  (`activity_static.test.js`, in-flight `legacy_activity_retirement_static`).
 - New record pages use the Comments foundation tables/APIs, not
   `activity_events`, for comment storage.
 - Comments APIs/RPCs are expected to include `list_comments`,
@@ -1255,7 +1319,15 @@ Read the relevant contract before editing its files.
   `layer.batch`, `layer.housing`, `cattle.animal`, `cattle.processing`,
   `sheep.animal`, `sheep.processing`, `equipment.item`, `poultry.daily`,
   `layer.daily`, `egg.daily`, `pig.daily`, `cattle.daily`, `sheep.daily`,
-  `weighin.session`.
+  `weighin.session`, and the Custom editable-table workflow entities
+  `cattle.forecast` (PROD, `076`) and `cattle.breeding` (in-flight `078`, TEST).
+- Custom editable-table Activity entities (`cattle.forecast`, `cattle.breeding`)
+  are SINGLETON workflow entities (fixed `entity_id` `cattle-forecast` /
+  `cattle-breeding`). Their `_activity_can_read` branch does NOT check row
+  existence — readability is gated purely on program access (admin always; no
+  program restriction => true; else the program e.g. `'cattle'`). Use these to
+  scope audit for table-level edits (hide/unhide, cycle create/edit/delete)
+  instead of cluttering a per-row record page.
 - New entity type = one permission resolver branch, one registry entry,
   stable record route/deep-link mapping, one record page surface, and a
   mutation/error/activity plan that uses `runMutation` or a SECDEF RPC where
@@ -1266,8 +1338,12 @@ Read the relevant contract before editing its files.
   `field.updated`, `status.changed`, `record.created`, `record.deleted`,
   `record.restored`. New event types require a migration.
 - `record.deleted` and `record.restored` require the source entity to still
-  exist for `_activity_can_read` / `_activity_can_write`; hard-delete audit
-  visibility needs a tombstone/deleted-record design.
+  exist for `_activity_can_read` / `_activity_can_write`. Two working patterns:
+  (a) soft-delete the row so it persists (cattle `069` / sheep `074`), or
+  (b) for a child/sub-row hard delete, scope the event to a PARENT entity that
+  persists — e.g. `079`'s calving-record delete logs `record.deleted` on the
+  dam's `cattle.animal` (the dam is not deleted). A full hard-delete of a root
+  still needs a tombstone/deleted-record design.
 - Meaningful change logging must avoid keystroke/autosave noise. Prefer saved
   user actions such as notes/status/date/location/count changes.
 - Pilot Activity change logging writes data first and records Activity
@@ -1420,13 +1496,30 @@ Read the relevant contract before editing its files.
 ### Cattle And Sheep
 
 - Cattle and sheep use dedicated Supabase tables, not `app_store`.
-- Cattle herds: `mommas`, `backgrounders`, `finishers`, `bulls`.
-- Sheep flocks: `rams`, `ewes`, `feeders`.
-- Cattle animal delete/restore is admin-only through
-  `soft_delete_cattle_animal` / `restore_cattle_animal`; clients have no direct
-  cattle DELETE policy.
-- Normal cattle read surfaces filter `deleted_at IS NULL`. Admin Recently
-  Deleted surfaces may read deleted cattle through admin-gated RLS.
+- Cattle herds: active `mommas`, `backgrounders`, `finishers`, `bulls`; outcome
+  states `processed`, `deceased`, `sold`.
+- Sheep flocks: active `rams`, `ewes`, `feeders`; outcome states `processed`,
+  `deceased`, `sold`.
+- Animal soft-delete/restore is admin-only via SECDEF RPCs:
+  `soft_delete_cattle_animal` / `restore_cattle_animal` (cattle, `069`) and
+  `soft_delete_sheep_animal` / `restore_sheep_animal` (sheep, `074`). Each sets/
+  clears `deleted_at`/`deleted_by` and writes a `record.deleted`/`record.restored`
+  Activity event in one transaction; restore rejects an active tag conflict.
+  Neither table has a client DELETE policy.
+- Manual herd/flock moves go through transactional SECDEF RPCs
+  `transfer_cattle_animal` / `transfer_sheep_animal` (`075`): row update + a
+  `cattle_transfers`/`sheep_transfers` audit row + a `status.changed` Activity
+  event, atomically. No-op when destination == current; sets `death_date` for
+  `deceased` and `sale_date` for `sold` when missing; rejects missing/deleted
+  rows and invalid destinations. Operational permission (authenticated + active,
+  not admin-only). Record pages call `src/lib/animalTransferApi.js`.
+- Calving-record delete goes through `delete_cattle_calving_record` (in-flight
+  `079`): atomic delete + a `record.deleted` Activity event scoped to the dam's
+  `cattle.animal` (the dam persists). Both cattle views call
+  `src/lib/cattleCalvingApi.js`; no client `cattle_calving_records` delete.
+- Normal cattle/sheep read surfaces filter `deleted_at IS NULL`. Admin Recently
+  Deleted surfaces may read deleted rows through admin-gated RLS. (No restore UI
+  yet for either species; restore is RPC/backend-only.)
 - Cattle active-herd tag uniqueness is `tag` where `deleted_at IS NULL` and
   herd is one of `mommas`, `backgrounders`, `finishers`, `bulls`.
 - Sold/deceased/processed cattle are not delete states; they remain active
