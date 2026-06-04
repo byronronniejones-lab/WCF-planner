@@ -20,6 +20,7 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 import {loadSheepWeighInsCached} from '../lib/sheepCache.js';
 import {softDeleteSheepAnimal} from '../lib/sheepDeleteApi.js';
 import {transferSheepAnimal} from '../lib/animalTransferApi.js';
+import {deleteSheepLambingRecord} from '../lib/sheepLambingApi.js';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 
@@ -230,8 +231,12 @@ export default function SheepAnimalPage({sb, fmt, authState, Header}) {
   async function deleteLambingRecord(recId) {
     if (!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this lambing record?', async () => {
-      await sb.from('sheep_lambing_records').delete().eq('id', recId);
-      await loadAll();
+      try {
+        await deleteSheepLambingRecord(sb, recId, authState && authState.name ? authState.name : null);
+        await loadAll();
+      } catch (e) {
+        setNotice({kind: 'error', message: 'Delete failed: ' + (e.message || String(e))});
+      }
     });
   }
 

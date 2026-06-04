@@ -7,11 +7,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 
 const EXPECTED_LITERAL_MUTATION_TOTALS = new Map([
-  ['delete', 30],
-  ['insert', 65],
+  ['delete', 28],
+  ['insert', 64],
   // CP2: 12 direct daily-table .update() literals (6 record pages + 6 list
   // views) moved to the update_daily_report SECDEF RPC (mig 091).
-  ['update', 82],
+  ['update', 81],
   ['upsert', 43],
 ]);
 
@@ -38,9 +38,6 @@ const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
   ['src/cattle/CattleBatchPage.jsx|delete', 1],
   ['src/cattle/CattleBatchPage.jsx|update', 3],
   ['src/cattle/CattleBatchesView.jsx|insert', 1],
-  ['src/cattle/CattleBreedingView.jsx|delete', 1],
-  ['src/cattle/CattleBreedingView.jsx|insert', 1],
-  ['src/cattle/CattleBreedingView.jsx|update', 1],
   ['src/cattle/CattleBulkImport.jsx|insert', 7],
   ['src/cattle/CattleForecastView.jsx|update', 1],
   ['src/cattle/CattleHerdsView.jsx|delete', 1],
@@ -92,7 +89,6 @@ const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
   ['src/pig/usePigPlannedTrips.js|upsert', 1],
   ['src/shared/AdminAddReportModal.jsx|insert', 6],
   ['src/shared/AdminNewWeighInModal.jsx|insert', 1],
-  ['src/sheep/SheepAnimalPage.jsx|delete', 1],
   ['src/sheep/SheepAnimalPage.jsx|insert', 1],
   ['src/sheep/SheepAnimalPage.jsx|update', 1],
   ['src/sheep/SheepBatchPage.jsx|delete', 1],
@@ -110,9 +106,6 @@ const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
 
 const EXPECTED_TABLE_OPERATION_COUNTS = new Map([
   ['app_store|upsert', 17],
-  ['cattle_breeding_cycles|delete', 1],
-  ['cattle_breeding_cycles|insert', 1],
-  ['cattle_breeding_cycles|update', 1],
   ['cattle_breeds|insert', 1],
   ['cattle_calving_records|delete', 2],
   ['cattle_calving_records|insert', 3],
@@ -174,7 +167,6 @@ const EXPECTED_TABLE_OPERATION_COUNTS = new Map([
   ['sheep_comments|delete', 1],
   ['sheep_comments|insert', 1],
   ['sheep_dailys|insert', 1],
-  ['sheep_lambing_records|delete', 1],
   ['sheep_lambing_records|insert', 2],
   ['sheep_origins|insert', 1],
   ['sheep_processing_batches|delete', 1],
@@ -248,7 +240,7 @@ function hasTransactionalCalvingDeleteRpc() {
 
 function expectedLiteralMutationTotals() {
   const expected = new Map(EXPECTED_LITERAL_MUTATION_TOTALS);
-  if (hasTransactionalCalvingDeleteRpc()) expected.set('delete', 28);
+  if (hasTransactionalCalvingDeleteRpc()) expected.set('delete', 26);
   return expected;
 }
 
