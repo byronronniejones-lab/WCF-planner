@@ -4,7 +4,7 @@
 // Minimal poultry feed ledger — same shape as PigFeedView, three feed types.
 //
 // Top of screen:
-//   • Four tiles: Actual On Hand · End of [prev] Est. · Order for [active] ·
+//   • Four tiles: Actual On Hand · End of [current] Est. · Order for [active] ·
 //     Need Thru [active+1]. Big number = total lbs; small subtext shows the
 //     per-type split (Starter · Grower · Layer).
 //   • Physical-count row right below. Feed-type selector + lbs input + a
@@ -431,24 +431,18 @@ export default function BroilerFeedView({
     : anyCurrentCount
       ? 'vs Actual On Hand where counted; otherwise End of ' + prevLabel + ' Est.'
       : 'vs End of ' + prevLabel + ' Est.';
-  // Second summary tile. Once the active month has a current-month physical
-  // count, that type's prev-month estimate is stale/misleading, so show its
-  // projected END OF ACTIVE month (the count-anchored active ledger end)
-  // instead. Non-counted types keep the previous-month end. Display only — the
-  // order recommendation basis is unchanged.
-  // Active-month end per type from the PERSISTED ledger (saved order only). The
-  // Est. tile updates when an order is saved, not while typing an unsaved draft.
-  const endOfActive = {};
+  // Second summary tile stays pinned to the current calendar month. The order
+  // workflow can advance activeYM after this month's order is saved, but this
+  // summary still shows the current month-end estimate per type. Saved order
+  // only -- updates on save, not while typing an unsaved draft.
+  const estTileYM = thisYM;
+  const endOfCurrent = {};
   TYPE_KEYS.forEach((type) => {
-    const lg = pLedger[type][activeYM];
-    endOfActive[type] = lg ? lg.end : null;
+    const lg = pLedger[type][estTileYM];
+    endOfCurrent[type] = lg ? lg.end : null;
   });
-  // Second tile follows the active/calendar feed-order month — always
-  // "End of [active] Est." with that month's persisted ledger end per type. A
-  // physical count changes the projected end NUMBERS (it anchors the active
-  // ledger), not which month/label the tile shows.
-  const estTileValues = endOfActive;
-  const estTileLabel = 'End of ' + activeLabel + ' Est.';
+  const estTileValues = endOfCurrent;
+  const estTileLabel = 'End of ' + ymShort(estTileYM) + ' Est.';
 
   // Top tiles render three stacked per-type rows so each feed type's
   // value scans on its own. The order matches the active card's per-type

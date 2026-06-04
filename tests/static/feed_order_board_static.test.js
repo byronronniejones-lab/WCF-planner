@@ -59,8 +59,8 @@ describe('PigFeedView — minimal ledger contract', () => {
 
   it('renders the four contract top tiles', () => {
     expect(pigSrc).toMatch(/Actual On Hand/);
-    // Second tile follows the active feed-order month.
-    expect(pigSrc).toMatch(/End of ' \+ activeLabel \+ ' Est\./);
+    // Second tile stays pinned to the current calendar month.
+    expect(pigSrc).toMatch(/'End of ' \+ ymShort\(estTileYM\) \+ ' Est\.'/);
     expect(pigSrc).toMatch(/Order for ' \+ activeLabel/);
     expect(pigSrc).toMatch(/Need Thru ' \+ nextLabel/);
   });
@@ -262,8 +262,8 @@ describe('BroilerFeedView — minimal ledger contract', () => {
 
   it('renders the four contract top tiles with three stacked per-type rows (no big total)', () => {
     expect(broilerSrc).toMatch(/Actual On Hand/);
-    // Second tile follows the active feed-order month.
-    expect(broilerSrc).toMatch(/'End of ' \+ activeLabel \+ ' Est\.'/);
+    // Second tile stays pinned to the current calendar month.
+    expect(broilerSrc).toMatch(/'End of ' \+ ymShort\(estTileYM\) \+ ' Est\.'/);
     expect(broilerSrc).toMatch(/'Order for ' \+ activeLabel/);
     expect(broilerSrc).toMatch(/'Need Thru ' \+ nextLabel/);
     // Each tile renders three stacked per-type rows via the shared
@@ -527,14 +527,18 @@ describe('BroilerFeedView — minimal ledger contract', () => {
   });
 });
 
-// ── Second summary tile follows the active feed-order month (count = numbers only) ──
-describe('Feed boards — Est. tile follows the active feed-order month', () => {
-  it('Broiler: second tile is always End of [active] Est. with active-month ledger end per type', () => {
-    // Values = active-month PERSISTED ledger end per type. A physical count
-    // anchors the ledger (changes numbers) but never the month/label.
-    expect(broilerSrc).toMatch(/const lg = pLedger\[type\]\[activeYM\];\s*endOfActive\[type\] = lg \? lg\.end : null/);
-    expect(broilerSrc).toMatch(/const estTileValues = endOfActive/);
-    expect(broilerSrc).toMatch(/const estTileLabel = 'End of ' \+ activeLabel \+ ' Est\.'/);
+// ── Second summary tile stays on the current calendar month (count = numbers only) ──
+describe('Feed boards — Est. tile stays on the current calendar month', () => {
+  it('Broiler: second tile is always End of [current] Est. with current-month ledger end per type', () => {
+    // Values = current calendar-month PERSISTED ledger end per type. Saving
+    // an order can advance activeYM, but never the summary month/label.
+    expect(broilerSrc).toMatch(/const estTileYM = thisYM/);
+    expect(broilerSrc).toMatch(
+      /const lg = pLedger\[type\]\[estTileYM\];\s*endOfCurrent\[type\] = lg \? lg\.end : null/,
+    );
+    expect(broilerSrc).toMatch(/const estTileValues = endOfCurrent/);
+    expect(broilerSrc).toMatch(/const estTileLabel = 'End of ' \+ ymShort\(estTileYM\) \+ ' Est\.'/);
+    expect(broilerSrc).not.toMatch(/const estTileLabel = 'End of ' \+ activeLabel \+ ' Est\.'/);
     // No count-dependent month label, no mixed label, no unsaved-draft values.
     expect(broilerSrc).not.toMatch(/'Current \/ Prior Est\.'/);
     expect(broilerSrc).not.toMatch(/estTileLabel\s*=\s*allCurrentCount/);
@@ -543,9 +547,12 @@ describe('Feed boards — Est. tile follows the active feed-order month', () => 
     expect(broilerSrc).not.toMatch(/renderTileRows\(endOfPrev,/);
   });
 
-  it('Pig: second tile is always End of [active] Est. with the active ledger end', () => {
-    expect(pigSrc).toMatch(/const estTileValue = activeLg \? activeLg\.end : null/);
-    expect(pigSrc).toMatch(/const estTileLabel = 'End of ' \+ activeLabel \+ ' Est\.'/);
+  it('Pig: second tile is always End of [current] Est. with the current ledger end', () => {
+    expect(pigSrc).toMatch(/const estTileYM = thisYM/);
+    expect(pigSrc).toMatch(/const estTileLg = pigLedger\[estTileYM\]/);
+    expect(pigSrc).toMatch(/const estTileValue = estTileLg \? estTileLg\.end : null/);
+    expect(pigSrc).toMatch(/const estTileLabel = 'End of ' \+ ymShort\(estTileYM\) \+ ' Est\.'/);
+    expect(pigSrc).not.toMatch(/const estTileLabel = 'End of ' \+ activeLabel \+ ' Est\.'/);
     // No count-dependent label/value and no draft-spliced value.
     expect(pigSrc).not.toMatch(/estTileLabel\s*=\s*hasCurrentCount/);
     expect(pigSrc).not.toMatch(/estTileValue\s*=\s*hasCurrentCount/);

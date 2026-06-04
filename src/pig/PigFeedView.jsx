@@ -6,7 +6,7 @@
 //   2. How much do I need to order for the next open month?
 //
 // Layout:
-//   • Four top tiles: Actual On Hand · End of [prev] Est. · Order for
+//   • Four top tiles: Actual On Hand · End of [current] Est. · Order for
 //     [active] · Need Thru [active+1].
 //   • Physical-count input directly below, with a "Count includes [month]
 //     order" checkbox derived from the count date's month.
@@ -369,13 +369,14 @@ export default function PigFeedView({
         }
       : activeLg;
 
-  // Second tile follows the active/calendar feed-order month — always
-  // "End of [active] Est." with that month's persisted ledger end. A physical
-  // count changes the projected end NUMBER (it anchors the active ledger), not
-  // which month/label the tile shows. Saved order only — updates on save, not
-  // while typing an unsaved draft. Order recommendation basis is unchanged.
-  const estTileValue = activeLg ? activeLg.end : null;
-  const estTileLabel = 'End of ' + activeLabel + ' Est.';
+  // Second tile stays pinned to the current calendar month. The order workflow
+  // can advance activeYM after this month's order is saved, but this summary
+  // still shows the current month-end estimate. Saved order only -- updates on
+  // save, not while typing an unsaved draft.
+  const estTileYM = thisYM;
+  const estTileLg = pigLedger[estTileYM];
+  const estTileValue = estTileLg ? estTileLg.end : null;
+  const estTileLabel = 'End of ' + ymShort(estTileYM) + ' Est.';
 
   // ── Per-group breakdown via feedPlanner helpers ──────────────────────────
   function projectedFeedByGroup(ym) {
