@@ -37,10 +37,21 @@ function writeStoredValue(key, value) {
 
 export function usePersistentViewState(key, initialValue) {
   const [value, setValue] = React.useState(() => readStoredValue(key, initialValue));
+  const valueRef = React.useRef(value);
+  const setPersistentValue = React.useCallback(
+    (nextValue) => {
+      const resolved = typeof nextValue === 'function' ? nextValue(valueRef.current) : nextValue;
+      valueRef.current = resolved;
+      writeStoredValue(key, resolved);
+      setValue(resolved);
+    },
+    [key],
+  );
 
   React.useEffect(() => {
+    valueRef.current = value;
     writeStoredValue(key, value);
   }, [key, value]);
 
-  return [value, setValue];
+  return [value, setPersistentValue];
 }

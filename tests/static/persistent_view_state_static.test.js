@@ -18,6 +18,17 @@ describe('persistent list view state hotfix', () => {
     expect(hook).not.toContain('localStorage');
   });
 
+  it('writes synchronously inside the setter before navigation can unmount the list', () => {
+    const hook = src('src/lib/usePersistentViewState.js');
+    expect(hook).toMatch(/const setPersistentValue = React\.useCallback/);
+    expect(hook).toMatch(/const valueRef = React\.useRef\(value\)/);
+    expect(hook).toMatch(/typeof nextValue === 'function' \? nextValue\(valueRef\.current\) : nextValue/);
+    expect(hook).toMatch(
+      /valueRef\.current = resolved;[\s\S]*?writeStoredValue\(key, resolved\);[\s\S]*?setValue\(resolved\)/,
+    );
+    expect(hook).toMatch(/return \[value, setPersistentValue\]/);
+  });
+
   it('persists cattle herd filters, sort, and view mode', () => {
     const view = src('src/cattle/CattleHerdsView.jsx');
     expect(view).toContain("usePersistentViewState('cattle.herds.viewMode'");
