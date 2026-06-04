@@ -4,6 +4,7 @@ import {sb} from '../lib/supabase.js';
 import {loadGlobalActivity} from '../lib/globalActivityApi.js';
 import {getActivityEntityMeta} from '../lib/activityRegistry.js';
 import InlineNotice from '../shared/InlineNotice.jsx';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 
 const ENTITY_TYPE_LABELS = {
   'task.instance': 'Task',
@@ -71,8 +72,8 @@ export default function ActivityLogView({Header}) {
   // closed via loadError.
   const [appendError, setAppendError] = React.useState(null);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [search, setSearch] = React.useState('');
-  const [entityFilter, setEntityFilter] = React.useState('');
+  const [search, setSearch] = usePersistentViewState('activity.log.search', '');
+  const [entityFilter, setEntityFilter] = usePersistentViewState('activity.log.entityFilter', '');
   const [hasMore, setHasMore] = React.useState(false);
   const [reloadKey, setReloadKey] = React.useState(0);
 

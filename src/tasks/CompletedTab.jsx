@@ -29,6 +29,7 @@ import {
 } from '../lib/tasksCenterApi.js';
 import {TASK_CHANGE_EVENT} from '../lib/tasksCenterMutationsApi.js';
 import {fmt, fmtCentralDateTime, todayCentralISO, centralISOFor} from '../lib/dateUtils.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 import TaskPhotoLightbox from './TaskPhotoLightbox.jsx';
 
 const CARD = {
@@ -303,7 +304,7 @@ export default function CompletedTab({sb, authState}) {
   const [profiles, setProfiles] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
-  const [filter, setFilter] = React.useState('all');
+  const [filter, setFilter] = usePersistentViewState('tasks.completed.filter', 'all');
   const [photoTaskTarget, setPhotoTaskTarget] = React.useState(null);
   const [reloadKey, setReloadKey] = React.useState(0);
 

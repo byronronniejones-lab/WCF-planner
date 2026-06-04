@@ -37,6 +37,7 @@ import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 import {softDeleteCattleAnimal} from '../lib/cattleDeleteApi.js';
@@ -255,9 +256,9 @@ const CattleHerdsHub = ({
   const [loading, setLoading] = useState(true);
 
   // Composable filter / sort state.
-  const [viewMode, setViewMode] = useState('grouped'); // 'grouped' | 'flat'
-  const [filters, setFilters] = useState({});
-  const [sortRules, setSortRules] = useState([{key: 'tag', dir: 'asc'}]);
+  const [viewMode, setViewMode] = usePersistentViewState('cattle.herds.viewMode', 'grouped'); // 'grouped' | 'flat'
+  const [filters, setFilters] = usePersistentViewState('cattle.herds.filters', {});
+  const [sortRules, setSortRules] = usePersistentViewState('cattle.herds.sortRules', [{key: 'tag', dir: 'asc'}]);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [openFilter, setOpenFilter] = useState(null); // chip popover state — string key
 

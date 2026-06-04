@@ -16,6 +16,7 @@ import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import SheepDailyPage from './SheepDailyPage.jsx';
 
@@ -63,11 +64,11 @@ const SheepDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdit
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [teamMembers, setTeamMembers] = useState([]);
-  const [fFlock, setFFlock] = useState('');
-  const [fTeam, setFTeam] = useState('');
-  const [fFrom, setFFrom] = useState('');
-  const [fTo, setFTo] = useState('');
-  const [srcFilter, setSrcFilter] = useState('all');
+  const [fFlock, setFFlock] = usePersistentViewState('sheep.dailys.flockFilter', '');
+  const [fTeam, setFTeam] = usePersistentViewState('sheep.dailys.teamFilter', '');
+  const [fFrom, setFFrom] = usePersistentViewState('sheep.dailys.fromFilter', '');
+  const [fTo, setFTo] = usePersistentViewState('sheep.dailys.toFilter', '');
+  const [srcFilter, setSrcFilter] = usePersistentViewState('sheep.dailys.sourceFilter', 'all');
 
   const FLOCKS = ['rams', 'ewes', 'feeders', 'processed', 'deceased', 'sold'];
   const SHEEP_ACTIVE_FLOCKS = ['rams', 'ewes', 'feeders'];

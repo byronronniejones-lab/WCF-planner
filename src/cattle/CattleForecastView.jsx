@@ -38,6 +38,7 @@ import {
 import {CATTLE_HERD_KEYS, cowTagSet} from '../lib/cattleHerdFilters.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 import {runMutation, recordFieldChange, recordActivityEvent} from '../lib/entityMutations.js';
@@ -170,12 +171,12 @@ const CattleForecastView = ({
   // Inline notice for forecast settings save / hide-state update / heifer
   // selection save errors. Cleared at the start of each action handler.
   const [notice, setNotice] = useState(null);
-  const [yearFilter, setYearFilter] = useState(null); // null = current year by default
-  const [monthFilter, setMonthFilter] = useState(null);
+  const [yearFilter, setYearFilter] = usePersistentViewState('cattle.forecast.yearFilter', null); // null = current year by default
+  const [monthFilter, setMonthFilter] = usePersistentViewState('cattle.forecast.monthFilter', null);
   const [showHeiferModal, setShowHeiferModal] = useState(false);
   // Tag search — client-side filter applied across planned rows, hidden
   // rows, actual-batch rows, and Attention rows. Empty string = show all.
-  const [tagSearch, setTagSearch] = useState('');
+  const [tagSearch, setTagSearch] = usePersistentViewState('cattle.forecast.tagSearch', '');
   const tagSearchTrim = tagSearch.trim().toLowerCase();
   // Predicate every renderable row uses. Matches against current cow.tag
   // PLUS retag-aware prior tags via cowTagSet so old tag numbers still find

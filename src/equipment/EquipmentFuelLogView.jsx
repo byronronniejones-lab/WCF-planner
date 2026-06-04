@@ -3,13 +3,14 @@
 // Matches the "Fuel Log" Podio tab's mental model.
 import React from 'react';
 import {stripPodioHtml} from '../lib/equipment.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 
 export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
-  const [eqFilter, setEqFilter] = React.useState('');
-  const [fuelFilter, setFuelFilter] = React.useState('');
-  const [teamFilter, setTeamFilter] = React.useState('');
-  const [fromDate, setFromDate] = React.useState('');
-  const [toDate, setToDate] = React.useState('');
+  const [eqFilter, setEqFilter] = usePersistentViewState('equipment.fuelLog.equipmentFilter', '');
+  const [fuelFilter, setFuelFilter] = usePersistentViewState('equipment.fuelLog.fuelFilter', '');
+  const [teamFilter, setTeamFilter] = usePersistentViewState('equipment.fuelLog.teamFilter', '');
+  const [fromDate, setFromDate] = usePersistentViewState('equipment.fuelLog.fromDate', '');
+  const [toDate, setToDate] = usePersistentViewState('equipment.fuelLog.toDate', '');
 
   const eqById = React.useMemo(() => Object.fromEntries(equipment.map((e) => [e.id, e])), [equipment]);
   const teamMembers = React.useMemo(() => {

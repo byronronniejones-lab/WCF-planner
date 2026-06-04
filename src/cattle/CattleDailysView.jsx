@@ -11,6 +11,7 @@ import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import CattleDailyPage from './CattleDailyPage.jsx';
 
@@ -48,11 +49,11 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [teamMembers, setTeamMembers] = useState([]);
-  const [fHerd, setFHerd] = useState('');
-  const [fTeam, setFTeam] = useState('');
-  const [fFrom, setFFrom] = useState('');
-  const [fTo, setFTo] = useState('');
-  const [srcFilter, setSrcFilter] = useState('all');
+  const [fHerd, setFHerd] = usePersistentViewState('cattle.dailys.herdFilter', '');
+  const [fTeam, setFTeam] = usePersistentViewState('cattle.dailys.teamFilter', '');
+  const [fFrom, setFFrom] = usePersistentViewState('cattle.dailys.fromFilter', '');
+  const [fTo, setFTo] = usePersistentViewState('cattle.dailys.toFilter', '');
+  const [srcFilter, setSrcFilter] = usePersistentViewState('cattle.dailys.sourceFilter', 'all');
 
   const HERDS = ['mommas', 'backgrounders', 'finishers', 'bulls', 'processed', 'deceased', 'sold'];
   const HERD_LABELS = {

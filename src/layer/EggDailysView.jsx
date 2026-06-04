@@ -9,6 +9,7 @@ import {softDeleteDailyReport, canDeleteDailyReport, updateDailyReport} from '..
 import AdminAddReportModal from '../shared/AdminAddReportModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import EggDailyPage from './EggDailyPage.jsx';
 
@@ -40,9 +41,9 @@ const EggDailysHub = ({sb, fmt, Header, authState, layerGroups, pendingEdit, set
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
-  const [fTeam, setFTeam] = useState('');
-  const [fFrom, setFFrom] = useState('');
-  const [fTo, setFTo] = useState('');
+  const [fTeam, setFTeam] = usePersistentViewState('layer.eggs.teamFilter', '');
+  const [fFrom, setFFrom] = usePersistentViewState('layer.eggs.fromFilter', '');
+  const [fTo, setFTo] = usePersistentViewState('layer.eggs.toFilter', '');
   const EMPTY = {
     date: todayStr(),
     teamMember: '',

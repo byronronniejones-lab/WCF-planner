@@ -16,6 +16,7 @@ import {
   findPriorPigWeighInSession,
   computeRankMatchedPigEntryADG,
 } from '../lib/pigForecast.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 const LivestockWeighInsView = ({
   sb,
   fmt,
@@ -35,7 +36,7 @@ const LivestockWeighInsView = ({
   const [sessions, setSessions] = useState([]);
   const [entries, setEntries] = useState({});
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = usePersistentViewState(`${species}.weighins.statusFilter`, 'all');
   const [showNewModal, setShowNewModal] = useState(false);
   const [pigMetricsBySession, setPigMetricsBySession] = useState({});
   const [notice, setNotice] = useState(null);

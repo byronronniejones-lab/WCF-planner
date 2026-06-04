@@ -11,6 +11,7 @@ import DailyPhotoChip from '../shared/DailyPhotoChip.jsx';
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import PigDailyPage from './PigDailyPage.jsx';
 
@@ -50,11 +51,11 @@ const PigDailysHub = ({
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
-  const [fBatch, setFBatch] = useState('');
-  const [fTeam, setFTeam] = useState('');
-  const [fFrom, setFFrom] = useState('');
-  const [fTo, setFTo] = useState('');
-  const [srcFilter, setSrcFilter] = useState('all');
+  const [fBatch, setFBatch] = usePersistentViewState('pig.dailys.batchFilter', '');
+  const [fTeam, setFTeam] = usePersistentViewState('pig.dailys.teamFilter', '');
+  const [fFrom, setFFrom] = usePersistentViewState('pig.dailys.fromFilter', '');
+  const [fTo, setFTo] = usePersistentViewState('pig.dailys.toFilter', '');
+  const [srcFilter, setSrcFilter] = usePersistentViewState('pig.dailys.sourceFilter', 'all');
   const EMPTY = {
     date: todayStr(),
     teamMember: '',

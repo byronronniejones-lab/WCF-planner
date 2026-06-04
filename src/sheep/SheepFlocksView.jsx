@@ -24,6 +24,7 @@ import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 
 function SheepFlocksRouter(props) {
   const location = useLocation();
@@ -65,9 +66,9 @@ const SheepFlocksHub = ({
   const [originOpts, setOriginOpts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('active');
-  const [sortBy, setSortBy] = useState('tag-asc');
+  const [search, setSearch] = usePersistentViewState('sheep.flocks.search', '');
+  const [statusFilter, setStatusFilter] = usePersistentViewState('sheep.flocks.statusFilter', 'active');
+  const [sortBy, setSortBy] = usePersistentViewState('sheep.flocks.sortBy', 'tag-asc');
   const [showAddForm, setShowAddForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [form, setForm] = useState(null);

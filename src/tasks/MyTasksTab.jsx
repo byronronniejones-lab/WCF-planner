@@ -52,6 +52,7 @@ import {
 } from '../lib/tasksCenterApi.js';
 import {TASK_CHANGE_EVENT, fireTaskChangeEvent} from '../lib/tasksCenterMutationsApi.js';
 import {todayCentralISO} from '../lib/dateUtils.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 import CompleteTaskModal from './CompleteTaskModal.jsx';
 import TaskPhotoLightbox from './TaskPhotoLightbox.jsx';
 import EditDueDateModal from './EditDueDateModal.jsx';
@@ -409,7 +410,7 @@ export default function MyTasksTab({sb, authState}) {
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
   const [expandedOverride, setExpandedOverride] = React.useState({});
-  const [filter, setFilter] = React.useState('all');
+  const [filter, setFilter] = usePersistentViewState('tasks.my.filter', 'all');
   const [completeTaskTarget, setCompleteTaskTarget] = React.useState(null);
   const [photoTaskTarget, setPhotoTaskTarget] = React.useState(null);
   const [editDueTarget, setEditDueTarget] = React.useState(null);

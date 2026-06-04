@@ -14,6 +14,7 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import LayerDailyPage from './LayerDailyPage.jsx';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 import {buildLayerDailyGroupOptions, resolveLayerDailyBatchId} from './layerDailyGroups.js';
 
 function LayerDailysRouter(props) {
@@ -57,11 +58,11 @@ const LayerDailysHub = ({
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
-  const [fGroup, setFGroup] = useState('');
-  const [fTeam, setFTeam] = useState('');
-  const [fFrom, setFFrom] = useState('');
-  const [fTo, setFTo] = useState('');
-  const [srcFilter, setSrcFilter] = useState('all');
+  const [fGroup, setFGroup] = usePersistentViewState('layer.dailys.groupFilter', '');
+  const [fTeam, setFTeam] = usePersistentViewState('layer.dailys.teamFilter', '');
+  const [fFrom, setFFrom] = usePersistentViewState('layer.dailys.fromFilter', '');
+  const [fTo, setFTo] = usePersistentViewState('layer.dailys.toFilter', '');
+  const [srcFilter, setSrcFilter] = usePersistentViewState('layer.dailys.sourceFilter', 'all');
   const EMPTY = {
     date: todayStr(),
     teamMember: '',

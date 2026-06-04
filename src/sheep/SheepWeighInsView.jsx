@@ -8,6 +8,7 @@ import {loadSheepWeighInsCached} from '../lib/sheepCache.js';
 import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import PlannerIcon from '../components/PlannerIcon.jsx';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 
 const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
 
@@ -28,9 +29,9 @@ const SheepWeighInsView = ({
   const [sessions, setSessions] = useState([]);
   const [entries, setEntries] = useState({});
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = usePersistentViewState('sheep.weighins.statusFilter', 'all');
   const [showNewModal, setShowNewModal] = useState(false);
-  const [tagSearch, setTagSearch] = useState('');
+  const [tagSearch, setTagSearch] = usePersistentViewState('sheep.weighins.tagSearch', '');
   const [notice, setNotice] = useState(null);
 
   async function loadAll() {
