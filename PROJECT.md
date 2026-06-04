@@ -8,7 +8,7 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-04.
-Current production checkpoint: latest app/build merge `7de1758` on `main`
+Current production checkpoint: latest app/build commit `235647c` on `main`
 (docs-only commits may sit on top; check `git log` for the exact HEAD).
 Production URL: https://wcfplanner.com.
 
@@ -33,10 +33,10 @@ history and tests for detailed lane history.
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source of truth: `origin/main`; production app/build checkpoint is merge
-  `7de1758` (later docs-only commits do not change the shipped runtime).
+- Source of truth: `origin/main`; production app/build checkpoint is commit
+  `235647c` (later docs-only commits do not change the shipped runtime).
 - Open gates for the shipped tree: none.
-- PROD-applied numbered migration series is live through `092`. Migration `082`
+- PROD-applied numbered migration series is live through `094`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
   cleanup `085` was applied before unique-index migration `084`.
 - TEST/PROD migrations `074` through `081` plus `084`/`085`/`086` were applied
@@ -58,6 +58,19 @@ listed:
 Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
+
+- Audited RPC follow-ups, migration `094`, PROD (2026-06-04, commit
+  `235647c`). Cattle breeding cycle save/delete and sheep lambing record delete
+  now route through authenticated SECDEF RPCs with `search_path = public`,
+  PostgREST grants/reload, and transactional Activity writes. Client code no
+  longer performs direct writes for those flows.
+- Task weekly email correction, migration `093`, PROD (2026-06-04, commit
+  `c0b3fed`). `tasks-summary-weekly` now runs Sunday 8am America/Chicago with
+  dual UTC cron entries and helper-side DST gating. The weekly window starts at
+  the previous Sunday 8am Central. Completed-assigned coverage comes from
+  `task_completed` notifications owed to task creators/assignors; recipients
+  are open assignees union completed-assigned recipients, assigned-only
+  recipients still receive email, and both-empty recipients are skipped.
 
 - Authenticated Light-user portal, CP1+CP2, migrations `087`–`092`, PROD
   (2026-06-04, commit `4b69510` + merge `7de1758`). CP1: real authenticated
@@ -126,17 +139,53 @@ the repo as history. See [HO.md](HO.md) Parallel Codex Worktree.
 Treat these as product lanes, not hotfixes, unless Ronnie says otherwise.
 Shipped 2026-06-04 (removed from queue): authenticated Light-user portal CP1+CP2,
 pig planned-trip weight audit, cattle missing-dam herd filters, feed second-tile
-current-month pin, and broiler on-farm count reconciliation.
+current-month pin, broiler on-farm count reconciliation, and task weekly email
+correction.
 
-1. Task weekly email correction. Current `tasks-summary-weekly` cron is
-   scheduled as Monday `13:00 UTC`, which is Monday 8am Central during daylight
-   time. Change the product schedule to Sunday 8am Central, decide whether that
-   means fixed UTC or true America/Chicago DST behavior, and add weekly email
-   coverage for task-completed notifications owed to the task creator/assignor.
-2. Equipment caught-up home notices. Add home tile notices when equipment
+1. Cattle herd filters, row parity, and saved views. Build first after wrap.
+   Scope: `/cattle/herds`, `src/lib/cattleHerdFilters.js`, tests, and the next
+   available numbered migration if saved views need database support. Do not
+   use migration `093` or `094`; `093` belongs to the task weekly email lane
+   and `094` belongs to audited RPC follow-ups.
+   - Non-calving filter/sort: keep the current default contract
+     (`Non Calving Cows` = cow/heifer, 30+ months old, no calving record in the
+     last 9 months), but add a configurable "No calf since [date]" cutoff with
+     the same semantics: last calved is missing OR before the cutoff. Preserve
+     backward compatibility for `filters.nonCalvingCows === true`. Add a sort
+     key so non-calving candidates can be sorted first/last.
+   - Flat/grouped parity: flat cattle rows should show the same useful metadata
+     grouped rows show, especially calf count and last-calved date. Prefer a
+     shared row renderer so flat and grouped cannot drift again.
+   - Saved views: all authenticated users can save cattle herd views as private
+     or public, Podio-style. Saved state must include `filters`, `sortRules`,
+     and `viewMode`. Private views are owner-only; public views are visible to
+     all authenticated users. Owners can update/delete their own views. Suggested
+     generic table: `app_saved_views(surface_key, name, visibility, view_state
+     jsonb, owner_profile_id, created_at, updated_at)` with
+     `surface_key = 'cattle.herds'` and RLS for public-or-owner SELECT plus
+     owner-only INSERT/UPDATE/DELETE.
+   - Remove the weak plain-English/Parse filter assistant from cattle herds. Do
+     not present it as AI. Keep a future queue note to investigate a real AI
+     filter/sort assistant.
+   - Remove `More filters` / `Hide more filters`; always render organized
+     filter groups. Suggested groups: Core (Herd, Sex, Age, Breed, Origin,
+     Weight), Calving/Breeding (Non Calving Cows, Calved, Last Calved, Calf
+     Count, Breeding Status, Blacklist), Lineage/Other (Dam, Sire, Birth Date,
+     Wagyu %), and Exceptions (Unmatched Calves if it does not fit cleanly in
+     Calving/Breeding).
+   - Tests: pure tests for configurable non-calving cutoff and sort key; static
+     tests that smart input/Parse/showMoreFilters/Hide more filters are gone;
+     flat/grouped row parity coverage; saved-view migration/RLS coverage; and a
+     Playwright flow for saving/applying a cattle herd view. Validate with
+     relevant `npm test`, `npx playwright test tests/cattle_herd_filters.spec.js`,
+     and `npm run build`.
+2. Real AI filter/sort investigation. The removed cattle plain-English parser
+   was not robust enough. Later, investigate a real AI-assisted filter/sort
+   solution across list views with explicit preview/apply behavior and tests.
+3. Equipment caught-up home notices. Add home tile notices when equipment
    maintenance and equipment materials are fully caught up, analogous to the
    "no missing daily reports" state.
-3. Follow-on audited RPCs where remaining flows still have partial-state or
+4. Follow-on audited RPCs where remaining flows still have partial-state or
    audit gaps.
 
 ### Light-User Portal Contract
@@ -294,6 +343,12 @@ Current PROD architecture includes these load-bearing migrations:
 - `092` ownership enforce (red-switch): REVOKE direct UPDATE/DELETE on the 6
   daily tables, `trg_freeze_owner` BEFORE UPDATE trigger, privileged-only RLS on
   `equipment_fuelings`/`fuel_supplies`.
+- `093` task weekly email correction: Sunday 8am America/Chicago digest with
+  dual UTC cron entries, helper-side DST gating, previous-Sunday-08:00-Central
+  windowing, and completed-assigned task coverage.
+- `094` audited RPC follow-ups: cattle breeding cycle upsert/delete and sheep
+  lambing delete through authenticated SECDEF RPCs with transactional Activity
+  writes.
 
 Special migration notes:
 
