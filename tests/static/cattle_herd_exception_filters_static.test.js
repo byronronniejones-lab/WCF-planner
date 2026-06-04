@@ -13,6 +13,7 @@ describe('Cattle herd exception checkbox filters', () => {
   it('renders both requested herd-tab checkbox labels with stable data hooks', () => {
     expect(herdsView).toContain('Non Calving Cows');
     expect(herdsView).toContain('Unmatched Calves');
+    expect(herdsView).toContain('data-cattle-special-filters-row');
     expect(herdsView).toContain('data-cattle-special-filter={filterKey}');
     expect(herdsView).toContain('data-cattle-special-filter-checkbox={filterKey}');
   });

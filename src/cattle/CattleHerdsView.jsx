@@ -1300,8 +1300,6 @@ const CattleHerdsHub = ({
           <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
             <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4}}>Filters:</span>
             {quickFilterButtons()}
-            <SpecialFilterCheckbox filterKey="nonCalvingCows" label="Non Calving Cows" />
-            <SpecialFilterCheckbox filterKey="unmatchedCalves" label="Unmatched Calves" />
             <button
               type="button"
               onClick={() => setShowMoreFilters((v) => !v)}
@@ -1328,6 +1326,20 @@ const CattleHerdsHub = ({
                 Clear all
               </button>
             )}
+          </div>
+          <div
+            data-cattle-special-filters-row
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              paddingLeft: 50,
+              paddingTop: 4,
+            }}
+          >
+            <SpecialFilterCheckbox filterKey="nonCalvingCows" label="Non Calving Cows" />
+            <SpecialFilterCheckbox filterKey="unmatchedCalves" label="Unmatched Calves" />
           </div>
           {showMoreFilters && (
             <div
