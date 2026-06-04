@@ -12,8 +12,8 @@ describe('RecordActivityLog — shared component contract', () => {
   it('exports a default function', () => {
     expect(componentSrc).toMatch(/export default function RecordActivityLog/);
   });
-  it('accepts sb, entityType, entityId, and optional limit props', () => {
-    expect(componentSrc).toMatch(/RecordActivityLog\(\{sb, entityType, entityId, limit/);
+  it('accepts sb, entityType, entityId, optional limit, and optional eventFilter props', () => {
+    expect(componentSrc).toMatch(/RecordActivityLog\(\{sb, entityType, entityId, limit[^}]*eventFilter/);
   });
   it('defaults limit to 50', () => {
     expect(componentSrc).toContain('limit = 50');
@@ -24,6 +24,10 @@ describe('RecordActivityLog — shared component contract', () => {
   });
   it('filters out comment.posted events', () => {
     expect(componentSrc).toContain("event_type !== 'comment.posted'");
+  });
+  it('can filter Activity rows by caller-provided eventFilter', () => {
+    expect(componentSrc).toContain("typeof eventFilter !== 'function'");
+    expect(componentSrc).toContain('return eventFilter(e)');
   });
   it('counts only non-deleted events', () => {
     expect(componentSrc).toContain('!e.deleted_at');

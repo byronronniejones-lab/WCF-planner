@@ -37,8 +37,8 @@ test('forecast hide logs a cattle.forecast status.changed Activity event', async
     .toBe(1);
 
   // Best-effort audit fires after the write: a cattle.forecast status.changed
-  // event scoped to the forecast workflow (entity_id 'cattle-forecast'), with
-  // the cow carried in the payload — NOT a cattle.animal event.
+  // event scoped to the forecast workflow stream, with the cow + month carried
+  // in the payload - NOT a cattle.animal event.
   await expect
     .poll(
       async () => {
@@ -57,7 +57,7 @@ test('forecast hide logs a cattle.forecast status.changed Activity event', async
   const ev = (rows || []).find((e) => e.payload && e.payload.cattle_id === 'F-HIDE');
   expect(ev.entity_id).toBe('cattle-forecast');
   expect(ev.event_type).toBe('status.changed');
-  expect(ev.body).toMatch(/Forecast month .* changed visible → hidden/);
+  expect(ev.body).toMatch(/Forecast month .* changed visible (?:→|->) hidden/);
   expect(ev.payload.field).toBe('forecast_month_visibility');
 
   // No cattle.animal event was created for this forecast table change.
@@ -77,5 +77,5 @@ test('forecast hide logs a cattle.forecast status.changed Activity event', async
     await page.reload();
   }
   await expect(firstRow).toBeVisible({timeout: 15_000});
-  await expect(page.getByText(/Forecast month .* changed visible → hidden/)).toBeVisible({timeout: 10_000});
+  await expect(page.getByText(/Forecast month .* changed visible (?:→|->) hidden/)).toBeVisible({timeout: 10_000});
 });

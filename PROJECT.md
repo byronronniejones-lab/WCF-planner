@@ -68,10 +68,10 @@ work (the 2026-06-03 hardening sequence):
   duplicate dailys as non-stuck, and equipment maintenance events have
   `client_submission_id` idempotency protection against accidental double
   submits without blocking legitimate same-day service entries.
-- Cattle forecast Activity log UI, commit `957f577`. `/cattle/forecast` now
-  renders the `cattle.forecast` Activity log through `RecordCollaborationSection`
-  in Activity-only mode (new `showComments={false}` prop; no comments on the
-  forecast workflow surface).
+- Cattle forecast Activity log UI, commit `957f577` plus follow-up correction.
+  `/cattle/forecast` renders Activity-only logs inside each expanded month
+  bucket. Month bucket logs read the `cattle.forecast` stream and filter by
+  `payload.month_key` so each month shows only its own Activity.
 - Static hardening and inventory guards. The current tree locks source-wide
   table/bucket/env/local storage/API boundaries plus mutation/delete/load/UI
   inventories. Treat the matching static guards as the source of truth for
@@ -399,9 +399,10 @@ A new Activity entity requires all of this:
 - Static test coverage.
 - Activity/event logging strategy.
 
-Workflow singleton entities:
+Workflow/worktable entities:
 
-- `cattle.forecast` uses entity_id `cattle-forecast`.
+- `cattle.forecast` uses entity_id `cattle-forecast`; Forecast month bucket
+  logs filter that stream by `payload.month_key`.
 - `cattle.breeding` uses entity_id `cattle-breeding`.
 - These are table/workflow audit streams. Their `_activity_can_read` branches
   are program-gated rather than row-existence gated.

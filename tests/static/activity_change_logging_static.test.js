@@ -145,15 +145,18 @@ describe('Custom editable-table Activity — cattle forecast hide/unhide (CP1)',
     expect(fn).not.toBeNull();
     expect(fn[0]).not.toContain("entityType: 'cattle.animal'");
   });
-  it('uses the singleton cattle-forecast entity_id and carries the cow label in the payload', () => {
+  it('uses the cattle forecast stream and carries the cow + month in the payload', () => {
     expect(cattleForecast).toContain("entityId: 'cattle-forecast'");
     expect(cattleForecast).toContain("cow && cow.tag ? '#' + cow.tag : cattleId");
     expect(cattleForecast).toContain('cattle_id: cattleId');
+    expect(cattleForecast).toContain('month_key: monthKey');
   });
-  it('mounts the workflow Activity log on the forecast page', () => {
+  it('mounts a month-filtered Activity log inside each expanded forecast month bucket', () => {
     expect(cattleForecast).toContain('RecordCollaborationSection');
+    expect(cattleForecast).toContain('data-month-activity-log={bucket.monthKey}');
+    expect(cattleForecast).toContain("ev?.payload?.month_key === bucket.monthKey");
     expect(cattleForecast).toMatch(
-      /<RecordCollaborationSection[\s\S]*?entityType="cattle\.forecast"[\s\S]*?entityId="cattle-forecast"[\s\S]*?showComments=\{false\}/,
+      /<RecordCollaborationSection[\s\S]*?entityType="cattle\.forecast"[\s\S]*?entityId="cattle-forecast"[\s\S]*?activityEventFilter=\{activityEventFilter\}[\s\S]*?showComments=\{false\}/,
     );
   });
   it('body + payload make the month, cow, and visible<->hidden action clear', () => {

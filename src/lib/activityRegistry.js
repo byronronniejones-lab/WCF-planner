@@ -75,8 +75,8 @@ export const ACTIVITY_REGISTRY = {
     program: 'cattle',
   },
   // Custom editable-table Activity: singleton cattle forecast workflow entity.
-  // The label is constant (the table, not a per-row record); rows route to the
-  // forecast view.
+  // Month bucket logs filter this stream by payload.month_key; rows route to
+  // the forecast view.
   [ENTITY_TYPES.CATTLE_FORECAST]: {
     displayLabel: () => 'Cattle Forecast',
     route: () => '/cattle/forecast',

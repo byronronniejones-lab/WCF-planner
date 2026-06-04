@@ -374,10 +374,10 @@ const CattleForecastView = ({
 
   // ── hide/unhide ────────────────────────────────────────────────────────────
   // Best-effort Activity audit for a forecast month hide/unhide. Scoped to the
-  // cattle forecast workflow table (entity_type cattle.forecast, singleton
-  // entity_id 'cattle-forecast') — NOT the cattle.animal record — so the audit
-  // lives with the forecast workflow in the global Activity log instead of
-  // cluttering a cow's record page. Logged ONLY after the hide/unhide table
+  // cattle forecast workflow stream (entity_type cattle.forecast, entity_id
+  // cattle-forecast) - NOT the cattle.animal record. The month bucket Activity
+  // UI filters this stream by payload.month_key so each bucket shows only its
+  // own Activity. Logged ONLY after the hide/unhide table
   // write succeeds; a failure here never rolls back the write or surfaces a
   // product error.
   async function recordForecastHiddenActivity(cattleId, monthKey, nowHidden) {
@@ -905,6 +905,8 @@ const CattleForecastView = ({
                 {filteredMonthBuckets.map((b) => (
                   <MonthBucketTile
                     key={b.monthKey}
+                    sb={sb}
+                    authState={authState}
                     bucket={b}
                     forecast={forecast}
                     cowsById={cowsById}
@@ -923,15 +925,6 @@ const CattleForecastView = ({
             {yearFilter != null && actualBatchesByYear.has(yearFilter) && (
               <PastActuals batches={actualBatchesByYear.get(yearFilter)} fmt={fmt} />
             )}
-
-            <RecordCollaborationSection
-              sb={sb}
-              authState={authState}
-              entityType="cattle.forecast"
-              entityId="cattle-forecast"
-              entityLabel="Cattle Forecast"
-              showComments={false}
-            />
           </>
         )}
       </div>
@@ -1111,6 +1104,8 @@ function LegendSwatch({color, border, label}) {
 }
 
 function MonthBucketTile({
+  sb,
+  authState,
   bucket,
   forecast,
   cowsById,
@@ -1121,13 +1116,14 @@ function MonthBucketTile({
   fmt,
   tagMatch,
 }) {
-  const {useState} = React;
+  const {useCallback, useState} = React;
   // Default-expand current and future months. Past months stay collapsed
   // unless explicitly clicked.
   const nowYm = new Date().toISOString().slice(0, 7);
   const isCurrentOrFuture = bucket.monthKey >= nowYm;
   const [expanded, setExpanded] = useState(monthFilter === bucket.monthKey || isCurrentOrFuture);
   const isFiltered = monthFilter === bucket.monthKey;
+  const activityEventFilter = useCallback((ev) => ev?.payload?.month_key === bucket.monthKey, [bucket.monthKey]);
   const plannedCount = bucket.count;
   const hiddenHereOnly = (bucket.hiddenAnimalIds || []).filter((cid) => !bucket.animalIds.includes(cid));
   const actualBatches = bucket.actualBatches || [];
@@ -1551,6 +1547,18 @@ function MonthBucketTile({
               </tbody>
             </table>
           )}
+          <div data-month-activity-log={bucket.monthKey} style={{marginTop: 12}}>
+            <RecordCollaborationSection
+              sb={sb}
+              authState={authState}
+              entityType="cattle.forecast"
+              entityId="cattle-forecast"
+              entityLabel={'Cattle Forecast ' + bucket.label}
+              activityLimit={200}
+              activityEventFilter={activityEventFilter}
+              showComments={false}
+            />
+          </div>
         </div>
       )}
     </div>

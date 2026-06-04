@@ -1,10 +1,24 @@
 import React from 'react';
 import {listActivityEvents, ACTIVITY_CHANGE_EVENT} from '../lib/activityApi.js';
 
-export default function RecordActivityLog({sb, entityType, entityId, limit = 50}) {
+export default function RecordActivityLog({sb, entityType, entityId, limit = 50, eventFilter = null}) {
   const [expanded, setExpanded] = React.useState(false);
   const [events, setEvents] = React.useState([]);
   const [count, setCount] = React.useState(0);
+  const filterEvents = React.useCallback(
+    (rows) => {
+      const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
+      if (typeof eventFilter !== 'function') return auditOnly;
+      return auditOnly.filter((e) => {
+        try {
+          return eventFilter(e);
+        } catch (_e) {
+          return false;
+        }
+      });
+    },
+    [eventFilter],
+  );
 
   React.useEffect(() => {
     if (!expanded || !entityType || !entityId) return;
@@ -13,9 +27,9 @@ export default function RecordActivityLog({sb, entityType, entityId, limit = 50}
       try {
         const rows = await listActivityEvents(sb, entityType, entityId, {limit});
         if (cancelled) return;
-        const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
-        setEvents(auditOnly);
-        setCount(auditOnly.filter((e) => !e.deleted_at).length);
+        const filtered = filterEvents(rows);
+        setEvents(filtered);
+        setCount(filtered.filter((e) => !e.deleted_at).length);
       } catch (_e) {
         /* soft-fail */
       }
@@ -23,28 +37,28 @@ export default function RecordActivityLog({sb, entityType, entityId, limit = 50}
     return () => {
       cancelled = true;
     };
-  }, [expanded, entityId]);
+  }, [expanded, entityType, entityId, limit, sb, filterEvents]);
 
   React.useEffect(() => {
     if (!entityType || !entityId) return;
     listActivityEvents(sb, entityType, entityId, {limit}).then((rows) => {
-      const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
-      setCount(auditOnly.filter((e) => !e.deleted_at).length);
+      const filtered = filterEvents(rows);
+      setCount(filtered.filter((e) => !e.deleted_at).length);
     });
-  }, [entityId]);
+  }, [entityType, entityId, limit, sb, filterEvents]);
 
   React.useEffect(() => {
     function onActivityChange() {
       if (!entityType || !entityId || !expanded) return;
       listActivityEvents(sb, entityType, entityId, {limit}).then((rows) => {
-        const auditOnly = (rows || []).filter((e) => e.event_type !== 'comment.posted');
-        setEvents(auditOnly);
-        setCount(auditOnly.filter((e) => !e.deleted_at).length);
+        const filtered = filterEvents(rows);
+        setEvents(filtered);
+        setCount(filtered.filter((e) => !e.deleted_at).length);
       });
     }
     window.addEventListener(ACTIVITY_CHANGE_EVENT, onActivityChange);
     return () => window.removeEventListener(ACTIVITY_CHANGE_EVENT, onActivityChange);
-  }, [entityId, expanded]);
+  }, [entityType, entityId, expanded, limit, sb, filterEvents]);
 
   if (!entityType || !entityId) return null;
 

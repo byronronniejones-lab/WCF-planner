@@ -12,6 +12,8 @@ export default function RecordCollaborationSection({
   entityLabel,
   spacing = 16,
   showComments = true,
+  activityLimit = 50,
+  activityEventFilter = null,
 }) {
   return (
     <>
@@ -27,7 +29,13 @@ export default function RecordCollaborationSection({
         </div>
       )}
       <div style={{marginTop: spacing}}>
-        <RecordActivityLog sb={sb} entityType={entityType} entityId={entityId} />
+        <RecordActivityLog
+          sb={sb}
+          entityType={entityType}
+          entityId={entityId}
+          limit={activityLimit}
+          eventFilter={activityEventFilter}
+        />
       </div>
     </>
   );

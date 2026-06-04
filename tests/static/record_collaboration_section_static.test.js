@@ -14,7 +14,7 @@ describe('RecordCollaborationSection — shared component contract', () => {
   });
   it('accepts shared record identity props plus spacing and activity-only mode', () => {
     expect(componentSrc).toMatch(
-      /RecordCollaborationSection\(\{\s*sb,\s*authState,\s*entityType,\s*entityId,\s*entityLabel,\s*spacing\s*=\s*16,\s*showComments\s*=\s*true,?\s*\}/,
+      /RecordCollaborationSection\(\{\s*sb,\s*authState,\s*entityType,\s*entityId,\s*entityLabel,\s*spacing\s*=\s*16,\s*showComments\s*=\s*true,\s*activityLimit\s*=\s*50,\s*activityEventFilter\s*=\s*null,?\s*\}/,
     );
   });
   it('composes CommentsSection and RecordActivityLog', () => {
@@ -30,6 +30,8 @@ describe('RecordCollaborationSection — shared component contract', () => {
     expect(componentSrc).toMatch(/<CommentsSection[\s\S]*?entityLabel=\{entityLabel\}/);
     expect(componentSrc).toMatch(/<RecordActivityLog[\s\S]*?entityType=\{entityType\}/);
     expect(componentSrc).toMatch(/<RecordActivityLog[\s\S]*?entityId=\{entityId\}/);
+    expect(componentSrc).toMatch(/<RecordActivityLog[\s\S]*?limit=\{activityLimit\}/);
+    expect(componentSrc).toMatch(/<RecordActivityLog[\s\S]*?eventFilter=\{activityEventFilter\}/);
   });
   it('applies spacing prop as marginTop on both wrappers', () => {
     const matches = componentSrc.match(/marginTop:\s*spacing/g) || [];
