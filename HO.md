@@ -121,8 +121,12 @@ A dedicated Codex worktree exists at:
 
 `C:\Users\Ronni\WCF-planner-codex`
 
-It was recreated from `main` at `f4c4d3f` on branch
-`codex/parallel-worktree`, with its own `node_modules` installed by `npm ci`.
+It is on branch `codex/parallel-worktree`, resynced to current `main`
+(`af44459`) on 2026-06-04, with its own `node_modules`. This is the only Codex
+worktree; the temporary per-lane worktrees from the 2026-06-04 ship
+(feed/broiler/cattle) were pruned after their lanes merged. For a new parallel
+lane, create a scoped `codex/<lane>` branch from current `main` in this
+worktree rather than reusing a merged lane branch.
 
 Default ownership is unchanged: Codex is still planning lead and reviewer, and
 CC is still primary builder. Ronnie may explicitly assign a build lane to Codex

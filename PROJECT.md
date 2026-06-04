@@ -113,10 +113,12 @@ There are no active commit, push, PROD migration, storage, deploy, or Vault
 gates documented for this checkpoint. If a new session sees a dirty tree, inspect
 it before planning; do not assume it is disposable.
 
-Local worktree note: the main worktree is `C:\Users\Ronni\WCF-planner`.
-Several suffixed Codex worktrees may still exist as shipped branch snapshots
-(`feed`, `broiler`, `cattle`, `pig`). They are not active build lanes unless
-Ronnie explicitly reuses or prunes them.
+Local worktree note: there are two worktrees — the main CC worktree at
+`C:\Users\Ronni\WCF-planner` (`main`) and the canonical Codex worktree at
+`C:\Users\Ronni\WCF-planner-codex` (`codex/parallel-worktree`, resynced to
+current `main`). The temporary per-lane worktrees from the 2026-06-04 ship
+(feed/broiler/cattle/pig) were pruned after merge; their lane branches remain in
+the repo as history. See [HO.md](HO.md) Parallel Codex Worktree.
 
 ### Recommended Work Queue
 
