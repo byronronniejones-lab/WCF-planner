@@ -53,6 +53,16 @@ describe('CattleHerdsView — no legacy Activity or inline CowDetail', () => {
   });
 });
 
+describe('CattleHerdsView — visible herd row columns', () => {
+  it('renders origin as a static row column in flat and grouped herd rows', () => {
+    expect(herdsView).toContain('data-cattle-flat-row-origin={c.id}');
+    expect(herdsView).toContain('data-cattle-grouped-row-origin={c.id}');
+    expect(herdsView).toMatch(/\{c\.origin \|\| '—'\}/);
+    expect(herdsView).toContain("gridTemplateColumns: '48px 16px 70px 110px 60px 160px 140px 70px 90px 1fr'");
+    expect(herdsView).toContain("gridTemplateColumns: '48px 16px 70px 60px 160px 140px 70px 90px 1fr'");
+  });
+});
+
 describe('CollapsibleOutcomeSections — no inline CowDetail', () => {
   it('does not render CowDetail JSX', () => {
     expect(collapsible).not.toMatch(/<CowDetail\b/);

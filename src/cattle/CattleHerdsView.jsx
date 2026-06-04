@@ -1433,7 +1433,7 @@ const CattleHerdsHub = ({
                     style={{
                       padding: '10px 16px 10px 0',
                       display: 'grid',
-                      gridTemplateColumns: '48px 16px 70px 110px 60px 180px 70px 90px 1fr',
+                      gridTemplateColumns: '48px 16px 70px 110px 60px 160px 140px 70px 90px 1fr',
                       alignItems: 'center',
                       gap: 10,
                       cursor: 'pointer',
@@ -1501,6 +1501,18 @@ const CattleHerdsHub = ({
                       }}
                     >
                       {c.breed || '—'}
+                    </span>
+                    <span
+                      data-cattle-flat-row-origin={c.id}
+                      style={{
+                        fontSize: 11,
+                        color: '#6b7280',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {c.origin || '—'}
                     </span>
                     <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
                     <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
@@ -1605,7 +1617,7 @@ const CattleHerdsHub = ({
                             style={{
                               padding: '10px 18px 10px 0',
                               display: 'grid',
-                              gridTemplateColumns: '48px 16px 70px 60px 180px 70px 90px 1fr',
+                              gridTemplateColumns: '48px 16px 70px 60px 160px 140px 70px 90px 1fr',
                               alignItems: 'center',
                               gap: 10,
                               cursor: 'pointer',
@@ -1656,6 +1668,18 @@ const CattleHerdsHub = ({
                               }}
                             >
                               {c.breed || '—'}
+                            </span>
+                            <span
+                              data-cattle-grouped-row-origin={c.id}
+                              style={{
+                                fontSize: 11,
+                                color: '#6b7280',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {c.origin || '—'}
                             </span>
                             <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
                             <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
