@@ -17,11 +17,6 @@ const savedViewsApi = fs.readFileSync(path.join(ROOT, 'src/lib/savedViewsApi.js'
 // ============================================================================
 
 describe('Cattle herd exception filters + groups', () => {
-  it('still renders both exception filter labels', () => {
-    expect(herdsView).toContain('Non Calving Cows');
-    expect(herdsView).toContain('Unmatched Calves');
-  });
-
   it('registers the exception + cutoff filter keys in the pure module', () => {
     expect(filtersLib).toContain("'nonCalvingCows'");
     expect(filtersLib).toContain("'nonCalvingCutoffDate'");
@@ -31,9 +26,26 @@ describe('Cattle herd exception filters + groups', () => {
     expect(filtersLib).toContain('isUnmatchedCalf(cow, todayMs)');
   });
 
-  it('wires the configurable "no calf since" cutoff control', () => {
+  it('non-calving is a single "No calf since" date control — no checkbox', () => {
     expect(herdsView).toContain('nonCalvingCutoffDate');
     expect(herdsView).toContain('data-cattle-noncalving-cutoff');
+    expect(herdsView).toContain('No calf since');
+    // The "Non Calving Cows" checkbox is no longer exposed.
+    expect(herdsView).not.toContain('Non Calving Cows');
+    expect(herdsView).not.toContain('data-cattle-special-filter-checkbox="nonCalvingCows"');
+  });
+
+  it('Unmatched Calves is a checkbox-style filter in Lineage/Other (no Exceptions group)', () => {
+    expect(herdsView).toContain("unmatchedCalves: 'Unmatched Calves'");
+    expect(herdsView).toContain("CHECKBOX_FILTER_KEYS = new Set(['unmatchedCalves'])");
+    // Rendered as a labeled checkbox (not a pill/popover chip).
+    expect(herdsView).toContain('function renderCheckboxFilter');
+    expect(herdsView).toContain('data-cattle-special-filter={key}');
+    expect(herdsView).toContain('data-cattle-special-filter-checkbox={key}');
+    // unmatchedCalves is the last key in the Lineage/Other group and is pushed
+    // to the right edge (marginLeft: auto) — off to the side, not mid-row.
+    expect(herdsView).toMatch(/'weightRange', 'unmatchedCalves'\]/);
+    expect(herdsView).toMatch(/marginLeft: 'auto'/);
   });
 });
 
@@ -61,13 +73,15 @@ describe('Cattle herd filters — always-visible organized groups', () => {
     expect(herdsView).not.toContain('data-cattle-special-filters-row');
   });
 
-  it('renders the four organized filter groups', () => {
+  it('renders three organized filter groups and no Exceptions group', () => {
     expect(herdsView).toContain('data-cattle-filter-groups');
     expect(herdsView).toContain('data-filter-group');
     expect(herdsView).toContain("label: 'Core'");
     expect(herdsView).toContain("label: 'Calving/Breeding'");
     expect(herdsView).toContain("label: 'Lineage/Other'");
-    expect(herdsView).toContain("label: 'Exceptions'");
+    // The Exceptions group/header was removed.
+    expect(herdsView).not.toContain("label: 'Exceptions'");
+    expect(herdsView).not.toContain("key: 'exceptions'");
   });
 });
 

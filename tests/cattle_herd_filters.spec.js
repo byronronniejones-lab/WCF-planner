@@ -366,3 +366,66 @@ test('breed filter dropdown includes historical "Heritage Wagyu" present on cow 
   await expect(popover).toContainText('Heritage Wagyu');
   await expect(popover).toContainText('(historical)');
 });
+
+// --------------------------------------------------------------------------
+// Test 11 — Non-calving "No calf since" date is the only control (no checkbox)
+// --------------------------------------------------------------------------
+test('No calf since date filters mature cows incl. those that calved before the cutoff', async ({
+  page,
+  cattleHerdFiltersScenario,
+}) => {
+  await page.goto('/cattle/herds');
+  await waitForLoaded(page);
+
+  // The non-calving control is a single "No calf since" date — no checkbox.
+  await openFilter(page, 'nonCalving');
+  await expect(page.locator('[data-cattle-special-filter-checkbox="nonCalvingCows"]')).toHaveCount(0);
+  await page.locator('[data-cattle-noncalving-cutoff]').fill('2026-01-01');
+  await page.locator('[data-filter-popover="nonCalving"] >> text=Close').click();
+
+  // Mature mommas whose last calving is missing or before 2026-01-01:
+  //   M002 (calved 2025-05), M004 (calved 2023-06 — past, before cutoff),
+  //   M005 (calved 2024-09). M001 calved 2026-04 (after cutoff) is excluded;
+  //   M003 heifer is not yet 30 months old.
+  await expect(page.locator('[data-cattle-match-count]')).toContainText('3 cattle match');
+});
+
+// --------------------------------------------------------------------------
+// Test 12 — Unmatched Calves checkbox (Lineage/Other) still filters correctly
+// --------------------------------------------------------------------------
+test('Unmatched Calves checkbox filters to calves missing a dam', async ({
+  page,
+  supabaseAdmin,
+  cattleHerdFiltersScenario,
+}) => {
+  // Seed one unmatched calf: no dam, born within the last 4 months.
+  const recent = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  await supabaseAdmin.from('cattle').upsert(
+    {
+      id: 'cow-unmatched-uc900',
+      tag: 'UC900',
+      sex: 'heifer',
+      herd: 'backgrounders',
+      breed: 'Angus',
+      breeding_blacklist: false,
+      birth_date: recent,
+      dam_tag: null,
+      old_tags: [],
+      deleted_at: null,
+      deleted_by: null,
+      processing_batch_id: null,
+    },
+    {onConflict: 'id'},
+  );
+
+  await page.goto('/cattle/herds');
+  await waitForLoaded(page);
+
+  // Checkbox-style filter in Lineage/Other (not a pill chip).
+  await page.locator('[data-cattle-special-filter-checkbox="unmatchedCalves"]').check();
+  await expect(page.locator('[data-cattle-match-count]')).toContainText('1 match');
+
+  await page.locator('input[data-view-mode="flat"]').click();
+  await expect(page.locator('[data-cattle-flat-list] div[id^="cow-"]')).toHaveCount(1);
+  await expect(page.locator('[data-cattle-flat-list] div[id^="cow-"]').first()).toContainText('#UC900');
+});

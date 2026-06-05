@@ -152,12 +152,15 @@ const FILTER_GROUPS = [
   {
     key: 'lineage',
     label: 'Lineage/Other',
-    keys: ['damPresence', 'sirePresence', 'birthDateRange', 'wagyuPctRange', 'weightRange'],
+    // Unmatched Calves is a lineage/data-relationship check (no matched dam),
+    // rendered as a checkbox-style filter pushed off to the right side of the
+    // Lineage/Other row (not mid-row among the chip filters).
+    keys: ['damPresence', 'sirePresence', 'birthDateRange', 'wagyuPctRange', 'weightRange', 'unmatchedCalves'],
   },
-  {key: 'exceptions', label: 'Exceptions', keys: ['unmatchedCalves']},
 ];
-// Boolean toggle chips (no value popover) — click flips the filter on/off.
-const TOGGLE_FILTER_KEYS = new Set(['unmatchedCalves']);
+// Checkbox-style filters (a labeled checkbox, not a pill/popover chip).
+const CHECKBOX_FILTER_KEYS = new Set(['unmatchedCalves']);
+const CHECKBOX_FILTER_LABELS = {unmatchedCalves: 'Unmatched Calves'};
 
 const EMPTY_COW = {
   tag: '',
@@ -845,9 +848,12 @@ const CattleHerdsHub = ({
         return 'Weight: ' + (tierLabels[filters.weightTier] || filters.weightTier);
       }
       case 'nonCalving': {
+        // Single user-facing control is the "No calf since" date. A legacy
+        // persisted nonCalvingCows boolean (no date) still shows the chip active
+        // with its 9-month default label, but the checkbox is no longer exposed.
         if (filters.nonCalvingCutoffDate) return 'No calf since ' + filters.nonCalvingCutoffDate;
-        if (filters.nonCalvingCows === true) return 'Non Calving Cows';
-        return '+ Non-calving';
+        if (filters.nonCalvingCows === true) return 'No calf since (9-mo default)';
+        return '+ No calf since';
       }
       case 'calvedStatus': {
         if ('calvedStatus' in filters) return 'Calved: ' + (filters.calvedStatus === 'yes' ? 'yes' : 'no');
@@ -944,19 +950,42 @@ const CattleHerdsHub = ({
     );
   }
 
-  // Boolean toggle chip (no value popover) — e.g. Unmatched Calves.
-  const TOGGLE_CHIP_LABELS = {unmatchedCalves: 'Unmatched Calves'};
-  function renderToggleChip(key) {
-    const active = filters[key] === true;
-    const label = TOGGLE_CHIP_LABELS[key] || key;
+  // Checkbox-style boolean filter (a labeled checkbox, not a pill chip) — e.g.
+  // Unmatched Calves, which sits in Lineage/Other beside Dam/Sire.
+  function renderCheckboxFilter(key) {
+    const checked = filters[key] === true;
+    const label = CHECKBOX_FILTER_LABELS[key] || key;
     return (
-      <FilterChip
+      <label
         key={key}
-        label={label + (active ? ' ×' : '')}
-        active={active}
-        dataAttr={key}
-        onClick={() => setFilter(key, active ? null : true)}
-      />
+        data-cattle-special-filter={key}
+        style={{
+          // Pushed to the right edge of its group row so it sits off to the
+          // side rather than mid-row among the chip filters.
+          marginLeft: 'auto',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '5px 10px',
+          borderRadius: 6,
+          border: checked ? '1px solid #991b1b' : '1px solid #d1d5db',
+          background: checked ? '#fef2f2' : 'white',
+          color: checked ? '#991b1b' : '#374151',
+          fontSize: 12,
+          fontWeight: checked ? 600 : 500,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => setFilter(key, e.target.checked ? true : null)}
+          data-cattle-special-filter-checkbox={key}
+          style={{margin: 0}}
+        />
+        <span>{label}</span>
+      </label>
     );
   }
 
@@ -968,7 +997,7 @@ const CattleHerdsHub = ({
         style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}
       >
         <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4, minWidth: 96}}>{g.label}</span>
-        {g.keys.map((key) => (TOGGLE_FILTER_KEYS.has(key) ? renderToggleChip(key) : renderFilterChip(key)))}
+        {g.keys.map((key) => (CHECKBOX_FILTER_KEYS.has(key) ? renderCheckboxFilter(key) : renderFilterChip(key)))}
       </div>
     ));
   }
@@ -2284,32 +2313,28 @@ function FilterChipPopover({
 
   switch (filterKey) {
     case 'nonCalving':
+      // Single user-facing control: the "No calf since" date. Setting it shows
+      // mature (30+ month) cows/heifers whose last calving is missing or before
+      // the date. No checkbox; no separate Age filter needed.
       return (
         <div style={popS} data-filter-popover={filterKey}>
-          <label style={{...choiceRowS, cursor: 'pointer'}}>
-            <input
-              type="checkbox"
-              checked={filters.nonCalvingCows === true}
-              onChange={(e) => setFilter('nonCalvingCows', e.target.checked ? true : null)}
-              data-cattle-special-filter-checkbox="nonCalvingCows"
-            />
-            <span style={choiceTextS}>Non Calving Cows</span>
-          </label>
-          <div style={{fontSize: 10, color: '#6b7280', marginBottom: 8}}>
-            Cow/heifer, 30+ months old, no calving record in the last 9 months.
-          </div>
           <div style={rowS}>
             <span>No calf since:</span>
             <input
               type="date"
               value={filters.nonCalvingCutoffDate || ''}
-              onChange={(e) => setFilter('nonCalvingCutoffDate', e.target.value || null)}
+              onChange={(e) => {
+                // The date is the only control: setting it clears any legacy
+                // persisted boolean so state stays unambiguous.
+                setFilter('nonCalvingCutoffDate', e.target.value || null);
+                if (e.target.value) clearFilter('nonCalvingCows');
+              }}
               data-cattle-noncalving-cutoff
-              style={{...inpS, width: 140}}
+              style={{...inpS, width: 150}}
             />
           </div>
           <div style={{fontSize: 10, color: '#6b7280', marginTop: 4}}>
-            Overrides the 9-month default: last calved is missing or before this date.
+            Cows/heifers 30+ months old whose last calving is missing or before this date.
           </div>
           <PopoverFooter
             onClear={() => {
