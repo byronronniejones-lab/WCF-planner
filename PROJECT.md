@@ -7,8 +7,8 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-04.
-Current production checkpoint: latest app/build commit `235647c` on `main`
+Last updated: 2026-06-05.
+Current production checkpoint: latest app/build commit `22799f1` on `main`
 (docs-only commits may sit on top; check `git log` for the exact HEAD).
 Production URL: https://wcfplanner.com.
 
@@ -34,11 +34,19 @@ history and tests for detailed lane history.
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
 - Source of truth: `origin/main`; production app/build checkpoint is commit
-  `235647c` (later docs-only commits do not change the shipped runtime).
+  `22799f1` (2026-06-05 five-lane ship `97da649` + record-nav placement hotfix;
+  later docs-only commits do not change the shipped runtime). Deploys verified by
+  Netlify bundle-hash rotation.
 - Open gates for the shipped tree: none.
-- PROD-applied numbered migration series is live through `094`. Migration `082`
+- PROD-applied numbered migration series is live through `095`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
   cleanup `085` was applied before unique-index migration `084`.
+- Migration `095` (`app_saved_views`, generic per-surface saved views) was
+  applied to TEST then PROD and verified on 2026-06-05: table + RLS
+  (public-or-owner SELECT, owner-only INSERT/UPDATE/DELETE), the owner-stamp
+  (`auth.uid()`) and updated_at/owner-freeze triggers, and grants to
+  `authenticated`. It is the only DB change since `094`; everything else shipped
+  since is code-only.
 - TEST/PROD migrations `074` through `081` plus `084`/`085`/`086` were applied
   and verified during the 2026-06-03 hardening sequence.
 - Light-user portal migrations `087`–`092` (CP1+CP2 ownership) were applied to
@@ -59,6 +67,34 @@ Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
 
+- Five-lane ship, code-only except migration `095`, PROD (2026-06-05, merge
+  `97da649`). Landed together and deploy-verified:
+  - Cattle herd filters / row parity / saved views (migration `095`). Removed the
+    local plain-English/Parse smart filter; organized always-visible filter
+    groups (Core, Calving/Breeding, Lineage/Other — no Exceptions group);
+    `Unmatched Calves` is a checkbox off to the right of Lineage/Other;
+    non-calving is a single "No calf since" date control; flat + grouped rows
+    share one `CowListRow` (calf count + last-calved parity); saved views via
+    `app_saved_views` + `src/lib/savedViewsApi.js` (private/public, owner-only
+    edit/delete, RLS-scoped).
+  - Cattle/sheep/pig weigh-in entry debounce autosave + Days-since and signed
+    +/- weight-delta chips. Per-row Save/Revert removed; edits autosave (700ms),
+    on blur, and are flushed before completing a session. Pig autosaves only
+    weight/note and keeps sent-to-trip / transferred rows locked.
+  - Fixed record-page prev/next navigation: `RecordSequenceNav` pins Prev to the
+    left screen edge and Next to the right (vertically centered, broiler
+    side-nav placement), as sleek flat pills with neighbor titles + a small
+    bottom-center "i of n" pill; stays available while scrolling. Broiler batch
+    joined the shared nav and its custom `BatchForm` side-nav was removed.
+    (Placement settled via the `22799f1` hotfix after a bottom-center version
+    read as hidden.)
+  - Broiler auto-processing: active batches auto-advance to `processed` on/after
+    `processingDate` (inclusive) via `shouldAutoProcessBroilerBatch`, persisted in
+    `loadAllData`.
+  - Equipment caught-up home notices (maintenance + materials) and shared home
+    alert builders in `src/dashboard/homeAlerts.js`; the Light home now shows
+    read-only Missed Daily Reports, Equipment Attention, and Next 30 Days
+    (equipment attention routes to `/equipment/<slug>`, never `/fleet`).
 - Audited RPC follow-ups, migration `094`, PROD (2026-06-04, commit
   `235647c`). Cattle breeding cycle save/delete and sheep lambing record delete
   now route through authenticated SECDEF RPCs with `search_path = public`,
@@ -93,7 +129,9 @@ work:
 - Pig planned-trip weight forecast audit + weigh-in/batch-tile refinements,
   code-only, PROD.
 - Cattle herd missing-dam / exception filters, code-only, PROD. `CattleHerdsView`
-  exception filters backed by `src/lib/cattleHerdFilters.js`.
+  exception filters backed by `src/lib/cattleHerdFilters.js`. (Superseded by the
+  2026-06-05 herd-filters rewrite + saved views, migration `095` — see Latest
+  Shipped Checkpoint and the Cattle And Sheep contract for the current shape.)
 - Broiler on-farm count reconciliation, code-only, PROD. On-farm count derives
   from `src/lib/broiler.js` with a dedicated static guard.
 - Legacy Activity composer RPC retirement, migration `080`, PROD. Historical
@@ -127,12 +165,23 @@ There are no active commit, push, PROD migration, storage, deploy, or Vault
 gates documented for this checkpoint. If a new session sees a dirty tree, inspect
 it before planning; do not assume it is disposable.
 
-Local worktree note: there are two worktrees — the main CC worktree at
-`C:\Users\Ronni\WCF-planner` (`main`) and the canonical Codex worktree at
-`C:\Users\Ronni\WCF-planner-codex` (`codex/parallel-worktree`, resynced to
-current `main`). The temporary per-lane worktrees from the 2026-06-04 ship
-(feed/broiler/cattle/pig) were pruned after merge; their lane branches remain in
-the repo as history. See [HO.md](HO.md) Parallel Codex Worktree.
+Local worktree note: the main CC worktree is at `C:\Users\Ronni\WCF-planner`
+(`main`, HEAD `22799f1`). The canonical Codex worktree is at
+`C:\Users\Ronni\WCF-planner-codex` (currently parked on
+`codex/processing-attach-rpcs`, which is merged to `main`). Five per-lane Codex
+worktrees remain on disk after merge and can be pruned when convenient — all
+their branches are merged to `main`:
+
+- `WCF-planner-codex-pig-autosave` (`codex/pig-weighin-autosave-days-delta`)
+- `WCF-planner-codex-broiler-auto-processed` (`codex/broiler-auto-processed`)
+- `WCF-planner-codex-equipment-caught-up` (`codex/equipment-caught-up-notices`)
+- `WCF-planner-codex-home-alerts-all-users` (`codex/home-alerts-all-users`)
+- `WCF-planner-codex-format-cleanup` (`codex/format-check-cleanup`)
+
+Prune with `git worktree remove <path>` then `git branch -d <branch>` once
+Ronnie confirms (do not prune branches/worktrees unsolicited). Per-lane
+worktrees need their own `node_modules` (`npm ci`) and gitignored `.env.test*`
+to run tests/Playwright. See [HO.md](HO.md) Parallel Codex Worktree.
 
 ### Recommended Work Queue
 
@@ -141,52 +190,22 @@ Shipped 2026-06-04 (removed from queue): authenticated Light-user portal CP1+CP2
 pig planned-trip weight audit, cattle missing-dam herd filters, feed second-tile
 current-month pin, broiler on-farm count reconciliation, and task weekly email
 correction.
+Shipped 2026-06-05 (removed from queue): cattle herd filters / row parity /
+saved views (migration `095`), cattle/sheep/pig weigh-in debounce autosave +
+Days/delta chips, fixed record-page prev/next nav + broiler batch on the shared
+nav, broiler auto-processing on processing date, equipment caught-up home
+notices, and Light home alerts with shared `homeAlerts.js` builders.
 
-1. Cattle herd filters, row parity, and saved views. Build first after wrap.
-   Scope: `/cattle/herds`, `src/lib/cattleHerdFilters.js`, tests, and the next
-   available numbered migration if saved views need database support. Do not
-   use migration `093` or `094`; `093` belongs to the task weekly email lane
-   and `094` belongs to audited RPC follow-ups.
-   - Non-calving filter/sort: keep the current default contract
-     (`Non Calving Cows` = cow/heifer, 30+ months old, no calving record in the
-     last 9 months), but add a configurable "No calf since [date]" cutoff with
-     the same semantics: last calved is missing OR before the cutoff. Preserve
-     backward compatibility for `filters.nonCalvingCows === true`. Add a sort
-     key so non-calving candidates can be sorted first/last.
-   - Flat/grouped parity: flat cattle rows should show the same useful metadata
-     grouped rows show, especially calf count and last-calved date. Prefer a
-     shared row renderer so flat and grouped cannot drift again.
-   - Saved views: all authenticated users can save cattle herd views as private
-     or public, Podio-style. Saved state must include `filters`, `sortRules`,
-     and `viewMode`. Private views are owner-only; public views are visible to
-     all authenticated users. Owners can update/delete their own views. Suggested
-     generic table: `app_saved_views(surface_key, name, visibility, view_state
-     jsonb, owner_profile_id, created_at, updated_at)` with
-     `surface_key = 'cattle.herds'` and RLS for public-or-owner SELECT plus
-     owner-only INSERT/UPDATE/DELETE.
-   - Remove the weak plain-English/Parse filter assistant from cattle herds. Do
-     not present it as AI. Keep a future queue note to investigate a real AI
-     filter/sort assistant.
-   - Remove `More filters` / `Hide more filters`; always render organized
-     filter groups. Suggested groups: Core (Herd, Sex, Age, Breed, Origin,
-     Weight), Calving/Breeding (Non Calving Cows, Calved, Last Calved, Calf
-     Count, Breeding Status, Blacklist), Lineage/Other (Dam, Sire, Birth Date,
-     Wagyu %), and Exceptions (Unmatched Calves if it does not fit cleanly in
-     Calving/Breeding).
-   - Tests: pure tests for configurable non-calving cutoff and sort key; static
-     tests that smart input/Parse/showMoreFilters/Hide more filters are gone;
-     flat/grouped row parity coverage; saved-view migration/RLS coverage; and a
-     Playwright flow for saving/applying a cattle herd view. Validate with
-     relevant `npm test`, `npx playwright test tests/cattle_herd_filters.spec.js`,
-     and `npm run build`.
-2. Real AI filter/sort investigation. The removed cattle plain-English parser
+1. Real AI filter/sort investigation. The removed cattle plain-English parser
    was not robust enough. Later, investigate a real AI-assisted filter/sort
    solution across list views with explicit preview/apply behavior and tests.
-3. Equipment caught-up home notices. Add home tile notices when equipment
-   maintenance and equipment materials are fully caught up, analogous to the
-   "no missing daily reports" state.
-4. Follow-on audited RPCs where remaining flows still have partial-state or
+   The current filters use organized always-visible groups; a real assistant
+   should layer on top with explicit preview/apply, not replace them.
+2. Follow-on audited RPCs where remaining flows still have partial-state or
    audit gaps.
+3. Webform-light identity lane (future). Authenticated read-only field-user
+   access model + field-portal home; design before code. Do not revive the
+   shelved roster-id -> profile-id mapping (migration `083`).
 
 ### Light-User Portal Contract
 
@@ -219,6 +238,13 @@ Shipped contract:
 - Equipment fueling and fuel supply own-record edits/deletes for Light happen in
   My Submissions through ownership RPCs. Privileged fleet/admin surfaces remain
   available to privileged roles under RLS/RPC controls.
+- The Light home portal (`LightHomePortal.jsx`) shows read-only alert cards above
+  the shortcut grid — Missed Daily Reports and Equipment Attention — plus a
+  Next-30 events list below (only when there are events). These reuse the shared
+  `src/dashboard/homeAlerts.js` builders. RLS, not UI, is the boundary: a real
+  `light` user must be able to read `app_store`/equipment/`equipment_fuelings`
+  for these cards, proven behaviorally by `tests/light_home_alerts.spec.js`
+  (real Light auth user, not the client-only role override).
 
 Guard rails: `light_user_portal_static.test.js`,
 `daily_edit_surface_static.test.js`, `daily_soft_delete_static.test.js`, and
@@ -295,6 +321,13 @@ Live Activity entity types and routes:
 No operational record workspace should reintroduce legacy `ActivityPanel` or
 `ActivityModal`. Comments are discussion; Activity is audit/history.
 
+Record-page prev/next sequence navigation is owned by the shared
+`RecordSequenceNav` (Prev pinned to the left screen edge, Next to the right,
+vertically centered — broiler side-nav placement). Broiler batch pages use the
+shared component; the old bespoke `BatchForm` side-nav was removed. Nav renders
+only when route state carries a valid sequence; direct links/notifications get
+no nav.
+
 ---
 
 ## Backend And Data State
@@ -349,6 +382,16 @@ Current PROD architecture includes these load-bearing migrations:
 - `094` audited RPC follow-ups: cattle breeding cycle upsert/delete and sheep
   lambing delete through authenticated SECDEF RPCs with transactional Activity
   writes.
+- `095` `app_saved_views`: generic per-surface saved views
+  (`id, surface_key, name, visibility, view_state jsonb, owner_profile_id,
+  created_at, updated_at`). Server-trusted ownership — BEFORE INSERT trigger
+  stamps `owner_profile_id := auth.uid()`; BEFORE UPDATE freezes owner +
+  refreshes `updated_at`. RLS: public-or-owner SELECT, owner-only
+  INSERT/UPDATE/DELETE; grants to `authenticated` only. First consumer is the
+  cattle herds list (`surface_key = 'cattle.herds'`) via
+  `src/lib/savedViewsApi.js`. Direct client CRUD is acceptable here because
+  RLS scopes every operation (saved views are user preferences, not
+  audit-critical entity writes). Applied TEST + PROD 2026-06-05.
 
 Special migration notes:
 
@@ -412,7 +455,16 @@ Append-only upload expectations:
 - `src/shared/RecordPageShell.jsx`: shared record-page chrome.
 - `src/shared/RecordCollaborationSection.jsx`: Comments + Activity composition.
 - `src/shared/RecordActivityLog.jsx`: audit-only record Activity view.
-- `src/shared/RecordSequenceNav.jsx`: sequence navigation.
+- `src/shared/RecordSequenceNav.jsx`: fixed prev/next record navigation pinned to
+  the left/right screen edges (broiler side-nav placement).
+- `src/dashboard/homeAlerts.js`: single source of truth for home/Light alert
+  builders (`buildNext30Events`, `buildMissedDailyReports`,
+  `buildEquipmentAttention`, `foldEquipmentFuelings`), shared by
+  `HomeDashboard` and `LightHomePortal`.
+- `src/lib/savedViewsApi.js`: `app_saved_views` CRUD + `buildViewState`
+  (first consumer: cattle herds list).
+- `src/lib/cattleHerdFilters.js`: pure cattle herd filter/sort predicates
+  (vitest-locked).
 - `src/shared/InlineNotice.jsx`: non-blocking notices.
 - `src/shared/DeleteModal.jsx` and `src/shared/ConfirmModal.jsx`: app modal
   primitives.
@@ -558,15 +610,28 @@ Workflow/worktable entities:
   Activity in one transaction.
 - Processing-batch helpers may need to resolve deleted animals by ID in admin
   context; do not add `deleted_at` filters there without redesign.
-- Cattle Herds tab exception filters live in `src/lib/cattleHerdFilters.js` and
-  render as checkboxes in the existing herd filter bar:
-  - `Non Calving Cows`: cow/heifer, at least 30 months old, and no calving
-    record in the last 9 months.
-  - `Unmatched Calves`: any sex, no matched dam, and either born in the last 4
-    months or missing DOB.
-- Exception filters compose as OR with each other and still compose with herd,
-  normal filters, and search. Current last-calved lookup is by current tag, not
-  old tags; treat that as the accepted edge unless Ronnie asks to change it.
+- Cattle Herds filters/sorts live in `src/lib/cattleHerdFilters.js` (pure,
+  vitest-locked); UI is `CattleHerdsView`. Filters render in three
+  always-visible groups (Core, Calving/Breeding, Lineage/Other) — no "More
+  filters" toggle, no Exceptions group, and no plain-English/Parse smart
+  assistant (removed; a real AI assistant is a future queue item).
+- Non-calving is a single "No calf since [date]" control: mature cow/heifer
+  (30+ months) whose last calving is missing OR before the date. Backward
+  compatibility — `filters.nonCalvingCows === true` still means the
+  9-months-ago default in the predicate, but the checkbox is no longer exposed.
+  A `nonCalving` sort key ranks candidates first/last.
+- `Unmatched Calves` is a checkbox-style filter pushed to the right of
+  Lineage/Other: any sex, no matched dam, born in the last 4 months or missing
+  DOB (`filters.unmatchedCalves === true`). Exception predicates compose as OR
+  and still compose with herd/normal filters/search. Last-calved lookup is by
+  current tag, not old tags (accepted edge).
+- Flat and grouped rows render through one shared `CowListRow`, so calf count +
+  last-calved metadata cannot drift between the two views (shown for females).
+- Saved views: `src/lib/savedViewsApi.js` over `app_saved_views`
+  (`surface_key = 'cattle.herds'`). Any authenticated user saves private or
+  public views capturing `{filters, sortRules, viewMode}`; public-or-owner
+  visibility, owner-only update/delete, RLS-enforced. Load failures degrade to a
+  disabled picker + inline notice (the list still works).
 
 ### Daily Reports
 
@@ -633,6 +698,9 @@ Workflow/worktable entities:
 - Weigh-in entry tiles show previous weigh-in/date and rank-matched per-pig ADG
   when a prior session exists. Blank notes are hidden behind `+ Note`; existing
   notes still show.
+- Pig weigh-in entry autosaves; the tile shows a days-since-last-weigh-in delta
+  alongside the previous session so the gap between weigh-ins is visible at a
+  glance.
 - Pig batch hub tiles show started count, current count, feed per pig started,
   and sub-batch chips.
 
@@ -656,6 +724,12 @@ Workflow/worktable entities:
   `src/lib/broiler.js`. "Birds on Farm" means projected live birds after
   mortality; "Birds Started" is shown separately. Home and Broiler Home use the
   same helper.
+- Broiler batch status auto-advances in `loadAllData` (`src/main.jsx`):
+  `shouldAutoActivateBroilerBatch` promotes planned -> active on/after the hatch
+  date, then `shouldAutoProcessBroilerBatch` (both in `src/lib/broiler.js`)
+  promotes active -> processed on/after the processing date (inclusive of
+  today). Auto-process runs after auto-activation within the same `ppp-v4`
+  migration map and persists before the webform mirror sync reads the store.
 
 ### Tasks
 
@@ -668,12 +742,12 @@ Workflow/worktable entities:
   on `webform_config` read errors.
 - Header task badge soft-fails and must not break Header rendering.
 - The `task_completed` notification contract is covered by Playwright.
-- Current weekly task email is an open-task digest grouped by assignee only; it
-  does not include completed-task notices owed to the creator/assignor.
-- Current weekly task email cron is `tasks-summary-weekly` at `0 13 * * 1`
-  (Monday 13:00 UTC), which is Monday 8am Central during daylight time. Product
-  target is Sunday 8am Central; the build lane must decide fixed UTC versus
-  true America/Chicago DST behavior.
+- Weekly task email (`tasks-summary-weekly`, migration `093`) runs Sunday 8am
+  America/Chicago via dual UTC cron entries with helper-side DST gating; the
+  weekly window starts at the previous Sunday 8am Central. Recipients are open
+  assignees unioned with completed-assigned recipients (completed-task notices
+  owed to creators/assignors via `task_completed` notifications); assigned-only
+  recipients still get email, both-empty recipients are skipped.
 
 ### Equipment
 
@@ -692,9 +766,11 @@ Workflow/worktable entities:
   date-uniqueness — multiple legitimate same-day service events are still
   allowed. Fuelings and `fuel_supplies` already had `client_submission_id`
   idempotency (`030`).
-- Backlog: home equipment tiles should show caught-up notices when all equipment
-  maintenance and equipment materials are current, mirroring the "no missing
-  daily reports" state.
+- Home equipment tiles show caught-up notices when all equipment maintenance and
+  all equipment materials are current, mirroring the "no missing daily reports"
+  state (`showEquipmentMaintenanceCaughtUp` / `showEquipmentMaterialsCaughtUp`
+  in `HomeDashboard`, fed by `buildEquipmentAttention` in
+  `src/dashboard/homeAlerts.js`).
 - Admin client error review is at `/admin/client-errors` and reads through
   `list_client_errors` only.
 
@@ -738,7 +814,18 @@ Workflow/worktable entities:
 - `RecordCollaborationSection` is the only component that composes
   `CommentsSection` and `RecordActivityLog`.
 - `RecordActivityLog` is audit-only and filters `comment.posted`.
-- `RecordSequenceNav` is the shared sequence-navigation primitive.
+- `RecordSequenceNav` is the shared sequence-navigation primitive: fixed flat
+  pills pinned to the left (Prev) and right (Next) screen edges, vertically
+  centered, with a small bottom-center "i of n" pill. Hooks
+  (`data-record-seq-nav/-prev/-next/-position/-fixed`) are locked by the
+  `*_sequence_nav.spec.js` suites. Note the fixed-position gotchas: the
+  container must carry no CSS transform (a transformed ancestor re-anchors
+  `position:fixed` children to itself), and the position pill stays in-flow so
+  the container has a real, visible box.
+- `app_saved_views` saved views are a generic per-surface primitive
+  (`savedViewsApi.js`, `surface_key`); the cattle herds list is the first
+  consumer. New consumers reuse the same table/API with a distinct
+  `surface_key`.
 - `DeleteModal` and `ConfirmModal` are app-level modal primitives, with known
   local exceptions locked by `shared_ui_extraction_contract_static.test.js`.
 - Record page controls live in `src/shared/recordPageControls.jsx`.
@@ -795,15 +882,16 @@ Focused starting points:
 | Comments and mentions    | `tests/static/comments_foundation_static.test.js`, `tests/static/mention_deep_links_static.test.js`                                                             |
 | Notifications            | `tests/static/notifications_static.test.js`, `tests/notifications_task_completed.spec.js`                                                                        |
 | Tasks                    | `tests/static/tasks_*.test.js`, `src/lib/tasksCenterApi.test.js`, `src/lib/tasksAdminApi.test.js`, `tests/tasks_v2_*.spec.js`                                  |
-| Record pages             | `tests/static/record_page_*.test.js`, per-entity static tests, sequence-nav specs                                                                                |
+| Record pages             | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js`, `tests/record_sequence_nav_fixed.spec.js`, `tests/static/record_sequence_nav_cp3_static.test.js` |
+| Home / dashboard alerts  | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/light_home_alerts.spec.js` |
 | Readiness                | `tests/static/load_retry_robustness_inventory_static.test.js`, `tests/static/*readiness*`                                                                       |
 | Mutation/delete/recovery | `tests/static/mutation_semantics_inventory_static.test.js`, `tests/static/delete_recovery_classification_static.test.js`, `tests/static/hard_delete_owner_static.test.js` |
-| Cattle                   | `tests/static/cattle_*.test.js`, `tests/cattle_*.spec.js`                                                                                                       |
+| Cattle                   | `tests/static/cattle_*.test.js`, `tests/cattle_*.spec.js`, `src/lib/cattleHerdFilters.test.js`, `tests/static/app_saved_views_migration_static.test.js`         |
 | Sheep                    | `tests/static/sheep_*.test.js`, `tests/sheep_*.spec.js`                                                                                                         |
 | Daily reports            | `tests/static/daily_*.test.js`, `tests/static/cp2_daily_writes_via_rpc_static.test.js`, `tests/daily_*.spec.js`                                                 |
 | Feed planning            | `src/lib/feedPlanner.test.js`, `src/lib/feedOrderBasis.test.js`, `tests/static/feed_order_board_static.test.js`                                                 |
 | Pig                      | `src/lib/pig*.test.js`, `tests/pig_*.spec.js`                                                                                                                   |
-| Broiler/layer            | `src/lib/broiler.test.js`, `src/layer/*.test.js`, `tests/broiler_*.spec.js`, `tests/layer_*.spec.js`                                                           |
+| Broiler/layer            | `src/lib/broiler.test.js`, `tests/static/broiler_hatch_activation_static.test.js`, `src/layer/*.test.js`, `tests/broiler_*.spec.js`, `tests/layer_*.spec.js`    |
 | Equipment                | `src/lib/equipment.test.js`, `tests/static/equipment_*.test.js`, `tests/equipment_*.spec.js`                                                                    |
 | Login/offline webforms   | `tests/static/light_user_portal_static.test.js`, `tests/offline_*.spec.js`, `tests/team_availability.spec.js`, `tests/daily_report_photos.spec.js`             |
 | Storage/media guards     | `tests/static/*storage*.test.js`, `tests/static/*photo*.test.js`, `tests/static/image_file_input_capture_static.test.js`                                       |
