@@ -1,8 +1,7 @@
 // Generic record-page form controls + layout primitives. The daily-report
 // hotfix established this as the reusable site-wide standard: a consistent
 // label/value grid, predictable control widths, aligned boolean controls,
-// roomy textareas, a responsive (stacks on mobile) field row, and the
-// roster-backed Team Member dropdown.
+// roomy textareas, and a responsive (stacks on mobile) field row.
 //
 // FUTURE CONSUMERS (migrate onto these in a dedicated "record page visual
 // consistency" lane — do NOT refactor them here): task instance, weigh-in
@@ -90,6 +89,34 @@ export const recordCheckbox = {width: 18, height: 18, cursor: 'pointer'};
 // to migrate a contained form card.
 export const RECORD_FORM_MAXWIDTH = 960;
 
+const lockedTeamMemberBox = {
+  ...recordControl,
+  background: '#f9fafb',
+  borderColor: '#e5e7eb',
+  color: '#374151',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+};
+
+export function LockedTeamMemberField({value, label = null, labelStyle, style}) {
+  const display = value || 'Signed-in user';
+  return (
+    <div>
+      {label != null && <label style={labelStyle}>{label}</label>}
+      <div
+        data-team-member-select="1"
+        data-team-member-select-locked="1"
+        style={style ? {...lockedTeamMemberBox, ...style} : lockedTeamMemberBox}
+      >
+        <span style={{fontWeight: 600}}>{display}</span>
+        <span style={{fontSize: 11, color: '#9ca3af'}}>signed in</span>
+      </div>
+    </div>
+  );
+}
+
 // Roster-backed Team Member dropdown. Loads the team roster and renders the
 // active names. The currently-saved value is preserved: if it is not in the
 // active roster it is offered as a selectable historical option labeled
@@ -116,12 +143,7 @@ export function TeamMemberSelect({sb, value, onChange, style}) {
   const v = value || '';
   const isHistorical = v !== '' && !names.includes(v);
   return (
-    <select
-      data-team-member-select="1"
-      value={v}
-      onChange={(e) => onChange(e.target.value)}
-      style={style || recordControl}
-    >
+    <select data-team-member-select="1" value={v} onChange={(e) => onChange?.(e.target.value)} style={style || recordControl}>
       <option value="">— Select team member —</option>
       {names.map((n) => (
         <option key={n} value={n}>
