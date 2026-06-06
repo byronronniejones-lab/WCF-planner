@@ -48,7 +48,6 @@ async function seedActiveEquipment(supabaseAdmin, overrides = {}) {
     attachment_checklists: [],
     manuals: [],
     documents: [],
-    team_members: [],
     ...overrides,
   };
   const {error} = await supabaseAdmin.from('equipment').upsert(row, {onConflict: 'id'});

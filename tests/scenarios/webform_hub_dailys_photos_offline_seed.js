@@ -4,19 +4,11 @@
 // forms need to render submit-able with photos, plus the layer + egg
 // minimums for negative-lock tests.
 
-const ROSTER = [{id: 'tm-bman', name: 'BMAN', active: true}];
-
 export async function seedWebformHubDailysPhotosOffline(supabaseAdmin) {
-  // Roster (canonical + legacy mirror).
-  let r = await supabaseAdmin.from('webform_config').upsert({key: 'team_roster', data: ROSTER}, {onConflict: 'key'});
-  if (r.error) throw new Error(`seed: team_roster ${r.error.message}`);
-  r = await supabaseAdmin.from('webform_config').upsert({key: 'team_members', data: ['BMAN']}, {onConflict: 'key'});
-  if (r.error) throw new Error(`seed: team_members ${r.error.message}`);
-
   // Broiler groups (drives /webforms/broiler batch dropdown). Two entries
   // so the Add-Group rejection negative-lock test can pick a distinct
   // extra batch.
-  r = await supabaseAdmin
+  let r = await supabaseAdmin
     .from('webform_config')
     .upsert({key: 'broiler_groups', data: ['B-26-01', 'B-26-02']}, {onConflict: 'key'});
   if (r.error) throw new Error(`seed: broiler_groups ${r.error.message}`);
@@ -78,5 +70,5 @@ export async function seedWebformHubDailysPhotosOffline(supabaseAdmin) {
     if (ins.error) throw new Error(`seed: cattle_feed_inputs ${f.id} ${ins.error.message}`);
   }
 
-  return {roster: ROSTER, feedInputs: feedRows};
+  return {feedInputs: feedRows};
 }

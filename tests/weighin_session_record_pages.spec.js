@@ -69,20 +69,12 @@ async function seedEntry(supabaseAdmin, {id, sessionId, tag, weight, note}) {
   return row;
 }
 
-async function seedRoster(supabaseAdmin) {
-  await supabaseAdmin
-    .from('webform_config')
-    .upsert({key: 'team_roster', data: [{id: 'tm-bman', name: 'BMAN'}]}, {onConflict: 'key'});
-  await supabaseAdmin.from('webform_config').upsert({key: 'team_members', data: ['BMAN']}, {onConflict: 'key'});
-}
-
 // ============================================================================
 // List-to-record navigation
 // ============================================================================
 
 test('cattle list tile navigates to /weigh-in-sessions/<id>', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
-  await seedRoster(supabaseAdmin);
   const sess = await seedSession(supabaseAdmin, {id: 'nav-cattle-1', species: 'cattle', herd: 'finishers'});
   await seedEntry(supabaseAdmin, {id: 'nav-cattle-e1', sessionId: sess.id, tag: '100', weight: 500});
 
@@ -98,7 +90,6 @@ test('cattle list tile navigates to /weigh-in-sessions/<id>', async ({page, supa
 
 test('sheep list tile navigates to /weigh-in-sessions/<id>', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
-  await seedRoster(supabaseAdmin);
   const sess = await seedSession(supabaseAdmin, {id: 'nav-sheep-1', species: 'sheep', herd: 'feeders'});
   await seedEntry(supabaseAdmin, {id: 'nav-sheep-e1', sessionId: sess.id, tag: '200', weight: 80});
 
@@ -114,7 +105,6 @@ test('sheep list tile navigates to /weigh-in-sessions/<id>', async ({page, supab
 
 test('pig list tile navigates to /weigh-in-sessions/<id>', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
-  await seedRoster(supabaseAdmin);
   await supabaseAdmin.from('webform_config').upsert({key: 'active_groups', data: ['P-TEST-01']}, {onConflict: 'key'});
   const sess = await seedSession(supabaseAdmin, {id: 'nav-pig-1', species: 'pig', batchId: 'P-TEST-01'});
   await seedEntry(supabaseAdmin, {id: 'nav-pig-e1', sessionId: sess.id, weight: 250});
@@ -131,7 +121,6 @@ test('pig list tile navigates to /weigh-in-sessions/<id>', async ({page, supabas
 
 test('broiler list tile navigates to /weigh-in-sessions/<id>', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
-  await seedRoster(supabaseAdmin);
   await supabaseAdmin.from('webform_config').upsert({key: 'broiler_groups', data: ['B-TEST-01']}, {onConflict: 'key'});
   await supabaseAdmin
     .from('app_store')
@@ -162,7 +151,6 @@ test('broiler list tile navigates to /weigh-in-sessions/<id>', async ({page, sup
 
 test('cattle: edit weight + note, autosave, reload, persist', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
-  await seedRoster(supabaseAdmin);
   const priorSess = await seedSession(supabaseAdmin, {
     id: 'save-cattle-prior-1',
     species: 'cattle',
@@ -233,7 +221,6 @@ test('cattle: edit weight + note, autosave, reload, persist', async ({page, supa
 
 test('sheep: edit weight + note, autosave, reload, persist', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
-  await seedRoster(supabaseAdmin);
   const priorSess = await seedSession(supabaseAdmin, {
     id: 'save-sheep-prior-1',
     species: 'sheep',
@@ -297,7 +284,6 @@ test('sheep: edit weight + note, autosave, reload, persist', async ({page, supab
 
 test('pig: edit weight + note, autosave, reload, persist', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
-  await seedRoster(supabaseAdmin);
   await supabaseAdmin.from('webform_config').upsert({key: 'active_groups', data: ['P-TEST-01']}, {onConflict: 'key'});
   const priorSess = await seedSession(supabaseAdmin, {
     id: 'save-pig-prior-1',
@@ -367,7 +353,6 @@ test('comment hash scroll: navigate to #comment-<id> scrolls target into view', 
   await resetDb();
   // Also clear stale comments from prior runs (comments table is not in the reset truncate list)
   await supabaseAdmin.from('comments').delete().neq('id', '__never__');
-  await seedRoster(supabaseAdmin);
   const sess = await seedSession(supabaseAdmin, {id: 'hash-cattle-1', species: 'cattle', herd: 'finishers'});
   await seedEntry(supabaseAdmin, {id: 'hash-cattle-e1', sessionId: sess.id, tag: '100', weight: 500});
   await supabaseAdmin.from('cattle').upsert(

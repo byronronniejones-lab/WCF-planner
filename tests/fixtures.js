@@ -219,9 +219,9 @@ export const test = base.extend({
     await use(ids);
   },
   // webformHubDailysPhotosOfflineScenario — Phase 1D-B photo queue setup
-  // for the WebformHub broiler/pig/cattle/sheep paths. Seeds team_roster
-  // + broiler_groups + active_groups + cattle_feed_inputs so all 4
-  // in-scope forms render submit-able. Layer + egg negative-lock tests
+  // for the WebformHub broiler/pig/cattle/sheep paths. Seeds
+  // broiler_groups + active_groups + webform_settings + cattle_feed_inputs
+  // so all 4 in-scope forms render submit-able. Layer + egg negative-lock tests
   // share this fixture (egg has no extra reqs; layer's negative-lock
   // doesn't actually submit so its lack of layer_groups doesn't matter).
   webformHubDailysPhotosOfflineScenario: async ({supabaseAdmin}, use) => {

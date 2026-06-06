@@ -11,13 +11,6 @@ import {waitForWeighInListLoaded, waitForWeighInSessionLoaded} from './helpers/w
 // and a direct URL open (no route state) hides the controls.
 // ============================================================================
 
-async function seedRoster(supabaseAdmin) {
-  await supabaseAdmin
-    .from('webform_config')
-    .upsert({key: 'team_roster', data: [{id: 'tm-bman', name: 'BMAN'}]}, {onConflict: 'key'});
-  await supabaseAdmin.from('webform_config').upsert({key: 'team_members', data: ['BMAN']}, {onConflict: 'key'});
-}
-
 async function seedSession(supabaseAdmin, {id, herd, date}) {
   const r = await supabaseAdmin.from('weigh_in_sessions').upsert(
     {
@@ -43,7 +36,6 @@ async function seedSession(supabaseAdmin, {id, herd, date}) {
 test.describe('Weigh-in session sequence navigation', () => {
   test('list tile opens with Prev/Next; Next advances within the sequence', async ({page, supabaseAdmin, resetDb}) => {
     await resetDb();
-    await seedRoster(supabaseAdmin);
     // Newest first by date → visible order ws-1, ws-2, ws-3.
     await seedSession(supabaseAdmin, {id: 'ws-1', herd: 'finishers', date: '2026-05-03'});
     await seedSession(supabaseAdmin, {id: 'ws-2', herd: 'mommas', date: '2026-05-02'});
@@ -74,7 +66,6 @@ test.describe('Weigh-in session sequence navigation', () => {
 
   test('direct URL open hides the sequence controls', async ({page, supabaseAdmin, resetDb}) => {
     await resetDb();
-    await seedRoster(supabaseAdmin);
     await seedSession(supabaseAdmin, {id: 'ws-1', herd: 'finishers', date: '2026-05-03'});
     await seedSession(supabaseAdmin, {id: 'ws-2', herd: 'mommas', date: '2026-05-02'});
 

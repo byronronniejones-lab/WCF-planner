@@ -5,20 +5,12 @@
 //     pre-stamped with week4Lbs=1.5 to match the seeded complete session
 //   - webform_config.broiler_groups + broiler_batch_meta (active-only
 //     filter would put B-26-01 in both; helper output mirrored directly)
-//   - team_roster: BMAN + JANE active. Tests that need a retired-name
-//     scenario insert a team_member='RETIREE' on a session row directly;
-//     the active roster never includes RETIREE.
 //   - 2 broiler weigh-in sessions for the batch:
 //       sd-draft   : status='draft',    broiler_week=4, BMAN, 0 entries
 //       sd-complete: status='complete', broiler_week=4, BMAN, 5 entries
 //                    (avg 1.5; matches pre-stamped ppp-v4.week4Lbs)
 //   - tests that need a SECOND complete wk4 session for the
 //     two-session WK 4→6 case (T4) seed it themselves via supabaseAdmin.
-
-const ROSTER = [
-  {id: 'tm-bman', name: 'BMAN'},
-  {id: 'tm-jane', name: 'JANE'},
-];
 
 const PPPV4 = [
   {
@@ -39,16 +31,8 @@ const DRAFT_ID = 'sd-draft';
 const COMPLETE_ID = 'sd-complete';
 
 export async function seedAdminBroilerSessionMeta(supabaseAdmin) {
-  // Roster (canonical + legacy mirror).
-  let r = await supabaseAdmin.from('webform_config').upsert({key: 'team_roster', data: ROSTER}, {onConflict: 'key'});
-  if (r.error) throw new Error(`seedAdminBroilerSessionMeta: team_roster ${r.error.message}`);
-  r = await supabaseAdmin
-    .from('webform_config')
-    .upsert({key: 'team_members', data: ['BMAN', 'JANE']}, {onConflict: 'key'});
-  if (r.error) throw new Error(`seedAdminBroilerSessionMeta: team_members ${r.error.message}`);
-
   // Public broiler webform_config keys (active-only filter output mirrored).
-  r = await supabaseAdmin
+  let r = await supabaseAdmin
     .from('webform_config')
     .upsert({key: 'broiler_groups', data: BROILER_GROUPS}, {onConflict: 'key'});
   if (r.error) throw new Error(`seedAdminBroilerSessionMeta: broiler_groups ${r.error.message}`);
@@ -114,7 +98,6 @@ export async function seedAdminBroilerSessionMeta(supabaseAdmin) {
     batchId: BATCH_ID,
     draftId: DRAFT_ID,
     completeId: COMPLETE_ID,
-    roster: ROSTER,
     pppv4: PPPV4,
   };
 }

@@ -82,7 +82,6 @@ async function seedAlertsData(supabaseAdmin) {
       attachment_checklists: [],
       manuals: [],
       documents: [],
-      team_members: [],
     },
     {onConflict: 'id'},
   );

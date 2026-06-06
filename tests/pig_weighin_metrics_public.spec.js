@@ -87,11 +87,7 @@ async function seedActiveDraftSession(supabaseAdmin) {
   );
   await supabaseAdmin.from('app_store').upsert({key: 'ppp-breeders-v1', data: []}, {onConflict: 'key'});
 
-  // webform_config so the public picker has the team + active groups.
-  await supabaseAdmin
-    .from('webform_config')
-    .upsert({key: 'team_roster', data: [{id: 'tm-bman', name: 'BMAN'}]}, {onConflict: 'key'});
-  await supabaseAdmin.from('webform_config').upsert({key: 'team_members', data: ['BMAN']}, {onConflict: 'key'});
+  // webform_config so the public picker has the active groups.
   await supabaseAdmin.from('webform_config').upsert({key: 'active_groups', data: [SUB_NAME]}, {onConflict: 'key'});
 
   // Draft session with five entries, deliberately scrambled by weight.

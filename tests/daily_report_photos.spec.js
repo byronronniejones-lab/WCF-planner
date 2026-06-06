@@ -36,13 +36,6 @@ function tinyImageFile(name) {
   return {name, mimeType: 'image/png', buffer: TINY_PNG};
 }
 
-async function seedTeamRoster(supabaseAdmin) {
-  // Minimum roster the daily forms need to render their team-member dropdown.
-  const roster = [{id: 'tm-bman', name: 'BMAN', active: true}];
-  await supabaseAdmin.from('webform_config').upsert({key: 'team_roster', data: roster}, {onConflict: 'key'});
-  await supabaseAdmin.from('webform_config').upsert({key: 'team_members', data: ['BMAN']}, {onConflict: 'key'});
-}
-
 // Sheep form is the simplest of the 5 supported daily forms — only
 // requires date (auto-fills today), team_member, and flock. Date and the
 // dropdown selectors are stable; the photo capture renders just above the
@@ -56,7 +49,7 @@ async function gotoSheepWebform(page) {
 async function fillSheepRequiredFields(page) {
   // The page renders selects in document order: team-member dropdown, then
   // flock dropdown. Use poll to wait until BMAN is in the team dropdown
-  // (loadRoster is async).
+  // (the submitter loads asynchronously).
   const teamSelect = page.locator('select').first();
   await expect.poll(async () => await teamSelect.locator('option').allTextContents()).toContain('BMAN');
   await teamSelect.selectOption({label: 'BMAN'});
@@ -75,7 +68,6 @@ test('public sheep daily submit with 2 photos: row + storage objects land', asyn
   browser,
 }) => {
   await resetDb();
-  await seedTeamRoster(supabaseAdmin);
 
   const anon = await browser.newContext({storageState: undefined});
   const anonPage = await anon.newPage();
@@ -124,7 +116,6 @@ test('public sheep daily submit with 2 photos: row + storage objects land', asyn
 // --------------------------------------------------------------------------
 test('public sheep daily submit without photos works (photos: [])', async ({page, supabaseAdmin, resetDb, browser}) => {
   await resetDb();
-  await seedTeamRoster(supabaseAdmin);
 
   const anon = await browser.newContext({storageState: undefined});
   const anonPage = await anon.newPage();
@@ -153,7 +144,6 @@ test('public sheep daily submit without photos works (photos: [])', async ({page
 // --------------------------------------------------------------------------
 test('photo cap regression: 11th photo selection caps at 10', async ({page, supabaseAdmin, resetDb, browser}) => {
   await resetDb();
-  await seedTeamRoster(supabaseAdmin);
 
   const anon = await browser.newContext({storageState: undefined});
   const anonPage = await anon.newPage();
@@ -185,7 +175,6 @@ test('admin display: photo chip on tile + thumbnails in edit modal (signed URL)'
   resetDb,
 }) => {
   await resetDb();
-  await seedTeamRoster(supabaseAdmin);
 
   // Seed a sheep daily row with 2 photos via service-role. We don't actually
   // upload files to storage here — the chip + thumbnail display only needs
@@ -254,7 +243,6 @@ test('hotfix: Home Last-5-Days tile → record page with locked submitter + phot
   resetDb,
 }) => {
   await resetDb();
-  await seedTeamRoster(supabaseAdmin);
 
   // Seed inside the home "Last 5 Days" window (today's date). team_member is
   // intentionally NOT in the seeded roster; record pages preserve the saved
@@ -339,7 +327,6 @@ test('photo upload failure routes to state="queued" (no row inserted yet)', asyn
   browser,
 }) => {
   await resetDb();
-  await seedTeamRoster(supabaseAdmin);
 
   const anon = await browser.newContext({storageState: undefined});
   const anonPage = await anon.newPage();
@@ -392,7 +379,6 @@ test('multi-row daily block: photos + extra group rejected, no row inserted', as
   browser,
 }) => {
   await resetDb();
-  await seedTeamRoster(supabaseAdmin);
 
   // Broiler-specific seed: a couple of batches + Add-Group enabled.
   await supabaseAdmin

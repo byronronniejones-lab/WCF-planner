@@ -54,8 +54,6 @@ const PPPV4 = [
   },
 ];
 
-const ROSTER = [{id: 'tm-bman', name: 'BMAN'}];
-
 export async function seedBroilerWeighInSchooners(supabaseAdmin) {
   let r = await supabaseAdmin
     .from('webform_config')
@@ -67,12 +65,6 @@ export async function seedBroilerWeighInSchooners(supabaseAdmin) {
     .upsert({key: 'broiler_batch_meta', data: BROILER_BATCH_META}, {onConflict: 'key'});
   if (r.error) throw new Error(`seedBroilerWeighInSchooners: broiler_batch_meta upsert failed: ${r.error.message}`);
 
-  r = await supabaseAdmin.from('webform_config').upsert({key: 'team_roster', data: ROSTER}, {onConflict: 'key'});
-  if (r.error) throw new Error(`seedBroilerWeighInSchooners: team_roster upsert failed: ${r.error.message}`);
-
-  r = await supabaseAdmin.from('webform_config').upsert({key: 'team_members', data: ['BMAN']}, {onConflict: 'key'});
-  if (r.error) throw new Error(`seedBroilerWeighInSchooners: team_members upsert failed: ${r.error.message}`);
-
   r = await supabaseAdmin.from('app_store').upsert({key: 'ppp-v4', data: PPPV4}, {onConflict: 'key'});
   if (r.error) throw new Error(`seedBroilerWeighInSchooners: ppp-v4 upsert failed: ${r.error.message}`);
 
@@ -80,6 +72,5 @@ export async function seedBroilerWeighInSchooners(supabaseAdmin) {
     broilerGroups: BROILER_GROUPS,
     broilerBatchMeta: BROILER_BATCH_META,
     pppv4: PPPV4,
-    roster: ROSTER,
   };
 }
