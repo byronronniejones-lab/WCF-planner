@@ -35,7 +35,7 @@ describe('daily record pages use the shared record-page controls', () => {
     it(`${rel} uses the responsive field-row class + locked Team Member display`, () => {
       expect(src).toContain('recordFieldRowClass');
       expect(src).toContain('className={fieldRowClass}');
-      expect(src).toContain('TeamMemberSelect');
+      expect(src).toContain('LockedTeamMemberField');
     });
 
     it(`${rel} does not re-declare bespoke flex field-row / fixed-width input styles`, () => {

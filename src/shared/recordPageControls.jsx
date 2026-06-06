@@ -100,7 +100,7 @@ const lockedTeamMemberBox = {
   gap: 8,
 };
 
-export function LockedTeamMemberField({value, label = null, labelStyle, style}) {
+export function LockedTeamMemberField({value, label = null, labelStyle, style, caption = 'signed in'}) {
   const display = value || 'Signed-in user';
   return (
     <div>
@@ -111,7 +111,7 @@ export function LockedTeamMemberField({value, label = null, labelStyle, style}) 
         style={style ? {...lockedTeamMemberBox, ...style} : lockedTeamMemberBox}
       >
         <span style={{fontWeight: 600}}>{display}</span>
-        <span style={{fontSize: 11, color: '#9ca3af'}}>signed in</span>
+        {caption ? <span style={{fontSize: 11, color: '#9ca3af'}}>{caption}</span> : null}
       </div>
     </div>
   );

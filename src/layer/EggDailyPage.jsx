@@ -17,7 +17,7 @@ import {
 /* eslint-enable no-unused-vars */
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
-/* eslint-disable no-unused-vars -- TeamMemberSelect is JSX-only */
+/* eslint-disable no-unused-vars -- LockedTeamMemberField is JSX-only */
 import {
   recordFormCard,
   recordFieldRow,
@@ -25,7 +25,7 @@ import {
   recordFieldLabel,
   recordControl,
   recordTextarea,
-  TeamMemberSelect,
+  LockedTeamMemberField,
 } from '../shared/recordPageControls.jsx';
 /* eslint-enable no-unused-vars */
 import {fmtMDY} from '../lib/dateUtils.js';
@@ -285,7 +285,7 @@ export default function EggDailyPage({sb, authState, Header}) {
           </div>
           <div className={fieldRowClass}>
             <span style={fieldLabel}>Team member</span>
-            <TeamMemberSelect sb={sb} value={form.teamMember} onChange={(v) => setForm({...form, teamMember: v})} />
+            <LockedTeamMemberField value={form.teamMember} caption={null} />
           </div>
 
           <div style={{borderBottom: '1px solid #e5e7eb', padding: '8px 0 4px', marginTop: 4}}>

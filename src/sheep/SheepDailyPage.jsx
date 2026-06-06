@@ -17,7 +17,7 @@ import {
 /* eslint-enable no-unused-vars */
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
-/* eslint-disable no-unused-vars -- DailyPhotoThumbnails/TeamMemberSelect are JSX-only */
+/* eslint-disable no-unused-vars -- DailyPhotoThumbnails/LockedTeamMemberField are JSX-only */
 import DailyPhotoThumbnails from '../shared/DailyPhotoThumbnails.jsx';
 import {
   recordFormCard,
@@ -26,7 +26,7 @@ import {
   recordControl,
   recordTextarea,
   recordCheckbox,
-  TeamMemberSelect,
+  LockedTeamMemberField,
 } from '../shared/recordPageControls.jsx';
 /* eslint-enable no-unused-vars */
 import {fmtMDY} from '../lib/dateUtils.js';
@@ -436,7 +436,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
           </div>
           <div className={fieldRowClass}>
             <span style={fieldLabel}>Team member</span>
-            <TeamMemberSelect sb={sb} value={form.team_member} onChange={(v) => updateField('team_member', v)} />
+            <LockedTeamMemberField value={form.team_member} caption={null} />
           </div>
           <div className={fieldRowClass}>
             <span style={fieldLabel}>Flock</span>
