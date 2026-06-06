@@ -46,6 +46,7 @@ const adminSrc = fs.readFileSync(path.join(ROOT, 'src/webforms/WebformsAdminView
 // asserted the old admin-task modal's UI shape have been removed
 // alongside the source file. The Mig 041 RPC describe below stays.
 const migSrc = fs.readFileSync(path.join(ROOT, 'supabase-migrations/041_tasks_public_rpcs.sql'), 'utf8');
+const mig097Src = fs.readFileSync(path.join(ROOT, 'supabase-migrations/097_tasks_submitter_locked_rpc.sql'), 'utf8');
 
 describe('Routes wiring', () => {
   it('tasksWebform → /dailys/tasks in routes.js (post 2026-05-06 rename)', () => {
@@ -93,8 +94,12 @@ describe('TasksWebform component', () => {
     expect(formSrc).toMatch(/submit\(payload,\s*\{\s*parentId:/);
   });
 
-  it('reads availability for the assignor dropdown via tasks-public form key', () => {
-    expect(formSrc).toMatch(/availableNamesFor\(\s*'tasks-public'/);
+  it('locks the submitter to the signed-in user (no roster dropdown)', () => {
+    expect(formSrc).toMatch(/import LockedSubmitter from '\.\/LockedSubmitter\.jsx'/);
+    expect(formSrc).toMatch(/sessionSubmitter/);
+    expect(formSrc).toMatch(/<LockedSubmitter\s+name=\{submittedBy\}/);
+    expect(formSrc).not.toContain('availableNamesFor');
+    expect(formSrc).not.toContain('loadRoster');
   });
 
   it('reads list_eligible_assignees + assignee availability for the assignee dropdown', () => {
@@ -115,12 +120,13 @@ describe('TasksWebform component', () => {
     expect(stripped).not.toMatch(/Recurrence\s*\*/);
   });
 
-  it('keeps current public submitter as roster display-name only until auth-only Light forms ship', () => {
+  it('stamps submitted_by from the signed-in user (Light forms shipped), not the roster', () => {
     const stripped = formSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(stripped).toMatch(/const submittedBy = sessionSubmitter\?\.name/);
     expect(stripped).toMatch(/submitted_by_team_member:\s*submittedBy/);
-    expect(stripped).toMatch(/availableNamesFor\(\s*'tasks-public',\s*roster,\s*availability\)/);
+    expect(stripped).not.toMatch(/availableNamesFor/);
+    expect(stripped).not.toMatch(/wcf_team/);
     expect(stripped).not.toMatch(/requester_profile_id|submitted_by_profile_id|submitted_by_email|requester_email/);
-    expect(stripped).not.toMatch(/profiles[\s\S]{0,80}full_name|full_name[\s\S]{0,80}submittedBy/);
   });
 });
 
@@ -238,24 +244,29 @@ describe('Mig 041 RPC contracts', () => {
     expect(migSrc).toMatch(/GRANT EXECUTE ON FUNCTION public\.list_eligible_assignees\(\) TO anon, authenticated/);
   });
 
-  it('submit_task_instance validates submitted_by + assignee + idempotency', () => {
-    const fn = migSrc.match(
+  it('submit_task_instance (097) requires auth, drops the roster check, keeps assignee + idempotency', () => {
+    const fn = mig097Src.match(
       /CREATE OR REPLACE FUNCTION public\.submit_task_instance\(parent_in jsonb\)[\s\S]*?\$submit_task_instance\$;/,
     );
-    expect(fn, 'expected submit_task_instance definition').not.toBeNull();
+    expect(fn, 'expected submit_task_instance definition in 097').not.toBeNull();
     const body = fn[0];
     // SECDEF + search_path.
     expect(body).toMatch(/SECURITY DEFINER/);
     expect(body).toMatch(/SET search_path = public/);
+    // Authenticated-only now.
+    expect(body).toMatch(/auth\.uid\(\)/);
+    expect(body).toMatch(/not authenticated/);
     // Required-field RAISEs.
     expect(body).toMatch(/client_submission_id required/);
     expect(body).toMatch(/title required/);
     expect(body).toMatch(/due_date required/);
     expect(body).toMatch(/assignee_profile_id required/);
     expect(body).toMatch(/submitted_by_team_member required/);
-    // Submitted_by validation.
-    expect(body).toMatch(/submitted_by_team_member not allowed/);
-    // Assignee validation: not in hidden list AND eligible profile.
+    // Roster membership validation REMOVED.
+    expect(body).not.toMatch(/submitted_by_team_member not allowed/);
+    expect(body).not.toMatch(/team_roster/);
+    expect(body).not.toMatch(/team_availability/);
+    // Assignee validation kept.
     expect(body).toMatch(/assignee not allowed/);
     expect(body).toMatch(/assignee not eligible/);
     // Inserts with template_id NULL + 'public_webform' + 'open'.
@@ -264,31 +275,35 @@ describe('Mig 041 RPC contracts', () => {
     expect(body).toMatch(/'open'/);
     // Idempotent ON CONFLICT.
     expect(body).toMatch(/ON CONFLICT \(client_submission_id\) DO NOTHING/);
-    // Returns idempotent_replay flag.
     expect(body).toMatch(/idempotent_replay/);
     expect(body).not.toMatch(/requester_profile_id|submitted_by_profile_id|submitted_by_email|requester_email/);
   });
 
-  it('submit_task_instance does not name-match public submitters to profiles or create completion-notice recipients', () => {
-    const fn = migSrc.match(
+  it('submit_task_instance (097) does not name-match submitters to profiles or insert notifications', () => {
+    const fn = mig097Src.match(
       /CREATE OR REPLACE FUNCTION public\.submit_task_instance\(parent_in jsonb\)[\s\S]*?\$submit_task_instance\$;/,
     );
-    expect(fn, 'expected submit_task_instance definition').not.toBeNull();
+    expect(fn, 'expected submit_task_instance definition in 097').not.toBeNull();
     const body = fn[0];
     expect(body).not.toMatch(/profiles[\s\S]{0,200}full_name[\s\S]{0,200}submitted_by_team_member/);
     expect(body).not.toMatch(/submitted_by_team_member[\s\S]{0,200}profiles[\s\S]{0,200}full_name/);
     expect(body).not.toMatch(/INSERT INTO public\.notifications/);
   });
 
-  it('submit_task_instance grants EXECUTE to anon + authenticated', () => {
-    expect(migSrc).toMatch(/GRANT EXECUTE ON FUNCTION public\.submit_task_instance\(jsonb\) TO anon, authenticated/);
+  it('submit_task_instance (097) revokes anon and grants EXECUTE to authenticated only', () => {
+    expect(mig097Src).toMatch(/REVOKE ALL ON FUNCTION public\.submit_task_instance\(jsonb\) FROM PUBLIC, anon/);
+    expect(mig097Src).toMatch(/GRANT EXECUTE ON FUNCTION public\.submit_task_instance\(jsonb\) TO authenticated/);
+    expect(mig097Src).toMatch(/NOTIFY pgrst/);
   });
 
-  it('mig 041 reads roster + tasks-public hiddenIds + tasks_public_assignee_availability', () => {
-    expect(migSrc).toMatch(/'team_roster'/);
-    expect(migSrc).toMatch(/'team_availability'/);
-    expect(migSrc).toMatch(/'tasks_public_assignee_availability'/);
-    expect(migSrc).toMatch(/forms,tasks-public,hiddenIds/);
-    expect(migSrc).toMatch(/hiddenProfileIds/);
+  it('submit_task_instance (097) reads assignee availability but NOT the team roster', () => {
+    const fn = mig097Src.match(
+      /CREATE OR REPLACE FUNCTION public\.submit_task_instance\(parent_in jsonb\)[\s\S]*?\$submit_task_instance\$;/,
+    );
+    const body = fn[0];
+    expect(body).toMatch(/'tasks_public_assignee_availability'/);
+    expect(body).toMatch(/hiddenProfileIds/);
+    expect(body).not.toMatch(/'team_roster'/);
+    expect(body).not.toMatch(/'team_availability'/);
   });
 });

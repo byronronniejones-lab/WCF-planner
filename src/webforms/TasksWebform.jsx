@@ -13,13 +13,13 @@
 // spec — useOfflineRpcSubmit's default ${formKind}-<ts>-<rand> doesn't
 // match the task_instances PK convention.
 import React from 'react';
-import {loadRoster} from '../lib/teamMembers.js';
-import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import {visiblePublicAssignees} from '../lib/tasks.js';
 import {listEligibleAssignees, loadPublicAssigneeAvailability} from '../lib/tasksPublicApi.js';
 import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import LockedSubmitter from './LockedSubmitter.jsx';
 
 function mintTiInstanceId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -55,8 +55,7 @@ const inpS = {
 };
 const lblS = {display: 'block', fontSize: 13, color: '#374151', marginBottom: 5, fontWeight: 500};
 
-const TasksWebform = ({sb}) => {
-  const [submittedByOptions, setSubmittedByOptions] = React.useState([]);
+const TasksWebform = ({sb, sessionSubmitter}) => {
   const [assigneeOptions, setAssigneeOptions] = React.useState([]);
   const [configLoaded, setConfigLoaded] = React.useState(false);
 
@@ -70,7 +69,8 @@ const TasksWebform = ({sb}) => {
   const [title, setTitle] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [dueDate, setDueDate] = React.useState(today);
-  const [submittedBy, setSubmittedBy] = React.useState('');
+  // Login-required form: submitter is locked to the signed-in user (no roster).
+  const submittedBy = sessionSubmitter?.name || '';
   const [assignee, setAssignee] = React.useState('');
   const [photoFile, setPhotoFile] = React.useState(null); // Optional File / Blob; one max
   const [submitting, setSubmitting] = React.useState(false);
@@ -89,10 +89,8 @@ const TasksWebform = ({sb}) => {
   }, [stuckRows.length]);
 
   React.useEffect(() => {
-    Promise.all([loadRoster(sb), loadAvailability(sb), listEligibleAssignees(sb), loadPublicAssigneeAvailability(sb)])
-      .then(([roster, availability, eligibles, assigneeAvail]) => {
-        const visibleNames = availableNamesFor('tasks-public', roster, availability);
-        setSubmittedByOptions(visibleNames);
+    Promise.all([listEligibleAssignees(sb), loadPublicAssigneeAvailability(sb)])
+      .then(([eligibles, assigneeAvail]) => {
         const visibleAssignees = visiblePublicAssignees(eligibles, assigneeAvail);
         setAssigneeOptions(visibleAssignees);
         setConfigLoaded(true);
@@ -131,11 +129,6 @@ const TasksWebform = ({sb}) => {
         submitted_by_team_member: submittedBy,
       };
       const result = await submit(payload, {parentId: mintTiInstanceId(), photo: photoFile || null});
-      try {
-        localStorage.setItem('wcf_team', submittedBy);
-      } catch (_e) {
-        /* localStorage unavailable in some browsers — best effort */
-      }
       setDoneState(result.state);
     } catch (e) {
       setErr('Could not submit: ' + (e && e.message ? e.message : String(e)));
@@ -311,15 +304,7 @@ const TasksWebform = ({sb}) => {
         </div>
 
         <div style={cardS}>
-          <label style={lblS}>Submitted by *</label>
-          <select value={submittedBy} onChange={(e) => setSubmittedBy(e.target.value)} style={inpS}>
-            <option value="">Select…</option>
-            {submittedByOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <LockedSubmitter name={submittedBy} label="Submitted by *" labelStyle={lblS} />
         </div>
 
         <div style={cardS}>

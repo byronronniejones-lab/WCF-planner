@@ -12,7 +12,6 @@ const EXPECTED_LOCAL_STORAGE_OWNERS = new Map([
   ['src/webforms/AddFeedWebform.jsx', 1],
   ['src/webforms/FuelSupplyWebform.jsx', 3],
   ['src/webforms/PigDailysWebform.jsx', 1],
-  ['src/webforms/TasksWebform.jsx', 1],
   ['src/webforms/WebformHub.jsx', 6],
 ]);
 
@@ -70,7 +69,7 @@ describe('localStorage boundary', () => {
       .filter(([rel, count]) => seen.get(rel) !== count)
       .map(([rel, count]) => `${rel}: expected ${count}, saw ${seen.get(rel) ?? 0}`);
 
-    expect(total).toBe(21);
+    expect(total).toBe(20);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
@@ -92,7 +91,7 @@ describe('localStorage boundary', () => {
       }
     }
 
-    expect(keys).toHaveLength(18);
+    expect(keys).toHaveLength(17);
     expect(offenders).toEqual([]);
     expect(secretLike).toEqual([]);
   });
