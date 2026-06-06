@@ -30,8 +30,9 @@ import {test, expect} from './fixtures.js';
 // /webform (singular) — the legacy path; do not confuse with /webforms.
 // ============================================================================
 
-test.use({storageState: {cookies: [], origins: []}});
-
+// Runs authenticated (default admin storageState) — the webform submitter is
+// now locked to the signed-in user, so anonymous access lands on the login
+// screen. The offline-queue behavior under test is identical when authed.
 const DB_NAME = 'wcf-offline-queue';
 
 // 1×1 transparent PNG; smallest valid PNG that createImageBitmap will
@@ -82,13 +83,9 @@ async function readQueue(page) {
 async function fillFormAndSubmit(page) {
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
 
-  // Wait for the team-member dropdown to populate from the seeded roster.
-  const teamSelect = page.getByRole('combobox').first();
-  await expect.poll(async () => await teamSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
-  await teamSelect.selectOption({label: 'BMAN'});
-
-  // Pig group dropdown is the second combobox.
-  const groupSelect = page.getByRole('combobox').nth(1);
+  // Submitter is locked to the signed-in user (no team dropdown). Pig group is
+  // the first combobox now.
+  const groupSelect = page.getByRole('combobox').first();
   await expect.poll(async () => await groupSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
   await groupSelect.selectOption({label: 'P-26-01'});
 
@@ -141,7 +138,7 @@ test('online no-photo: synced copy + 1 row in pig_dailys + empty queue', async (
   expect(rows[0]).toMatchObject({
     batch_label: 'P-26-01',
     batch_id: 'p-26-01',
-    team_member: 'BMAN',
+    team_member: 'Test Admin',
     pig_count: 20,
     feed_lbs: 250,
     fence_voltage: 4.2,
@@ -178,7 +175,7 @@ test('offline no-photo: queued copy + IDB has flat record + zero rows in pig_dai
   expect(rec.client_submission_id).toBe(queue[0].csid);
   expect(rec.batch_label).toBe('P-26-01');
   expect(rec.batch_id).toBe('p-26-01');
-  expect(rec.team_member).toBe('BMAN');
+  expect(rec.team_member).toBe('Test Admin');
   expect(rec.pig_count).toBe(20);
   expect(rec.feed_lbs).toBe(250);
   expect(rec.fence_voltage).toBe(4.2);
@@ -220,7 +217,7 @@ test('recovery: queued PigDailys submission replays on next mount + lands one ro
   const {data: rows} = await supabaseAdmin.from('pig_dailys').select('*').eq('client_submission_id', queuedCsid);
   expect(rows).toHaveLength(1);
   expect(rows[0].batch_label).toBe('P-26-01');
-  expect(rows[0].team_member).toBe('BMAN');
+  expect(rows[0].team_member).toBe('Test Admin');
   expect(rows[0].photos).toEqual([]);
 });
 

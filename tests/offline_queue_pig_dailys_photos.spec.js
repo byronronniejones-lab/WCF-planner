@@ -19,11 +19,23 @@ import {test, expect} from './fixtures.js';
 // standalone PigDailysWebform, which uses useOfflineSubmit('pig_dailys')
 // for both photo and no-photo paths after this build.
 //
-// Per-test fresh anon storageState. Per-test wipeOfflineQueue is unnecessary
-// — fresh storageState wipes IDB.
+// Runs authenticated (default admin storageState) — the webform submitter is
+// now locked to the signed-in user, so /webform-pigs is login-required and an
+// anonymous context lands on the LoginScreen. The photo offline-queue behavior
+// under test is identical when authed; the submitter is the admin profile's
+// full_name ('Test Admin') instead of a roster pick. Per-test fresh browser
+// storage wipes IDB, so no explicit wipeOfflineQueue step is needed.
+//
+// Daily-photos RLS (resolved): the daily-photos storage bucket previously
+// lacked a `FOR INSERT TO authenticated` policy (migration 031 granted anon
+// INSERT only), unlike every other private bucket the authenticated app writes
+// to. Once these webforms became login-required, authenticated photo uploads
+// 403'd with "new row violates row-level security policy". Migration 099
+// (`daily_photos_auth_insert FOR INSERT TO authenticated`) added the missing
+// policy, so the authenticated photo webforms now upload correctly and the
+// upload-dependent tests (online happy path + queue replays that re-upload)
+// run.
 // ============================================================================
-
-test.use({storageState: {cookies: [], origins: []}});
 
 const DB_NAME = 'wcf-offline-queue';
 
@@ -129,11 +141,9 @@ async function readPhotoBlobs(page) {
 async function fillPigForm(page) {
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
 
-  const teamSelect = page.getByRole('combobox').first();
-  await expect.poll(async () => await teamSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
-  await teamSelect.selectOption({label: 'BMAN'});
-
-  const groupSelect = page.getByRole('combobox').nth(1);
+  // Submitter is locked to the signed-in user (no team dropdown), so the pig
+  // group is the first combobox now.
+  const groupSelect = page.getByRole('combobox').first();
   await expect.poll(async () => await groupSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
   await groupSelect.selectOption({label: 'P-26-01'});
 

@@ -28,10 +28,21 @@ import {test, expect} from './fixtures.js';
 //   10 negative lock — egg submit issues NO daily-photos requests AND no
 //        IDB writes (egg permanently excluded from 1D-B)
 //
-// Per-test fresh anon storageState wipes IDB. WebformHub mounts at /webforms.
+// Runs authenticated (default admin storageState) — the WebformHub daily forms
+// lock the submitter to the signed-in user, so /webforms/<slug> is
+// login-required and an anonymous context lands on the LoginScreen. The
+// offline-queue behavior under test is identical when authed; per-test fresh
+// browser storage still wipes IDB. WebformHub mounts at /webforms.
+//
+// Daily-photos RLS (resolved): the daily-photos storage bucket previously
+// lacked a `FOR INSERT TO authenticated` policy (migration 031 granted anon
+// INSERT only), unlike every other private bucket the authenticated app writes
+// to. Once these forms became login-required, authenticated photo uploads 403'd
+// with "new row violates row-level security policy". Migration 099
+// (`daily_photos_auth_insert FOR INSERT TO authenticated`) added the missing
+// policy, so the authenticated photo webforms now upload correctly and the
+// online-happy + recovery-replay tests (1-5) run.
 // ============================================================================
-
-test.use({storageState: {cookies: [], origins: []}});
 
 const DB_NAME = 'wcf-offline-queue';
 const PNG_1x1_BASE64 =
@@ -129,10 +140,13 @@ async function gotoForm(page, slug) {
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
 }
 
-async function pickTeam(page, name = 'BMAN') {
-  const teamSelect = page.locator('select').first();
-  await expect.poll(async () => await teamSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
-  await teamSelect.selectOption({label: name});
+// Submitter is now a locked auto-filled field (signed-in user), not a select.
+// The forms' first <select> is therefore the program-specific group/herd/flock
+// dropdown — wait for it to populate before the caller selects from it.
+async function waitFirstSelectPopulated(page) {
+  const firstSelect = page.locator('select').first();
+  await expect.poll(async () => await firstSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
+  return firstSelect;
 }
 
 async function attachPhotos(page, n) {
@@ -143,8 +157,8 @@ async function attachPhotos(page, n) {
 
 // Form fillers — pick the bare minimum to satisfy required-field validation.
 async function fillBroiler(page, {batch = 'B-26-01', feedType = 'STARTER', feedLbs = '100'} = {}) {
-  await pickTeam(page);
-  await page.locator('select').nth(1).selectOption(batch); // Broiler Group
+  await waitFirstSelectPopulated(page);
+  await page.locator('select').first().selectOption(batch); // Broiler Group
   await page.locator('input[type="number"]').first().fill(feedLbs);
   // Feed-type toggle is a button group (Toggle component); scroll into view
   // since it sits below feed_lbs.
@@ -154,8 +168,8 @@ async function fillBroiler(page, {batch = 'B-26-01', feedType = 'STARTER', feedL
 }
 
 async function fillPig(page) {
-  await pickTeam(page);
-  await page.locator('select').nth(1).selectOption('P-26-01'); // Pig Group
+  await waitFirstSelectPopulated(page);
+  await page.locator('select').first().selectOption('P-26-01'); // Pig Group
   // # pigs, feed lbs, fence voltage are number inputs.
   const nums = page.locator('input[type="number"]');
   await nums.nth(0).fill('20');
@@ -164,14 +178,15 @@ async function fillPig(page) {
 }
 
 async function fillCattle(page) {
-  await pickTeam(page);
-  await page.locator('select').nth(1).selectOption('mommas'); // Herd
-  // Cattle/sheep feed picker is jsonb-driven; submit only requires date+team+herd.
+  await waitFirstSelectPopulated(page);
+  await page.locator('select').first().selectOption('mommas'); // Herd
+  // Cattle/sheep feed picker is jsonb-driven; submit only requires date+herd
+  // (submitter is locked to the signed-in user).
 }
 
 async function fillSheep(page) {
-  await pickTeam(page);
-  await page.locator('select').nth(1).selectOption('feeders'); // Flock
+  await waitFirstSelectPopulated(page);
+  await page.locator('select').first().selectOption('feeders'); // Flock
 }
 
 async function blockStorageUpload(page) {
@@ -472,8 +487,10 @@ test('broiler photos + Add-Group: rejected; no IDB write; no storage upload', as
   await attachPhotos(page, 1);
 
   // Add Another Group + pick a distinct batch so the multi-row branch arms.
+  // Submitter is locked (no team select), so the primary batch is select 0 and
+  // the added extra group's batch is select 1.
   await page.getByRole('button', {name: /Add Another Group/i}).click();
-  const extraSelect = page.locator('select').nth(2);
+  const extraSelect = page.locator('select').nth(1);
   await extraSelect.selectOption({value: 'B-26-02'});
 
   await page.getByRole('button', {name: /^Submit Report$/}).click();
@@ -505,7 +522,7 @@ test('egg form: no DailyPhotoCapture mount; no daily-photos requests; no IDB wri
   });
 
   await gotoForm(page, 'egg');
-  await pickTeam(page);
+  // Submitter is locked to the signed-in user — no team dropdown to fill.
 
   // Egg form has NO photo capture (locks the permanent exclusion at the UI
   // boundary — egg_dailys has no photos column per mig 030).

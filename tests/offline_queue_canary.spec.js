@@ -7,13 +7,11 @@ import {test, expect} from './fixtures.js';
 // background sync path the same way an operator on a flaky cellular
 // connection would experience it.
 //
-// IMPORTANT: this spec runs under an ANONYMOUS browser context, not the
-// admin storageState the rest of the suite uses. Real operators arrive
-// at /fueling/supply unauthenticated, and the fuel_supplies RLS only
-// grants INSERT to the anon role. Running the spec under admin auth
-// would hit the authenticated role (which has no INSERT policy on this
-// table) and the canary would fail with a misleading 403 instead of
-// reproducing the real public-webform path.
+// This spec runs authenticated (default admin storageState). The fuel-supply
+// webform submitter is now locked to the signed-in user, so /fueling/supply is
+// login-required — an anonymous context lands on the LoginScreen. The
+// offline-queue behavior under test is identical when authed; the submitter is
+// the admin profile's full_name ('Test Admin') instead of a roster pick.
 //
 // Test 1 — happy online path: submit succeeds, copy reads "synced", IDB
 //          queue empty, fuel_supplies has 1 row.
@@ -29,9 +27,8 @@ import {test, expect} from './fixtures.js';
 // confuse the recovery assertion.
 // ============================================================================
 
-// Override the global storageState so each test gets an unauthenticated
-// browser context. Per-test creation also gives each one its own IDB.
-test.use({storageState: {cookies: [], origins: []}});
+// Runs under the default admin storageState (no anon override) — the form is
+// login-required now. Each test still wipes IDB via wipeOfflineQueue(page).
 
 const DB_NAME = 'wcf-offline-queue';
 
@@ -83,9 +80,8 @@ async function fillFormAndSubmit(page) {
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
 
   // Fill required fields. Today's ISO date is the default; the dropdowns
-  // default to 'cell' destination + 'diesel' fuel type. Only Team + Gallons
-  // need to be touched.
-  await page.getByRole('combobox').first().selectOption({label: 'BMAN'}); // Team
+  // default to 'cell' destination + 'diesel' fuel type. The submitter is now a
+  // locked auto-filled field (signed-in user), so only Gallons needs touching.
   await page.locator('input[type="number"]').fill('25.5');
 
   await page.locator('[data-submit-button="1"]').click();
@@ -134,7 +130,7 @@ test('online happy path: synced copy + 1 row in fuel_supplies + empty queue', as
   expect(data).toHaveLength(1);
   expect(data[0]).toMatchObject({
     gallons: 25.5,
-    team_member: 'BMAN',
+    team_member: 'Test Admin',
     fuel_type: 'diesel',
     destination: 'cell',
     source: 'webform',
@@ -166,7 +162,7 @@ test('blocked upsert: queued copy + 1 IDB row + zero rows in fuel_supplies', asy
   expect(queue[0]).toMatchObject({form_kind: 'fuel_supply'});
   expect(queue[0].record).toMatchObject({
     gallons: 25.5,
-    team_member: 'BMAN',
+    team_member: 'Test Admin',
     destination: 'cell',
     fuel_type: 'diesel',
     source: 'webform',
@@ -216,5 +212,5 @@ test('recovery: queued submission replays on next mount + lands one row', async 
   expect(error).toBeNull();
   expect(data).toHaveLength(1);
   expect(data[0].gallons).toBe(25.5);
-  expect(data[0].team_member).toBe('BMAN');
+  expect(data[0].team_member).toBe('Test Admin');
 });

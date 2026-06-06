@@ -20,15 +20,17 @@ import {test, expect} from './fixtures.js';
 //   4 — idempotent replay: pre-seed DB at queued csid; queue replay calls
 //        RPC which returns idempotent_replay:true; no duplicates land.
 //
-// Anon context per Phase 1B canary pattern. Per-test wipeOfflineQueue.
+// Runs authenticated (default admin storageState) — the /addfeed webform
+// submitter is locked to the signed-in user, so the form is login-required and
+// an anonymous context lands on the LoginScreen. The RPC queue behavior under
+// test is identical when authed.
 // ============================================================================
 
-// Each test in this spec gets a fresh anonymous browser context (storage
-// isolated per Playwright). That includes IndexedDB — no wipe step needed,
+// Default admin storageState (no anon override). Each test still gets fresh
+// browser storage per Playwright, including IndexedDB — no wipe step needed,
 // and an explicit `indexedDB.deleteDatabase()` call between mount and read
 // races with the hook's openDB and can leave the DB unreachable. Letting
 // the context boundary do the wipe is reliable.
-test.use({storageState: {cookies: [], origins: []}});
 
 const DB_NAME = 'wcf-offline-queue';
 
@@ -80,18 +82,17 @@ async function fillBroilerTwoBatchAndSubmit(page) {
 
   await page.getByRole('button', {name: 'Broiler'}).click();
 
-  // First batch group. Combobox indices after broiler is picked:
-  //   0 = team member (left blank — optional under default config)
-  //   1 = first batch select
-  const firstBatchSelect = page.getByRole('combobox').nth(1);
+  // First batch group. The submitter is now a locked auto-filled field (not a
+  // combobox), so the first batch select is combobox index 0.
+  const firstBatchSelect = page.getByRole('combobox').first();
   await expect.poll(async () => await firstBatchSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
   await firstBatchSelect.selectOption('B-26-01');
   await page.getByRole('button', {name: 'STARTER'}).first().click();
   await page.locator('input[type="number"]').first().fill('100');
 
-  // Add second group.
+  // Add second group. Its batch select is the next combobox (index 1).
   await page.getByRole('button', {name: '+ Add Another Group'}).click();
-  const secondBatchSelect = page.getByRole('combobox').nth(2);
+  const secondBatchSelect = page.getByRole('combobox').nth(1);
   await expect(secondBatchSelect).toBeVisible({timeout: 10_000});
   await secondBatchSelect.selectOption('B-26-02');
   await page.getByRole('button', {name: 'STARTER'}).nth(1).click();

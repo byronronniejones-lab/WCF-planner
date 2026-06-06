@@ -6,8 +6,7 @@ import {test, expect} from './fixtures.js';
 // Codex-required public-form integration smoke for commit 3. The admin spec
 // (tests/pig_weighin_metrics_admin.spec.js) covers RPC correctness across
 // scopes; this spec proves the UNIQUE public-form parts:
-//   - anon auth path resolves the metrics block via anon-shaped RPC
-//     EXECUTE
+//   - the metrics block resolves via the RPC EXECUTE path on the public form
 //   - the metrics block sits ABOVE the "Recent entries (N)" header
 //   - the four documented labels render in the public layout
 //   - the operator-facing #N tags stay stable across the descending-by-
@@ -17,9 +16,12 @@ import {test, expect} from './fixtures.js';
 //
 // Scope: this is a smoke; it does not duplicate every RPC case from the
 // admin spec.
+//
+// Runs authenticated (default admin storageState) — the /weighins form is now
+// login-required, so an anonymous context lands on the LoginScreen. The
+// metrics block, descending sort, and #N stability render identically when
+// authed; the resumed draft is a service-role seed, not a form submission.
 // ============================================================================
-
-test.use({storageState: {cookies: [], origins: []}});
 
 const SUB_NAME = 'P-26-09A';
 const SUB_SLUG = 'p-26-09a';

@@ -49,18 +49,20 @@ async function recordAppStoreRequests(page) {
 async function startBroilerSession(page, batchName, week = 4) {
   await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
   await page.getByText('Broiler', {exact: true}).click();
-  await page.getByRole('combobox').first().selectOption({label: 'BMAN'});
-  await page.getByRole('combobox').nth(1).selectOption(batchName);
+  // Submitter is locked to the signed-in user (no team dropdown), so the batch
+  // select is now the first combobox.
+  await page.getByRole('combobox').first().selectOption(batchName);
   await page.getByRole('button', {name: `Week ${week}`}).click();
   await page.getByRole('button', {name: 'Start Session'}).click();
 }
 
 // =============================================================================
-// Public anon flows — no admin storage state. Mirrors offline_queue_weigh_ins.
+// Public weigh-in flows. The /weighins form submitter is now locked to the
+// signed-in user, so the form is login-required — these run under the default
+// admin storageState (no anon override). The schooner mapping behavior under
+// test is identical when authed.
 // =============================================================================
-test.describe('public broiler weigh-in (anon)', () => {
-  test.use({storageState: {cookies: [], origins: []}});
-
+test.describe('public broiler weigh-in', () => {
   // Each test navigates inside its body — Playwright fixtures (incl. the
   // scenario reset+seed) only run when destructured by the test, so
   // navigation must happen AFTER seeding or the form's once-on-mount
@@ -114,12 +116,13 @@ test.describe('public broiler weigh-in (anon)', () => {
     await wipeOfflineQueue(page);
     await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
     await page.getByText('Broiler', {exact: true}).click();
-    await page.getByRole('combobox').first().selectOption({label: 'BMAN'});
 
     // B-26-03 is an ACTIVE batch with empty schooners — still visible in the
     // dropdown so admin misconfig surfaces at Start Session rather than
     // silently hiding the batch (Q2 answer; helper filter is active-only).
-    const batchSelect = page.getByRole('combobox').nth(1);
+    // Submitter is locked (no team dropdown) so the batch select is the first
+    // combobox.
+    const batchSelect = page.getByRole('combobox').first();
     await expect(batchSelect.locator('option', {hasText: 'B-26-03'})).toHaveCount(1);
 
     await batchSelect.selectOption('B-26-03');
@@ -268,7 +271,21 @@ test.describe('public broiler weigh-in (anon)', () => {
   });
 
   // T_negative — Public flow makes zero requests to /rest/v1/app_store
-  test('T_negative: public broiler flow does NOT request app_store', async ({
+  //
+  // OBSOLETE under the login-required change (Lane 1 CP1). The /weighins form is
+  // now login-required, so it renders inside the full authenticated admin app,
+  // whose boot sequence loads app_store (a single `?select=*` bulk store read)
+  // on every page regardless of which view is shown. That boot read is NOT the
+  // weigh-in form requesting app_store — the form still reads
+  // webform_config.broiler_batch_meta exclusively — but it makes this
+  // page-level "zero app_store requests" assertion structurally impossible to
+  // satisfy. The form's independence from app_store is unchanged and is fully
+  // locked at the source level by tests/static/weighinswebform_no_app_store.js
+  // (WeighInsWebform.jsx + all of src/webforms contain no app_store/ppp-v4
+  // literal; the form reads broiler_batch_meta from webform_config). Skipped
+  // rather than force-converted because filtering the boot read out of the
+  // recorder would turn a meaningful network-isolation proof into a false pass.
+  test.skip('T_negative: public broiler flow does NOT request app_store', async ({
     page,
     broilerWeighInSchoonersScenario,
   }) => {

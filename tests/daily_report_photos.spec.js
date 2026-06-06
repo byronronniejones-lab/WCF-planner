@@ -25,6 +25,20 @@ import {test, expect} from './fixtures.js';
 //
 // Per-spec storage cleanup is wired into resetTestDatabase via the
 // cleanupDailyPhotosStorage helper added in tests/setup/reset.js.
+//
+// Login-required conversion: the daily-report webforms now lock the submitter
+// to the signed-in user, so /webforms/<slug> is login-required. The public-
+// submit tests used to drive an anonymous browser.newContext; an anon context
+// now lands on the LoginScreen, so they run on the default authenticated admin
+// page instead. The submitter is the admin profile's full_name ('Test Admin').
+//
+// Daily-photos RLS (resolved): the daily-photos storage bucket previously
+// lacked a `FOR INSERT TO authenticated` policy (migration 031 granted anon
+// INSERT only), so once these forms became login-required, authenticated photo
+// uploads 403'd with "new row violates row-level security policy". Migration
+// 099 (`daily_photos_auth_insert`) added the authenticated-INSERT policy, so
+// the authenticated photo webforms now upload correctly and the upload-
+// dependent tests here run.
 // ============================================================================
 
 // Tiny 1x1 transparent PNG, ~67 bytes once decoded. The browser decodes it
@@ -47,123 +61,94 @@ async function gotoSheepWebform(page) {
 }
 
 async function fillSheepRequiredFields(page) {
-  // The page renders selects in document order: team-member dropdown, then
-  // flock dropdown. Use poll to wait until BMAN is in the team dropdown
-  // (the submitter loads asynchronously).
-  const teamSelect = page.locator('select').first();
-  await expect.poll(async () => await teamSelect.locator('option').allTextContents()).toContain('BMAN');
-  await teamSelect.selectOption({label: 'BMAN'});
-
-  const flockSelect = page.locator('select').nth(1);
+  // Submitter is now a locked auto-filled field (signed-in user), not a select,
+  // so the flock dropdown is the first <select>. Wait for it to populate (the
+  // form's webform_config read is async) before selecting.
+  const flockSelect = page.locator('select').first();
+  await expect.poll(async () => await flockSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
   await flockSelect.selectOption({value: 'ewes'});
 }
 
 // --------------------------------------------------------------------------
 // Test 1 — Public submit WITH photos lands the row + storage objects
 // --------------------------------------------------------------------------
-test('public sheep daily submit with 2 photos: row + storage objects land', async ({
-  page,
-  supabaseAdmin,
-  resetDb,
-  browser,
-}) => {
+test('public sheep daily submit with 2 photos: row + storage objects land', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
 
-  const anon = await browser.newContext({storageState: undefined});
-  const anonPage = await anon.newPage();
-  try {
-    await gotoSheepWebform(anonPage);
-    await fillSheepRequiredFields(anonPage);
+  await gotoSheepWebform(page);
+  await fillSheepRequiredFields(page);
 
-    await anonPage
-      .locator('[data-daily-photo-capture="1"] [data-photo-input="1"]')
-      .setInputFiles([tinyImageFile('a.png'), tinyImageFile('b.png')]);
+  await page
+    .locator('[data-daily-photo-capture="1"] [data-photo-input="1"]')
+    .setInputFiles([tinyImageFile('a.png'), tinyImageFile('b.png')]);
 
-    // Selected count chip rendered.
-    await expect(anonPage.locator('[data-daily-photo-capture="1"]')).toContainText('2 of 10');
+  // Selected count chip rendered.
+  await expect(page.locator('[data-daily-photo-capture="1"]')).toContainText('2 of 10');
 
-    // Submit. Wait for the success state — WebformHub.sheep sets done=true.
-    await anonPage.getByRole('button', {name: /Submit Report/i}).click();
-    await expect(anonPage.getByText(/Thanks|Submitted|Daily logged|saved/i).first()).toBeVisible({
-      timeout: 15_000,
-    });
+  // Submit. Wait for the success state — WebformHub.sheep sets done=true.
+  await page.getByRole('button', {name: /Submit Report/i}).click();
+  await expect(page.getByText(/Thanks|Submitted|Daily logged|saved/i).first()).toBeVisible({
+    timeout: 15_000,
+  });
 
-    // DB row landed with photos.
-    const {data, error} = await supabaseAdmin.from('sheep_dailys').select('*');
-    expect(error).toBeNull();
-    expect(data).toHaveLength(1);
-    expect(data[0].photos).toHaveLength(2);
-    expect(data[0].client_submission_id).toBeTruthy();
+  // DB row landed with photos.
+  const {data, error} = await supabaseAdmin.from('sheep_dailys').select('*');
+  expect(error).toBeNull();
+  expect(data).toHaveLength(1);
+  expect(data[0].photos).toHaveLength(2);
+  expect(data[0].client_submission_id).toBeTruthy();
 
-    // Path scheme conformance.
-    const csid = data[0].client_submission_id;
-    expect(data[0].photos[0].path).toBe(`sheep_dailys/${csid}/photo-1.jpg`);
-    expect(data[0].photos[1].path).toBe(`sheep_dailys/${csid}/photo-2.jpg`);
-    expect(data[0].photos[0].mime).toBe('image/jpeg');
+  // Path scheme conformance.
+  const csid = data[0].client_submission_id;
+  expect(data[0].photos[0].path).toBe(`sheep_dailys/${csid}/photo-1.jpg`);
+  expect(data[0].photos[1].path).toBe(`sheep_dailys/${csid}/photo-2.jpg`);
+  expect(data[0].photos[0].mime).toBe('image/jpeg');
 
-    // Storage objects exist (service-role list).
-    const list = await supabaseAdmin.storage.from('daily-photos').list(`sheep_dailys/${csid}`);
-    expect(list.error).toBeNull();
-    expect((list.data || []).map((f) => f.name).sort()).toEqual(['photo-1.jpg', 'photo-2.jpg']);
-  } finally {
-    await anon.close();
-  }
-  void page;
+  // Storage objects exist (service-role list).
+  const list = await supabaseAdmin.storage.from('daily-photos').list(`sheep_dailys/${csid}`);
+  expect(list.error).toBeNull();
+  expect((list.data || []).map((f) => f.name).sort()).toEqual(['photo-1.jpg', 'photo-2.jpg']);
 });
 
 // --------------------------------------------------------------------------
 // Test 2 — Public submit WITHOUT photos still works
 // --------------------------------------------------------------------------
-test('public sheep daily submit without photos works (photos: [])', async ({page, supabaseAdmin, resetDb, browser}) => {
+test('public sheep daily submit without photos works (photos: [])', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
 
-  const anon = await browser.newContext({storageState: undefined});
-  const anonPage = await anon.newPage();
-  try {
-    await gotoSheepWebform(anonPage);
-    await fillSheepRequiredFields(anonPage);
+  await gotoSheepWebform(page);
+  await fillSheepRequiredFields(page);
 
-    // No photos selected. Submit.
-    await anonPage.getByRole('button', {name: /Submit Report/i}).click();
-    await expect(anonPage.getByText(/Thanks|Submitted|Daily logged|saved/i).first()).toBeVisible({
-      timeout: 15_000,
-    });
+  // No photos selected. Submit.
+  await page.getByRole('button', {name: /Submit Report/i}).click();
+  await expect(page.getByText(/Thanks|Submitted|Daily logged|saved/i).first()).toBeVisible({
+    timeout: 15_000,
+  });
 
-    const {data, error} = await supabaseAdmin.from('sheep_dailys').select('*');
-    expect(error).toBeNull();
-    expect(data).toHaveLength(1);
-    expect(data[0].photos).toEqual([]);
-  } finally {
-    await anon.close();
-  }
-  void page;
+  const {data, error} = await supabaseAdmin.from('sheep_dailys').select('*');
+  expect(error).toBeNull();
+  expect(data).toHaveLength(1);
+  expect(data[0].photos).toEqual([]);
 });
 
 // --------------------------------------------------------------------------
 // Test 3 — 11-photo cap regression (UI rejects)
 // --------------------------------------------------------------------------
-test('photo cap regression: 11th photo selection caps at 10', async ({page, supabaseAdmin, resetDb, browser}) => {
+test('photo cap regression: 11th photo selection caps at 10', async ({page, resetDb}) => {
   await resetDb();
 
-  const anon = await browser.newContext({storageState: undefined});
-  const anonPage = await anon.newPage();
-  try {
-    await gotoSheepWebform(anonPage);
-    await fillSheepRequiredFields(anonPage);
+  await gotoSheepWebform(page);
+  await fillSheepRequiredFields(page);
 
-    const eleven = Array.from({length: 11}, (_, i) => tinyImageFile(`p${i + 1}.png`));
-    await anonPage.locator('[data-daily-photo-capture="1"] [data-photo-input="1"]').setInputFiles(eleven);
+  const eleven = Array.from({length: 11}, (_, i) => tinyImageFile(`p${i + 1}.png`));
+  await page.locator('[data-daily-photo-capture="1"] [data-photo-input="1"]').setInputFiles(eleven);
 
-    // Component caps the selection at 10 — chip text confirms.
-    await expect(anonPage.locator('[data-daily-photo-capture="1"]')).toContainText('10 of 10');
-    await expect(anonPage.locator('[data-daily-photo-capture="1"]')).toContainText('max reached');
+  // Component caps the selection at 10 — chip text confirms.
+  await expect(page.locator('[data-daily-photo-capture="1"]')).toContainText('10 of 10');
+  await expect(page.locator('[data-daily-photo-capture="1"]')).toContainText('max reached');
 
-    // The Add Photos button is disabled at the cap.
-    await expect(anonPage.locator('[data-add-photos="1"]')).toBeDisabled();
-  } finally {
-    await anon.close();
-  }
-  void page;
+  // The Add Photos button is disabled at the cap.
+  await expect(page.locator('[data-add-photos="1"]')).toBeDisabled();
 });
 
 // --------------------------------------------------------------------------
@@ -320,45 +305,33 @@ test('hotfix: Home Last-5-Days tile → record page with locked submitter + phot
 // branch — sheep_dailys submission now lands in state:'queued', the row
 // is persisted in IDB, and no row lands in sheep_dailys until the queue
 // drains. This test locks the new contract.
-test('photo upload failure routes to state="queued" (no row inserted yet)', async ({
-  page,
-  supabaseAdmin,
-  resetDb,
-  browser,
-}) => {
+test('photo upload failure routes to state="queued" (no row inserted yet)', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
 
-  const anon = await browser.newContext({storageState: undefined});
-  const anonPage = await anon.newPage();
-  try {
-    await anonPage.route('**/storage/v1/object/daily-photos/**', async (route) => {
-      if (route.request().method() === 'POST') {
-        await route.abort('failed');
-      } else {
-        await route.continue();
-      }
-    });
+  await page.route('**/storage/v1/object/daily-photos/**', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.abort('failed');
+    } else {
+      await route.continue();
+    }
+  });
 
-    await gotoSheepWebform(anonPage);
-    await fillSheepRequiredFields(anonPage);
+  await gotoSheepWebform(page);
+  await fillSheepRequiredFields(page);
 
-    await anonPage
-      .locator('[data-daily-photo-capture="1"] [data-photo-input="1"]')
-      .setInputFiles([tinyImageFile('a.png')]);
+  await page.locator('[data-daily-photo-capture="1"] [data-photo-input="1"]').setInputFiles([tinyImageFile('a.png')]);
 
-    await anonPage.getByRole('button', {name: /Submit Report/i}).click();
+  await page.getByRole('button', {name: /Submit Report/i}).click();
 
-    // 1D-B contract: state="queued" rendered on the done screen.
-    await expect(anonPage.locator('[data-submit-state="queued"]')).toBeVisible({timeout: 15_000});
+  // 1D-B contract: state="queued" rendered on the done screen.
+  await expect(page.locator('[data-submit-state="queued"]')).toBeVisible({timeout: 15_000});
 
-    // No row landed in sheep_dailys yet (queue hasn't drained).
-    const {data, error} = await supabaseAdmin.from('sheep_dailys').select('*');
-    expect(error).toBeNull();
-    expect(data).toHaveLength(0);
-  } finally {
-    await anon.close();
-  }
-  void page;
+  // No row landed in sheep_dailys yet (queue hasn't drained).
+  const {data, error} = await supabaseAdmin.from('sheep_dailys').select('*');
+  expect(error).toBeNull();
+  expect(data).toHaveLength(0);
+
+  await page.unroute('**/storage/v1/object/daily-photos/**');
 });
 
 // --------------------------------------------------------------------------
@@ -370,67 +343,71 @@ test('photo upload failure routes to state="queued" (no row inserted yet)', asyn
 // daily_submissions parent table (which is the deferred Add-Feed design).
 // In the meantime, broiler / layer / pig daily forms BLOCK submit if both
 // photos AND extra groups are present. This test exercises the broiler
-// branch end-to-end (anon context, real form). No upload fires; no row
+// branch end-to-end (authenticated, real form). No upload fires; no row
 // lands; operator gets a clear error.
-test('multi-row daily block: photos + extra group rejected, no row inserted', async ({
-  page,
-  supabaseAdmin,
-  resetDb,
-  browser,
-}) => {
+test('multi-row daily block: photos + extra group rejected, no row inserted', async ({page, supabaseAdmin, resetDb}) => {
   await resetDb();
 
-  // Broiler-specific seed: a couple of batches + Add-Group enabled.
+  // Broiler-specific seed: a couple of batches + Add-Group enabled. The form is
+  // login-required now, so it renders inside the authenticated admin app whose
+  // boot re-syncs webform_config from app_store (buildBroilerPublicMirror +
+  // syncWebformConfig). That sync clobbers bare broiler_groups (rebuilt from
+  // ppp-v4, EARLY) and webform_settings.allowAddGroup (rebuilt from
+  // ppp-webforms-v1). Seed those canonical stores too so the batch dropdown +
+  // Add-Group survive the boot sync.
   await supabaseAdmin
     .from('webform_config')
     .upsert({key: 'broiler_groups', data: ['B-26-01', 'B-26-02']}, {onConflict: 'key'});
   await supabaseAdmin
     .from('webform_config')
     .upsert({key: 'webform_settings', data: {allowAddGroup: {'broiler-dailys': true}}}, {onConflict: 'key'});
+  await supabaseAdmin.from('app_store').upsert(
+    {
+      key: 'ppp-v4',
+      data: [
+        {name: 'B-26-01', schooner: '1', breed: 'CC', hatchery: 'CREDO FARMS', status: 'active'},
+        {name: 'B-26-02', schooner: '1', breed: 'CC', hatchery: 'CREDO FARMS', status: 'active'},
+      ],
+    },
+    {onConflict: 'key'},
+  );
+  await supabaseAdmin.from('app_store').upsert(
+    {key: 'ppp-webforms-v1', data: {webforms: [{id: 'broiler-dailys', allowAddGroup: true, sections: []}]}},
+    {onConflict: 'key'},
+  );
 
-  const anon = await browser.newContext({storageState: undefined});
-  const anonPage = await anon.newPage();
-  try {
-    await anonPage.goto('/webforms/broiler');
-    await expect(anonPage.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
-    await expect(anonPage.locator('[data-daily-photo-capture="1"]')).toBeVisible({timeout: 10_000});
+  await page.goto('/webforms/broiler');
+  await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
+  await expect(page.locator('[data-daily-photo-capture="1"]')).toBeVisible({timeout: 10_000});
 
-    // Fill primary group: team + batch.
-    const teamSelect = anonPage.locator('select').first();
-    await expect.poll(async () => await teamSelect.locator('option').allTextContents()).toContain('BMAN');
-    await teamSelect.selectOption({label: 'BMAN'});
+  // Fill primary group: submitter is locked (no team select), so the batch is
+  // the first <select>. Wait for it to populate before selecting.
+  const batchSelect = page.locator('select').first();
+  await expect.poll(async () => await batchSelect.locator('option').count(), {timeout: 10_000}).toBeGreaterThan(1);
+  await batchSelect.selectOption({value: 'B-26-01'});
 
-    const batchSelect = anonPage.locator('select').nth(1);
-    await batchSelect.selectOption({value: 'B-26-01'});
+  // Add an extra group, fill its batch dropdown (now the second <select>).
+  await page.getByRole('button', {name: /Add Another Group/i}).click();
+  const extraBatchSelect = page.locator('select').nth(1);
+  await extraBatchSelect.selectOption({value: 'B-26-02'});
 
-    // Add an extra group, fill its batch dropdown.
-    await anonPage.getByRole('button', {name: /Add Another Group/i}).click();
-    const extraBatchSelect = anonPage.locator('select').nth(2);
-    await extraBatchSelect.selectOption({value: 'B-26-02'});
+  // Pick one photo.
+  await page.locator('[data-daily-photo-capture="1"] [data-photo-input="1"]').setInputFiles([tinyImageFile('a.png')]);
 
-    // Pick one photo.
-    await anonPage
-      .locator('[data-daily-photo-capture="1"] [data-photo-input="1"]')
-      .setInputFiles([tinyImageFile('a.png')]);
+  // Submit. Block fires before any upload.
+  await page.getByRole('button', {name: /Submit Report/i}).click();
 
-    // Submit. Block fires before any upload.
-    await anonPage.getByRole('button', {name: /Submit Report/i}).click();
+  await expect(page.getByText(/Photos can only be attached when submitting one group at a time/i)).toBeVisible({
+    timeout: 10_000,
+  });
 
-    await expect(anonPage.getByText(/Photos can only be attached when submitting one group at a time/i)).toBeVisible({
-      timeout: 10_000,
-    });
+  // No row landed in poultry_dailys.
+  const {data, error} = await supabaseAdmin.from('poultry_dailys').select('*');
+  expect(error).toBeNull();
+  expect(data).toHaveLength(0);
 
-    // No row landed in poultry_dailys.
-    const {data, error} = await supabaseAdmin.from('poultry_dailys').select('*');
-    expect(error).toBeNull();
-    expect(data).toHaveLength(0);
-
-    // No storage objects under poultry_dailys/* either.
-    const list = await supabaseAdmin.storage.from('daily-photos').list('poultry_dailys');
-    expect(list.error).toBeNull();
-    expect(list.data || []).toHaveLength(0);
-  } finally {
-    await anon.close();
-  }
-  void page;
+  // No storage objects under poultry_dailys/* either.
+  const list = await supabaseAdmin.storage.from('daily-photos').list('poultry_dailys');
+  expect(list.error).toBeNull();
+  expect(list.data || []).toHaveLength(0);
 });
