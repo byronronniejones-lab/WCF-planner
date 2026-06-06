@@ -10,15 +10,7 @@ import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, todayISO, addDays} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
-import {addMember, renameMember, removeMember, saveRoster, loadRoster} from '../lib/teamMembers.js';
-import {
-  TEAM_AVAILABILITY_FORM_KEYS,
-  cleanAvailabilityForDeletedId,
-  loadAvailability,
-  saveAvailability,
-  setHidden,
-  sortByDailysOrder,
-} from '../lib/teamAvailability.js';
+import {sortByDailysOrder} from '../lib/dailysOrder.js';
 import {setPublicAssigneeHidden} from '../lib/tasks.js';
 import {loadPublicAssigneeAvailability, savePublicAssigneeAvailability} from '../lib/tasksAdminApi.js';
 import UsersModal from '../auth/UsersModal.jsx';
@@ -36,365 +28,26 @@ import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
 import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
-// ── Team Roster master editor ────────────────────────────────────────────
-// Sole writer of webform_config.team_roster (canonical) +
-// webform_config.team_members (legacy mirror). Read-fresh-then-merge
-// inside saveRoster keeps concurrent admin tabs from clobbering each
-// other. v1 actions: add / rename / hard-delete. The previous
-// active/inactive (soft-delete) workflow was retired 2026-04-29 — delete
-// is the only removal path. The "temporarily inactive worker" workflow
-// is intentionally gone; admins re-add a returning worker as a new entry.
-//
-// Coordinated delete order: clean availability hiddenIds → cascade
-// equipment.team_members → saveRoster (last). If any cleanup step fails,
-// the roster entry stays put so the admin still has a UI handle to retry.
-// See PROJECT.md §7 team_roster entry for the contract.
-function TeamRosterEditor() {
-  const {wfRoster, setWfRoster, wfAvailability, setWfAvailability} = useWebformsConfig();
-  const [busy, setBusy] = React.useState(false);
-  const [newName, setNewName] = React.useState('');
-  const [editingId, setEditingId] = React.useState(null);
-  const [editValue, setEditValue] = React.useState('');
-  const [err, setErr] = React.useState('');
-
-  // First load — fall back to loadRoster directly if context wasn't populated
-  // by a prior /webform or /webformhub mount. Idempotent.
-  React.useEffect(() => {
-    if (wfRoster && wfRoster.length > 0) return;
-    let cancelled = false;
-    loadRoster(sb).then((r) => {
-      if (!cancelled && Array.isArray(r) && r.length > 0) setWfRoster(r);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function persist(next) {
-    setBusy(true);
-    setErr('');
-    try {
-      const persisted = await saveRoster(sb, next);
-      setWfRoster(persisted);
-    } catch (e) {
-      setErr(e && e.message ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onAdd() {
-    const name = newName.trim();
-    if (!name) return;
-    try {
-      const next = addMember(wfRoster || [], name);
-      setNewName('');
-      await persist(next);
-    } catch (e) {
-      setErr(e && e.message ? e.message : String(e));
-    }
-  }
-
-  async function onRename(id) {
-    const name = editValue.trim();
-    if (!name) {
-      setEditingId(null);
-      return;
-    }
-    try {
-      const next = renameMember(wfRoster || [], id, name);
-      setEditingId(null);
-      setEditValue('');
-      await persist(next);
-    } catch (e) {
-      setErr(e && e.message ? e.message : String(e));
-    }
-  }
-
-  // Coordinated delete: dependencies first, roster last.
-  function onDelete(member) {
-    if (!window._wcfConfirmDelete) return;
-    const confirmMsg =
-      `Permanently delete "${member.name}" from the team roster? They will disappear ` +
-      `from every dropdown going forward. Historical reports keep their stored name.`;
-    window._wcfConfirmDelete(confirmMsg, async () => {
-      setBusy(true);
-      setErr('');
-      try {
-        // Step 1: read fresh availability + equipment rows that name them.
-        // equipment.team_members is jsonb; filter client-side rather than via
-        // PostgREST .contains() (which mangles jsonb-array filters under
-        // some supabase-js + PostgREST combinations). Equipment row count is
-        // ≤20 in prod — trivial overhead.
-        const freshAvailability = await loadAvailability(sb);
-        const {data: allEquipment, error: eqReadErr} = await sb.from('equipment').select('id, team_members');
-        if (eqReadErr) {
-          throw new Error(`Read failed: ${eqReadErr.message}. Roster member NOT removed.`);
-        }
-        const equipmentRows = (allEquipment || []).filter(
-          (r) => Array.isArray(r.team_members) && r.team_members.includes(member.name),
-        );
-
-        // Step 2: compute cleanup state.
-        const cleanedAvailability = cleanAvailabilityForDeletedId(freshAvailability, member.id);
-
-        // Step 3: persist availability cleanup BEFORE roster save.
-        let persistedAvailability;
-        try {
-          persistedAvailability = await saveAvailability(sb, cleanedAvailability);
-        } catch (e) {
-          throw new Error(`Availability cleanup failed: ${e?.message || e}. Roster member NOT removed. Try again.`);
-        }
-        if (setWfAvailability) setWfAvailability(persistedAvailability);
-
-        // Step 4: cascade equipment.team_members.
-        for (const row of equipmentRows || []) {
-          const next = (row.team_members || []).filter((m) => m !== member.name);
-          const {error: eqErr} = await sb.from('equipment').update({team_members: next}).eq('id', row.id);
-          if (eqErr) {
-            throw new Error(
-              `Equipment cleanup failed on row ${row.id}: ${eqErr.message}. ` + `Roster member NOT removed. Try again.`,
-            );
-          }
-        }
-
-        // Step 5: only after cleanup succeeds, save roster. Pass removedIds
-        // so saveRoster's read-fresh-then-merge doesn't silently re-add
-        // member.id from fresh (the entry is "fresh-only" relative to
-        // post-removeMember local — without this the delete intent loses
-        // to concurrent-add preservation logic).
-        const nextRoster = removeMember(wfRoster || [], member.id);
-        try {
-          const persistedRoster = await saveRoster(sb, nextRoster, {removedIds: [member.id]});
-          setWfRoster(persistedRoster);
-        } catch (e) {
-          throw new Error(
-            `Roster save failed: ${e?.message || e}. Dependencies were cleaned but the roster ` +
-              `entry remains. Try again to retry the delete.`,
-          );
-        }
-      } catch (e) {
-        setErr(e?.message ? e.message : String(e));
-      } finally {
-        setBusy(false);
-      }
-    });
-  }
-
-  const roster = Array.isArray(wfRoster) ? wfRoster : [];
-
-  const card = {
-    background: 'white',
-    border: '1px solid #e5e7eb',
-    borderRadius: 10,
-    padding: '14px 16px',
-    marginBottom: 16,
-  };
-  const chip = (bg, fg, border) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    background: bg,
-    border: '1px solid ' + border,
-    borderRadius: 6,
-    padding: '4px 10px',
-    fontSize: 12,
-    color: fg,
-    fontWeight: 500,
-  });
-  const ico = {background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0};
-
-  return (
-    <div style={card}>
-      <div style={{fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 6}}>
-        Team Members
-        <span style={{fontSize: 11, fontWeight: 400, color: '#9ca3af', marginLeft: 8}}>
-          one master list · used by every webform, daily report, and weigh-in
-        </span>
-      </div>
-      <div style={{fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.5}}>
-        Every name in this list appears in every team-member dropdown unless hidden by an availability filter (below).
-        Use × to permanently remove someone — historical reports keep their stored name.
-      </div>
-
-      <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10}}>
-        {roster.map((m) => (
-          <span key={m.id} data-roster-active="1" data-roster-id={m.id} style={chip('#ecfdf5', '#065f46', '#a7f3d0')}>
-            {editingId === m.id ? (
-              <input
-                autoFocus
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onRename(m.id);
-                  if (e.key === 'Escape') {
-                    setEditingId(null);
-                    setEditValue('');
-                  }
-                }}
-                onBlur={() => onRename(m.id)}
-                disabled={busy}
-                style={{
-                  fontSize: 12,
-                  padding: '0 4px',
-                  border: '1px solid #6ee7b7',
-                  borderRadius: 4,
-                  fontFamily: 'inherit',
-                  width: Math.max(80, (editValue.length + 2) * 8),
-                }}
-              />
-            ) : (
-              <>
-                {m.name}
-                <button
-                  onClick={() => {
-                    setEditingId(m.id);
-                    setEditValue(m.name);
-                  }}
-                  disabled={busy}
-                  title="Rename"
-                  style={{...ico, color: '#065f46'}}
-                >
-                  ✏
-                </button>
-                <button
-                  onClick={() => onDelete(m)}
-                  disabled={busy}
-                  title="Delete permanently"
-                  data-roster-delete="1"
-                  style={{...ico, color: '#b91c1c'}}
-                >
-                  ×
-                </button>
-              </>
-            )}
-          </span>
-        ))}
-        {roster.length === 0 && <span style={{fontSize: 12, color: '#9ca3af'}}>No team members yet.</span>}
-      </div>
-
-      <div style={{display: 'flex', gap: 6}}>
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onAdd();
-          }}
-          placeholder="Add team member…"
-          disabled={busy}
-          data-roster-add-input="1"
-          style={{
-            fontSize: 12,
-            padding: '6px 10px',
-            flex: 1,
-            border: '1px solid #d1d5db',
-            borderRadius: 6,
-            fontFamily: 'inherit',
-          }}
-        />
-        <button
-          onClick={onAdd}
-          disabled={busy || !newName.trim()}
-          data-roster-add-button="1"
-          style={{
-            padding: '6px 14px',
-            borderRadius: 6,
-            border: 'none',
-            background: busy || !newName.trim() ? '#9ca3af' : '#085041',
-            color: 'white',
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: busy || !newName.trim() ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          + Add
-        </button>
-      </div>
-
-      {err && (
-        <div
-          style={{
-            marginTop: 10,
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
-            color: '#b91c1c',
-            padding: '6px 10px',
-            borderRadius: 6,
-            fontSize: 12,
-          }}
-        >
-          {err}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Team Availability per-form filters ───────────────────────────────────
-// Sole writer of webform_config.team_availability. Every active roster
-// member appears in every form by default; admin unchecks a member to hide
-// them from a single form's dropdown without affecting others. Stable
-// roster IDs are referenced — renames preserve hide state. New roster
-// members default to visible everywhere.
-//
-// Read-fresh-then-merge inside saveAvailability mirrors the saveRoster
-// pattern. Inactive entries (already filtered out by normalizeRoster) and
-// orphan IDs (no longer in roster) are no-ops in availableNamesFor — the
-// editor only needs to handle the live roster.
-const FORM_LABELS = {
-  'add-feed': 'Add Feed',
-  'broiler-dailys': 'Broiler Daily Reports',
-  'cattle-dailys': 'Cattle Daily Reports',
-  'egg-dailys': 'Egg Daily Reports',
-  'fuel-supply': 'Fuel Supply',
-  'layer-dailys': 'Layer Daily Reports',
-  'pig-dailys': 'Pig Daily Reports',
-  'sheep-dailys': 'Sheep Daily Reports',
-  'tasks-public': 'Public Tasks',
-  'weigh-ins': 'Weigh-Ins',
-};
-
 function TeamAvailabilityEditor({loadUsers}) {
-  const {wfRoster, wfAvailability, setWfAvailability} = useWebformsConfig();
   const {allUsers} = useAuth();
 
-  // Hydrate allUsers when this editor mounts and the auth context's list
-  // is empty. Direct admin /webforms loads (URL bar / bookmark / page
-  // reload) bypass the Header → Users modal click that would otherwise
-  // populate allUsers. The 'tasks-public' assignee section depends on
-  // allUsers being non-empty
-  // to render any checkboxes; without this, a fresh /admin/Webforms hit
-  // would show "No eligible planner users yet" until the admin clicks
-  // the Header → Users option.
+  // Hydrate allUsers when this editor mounts and the auth context's list is
+  // empty. Direct admin /webforms loads (URL bar / bookmark / reload) bypass
+  // the Header -> Users click that would otherwise populate allUsers, and the
+  // assignee checkboxes need it.
   React.useEffect(() => {
     if (typeof loadUsers !== 'function') return;
     if (Array.isArray(allUsers) && allUsers.length > 0) return;
     loadUsers();
-    // Fire-once on mount; allUsers transitions from [] to populated once
-    // the load resolves. eslint-disable to keep the deps array empty.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
-  const [openKey, setOpenKey] = React.useState(null);
-  // Public-tasks assignee availability lives in a separate webform_config
-  // key ('tasks_public_assignee_availability'). Stored shape:
-  // {hiddenProfileIds: [<profile uuid>, ...]}. Roster IDs (gated above
-  // via wfAvailability.forms['tasks-public'].hiddenIds) and profile UUIDs
-  // (gated here) are kept in DIFFERENT keys per Codex's "do not mix" rule.
+  // Public-tasks assignee availability lives in webform_config.tasks_public_
+  // assignee_availability, shape {hiddenProfileIds: [<profile uuid>, ...]}.
+  // Controls which planner users appear in the public Tasks "Assign to" list.
   const [publicAssigneeAv, setPublicAssigneeAv] = React.useState({hiddenProfileIds: []});
-
-  React.useEffect(() => {
-    if (wfAvailability && wfAvailability.forms && Object.keys(wfAvailability.forms).length > 0) return;
-    let cancelled = false;
-    loadAvailability(sb).then((a) => {
-      if (!cancelled && a) setWfAvailability(a);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -405,20 +58,6 @@ function TeamAvailabilityEditor({loadUsers}) {
       cancelled = true;
     };
   }, []);
-
-  async function onToggle(formKey, id, hidden) {
-    setBusy(true);
-    setErr('');
-    try {
-      const next = setHidden(wfAvailability || {forms: {}}, formKey, id, hidden);
-      const persisted = await saveAvailability(sb, next);
-      setWfAvailability(persisted);
-    } catch (e) {
-      setErr(e?.message ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function onToggleAssignee(profileId, hidden) {
     setBusy(true);
@@ -434,39 +73,12 @@ function TeamAvailabilityEditor({loadUsers}) {
     }
   }
 
-  const roster = Array.isArray(wfRoster) ? wfRoster : [];
-  const availability = wfAvailability && wfAvailability.forms ? wfAvailability : {forms: {}};
-
   const card = {
     background: 'white',
     border: '1px solid #e5e7eb',
     borderRadius: 10,
     padding: '14px 16px',
     marginBottom: 16,
-  };
-  const sectionBtn = {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 10px',
-    background: '#f9fafb',
-    border: '1px solid #e5e7eb',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: 12,
-    fontWeight: 600,
-    color: '#374151',
-    marginBottom: 6,
-  };
-  const hiddenBadge = {
-    fontSize: 10,
-    fontWeight: 600,
-    padding: '2px 8px',
-    borderRadius: 4,
-    background: '#fef3c7',
-    color: '#92400e',
   };
   const rowStyle = {
     display: 'inline-flex',
@@ -478,136 +90,54 @@ function TeamAvailabilityEditor({loadUsers}) {
     cursor: 'pointer',
   };
 
+  const hiddenAssigneeIds = new Set(publicAssigneeAv.hiddenProfileIds || []);
+  const eligibleProfiles = (Array.isArray(allUsers) ? allUsers : [])
+    .filter((u) => u && u.id && u.role !== 'inactive')
+    .slice()
+    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+
   return (
     <div style={card}>
       <div style={{fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 6}}>
-        Team Member Availability
+        Public Tasks &mdash; Assignees
         <span style={{fontSize: 11, fontWeight: 400, color: '#9ca3af', marginLeft: 8}}>
-          per-form filters · everyone visible by default
+          who can be assigned a public task
         </span>
       </div>
-      <div style={{fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.5}}>
-        Hide team members from individual form dropdowns. Master roster names and history are not changed. New members
-        default to visible everywhere.
+      <div
+        data-availability-default-copy="tasks-public"
+        style={{fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.5, fontStyle: 'italic'}}
+      >
+        Active planner users are included by default. Uncheck to hide a user from the public Tasks Assign-to dropdown.
       </div>
-
-      {sortByDailysOrder(TEAM_AVAILABILITY_FORM_KEYS).map((formKey) => {
-        const hiddenIds = new Set(availability.forms[formKey]?.hiddenIds || []);
-        const hiddenCount = hiddenIds.size;
-        const isPublicTasks = formKey === 'tasks-public';
-        const hiddenAssigneeIds = new Set(publicAssigneeAv.hiddenProfileIds || []);
-        const hiddenAssigneeCount = isPublicTasks ? hiddenAssigneeIds.size : 0;
-        const totalHiddenCount = hiddenCount + hiddenAssigneeCount;
-        const isOpen = openKey === formKey;
-        const eligibleProfiles = (Array.isArray(allUsers) ? allUsers : [])
-          .filter((u) => u && u.id && u.role !== 'inactive')
-          .slice()
-          .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
-        return (
-          <div key={formKey} data-availability-section={formKey}>
-            <button
-              type="button"
-              onClick={() => setOpenKey(isOpen ? null : formKey)}
-              data-availability-toggle={formKey}
-              style={sectionBtn}
-            >
-              <span>
-                {isOpen ? '▾' : '▸'} {FORM_LABELS[formKey]}
-              </span>
-              {totalHiddenCount > 0 && <span style={hiddenBadge}>{totalHiddenCount} hidden</span>}
-            </button>
-            {isOpen && (
-              <div style={{padding: '6px 4px 12px'}}>
-                {isPublicTasks && (
-                  <>
-                    <div
-                      data-availability-default-copy="tasks-public"
-                      style={{
-                        fontSize: 11,
-                        color: '#6b7280',
-                        marginBottom: 8,
-                        lineHeight: 1.5,
-                        fontStyle: 'italic',
-                      }}
-                    >
-                      New roster members and active planner users are included by default. Uncheck to hide.
-                    </div>
-                    <div style={{fontSize: 11, color: '#6b7280', marginBottom: 6, fontWeight: 600}}>
-                      Submitted-by / Assignor (roster names)
-                    </div>
-                  </>
-                )}
-                <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
-                  {roster.length === 0 ? (
-                    <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
-                      No team members in roster yet.
-                    </span>
-                  ) : (
-                    roster.map((m) => {
-                      const isHidden = hiddenIds.has(m.id);
-                      return (
-                        <label
-                          key={m.id}
-                          data-availability-row={formKey}
-                          data-availability-member={m.id}
-                          data-availability-hidden={isHidden ? '1' : '0'}
-                          style={rowStyle}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!isHidden}
-                            disabled={busy}
-                            onChange={(e) => onToggle(formKey, m.id, !e.target.checked)}
-                            style={{margin: 0, accentColor: '#085041'}}
-                          />
-                          <span>{m.name}</span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-                {isPublicTasks && (
-                  <>
-                    <div style={{fontSize: 11, color: '#6b7280', margin: '12px 0 6px', fontWeight: 600}}>
-                      Assignee (planner users)
-                    </div>
-                    <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
-                      {eligibleProfiles.length === 0 ? (
-                        <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>
-                          No eligible planner users yet.
-                        </span>
-                      ) : (
-                        eligibleProfiles.map((u) => {
-                          const isHidden = hiddenAssigneeIds.has(u.id);
-                          return (
-                            <label
-                              key={u.id}
-                              data-availability-assignee-row="tasks-public"
-                              data-availability-assignee-id={u.id}
-                              data-availability-assignee-hidden={isHidden ? '1' : '0'}
-                              style={rowStyle}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={!isHidden}
-                                disabled={busy}
-                                onChange={(e) => onToggleAssignee(u.id, !e.target.checked)}
-                                style={{margin: 0, accentColor: '#085041'}}
-                              />
-                              <span>{u.full_name || u.email || u.id.slice(0, 8)}</span>
-                            </label>
-                          );
-                        })
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
+      <div style={{fontSize: 11, color: '#6b7280', marginBottom: 6, fontWeight: 600}}>Assignee (planner users)</div>
+      <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
+        {eligibleProfiles.length === 0 ? (
+          <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No eligible planner users yet.</span>
+        ) : (
+          eligibleProfiles.map((u) => {
+            const isHidden = hiddenAssigneeIds.has(u.id);
+            return (
+              <label
+                key={u.id}
+                data-availability-assignee-row="tasks-public"
+                data-availability-assignee-id={u.id}
+                data-availability-assignee-hidden={isHidden ? '1' : '0'}
+                style={rowStyle}
+              >
+                <input
+                  type="checkbox"
+                  checked={!isHidden}
+                  disabled={busy}
+                  onChange={(e) => onToggleAssignee(u.id, !e.target.checked)}
+                  style={{margin: 0, accentColor: '#085041'}}
+                />
+                <span>{u.full_name || u.email || u.id.slice(0, 8)}</span>
+              </label>
+            );
+          })
+        )}
+      </div>
       {err && (
         <div
           style={{
@@ -652,7 +182,7 @@ export default function WebformsAdminView({
   const [editSecVal, setEditSecVal] = React.useState('');
   const [newOpt, setNewOpt] = React.useState('');
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
-  const {webformsConfig, wfGroups, setWfGroups, wfTeamMembers, setWfTeamMembers} = useWebformsConfig();
+  const {webformsConfig, wfGroups, setWfGroups} = useWebformsConfig();
   const {feedCosts} = useFeedCosts();
   const {setView} = useUI();
   const FIELD_TYPES = [
@@ -696,11 +226,9 @@ export default function WebformsAdminView({
     updateWf({...currentWf, sections: s});
   }
 
-  // Master team-member add/remove was retired 2026-04-29 in the team-member
-  // master list cleanup. The TeamRosterEditor (rendered at the top of the
-  // webforms tab) is the sole writer of the canonical roster + legacy
-  // active-name mirror. webformsConfig.teamMembers is no longer read or
-  // written from this view.
+  // The team-member roster (and its admin editor) was retired 2026-06-06:
+  // every user is authenticated, so form submitters are locked to the
+  // signed-in user. webformsConfig.teamMembers is no longer read or written.
   function moveSection(si, dir) {
     const s = [...currentWf.sections];
     if (si + dir < 0 || si + dir >= s.length) return;
@@ -879,7 +407,6 @@ export default function WebformsAdminView({
         {adminTab === 'webforms' && (
           <div>
             {/* ── MASTER TEAM ROSTER + per-form availability filters (only at list level, hidden inside the per-form editor) ── */}
-            {!editWfId && <TeamRosterEditor />}
             {!editWfId && <TeamAvailabilityEditor loadUsers={loadUsers} />}
 
             {/* ── WEIGH-INS EDITOR (per-species lists retired; no editor needed for v1) ── */}

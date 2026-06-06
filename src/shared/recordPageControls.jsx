@@ -10,7 +10,6 @@
 // record pages. The six daily record pages are the first consumers.
 
 import React from 'react';
-import {loadRoster, activeNames} from '../lib/teamMembers.js';
 
 // ── Responsive field-row grid ───────────────────────────────────────────────
 // Desktop: a [label | control] grid with a fixed label column so every row's
@@ -117,44 +116,3 @@ export function LockedTeamMemberField({value, label = null, labelStyle, style, c
   );
 }
 
-// Roster-backed Team Member dropdown. Loads the team roster and renders the
-// active names. The currently-saved value is preserved: if it is not in the
-// active roster it is offered as a selectable historical option labeled
-// "<name> (not in roster)" so an editor can keep the original submitter. It
-// does NOT allow arbitrary new names to be typed, and never auto-stamps the
-// logged-in user — team_member stays the existing display-name string.
-export function TeamMemberSelect({sb, value, onChange, style}) {
-  const [names, setNames] = React.useState([]);
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const roster = await loadRoster(sb);
-        if (!cancelled) setNames(activeNames(roster));
-      } catch {
-        if (!cancelled) setNames([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sb]);
-
-  const v = value || '';
-  const isHistorical = v !== '' && !names.includes(v);
-  return (
-    <select data-team-member-select="1" value={v} onChange={(e) => onChange?.(e.target.value)} style={style || recordControl}>
-      <option value="">— Select team member —</option>
-      {names.map((n) => (
-        <option key={n} value={n}>
-          {n}
-        </option>
-      ))}
-      {isHistorical && (
-        <option key={v} value={v}>
-          {v} (not in roster)
-        </option>
-      )}
-    </select>
-  );
-}

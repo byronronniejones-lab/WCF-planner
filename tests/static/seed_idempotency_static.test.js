@@ -342,7 +342,6 @@ describe('CP7: equipment seeds avoid fixed unique-key collisions', () => {
 const CP8_FULL_FILES = [
   'tests/cattle_forecast.spec.js',
   'tests/daily_report_photos.spec.js',
-  'tests/team_availability.spec.js',
   'tests/activity_navigation.spec.js',
   'tests/cattle_soft_delete.spec.js',
   'tests/tasks_v2_t3_t4.spec.js',

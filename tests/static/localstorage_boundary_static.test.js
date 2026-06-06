@@ -9,10 +9,6 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const EXPECTED_LOCAL_STORAGE_OWNERS = new Map([
   ['src/contexts/PigContext.jsx', 5],
   ['src/main.jsx', 4],
-  ['src/webforms/AddFeedWebform.jsx', 1],
-  ['src/webforms/FuelSupplyWebform.jsx', 3],
-  ['src/webforms/PigDailysWebform.jsx', 1],
-  ['src/webforms/WebformHub.jsx', 6],
 ]);
 
 const ALLOWED_LITERAL_KEYS = new Set([
@@ -22,7 +18,6 @@ const ALLOWED_LITERAL_KEYS = new Set([
   'ppp-feeders-v1',
   'ppp-pigs-v1',
   'wcf-test-role-override',
-  'wcf_team',
 ]);
 
 function stripComments(src) {
@@ -69,7 +64,7 @@ describe('localStorage boundary', () => {
       .filter(([rel, count]) => seen.get(rel) !== count)
       .map(([rel, count]) => `${rel}: expected ${count}, saw ${seen.get(rel) ?? 0}`);
 
-    expect(total).toBe(20);
+    expect(total).toBe(9);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
@@ -91,7 +86,7 @@ describe('localStorage boundary', () => {
       }
     }
 
-    expect(keys).toHaveLength(17);
+    expect(keys).toHaveLength(6);
     expect(offenders).toEqual([]);
     expect(secretLike).toEqual([]);
   });

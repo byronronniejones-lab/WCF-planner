@@ -10,10 +10,10 @@
 // just don't drive them through this module anymore.
 //
 // C3 added: load/savePublicAssigneeAvailability for the Public Tasks
-// availability tile. Roster-side filtering for the Submitted-by dropdown
-// goes through teamAvailability.js (forms['tasks-public'].hiddenIds);
-// profile-uuid filtering for the Assignee dropdown lives in a separate
-// webform_config key — see tasks.js for the canonical key name + shape.
+// availability tile. Profile-uuid filtering for the Assignee dropdown
+// lives in webform_config.tasks_public_assignee_availability — see
+// tasks.js for the canonical key name + shape. (The legacy roster
+// Submitted-by filter was retired with the team roster on 2026-06-06.)
 
 import {
   TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY,
@@ -68,10 +68,9 @@ export async function loadPublicAssigneeAvailability(sb) {
 /**
  * Persist the public-tasks assignee availability. Read-fresh-then-merge
  * per PROJECT.md §7 line 543 (webform_config jsonb keys must re-fetch
- * before upsert). Local-wins on the full list — matches
- * saveAvailability's per-formKey local-wins philosophy. Single-admin
- * tile usage in practice; if concurrent admins both write here, last
- * writer's snapshot is what persists.
+ * before upsert). Local-wins on the full list. Single-admin tile usage in
+ * practice; if concurrent admins both write here, last writer's snapshot
+ * is what persists.
  *
  * Returns the persisted availability.
  */

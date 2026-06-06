@@ -35,7 +35,7 @@ describe('shared record-page controls module', () => {
     ]) {
       expect(src).toContain(`export const ${sym}`);
     }
-    expect(src).toContain('export function TeamMemberSelect');
+    expect(src).toContain('export function LockedTeamMemberField');
   });
 });
 

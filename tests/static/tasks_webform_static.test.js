@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {describe, it, expect} from 'vitest';
-import {TEAM_AVAILABILITY_FORM_KEYS} from '../../src/lib/teamAvailability.js';
 import {_REGISTRY as RPC_REGISTRY} from '../../src/lib/offlineRpcForms.js';
 
 // ============================================================================
@@ -18,12 +17,10 @@ import {_REGISTRY as RPC_REGISTRY} from '../../src/lib/offlineRpcForms.js';
 //   5. offlineRpcForms registry has a task_submit entry whose buildArgs
 //      assembles parent_in with the C3 contract fields and uses the
 //      caller-provided parentId (so 'ti-<uuid>' makes it through).
-//   6. teamAvailability lists 'tasks-public' (10 keys total).
-//   7. WebformsAdminView FORM_LABELS contains 'tasks-public': 'Public
-//      Tasks'.
-//   8. TeamAvailabilityEditor renders BOTH a Submitted-by/Assignor
-//      section (roster checkboxes) AND an Assignee section (profile
-//      checkboxes) for 'tasks-public'.
+//   6. WebformsAdminView's TeamAvailabilityEditor renders the public-Tasks
+//      Assignee section (profile checkboxes) for 'tasks-public'. The legacy
+//      roster Submitted-by/Assignor matrix is gone — the submitter is locked
+//      to the signed-in user.
 //   9. mig 041 ships the two RPCs:
 //      - list_eligible_assignees returns only id + full_name (no role/
 //        email leak) and filters role != 'inactive'.
@@ -168,20 +165,12 @@ describe('offlineRpcForms task_submit registry', () => {
   });
 });
 
-describe('Team availability + admin tile', () => {
-  it("'tasks-public' is in TEAM_AVAILABILITY_FORM_KEYS (10 total)", () => {
-    expect(TEAM_AVAILABILITY_FORM_KEYS).toContain('tasks-public');
-    expect(TEAM_AVAILABILITY_FORM_KEYS).toHaveLength(10);
-  });
-
-  it("WebformsAdminView FORM_LABELS contains 'tasks-public': 'Public Tasks'", () => {
-    expect(adminSrc).toMatch(/'tasks-public':\s*'Public Tasks'/);
-  });
-
-  it('Public Tasks tile renders BOTH the Submitted-by/Assignor section and the Assignee section', () => {
-    expect(adminSrc).toMatch(/Submitted-by\s*\/\s*Assignor/);
+describe('Public Tasks admin assignee tile', () => {
+  it('Public Tasks tile renders the Assignee section (legacy roster matrix removed)', () => {
     expect(adminSrc).toMatch(/Assignee \(planner users\)/);
-    // Lock the data-attrs so a UI refactor still exposes both rows for tests.
+    // The legacy roster Submitted-by/Assignor matrix is gone.
+    expect(adminSrc).not.toMatch(/Submitted-by\s*\/\s*Assignor/);
+    // Lock the data-attrs so a UI refactor still exposes the assignee rows.
     expect(adminSrc).toMatch(/data-availability-assignee-row="tasks-public"/);
     expect(adminSrc).toMatch(/data-availability-assignee-id=/);
   });
@@ -208,10 +197,12 @@ describe('Team availability + admin tile', () => {
   });
 
   it('Public Tasks tile shows the default-inclusion copy at the top of the tile (C3.1a)', () => {
-    // Codex-locked exact phrase. Lives only inside the 'tasks-public'
-    // tile branch — locked via the data-availability-default-copy attr.
+    // Default-inclusion copy, locked via the data-availability-default-copy
+    // attr so it stays at the top of the assignee tile.
     expect(adminSrc).toMatch(/data-availability-default-copy="tasks-public"/);
-    expect(adminSrc).toMatch(/New roster members and active planner users are included by default\. Uncheck to hide\./);
+    expect(adminSrc).toMatch(
+      /Active planner users are included by default\. Uncheck to hide a user from the public Tasks Assign-to dropdown\./,
+    );
   });
 });
 

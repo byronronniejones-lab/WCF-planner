@@ -129,8 +129,8 @@ export default function EquipmentWebformsAdmin() {
 
   return (
     <div>
-      {/* FuelSupplyAdminSection retired 2026-04-29 — master roster lives in
-          /webforms admin (TeamRosterEditor); per-form filtering removed. */}
+      {/* FuelSupplyAdminSection retired 2026-04-29. The team-member roster it
+          referenced was retired 2026-06-06 — submitters are now login-locked. */}
       <div style={card}>
         <div style={sectionTitle}>
           Equipment{' '}

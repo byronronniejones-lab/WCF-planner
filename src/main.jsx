@@ -118,8 +118,6 @@ import {calcCattleBreedingTimeline, buildCattleCycleSeqMap, cattleCycleLabel} fr
 import {addDays, toISO, fmt, fmtS, todayISO} from './lib/dateUtils.js';
 import {S} from './lib/styles.js';
 import {DEFAULT_WEBFORMS_CONFIG} from './lib/defaults.js';
-import {loadRoster, activeNames as rosterActiveNames} from './lib/teamMembers.js';
-import {loadAvailability} from './lib/teamAvailability.js';
 // Phase 2 Round 6 prep: broiler helpers lifted to src/lib/broiler.js so the
 // BroilerHomeView extraction can import them without a main.jsx circular dep.
 import {
@@ -1223,18 +1221,7 @@ function App() {
   // Phase 2.0.6 — small bundled contexts.
   const {cattleForHome, setCattleForHome, cattleOnFarmCount, setCattleOnFarmCount} = useCattleHome();
   const {sheepForHome, setSheepForHome} = useSheepHome();
-  const {
-    wfGroups,
-    setWfGroups,
-    wfRoster,
-    setWfRoster,
-    wfAvailability,
-    setWfAvailability,
-    wfTeamMembers,
-    setWfTeamMembers,
-    webformsConfig,
-    setWebformsConfig,
-  } = useWebformsConfig();
+  const {wfGroups, setWfGroups, webformsConfig, setWebformsConfig} = useWebformsConfig();
   const {feedCosts, setFeedCosts, missedCleared, setMissedCleared} = useFeedCosts();
   const {view, setView, pendingEdit, setPendingEdit, showAllComparison, setShowAllComparison, showMenu, setShowMenu} =
     useUI();
@@ -1437,25 +1424,19 @@ function App() {
   });
 
   // ── AUTH LISTENER & DATA LOADING ──
-  // Load webform config (anon, no auth needed) — team roster + active groups.
-  // Reads canonical team_roster first; loadRoster falls back to legacy
-  // team_members string[] when the canonical key is missing. setWfRoster
-  // also updates the derived wfTeamMembers active-name list for back-compat
-  // consumers (PigDailysWebform etc.) during the team-member cleanup.
+  // Load the active pig-group dropdown options for the webform hub.
   useEffect(() => {
     if (view !== 'webform' && view !== 'webformhub') return;
-    Promise.all([
-      loadRoster(sb),
-      loadAvailability(sb),
-      sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
-    ]).then(([roster, availability, agRes]) => {
-      if (Array.isArray(roster) && roster.length > 0) setWfRoster(roster);
-      if (availability) setWfAvailability(availability);
-      if (!agRes.error && Array.isArray(agRes.data?.data)) {
-        const groups = agRes.data.data.map((name) => ({value: name, label: name}));
-        setWfGroups(groups);
-      }
-    });
+    sb.from('webform_config')
+      .select('data')
+      .eq('key', 'active_groups')
+      .maybeSingle()
+      .then((agRes) => {
+        if (!agRes.error && Array.isArray(agRes.data?.data)) {
+          const groups = agRes.data.data.map((name) => ({value: name, label: name}));
+          setWfGroups(groups);
+        }
+      });
   }, [view]);
 
   // Load cattle count for Home page Animals on Farm tile
@@ -2390,17 +2371,6 @@ function App() {
             }),
           };
           setWebformsConfig(wfCfg);
-          // Roster — canonical team_roster (legacy team_members fallback inside
-          // loadRoster). Sets both wfRoster and the derived wfTeamMembers
-          // active-name list. Roster is the source of truth for logged-in
-          // admin views; the per-webform `teamMembers` field on each form
-          // is no longer the source we read.
-          loadRoster(sb).then((roster) => {
-            if (Array.isArray(roster) && roster.length > 0) setWfRoster(roster);
-          });
-          loadAvailability(sb).then((availability) => {
-            if (availability) setWfAvailability(availability);
-          });
         }
         if (store['ppp-layer-groups-v1']) setLayerGroups(store['ppp-layer-groups-v1']);
         if (store['ppp-missed-cleared-v1']) setMissedCleared(new Set(store['ppp-missed-cleared-v1'] || []));
@@ -2697,18 +2667,6 @@ function App() {
       // until an active sub-batch splits it). SOWS/BOARS stay as the fixed
       // breeding-stock daily groups.
       const pigGroups = ['SOWS', 'BOARS', ...activePigFeederDailyTargets(fgs).map((t) => t.name)];
-      // Team-member master roster lives in webform_config.team_roster
-      // (canonical) + webform_config.team_members (legacy active-name
-      // mirror). saveRoster on the central admin editor writes both. This
-      // syncWebformConfig path no longer touches either — it neither
-      // derives a union from per-webform `teamMembers` nor writes the
-      // legacy mirror, so admin saves elsewhere don't churn the roster.
-      //
-      // Retired alongside:
-      //   - per_form_team_members  (per-form filtering eliminated)
-      //   - weighins_team_members  (per-species filtering eliminated;
-      //                             every active member selectable for
-      //                             every species)
       // Use explicit batchData param to avoid stale closure — batches state may not be set yet
       const batchList = batchData || batches || [];
       // Public broiler mirror — single source of truth for the dropdown list AND
@@ -3453,8 +3411,6 @@ function App() {
       sb,
       wfGroups,
       setWfGroups,
-      wfTeamMembers,
-      setWfTeamMembers,
       layerGroups,
       batches,
       layerBatches,

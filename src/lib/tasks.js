@@ -17,9 +17,10 @@ export function isOpenTaskInstance(ti) {
 // Storage: webform_config.tasks_public_assignee_availability
 // Shape:   {hiddenProfileIds: [<profile uuid>, ...]}
 //
-// Roster IDs (gated via team_availability.forms['tasks-public'].hiddenIds)
-// and profile UUIDs (gated here) MUST NOT mix in the same hiddenIds array.
-// Submitted-by is a roster display name; assignee is a profiles.id uuid.
+// This holds profile UUIDs only (the Assignee dropdown). The legacy roster
+// "Submitted-by" filter that once shared the tasks-public form key was
+// retired with the team roster on 2026-06-06 — submitters are now locked to
+// the signed-in user, so no roster-name / profile-uuid mixing remains.
 
 export const TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY = 'tasks_public_assignee_availability';
 

@@ -3,9 +3,6 @@ import React from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {setHousingAnchorFromReport} from '../lib/layerHousing.js';
 import {wcfSendEmail} from '../lib/email.js';
-import {loadRoster, activeNames} from '../lib/teamMembers.js';
-import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
-import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
 import {uploadDailyPhoto, MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
@@ -28,8 +25,6 @@ const WebformHub = ({
   sb,
   wfGroups,
   setWfGroups,
-  wfTeamMembers,
-  setWfTeamMembers,
   layerGroups,
   batches,
   layerBatches,
@@ -46,7 +41,6 @@ const WebformHub = ({
   // reset without touching each path).
   const lockedName = sessionSubmitter?.name || '';
   const submitterLocked = !!lockedName;
-  const {wfRoster, setWfRoster, wfAvailability, setWfAvailability} = useWebformsConfig();
   const [loadedConfig, setLoadedConfig] = useState(null); // loaded from Supabase full_config
   const [showAppSetup, setShowAppSetup] = useState(false);
   const [broilerGroupsFromDb, setBroilerGroupsFromDb] = useState([]);
@@ -62,9 +56,7 @@ const WebformHub = ({
       sb.from('webform_config').select('data').eq('key', 'webform_settings').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'housing_batch_map').maybeSingle(),
-      loadRoster(sb),
-      loadAvailability(sb),
-    ]).then(([fc, bg, bbm, ws, ag, hbm, roster, availability]) => {
+    ]).then(([fc, bg, bbm, ws, ag, hbm]) => {
       if (fc?.data?.data) setLoadedConfig(fc.data.data);
       if (Array.isArray(bg?.data?.data) && bg.data.data.length > 0) setBroilerGroupsFromDb(bg.data.data);
       if (Array.isArray(bbm?.data?.data)) setBroilerMeta(bbm.data.data);
@@ -74,11 +66,6 @@ const WebformHub = ({
         setPigGroupsFromDb(groups);
         if (setWfGroups) setWfGroups(groups);
       }
-      if (Array.isArray(roster) && roster.length > 0) {
-        if (setWfRoster) setWfRoster(roster);
-        if (setWfTeamMembers) setWfTeamMembers(activeNames(roster));
-      }
-      if (availability && setWfAvailability) setWfAvailability(availability);
       if (hbm?.data?.data) setHousingBatchMap(hbm.data.data);
     });
   }, []);
@@ -256,25 +243,7 @@ const WebformHub = ({
     );
     return byHousing?.batch_id || null;
   }
-  // Per-form team-member availability filters (2026-04-29). The master
-  // roster is the single source of truth (wfRoster, loaded via loadRoster).
-  // `team_availability.forms[formKey].hiddenIds` narrows the dropdown for
-  // each form key — empty / missing entry means everyone visible. The
-  // loadedConfig.teamMembers fallback is a defensive path for the
-  // mobile cold-load race where roster hasn't populated yet.
   const cfg = loadedConfig || webformsConfig || {};
-  const loadedTeamMembers = loadedConfig?.teamMembers || [];
-  const getFormTeamMembers = (formKey) => {
-    const roster = Array.isArray(wfRoster) ? wfRoster : [];
-    if (roster.length > 0) {
-      return availableNamesFor(formKey, roster, wfAvailability);
-    }
-    // Cold-load fallback: legacy mirror or wfTeamMembers prop. Availability
-    // can't be applied without ids in this branch — names only.
-    const fromProp = wfTeamMembers || [];
-    if (fromProp.length > 0) return fromProp;
-    return loadedTeamMembers;
-  };
   const isEnabled = (formId, fieldId) => {
     const wf = (cfg.webforms || []).find((w) => w.id === formId);
     if (!wf) return true;
@@ -629,7 +598,6 @@ const WebformHub = ({
     }
 
     setSubmitting(true);
-    localStorage.setItem('wcf_team', bForm.teamMember);
 
     const extraCount = extraBroilerGroups.filter((g) => g.batchLabel).length;
 
@@ -822,7 +790,6 @@ const WebformHub = ({
     }
 
     setSubmitting(true);
-    localStorage.setItem('wcf_team', lForm.teamMember);
 
     const csid = newClientSubmissionId();
     let photoMeta;
@@ -970,7 +937,6 @@ const WebformHub = ({
     }
 
     setSubmitting(true);
-    localStorage.setItem('wcf_team', pForm.teamMember);
 
     const extraCount = extraPigGroups.filter((g) => g.batchLabel).length;
 
@@ -1120,7 +1086,6 @@ const WebformHub = ({
     }
     setErr('');
     setSubmitting(true);
-    localStorage.setItem('wcf_team', eForm.teamMember);
     const g1 = eForm.g1c !== '' ? parseInt(eForm.g1c) : 0;
     const g2 = eForm.g2c !== '' ? parseInt(eForm.g2c) : 0;
     const g3 = eForm.g3c !== '' ? parseInt(eForm.g3c) : 0;
@@ -1196,7 +1161,6 @@ const WebformHub = ({
     }
     setErr('');
     setSubmitting(true);
-    localStorage.setItem('wcf_team', cForm.teamMember);
     // Build feeds jsonb with nutrition snapshots from the feed master list
     const feedsJ = (cForm.feeds || [])
       .filter((f) => f.feedId && f.qty !== '' && f.qty != null)
@@ -1280,7 +1244,6 @@ const WebformHub = ({
     }
     setErr('');
     setSubmitting(true);
-    localStorage.setItem('wcf_team', sForm.teamMember);
     // Build feeds jsonb from picker rows — mirrors cattle's shape
     const feedsJ = (sForm.feeds || [])
       .filter((f) => f.feedId && f.qty !== '' && f.qty != null)
@@ -1695,25 +1658,7 @@ const WebformHub = ({
                 />
               </div>
               <div style={{gridColumn: '1/-1'}}>
-                {submitterLocked ? (
-                  <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
-                ) : (
-                  <>
-                    <label style={labelStyle}>Team Member{reqStar('broiler-dailys', 'team_member')}</label>
-                    <select
-                      value={bForm.teamMember}
-                      onChange={(e) => setBForm((f) => ({...f, teamMember: e.target.value}))}
-                      style={inputStyle}
-                    >
-                      <option value="">Select...</option>
-                      {getFormTeamMembers('broiler-dailys').map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
+                <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
               </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={labelStyle}>Broiler Group{reqStar('broiler-dailys', 'batch_label')}</label>
@@ -2080,25 +2025,7 @@ const WebformHub = ({
                 />
               </div>
               <div style={{gridColumn: '1/-1'}}>
-                {submitterLocked ? (
-                  <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
-                ) : (
-                  <>
-                    <label style={labelStyle}>Team Member{reqStar('layer-dailys', 'team_member')}</label>
-                    <select
-                      value={lForm.teamMember}
-                      onChange={(e) => setLForm((f) => ({...f, teamMember: e.target.value}))}
-                      style={inputStyle}
-                    >
-                      <option value="">Select...</option>
-                      {getFormTeamMembers('layer-dailys').map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
+                <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
               </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={labelStyle}>Layer Group{reqStar('layer-dailys', 'batch_label')}</label>
@@ -2442,7 +2369,6 @@ const WebformHub = ({
   if (activeForm === 'pig') {
     // CRITICAL: load from Supabase only — props are empty on mobile (no auth)
     const pgGroups = pigGroupsFromDb.length > 0 ? pigGroupsFromDb : wfGroups && wfGroups.length > 0 ? wfGroups : [];
-    const pgTeam = getFormTeamMembers('pig-dailys');
     return (
       <div style={wfBg}>
         <div style={{maxWidth: 480, margin: '0 auto'}}>
@@ -2482,25 +2408,7 @@ const WebformHub = ({
                 />
               </div>
               <div style={{gridColumn: '1/-1'}}>
-                {submitterLocked ? (
-                  <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
-                ) : (
-                  <>
-                    <label style={labelStyle}>Team Member{reqStar('pig-dailys', 'team_member')}</label>
-                    <select
-                      value={pForm.teamMember}
-                      onChange={(e) => setPForm((f) => ({...f, teamMember: e.target.value}))}
-                      style={inputStyle}
-                    >
-                      <option value="">Select...</option>
-                      {pgTeam.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
+                <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
               </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={labelStyle}>Pig Group{reqStar('pig-dailys', 'batch_label')}</label>
@@ -2838,7 +2746,6 @@ const WebformHub = ({
       const fi = cattleFeedInputs.find((x) => x.id === feedId);
       return fi ? fi.unit : '';
     };
-    const cgTeam = getFormTeamMembers('cattle-dailys');
     const showCreepToggle = herdSelected === 'mommas';
     return (
       <div style={wfBg}>
@@ -2878,27 +2785,7 @@ const WebformHub = ({
                 />
               </div>
               <div style={{gridColumn: '1/-1'}}>
-                {submitterLocked ? (
-                  <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
-                ) : (
-                  <>
-                    <label style={labelStyle}>
-                      Team Member<span style={{color: '#b91c1c', marginLeft: 2}}>*</span>
-                    </label>
-                    <select
-                      value={cForm.teamMember}
-                      onChange={(e) => setCForm((f) => ({...f, teamMember: e.target.value}))}
-                      style={inputStyle}
-                    >
-                      <option value="">Select...</option>
-                      {cgTeam.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
+                <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
               </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={labelStyle}>
@@ -3284,25 +3171,7 @@ const WebformHub = ({
                 />
               </div>
               <div style={{gridColumn: '1/-1'}}>
-                {submitterLocked ? (
-                  <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
-                ) : (
-                  <>
-                    <label style={labelStyle}>Team Member{reqStar('egg-dailys', 'team_member')}</label>
-                    <select
-                      value={eForm.teamMember}
-                      onChange={(e) => setEForm((f) => ({...f, teamMember: e.target.value}))}
-                      style={inputStyle}
-                    >
-                      <option value="">Select...</option>
-                      {getFormTeamMembers('egg-dailys').map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
+                <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
               </div>
             </div>
           </div>
@@ -3448,25 +3317,7 @@ const WebformHub = ({
                 />
               </div>
               <div style={{gridColumn: '1/-1'}}>
-                {submitterLocked ? (
-                  <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
-                ) : (
-                  <>
-                    <label style={labelStyle}>Team Member{reqStar('sheep-dailys', 'team_member')}</label>
-                    <select
-                      value={sForm.teamMember}
-                      onChange={(e) => setSForm((f) => ({...f, teamMember: e.target.value}))}
-                      style={inputStyle}
-                    >
-                      <option value="">Select...</option>
-                      {getFormTeamMembers('sheep-dailys').map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
+                <LockedSubmitter name={lockedName} label="Team Member" labelStyle={labelStyle} />
               </div>
               <div style={{gridColumn: '1/-1'}}>
                 <label style={labelStyle}>

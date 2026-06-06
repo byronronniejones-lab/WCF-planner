@@ -10,8 +10,6 @@ const EXPECTED_WEBFORM_CONFIG_OWNERS = new Map([
   ['src/lib/tasksAdminApi.js', 3],
   ['src/lib/tasksCenterApi.js', 1],
   ['src/lib/tasksPublicApi.js', 1],
-  ['src/lib/teamAvailability.js', 3],
-  ['src/lib/teamMembers.js', 5],
   ['src/main.jsx', 11],
   ['src/shared/AdminAddReportModal.jsx', 6],
   ['src/shared/AdminNewWeighInModal.jsx', 2],
@@ -73,7 +71,7 @@ describe('webform_config boundary', () => {
       .filter(([rel, count]) => seen.get(rel) !== count)
       .map(([rel, count]) => `${rel}: expected ${count}, saw ${seen.get(rel) ?? 0}`);
 
-    expect(total).toBe(47);
+    expect(total).toBe(39);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
@@ -101,14 +99,9 @@ describe('webform_config boundary', () => {
     const tasksSrc = fs.readFileSync(path.join(ROOT, 'src/lib/tasks.js'), 'utf8');
     const tasksPublic = fs.readFileSync(path.join(ROOT, 'src/lib/tasksPublicApi.js'), 'utf8');
     const tasksAdmin = fs.readFileSync(path.join(ROOT, 'src/lib/tasksAdminApi.js'), 'utf8');
-    const teamMembers = fs.readFileSync(path.join(ROOT, 'src/lib/teamMembers.js'), 'utf8');
-    const teamAvailability = fs.readFileSync(path.join(ROOT, 'src/lib/teamAvailability.js'), 'utf8');
 
     expect(tasksSrc).toContain("TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY = 'tasks_public_assignee_availability'");
     expect(tasksPublic).toContain('TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY');
     expect(tasksAdmin).toContain('TASKS_PUBLIC_ASSIGNEE_AVAILABILITY_KEY');
-    expect(teamMembers).toContain("ROSTER_KEY = 'team_roster'");
-    expect(teamMembers).toContain("LEGACY_NAMES_KEY = 'team_members'");
-    expect(teamAvailability).toContain("KEY = 'team_availability'");
   });
 });

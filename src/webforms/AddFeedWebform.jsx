@@ -20,8 +20,6 @@
 // Feed is on the RPC path because it produces N child rows from one
 // submission and atomicity matters.
 import React from 'react';
-import {loadRoster} from '../lib/teamMembers.js';
-import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import {formatBroilerBatchLabel} from '../lib/broilerBatchMeta.js';
 import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -45,7 +43,6 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
   const [pigGroups, setPigGroups] = React.useState([]);
   const [layerGroupNames, setLayerGroupNames] = React.useState([]);
   const [layerBatchIdMap, setLayerBatchIdMap] = React.useState({});
-  const [allTeamMembers, setAllTeamMembers] = React.useState([]);
 
   const [program, setProgram] = React.useState('');
   const [date, setDate] = React.useState('');
@@ -112,24 +109,17 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
       sb.from('webform_config').select('data').eq('key', 'active_groups').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'full_config').maybeSingle(),
       sb.from('webform_config').select('data').eq('key', 'webform_settings').maybeSingle(),
-      loadRoster(sb),
-      loadAvailability(sb),
     ]).then(function (results) {
       var hbm = results[0],
         bg = results[1],
         bbm = results[2],
         ag = results[3],
         fc = results[4],
-        ws = results[5],
-        roster = results[6],
-        availability = results[7];
+        ws = results[5];
       if (hbm && hbm.data && hbm.data.data) setHousingBatchMap(hbm.data.data);
       if (bg && bg.data && Array.isArray(bg.data.data) && bg.data.data.length > 0) setBroilerGroups(bg.data.data);
       if (bbm && bbm.data && Array.isArray(bbm.data.data)) setBroilerMeta(bbm.data.data);
       if (ag && ag.data && Array.isArray(ag.data.data) && ag.data.data.length > 0) setPigGroups(ag.data.data);
-      if (Array.isArray(roster) && roster.length > 0) {
-        setAllTeamMembers(availableNamesFor('add-feed', roster, availability));
-      }
       if (ws && ws.data && ws.data.data) setWfSettings(ws.data.data);
       if (fc && fc.data && fc.data.data) {
         setWfCfg(fc.data.data);
@@ -208,13 +198,6 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
     if (program === 'layer') return layerGroupNames;
     return [];
   }
-  function getTeamMemberList() {
-    // allTeamMembers holds the roster pre-filtered by the 'add-feed'
-    // availability key (TeamAvailabilityEditor). Members hidden for
-    // Add Feed in admin do not appear here.
-    return allTeamMembers;
-  }
-
   function buildRecord(bl, ft, fl) {
     var id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
     var now = new Date().toISOString();
@@ -415,16 +398,6 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
     try {
       const payload = buildSubmitPayload();
       const result = await submit(payload);
-      // Persist team-member convenience on BOTH outcomes — queued means the
-      // submission was captured on-device successfully; the operator's pick
-      // should survive reload either way.
-      if (teamMember) {
-        try {
-          localStorage.setItem('wcf_team', teamMember);
-        } catch (_e) {
-          /* localStorage unavailable in some browsers — best effort */
-        }
-      }
       setDoneState(result.state);
     } catch (e) {
       // Schema/validation error — useOfflineRpcSubmit throws on PGRST/22*/23*.
@@ -820,36 +793,9 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
           />
         </div>
 
-        {submitterLocked ? (
-          <div style={cardS}>
-            <LockedSubmitter name={lockedName} label={getLabel('team_member', 'Team Member')} labelStyle={lblS} />
-          </div>
-        ) : (
-          isEnabled('team_member') && (
-            <div style={cardS}>
-              <label style={lblS}>
-                {getLabel('team_member', 'Team Member')}
-                {reqStar('team_member')}
-              </label>
-              <select
-                value={teamMember}
-                onChange={function (e) {
-                  setTeamMember(e.target.value);
-                }}
-                style={inpS}
-              >
-                <option value="">Select...</option>
-                {getTeamMemberList().map(function (m) {
-                  return (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-          )
-        )}
+        <div style={cardS}>
+          <LockedSubmitter name={lockedName} label={getLabel('team_member', 'Team Member')} labelStyle={lblS} />
+        </div>
 
         <div style={cardS}>
           <label style={lblS}>Program</label>

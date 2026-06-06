@@ -17,7 +17,6 @@
 // ============================================================================
 import React from 'react';
 import {useWebformsConfig} from '../contexts/WebformsConfigContext.jsx';
-import {availableNamesFor} from '../lib/teamAvailability.js';
 import {MAX_PHOTOS_PER_REPORT} from '../lib/dailyPhotos.js';
 import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
 import DailyPhotoCapture from './DailyPhotoCapture.jsx';
@@ -25,17 +24,10 @@ import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 import LockedSubmitter from './LockedSubmitter.jsx';
 
 export default function PigDailysWebform({sessionSubmitter}) {
-  const {wfGroups, wfRoster, wfAvailability, wfTeamMembers, webformsConfig} = useWebformsConfig();
-  // Lane 1 CP1: on the authenticated path the submitter is the signed-in user,
-  // locked.
+  const {wfGroups, webformsConfig} = useWebformsConfig();
+  // Lane 1 CP1: every webform is login-required, so the submitter is always
+  // the signed-in user.
   const lockedName = sessionSubmitter?.name || '';
-  const submitterLocked = !!lockedName;
-  // Master roster filtered by `pig-dailys` availability. Falls back to the
-  // legacy wfTeamMembers if roster hasn't populated yet (cold-load race).
-  const wfPigTeamMembers =
-    Array.isArray(wfRoster) && wfRoster.length > 0
-      ? availableNamesFor('pig-dailys', wfRoster, wfAvailability)
-      : wfTeamMembers || [];
 
   const [wfPhotos, setWfPhotos] = React.useState([]);
   const [wfPhotoStatuses, setWfPhotoStatuses] = React.useState([]);
@@ -69,12 +61,12 @@ export default function PigDailysWebform({sessionSubmitter}) {
   const [wfGroupName, setWfGroupName] = React.useState('');
   const [wfStuckOpen, setWfStuckOpen] = React.useState(false);
 
-  // Keep the locked submitter pinned to the signed-in identity.
+  // Keep the submitter pinned to the signed-in identity.
   React.useEffect(() => {
-    if (submitterLocked && wfForm.teamMember !== lockedName) {
+    if (wfForm.teamMember !== lockedName) {
       setWfForm((prev) => ({...prev, teamMember: lockedName}));
     }
-  }, [submitterLocked, lockedName, wfForm.teamMember]);
+  }, [lockedName, wfForm.teamMember]);
 
   // Phase 1C-B no-photo offline queue + Phase 1D-A photo offline queue.
   // The hook handles both via the hasPhotos branch (offlineForms.js
@@ -163,11 +155,6 @@ export default function PigDailysWebform({sessionSubmitter}) {
     }
     setWfErr('');
     setWfSubmitting(true);
-    try {
-      if (!submitterLocked) localStorage.setItem('wcf_team', wfForm.teamMember.trim());
-    } catch (_e) {
-      /* localStorage unavailable in some browsers — best effort */
-    }
 
     // Validate the photo count cap upfront — DailyPhotoCapture also enforces
     // it, the hook's preparePhotos throws on >10 too, but a defense-in-depth
@@ -615,60 +602,11 @@ export default function PigDailysWebform({sessionSubmitter}) {
               </div>
             </div>
             <div>
-              {submitterLocked ? (
-                <LockedSubmitter
-                  name={lockedName}
-                  label="Team member"
-                  labelStyle={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}
-                />
-              ) : (
-                <>
-                  <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
-                    Team member{isReq('team_member') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
-                  </label>
-                  {wfPigTeamMembers.length > 0 ? (
-                    <select
-                      value={wfForm.teamMember}
-                      onChange={(e) => setWfForm({...wfForm, teamMember: e.target.value})}
-                      style={{
-                        fontFamily: 'inherit',
-                        fontSize: 13,
-                        padding: '9px 12px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: 6,
-                        width: '100%',
-                        outline: 'none',
-                        background: 'white',
-                        color: wfForm.teamMember ? '#111827' : '#9ca3af',
-                      }}
-                    >
-                      <option value="">— Select name —</option>
-                      {wfPigTeamMembers.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      value={wfForm.teamMember}
-                      onChange={(e) => setWfForm({...wfForm, teamMember: e.target.value})}
-                      placeholder="Your name"
-                      style={{
-                        fontFamily: 'inherit',
-                        fontSize: 13,
-                        padding: '9px 12px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: 6,
-                        width: '100%',
-                        outline: 'none',
-                        background: 'white',
-                        color: '#111827',
-                      }}
-                    />
-                  )}
-                </>
-              )}
+              <LockedSubmitter
+                name={lockedName}
+                label="Team member"
+                labelStyle={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}
+              />
             </div>
             <div>
               <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>

@@ -15,8 +15,12 @@ const EXPECTED_LITERAL_MUTATION_TOTALS = new Map([
   // views) moved to the update_daily_report SECDEF RPC (mig 091).
   // +1 update from savedViewsApi.updateSavedView (app_saved_views, mig 095).
   // -1 update from retiring per-equipment team_members assignment.
-  ['update', 81],
-  ['upsert', 43],
+  // -1 update from removing the team-roster → equipment.team_members cascade
+  //    in WebformsAdminView (roster teardown).
+  ['update', 80],
+  // -3 upsert from deleting teamMembers.js (2) + teamAvailability.js (1), the
+  //    webform_config roster/availability writers (roster teardown).
+  ['upsert', 40],
 ]);
 
 const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
@@ -82,8 +86,6 @@ const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
   ['src/lib/tasksCenterMutationsApi.js|delete', 1],
   ['src/lib/tasksCenterMutationsApi.js|update', 2],
   ['src/lib/tasksCenterMutationsApi.js|upsert', 1],
-  ['src/lib/teamAvailability.js|upsert', 1],
-  ['src/lib/teamMembers.js|upsert', 2],
   ['src/livestock/WeighInSessionPage.jsx|delete', 3],
   ['src/livestock/WeighInSessionPage.jsx|insert', 3],
   ['src/livestock/WeighInSessionPage.jsx|update', 13],
@@ -105,7 +107,6 @@ const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
   ['src/sheep/SheepFlocksView.jsx|insert', 1],
   ['src/sheep/SheepWeighInsView.jsx|insert', 1],
   ['src/webforms/WebformHub.jsx|insert', 4],
-  ['src/webforms/WebformsAdminView.jsx|update', 1],
   ['src/webforms/WeighInsWebform.jsx|delete', 5],
   ['src/webforms/WeighInsWebform.jsx|insert', 6],
   ['src/webforms/WeighInsWebform.jsx|update', 8],
@@ -154,7 +155,7 @@ const EXPECTED_TABLE_OPERATION_COUNTS = new Map([
   ['equipment_service_materials|insert', 1],
   ['equipment_service_materials|update', 1],
   ['equipment|insert', 1],
-  ['equipment|update', 14],
+  ['equipment|update', 13],
   ['fuel_bill_lines|insert', 1],
   ['fuel_bills|delete', 2],
   ['fuel_bills|insert', 1],
@@ -190,7 +191,7 @@ const EXPECTED_TABLE_OPERATION_COUNTS = new Map([
   ['task_templates|delete', 2],
   ['task_templates|update', 1],
   ['task_templates|upsert', 2],
-  ['webform_config|upsert', 14],
+  ['webform_config|upsert', 11],
   ['weigh_in_sessions|delete', 1],
   ['weigh_in_sessions|insert', 6],
   ['weigh_in_sessions|update', 7],

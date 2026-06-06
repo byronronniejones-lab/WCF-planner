@@ -11,7 +11,7 @@
 //
 // Phase 1B canary: submission goes through useOfflineSubmit, which tries
 // the network synchronously and queues to IndexedDB on failure. The form
-// keeps its existing validation, team-member load, and post-submit reset
+// keeps its existing validation and post-submit reset
 // behavior; what changes is the success path — synced rows show "✓ Supply
 // logged" exactly like before; queued rows show "📡 Saved on this device —
 // will sync when online" so the operator knows the row is captured but
@@ -20,8 +20,6 @@
 import React from 'react';
 
 import {useOfflineSubmit} from '../lib/useOfflineSubmit.js';
-import {loadRoster} from '../lib/teamMembers.js';
-import {loadAvailability, availableNamesFor} from '../lib/teamAvailability.js';
 import StuckSubmissionsModal from './StuckSubmissionsModal.jsx';
 import LockedSubmitter from './LockedSubmitter.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -44,15 +42,13 @@ const FUEL_TYPES = [
   {value: 'def', label: 'DEF'},
 ];
 
-export default function FuelSupplyWebform({sb, onBack, sessionSubmitter}) {
+export default function FuelSupplyWebform({onBack, sessionSubmitter}) {
   // Lane 1 CP1: on the authenticated path the submitter is the signed-in user,
   // locked. No roster dropdown, no localStorage convenience selection.
   const lockedName = sessionSubmitter?.name || '';
-  const submitterLocked = !!lockedName;
-  const [teamMembers, setTeamMembers] = React.useState([]);
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = React.useState(today);
-  const [team, setTeam] = React.useState(submitterLocked ? lockedName : localStorage.getItem('wcf_team') || '');
+  const [team, setTeam] = React.useState(lockedName);
   const [gallons, setGallons] = React.useState('');
   const [fuelType, setFuelType] = React.useState('diesel');
   const [destination, setDestination] = React.useState('cell');
@@ -76,64 +72,16 @@ export default function FuelSupplyWebform({sb, onBack, sessionSubmitter}) {
     }
   }, [stuckRows.length]);
 
-  // Tracks whether the available-list load has completed. We cannot use
-  // teamMembers.length > 0 alone because an empty roster is a legitimate
-  // post-load state (and we still need to clear stale localStorage in
-  // that case).
-  const [teamMembersLoaded, setTeamMembersLoaded] = React.useState(false);
-
+  // Keep the submitter pinned to the signed-in identity. The form is always
+  // login-required, so `team` is always the locked name.
   React.useEffect(() => {
-    let cancelled = false;
-    // Master roster + per-form availability filter (`fuel-supply` formKey).
-    // Empty / missing availability entry = everyone visible. Inactive
-    // entries are filtered out by normalizeRoster inside loadRoster.
-    Promise.all([loadRoster(sb), loadAvailability(sb)]).then(([roster, availability]) => {
-      if (!cancelled) {
-        setTeamMembers(availableNamesFor('fuel-supply', roster, availability));
-        setTeamMembersLoaded(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sb]);
-
-  // Stale-name guard: once the available list lands, if `team` (initialized
-  // from localStorage.wcf_team for operator convenience) isn't in that list,
-  // clear the selection AND remove the stale localStorage entry. This
-  // enforces the acceptance contract that deleted/hidden master-roster
-  // names cannot appear as a selectable option in any new-entry dropdown.
-  // No "(saved earlier)" rendering — once a name is gone, it's gone.
-  React.useEffect(() => {
-    // Keep the locked submitter pinned to the signed-in identity.
-    if (submitterLocked) {
-      if (team !== lockedName) setTeam(lockedName);
-      return;
-    }
-    if (!teamMembersLoaded) return;
-    if (team && !teamMembers.includes(team)) {
-      setTeam('');
-      try {
-        localStorage.removeItem('wcf_team');
-      } catch (_e) {
-        /* localStorage may be unavailable in some browsers */
-      }
-    }
-  }, [teamMembersLoaded, teamMembers, team, submitterLocked, lockedName]);
+    if (team !== lockedName) setTeam(lockedName);
+  }, [team, lockedName]);
 
   async function handleSubmit() {
     setErr('');
     if (!team) {
       setErr('Pick a team member.');
-      return;
-    }
-    // Defense-in-depth: if the available list has loaded and the current
-    // selection is no longer in it (e.g. roster delete during the open
-    // form), refuse to submit. Belt-and-suspenders alongside the load-
-    // time clear above.
-    if (!submitterLocked && teamMembersLoaded && !teamMembers.includes(team)) {
-      setTeam('');
-      setErr('That team member is no longer available. Pick someone else.');
       return;
     }
     if (!date) {
@@ -145,7 +93,6 @@ export default function FuelSupplyWebform({sb, onBack, sessionSubmitter}) {
       setErr('Gallons must be a positive number.');
       return;
     }
-    if (!submitterLocked) localStorage.setItem('wcf_team', team);
     setSubmitting(true);
 
     try {
@@ -293,21 +240,7 @@ export default function FuelSupplyWebform({sb, onBack, sessionSubmitter}) {
           </div>
 
           <div style={{marginBottom: 12}}>
-            {submitterLocked ? (
-              <LockedSubmitter name={lockedName} label="Team member" labelStyle={lblS} />
-            ) : (
-              <>
-                <label style={lblS}>Team member *</label>
-                <select value={team} onChange={(e) => setTeam(e.target.value)} style={inpS}>
-                  <option value="">Select…</option>
-                  {teamMembers.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
+            <LockedSubmitter name={lockedName} label="Team member" labelStyle={lblS} />
           </div>
 
           <div style={{marginBottom: 12}}>
