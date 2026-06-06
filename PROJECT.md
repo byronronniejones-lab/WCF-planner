@@ -7,9 +7,9 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-05.
-Current production checkpoint: latest app/build commit `22799f1` on `main`
-(docs-only commits may sit on top; check `git log` for the exact HEAD).
+Last updated: 2026-06-06.
+Current production checkpoint: latest app/build commit `ad47fee` on `main`
+(processing-attach RPC lane + daily edit-page locked team-member fields).
 Production URL: https://wcfplanner.com.
 
 ---
@@ -151,19 +151,22 @@ plus a guard update in the same change.
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
 - Source of truth: `origin/main`; production app/build checkpoint is commit
-  `22799f1` (2026-06-05 five-lane ship `97da649` + record-nav placement hotfix;
-  later docs-only commits do not change the shipped runtime). Deploys verified by
-  Netlify bundle-hash rotation.
+  `ad47fee` (2026-06-06 processing-attach RPC lane + daily edit-page locked
+  team-member fields). Deploy verified by Netlify bundle-hash rotation.
 - Open gates for the shipped tree: none.
-- PROD-applied numbered migration series is live through `095`. Migration `082`
+- PROD-applied numbered migration series is live through `096`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
   cleanup `085` was applied before unique-index migration `084`.
+- Migration `096` (`processing_attach_activity_rpcs`) was applied to TEST with
+  `exec_sql`, then PROD with `psql --single-transaction` and `ON_ERROR_STOP=1`,
+  and verified on 2026-06-06: cattle/sheep attach RPCs exist, authenticated has
+  EXECUTE, anon is revoked, and PostgREST cache reload was verified by anon REST
+  permission denial.
 - Migration `095` (`app_saved_views`, generic per-surface saved views) was
   applied to TEST then PROD and verified on 2026-06-05: table + RLS
   (public-or-owner SELECT, owner-only INSERT/UPDATE/DELETE), the owner-stamp
   (`auth.uid()`) and updated_at/owner-freeze triggers, and grants to
-  `authenticated`. It is the only DB change since `094`; everything else shipped
-  since is code-only.
+  `authenticated`.
 - TEST/PROD migrations `074` through `081` plus `084`/`085`/`086` were applied
   and verified during the 2026-06-03 hardening sequence.
 - Light-user portal migrations `087`–`092` (CP1+CP2 ownership) were applied to
@@ -184,6 +187,13 @@ Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
 
+- Processing-attach RPC lane + daily edit-page locks, migration `096`, PROD
+  (2026-06-06, merge `ad47fee`). Authenticated cattle/sheep
+  Send-to-Processor attach flows now use transactional SECDEF RPCs for batch
+  detail, animal state, transfer audit rows, weigh-in stamps, and Activity.
+  Public/shared modal callers keep the legacy helper fallback. The six daily
+  edit pages now lock the Team Member field to the signed-in user using the
+  shared locked-field control.
 - Five-lane ship, code-only except migration `095`, PROD (2026-06-05, merge
   `97da649`). Landed together and deploy-verified:
   - Cattle herd filters / row parity / saved views (migration `095`). Removed the
@@ -283,22 +293,13 @@ gates documented for this checkpoint. If a new session sees a dirty tree, inspec
 it before planning; do not assume it is disposable.
 
 Local worktree note: the main CC worktree is at `C:\Users\Ronni\WCF-planner`
-(`main`, HEAD `22799f1`). The canonical Codex worktree is at
-`C:\Users\Ronni\WCF-planner-codex` (currently parked on
-`codex/processing-attach-rpcs`, which is merged to `main`). Five per-lane Codex
-worktrees remain on disk after merge and can be pruned when convenient — all
-their branches are merged to `main`:
-
-- `WCF-planner-codex-pig-autosave` (`codex/pig-weighin-autosave-days-delta`)
-- `WCF-planner-codex-broiler-auto-processed` (`codex/broiler-auto-processed`)
-- `WCF-planner-codex-equipment-caught-up` (`codex/equipment-caught-up-notices`)
-- `WCF-planner-codex-home-alerts-all-users` (`codex/home-alerts-all-users`)
-- `WCF-planner-codex-format-cleanup` (`codex/format-check-cleanup`)
-
-Prune with `git worktree remove <path>` then `git branch -d <branch>` once
-Ronnie confirms (do not prune branches/worktrees unsolicited). Per-lane
-worktrees need their own `node_modules` (`npm ci`) and gitignored `.env.test*`
-to run tests/Playwright. See [HO.md](HO.md) Parallel Codex Worktree.
+(`main`, HEAD `ad47fee`). The canonical Codex worktree is at
+`C:\Users\Ronni\WCF-planner-codex`, parked on `codex/parallel-worktree` and
+resynced to current `main`. No per-lane Codex worktrees remain on disk. Create
+new scoped worktrees/branches only for active lanes, and prune them after merge
+once Ronnie confirms. Per-lane worktrees need their own `node_modules`
+(`npm ci`) and gitignored `.env.test*` to run tests/Playwright. See
+[HO.md](HO.md) Parallel Codex Worktree.
 
 ### Build Queue
 
@@ -646,6 +647,11 @@ Current PROD architecture includes these load-bearing migrations:
   `src/lib/savedViewsApi.js`. Direct client CRUD is acceptable here because
   RLS scopes every operation (saved views are user preferences, not
   audit-critical entity writes). Applied TEST + PROD 2026-06-05.
+- `096` processing attach Activity RPCs: authenticated cattle/sheep
+  Send-to-Processor attach flows now use SECDEF RPCs that update processing
+  batch detail, animal processed state, transfer audit rows, weigh-in stamps,
+  and Activity atomically. Authenticated has EXECUTE; anon/PUBLIC are revoked.
+  Applied TEST + PROD 2026-06-06.
 
 Special migration notes:
 
