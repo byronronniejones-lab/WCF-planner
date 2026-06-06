@@ -324,6 +324,105 @@ Class legend: `DEFECT` = build without a product decision once scoped;
 `DECISION` = Ronnie must choose product/UX/policy before build; `ENH` =
 enhancement/polish lane.
 
+Next session sprint assignment (Ronnie direction):
+
+- CC owns Sprints 1 + 2 in a fresh scoped worktree/branch from current
+  `origin/main`. Sprint 1 is Lane 0 immediate correctness bugs. Sprint 2 is
+  Lane A audit/RPC atomicity work. CC should not merge to `main`, should not
+  apply PROD migrations, and should report "Done for Codex verification" only
+  after build/lint/targeted tests are green with files, migrations, tests, and
+  residual risks listed.
+- Codex owns Sprints 3 + 4 in one or more separate scoped worktrees/branches
+  from current `origin/main`. Sprint 3 is Lane B fail-closed loading parity plus
+  Lane C notice/delete-modal primitive parity. Sprint 4 is Lane D save/editing
+  model policy plus Lane E record-page shell/chrome parity. Codex should not
+  touch CC's worktree or dirty `main`, should not merge to `main`, should not
+  apply PROD migrations, and should report "Done for CC verification" only after
+  build/lint/targeted tests and focused Playwright where warranted are green.
+- Verification/merge rule: CC verifies Codex's Sprint 3/4 work; Codex verifies
+  CC's Sprint 1/2 work. Ronnie decides merge order, push, deploy, and any
+  TEST/PROD migration gates.
+
+Prompt for CC:
+
+```text
+You own Sprints 1 + 2. Do not use or depend on Codex's sprint worktrees. Do not
+touch dirty main unless Ronnie explicitly tells you that current lane is ready.
+
+Base from current origin/main in a fresh worktree/branch.
+
+Sprint 1: Lane 0 immediate correctness bugs
+- Fix broken InlineNotice prop-shape call sites.
+- Add/map the `info` notice kind so benign messages do not render as errors.
+- Suppress legacy CowDetail Issues panel inside cattle forecast.
+- Lock TasksWebform submitter identity to signed-in user.
+- Add/update static guards for InlineNotice contract and locked Tasks submitter.
+
+Sprint 2: Lane A audit/RPC atomicity
+- Continue audit-critical mutation hardening from PROJECT.md Lane A.
+- Prioritize clearly scoped destructive or multi-table flows.
+- Use SECDEF RPCs where atomicity/activity audit is required.
+- Extend mutation/activity/delete-recovery guards for touched flows.
+- Any migration must be numbered after current PROD series and must not be
+  applied without Ronnie approval.
+
+Rules:
+- Work in a dedicated worktree/branch, not shared main.
+- Do not merge to main.
+- Do not apply PROD migrations.
+- Run targeted tests, build, lint.
+- When done, report exact files changed, migrations added, tests run, pass/fail,
+  and residual risks.
+- Present "Done for Codex verification" only after your lane is green.
+```
+
+Prompt for Codex:
+
+```text
+You own Sprints 3 + 4 while CC works Sprints 1 + 2. Ignore dirty main. Work only
+from fresh worktrees/branches based on current origin/main.
+
+Sprint 3: Lane B + Lane C
+- Fail-closed loading parity:
+  - record/list/hub/section-home/My Submissions/admin surfaces should clear
+    stale state on load failure.
+  - show InlineNotice consistently.
+  - expose retry where retry can recover.
+  - add/update load retry robustness guards.
+- Notice/delete-modal primitive parity:
+  - converge destructive/confirmation flows on shared primitives or documented
+    exceptions.
+  - standardize delete copy, Cancel/Delete placement, typed-confirm phrase,
+    Enter/Escape behavior, overlay-click policy, z-index scale, and post-delete
+    feedback.
+  - extend shared UI extraction/static guards.
+
+Sprint 4: Lane D + Lane E
+- Save/editing model policy:
+  - codify autosave vs explicit save expectations.
+  - fix EquipmentDetail flush-on-blur/before-navigation autosave loss.
+  - evaluate broiler weigh-in explicit-save vs autosave parity.
+  - add focused save/autosave static guards and touched Playwright where
+    appropriate.
+- Record-page shell/chrome parity:
+  - bring EquipmentDetail and PigBatchPage toward shared record chrome where
+    appropriate.
+  - standardize record widths and loaded/error hooks.
+  - expand recordPageControls adoption.
+  - align Sheep daily page structure with the other daily record pages.
+  - add record-page shell/chrome guards.
+
+Rules:
+- Use separate Codex worktrees if Sprint 3 and Sprint 4 would collide.
+- Do not touch CC's worktree or dirty main.
+- Do not merge to main.
+- Do not apply PROD migrations.
+- Run build, lint, targeted static tests, and focused Playwright only where
+  touched/risk warrants.
+- When done, report exact files changed, tests run, pass/fail, residual risks,
+  and say "Done for CC verification."
+```
+
 1. Lane 0 - Immediate correctness bugs.
    Class: `DEFECT`. Size: small. Ship first.
    Scope: fix the four broken `InlineNotice` prop-shape call sites, add or map
