@@ -507,6 +507,46 @@ describe('SheepWeighInsView - CSV export', () => {
   });
 });
 
+describe('CattleWeighInsView - CSV export (Lane K CP3)', () => {
+  it('uses the shared csvExport owner for browser download mechanics', () => {
+    expect(csvExport).toContain('export function rowsToCsv');
+    expect(csvExport).toContain('export function csvFilename');
+    expect(csvExport).toContain('export function downloadCsv');
+    expect(csvExport).toContain('new Blob');
+    expect(csvExport).toContain('URL.createObjectURL');
+  });
+
+  it('exports the current visible cattle weigh-in sessions, not the raw session list', () => {
+    expect(listSrc).toContain("from '../lib/csvExport.js'");
+    expect(listSrc).toContain('function handleExportCsv');
+    expect(listSrc).toContain('data-cattle-weighins-export-csv="1"');
+    expect(listSrc).toContain('rowsToCsv(columns, filtered)');
+    expect(listSrc).not.toContain('rowsToCsv(columns, sessions)');
+  });
+
+  it('keeps cattle weigh-in export columns useful for session review', () => {
+    for (const header of [
+      'Date',
+      'Herd',
+      'Status',
+      'Team member',
+      'Entry count',
+      'Matching tag entries',
+      'New tag count',
+      'Started at',
+      'Session ID',
+    ]) {
+      expect(listSrc).toContain(`header: '${header}'`);
+    }
+  });
+
+  it('keeps the export fallback browser-only and free of window.alert/confirm', () => {
+    expect(listSrc).toContain('CSV export is only available in the browser.');
+    expect(listSrc).not.toContain('window.alert');
+    expect(listSrc).not.toContain('window.confirm');
+  });
+});
+
 describe('WeighInSessionPage — broiler record page', () => {
   it('loadAll allows species broiler', () => {
     expect(pageSrc).toContain("sp !== 'broiler'");

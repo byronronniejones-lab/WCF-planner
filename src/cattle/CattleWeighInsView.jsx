@@ -1,6 +1,7 @@
 import React from 'react';
 import {useNavigate} from 'react-router-dom';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
@@ -94,6 +95,29 @@ const CattleWeighInsView = ({
   const totalEntries = filtered.reduce((s, sess) => s + (entries[sess.id] || []).length, 0);
   const matchedSessionCount = tagQ ? filtered.length : null;
   const loadFailed = !!notice;
+
+  // CSV export of the CURRENT result set (status filter + tag search applied).
+  // Exports `filtered`, not raw `sessions`. Mirrors SheepWeighInsView. Session
+  // counts come from entries[s.id]; matching-tag count only when a tag search
+  // is active. Mechanics via the shared csvExport owner.
+  function handleExportCsv() {
+    const columns = [
+      {header: 'Date', value: (s) => s.date || ''},
+      {header: 'Herd', value: (s) => HERD_LABELS[s.herd] || s.herd || ''},
+      {header: 'Status', value: (s) => s.status || ''},
+      {header: 'Team member', value: (s) => s.team_member || ''},
+      {header: 'Entry count', value: (s) => (entries[s.id] || []).length},
+      {
+        header: 'Matching tag entries',
+        value: (s) => (tagQ ? (entries[s.id] || []).filter(entryMatchesTag).length : ''),
+      },
+      {header: 'New tag count', value: (s) => (entries[s.id] || []).filter((e) => e.new_tag_flag).length},
+      {header: 'Started at', value: (s) => s.started_at || ''},
+      {header: 'Session ID', value: (s) => s.id || ''},
+    ];
+    const ok = downloadCsv(csvFilename('cattle-weigh-in-sessions'), rowsToCsv(columns, filtered));
+    if (!ok) setNotice({kind: 'error', message: 'CSV export is only available in the browser.'});
+  }
 
   return (
     <div
@@ -228,6 +252,25 @@ const CattleWeighInsView = ({
               ))}
             </div>
             <button
+              type="button"
+              data-cattle-weighins-export-csv="1"
+              onClick={handleExportCsv}
+              disabled={loading || loadFailed}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 7,
+                border: '1px solid #d1d5db',
+                background: loading || loadFailed ? '#f9fafb' : 'white',
+                color: loading || loadFailed ? '#9ca3af' : '#374151',
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: loading || loadFailed ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Export CSV
+            </button>
+            <button
               data-new-weighin-button="1"
               onClick={() => setShowNewModal(true)}
               style={{
@@ -343,7 +386,11 @@ const CattleWeighInsView = ({
         </div>
       </div>
       {showNewModal && (
-        <CattleNewWeighInModal authState={authState} onClose={() => setShowNewModal(false)} onCreate={createNewSession} />
+        <CattleNewWeighInModal
+          authState={authState}
+          onClose={() => setShowNewModal(false)}
+          onCreate={createNewSession}
+        />
       )}
     </div>
   );
