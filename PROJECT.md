@@ -7,11 +7,12 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-06.
-Current production checkpoint: latest app/build commit `a507d90` on `main`
-(team-member roster teardown: all webform submitters locked to the signed-in
-user, the team_roster/team_availability machinery removed front-to-back, and
-migrations 097/098/099 applied).
+Last updated: 2026-06-08.
+Current production checkpoint: integrated `main` commit `91546a7` — a seven-lane
+ship (Lane 0 InlineNotice correctness; Lane A processing-batch lifecycle RPCs +
+cattle.breeding Activity mount; Codex Lanes B/C/D/E/F/G/K). PROD-deployed and
+verified live at wcfplanner.com by Netlify bundle-hash match (`main-DZOL_lsp.js`)
+to the local integrated build. Migration series live through 100.
 Production URL: https://wcfplanner.com.
 
 ---
@@ -100,29 +101,32 @@ Rules (normative):
 
 | Decision | Status | Evidence |
 | --- | --- | --- |
-| 1 Font scale | Locked | `tests/static/typography_tokens_static.test.js` |
-| 2 Button corners | Locked | `tests/static/border_radius_scale_static.test.js` |
-| 3 Confirm/Delete stacking | Locked | `tests/static/zindex_scale_static.test.js` |
-| 4 Button height/padding | Locked | `tests/static/button_control_tokens_static.test.js` |
+| 1 Font scale | Ratified; enforcement pending | Lane I guard target (not yet built) |
+| 2 Button corners | Ratified; enforcement pending | Lane I guard target (not yet built) |
+| 3 Confirm/Delete stacking | Ratified; enforcement pending | Lane I guard target (not yet built) |
+| 4 Button height/padding | Ratified; enforcement pending | Lane I guard target (not yet built) |
 | 5 Save model (Submit vs autosave) | Ratified; enforcement pending | Lane D save/autosave guard (static + Playwright) |
 
 1. Font sizes use a clean px scale. Canonical set: `10, 11, 12, 13, 14, 15, 16, 18,
    20, 22, 26`. Lift `9 -> 10`, fold `17 -> 18`, `24 -> 22`, `28 -> 26`.
    Display whitelist remains `32/34/36/48/56` for hero-only usage. Fractional
    font values (`12.5`, `10.5`) are forbidden.
-   - Guard target: `tests/static/typography_tokens_static.test.js` (hard clamp to
-     this set).
+   - Guard target (Lane I, not yet built): a `typography_tokens` static clamp to
+     this set. Decision is ratified; automated enforcement is pending Lane I.
 
 2. Button corners use canonical `6px` radius. The values `7` and `8` are retired.
    Canonical radius set is `{4, 6, 10, 14, 999, '50%'}`.
-   - Guard target: `tests/static/border_radius_scale_static.test.js`.
+   - Guard target (Lane I, not yet built): a `border_radius_scale` static clamp.
+     Decision is ratified; automated enforcement is pending Lane I.
 
 3. Confirm/Delete dialogs remain top-tier destructive overlay priority at
    toast (`9000`) so confirm stacks are never visually hidden.
-   - Guard target: `tests/static/zindex_scale_static.test.js`.
+   - Guard target (Lane I, not yet built): a `zindex_scale` static clamp.
+     Decision is ratified; automated enforcement is pending Lane I.
 
 4. Button vertical pad defaults to `10px`; the standard button pad is `10px 16px`.
-   - Guard target: `tests/static/button_control_tokens_static.test.js`.
+   - Guard target (Lane I, not yet built): a `button_control_tokens` static clamp.
+     Decision is ratified; automated enforcement is pending Lane I.
 
 5. Save model is contractually split by surface:
    - Submit-style surfaces (daily reports, webforms, modals) use explicit Save/
@@ -153,14 +157,24 @@ plus a guard update in the same change.
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
 - Source of truth: `origin/main`; production app/build checkpoint is commit
-  `a507d90` (2026-06-06 team-member roster teardown — webform submitters locked
-  to the signed-in user, all team_roster/team_availability code + storage
-  removed, migrations 097/098/099 applied). Deploy verified by Netlify
-  bundle-hash rotation (`main-s1aQgkGe.js`).
+  `91546a7` (2026-06-08 seven-lane ship — see Latest Shipped Checkpoint). Deploy
+  verified live at wcfplanner.com by Netlify bundle-hash match
+  (`main-DZOL_lsp.js`) to the local integrated build, HTTP 200.
+- Integrated-`main` validation at ship: `npm run lint` 0 errors,
+  `npm test` 176 files / 4827 passed, `npm run build` green.
 - Open gates for the shipped tree: none.
-- PROD-applied numbered migration series is live through `099`. Migration `082`
+- PROD-applied numbered migration series is live through `100`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
   cleanup `085` was applied before unique-index migration `084`.
+- Migration `100` (`processing_batch_lifecycle_rpcs`) was applied to TEST
+  (`exec_sql`) then PROD (`psql --single-transaction`, `ON_ERROR_STOP=1`) and
+  verified on 2026-06-08: `unschedule_cattle_processing_batch` and
+  `delete_sheep_processing_batch` exist as SECURITY DEFINER with
+  `search_path = public`; `authenticated` has EXECUTE, anon is revoked (REST
+  probe → 401); a cattle + sheep behavioral round-trip (seed → RPC → row gone +
+  `record.deleted` audit) ran clean inside a rolled-back transaction (zero PROD
+  trace); PostgREST cache reload confirmed by the anon REST 401 (registered, not
+  404).
 - Migrations `097`–`099` were applied to TEST (`exec_sql`) then PROD
   (`psql --single-transaction`, `ON_ERROR_STOP=1`) and verified on 2026-06-06:
   `097` locks the public Tasks `submit_task_instance` to authenticated callers
@@ -200,6 +214,47 @@ Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
 
+- Seven-lane integration, migration `100`, PROD (2026-06-08, integrated `main`
+  `91546a7`; CC + Codex parallel lanes). Built on parallel branches, CC-verified,
+  merged in order Lane 0 → Lane A → Codex, then pushed and PROD-deployed
+  (bundle-hash verified). Lanes:
+  - Lane 0 (`2436b75`): InlineNotice correctness — the four flat-prop call sites
+    (`CattleAnimalPage`, `SheepAnimalPage`, `MySubmissions` mutation + load
+    notices) now use the canonical `notice={...}` / `onDismiss` shape (they were
+    rendering nothing); added the benign `info` kind (blue) so
+    `SheepDailyPage`'s "No changes to save." stops rendering as a red error; the
+    legacy `CowDetail` Issues panel is suppressed inside cattle forecast
+    (`hideComments`). Guard: `tests/static/inline_notice_contract_static.test.js`.
+  - Lane A (`8f4bb65`): processing-batch lifecycle RPCs (migration `100`).
+    `CattleBatchPage.handleUnschedule` and `SheepBatchPage.handleDeleteBatch` now
+    route through the audited SECDEF RPCs `unschedule_cattle_processing_batch` /
+    `delete_sheep_processing_batch` instead of direct client deletes — atomic
+    straggler-clear + delete + `record.deleted` audit in one transaction. Wrapper
+    `src/lib/processingBatchDeleteApi.js`.
+  - Lane A (`0455540`): `CattleBreedingView` mounts the audit-only
+    `cattle.breeding` workflow Activity stream (`RecordCollaborationSection`,
+    entity_id `cattle-breeding`, `showComments=false`), reusing the existing
+    stream populated by the mig `094` cycle RPCs. Code-only.
+  - Codex Lanes B/C/D/E/F/G/K (`12cbb07`): Lane B fail-closed loading parity
+    (`RecentlyDeletedDailyReports`, `CattleHerdsView`, `SheepFlocksView`,
+    `MySubmissions` clear stale rows on load failure, show `InlineNotice` +
+    Retry, gate content behind non-error loaded state); Lane C
+    `DeleteModal`/`ConfirmModal` canonical dialog semantics (role/aria-modal/
+    aria-labelledby, Escape, disabled overlay-dismiss); Lane D `EquipmentDetail`
+    pending-autosave flush on blur/pagehide/visibilitychange/unmount, with CC's
+    polish to re-queue a pending edit on save failure instead of dropping it;
+    Lane E `EquipmentDetail` adopts `RecordPageBody`/`RecordTitle` +
+    `data-equipment-record-loaded`; Lane F `SheepFlocksView` saved views via the
+    existing `app_saved_views` API (`surface_key = 'sheep.flocks'`), degrading to
+    an inline notice on load error; Lane G `RecentlyDeletedDailyReports` is a
+    combined Recently Deleted Records surface (daily + cattle + sheep animals),
+    fail-closed, dispatching the correct restore RPC by record kind; Lane K
+    cattle-herd CSV export via the new `src/lib/csvExport.js` (escaping,
+    formula/DDE-injection guard, Central-date filename, sole browser-download
+    owner) — `CattleHerdsView` exports the filtered/sorted `sortedFlat` rows.
+  - Merge note: the `MySubmissions.jsx` overlap (Lane 0 InlineNotice fix vs
+    Codex's fail-closed rewrite) was resolved by keeping the Codex superset —
+    both the Lane 0 `notice={...}` shape and the fail-closed hooks are preserved.
 - Team-member roster teardown, migrations `097`–`099`, PROD (2026-06-06,
   commits `029b55c` + `33d10af` + `a507d90`). Every public webform submitter is
   locked to the signed-in user (no roster dropdown); the `team_roster` /
@@ -320,13 +375,19 @@ gates documented for this checkpoint. If a new session sees a dirty tree, inspec
 it before planning; do not assume it is disposable.
 
 Local worktree note: the main CC worktree is at `C:\Users\Ronni\WCF-planner`
-(`main`, HEAD `a507d90`). The canonical Codex worktree is at
-`C:\Users\Ronni\WCF-planner-codex`, parked on `codex/parallel-worktree` and
-resynced to current `main`. No per-lane Codex worktrees remain on disk. Create
-new scoped worktrees/branches only for active lanes, and prune them after merge
-once Ronnie confirms. Per-lane worktrees need their own `node_modules`
-(`npm ci`) and gitignored `.env.test*` to run tests/Playwright. See
-[HO.md](HO.md) Parallel Codex Worktree.
+on `main`. The runtime/app production checkpoint is `91546a7` (the seven-lane
+ship deployed to PROD); `main` HEAD is this docs-reconciliation commit sitting on
+top of it — docs-only (no bundle change), 1 ahead of `origin/main` until pushed.
+That extra commit is expected, not drift. The Codex worktree is at
+`C:\Users\Ronni\WCF-planner-codex`, currently on `codex/lane-b-fail-closed-loading`
+(merged into `main` at this ship). After this docs commit, the merged lane
+branches `fix/lane0-inline-notice`, `feature/lane-a-processing-rpc`,
+`feature/lane-a-cattle-breeding-activity`, and `codex/lane-b-fail-closed-loading`
+are safe to delete, and the Codex worktree can be reset to `main` — pending
+Ronnie's go. Create new scoped worktrees/branches only for active lanes, and
+prune them after merge once Ronnie confirms. Per-lane worktrees need their own
+`node_modules` (`npm ci`) and gitignored `.env.test*` to run tests/Playwright.
+See [HO.md](HO.md) Parallel Codex Worktree.
 
 ### Build Queue
 
@@ -347,14 +408,22 @@ item plus the full team-member roster teardown — `TasksWebform` submitter
 locked to the signed-in user (migration `097`), all `team_roster` /
 `team_availability` code + storage removed (migration `098`), and the
 `daily_photos_auth_insert` storage policy added so authenticated photo uploads
-work (migration `099`). The remaining Sprint 1 Lane 0 items (InlineNotice
-prop-shape fixes, the `info` notice kind, CowDetail Issues-panel suppression in
-cattle forecast) are NOT done and stay queued. Low-priority roster-teardown
+work (migration `099`). Low-priority roster-teardown
 follow-ups: delete or repurpose the skipped `broiler_weigh_in_schooners`
 T_negative app_store-isolation test (now moot under the authed admin shell;
 source guarantee stays locked by `tests/static/weighinswebform_no_app_store`),
 and drop the now-redundant `daily_photos_anon_insert` policy once no anonymous
 upload path remains.
+Shipped 2026-06-08 (removed/trimmed from queue): Lane 0 InlineNotice correctness
+(all four flat-prop call sites + `info` kind + forecast Issues suppression — the
+final Lane 0 items); Lane A processing-batch lifecycle RPCs (migration `100`);
+Lane A cattle.breeding Activity mount; and Codex Lanes B (fail-closed loading
+parity on the recovery/list/MySubmissions surfaces), C (DeleteModal/ConfirmModal
+canonical dialog semantics), D (EquipmentDetail autosave flush + re-queue), E
+(EquipmentDetail shared record chrome), F-narrow (Sheep Flocks saved views on
+`app_saved_views` surface_key `sheep.flocks`), G (combined Recently Deleted
+Records recovery surface), and K-narrow (cattle-herd CSV export). The larger
+Lanes A/D/E/F/K remain open for their unshipped scope (see the lane list below).
 
 Detailed parity evidence lives in
 `C:\Users\Ronni\cc-research\parity-audit-2026-06-05-CC.md`; line-level findings
@@ -364,173 +433,70 @@ Class legend: `DEFECT` = build without a product decision once scoped;
 `DECISION` = Ronnie must choose product/UX/policy before build; `ENH` =
 enhancement/polish lane.
 
-Next session sprint assignment (Ronnie direction):
+Sprint assignment (executed 2026-06-08): the CC Sprints 1 + 2 (Lane 0
+correctness, Lane A audit/RPC atomicity) and Codex Sprints 3 + 4 (Lanes B/C +
+D/E, plus the F/G/K slices) shipped in the seven-lane integration above. Those
+prompts are retired. The remaining open scope is captured in the lane list
+below.
 
-- CC owns Sprints 1 + 2 in a fresh scoped worktree/branch from current
-  `origin/main`. Sprint 1 is Lane 0 immediate correctness bugs. Sprint 2 is
-  Lane A audit/RPC atomicity work. CC should not merge to `main`, should not
-  apply PROD migrations, and should report "Done for Codex verification" only
-  after build/lint/targeted tests are green with files, migrations, tests, and
-  residual risks listed.
-- Codex owns Sprints 3 + 4 in one or more separate scoped worktrees/branches
-  from current `origin/main`. Sprint 3 is Lane B fail-closed loading parity plus
-  Lane C notice/delete-modal primitive parity. Sprint 4 is Lane D save/editing
-  model policy plus Lane E record-page shell/chrome parity. Codex should not
-  touch CC's worktree or dirty `main`, should not merge to `main`, should not
-  apply PROD migrations, and should report "Done for CC verification" only after
-  build/lint/targeted tests and focused Playwright where warranted are green.
-- Verification/merge rule: CC verifies Codex's Sprint 3/4 work; Codex verifies
-  CC's Sprint 1/2 work. Ronnie decides merge order, push, deploy, and any
-  TEST/PROD migration gates.
-
-Prompt for CC:
-
-```text
-You own Sprints 1 + 2. Do not use or depend on Codex's sprint worktrees. Do not
-touch dirty main unless Ronnie explicitly tells you that current lane is ready.
-
-Base from current origin/main in a fresh worktree/branch.
-
-Sprint 1: Lane 0 immediate correctness bugs
-- Fix broken InlineNotice prop-shape call sites.
-- Add/map the `info` notice kind so benign messages do not render as errors.
-- Suppress legacy CowDetail Issues panel inside cattle forecast.
-- Lock TasksWebform submitter identity to signed-in user.
-- Add/update static guards for InlineNotice contract and locked Tasks submitter.
-
-Sprint 2: Lane A audit/RPC atomicity
-- Continue audit-critical mutation hardening from PROJECT.md Lane A.
-- Prioritize clearly scoped destructive or multi-table flows.
-- Use SECDEF RPCs where atomicity/activity audit is required.
-- Extend mutation/activity/delete-recovery guards for touched flows.
-- Any migration must be numbered after current PROD series and must not be
-  applied without Ronnie approval.
-
-Rules:
-- Work in a dedicated worktree/branch, not shared main.
-- Do not merge to main.
-- Do not apply PROD migrations.
-- Run targeted tests, build, lint.
-- When done, report exact files changed, migrations added, tests run, pass/fail,
-  and residual risks.
-- Present "Done for Codex verification" only after your lane is green.
-```
-
-Prompt for Codex:
-
-```text
-You own Sprints 3 + 4 while CC works Sprints 1 + 2. Ignore dirty main. Work only
-from fresh worktrees/branches based on current origin/main.
-
-Sprint 3: Lane B + Lane C
-- Fail-closed loading parity:
-  - record/list/hub/section-home/My Submissions/admin surfaces should clear
-    stale state on load failure.
-  - show InlineNotice consistently.
-  - expose retry where retry can recover.
-  - add/update load retry robustness guards.
-- Notice/delete-modal primitive parity:
-  - converge destructive/confirmation flows on shared primitives or documented
-    exceptions.
-  - standardize delete copy, Cancel/Delete placement, typed-confirm phrase,
-    Enter/Escape behavior, overlay-click policy, z-index scale, and post-delete
-    feedback.
-  - extend shared UI extraction/static guards.
-
-Sprint 4: Lane D + Lane E
-- Save/editing model policy:
-  - codify autosave vs explicit save expectations.
-  - fix EquipmentDetail flush-on-blur/before-navigation autosave loss.
-  - evaluate broiler weigh-in explicit-save vs autosave parity.
-  - add focused save/autosave static guards and touched Playwright where
-    appropriate.
-- Record-page shell/chrome parity:
-  - bring EquipmentDetail and PigBatchPage toward shared record chrome where
-    appropriate.
-  - standardize record widths and loaded/error hooks.
-  - expand recordPageControls adoption.
-  - align Sheep daily page structure with the other daily record pages.
-  - add record-page shell/chrome guards.
-
-Rules:
-- Use separate Codex worktrees if Sprint 3 and Sprint 4 would collide.
-- Do not touch CC's worktree or dirty main.
-- Do not merge to main.
-- Do not apply PROD migrations.
-- Run build, lint, targeted static tests, and focused Playwright only where
-  touched/risk warrants.
-- When done, report exact files changed, tests run, pass/fail, residual risks,
-  and say "Done for CC verification."
-```
-
-1. Lane 0 - Immediate correctness bugs.
-   Class: `DEFECT`. Size: small. Ship first.
-   Scope: fix the four broken `InlineNotice` prop-shape call sites, add or map
-   the `info` notice kind so benign messages do not render as errors, suppress
-   the legacy `CowDetail` Issues panel inside cattle forecast, and lock
-   `TasksWebform` submitter identity to the signed-in user.
-   Guard target: static coverage for the `InlineNotice` call contract and a
-   locked-submitter webform guard/spec.
+1. Lane 0 - Immediate correctness bugs. SHIPPED 2026-06-08.
+   All four broken `InlineNotice` prop-shape call sites fixed, the `info` notice
+   kind added, the legacy `CowDetail` Issues panel suppressed in cattle forecast,
+   and the `TasksWebform` submitter locked (mig `097`, 2026-06-06). Guard:
+   `tests/static/inline_notice_contract_static.test.js`.
 2. Lane A - Audit, Activity, RPC atomicity, and tombstone/deleted-record design.
-   Class: `DEFECT` for destructive flows with no audit; `DECISION` for
-   best-effort versus transactional policy on non-destructive edits. Size:
-   large.
-   Scope: move audit-critical pig, broiler, layer, cattle, and sheep destructive
-   or multi-table flows toward audited SECDEF RPCs where needed; make mounted
-   Activity streams receive meaningful events; mount the already-populated
-   cattle breeding Activity stream; and design the root hard-delete
-   tombstone/deleted-record model before expanding physical root deletes.
+   PARTIAL. Class: `DEFECT`/`DECISION`. Size: large.
+   Shipped 2026-06-08: processing-batch unschedule/delete moved to audited SECDEF
+   RPCs (migration `100`); the cattle.breeding Activity stream is now mounted.
+   Remaining: move the other audit-critical pig/broiler/layer/cattle/sheep
+   destructive or multi-table flows to SECDEF RPCs where needed, ensure other
+   mounted Activity streams receive meaningful events, and design the root
+   hard-delete tombstone/deleted-record model before expanding physical root
+   deletes.
    Guard target: extend mutation semantics, hard-delete owner, delete/recovery,
    and Activity static guards.
-3. Lane B - Fail-closed loading parity.
-   Class: `DEFECT`. Size: medium.
-   Scope: make record, list, hub, section-home, My Submissions, and admin
-   surfaces clear stale state on load failure, show `InlineNotice`, expose
-   user-gated Retry where retry can recover, and carry consistent loaded/error
-   data hooks.
-   Guard target: extend `load_retry_robustness_inventory_static.test.js`.
-4. Lane C - Notice and delete-modal primitive parity.
-   Class: `DEFECT` for correctness gaps not already handled by Lane 0; `ENH` for
-   visual/interaction convergence. Size: medium.
-   Scope: converge destructive and confirmation flows on shared primitives or
-   documented static-guarded exceptions; standardize delete copy, typed-confirm
-   phrase, Cancel/Delete placement, Enter/Escape behavior, overlay-click policy,
-   z-index scale, and post-delete feedback.
-   Guard target: extend `shared_ui_extraction_contract_static.test.js`.
-5. Lane D - Save/editing model policy.
-   Class: `DECISION` for the canonical save paradigm; `DEFECT` for known data
-   loss windows. Size: medium.
-   Scope: define the canonical edit/save behavior by surface type, fix
-   EquipmentDetail flush-on-blur/before-navigation autosave loss, decide
-   broiler weigh-in explicit-save versus autosave parity, and define how global
-   versus local save indicators represent RPC, app-store, and autosave writes.
-   Guard target: focused save/autosave static guards plus touched Playwright
-   flows.
-6. Lane E - Record-page shell and chrome parity.
-   Class: `ENH` plus `DEFECT` where page structure causes weaker loading,
-   not-found, or Light view-only behavior. Size: medium.
-   Scope: bring EquipmentDetail and PigBatchPage onto shared record chrome where
-   appropriate, standardize record widths and loaded/error hooks, expand
-   `recordPageControls` adoption, and align Sheep daily page structure with the
-   other daily record pages.
-   Guard target: record-page shell/chrome static guards and focused record-page
-   Playwright.
-7. Lane F - List, hub, filter, sort, saved-view, and empty-state parity.
+3. Lane B - Fail-closed loading parity. SHIPPED 2026-06-08 (core).
+   `RecentlyDeletedDailyReports`, `CattleHerdsView`, `SheepFlocksView`, and
+   `MySubmissions` now clear stale state on load failure, show `InlineNotice` +
+   user-gated Retry, and gate content behind non-error loaded markers, locked by
+   `load_retry_robustness_inventory_static.test.js`. Reopen only if a specific
+   record/hub/section-home surface is found still failing open.
+4. Lane C - Notice and delete-modal primitive parity. SHIPPED 2026-06-08.
+   `DeleteModal`/`ConfirmModal` carry canonical dialog semantics (role,
+   aria-modal/labelledby, Escape, disabled overlay-dismiss) under the expanded
+   `shared_ui_extraction_contract_static.test.js`.
+5. Lane D - Save/editing model policy. PARTIAL. Class: `DECISION`/`DEFECT`.
+   Shipped 2026-06-08: the EquipmentDetail flush-on-blur/before-navigation
+   autosave loss is fixed (pending edits flush on blur/pagehide/visibilitychange/
+   unmount and re-queue on save failure).
+   Remaining (DECISION): define the canonical edit/save behavior by surface type,
+   decide broiler weigh-in explicit-save versus autosave parity, and define how
+   global versus local save indicators represent RPC/app-store/autosave writes.
+   Guard target: focused save/autosave static guards plus touched Playwright.
+6. Lane E - Record-page shell and chrome parity. PARTIAL.
+   Shipped 2026-06-08: `EquipmentDetail` adopted `RecordPageBody`/`RecordTitle`
+   and exposes `data-equipment-record-loaded`.
+   Remaining: bring `PigBatchPage` onto shared record chrome, standardize record
+   widths and loaded/error hooks, expand `recordPageControls` adoption, and align
+   the Sheep daily page structure with the other daily record pages.
+   Guard target: record-page shell/chrome static guards and focused Playwright.
+7. Lane F - List, hub, filter, sort, saved-view, and empty-state parity. PARTIAL.
    Class: `ENH`. Size: large.
-   Scope: bring Sheep Flocks to the Cattle Herds filter-group/multi-sort/saved
-   views model, extract drifting row/tile primitives, define which lists get
+   Shipped 2026-06-08: `SheepFlocksView` saved views via `app_saved_views`
+   (`surface_key = 'sheep.flocks'`), capturing search + status + sort, degrading
+   to an inline notice on load error.
+   Remaining: bring Sheep Flocks to the full Cattle Herds filter-group/multi-sort
+   model, extract drifting row/tile primitives, define which other lists get
    search/sort/saved views, standardize filtered/empty states, and keep the real
-   AI filter/sort investigation layered on top of deterministic filters with
-   explicit preview/apply behavior.
+   AI filter/sort investigation layered on deterministic filters with explicit
+   preview/apply behavior.
    Guard target: per-surface filter/sort tests, saved-view tests, and static
    shared-row/empty-state guards.
-8. Lane G - Restore/recovery surface.
-   Class: `DECISION`. Size: small.
-   Scope: either add cattle/sheep animal restore UI matching daily Recently
-   Deleted recovery, or remove user-facing copy that promises in-app/admin
-   restore where no app surface exists.
-   Guard target: delete/recovery classification guard plus focused restore UI
-   coverage if built.
+8. Lane G - Restore/recovery surface. SHIPPED 2026-06-08.
+   `RecentlyDeletedDailyReports` is now a combined Recently Deleted Records
+   surface that restores daily reports plus deleted cattle/sheep animals
+   (`restoreCattleAnimal`/`restoreSheepAnimal`), fail-closed, dispatching the
+   correct restore RPC by record kind.
 9. Lane H - Webform/offline parity.
    Class: `DEFECT` for EquipmentFueling offline/stuck recovery gaps; `ENH` for
    consolidation and terminal-copy parity. Size: medium.
@@ -556,17 +522,17 @@ Rules:
     still need a uniform frame.
     Guard target: route/nav/date/a11y static guards plus focused Playwright once
     decisions are made.
-12. Lane K - Export/print parity.
-    Class: `DECISION` plus `ENH`. Size: medium.
-    Scope: add a shared CSV/export/print model for operational lists and record
-    pages, starting from Ronnie's cattle herd need. One export/download owner
-    should own rows-to-CSV, Blob/object URL, filename, and revoke mechanics;
-    exports should use active filtered/sorted view state and shared column specs;
-    permissions must remain bounded to already-allowed/RLS-visible rows; print
-    should use a shared print view/stylesheet rather than per-section print
-    islands; filename dates should use the farm-Central convention.
-    Guard target: a static single-download-owner guard, column-spec/export
-    tests, and print stylesheet/screenshot checks.
+12. Lane K - Export/print parity. PARTIAL. Class: `DECISION`/`ENH`.
+    Shipped 2026-06-08: cattle-herd CSV export — `src/lib/csvExport.js` is the
+    single rows-to-CSV / Blob / object-URL / filename / revoke owner (with a
+    formula/DDE-injection guard and farm-Central filename dates), and
+    `CattleHerdsView` exports the active filtered/sorted `sortedFlat` rows.
+    Remaining: extend the shared CSV/export model to other operational lists and
+    record pages with shared column specs, keep permissions bounded to
+    RLS-visible rows, and add a shared print view/stylesheet rather than
+    per-section print islands.
+    Guard target: column-spec/export tests and print stylesheet/screenshot checks
+    (the single-download owner is now `csvExport.js`).
 
 ### Light-User Portal Contract
 
@@ -805,6 +771,18 @@ Current PROD architecture includes these load-bearing migrations:
   anon INSERT only), so authenticated daily-report photo uploads no longer 403
   now that the photo webforms are login-required. Applied TEST + PROD
   2026-06-06.
+- `100` `processing_batch_lifecycle_rpcs`: audited SECDEF RPCs
+  `unschedule_cattle_processing_batch` and `delete_sheep_processing_batch` that
+  replace the last direct client hard-deletes of processing-batch roots. Each
+  defensively unlinks straggler `processing_batch_id` rows, writes a
+  `record.deleted` Activity event, and deletes the batch in one transaction
+  (cattle unschedule is server-refused unless status `scheduled`). admin/management
+  gate in-function, `SET search_path = public`, REVOKE PUBLIC/anon + GRANT
+  authenticated, `NOTIFY pgrst`. The record.deleted event lives on the
+  cattle.processing / sheep.processing entity and persists in the GLOBAL Activity
+  log after the row is gone (per-entity read is existence-gated; full tombstone
+  redesign stays out of scope). Client wrapper `src/lib/processingBatchDeleteApi.js`.
+  Applied TEST + PROD 2026-06-08.
 
 Special migration notes:
 
@@ -878,7 +856,14 @@ Append-only upload expectations:
   (first consumer: cattle herds list).
 - `src/lib/cattleHerdFilters.js`: pure cattle herd filter/sort predicates
   (vitest-locked).
-- `src/shared/InlineNotice.jsx`: non-blocking notices.
+- `src/lib/processingBatchDeleteApi.js`: client wrappers for the audited
+  processing-batch lifecycle RPCs (`unschedule_cattle_processing_batch`,
+  `delete_sheep_processing_batch`; migration `100`).
+- `src/lib/csvExport.js`: the single CSV rows-to-CSV / Blob / object-URL /
+  filename / revoke owner, with a spreadsheet formula/DDE-injection guard and
+  farm-Central filename dates (first consumer: cattle herds export).
+- `src/shared/InlineNotice.jsx`: non-blocking notices (`error`/`warning`/
+  `success`/`info` kinds).
 - `src/shared/DeleteModal.jsx` and `src/shared/ConfirmModal.jsx`: app modal
   primitives.
 - `src/lib/entityMutations.js`: shared best-effort mutation + Activity helper.
@@ -1061,6 +1046,19 @@ Workflow/worktable entities:
   Activity in one transaction.
 - Processing-batch helpers may need to resolve deleted animals by ID in admin
   context; do not add `deleted_at` filters there without redesign.
+- Processing-batch unschedule/delete go through the audited SECDEF RPCs
+  `unschedule_cattle_processing_batch` / `delete_sheep_processing_batch`
+  (migration `100`, wrapper `src/lib/processingBatchDeleteApi.js`): atomic
+  straggler-unlink + delete + `record.deleted` Activity. Do not reintroduce
+  direct client `.delete()` on `cattle_processing_batches` /
+  `sheep_processing_batches`. The per-sheep flock-revert detach loop still runs
+  client-side first via the migration `081` detach RPCs.
+- `CattleBreedingView` mounts the audit-only `cattle.breeding` workflow Activity
+  stream (`RecordCollaborationSection`, entity_id `cattle-breeding`,
+  `showComments=false`), populated by the migration `094` cycle RPCs.
+- Sheep Flocks saved views use `src/lib/savedViewsApi.js` over `app_saved_views`
+  with `surface_key = 'sheep.flocks'`, capturing search + status + sort; load
+  failures degrade to an inline notice and never block the flock hub.
 - Cattle Herds filters/sorts live in `src/lib/cattleHerdFilters.js` (pure,
   vitest-locked); UI is `CattleHerdsView`. Filters render in three
   always-visible groups (Core, Calving/Breeding, Lineage/Other) — no "More

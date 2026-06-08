@@ -1,6 +1,6 @@
 # HO - Static Workflow SOP
 
-Last updated: 2026-06-01.
+Last updated: 2026-06-08.
 
 This is the durable start-of-session workflow for Ronnie, CC (Claude Code), and
 Codex. It is not a session log and must not carry current project state.
@@ -121,12 +121,11 @@ A dedicated Codex worktree exists at:
 
 `C:\Users\Ronni\WCF-planner-codex`
 
-It is on branch `codex/parallel-worktree`, resynced to current `main`
-(`af44459`) on 2026-06-04, with its own `node_modules`. This is the only Codex
-worktree; the temporary per-lane worktrees from the 2026-06-04 ship
-(feed/broiler/cattle) were pruned after their lanes merged. For a new parallel
-lane, create a scoped `codex/<lane>` branch from current `main` in this
-worktree rather than reusing a merged lane branch.
+It has its own `node_modules`. As of 2026-06-08 it sits on the merged lane
+branch `codex/lane-b-fail-closed-loading` (integrated into `main` at `91546a7`);
+after branch cleanup it should be reset to current `main`. This is the only Codex
+worktree. For a new parallel lane, create a scoped `codex/<lane>` branch from
+current `main` in this worktree rather than reusing a merged lane branch.
 
 Default ownership is unchanged: Codex is still planning lead and reviewer, and
 CC is still primary builder. Ronnie may explicitly assign a build lane to Codex
@@ -159,7 +158,7 @@ Parallel-build rules:
 Before planning or editing:
 
 - Read `HO.md`.
-- Read `PROJECT.md` Current State, Active Roadmap, and relevant Contracts.
+- Read `PROJECT.md` Current State, Build Queue, and relevant Contracts.
 - Run `git status --short`.
 - Check recent git log.
 - Inspect relevant source/test/migration files.
