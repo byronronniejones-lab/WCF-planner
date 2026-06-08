@@ -10,6 +10,8 @@ const fleetView = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFleetV
 const detail = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentDetail.jsx'), 'utf8');
 const home = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentHome.jsx'), 'utf8');
 const registry = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
+const fuelLog = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFuelLogView.jsx'), 'utf8');
+const csvExport = fs.readFileSync(path.join(ROOT, 'src/lib/csvExport.js'), 'utf8');
 
 describe('EquipmentFleetView — no legacy Activity surfaces', () => {
   it('does not import ActivityPanel', () => {
@@ -80,6 +82,66 @@ describe('activityRegistry — equipment.item route', () => {
   });
   it('does not require slug context for routing', () => {
     expect(registry).not.toMatch(/EQUIPMENT_ITEM[\s\S]*?ctx\.slug/);
+  });
+});
+
+describe('EquipmentFuelLogView — CSV export (Lane K CP2)', () => {
+  it('uses the shared csvExport owner for browser download mechanics', () => {
+    expect(csvExport).toContain('export function rowsToCsv');
+    expect(csvExport).toContain('export function csvFilename');
+    expect(csvExport).toContain('export function downloadCsv');
+    expect(csvExport).toContain('new Blob');
+    expect(csvExport).toContain('URL.createObjectURL');
+  });
+
+  it('imports the shared csvExport helpers (no local download mechanics)', () => {
+    expect(fuelLog).toMatch(/import\s*\{[^}]*\}\s*from\s*'\.\.\/lib\/csvExport\.js'/);
+    for (const name of ['csvFilename', 'downloadCsv', 'rowsToCsv']) {
+      expect(fuelLog).toContain(name);
+    }
+  });
+
+  it('defines handleExportCsv and a toolbar Export CSV button with the marker', () => {
+    expect(fuelLog).toContain('function handleExportCsv');
+    expect(fuelLog).toContain('data-equipment-fuel-log-export-csv="1"');
+    expect(fuelLog).toContain('Export CSV');
+    expect(fuelLog).toContain('onClick={handleExportCsv}');
+  });
+
+  it('exports the current filtered rows, not raw fuelings, and is NOT capped to the 500-row render slice', () => {
+    expect(fuelLog).toContain('rowsToCsv(columns, filtered)');
+    expect(fuelLog).not.toContain('rowsToCsv(columns, fuelings)');
+    expect(fuelLog).not.toContain('rowsToCsv(columns, filtered.slice');
+  });
+
+  it('strips Podio HTML from the comments column', () => {
+    expect(fuelLog).toContain('stripPodioHtml(f.comments)');
+  });
+
+  it('includes the key fuel-log export headers', () => {
+    for (const header of [
+      'Date',
+      'Equipment name',
+      'Equipment ID',
+      'Fuel type',
+      'Gallons',
+      'DEF gallons',
+      'Fuel cost per gallon',
+      'Estimated fuel cost',
+      'Hours reading',
+      'KM reading',
+      'Team member',
+      'Comments',
+      'Record ID',
+    ]) {
+      expect(fuelLog).toContain(`'${header}'`);
+    }
+  });
+
+  it('keeps the fallback browser-only and free of window.alert/confirm', () => {
+    expect(fuelLog).toContain('CSV export is only available in the browser.');
+    expect(fuelLog).not.toContain('window.alert');
+    expect(fuelLog).not.toContain('window.confirm');
   });
 });
 

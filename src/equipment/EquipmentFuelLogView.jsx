@@ -4,6 +4,7 @@
 import React from 'react';
 import {stripPodioHtml} from '../lib/equipment.js';
 import {usePersistentViewState} from '../lib/usePersistentViewState.js';
+import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 
 export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
   const [eqFilter, setEqFilter] = usePersistentViewState('equipment.fuelLog.equipmentFilter', '');
@@ -11,6 +12,9 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
   const [teamFilter, setTeamFilter] = usePersistentViewState('equipment.fuelLog.teamFilter', '');
   const [fromDate, setFromDate] = usePersistentViewState('equipment.fuelLog.fromDate', '');
   const [toDate, setToDate] = usePersistentViewState('equipment.fuelLog.toDate', '');
+  // Browser-only fallback notice for CSV export (no inline-notice system in
+  // this view; downloadCsv returns false only in a non-browser context).
+  const [exportNotice, setExportNotice] = React.useState('');
 
   const eqById = React.useMemo(() => Object.fromEntries(equipment.map((e) => [e.id, e])), [equipment]);
   const teamMembers = React.useMemo(() => {
@@ -36,6 +40,35 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
     def_gallons: filtered.reduce((s, f) => s + (parseFloat(f.def_gallons) || 0), 0),
     cost: filtered.reduce((s, f) => s + (parseFloat(f.gallons) || 0) * (parseFloat(f.fuel_cost_per_gal) || 0), 0),
   };
+
+  // CSV export of the CURRENT filtered rows. Exports ALL filtered rows, not
+  // the visible filtered.slice(0, 500) cap — the 500-row cap is a render-only
+  // guard. Mechanics (quoting, formula-injection neutralization, browser
+  // download) come from the shared csvExport owner.
+  function handleExportCsv() {
+    const estCost = (f) => {
+      const g = parseFloat(f.gallons) || 0;
+      const c = parseFloat(f.fuel_cost_per_gal) || 0;
+      return g > 0 && c > 0 ? Math.round(g * c * 100) / 100 : '';
+    };
+    const columns = [
+      {header: 'Date', value: (f) => f.date || ''},
+      {header: 'Equipment name', value: (f) => eqById[f.equipment_id]?.name || ''},
+      {header: 'Equipment ID', value: (f) => f.equipment_id || ''},
+      {header: 'Fuel type', value: (f) => f.fuel_type || ''},
+      {header: 'Gallons', value: (f) => f.gallons ?? ''},
+      {header: 'DEF gallons', value: (f) => f.def_gallons ?? ''},
+      {header: 'Fuel cost per gallon', value: (f) => f.fuel_cost_per_gal ?? ''},
+      {header: 'Estimated fuel cost', value: estCost},
+      {header: 'Hours reading', value: (f) => f.hours_reading ?? ''},
+      {header: 'KM reading', value: (f) => f.km_reading ?? ''},
+      {header: 'Team member', value: (f) => f.team_member || ''},
+      {header: 'Comments', value: (f) => stripPodioHtml(f.comments) || ''},
+      {header: 'Record ID', value: (f) => f.id || ''},
+    ];
+    const ok = downloadCsv(csvFilename('equipment-fuel-log'), rowsToCsv(columns, filtered));
+    setExportNotice(ok ? '' : 'CSV export is only available in the browser.');
+  }
 
   const inpS = {
     fontSize: 13,
@@ -112,7 +145,27 @@ export default function EquipmentFuelLogView({equipment, fuelings, fmt}) {
         >
           Clear
         </button>
+        <button
+          type="button"
+          data-equipment-fuel-log-export-csv="1"
+          onClick={handleExportCsv}
+          style={{
+            padding: '7px 14px',
+            borderRadius: 7,
+            border: '1px solid #d1d5db',
+            background: 'white',
+            color: '#374151',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          Export CSV
+        </button>
       </div>
+
+      {exportNotice && <div style={{marginBottom: 14, color: '#b91c1c', fontSize: 12}}>{exportNotice}</div>}
 
       <div
         style={{
