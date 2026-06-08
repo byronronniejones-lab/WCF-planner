@@ -1,7 +1,11 @@
 // Shared inline-style object. Verbatim extract from main.jsx.
 export const S = {
   header: {
-    background: 'linear-gradient(135deg,#042f23 0%,#085041 60%,#0d6652 100%)',
+    // Homepage-redesign "header-green" gradient (modern-themes.css .header-green):
+    // 102deg, two-stop oklch greens. The shipped header was already a green
+    // gradient with white text + white 36px icon buttons, so this aligns the
+    // exact hue/angle to the design without touching DOM, hooks, or behavior.
+    background: 'linear-gradient(102deg, oklch(0.355 0.058 166), oklch(0.435 0.078 170))',
     color: 'white',
     padding: '10px 1.25rem',
     display: 'flex',

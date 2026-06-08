@@ -40,6 +40,13 @@ export const PLANNER_ICON_KEYS = {
   feed: 'feed',
   checkmark: 'checkmark',
   weighins: 'weighins',
+
+  // Homepage-redesign UI icons (2026-06-08). Raster PNGs optimized to ≤256px
+  // palette and shipped at public/icons/planner/<key>.png.
+  weather: 'weather',
+  wrench: 'wrench',
+  admin: 'admin',
+  processing: 'processing',
 };
 
 const VALID_KEYS = new Set(Object.values(PLANNER_ICON_KEYS));

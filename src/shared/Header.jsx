@@ -54,14 +54,10 @@ import PlannerIcon from '../components/PlannerIcon.jsx';
 // recipient's unread count from real DB data (no fakes).
 const NOTIFICATIONS_CENTER_ENABLED = true;
 
-// Shared white-button shape for header action icons (Tasks, Notifications,
-// Hamburger). 2026-05-14 Codex direction: actual white buttons on the
-// green header, not translucent outline-on-green. 36×36 hit target meets
-// WCAG 2.5.5 (Level AAA = 24px / Level AA = 44px; 36px is a deliberate
-// middle ground that keeps mobile usable without dominating the bar).
-// Brand-green stroke (#085041) on solid white reads cleanly as an action
-// group; the active state uses a subtle light-green tint that mirrors
-// the palette used elsewhere in the app.
+// Homepage-redesign header treatment (modern-base.css .icon-btn + .header-green):
+// translucent white glyphs sitting directly on the green bar — NOT white-filled
+// boxes. 36×36 hit target, 10px radius. Active = a soft white wash. Hover wash
+// is added via a global rule in index.html ([data-header-action-group] button).
 const HEADER_ICON_BTN = {
   width: 36,
   height: 36,
@@ -70,21 +66,20 @@ const HEADER_ICON_BTN = {
   justifyContent: 'center',
   position: 'relative',
   padding: 0,
-  borderRadius: 8,
-  border: '1px solid rgba(255,255,255,.55)',
-  background: '#ffffff',
-  color: '#085041',
+  borderRadius: 10,
+  border: 'none',
+  background: 'transparent',
+  color: 'rgba(255,255,255,.96)',
   cursor: 'pointer',
   fontSize: 16,
   lineHeight: 1,
   fontFamily: 'inherit',
+  transition: 'background .15s',
 };
 
 const HEADER_ICON_BTN_ACTIVE = {
   ...HEADER_ICON_BTN,
-  background: '#ecfdf5',
-  border: '1px solid #ffffff',
-  boxShadow: '0 0 0 1px rgba(255,255,255,.6)',
+  background: 'rgba(255,255,255,.18)',
 };
 
 // Red badge for unread/open counts on header icons. White border so the
@@ -104,6 +99,39 @@ const HEADER_BADGE = {
   color: 'white',
   textAlign: 'center',
   border: '1px solid #ffffff',
+};
+
+// Homepage-redesign user chip (modern-base.css .user/.avatar/.user-txt):
+// a rounded pill on the green bar holding a circular avatar (initial) + the
+// name/role stacked. Replaces the old plain-text "Name · role".
+const USER_PILL = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '3px 12px 3px 4px',
+  borderRadius: 999,
+  background: 'rgba(255,255,255,.16)',
+};
+const USER_AVATAR = {
+  width: 26,
+  height: 26,
+  flexShrink: 0,
+  borderRadius: '50%',
+  background: 'rgba(255,255,255,.92)',
+  color: '#0b3530',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontWeight: 700,
+  fontSize: 12,
+};
+const USER_TXT = {
+  display: 'flex',
+  flexDirection: 'column',
+  lineHeight: 1.05,
+  fontSize: 12.5,
+  fontWeight: 650,
+  color: '#ffffff',
 };
 
 // Inline monochrome SVG icons that use currentColor so the parent button's
@@ -467,19 +495,24 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
             </span>
           )}
         </button>
-        <div
-          data-header-userinfo="1"
-          style={{fontSize: 11, display: 'flex', alignItems: 'center', gap: 5, opacity: 0.75, marginLeft: 'auto'}}
-        >
-          {saveStatus === 'saving' && <span style={{color: '#a7f3d0', fontWeight: 500}}>Saving…</span>}
-          {saveStatus === 'saved' && <span style={{color: '#a7f3d0', fontWeight: 500}}>✓ Saved</span>}
+        <div data-header-userinfo="1" style={{display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto'}}>
+          {saveStatus === 'saving' && <span style={{color: '#a7f3d0', fontWeight: 500, fontSize: 11}}>Saving…</span>}
+          {saveStatus === 'saved' && <span style={{color: '#a7f3d0', fontWeight: 500, fontSize: 11}}>✓ Saved</span>}
           {saveStatus === 'error' && (
-            <span style={{color: '#fca5a5', fontWeight: 500}}>⚠ Save failed — check connection</span>
+            <span style={{color: '#fca5a5', fontWeight: 500, fontSize: 11}}>⚠ Save failed — check connection</span>
           )}
           {!saveStatus && authState?.name && (
-            <span data-header-username="1">
-              {authState.name} · <span style={{textTransform: 'capitalize'}}>{authState?.role}</span>
-            </span>
+            <div style={USER_PILL}>
+              <span style={USER_AVATAR}>{(authState.name || '?').trim().charAt(0).toUpperCase() || '?'}</span>
+              <span data-header-username="1" style={USER_TXT}>
+                <span>{authState.name}</span>
+                <span
+                  style={{fontSize: 10.5, fontWeight: 600, color: 'rgba(255,255,255,.82)', textTransform: 'capitalize'}}
+                >
+                  {authState?.role}
+                </span>
+              </span>
+            </div>
           )}
         </div>
         {/* Right-side icon group: Tasks, Notifications placeholder, Hamburger.

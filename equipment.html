@@ -13,12 +13,12 @@
      same way as index.html — only the install manifest differs. -->
 <link rel="manifest" href="/manifest-equipment.webmanifest"/>
 <link rel="apple-touch-icon" href="/icons/icon-192.png"/>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link rel="preconnect" href="https://unpkg.com" crossorigin/>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin/>
 <link rel="preconnect" href="https://pzfujbjtayhkdlxiblwe.supabase.co" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<!-- Self-hosted Hanken Grotesk (variable, latin subset) — no Google Fonts CDN so the
+     app font works offline/PWA. Preload keeps FOUT short. @font-face is in <style>. -->
+<link rel="preload" href="/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin/>
 <!-- React, ReactDOM, and Supabase are now bundled by Vite via /src/main.jsx (see end of <body>). -->
 <!-- Babel-in-browser was removed when Vite took over JSX transpilation at build time. -->
 <!-- The CDN preload + script tags that lived here pre-migration are deleted. -->
@@ -50,9 +50,16 @@
     --radius-md:  10px;
     --radius-lg:  14px;
   }
+  @font-face {
+    font-family: 'Hanken Grotesk';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url('/fonts/hanken-grotesk-latin.woff2') format('woff2');
+  }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
-    font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-family:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     background:var(--bg-page);
     color:var(--text-primary);
     font-size:14px;
@@ -91,7 +98,7 @@
   .breed-gantt::-webkit-scrollbar-thumb:hover { background: #374151; }
 
   /* ── WEBFORM STYLES (scoped to #webform-container) ── */
-  #webform-container{--wf-green:#085041;--wf-green-lt:#ecfdf5;--wf-green-bd:#a7f3d0;--wf-text:#111827;--wf-text2:#4b5563;--wf-muted:#9ca3af;--wf-border:#e5e7eb;--wf-border2:#d1d5db;--wf-bg:#f6f8f7;--wf-r-sm:6px;--wf-r-md:10px;--wf-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);font-family:'Geist',-apple-system,sans-serif;background:#f6f8f7;color:#111827;font-size:14px;line-height:1.5;min-height:100vh}
+  #webform-container{--wf-green:#085041;--wf-green-lt:#ecfdf5;--wf-green-bd:#a7f3d0;--wf-text:#111827;--wf-text2:#4b5563;--wf-muted:#9ca3af;--wf-border:#e5e7eb;--wf-border2:#d1d5db;--wf-bg:#f6f8f7;--wf-r-sm:6px;--wf-r-md:10px;--wf-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);font-family:'Hanken Grotesk',-apple-system,sans-serif;background:#f6f8f7;color:#111827;font-size:14px;line-height:1.5;min-height:100vh}
   #webform-container input,#webform-container select,#webform-container textarea{font-family:inherit;font-size:13px;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;width:100%;outline:none;background:#fff;color:#111827;transition:border-color .15s,box-shadow .15s}
   #webform-container input:focus,#webform-container select:focus,#webform-container textarea:focus{border-color:#085041;box-shadow:0 0 0 3px rgba(8,80,65,.1)}
   #webform-container input::placeholder,#webform-container textarea::placeholder{color:#9ca3af}
@@ -245,7 +252,7 @@
     position: fixed; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     background: linear-gradient(135deg, #f0f7f4 0%, #ecfdf5 100%);
-    font-family: 'Geist', -apple-system, sans-serif;
+    font-family: 'Hanken Grotesk', -apple-system, sans-serif;
     z-index: 99999;
     transition: opacity .3s;
   }

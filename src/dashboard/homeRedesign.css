@@ -1,0 +1,509 @@
+/* ===========================================================================
+   HomeDashboard redesign — scoped CSS (Lane: homepage redesign, CP3)
+   ---------------------------------------------------------------------------
+   Ported from "WCF Planner Redesign/modern-base.css" + the theme-crisp tokens
+   from modern-themes.css. EVERYTHING is namespaced under `.home` so it cannot
+   leak into the rest of the app (the app is otherwise inline-styled). The
+   HomeDashboard root carries `className="home theme-crisp"`. Header styling is
+   NOT here — the global Header (src/shared/Header.jsx) owns its own green-crisp
+   styling. Icons are rendered as <img>/PlannerIcon in JSX; this file only
+   styles their containers.
+   =========================================================================== */
+
+.home.theme-crisp {
+  --r-lg: 18px;
+  --r-md: 12px;
+  --r-sm: 9px;
+  --gap: 18px;
+  --surface: #ffffff;
+  --surface-2: oklch(0.975 0.003 225);
+  --border: oklch(0.915 0.005 230);
+  --border-strong: oklch(0.85 0.007 230);
+  --divider: oklch(0.938 0.004 230);
+  --text: oklch(0.24 0.015 250);
+  --text-muted: oklch(0.52 0.012 250);
+  --text-faint: oklch(0.69 0.01 250);
+  --label: oklch(0.58 0.015 250);
+  --brand: oklch(0.5 0.095 162);
+  --shadow-card: 0 1px 2px rgba(20, 30, 40, 0.045);
+  --shadow-hover: 0 7px 20px rgba(20, 30, 40, 0.1);
+  --row-hover: oklch(0.979 0.003 230);
+  --c-broiler: oklch(0.66 0.12 70);
+  --c-layer: oklch(0.58 0.13 45);
+  --c-pig: oklch(0.6 0.11 350);
+  --c-cattle: oklch(0.52 0.15 25);
+  --c-sheep: oklch(0.58 0.07 195);
+  --danger: oklch(0.56 0.18 26);
+  --danger-soft: oklch(0.952 0.038 28);
+  --warn: oklch(0.66 0.13 70);
+  --warn-ink: oklch(0.5 0.11 62);
+  --warn-soft: oklch(0.955 0.05 82);
+  --ok: oklch(0.56 0.11 156);
+  --ok-ink: oklch(0.45 0.09 156);
+  --ok-soft: oklch(0.952 0.036 162);
+  --info: oklch(0.54 0.13 258);
+  --info-soft: oklch(0.952 0.034 258);
+  color: var(--text);
+}
+
+/* The redesigned content column (inside the existing app frame, below Header). */
+.home .home-col {
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  padding: 24px 20px 64px;
+}
+.home button {
+  font: inherit;
+}
+
+/* ---------- quick-nav tiles ---------- */
+.home .tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.home .tile {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
+.home .tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-strong);
+}
+.home .tile-label {
+  font-weight: 680;
+  font-size: 15.5px;
+  letter-spacing: -0.01em;
+  flex: 1;
+  color: var(--text);
+}
+.home .tile-go {
+  width: 18px;
+  height: 18px;
+  color: var(--text-faint);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: 0.16s;
+}
+.home .tile:hover .tile-go {
+  opacity: 1;
+  transform: none;
+  color: var(--brand);
+}
+
+/* ---------- shared coin (raster icon holder) ---------- */
+.home .coin {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.home .coin img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 3px;
+}
+.home .coin-sm {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+}
+
+/* ---------- cards ---------- */
+.home .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+.home .lift {
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
+.home .lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-strong);
+}
+.home .go {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-left: auto;
+  color: var(--text-faint);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: 0.16s;
+}
+.home .lift:hover .go {
+  opacity: 1;
+  transform: none;
+  color: var(--brand);
+}
+
+/* utility row: Processing + Admin side by side */
+.home .utility {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.home .admin-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 18px;
+  width: 100%;
+  text-align: left;
+}
+.home .admin-ic {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+}
+.home .admin-ic img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.home .admin-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+}
+
+/* ---------- labels ---------- */
+.home .card-label,
+.home .section-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label);
+  white-space: nowrap;
+  margin: 0;
+}
+.home .block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.home .block-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 2px 0;
+}
+.home .head-ic {
+  height: 18px;
+  display: flex;
+  align-items: center;
+}
+.home .head-ic img {
+  height: 100%;
+  width: auto;
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(20, 30, 40, 0.12));
+}
+.home .count-pill {
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+}
+.home .count-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ---------- stats blocks (Animals on Farm / Production) ---------- */
+.home .stats {
+  padding: 18px 22px 20px;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.home .stats-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.home .stat-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+.home .stat {
+  position: relative;
+  padding: 0 4px;
+}
+.home .stat + .stat::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 8%;
+  height: 60%;
+  width: 1px;
+  background: var(--divider);
+}
+.home .stat-n {
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.home .stat-total .stat-n {
+  color: var(--brand);
+}
+.home .stat-l {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 9px;
+  font-weight: 600;
+}
+.home .sdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 7px;
+}
+.home .sdot-broiler {
+  background: var(--c-broiler);
+}
+.home .sdot-layer {
+  background: var(--c-layer);
+}
+.home .sdot-pig {
+  background: var(--c-pig);
+}
+.home .sdot-cattle {
+  background: var(--c-cattle);
+}
+.home .sdot-sheep {
+  background: var(--c-sheep);
+}
+.home .sdot-total {
+  background: var(--brand);
+}
+
+/* ---------- slim status note (caught-up banners) ---------- */
+.home .note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 550;
+}
+.home .note-ic {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.home .note-ok {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+.home .note-ok .note-ic {
+  background: var(--ok);
+  color: #fff;
+}
+.home .note-ok .note-ic svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---------- grouped panels (lists) ---------- */
+.home .panel {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.home .litem {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 18px;
+  position: relative;
+  transition: background 0.14s;
+}
+.home .litem + .litem {
+  border-top: 1px solid var(--divider);
+}
+.home .litem:hover {
+  background: var(--row-hover);
+}
+.home .litem-body {
+  flex: 1;
+  min-width: 0;
+}
+.home .litem-title {
+  font-weight: 650;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  color: var(--text);
+}
+.home .litem-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+/* equipment rows */
+.home .eq-led {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.home .led-danger {
+  background: var(--danger);
+}
+.home .led-warn {
+  background: var(--warn);
+}
+
+/* badges */
+.home .badge-soft {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.home .badge-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.home .badge-warn {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+.home .badge-info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.home .badge-ok {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+
+/* feed rows (Next 30 Days) */
+.home .fd-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 550;
+  white-space: nowrap;
+}
+.home .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 8px;
+}
+.home .dot-ok {
+  background: var(--ok);
+}
+.home .dot-warn {
+  background: var(--warn);
+}
+.home .dot-danger {
+  background: var(--danger);
+}
+.home .dot-info {
+  background: var(--info);
+}
+
+/* ---------- weather card ---------- */
+.home .weather-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 18px;
+}
+.home .wx-ic {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.home .wx-ic img {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+.home .wx-temp {
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.home .wx-hilo {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* ---------- mobile ---------- */
+@media (max-width: 640px) {
+  .home .tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .home .utility {
+    grid-template-columns: 1fr;
+  }
+  .home .stat-row {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px 8px;
+  }
+  .home .home-col {
+    padding: 16px 14px 56px;
+  }
+}
