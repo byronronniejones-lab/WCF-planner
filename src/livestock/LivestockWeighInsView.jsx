@@ -1,11 +1,14 @@
 import React from 'react';
 import {useNavigate} from 'react-router-dom';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+import {averageEntryWeight, buildLivestockWeighInSessionColumns} from '../lib/weighInSessionExports.js';
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {listSavedViews, createSavedView, updateSavedView, deleteSavedView} from '../lib/savedViewsApi.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import AdminNewWeighInModal from '../shared/AdminNewWeighInModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import WeighInSessionListTile from '../shared/WeighInSessionListTile.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import UsersModal from '../auth/UsersModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -264,26 +267,11 @@ const LivestockWeighInsView = ({
   }
 
   function livestockWeighInsExportColumns() {
-    return [
-      {header: 'Date', value: (s) => s.date || ''},
-      {header: 'Species', value: () => speciesLabel},
-      {header: 'Batch ID', value: (s) => s.batch_id || ''},
-      {header: 'Broiler week', value: (s) => (species === 'broiler' ? s.broiler_week || '' : '')},
-      {header: 'Status', value: (s) => s.status || ''},
-      {header: 'Team member', value: (s) => s.team_member || ''},
-      {header: 'Entry count', value: (s) => (entries[s.id] || []).length},
-      {
-        header: 'Average weight',
-        value: (s) => {
-          const sEntries = entries[s.id] || [];
-          if (sEntries.length === 0) return '';
-          const avg = sEntries.reduce((sum, e) => sum + (parseFloat(e.weight) || 0), 0) / sEntries.length;
-          return Math.round(avg * 100) / 100;
-        },
-      },
-      {header: 'Started at', value: (s) => s.started_at || ''},
-      {header: 'Session ID', value: (s) => s.id || ''},
-    ];
+    return buildLivestockWeighInSessionColumns({
+      species,
+      speciesLabel,
+      entriesBySession: entries,
+    });
   }
 
   function handleExportCsv() {
@@ -674,11 +662,7 @@ const LivestockWeighInsView = ({
           {!loadFailed &&
             filtered.map((s) => {
               const sEntries = entries[s.id] || [];
-              const avgWeight =
-                sEntries.length > 0
-                  ? sEntries.reduce((sum, e) => sum + (parseFloat(e.weight) || 0), 0) / sEntries.length
-                  : 0;
-              const isComplete = s.status === 'complete';
+              const avgWeight = averageEntryWeight(sEntries);
               const priorPigSession = species === 'pig' ? findPriorPigWeighInSession(s, sessions) : null;
               const pigEntryAdgs = priorPigSession
                 ? computeRankMatchedPigEntryADG(
@@ -693,8 +677,12 @@ const LivestockWeighInsView = ({
                   key={s.id}
                   style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden'}}
                 >
-                  <div
-                    data-weighin-session-tile={s.id}
+                  <WeighInSessionListTile
+                    session={s}
+                    label={s.batch_id || 'Unknown batch'}
+                    fmt={fmt}
+                    countLabel={sEntries.length + ' ' + (sEntries.length === 1 ? 'entry' : 'entries')}
+                    embedded
                     onClick={() =>
                       navigate(
                         '/weigh-in-sessions/' + s.id,
@@ -703,51 +691,23 @@ const LivestockWeighInsView = ({
                         ),
                       )
                     }
-                    style={{
-                      padding: '10px 16px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      flexWrap: 'wrap',
-                    }}
-                    className="hoverable-tile"
+                    beforeStatus={
+                      species === 'broiler' && s.broiler_week ? (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: 10,
+                            background: '#fef3c7',
+                            color: '#92400e',
+                          }}
+                        >
+                          {'WK ' + s.broiler_week}
+                        </span>
+                      ) : null
+                    }
                   >
-                    <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
-                      {s.batch_id || 'Unknown batch'}
-                    </span>
-                    {species === 'broiler' && s.broiler_week && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 10,
-                          background: '#fef3c7',
-                          color: '#92400e',
-                        }}
-                      >
-                        {'WK ' + s.broiler_week}
-                      </span>
-                    )}
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '2px 8px',
-                        borderRadius: 10,
-                        background: isComplete ? '#d1fae5' : '#fef3c7',
-                        color: isComplete ? '#065f46' : '#92400e',
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {s.status}
-                    </span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
-                    <span style={{fontSize: 11, fontWeight: 600, color: '#1e40af'}}>
-                      {sEntries.length} {sEntries.length === 1 ? 'entry' : 'entries'}
-                    </span>
                     {species !== 'pig' && avgWeight > 0 && (
                       <span
                         style={{
@@ -767,7 +727,7 @@ const LivestockWeighInsView = ({
                         {'→ batch wk' + s.broiler_week + 'Lbs'}
                       </span>
                     )}
-                  </div>
+                  </WeighInSessionListTile>
                   {species === 'pig' &&
                     sEntries.length > 0 &&
                     pigMetricsBySession[s.id] &&

@@ -11,6 +11,8 @@ const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
 const listSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleWeighInsView.jsx'), 'utf8');
 const sheepListSrc = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepWeighInsView.jsx'), 'utf8');
 const livestockSrc = fs.readFileSync(path.join(ROOT, 'src/livestock/LivestockWeighInsView.jsx'), 'utf8');
+const weighInSessionTileSrc = fs.readFileSync(path.join(ROOT, 'src/shared/WeighInSessionListTile.jsx'), 'utf8');
+const weighInSessionExportsSrc = fs.readFileSync(path.join(ROOT, 'src/lib/weighInSessionExports.js'), 'utf8');
 const sheepCacheSrc = fs.readFileSync(path.join(ROOT, 'src/lib/sheepCache.js'), 'utf8');
 const csvExport = fs.readFileSync(path.join(ROOT, 'src/lib/csvExport.js'), 'utf8');
 const printExport = fs.readFileSync(path.join(ROOT, 'src/lib/printExport.js'), 'utf8');
@@ -627,9 +629,10 @@ describe('SheepWeighInsView - CSV export', () => {
   });
 
   it('keeps sheep weigh-in export columns useful for session review', () => {
+    expect(sheepListSrc).toContain("groupHeader: 'Flock'");
+    expect(sheepListSrc).toContain('buildRuminantWeighInSessionColumns');
     for (const header of [
       'Date',
-      'Flock',
       'Status',
       'Team member',
       'Entry count',
@@ -638,7 +641,7 @@ describe('SheepWeighInsView - CSV export', () => {
       'Started at',
       'Session ID',
     ]) {
-      expect(sheepListSrc).toContain(`header: '${header}'`);
+      expect(weighInSessionExportsSrc).toContain(`header: '${header}'`);
     }
   });
 });
@@ -661,9 +664,10 @@ describe('CattleWeighInsView - CSV export (Lane K CP3)', () => {
   });
 
   it('keeps cattle weigh-in export columns useful for session review', () => {
+    expect(listSrc).toContain("groupHeader: 'Herd'");
+    expect(listSrc).toContain('buildRuminantWeighInSessionColumns');
     for (const header of [
       'Date',
-      'Herd',
       'Status',
       'Team member',
       'Entry count',
@@ -672,7 +676,7 @@ describe('CattleWeighInsView - CSV export (Lane K CP3)', () => {
       'Started at',
       'Session ID',
     ]) {
-      expect(listSrc).toContain(`header: '${header}'`);
+      expect(weighInSessionExportsSrc).toContain(`header: '${header}'`);
     }
   });
 
@@ -736,6 +740,32 @@ describe('Weigh-in list print export (Lane K)', () => {
       expect(list.src).not.toContain('window.confirm');
     });
   }
+});
+
+describe('Weigh-in list shared tile primitive (Lane F)', () => {
+  it('owns the common weigh-in session tile marker and chrome', () => {
+    expect(weighInSessionTileSrc).toContain('data-weighin-session-tile');
+    expect(weighInSessionTileSrc).toContain('hoverable-tile');
+    expect(weighInSessionTileSrc).toContain('borderRadius: 10');
+    expect(weighInSessionTileSrc).toContain("padding: '10px 16px'");
+    expect(weighInSessionTileSrc).toContain("background: isComplete ? '#d1fae5' : '#fef3c7'");
+    expect(weighInSessionTileSrc).toContain("color: isComplete ? '#065f46' : '#92400e'");
+  });
+
+  it('is used by cattle, sheep, and livestock weigh-in list views', () => {
+    for (const src of [listSrc, sheepListSrc, livestockSrc]) {
+      expect(src).toContain("import WeighInSessionListTile from '../shared/WeighInSessionListTile.jsx'");
+      expect(src).toContain('<WeighInSessionListTile');
+    }
+  });
+
+  it('keeps shared export column builders out of the list views', () => {
+    expect(weighInSessionExportsSrc).toContain('export function buildRuminantWeighInSessionColumns');
+    expect(weighInSessionExportsSrc).toContain('export function buildLivestockWeighInSessionColumns');
+    expect(listSrc).toContain('buildRuminantWeighInSessionColumns');
+    expect(sheepListSrc).toContain('buildRuminantWeighInSessionColumns');
+    expect(livestockSrc).toContain('buildLivestockWeighInSessionColumns');
+  });
 });
 
 describe('WeighInSessionPage — broiler record page', () => {
@@ -869,7 +899,8 @@ describe('LivestockWeighInsView — navigation-only list', () => {
     expect(livestockSrc).not.toContain('loadRoster');
   });
   it('tiles have data-weighin-session-tile marker', () => {
-    expect(livestockSrc).toContain('data-weighin-session-tile');
+    expect(weighInSessionTileSrc).toContain('data-weighin-session-tile');
+    expect(livestockSrc).toContain('WeighInSessionListTile');
   });
   it('still has status filter', () => {
     expect(livestockSrc).toContain('statusFilter');
@@ -1051,6 +1082,7 @@ describe('LivestockWeighInsView - CSV export (Lane K)', () => {
   });
 
   it('keeps livestock weigh-in export columns useful for session review', () => {
+    expect(livestockSrc).toContain('buildLivestockWeighInSessionColumns');
     for (const header of [
       'Date',
       'Species',
@@ -1063,7 +1095,7 @@ describe('LivestockWeighInsView - CSV export (Lane K)', () => {
       'Started at',
       'Session ID',
     ]) {
-      expect(livestockSrc).toContain(`header: '${header}'`);
+      expect(weighInSessionExportsSrc).toContain(`header: '${header}'`);
     }
   });
 

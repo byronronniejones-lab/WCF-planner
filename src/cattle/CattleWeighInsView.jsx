@@ -1,12 +1,15 @@
 import React from 'react';
 import {useNavigate} from 'react-router-dom';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
+import {buildRuminantWeighInSessionColumns} from '../lib/weighInSessionExports.js';
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {listSavedViews, createSavedView, updateSavedView, deleteSavedView} from '../lib/savedViewsApi.js';
 import CattleNewWeighInModal from './CattleNewWeighInModal.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import WeighInSessionListTile from '../shared/WeighInSessionListTile.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -242,20 +245,13 @@ const CattleWeighInsView = ({
   // counts come from entries[s.id]; matching-tag count only when a tag search
   // is active. Mechanics via the shared csvExport owner.
   function cattleWeighInsExportColumns() {
-    return [
-      {header: 'Date', value: (s) => s.date || ''},
-      {header: 'Herd', value: (s) => HERD_LABELS[s.herd] || s.herd || ''},
-      {header: 'Status', value: (s) => s.status || ''},
-      {header: 'Team member', value: (s) => s.team_member || ''},
-      {header: 'Entry count', value: (s) => (entries[s.id] || []).length},
-      {
-        header: 'Matching tag entries',
-        value: (s) => (tagQ ? (entries[s.id] || []).filter(entryMatchesTag).length : ''),
-      },
-      {header: 'New tag count', value: (s) => (entries[s.id] || []).filter((e) => e.new_tag_flag).length},
-      {header: 'Started at', value: (s) => s.started_at || ''},
-      {header: 'Session ID', value: (s) => s.id || ''},
-    ];
+    return buildRuminantWeighInSessionColumns({
+      groupHeader: 'Herd',
+      groupLabels: HERD_LABELS,
+      entriesBySession: entries,
+      tagQ,
+      entryMatchesTag,
+    });
   }
 
   function handleExportCsv() {
@@ -691,9 +687,13 @@ const CattleWeighInsView = ({
                 : sEntriesAll.length + ' ' + (sEntriesAll.length === 1 ? 'entry' : 'entries');
               const newTagCount = sEntriesAll.filter((e) => e.new_tag_flag).length;
               return (
-                <div
+                <WeighInSessionListTile
                   key={s.id}
-                  data-weighin-session-tile={s.id}
+                  session={s}
+                  label={HERD_LABELS[s.herd] || s.herd || 'Unknown herd'}
+                  fmt={fmt}
+                  countLabel={countLabel}
+                  countColor={tagQ ? '#065f46' : '#1e40af'}
                   onClick={() =>
                     navigate(
                       '/weigh-in-sessions/' + s.id,
@@ -705,53 +705,23 @@ const CattleWeighInsView = ({
                       ),
                     )
                   }
-                  className="hoverable-tile"
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 10,
-                    padding: '10px 16px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span style={{fontSize: 13, fontWeight: 700, color: '#111827', minWidth: 120}}>
-                    {HERD_LABELS[s.herd] || s.herd || 'Unknown herd'}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: 10,
-                      background: s.status === 'complete' ? '#d1fae5' : '#fef3c7',
-                      color: s.status === 'complete' ? '#065f46' : '#92400e',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {s.status}
-                  </span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>{fmt(s.date)}</span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>{s.team_member}</span>
-                  <span style={{fontSize: 11, fontWeight: 600, color: tagQ ? '#065f46' : '#1e40af'}}>{countLabel}</span>
-                  {newTagCount > 0 && !tagQ && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        borderRadius: 4,
-                        background: '#fef2f2',
-                        color: '#b91c1c',
-                      }}
-                    >
-                      {newTagCount + ' new tags'}
-                    </span>
-                  )}
-                </div>
+                  afterCount={
+                    newTagCount > 0 && !tagQ ? (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          background: '#fef2f2',
+                          color: '#b91c1c',
+                        }}
+                      >
+                        {newTagCount + ' new tags'}
+                      </span>
+                    ) : null
+                  }
+                />
               );
             })}
         </div>
