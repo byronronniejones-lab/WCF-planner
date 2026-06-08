@@ -8,12 +8,12 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-08.
-Current pushed source checkpoint: `origin/main` commit `6620d5d` - the
-post-seven-lane runtime queue through EquipmentFueling offline queue, Pig batch
-record chrome CP1, and the first CSV export expansion. Netlify auto-deploys from
-GitHub `main`; the earlier `91546a7` seven-lane ship was live-verified by bundle
-hash, while the later `6620d5d` runtime push was validated locally but not
-post-verified live in this project map. Migration series live through 100.
+Current pushed source checkpoint: `origin/main` commit `99e933a` - homepage
+redesign CP3 plus the merged outstanding build queue for Lanes H/I/D/F/J/K.
+Netlify auto-deploys from GitHub `main`; the earlier `91546a7` seven-lane ship
+was live-verified by bundle hash, while the later `99e933a` push has constituent
+local/Playwright validation recorded but no post-push live probe in this project
+map. Migration series live through 100.
 Production URL: https://wcfplanner.com.
 
 ---
@@ -102,38 +102,39 @@ Rules (normative):
 
 | Decision | Status | Evidence |
 | --- | --- | --- |
-| 1 Font scale | Ratified; enforcement pending | Lane I guard target (not yet built) |
-| 2 Button corners | Ratified; enforcement pending | Lane I guard target (not yet built) |
-| 3 Confirm/Delete stacking | Ratified; enforcement pending | Lane I guard target (not yet built) |
-| 4 Button height/padding | Ratified; enforcement pending | Lane I guard target (not yet built) |
-| 5 Save model (Submit vs autosave) | Ratified; enforcement pending | Lane D save/autosave guard (static + Playwright) |
+| 1 Font scale | Ratified; shared-token enforcement active, source-wide cleanup ongoing | `design_token_contract_static.test.js`, `record_page_shell_static.test.js` |
+| 2 Button corners | Ratified; shared-token enforcement active | `design_token_contract_static.test.js` |
+| 3 Confirm/Delete stacking | Ratified; enforcement active for shared modal tier | `design_token_contract_static.test.js`, `shared_ui_extraction_contract_static.test.js` |
+| 4 Button height/padding | Ratified; shared-token enforcement active | `design_token_contract_static.test.js` |
+| 5 Save model (Submit vs autosave) | Ratified; current model guarded | `save_model_contract_static.test.js` |
 
 1. Font sizes use a clean px scale. Canonical set: `10, 11, 12, 13, 14, 15, 16, 18,
    20, 22, 26`. Lift `9 -> 10`, fold `17 -> 18`, `24 -> 22`, `28 -> 26`.
    Display whitelist remains `32/34/36/48/56` for hero-only usage. Fractional
    font values (`12.5`, `10.5`) are forbidden.
-   - Guard target (Lane I, not yet built): a `typography_tokens` static clamp to
-     this set. Decision is ratified; automated enforcement is pending Lane I.
+   - Guard: `design_token_contract_static.test.js` and
+     `record_page_shell_static.test.js` cover the shipped shared-token slice.
+     Source-wide cleanup remains Lane I follow-up work.
 
 2. Button corners use canonical `6px` radius. The values `7` and `8` are retired.
    Canonical radius set is `{4, 6, 10, 14, 999, '50%'}`.
-   - Guard target (Lane I, not yet built): a `border_radius_scale` static clamp.
-     Decision is ratified; automated enforcement is pending Lane I.
+   - Guard: `design_token_contract_static.test.js` covers the shipped shared
+     radius/token slice.
 
 3. Confirm/Delete dialogs remain top-tier destructive overlay priority at
    toast (`9000`) so confirm stacks are never visually hidden.
-   - Guard target (Lane I, not yet built): a `zindex_scale` static clamp.
-     Decision is ratified; automated enforcement is pending Lane I.
+   - Guard: `design_token_contract_static.test.js` plus the shared modal
+     extraction guard.
 
 4. Button vertical pad defaults to `10px`; the standard button pad is `10px 16px`.
-   - Guard target (Lane I, not yet built): a `button_control_tokens` static clamp.
-     Decision is ratified; automated enforcement is pending Lane I.
+   - Guard: `design_token_contract_static.test.js`.
 
 5. Save model is contractually split by surface:
    - Submit-style surfaces (daily reports, webforms, modals) use explicit Save/
      Submit controls.
    - Edit-in-place surfaces (record pages, weigh-in entry) use autosave.
-   - Guard target: Lane D save/autosave coverage and Playwright.
+   - Guard: `save_model_contract_static.test.js` plus touched Playwright when a
+     surface behavior changes.
 
 ### Locked functional invariants
 
@@ -157,37 +158,34 @@ plus a guard update in the same change.
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Pushed source of truth: `origin/main` at `6620d5d`
-  (`feat(cattle): export weigh-in session CSVs`). This includes the verified
-  seven-lane `91546a7` ship plus the later runtime queue: EquipmentFueling
-  offline/stuck recovery, Pig batch record `RecordPageBody` CP1, sheep flock +
-  weigh-in CSVs, Equipment Fuel Log CSV, and Cattle Weigh-In Sessions CSV.
+- Pushed source of truth: `origin/main` at `99e933a`
+  (`merge: integrate outstanding build queue (lanes H/I/D/F/J/K) into main`).
+  This includes homepage redesign CP3 (`93b42fd`) and the Codex build-queue
+  merge (`d716d31`) on top of the earlier runtime/CSV work.
 - Live verification: the `91546a7` seven-lane ship was verified at
   wcfplanner.com by Netlify bundle-hash match (`main-DZOL_lsp.js`), HTTP 200.
-  The later `6620d5d` runtime push was validated locally before push; no
-  post-push live probe is recorded in this project map.
-- Local main checkpoint not pushed: `23e3e8e`
-  (`feat(home): add redesign header and homepage foundation`). It contains CP1
-  self-hosted Hanken font, CP2 header redesign, optimized/registered planner
-  icons, and inert `src/dashboard/homeRedesign.css`; it deliberately does not
-  include the HomeDashboard JSX integration CP3.
-- Parallel Codex checkpoint not pushed: `C:\Users\Ronni\WCF-planner-codex` on
-  branch `codex/lane-f-weighin-saved-views`, commit `775aa56`
-  (`feat(reports): add saved views and filtered CSV exports`). It is based on
-  `origin/main` `6620d5d` and has CC verification: prettier/check/diff clean,
-  `npm test` 177 files / 4910 passed, lint 0 errors / 743 warnings, build clean.
-- Local untracked design reference: `WCF Planner Redesign/` remains in the main
-  worktree for the next homepage session and is intentionally not committed.
-- Open gates: push/merge decisions for local main `23e3e8e` and Codex
-  `775aa56`; CP3 HomeDashboard JSX integration remains unbuilt.
+  The later `99e933a` pushed checkpoint has green constituent local validation
+  and focused Playwright before push/merge; no post-push live probe is recorded
+  in this project map.
+- Local main dirty state after the 2026-06-08 wrap: only the untracked homepage
+  design reference folder remains (`WCF Planner Redesign/`). It is intentionally
+  excluded from the CP3 commit and is not production source.
+- Parallel Codex worktree `C:\Users\Ronni\WCF-planner-codex` is reset to current
+  `main`: detached HEAD at `99e933a`, clean working tree. The merged
+  `codex/outstanding-build-queue` branch (was `d716d31`) plus the older stale
+  `codex/lane-f-weighin-saved-views`, `codex/lane-k-sheep-flocks-csv`, and
+  `codex/parallel-worktree` branches were pruned after the 2026-06-08 merge;
+  `main` is the only remaining branch. Start a new Codex lane by creating a fresh
+  `codex/<lane>` branch from current `main`.
+- Open code gates: none recorded for `origin/main` at `99e933a`. No PROD
+  migration, Storage, Vault, or Edge Function deploy gate is open.
 - Historical verified baseline before the later runtime queue: commit
   `91546a7` (2026-06-08 seven-lane ship — see Latest Shipped Checkpoint). Deploy
   verified live at wcfplanner.com by Netlify bundle-hash match
   (`main-DZOL_lsp.js`) to the local integrated build, HTTP 200.
 - Integrated-`main` validation at ship: `npm run lint` 0 errors,
   `npm test` 176 files / 4827 passed, `npm run build` green.
-- Open gates for pushed `origin/main`: none; local checkpoints above still need
-  push/merge approval before they become production source.
+- Open gates for pushed `origin/main`: none.
 - PROD-applied numbered migration series is live through `100`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
   cleanup `085` was applied before unique-index migration `084`.
@@ -238,6 +236,43 @@ listed:
 Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
+
+- Homepage redesign CP3 + outstanding build queue merge, pushed source
+  checkpoint `99e933a` (2026-06-08, commits `93b42fd`, `d716d31`, merge
+  `99e933a`). Code/assets/tests only; no new PROD migrations, Storage, Vault, or
+  Edge Function work. Landed:
+  - Homepage CP3 (`93b42fd`): `HomeDashboard` now uses the scoped
+    `src/dashboard/homeRedesign.css` `.home.theme-crisp` treatment, the approved
+    label-only program tiles, Processing/Admin utility row, live weather card,
+    real Animals-on-Farm counts, blank-but-present Production card, in-app
+    coming-soon destinations for not-built top-level areas, and transparent
+    planner PNG icon assets. `buildEquipmentAttention` keeps full shared
+    `detail` text for non-HomeDashboard consumers, while HomeDashboard uses
+    `metaLabel` + `pill` for the redesigned badge layout.
+  - Lane H terminal copy (`d716d31`): locked submitter/default webform copy is
+    standardized to "Team member" and covered by
+    `webform_terminal_copy_static.test.js`.
+  - Lane I shared token slice (`d716d31`): shared button/radius/title tokens were
+    tightened (`styles.js`, shared primitives, `RecordTitle` default) and locked
+    by `design_token_contract_static.test.js`.
+  - Lane D save-model guard (`d716d31`): `save_model_contract_static.test.js`
+    locks explicit Save/Submit on daily surfaces and autosave on
+    weigh-in/equipment edit surfaces.
+  - Lane F parity (`775aa56` + `d716d31`): saved views and filtered CSV expanded
+    across daily/weigh-in/fuel-log surfaces; Sheep Flocks gained full
+    filter/sort helper parity via `src/lib/sheepFlockFilters.js`; Layer/Egg
+    daily lists gained saved views and visible team filters.
+  - Lane J policy/a11y (`d716d31`): `DeleteModal`/`ConfirmModal` use
+    `useModalFocusTrap`, and central-date defaults are guarded across admin and
+    webform entry points.
+  - Lane K export/print parity (`d716d31`): `src/lib/printExport.js` owns row
+    print HTML/window behavior; print/CSV coverage expanded across cattle/sheep
+    inventory, daily lists, equipment fuel log, and livestock/cattle/sheep
+    weigh-ins.
+  Constituent validation was reported green before commit/merge: homepage CP3
+  had lint/build/full tests and focused homepage/light Playwright; the Codex
+  build queue had `npm test` 183 files / 5062 passed, build, lint, diff, and
+  Prettier checks clean. No post-push live probe is recorded here.
 
 - Post-seven-lane runtime queue, pushed source checkpoint `6620d5d`
   (2026-06-08, commits `053bafa` through `6620d5d`). Code-only, no new PROD
@@ -413,16 +448,17 @@ work:
 
 ### Current Local Gates
 
-No PROD migration, storage, deploy, or Vault gates are open. Two local code
-checkpoints are intentionally unpushed:
+No PROD migration, storage, deploy, Vault, commit, push, or merge gate is open
+for committed source as of `origin/main` `99e933a`.
 
-- Main CC worktree `C:\Users\Ronni\WCF-planner` on `main` is ahead of
-  `origin/main` by `23e3e8e` (homepage redesign header/font/icon/CSS foundation).
-  It also has untracked `WCF Planner Redesign/` design-reference files.
-- Codex worktree `C:\Users\Ronni\WCF-planner-codex` is on
-  `codex/lane-f-weighin-saved-views`, ahead of `origin/main` by `775aa56`
-  (saved views + filtered CSV export expansion). It is verified by CC and awaits
-  merge/push direction.
+- Main CC worktree `C:\Users\Ronni\WCF-planner` is on `main` at
+  `origin/main` `99e933a`. The only untracked local artifact is the homepage
+  design reference folder: `WCF Planner Redesign/`.
+- Codex worktree `C:\Users\Ronni\WCF-planner-codex` is already reset to current
+  `main` (detached HEAD at `99e933a`, clean). The merged
+  `codex/outstanding-build-queue` branch and the older stale `codex/*` branches
+  were pruned; `main` is the only branch. Create a fresh `codex/<lane>` branch
+  from `main` for the next Codex build lane.
 
 If a new session sees additional dirty state, inspect it before planning; do not
 assume it is disposable. Create new scoped worktrees/branches only for active
@@ -465,14 +501,13 @@ canonical dialog semantics), D (EquipmentDetail autosave flush + re-queue), E
 `app_saved_views` surface_key `sheep.flocks`), G (combined Recently Deleted
 Records recovery surface), and K-narrow (cattle-herd CSV export). The larger
 Lanes A/D/E/F/K remain open for their unshipped scope (see the lane list below).
-Additional 2026-06-08 shipped queue after that paragraph: Lane H
-EquipmentFueling offline queue + stuck recovery; Lane E Pig batch
-`RecordPageBody` CP1; and Lane K CSV expansion through Sheep Flocks, Sheep
-Weigh-In Sessions, Equipment Fuel Log, and Cattle Weigh-In Sessions. Local-only
-checkpoints awaiting push/merge: main `23e3e8e` homepage foundation (Lane I/home
-redesign CP1-CP2 + inert CP3 CSS foundation) and Codex `775aa56` saved views +
-filtered CSV expansion across daily hubs, weigh-in hubs, Equipment Fuel Log, and
-Pig Daily Reports.
+Additional 2026-06-08 shipped queue now on `origin/main` `99e933a`: Lane H
+EquipmentFueling offline queue + stuck recovery plus terminal-copy parity; Lane
+E Pig batch `RecordPageBody` CP1; Lane I homepage redesign CP1-CP3 plus shared
+token guard slice; Lane D save-model guard slice; Lane F saved-view/filter/sort
+parity across the Codex queue; Lane J modal focus/central-date policy slice; and
+Lane K CSV/print expansion through the listed daily, weigh-in, fuel-log, and
+inventory surfaces. No local-only build checkpoint remains in the queue.
 
 Detailed parity evidence lives in
 `C:\Users\Ronni\cc-research\parity-audit-2026-06-05-CC.md`; line-level findings
@@ -514,14 +549,14 @@ below.
    `DeleteModal`/`ConfirmModal` carry canonical dialog semantics (role,
    aria-modal/labelledby, Escape, disabled overlay-dismiss) under the expanded
    `shared_ui_extraction_contract_static.test.js`.
-5. Lane D - Save/editing model policy. PARTIAL. Class: `DECISION`/`DEFECT`.
-   Shipped 2026-06-08: the EquipmentDetail flush-on-blur/before-navigation
-   autosave loss is fixed (pending edits flush on blur/pagehide/visibilitychange/
-   unmount and re-queue on save failure).
-   Remaining (DECISION): define the canonical edit/save behavior by surface type,
-   decide broiler weigh-in explicit-save versus autosave parity, and define how
-   global versus local save indicators represent RPC/app-store/autosave writes.
-   Guard target: focused save/autosave static guards plus touched Playwright.
+5. Lane D - Save/editing model policy. GUARDED CORE SHIPPED 2026-06-08.
+   The EquipmentDetail flush-on-blur/before-navigation autosave loss is fixed
+   (pending edits flush on blur/pagehide/visibilitychange/unmount and re-queue
+   on save failure). `save_model_contract_static.test.js` now locks the current
+   contract: daily/report submit-style surfaces use explicit Save/Submit, while
+   weigh-in/equipment edit-in-place surfaces autosave. Reopen only for a named
+   surface that violates the contract or for a Ronnie-approved change to the
+   save/indicator model.
 6. Lane E - Record-page shell and chrome parity. PARTIAL.
    Shipped 2026-06-08: `EquipmentDetail` adopted `RecordPageBody`/`RecordTitle`
    and exposes `data-equipment-record-loaded`; `PigBatchPage` adopted the shared
@@ -534,17 +569,16 @@ below.
    Guard target: record-page shell/chrome static guards and focused Playwright.
 7. Lane F - List, hub, filter, sort, saved-view, and empty-state parity. PARTIAL.
    Class: `ENH`. Size: large.
-   Shipped 2026-06-08: `SheepFlocksView` saved views via `app_saved_views`
-   (`surface_key = 'sheep.flocks'`), capturing search + status + sort, degrading
-   to an inline notice on load error.
-   Local-only checkpoint awaiting push/merge: Codex `775aa56` adds saved views
-   to cattle/sheep weigh-in sessions, pig/broiler weigh-in sessions, Equipment
-   Fuel Log, Pig Daily Reports, and broiler/cattle/sheep daily report hubs.
-   Remaining: bring Sheep Flocks to the full Cattle Herds filter-group/multi-sort
-   model, extract drifting row/tile primitives, define which other lists get
-   search/sort/saved views, standardize filtered/empty states, and keep the real
-   AI filter/sort investigation layered on deterministic filters with explicit
-   preview/apply behavior.
+   Shipped 2026-06-08: `SheepFlocksView` uses the full helper-backed filter/sort
+   model in `src/lib/sheepFlockFilters.js` plus saved views on
+   `surface_key = 'sheep.flocks'`; saved views and filtered CSV exports expanded
+   across cattle/sheep/livestock weigh-ins, Pig Daily Reports, daily hubs,
+   Equipment Fuel Log, Layer Dailys, and Egg Dailys. Saved-view load failures
+   degrade locally without blocking parent lists.
+   Remaining: extract drifting row/tile primitives, decide which remaining
+   operational lists need search/sort/saved views, standardize filtered/empty
+   states where gaps are found, and keep the real AI filter/sort investigation
+   layered on deterministic filters with explicit preview/apply behavior.
    Guard target: per-surface filter/sort tests, saved-view tests, and static
    shared-row/empty-state guards.
 8. Lane G - Restore/recovery surface. SHIPPED 2026-06-08.
@@ -552,56 +586,57 @@ below.
    surface that restores daily reports plus deleted cattle/sheep animals
    (`restoreCattleAnimal`/`restoreSheepAnimal`), fail-closed, dispatching the
    correct restore RPC by record kind.
-9. Lane H - Webform/offline parity. PARTIAL.
-   Class: `ENH` for remaining consolidation and terminal-copy parity. Size:
-   medium.
+9. Lane H - Webform/offline parity. CORE SHIPPED 2026-06-08.
+   Class: `ENH` for any future consolidation. Size: medium.
    Shipped 2026-06-08: `EquipmentFuelingWebform` now submits through
    `useOfflineRpcSubmit('equipment_fueling')`, queues transient/offline RPC
    failures, auto-replays, and exposes stuck-submission recovery; no new
    migration was needed because migration `047` already supports idempotent
-   replay.
-   Remaining: consolidate legacy webform paths where appropriate without
-   breaking documented aliases, and standardize terminal success/queued copy and
-   locked submitter labels.
+   replay. The later build-queue merge standardized locked submitter copy to
+   "Team member" and guards terminal queued/stuck/saved copy.
+   Remaining: consolidate legacy webform paths only if a concrete duplicate flow
+   causes product friction; documented aliases must remain valid.
    Guard target: offline/webform static guards and focused offline Playwright.
 10. Lane I - Visual tokens, terminology, formatting, and design primitives.
-    Class: `ENH`. Size: large.
-    Local-only checkpoint awaiting push: main `23e3e8e` adds the homepage
-    redesign foundation (self-hosted Hanken font, redesigned header,
-    optimized/registered planner icons, and inert scoped
-    `src/dashboard/homeRedesign.css`). HomeDashboard JSX integration CP3 is not
-    built yet.
-    Scope: ratify and enforce the decisions in `## Global Decisions
-    (Constitution)` across all surfaces: font scale, button radius/corners,
-    button height/padding, dialog stacking, and Save/Submit versus autosave.
-    Migrate remaining drift to shared tokens and canonical components before
-    adding exceptions.
-    Guard target: typography, radius, button-control, z-index, and shared-ui/token
-    static guards, plus targeted visual Playwright checks where needed.
-11. Lane J - Cross-cutting product and accessibility policy.
+    PARTIAL. Class: `ENH`. Size: large.
+    Shipped 2026-06-08: homepage redesign CP1-CP3 is on `main` (self-hosted
+    Hanken font, redesigned green header, transparent planner icons, scoped
+    `homeRedesign.css`, and full `HomeDashboard` integration). Shared token
+    slice also shipped: button padding/radius updates, `RecordTitle` default
+    `26`, shared primitive radius tightening, and
+    `design_token_contract_static.test.js`.
+    Remaining: source-wide typography/radius/color drift cleanup outside the
+    shipped shared primitives and documented exceptions; any future homepage
+    visual changes should preserve the approved `.home.theme-crisp` composition
+    unless Ronnie reopens the design.
+    Guard target: typography, radius, button-control, z-index, shared-ui/token
+    static guards, plus targeted visual Playwright/screenshots where needed.
+11. Lane J - Cross-cutting product and accessibility policy. PARTIAL.
     Class: `DECISION`. Size: medium.
-    Scope: decide canonical nav IA order, farm-Central date defaults across
-    livestock/tasks/webforms, modal keyboard/focus/ARIA behavior, image alt text
-    policy, and any baseline home-dashboard KPI rules where program differences
-    still need a uniform frame.
+    Shipped 2026-06-08: shared Delete/Confirm modals have focus-trap behavior via
+    `useModalFocusTrap.js`; central-date defaults are guarded across admin
+    modals, webforms, WebformHub, and Layer/Egg daily list defaults; route/nav
+    policy guards were added in `lane_j_policy_static.test.js`.
+    Remaining: image alt text policy and any future baseline home-dashboard KPI
+    rules where program differences still need a uniform frame.
     Guard target: route/nav/date/a11y static guards plus focused Playwright once
-    decisions are made.
+    more decisions are made.
 12. Lane K - Export/print parity. PARTIAL. Class: `DECISION`/`ENH`.
     Shipped 2026-06-08: cattle-herd CSV export — `src/lib/csvExport.js` is the
     single rows-to-CSV / Blob / object-URL / filename / revoke owner (with a
     formula/DDE-injection guard and farm-Central filename dates), and
     `CattleHerdsView` exports the active filtered/sorted `sortedFlat` rows.
     The pushed runtime queue further extends CSV to Sheep Flocks, Sheep Weigh-In
-    Sessions, Equipment Fuel Log, and Cattle Weigh-In Sessions.
-    Local-only checkpoint awaiting push/merge: Codex `775aa56` extends filtered
-    CSV export to pig/broiler weigh-in sessions, Pig Daily Reports, and
-    broiler/cattle/sheep daily report hubs.
-    Remaining: extend the shared CSV/export model to remaining operational lists
-    and record pages with shared column specs, keep permissions bounded to
-    RLS-visible rows, and add a shared print view/stylesheet rather than
-    per-section print islands.
+    Sessions, Equipment Fuel Log, and Cattle Weigh-In Sessions. The build-queue
+    merge added `src/lib/printExport.js` plus print/CSV expansion across
+    livestock/cattle/sheep weigh-ins, cattle/sheep inventory, Broiler/Pig/
+    Cattle/Sheep dailys, Layer/Egg dailys, and Equipment Fuel Log.
+    Remaining: extend the shared CSV/print model to any remaining operational
+    lists and record pages with shared column specs, keep permissions bounded to
+    RLS-visible rows, and consider a fuller shared print stylesheet/screenshot
+    gate if print use becomes more central.
     Guard target: column-spec/export tests and print stylesheet/screenshot checks
-    (the single-download owner is now `csvExport.js`).
+    (`csvExport.js` owns CSV download; `printExport.js` owns row-print output).
 
 ### Light-User Portal Contract
 
@@ -676,6 +711,11 @@ unless Ronnie changes the contract:
   larger font, scoped input padding) is an intentionally self-contained design
   system, separate from the React app tokens in `## Design System`. It is not
   token drift and is excluded from the app token migration.
+- The homepage redesign is intentionally scoped under `.home.theme-crisp` in
+  `src/dashboard/homeRedesign.css` and may keep approved design-reference
+  micro-type/weight values while Lane I source-wide token cleanup remains
+  incremental. Future homepage visual changes must preserve the approved
+  composition unless Ronnie reopens the design.
 - `getReadableText()` in `src/lib/styles.js` returns `#0f172a`/`white` as
   auto-contrast for arbitrary colored backgrounds. These two values are
   infrastructure, not palette drift, and are exempt from the color migration.
@@ -686,7 +726,10 @@ unless Ronnie changes the contract:
 
 ### Authenticated App
 
-- Home dashboard.
+- Home dashboard: redesigned `.home.theme-crisp` landing surface with label-only
+  program tiles, Processing/Admin utility row, live weather, Animals-on-Farm
+  counts, Production placeholder card, missed-daily/equipment/material alerts,
+  Next 30 Days, and admin Last-5-Days.
 - Broiler: home, timeline, batches, feed, dailys, weigh-ins.
 - Pig: home, breeding, farrowing, sows, batches, feed, dailys, weigh-ins.
 - Layer: home, groups, batches, dailys, eggs.
@@ -920,12 +963,19 @@ Append-only upload expectations:
 - `src/dashboard/homeAlerts.js`: single source of truth for home/Light alert
   builders (`buildNext30Events`, `buildMissedDailyReports`,
   `buildEquipmentAttention`, `foldEquipmentFuelings`), shared by
-  `HomeDashboard` and `LightHomePortal`.
+  `HomeDashboard` and `LightHomePortal`. Equipment attention keeps shared
+  `detail` full for single-text consumers and gives HomeDashboard `metaLabel` +
+  `pill` for the CP3 badge layout.
+- `src/dashboard/homeRedesign.css`: scoped homepage redesign styles under
+  `.home.theme-crisp`; do not move these into global CSS without a Lane I design
+  amendment.
 - `src/lib/savedViewsApi.js`: `app_saved_views` CRUD + `buildViewState`.
-  Original consumer was Cattle Herds; shipped and local checkpoints now reuse it
-  across multiple list/report surfaces with distinct `surface_key` values.
+  Original consumer was Cattle Herds; shipped consumers now reuse it across
+  multiple list/report surfaces with distinct `surface_key` values.
 - `src/lib/cattleHerdFilters.js`: pure cattle herd filter/sort predicates
   (vitest-locked).
+- `src/lib/sheepFlockFilters.js`: pure Sheep Flocks filter/sort predicates and
+  dimension helpers (vitest-locked).
 - `src/lib/processingBatchDeleteApi.js`: client wrappers for the audited
   processing-batch lifecycle RPCs (`unschedule_cattle_processing_batch`,
   `delete_sheep_processing_batch`; migration `100`).
@@ -933,10 +983,14 @@ Append-only upload expectations:
   filename / revoke owner, with a spreadsheet formula/DDE-injection guard and
   farm-Central filename dates. All CSV lanes should export the active filtered
   result set unless a Ronnie-approved exception is documented.
+- `src/lib/printExport.js`: shared rows-to-print HTML/window owner for record
+  and list print exports.
 - `src/shared/InlineNotice.jsx`: non-blocking notices (`error`/`warning`/
   `success`/`info` kinds).
 - `src/shared/DeleteModal.jsx` and `src/shared/ConfirmModal.jsx`: app modal
   primitives.
+- `src/shared/useModalFocusTrap.js`: shared modal focus-trap/Escape behavior for
+  modal primitives.
 - `src/lib/entityMutations.js`: shared best-effort mutation + Activity helper.
 - `src/lib/clientErrorReporting.js` and `src/admin/ClientErrorsView.jsx`:
   runtime error capture and admin review.
@@ -965,11 +1019,13 @@ Append-only upload expectations:
 
 ### Typography
 
-- Canonical font family: `Geist` stack from `index.html` and inheritance from
-  `fontFamily: 'inherit'` on component styles.
+- Canonical font family: self-hosted `Hanken Grotesk` from `index.html` and
+  inheritance from `fontFamily: 'inherit'` on component styles.
 - Canonical font-size set: `10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 26`.
 - Allowed display sizes: `32, 34, 36, 48, 56`.
-- Font-weight scale: `400, 500, 600, 700` only; `800` is forbidden.
+- Canonical shared-component font-weight scale: `400, 500, 600, 700`. Existing
+  legacy/scoped drift is Lane I cleanup work and should not expand without a
+  documented exception.
 
 ### Spacing and controls
 
@@ -1128,11 +1184,13 @@ Workflow/worktable entities:
   stream (`RecordCollaborationSection`, entity_id `cattle-breeding`,
   `showComments=false`), populated by the migration `094` cycle RPCs.
 - Sheep Flocks saved views use `src/lib/savedViewsApi.js` over `app_saved_views`
-  with `surface_key = 'sheep.flocks'`, capturing search + status + sort; load
-  failures degrade to an inline notice and never block the flock hub.
-  Additional saved-view consumers exist in local unpushed Codex checkpoint
-  `775aa56`; after merge/push, keep this contract updated with the active
-  surface inventory.
+  with `surface_key = 'sheep.flocks'`, capturing search/filter/sort state; load
+  failures degrade to an inline notice and never block the flock hub. Sheep
+  Flocks filter/sort logic lives in `src/lib/sheepFlockFilters.js`.
+- Additional saved-view consumers now shipped on `main` include daily/report and
+  weigh-in/fuel-log surfaces using distinct `surface_key` values such as
+  `layer.dailys` and `layer.eggs`; failures must degrade locally without
+  converting the parent list into a load failure.
 - Cattle Herds filters/sorts live in `src/lib/cattleHerdFilters.js` (pure,
   vitest-locked); UI is `CattleHerdsView`. Filters render in three
   always-visible groups (Core, Calving/Breeding, Lineage/Other) — no "More
@@ -1357,7 +1415,11 @@ Workflow/worktable entities:
   converting the parent list into a load failure.
 - `DeleteModal` and `ConfirmModal` are app-level modal primitives. New
   destructive/confirmation flows should use them unless a documented exception
-  is added to `shared_ui_extraction_contract_static.test.js`.
+  is added to `shared_ui_extraction_contract_static.test.js`; shared modal
+  focus behavior lives in `useModalFocusTrap.js`.
+- CSV export ownership lives in `csvExport.js`; row-print export ownership lives
+  in `printExport.js`. New exports should use active filtered/sorted rows unless
+  a Ronnie-approved exception is documented.
 - Record page controls live in `src/shared/recordPageControls.jsx`.
 
 ### Source Boundary Guards
@@ -1412,17 +1474,18 @@ Focused starting points:
 | Comments and mentions    | `tests/static/comments_foundation_static.test.js`, `tests/static/mention_deep_links_static.test.js`                                                             |
 | Notifications            | `tests/static/notifications_static.test.js`, `tests/notifications_task_completed.spec.js`                                                                        |
 | Tasks                    | `tests/static/tasks_*.test.js`, `src/lib/tasksCenterApi.test.js`, `src/lib/tasksAdminApi.test.js`, `tests/tasks_v2_*.spec.js`                                  |
-| Record pages             | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js`, `tests/record_sequence_nav_fixed.spec.js`, `tests/static/record_sequence_nav_cp3_static.test.js` |
-| Home / dashboard alerts  | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/light_home_alerts.spec.js` |
+| Record pages             | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js`, `tests/record_sequence_nav_fixed.spec.js`, `tests/static/record_sequence_nav_cp3_static.test.js`, `tests/static/save_model_contract_static.test.js` |
+| Home / dashboard alerts  | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/light_user_portal_static.test.js`, `tests/light_home_alerts.spec.js`, `tests/home_dashboard_equipment.spec.js` |
 | Readiness                | `tests/static/load_retry_robustness_inventory_static.test.js`, `tests/static/*readiness*`                                                                       |
 | Mutation/delete/recovery | `tests/static/mutation_semantics_inventory_static.test.js`, `tests/static/delete_recovery_classification_static.test.js`, `tests/static/hard_delete_owner_static.test.js` |
 | Cattle                   | `tests/static/cattle_*.test.js`, `tests/cattle_*.spec.js`, `src/lib/cattleHerdFilters.test.js`, `tests/static/app_saved_views_migration_static.test.js`         |
-| Sheep                    | `tests/static/sheep_*.test.js`, `tests/sheep_*.spec.js`                                                                                                         |
-| Daily reports            | `tests/static/daily_*.test.js`, `tests/static/cp2_daily_writes_via_rpc_static.test.js`, `tests/daily_*.spec.js`                                                 |
+| Sheep                    | `tests/static/sheep_*.test.js`, `tests/sheep_*.spec.js`, `src/lib/sheepFlockFilters.test.js`                                                                     |
+| Daily reports            | `tests/static/daily_*.test.js`, `tests/static/daily_hub_saved_views_csv_static.test.js`, `tests/static/cp2_daily_writes_via_rpc_static.test.js`, `tests/daily_*.spec.js` |
 | Feed planning            | `src/lib/feedPlanner.test.js`, `src/lib/feedOrderBasis.test.js`, `tests/static/feed_order_board_static.test.js`                                                 |
 | Pig                      | `src/lib/pig*.test.js`, `tests/pig_*.spec.js`                                                                                                                   |
 | Broiler/layer            | `src/lib/broiler.test.js`, `tests/static/broiler_hatch_activation_static.test.js`, `src/layer/*.test.js`, `tests/broiler_*.spec.js`, `tests/layer_*.spec.js`    |
 | Equipment                | `src/lib/equipment.test.js`, `tests/static/equipment_*.test.js`, `tests/equipment_*.spec.js`                                                                    |
+| Export / print           | `src/lib/csvExport.test.js`, `src/lib/printExport.test.js`, `tests/static/weighin_session_record_page_static.test.js`                                          |
 | Login/offline webforms   | `tests/static/light_user_portal_static.test.js`, `tests/offline_*.spec.js`, `tests/daily_report_photos.spec.js`             |
 | Storage/media guards     | `tests/static/*storage*.test.js`, `tests/static/*photo*.test.js`, `tests/static/image_file_input_capture_static.test.js`                                       |
 | Runtime observability    | `tests/static/error_resilience_static.test.js`, `tests/static/client_error_boundary_static.test.js`, `tests/static/client_errors_review_static.test.js`          |
