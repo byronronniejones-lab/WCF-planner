@@ -98,3 +98,24 @@ describe('daily record pages share the canonical action button styles', () => {
     });
   }
 });
+
+// Lane E CP2 — Sheep daily structural parity. The Sheep page must reuse the
+// shared record control (via the same `inp` alias the other daily pages use)
+// for its fields and its feed/mineral row controls, instead of re-declaring a
+// bespoke local input primitive. Add/Remove-row chip buttons (btnSmall) stay
+// intentionally distinct and out of this lane.
+describe('sheep daily page reuses the shared record control (Lane E CP2)', () => {
+  const src = read('src/sheep/SheepDailyPage.jsx');
+
+  it('does not re-declare a bespoke local input style primitive', () => {
+    expect(src).not.toMatch(/const\s+inputStyle\s*=/);
+    expect(src).not.toContain("padding: '6px 8px'");
+  });
+
+  it('aliases and uses the shared record control like the other daily pages', () => {
+    expect(src).toContain('const inp = recordControl;');
+    // Feed/mineral row controls derive from the shared control, not a local one.
+    expect(src).toMatch(/feedRowControl\s*=\s*\{\s*\.\.\.recordControl/);
+    expect(src).toContain('{...feedRowControl');
+  });
+});

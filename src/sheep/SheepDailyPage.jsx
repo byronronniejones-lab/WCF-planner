@@ -46,6 +46,7 @@ import {buildChanges} from '../lib/activityChangeDiff.js';
 // Shared daily record-page layout primitives.
 const fieldRowClass = recordFieldRowClass;
 const fieldLabel = recordFieldLabel;
+const inp = recordControl;
 
 const FLOCK_OPTIONS = ['rams', 'ewes', 'feeders', 'processed', 'deceased', 'sold'];
 
@@ -93,16 +94,9 @@ function initForm(d) {
   };
 }
 
-const inputStyle = {
-  width: '100%',
-  padding: '6px 8px',
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  fontSize: 13,
-  fontFamily: 'inherit',
-  background: '#fff',
-  boxSizing: 'border-box',
-};
+// Feed/mineral row controls reuse the shared record control, widened to fill
+// the flex row (the shared control caps width for label/value rows).
+const feedRowControl = {...recordControl, maxWidth: '100%'};
 
 const btnSmall = {
   padding: '4px 10px',
@@ -395,12 +389,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
         <div key={record.id} data-daily-edit-form="1" style={recordFormCard}>
           <div className={fieldRowClass}>
             <span style={fieldLabel}>Date</span>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => updateField('date', e.target.value)}
-              style={recordControl}
-            />
+            <input type="date" value={form.date} onChange={(e) => updateField('date', e.target.value)} style={inp} />
           </div>
           <div className={fieldRowClass}>
             <span style={fieldLabel}>Team member</span>
@@ -408,7 +397,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
           </div>
           <div className={fieldRowClass}>
             <span style={fieldLabel}>Flock</span>
-            <select value={form.flock} onChange={(e) => updateField('flock', e.target.value)} style={recordControl}>
+            <select value={form.flock} onChange={(e) => updateField('flock', e.target.value)} style={inp}>
               <option value="">-- select --</option>
               {FLOCK_OPTIONS.map((f) => (
                 <option key={f} value={f}>
@@ -425,7 +414,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
                 <select
                   value={row.feedId}
                   onChange={(e) => updateFeedRow(idx, 'feedId', e.target.value)}
-                  style={{...inputStyle, flex: 2}}
+                  style={{...feedRowControl, flex: 2}}
                 >
                   <option value="">-- feed --</option>
                   {Object.entries(feedCategories).map(([cat, items]) => (
@@ -443,7 +432,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
                   placeholder="qty"
                   value={row.qty}
                   onChange={(e) => updateFeedRow(idx, 'qty', e.target.value)}
-                  style={{...inputStyle, flex: 1, minWidth: 70}}
+                  style={{...feedRowControl, flex: 1, minWidth: 70}}
                   min="0"
                   step="any"
                 />
@@ -464,7 +453,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
                 <select
                   value={row.feedId}
                   onChange={(e) => updateMineralRow(idx, 'feedId', e.target.value)}
-                  style={{...inputStyle, flex: 2}}
+                  style={{...feedRowControl, flex: 2}}
                 >
                   <option value="">-- mineral --</option>
                   {Object.entries(feedCategories).map(([cat, items]) => (
@@ -482,7 +471,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
                   placeholder="lbs"
                   value={row.lbs}
                   onChange={(e) => updateMineralRow(idx, 'lbs', e.target.value)}
-                  style={{...inputStyle, flex: 1, minWidth: 70}}
+                  style={{...feedRowControl, flex: 1, minWidth: 70}}
                   min="0"
                   step="any"
                 />
@@ -505,7 +494,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
                     type="number"
                     value={form.fence_voltage_kv}
                     onChange={(e) => updateField('fence_voltage_kv', e.target.value)}
-                    style={{...recordControl, maxWidth: 120}}
+                    style={{...inp, maxWidth: 120}}
                     min="0"
                     step="any"
                   />
@@ -527,7 +516,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
                   type="number"
                   value={form.mortality_count}
                   onChange={(e) => updateField('mortality_count', e.target.value)}
-                  style={{...recordControl, maxWidth: 120}}
+                  style={{...inp, maxWidth: 120}}
                   min="0"
                   step="1"
                 />
