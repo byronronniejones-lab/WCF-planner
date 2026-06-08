@@ -79,6 +79,8 @@ export default function MySubmissions({Header}) {
       .catch((e) => {
         if (cancelled) return;
         setLoadError(e.message || String(e));
+        setFuelings([]);
+        setSupplies([]);
         setLoaded(true);
       });
     return () => {
@@ -199,7 +201,11 @@ export default function MySubmissions({Header}) {
   }
 
   return (
-    <div data-my-submissions="1" style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div
+      data-my-submissions="1"
+      data-my-submissions-loaded={loaded && !loadError ? 'true' : 'false'}
+      style={{minHeight: '100vh', background: '#f1f3f2'}}
+    >
       <Header />
       <div style={{padding: '1.25rem', maxWidth: 760, margin: '0 auto'}}>
         <div style={{fontSize: 20, fontWeight: 800, color: '#111827', marginBottom: 4}}>My Submissions</div>
@@ -208,25 +214,34 @@ export default function MySubmissions({Header}) {
         </div>
         {notice && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
         {loadError && (
-          <div>
+          <div data-my-submissions-load-error="true">
             <InlineNotice notice={{kind: 'error', message: 'Could not load: ' + loadError}} />
-            <button onClick={() => setReloadKey((k) => k + 1)} style={btn('white', '#1d4ed8')}>
+            <button
+              type="button"
+              data-my-submissions-retry="1"
+              onClick={() => setReloadKey((k) => k + 1)}
+              style={btn('white', '#1d4ed8')}
+            >
               Retry
             </button>
           </div>
         )}
 
-        <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', margin: '12px 0 6px'}}>
-          🚜 Equipment fuelings ({fuelings.length})
-        </div>
-        {loaded && fuelings.length === 0 && <div style={{fontSize: 12, color: '#9ca3af'}}>None yet.</div>}
-        {fuelings.map((r) => row('fueling', r))}
+        {!loadError && (
+          <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', margin: '12px 0 6px'}}>
+            🚜 Equipment fuelings ({fuelings.length})
+          </div>
+        )}
+        {!loadError && loaded && fuelings.length === 0 && <div style={{fontSize: 12, color: '#9ca3af'}}>None yet.</div>}
+        {!loadError && fuelings.map((r) => row('fueling', r))}
 
-        <div style={{fontSize: 13, fontWeight: 700, color: '#92400e', margin: '18px 0 6px'}}>
-          ⛽ Fuel supplies ({supplies.length})
-        </div>
-        {loaded && supplies.length === 0 && <div style={{fontSize: 12, color: '#9ca3af'}}>None yet.</div>}
-        {supplies.map((r) => row('supply', r))}
+        {!loadError && (
+          <div style={{fontSize: 13, fontWeight: 700, color: '#92400e', margin: '18px 0 6px'}}>
+            ⛽ Fuel supplies ({supplies.length})
+          </div>
+        )}
+        {!loadError && loaded && supplies.length === 0 && <div style={{fontSize: 12, color: '#9ca3af'}}>None yet.</div>}
+        {!loadError && supplies.map((r) => row('supply', r))}
       </div>
     </div>
   );
