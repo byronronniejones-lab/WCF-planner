@@ -150,11 +150,16 @@ describe('CattleBatchesView — Planned / Scheduled / Active / Processed', () =>
     expect(fn[0]).not.toMatch(/from\('cattle'\)\.update/);
   });
 
-  it('Unschedule uses a guarded inline warning and only deletes scheduled rows (record page)', () => {
+  it('Unschedule uses a guarded inline warning and only unschedules scheduled rows via the SECDEF RPC (record page)', () => {
     expect(batchPageSrc).toMatch(/async function handleUnschedule\(\)/);
     expect(batchPageSrc).toMatch(/status !== 'scheduled'/);
-    // The handleUnschedule function guards on scheduled status before deleting.
-    expect(batchPageSrc).toMatch(/handleUnschedule[\s\S]*?status !== 'scheduled'[\s\S]*?\.delete\(\)/);
+    // The handleUnschedule function guards on scheduled status, then routes the
+    // delete through the audited SECDEF lifecycle RPC (migration 100) — no more
+    // direct, unaudited sb.from('cattle_processing_batches').delete().
+    expect(batchPageSrc).toMatch(
+      /handleUnschedule[\s\S]*?status !== 'scheduled'[\s\S]*?unscheduleCattleProcessingBatch/,
+    );
+    expect(batchPageSrc).not.toMatch(/cattle_processing_batches'\)\s*\.delete\(/);
     // Inline two-step pattern: warning toggled via unscheduling state,
     // confirmed via Confirm unschedule button. No window.confirm.
     expect(batchPageSrc).toMatch(/data-scheduled-batch-unschedule=/);

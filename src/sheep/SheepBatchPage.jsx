@@ -25,6 +25,7 @@ import {
   recordTextarea,
 } from '../shared/recordPageControls.jsx';
 import {detachSheepFromProcessingBatch} from '../lib/processingDetachApi.js';
+import {deleteSheepProcessingBatch} from '../lib/processingBatchDeleteApi.js';
 import {invalidateSheepWeighInsCache} from '../lib/sheepCache.js';
 import {recordStatusChange, recordActivityEvent} from '../lib/entityMutations.js';
 
@@ -270,11 +271,20 @@ export default function SheepBatchPage({sb, fmt, authState, Header}) {
           if (r.ok) reverted.push(r);
           else blocked.push({...r, sheepId: sid});
         }
-        await sb.from('sheep').update({processing_batch_id: null}).eq('processing_batch_id', batch.id);
-        const {error} = await sb.from('sheep_processing_batches').delete().eq('id', batch.id);
+        // Atomic straggler-clear + batch delete via SECDEF RPC (migration 100):
+        // clears any leftover sheep.processing_batch_id links and deletes the
+        // batch, logging record.deleted in one transaction. The per-sheep detach
+        // loop above already reverted/audited each animal individually.
+        const del = await deleteSheepProcessingBatch(sb, {
+          batchId: batch.id,
+          teamMember: authState && authState.name ? authState.name : null,
+        });
         invalidateSheepWeighInsCache();
-        if (error) {
-          setNotice({kind: 'error', message: 'Delete failed: ' + error.message});
+        if (!del.ok) {
+          setNotice({
+            kind: 'error',
+            message: 'Delete failed: ' + (del.reason === 'rpc_error' ? del.error : del.reason),
+          });
           return;
         }
         if (blocked.length > 0) {

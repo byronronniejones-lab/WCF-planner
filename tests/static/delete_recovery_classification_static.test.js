@@ -125,15 +125,32 @@ function hasTransactionalCalvingDeleteRpc() {
   );
 }
 
+function hasProcessingBatchDeleteRpcs() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/processingBatchDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/100_processing_batch_lifecycle_rpcs.sql'))
+  );
+}
+
 function expectedDeleteTableCounts() {
   const expected = new Map(EXPECTED_DELETE_TABLE_COUNTS);
   if (hasTransactionalCalvingDeleteRpc()) expected.delete('cattle_calving_records');
+  // Processing-batch unschedule/delete moved to SECDEF RPCs (mig 100): no
+  // runtime client delete remains on either processing-batch root.
+  if (hasProcessingBatchDeleteRpcs()) {
+    expected.delete('cattle_processing_batches');
+    expected.delete('sheep_processing_batches');
+  }
   return expected;
 }
 
 function expectedDeleteRecoveryClass() {
   const expected = new Map(DELETE_RECOVERY_CLASS);
   if (hasTransactionalCalvingDeleteRpc()) expected.delete('cattle_calving_records');
+  if (hasProcessingBatchDeleteRpcs()) {
+    expected.delete('cattle_processing_batches');
+    expected.delete('sheep_processing_batches');
+  }
   return expected;
 }
 
@@ -232,6 +249,43 @@ describe('delete/recovery classification inventory', () => {
     expect(migration).toContain(
       'GRANT EXECUTE ON FUNCTION public.delete_cattle_calving_record(text, text) TO authenticated',
     );
+  });
+
+  it('locks the processing-batch unschedule/delete as RPC-backed after migration 100', () => {
+    const tables = collectDeleteTables();
+
+    if (!hasProcessingBatchDeleteRpcs()) {
+      expect(tables.get('cattle_processing_batches')).toBe(1);
+      expect(tables.get('sheep_processing_batches')).toBe(1);
+      return;
+    }
+
+    const api = fs.readFileSync(path.join(ROOT, 'src/lib/processingBatchDeleteApi.js'), 'utf8');
+    const migration = fs.readFileSync(
+      path.join(ROOT, 'supabase-migrations/100_processing_batch_lifecycle_rpcs.sql'),
+      'utf8',
+    );
+
+    // No runtime client delete remains on either processing-batch root.
+    expect(tables.has('cattle_processing_batches')).toBe(false);
+    expect(tables.has('sheep_processing_batches')).toBe(false);
+
+    expect(api).toContain('export async function unscheduleCattleProcessingBatch');
+    expect(api).toContain("rpc('unschedule_cattle_processing_batch'");
+    expect(api).toContain('export async function deleteSheepProcessingBatch');
+    expect(api).toContain("rpc('delete_sheep_processing_batch'");
+
+    for (const fn of ['unschedule_cattle_processing_batch', 'delete_sheep_processing_batch']) {
+      expect(migration).toMatch(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}[\\s\\S]*?SECURITY DEFINER`));
+      expect(migration).toContain(`REVOKE ALL ON FUNCTION public.${fn}(text, text) FROM PUBLIC, anon`);
+      expect(migration).toContain(`GRANT EXECUTE ON FUNCTION public.${fn}(text, text) TO authenticated`);
+    }
+    // Both delete their batch root and log a record.deleted audit event in-txn.
+    expect(migration).toMatch(/DELETE FROM public\.cattle_processing_batches/);
+    expect(migration).toMatch(/DELETE FROM public\.sheep_processing_batches/);
+    expect(migration).toMatch(/INSERT INTO public\.activity_events/);
+    expect(migration).toContain("'record.deleted'");
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
   });
 
   it('keeps delete recovery classes in the documented allowed vocabulary', () => {
