@@ -249,11 +249,26 @@ function hasTransactionalCalvingDeleteRpc() {
   );
 }
 
+function hasProcessingBatchDeleteRpcs() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/processingBatchDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/100_processing_batch_lifecycle_rpcs.sql'))
+  );
+}
+
 function expectedLiteralMutationTotals() {
   const expected = new Map(EXPECTED_LITERAL_MUTATION_TOTALS);
   // The two literal calving deletes (CattleAnimalPage + CattleHerdsView) route
   // through the SECDEF RPC instead; the saved-view delete (29 - 2) remains.
   if (hasTransactionalCalvingDeleteRpc()) expected.set('delete', 27);
+  // Processing-batch lifecycle RPCs (mig 100) move CattleBatchPage.handleUnschedule
+  // (cattle_processing_batches delete) and SheepBatchPage.handleDeleteBatch
+  // (sheep_processing_batches delete + the sheep straggler-clear update) into
+  // SECDEF RPCs: -2 delete, -1 update.
+  if (hasProcessingBatchDeleteRpcs()) {
+    expected.set('delete', expected.get('delete') - 2);
+    expected.set('update', expected.get('update') - 1);
+  }
   return expected;
 }
 
@@ -263,12 +278,22 @@ function expectedOwnerOperationCounts() {
     expected.delete('src/cattle/CattleAnimalPage.jsx|delete');
     expected.delete('src/cattle/CattleHerdsView.jsx|delete');
   }
+  if (hasProcessingBatchDeleteRpcs()) {
+    expected.delete('src/cattle/CattleBatchPage.jsx|delete');
+    expected.delete('src/sheep/SheepBatchPage.jsx|delete');
+    expected.set('src/sheep/SheepBatchPage.jsx|update', 3);
+  }
   return expected;
 }
 
 function expectedTableOperationCounts() {
   const expected = new Map(EXPECTED_TABLE_OPERATION_COUNTS);
   if (hasTransactionalCalvingDeleteRpc()) expected.delete('cattle_calving_records|delete');
+  if (hasProcessingBatchDeleteRpcs()) {
+    expected.delete('cattle_processing_batches|delete');
+    expected.delete('sheep_processing_batches|delete');
+    expected.set('sheep|update', 3);
+  }
   return expected;
 }
 

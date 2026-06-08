@@ -199,7 +199,10 @@ describe('SheepBatchPage — metadata + weight editing', () => {
     expect(pageSrc).toContain('recordActivityEvent');
     expect(pageSrc).toContain("eventType: 'field.updated'");
   });
-  it('does not attempt record.deleted Activity for hard delete', () => {
+  it('does not emit a client record.deleted Activity event (the mig 100 RPC owns the delete audit)', () => {
+    // The hard delete is now audited inside delete_sheep_processing_batch
+    // (record.deleted, in the same transaction). The page must not also write a
+    // best-effort client-side Activity event for it.
     expect(pageSrc).not.toContain("eventType: 'record.deleted'");
   });
   it('saveSheepWeight logs best-effort field.updated Activity after successful save', () => {
@@ -232,9 +235,12 @@ describe('SheepBatchPage — delete flow', () => {
   it('delete drives detach loop via the audited SECDEF RPC wrapper', () => {
     expect(pageSrc).toMatch(/handleDeleteBatch[\s\S]*?detachSheepFromProcessingBatch/);
   });
-  it('delete clears stragglers + removes batch then navigates back', () => {
-    expect(pageSrc).toMatch(/handleDeleteBatch[\s\S]*?processing_batch_id: null/);
-    expect(pageSrc).toMatch(/handleDeleteBatch[\s\S]*?\.delete\(\)\.eq\('id', batch\.id\)/);
+  it('clears stragglers + removes batch via the SECDEF lifecycle RPC (mig 100), then navigates back', () => {
+    // The straggler clear (sheep.update processing_batch_id=null) and the batch
+    // hard delete moved into delete_sheep_processing_batch, made atomic + audited.
+    expect(pageSrc).toMatch(/handleDeleteBatch[\s\S]*?deleteSheepProcessingBatch/);
+    expect(pageSrc).not.toContain('processing_batch_id: null');
+    expect(pageSrc).not.toMatch(/sheep_processing_batches'\)\s*\.delete\(/);
     expect(pageSrc).toMatch(/handleDeleteBatch[\s\S]*?navigate\('\/sheep\/batches'\)/);
   });
   it('reports blocked detaches in the notice', () => {

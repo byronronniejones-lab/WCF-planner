@@ -19,6 +19,7 @@ import {
 /* eslint-enable no-unused-vars */
 import {recordControl, recordFieldLabel} from '../shared/recordPageControls.jsx';
 import {detachCattleFromProcessingBatch} from '../lib/processingDetachApi.js';
+import {unscheduleCattleProcessingBatch} from '../lib/processingBatchDeleteApi.js';
 import {batchHasAllHangingWeights, batchMissingHangingTags, validateRealBatchRename} from '../lib/cattleForecast.js';
 import {markBatchComplete, reopenBatch} from '../lib/cattleForecastApi.js';
 import {todayCentralISO} from '../lib/dateUtils.js';
@@ -280,9 +281,15 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
   async function handleUnschedule() {
     if (!canEdit || !batch || batch.status !== 'scheduled') return;
     setNotice(null);
-    const r = await sb.from('cattle_processing_batches').delete().eq('id', batch.id);
-    if (r.error) {
-      setNotice({kind: 'error', message: 'Unschedule failed: ' + r.error.message});
+    // Atomic unschedule via SECDEF RPC (migration 100): deletes the empty
+    // scheduled batch, defensively unlinks any cattle, and logs record.deleted
+    // in one transaction — replacing the unaudited direct client delete.
+    const r = await unscheduleCattleProcessingBatch(sb, {
+      batchId: batch.id,
+      teamMember: authState && authState.name ? authState.name : null,
+    });
+    if (!r.ok) {
+      setNotice({kind: 'error', message: 'Unschedule failed: ' + (r.reason === 'rpc_error' ? r.error : r.reason)});
       return;
     }
     navigate('/cattle/batches');

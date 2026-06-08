@@ -18,7 +18,10 @@ const EXPECTED_DELETE_OWNERS = new Map([
   // SheepAnimalPage (sheep_lambing_records) likewise routed their literal
   // deletes through audited RPCs in commit 235647c, so none of those files
   // has a runtime .delete() anymore.
-  ['src/cattle/CattleBatchPage.jsx', 1],
+  // CattleBatchPage.handleUnschedule + SheepBatchPage.handleDeleteBatch no
+  // longer direct-delete a processing-batch root — both route through the
+  // SECDEF lifecycle RPCs (migration 100), so neither file has a runtime
+  // .delete() anymore.
   ['src/equipment/EquipmentDetail.jsx', 2],
   ['src/layer/LayerBatchPage.jsx', 2],
   ['src/lib/cattleForecastApi.js', 2],
@@ -28,7 +31,6 @@ const EXPECTED_DELETE_OWNERS = new Map([
   ['src/lib/tasksAdminApi.js', 1],
   ['src/lib/tasksCenterMutationsApi.js', 1],
   ['src/livestock/WeighInSessionPage.jsx', 3],
-  ['src/sheep/SheepBatchPage.jsx', 1],
   ['src/webforms/WeighInsWebform.jsx', 5],
 ]);
 
@@ -43,7 +45,8 @@ const EXPECTED_DELETE_TABLES = new Map([
   ['cattle_feed_tests', 1],
   ['cattle_forecast_heifer_includes', 1],
   ['cattle_forecast_hidden', 1],
-  ['cattle_processing_batches', 1],
+  // cattle_processing_batches + sheep_processing_batches deletes moved to the
+  // SECDEF lifecycle RPCs (migration 100); no runtime client delete remains.
   ['equipment_fuelings', 1],
   ['equipment_maintenance_events', 1],
   ['equipment_material_clears', 1],
@@ -54,7 +57,6 @@ const EXPECTED_DELETE_TABLES = new Map([
   ['layer_housings', 1],
   ['profiles', 1],
   ['sheep_comments', 1],
-  ['sheep_processing_batches', 1],
   ['task_templates', 2],
   ['weigh_in_sessions', 1],
   ['weigh_ins', 4],
@@ -116,7 +118,7 @@ describe('Supabase hard-delete owner boundary', () => {
     const {owners, total} = collectSupabaseDeletes();
     const {unexpected, missing, wrongCounts} = diffMap(EXPECTED_DELETE_OWNERS, owners);
 
-    expect(total).toBe(27);
+    expect(total).toBe(25);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);

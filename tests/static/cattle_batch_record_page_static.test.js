@@ -91,6 +91,13 @@ describe('CattleBatchPage — scheduled batch support', () => {
   it('navigates back to list after unschedule', () => {
     expect(pageSrc).toMatch(/handleUnschedule[\s\S]*?navigate\('\/cattle\/batches'\)/);
   });
+  it('unschedules via the audited SECDEF RPC wrapper (migration 100), not a direct delete', () => {
+    // The unaudited sb.from('cattle_processing_batches').delete() is gone; the
+    // unschedule routes through the transactional RPC that logs record.deleted.
+    expect(pageSrc).toContain('unscheduleCattleProcessingBatch');
+    expect(pageSrc).toMatch(/handleUnschedule[\s\S]*?unscheduleCattleProcessingBatch/);
+    expect(pageSrc).not.toMatch(/cattle_processing_batches'\)\s*\.delete\(/);
+  });
 });
 
 describe('CattleBatchPage — active/complete batch support', () => {
