@@ -26,6 +26,9 @@ import {
   recordControl,
   recordTextarea,
   recordCheckbox,
+  recordSaveButton,
+  recordSecondaryButton,
+  recordDeleteButton,
   LockedTeamMemberField,
 } from '../shared/recordPageControls.jsx';
 /* eslint-enable no-unused-vars */
@@ -99,30 +102,6 @@ const inputStyle = {
   fontFamily: 'inherit',
   background: '#fff',
   boxSizing: 'border-box',
-};
-
-const btnPrimary = {
-  padding: '8px 18px',
-  borderRadius: 8,
-  border: 'none',
-  background: '#2563eb',
-  color: '#fff',
-  fontWeight: 600,
-  fontSize: 13,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const btnSecondary = {
-  padding: '8px 18px',
-  borderRadius: 8,
-  border: '1px solid #d1d5db',
-  background: '#fff',
-  color: '#374151',
-  fontWeight: 600,
-  fontSize: 13,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 
 const btnSmall = {
@@ -371,18 +350,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
             type="button"
             data-daily-record-retry="1"
             onClick={() => loadAll()}
-            style={{
-              marginTop: 10,
-              padding: '7px 14px',
-              borderRadius: 7,
-              border: '1px solid #d1d5db',
-              background: 'white',
-              color: '#374151',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
+            style={{...recordSecondaryButton, marginTop: 10}}
           >
             Retry
           </button>
@@ -577,7 +545,13 @@ export default function SheepDailyPage({sb, authState, Header}) {
           )}
 
           <div style={{display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end'}}>
-            <button type="button" data-daily-cancel="1" onClick={handleCancel} disabled={saving} style={btnSecondary}>
+            <button
+              type="button"
+              data-daily-cancel="1"
+              onClick={handleCancel}
+              disabled={saving}
+              style={recordSecondaryButton}
+            >
               Revert
             </button>
             <button
@@ -585,7 +559,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
               data-daily-save="1"
               onClick={handleSave}
               disabled={saving || !canEditOwnRecord(authState, record)}
-              style={{...btnPrimary, opacity: saving ? 0.6 : 1}}
+              style={{...recordSaveButton, opacity: saving ? 0.6 : 1}}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -599,21 +573,7 @@ export default function SheepDailyPage({sb, authState, Header}) {
         )}
 
         {canDeleteDailyReport(authState, record) && (
-          <button
-            onClick={handleDelete}
-            style={{
-              marginTop: 12,
-              padding: '8px 18px',
-              borderRadius: 8,
-              border: '1px solid #fca5a5',
-              background: '#fef2f2',
-              color: '#b91c1c',
-              fontWeight: 600,
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
+          <button onClick={handleDelete} style={{...recordDeleteButton, marginTop: 12}}>
             Delete report
           </button>
         )}

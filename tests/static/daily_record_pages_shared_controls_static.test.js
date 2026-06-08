@@ -59,3 +59,42 @@ describe('daily record pages use the shared record-page controls', () => {
     }
   });
 });
+
+// Lane I CP4 — daily action-button cleanup. The six daily record pages route
+// their footer Save/Revert, the load-error Retry, and the Delete action through
+// the shared canonical record-page action buttons, so they cannot re-introduce
+// the retired 7px/8px radii or the bespoke 6px14px / 7px14px / 8px18px action
+// padding. This is a focused action-button slice, not a source-wide token ban.
+describe('daily record pages share the canonical action button styles', () => {
+  const SHARED_ACTION_EXPORTS = ['recordSaveButton', 'recordSecondaryButton', 'recordDeleteButton'];
+
+  it('the shared helper exports the canonical action buttons on the 10px 16px / radius 6 contract', () => {
+    const src = read('src/shared/recordPageControls.jsx');
+    for (const name of SHARED_ACTION_EXPORTS) {
+      expect(src).toContain('export const ' + name);
+    }
+    expect(src).toContain("padding: '10px 16px'");
+    expect(src).toContain('borderRadius: 6');
+    // The retired radii must not appear in the shared action-button source.
+    expect(src).not.toMatch(/borderRadius:\s*7\D/);
+    expect(src).not.toMatch(/borderRadius:\s*8\D/);
+  });
+
+  for (const rel of DAILY_PAGES) {
+    const src = read(rel);
+
+    it(`${rel} consumes the shared canonical action button styles`, () => {
+      for (const name of SHARED_ACTION_EXPORTS) {
+        expect(src).toContain(name);
+      }
+    });
+
+    it(`${rel} does not re-declare retired radius or one-off action padding`, () => {
+      expect(src).not.toMatch(/borderRadius:\s*7\D/);
+      expect(src).not.toMatch(/borderRadius:\s*8\D/);
+      expect(src).not.toContain("padding: '7px 14px'");
+      expect(src).not.toContain("padding: '6px 14px'");
+      expect(src).not.toContain("padding: '8px 18px'");
+    });
+  }
+});

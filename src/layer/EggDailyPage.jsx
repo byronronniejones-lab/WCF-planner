@@ -25,6 +25,9 @@ import {
   recordFieldLabel,
   recordControl,
   recordTextarea,
+  recordSaveButton,
+  recordSecondaryButton,
+  recordDeleteButton,
   LockedTeamMemberField,
 } from '../shared/recordPageControls.jsx';
 /* eslint-enable no-unused-vars */
@@ -228,18 +231,7 @@ export default function EggDailyPage({sb, authState, Header}) {
             type="button"
             data-daily-record-retry="1"
             onClick={() => loadAll()}
-            style={{
-              marginTop: 10,
-              padding: '7px 14px',
-              borderRadius: 7,
-              border: '1px solid #d1d5db',
-              background: 'white',
-              color: '#374151',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
+            style={{...recordSecondaryButton, marginTop: 10}}
           >
             Retry
           </button>
@@ -412,16 +404,7 @@ export default function EggDailyPage({sb, authState, Header}) {
               data-daily-cancel="1"
               onClick={handleCancel}
               disabled={saving}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 6,
-                border: '1px solid #d1d5db',
-                background: 'white',
-                color: '#374151',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontFamily: 'inherit',
-              }}
+              style={recordSecondaryButton}
             >
               Revert
             </button>
@@ -430,17 +413,7 @@ export default function EggDailyPage({sb, authState, Header}) {
               data-daily-save="1"
               onClick={handleSave}
               disabled={saving || !canEditOwnRecord(authState, record)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 6,
-                border: '1px solid #085041',
-                background: '#085041',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: 'inherit',
-              }}
+              style={recordSaveButton}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -448,21 +421,7 @@ export default function EggDailyPage({sb, authState, Header}) {
         </div>
 
         {canDeleteDailyReport(authState, record) && (
-          <button
-            onClick={handleDelete}
-            style={{
-              marginTop: 12,
-              padding: '8px 18px',
-              borderRadius: 8,
-              border: '1px solid #fca5a5',
-              background: '#fef2f2',
-              color: '#b91c1c',
-              fontWeight: 600,
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
+          <button onClick={handleDelete} style={{...recordDeleteButton, marginTop: 12}}>
             Delete report
           </button>
         )}

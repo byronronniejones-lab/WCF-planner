@@ -79,6 +79,48 @@ export const recordTextarea = {
 // Checkbox sized + left-aligned in the value column.
 export const recordCheckbox = {width: 18, height: 18, cursor: 'pointer'};
 
+// ── Record-page action buttons ──────────────────────────────────────────────
+// Canonical action buttons for the record-page form footer (Save / Revert), the
+// load-error Retry, and the Delete action. Tokens follow the Design System:
+// radius 6 (the retired 7/8 values are gone), the standard 10px 16px button pad,
+// and the canonical font-size scale. Call sites keep their own data hooks,
+// disabled logic, labels, and any layout-only override (e.g. marginTop) via a
+// spread. The six daily record pages are the first consumers; other record
+// pages migrate onto these in the same visual-consistency lane.
+const recordActionButtonBase = {
+  padding: '10px 16px',
+  borderRadius: 6,
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+};
+
+// Primary save (brand green).
+export const recordSaveButton = {
+  ...recordActionButtonBase,
+  border: '1px solid #085041',
+  background: '#085041',
+  color: 'white',
+};
+
+// Neutral/ghost action: form Revert and the load-error Retry.
+export const recordSecondaryButton = {
+  ...recordActionButtonBase,
+  border: '1px solid #d1d5db',
+  background: 'white',
+  color: '#374151',
+};
+
+// Destructive: Delete report.
+export const recordDeleteButton = {
+  ...recordActionButtonBase,
+  border: '1px solid #fca5a5',
+  background: '#fef2f2',
+  color: '#b91c1c',
+};
+
 // RecordPageBody maxWidth convention: form-centric record pages (mostly
 // label/value fields, like the daily pages) use RECORD_FORM_MAXWIDTH for a
 // consistent comfortable column. Dense stats / grid pages (e.g. layer batch
@@ -115,4 +157,3 @@ export function LockedTeamMemberField({value, label = null, labelStyle, style, c
     </div>
   );
 }
-
