@@ -1,6 +1,6 @@
 # HO - Static Workflow SOP
 
-Last updated: 2026-06-08.
+Last updated: 2026-06-09.
 
 This is the durable start-of-session workflow for Ronnie, CC (Claude Code), and
 Codex. It is not a session log and must not carry current project state.
@@ -117,15 +117,14 @@ stay short.
 
 ### Parallel Codex Worktree
 
-A dedicated Codex worktree exists at:
+Parallel worktrees exist at:
 
-`C:\Users\Ronni\WCF-planner-codex`
+`C:\Users\Ronni\WCF-planner-codex` and `C:\Users\Ronni\WCF-planner-light-audit`
 
-It has its own `node_modules`. As of 2026-06-08 it sits on the merged lane
-branch `codex/lane-b-fail-closed-loading` (integrated into `main` at `91546a7`);
-after branch cleanup it should be reset to current `main`. This is the only Codex
-worktree. For a new parallel lane, create a scoped `codex/<lane>` branch from
-current `main` in this worktree rather than reusing a merged lane branch.
+Each has its own `node_modules`. As of 2026-06-09 both sit detached at current
+`main` after branch cleanup (all merged `codex/*` lane branches pruned). For a
+new parallel lane, create a scoped `codex/<lane>` branch from current `main` in a
+worktree rather than reusing a merged/old branch.
 
 Default ownership is unchanged: Codex is still planning lead and reviewer, and
 CC is still primary builder. Ronnie may explicitly assign a build lane to Codex
