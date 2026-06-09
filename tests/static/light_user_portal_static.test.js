@@ -3,21 +3,11 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
 
-// ============================================================================
-// Lane 1 CP1 — authenticated Light-user portal static guards
-// ----------------------------------------------------------------------------
-// Locks the load-bearing pieces of the Light role: the DB constraint, role
-// plumbing, fail-closed route containment, login-required form surfaces, the
-// injected/locked submitter, and the portal home + nav containment. These are
-// source-level guards; the RLS/ownership enforcement is a later checkpoint and
-// is intentionally NOT claimed here (see PROJECT.md Lane 1 detail).
-// ============================================================================
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-describe('Light role — DB constraint (migration 087)', () => {
+describe('Light role - DB constraint (migration 087)', () => {
   const mig = read('supabase-migrations/087_profiles_role_light.sql');
 
   it('recreates profiles_role_check including light as a superset of prior roles', () => {
@@ -29,7 +19,7 @@ describe('Light role — DB constraint (migration 087)', () => {
   });
 });
 
-describe('Light role — plumbing', () => {
+describe('Light role - plumbing', () => {
   const main = read('src/main.jsx');
   const users = read('src/auth/UsersModal.jsx');
   const rapid = read('supabase-functions/rapid-processor.ts');
@@ -47,19 +37,16 @@ describe('Light role — plumbing', () => {
   });
 });
 
-describe('Light role — fail-closed route containment (main.jsx)', () => {
+describe('Light role - fail-closed route containment (main.jsx)', () => {
   const main = read('src/main.jsx');
 
   it('defines a Light allowed-view allowlist with the agreed surfaces', () => {
     const allowIdx = main.indexOf('LIGHT_ALLOWED_VIEWS');
     expect(allowIdx, 'LIGHT_ALLOWED_VIEWS defined').toBeGreaterThan(-1);
-    // Capture the Set literal that follows.
     const slice = main.slice(allowIdx, allowIdx + 600);
     for (const v of ['home', 'webformhub', 'tasksWebform', 'addfeed', 'webform', 'fuelingHub', 'fuelSupply', 'tasks']) {
       expect(slice, `allowlist contains ${v}`).toContain(`'${v}'`);
     }
-    // Forbidden surfaces must NOT be in the allowlist literal. 'weighins' is
-    // deliberately excluded — Light users do not submit weigh-ins.
     for (const v of [
       'weighins',
       'activity',
@@ -74,8 +61,6 @@ describe('Light role — fail-closed route containment (main.jsx)', () => {
   });
 
   it('hides the Weigh-Ins tile on the /dailys hub for Light', () => {
-    // main.jsx passes hideWeighIns: isLight into WebformHub; the hub gates the
-    // Weigh-Ins tile behind that flag so Light users never see a dead link.
     expect(main).toMatch(/hideWeighIns:\s*isLight/);
     const hub = read('src/webforms/WebformHub.jsx');
     expect(hub).toMatch(/hideWeighIns/);
@@ -99,7 +84,7 @@ describe('Light role — fail-closed route containment (main.jsx)', () => {
   });
 });
 
-describe('Light role — login-required form surfaces inject a locked submitter', () => {
+describe('Light role - login-required form surfaces inject a locked submitter', () => {
   const main = read('src/main.jsx');
 
   it('builds sessionSubmitter from the signed-in identity', () => {
@@ -126,18 +111,13 @@ describe('Light role — login-required form surfaces inject a locked submitter'
   });
 });
 
-describe('Light role — locked submitter component + form wiring', () => {
+describe('Light role - locked submitter component + form wiring', () => {
   it('LockedSubmitter is presentational only (no auth/supabase coupling)', () => {
     const ls = read('src/webforms/LockedSubmitter.jsx');
     expect(ls).not.toMatch(/useAuth\s*\(|AuthContext/);
     expect(ls).not.toMatch(/@supabase\/supabase-js|\bcreateClient\s*\(|from '\.\.\/lib\/supabase/);
   });
 
-  // The forms whose submitter is locked to the signed-in user on the
-  // authenticated path. TasksWebform is intentionally excluded — its
-  // submit_task_instance RPC validates submitted_by against the tasks-public
-  // roster, so locking it to a session name is deferred to an RPC-contract
-  // change (tracked as CP1 residual risk).
   const LOCKED_FORMS = [
     'src/webforms/WebformHub.jsx',
     'src/webforms/AddFeedWebform.jsx',
@@ -156,7 +136,7 @@ describe('Light role — locked submitter component + form wiring', () => {
   }
 });
 
-describe('Light role — header + portal containment', () => {
+describe('Light role - header + portal containment', () => {
   const header = read('src/shared/Header.jsx');
   const portal = read('src/dashboard/LightHomePortal.jsx');
   const homeAlerts = read('src/dashboard/homeAlerts.js');
@@ -166,11 +146,10 @@ describe('Light role — header + portal containment', () => {
     expect(header).toMatch(/\{!isLight && \([\s\S]*?data-header-menu-item="activity"/);
   });
 
-  it('Light portal exposes exactly the four allowed shortcuts', () => {
-    for (const v of ['webformhub', 'addfeed', 'fuelingHub', 'tasks']) {
+  it('Light portal exposes the allowed field shortcuts', () => {
+    for (const v of ['webformhub', 'addfeed', 'fuelingHub', 'tasks', 'mySubmissions']) {
       expect(portal, `portal tile ${v}`).toContain(`'${v}'`);
     }
-    // No program-dashboard or admin shortcuts on the portal.
     for (const v of ['broilerHome', 'cattleHome', 'equipmentHome', 'activity', 'webforms']) {
       expect(portal, `portal excludes ${v}`).not.toContain(`'${v}'`);
     }
@@ -188,25 +167,31 @@ describe('Light role — header + portal containment', () => {
       /data-light-portal-grid="1"[\s\S]*?weekEvents\.length > 0[\s\S]*?data-light-home-next-30="1"/,
     );
     expect(portal).not.toMatch(/Nothing scheduled in the next 30 days/);
-    expect(portal).toMatch(/NEXT 30 DAYS/);
+    expect(portal).toMatch(/Next 30 Days/);
+  });
+
+  it('Light portal shares the regular home white-panel design treatment', () => {
+    expect(portal).toContain("import './homeRedesign.css'");
+    expect(portal).toMatch(/className="home theme-crisp"/);
+    expect(portal).toMatch(/className="tile"/);
+    expect(portal).toMatch(/className="block"/);
+    expect(portal).toMatch(/className="panel"/);
+    expect(portal).toMatch(/className="litem eq is-link"/);
+    expect(portal).toMatch(/className=\{'badge-soft ' \+ badge\}/);
+    expect(portal).toMatch(/className=\{'type-chip type-' \+ it\.type\}/);
   });
 
   it('Light equipment attention rows route to the allowed public equipment surface, not /fleet', () => {
-    expect(portal).toMatch(/navigate\('\/equipment\/' \+ a\.slug\)/);
+    expect(portal).toMatch(/function openEquipment\(slug\)[\s\S]*navigate\('\/equipment\/' \+ slug\)/);
+    expect(portal).toMatch(/onClick=\{\(\) => openEquipment\(a\.slug\)\}/);
     expect(portal).not.toMatch(/navigate\('\/fleet\//);
   });
 
   it('shared equipment-attention detail keeps the overdue quantity so non-HomeDashboard consumers still show it', () => {
-    // Regression guard: HomeDashboard split the overdue quantity into a pastel
-    // `pill` badge, but LightHomePortal renders the single shared `a.detail`
-    // field. `detail` must therefore stay the FULL string (service + quantity);
-    // `metaLabel` (service only) is the HomeDashboard-only label, and `pill`
-    // carries the badge text. If a future refactor strips the quantity out of
-    // `detail`, light users silently lose overdue severity — this locks it.
-    expect(homeAlerts).toMatch(/detail: `\$\{intervalLbl\} · \$\{Math\.round\(over\)[\s\S]*?\} overdue`/);
+    expect(homeAlerts).toMatch(/detail: `\$\{intervalLbl\}[\s\S]*?\$\{Math\.round\(over\)[\s\S]*?\} overdue`/);
     expect(homeAlerts).toMatch(/metaLabel: intervalLbl/);
     expect(homeAlerts).toMatch(/pill: `\$\{Math\.round\(over\)[\s\S]*?\} overdue`/);
-    // LightHomePortal surfaces the full shared detail (not metaLabel/pill).
+    expect(portal).toMatch(/\{it\.detail\}/);
     expect(portal).toMatch(/\{a\.detail\}/);
     expect(portal).not.toMatch(/a\.metaLabel/);
   });

@@ -14,12 +14,30 @@
 //   saveStatus  : '' | 'saving' | 'saved' | 'error'
 //   showUsers, allUsers, inviteEmail, inviteRole, inviteMsg — UsersModal state
 // ============================================================================
-import React, {createContext, useContext, useState} from 'react';
+import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from 'react';
 
 const AuthContext = createContext(null);
+export const ROLE_PREVIEW_ROLES = ['admin', 'management', 'farm_team', 'equipment_tech', 'light', 'inactive'];
+
+function withRolePreview(authState, rolePreview) {
+  if (!authState || authState === false || !rolePreview || !ROLE_PREVIEW_ROLES.includes(rolePreview)) return authState;
+  return {
+    ...authState,
+    role: rolePreview,
+    // Diagnostic markers only: consumers can identify preview state without
+    // touching Supabase auth, the JWT, or the stored profile row.
+    rolePreviewActive: true,
+    realRole: authState.role,
+    profile:
+      authState.profile && typeof authState.profile === 'object'
+        ? {...authState.profile, role: rolePreview}
+        : authState.profile,
+  };
+}
 
 export function AuthProvider({children}) {
-  const [authState, setAuthState] = useState(null);
+  const [realAuthState, setAuthState] = useState(null);
+  const [rolePreview, setRolePreviewRaw] = useState('');
   const [pwRecovery, setPwRecovery] = useState(() => {
     if (typeof window === 'undefined') return false;
     const h = window.location.hash || '';
@@ -39,9 +57,30 @@ export function AuthProvider({children}) {
   const [inviteRole, setInviteRole] = useState('farm_team');
   const [inviteMsg, setInviteMsg] = useState('');
 
+  const canUseRolePreview = !!(realAuthState && realAuthState !== false && realAuthState.role === 'admin');
+  useEffect(() => {
+    if (!canUseRolePreview && rolePreview) setRolePreviewRaw('');
+  }, [canUseRolePreview, rolePreview]);
+
+  const setRolePreview = useCallback((nextRole) => {
+    setRolePreviewRaw(ROLE_PREVIEW_ROLES.includes(nextRole) ? nextRole : '');
+  }, []);
+  const clearRolePreview = useCallback(() => setRolePreviewRaw(''), []);
+  const activeRolePreview = canUseRolePreview ? rolePreview : '';
+  const authState = useMemo(
+    () => (activeRolePreview ? withRolePreview(realAuthState, activeRolePreview) : realAuthState),
+    [realAuthState, activeRolePreview],
+  );
+
   const value = {
     authState,
+    realAuthState,
     setAuthState,
+    rolePreview: activeRolePreview,
+    setRolePreview,
+    clearRolePreview,
+    rolePreviewRoles: ROLE_PREVIEW_ROLES,
+    canUseRolePreview,
     pwRecovery,
     setPwRecovery,
     dataLoaded,
