@@ -42,7 +42,9 @@ test.describe('Cattle daily record-page sequence navigation', () => {
     await expect(page.locator('[data-record-seq-prev="1"]')).toBeDisabled();
 
     const nextBtn = page.locator('[data-record-seq-next="1"]');
-    const nextLabel = (await nextBtn.innerText()).replace(/[‹›]/g, '').trim();
+    const nextAria = await nextBtn.getAttribute('aria-label');
+    expect(nextAria).toMatch(/^Next record: /);
+    const nextLabel = nextAria.replace(/^Next record: /, '');
     expect(nextLabel).toBe('05/02/2026 · finishers');
 
     await nextBtn.click();

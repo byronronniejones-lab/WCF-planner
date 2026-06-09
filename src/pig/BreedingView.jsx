@@ -21,13 +21,12 @@ import {
 } from '../lib/pig.js';
 import UsersModal from '../auth/UsersModal.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
-import {useBatches} from '../contexts/BatchesContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
 export default function BreedingView({Header, loadUsers, persistBreeding, breedAutoSaveTimer, confirmDelete}) {
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
-  const {tooltip, setTooltip} = useBatches();
+  const [tooltip, setTooltip] = React.useState(null);
   const {
     breedingCycles,
     setBreedingCycles,

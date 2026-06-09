@@ -6,8 +6,8 @@ const EMPTY_STATE_STYLE = {
 };
 
 export default function OperationalListEmptyState({
-  loading,
-  loadError,
+  loading = false,
+  loadError = false,
   totalCount,
   filteredCount,
   emptyLabel,

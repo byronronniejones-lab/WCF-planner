@@ -41,7 +41,6 @@ import PlannerIcon from '../components/PlannerIcon.jsx';
 import {useNavigate, useLocation} from 'react-router-dom';
 import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
@@ -72,7 +71,7 @@ export default function PigBatchesView({
   // (mortality, sub-batch, feeder form, ADG input). Cleared on each
   // action entry; failure paths set + return.
   const [notice, setNotice] = React.useState(null);
-  const [showArchBatches, setShowArchBatches] = React.useState(false);
+  const [showArchBatches, setShowArchBatches] = React.useState(true);
   // Tracks whether the parent modal's partition editor has unsaved sub-batch
   // count changes. closeFeederForm reads this so a fast close (<1.5s) still
   // flushes the pending partition write — the shared pigAutoSaveTimer would
@@ -164,9 +163,21 @@ export default function PigBatchesView({
   const recordGroup = recordMode ? (feederGroups || []).find((g) => g.id === recordId) : null;
   // Originating list order handed through route state; absent on direct links.
   const recordSeq = location.state?.recordSeq || null;
-  // Visible hub order (active first; processed only when shown). All visible
+  // Visible hub order (active first; processed can be hidden). All visible
   // tiles route to a record page — no virtual/planned rows for pig.
   const visiblePigBatches = (feederGroups || []).filter((g) => showArchBatches || g.status !== 'processed');
+  const pigBatchStatusColumns = [
+    {
+      key: 'active',
+      label: 'Active',
+      rows: visiblePigBatches.filter((g) => g.status !== 'processed'),
+    },
+    {
+      key: 'processed',
+      label: 'Processed',
+      rows: visiblePigBatches.filter((g) => g.status === 'processed'),
+    },
+  ].filter((c) => c.key !== 'processed' || showArchBatches || c.rows.length > 0);
   const goToBatch = (id, rows) =>
     navigate(
       '/pig/batches/' + encodeURIComponent(id),
@@ -380,7 +391,10 @@ export default function PigBatchesView({
         // attributions are sex-agnostic in current data; for v1 we treat
         // a single-sex sub's remaining as the whole ledger remainder.
         const transfers = pigTransfersForSub(breeders, g.batchName, sub.name);
-        const tripPigs = pigTripPigsForSub(g.processingTrips || [], sub.id);
+        const tripPigs = pigTripPigsForSub(g.processingTrips || [], sub.id, {
+          tripSourceSummary: processingTrips.tripSourceSummary,
+          subName: sub.name,
+        });
         const mortality = pigMortalityForSub(g, sub.name);
         const started = giltCount + boarCount;
         const remaining = Math.max(0, started - tripPigs - transfers.count - mortality);
@@ -429,13 +443,7 @@ export default function PigBatchesView({
     // through the closure. eslint-disable matches the file's existing
     // pattern.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    feederGroups,
-    breedingCycles,
-    farrowingRecs,
-    breeders,
-    effectiveAdgLbsPerDay,
-  ]);
+  }, [feederGroups, breedingCycles, farrowingRecs, breeders, effectiveAdgLbsPerDay]);
 
   // ── Pig mortality entries (parent batch with sub-batch attribution) ─────
   // Stored as feederGroup.pigMortalities = [{id, date, sub_batch_id,
@@ -476,7 +484,7 @@ export default function PigBatchesView({
           name: sb.name,
           status: sb.status,
           started: subStarted,
-          current: computeSubCurrentCount(g, sb, breeders),
+          current: computeSubCurrentCount(g, sb, breeders, {tripSourceSummary: processingTrips.tripSourceSummary}),
           feedPerStarted: subStarted > 0 && adjustedFeedLbs > 0 ? adjustedFeedLbs / subStarted : null,
           adjustedFeedLbs,
         };
@@ -491,12 +499,53 @@ export default function PigBatchesView({
 
     const feedRows = dailysForName(g.batchName);
     const rawFeedLbs = feedRows.reduce((sum, d) => sum + (parseFloat(d.feed_lbs) || 0), 0) + parentLegacy;
-    const transferCredit = pigTransfersForBatch(breeders, g.batchName).feedAllocLbs || parseFloat(g.feedAllocatedToTransfers) || 0;
+    const transferCredit =
+      pigTransfersForBatch(breeders, g.batchName).feedAllocLbs || parseFloat(g.feedAllocatedToTransfers) || 0;
     const adjustedFeedLbs = Math.max(0, rawFeedLbs - transferCredit);
     return {
       subSummaries: [],
       feedPerStarted: started > 0 && adjustedFeedLbs > 0 ? adjustedFeedLbs / started : null,
     };
+  }
+
+  function renderPigBatchTile(g, rowsForSequence) {
+    const sc = statusColors[g.status] || statusColors.active;
+    const subs = g.subBatches || [];
+    const latestDailyPigCount =
+      subs.length > 0
+        ? null
+        : (() => {
+            // Same ordering as the record workspace (date desc, then
+            // submitted_at desc) so the hub tile and record page can't
+            // disagree on "Current" when a parent-only batch has multiple
+            // reports on the same date.
+            const rows = dailysForName(g.batchName);
+            const sorted = [...rows].sort(
+              (a, b) =>
+                (b.date || '').localeCompare(a.date || '') ||
+                (b.submitted_at || '').localeCompare(a.submitted_at || '') ||
+                0,
+            );
+            return sorted[0]?.pig_count ?? null;
+          })();
+    const current = computeBatchCurrentCount(g, breeders, {
+      latestDailyPigCount,
+      tripSourceSummary: processingTrips.tripSourceSummary,
+    });
+    const started = batchStartedCount(g);
+    const tileInfo = batchHubTileInfo(g, started);
+    return (
+      <PigBatchHubTile
+        key={g.id}
+        group={g}
+        current={current}
+        started={started}
+        feedPerStarted={tileInfo.feedPerStarted}
+        subSummaries={tileInfo.subSummaries}
+        statusColor={sc}
+        onOpen={() => goToBatch(g.id, rowsForSequence)}
+      />
+    );
   }
 
   function archiveBatch(batchId) {
@@ -1329,30 +1378,10 @@ export default function PigBatchesView({
           </div>
         )}
 
-        {!recordMode && feederGroups.filter((g) => g.status !== 'processed').length === 0 && !showFeederForm && (
+        {!recordMode && (feederGroups || []).length === 0 && !showFeederForm && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
             No pig batches yet — farm-born batches appear here once you record the cycle's first farrowing; use "+ Add
             Manual Batch" for manual/admin batches.
-          </div>
-        )}
-
-        {/* Record-page header: back link to the hub. */}
-        {recordMode && (
-          <div style={{display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 12px'}}>
-            <button
-              onClick={goToHub}
-              style={{
-                fontSize: 13,
-                color: '#085041',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                padding: 0,
-              }}
-            >
-              {'← Pig Batches'}
-            </button>
           </div>
         )}
 
@@ -1380,55 +1409,66 @@ export default function PigBatchesView({
           </div>
         )}
 
-        {/* Hub: nav-only batch tiles. Clicking a tile opens the record page;
-            the full workspace (edit/mortality/sub-batches/trips) renders there. */}
-        {!recordMode &&
-          visiblePigBatches.map((g) => {
-            const sc = statusColors[g.status] || statusColors.active;
-            const subs = g.subBatches || [];
-            const latestDailyPigCount =
-              subs.length > 0
-                ? null
-                : (() => {
-                    // Same ordering as the record workspace (date desc, then
-                    // submitted_at desc) so the hub tile and record page can't
-                    // disagree on "Current" when a parent-only batch has
-                    // multiple reports on the same date.
-                    const rows = dailysForName(g.batchName);
-                    const sorted = [...rows].sort(
-                      (a, b) =>
-                        (b.date || '').localeCompare(a.date || '') ||
-                        (b.submitted_at || '').localeCompare(a.submitted_at || '') ||
-                        0,
-                    );
-                    return sorted[0]?.pig_count ?? null;
-                  })();
-            const current = computeBatchCurrentCount(g, breeders, {latestDailyPigCount});
-            const started = batchStartedCount(g);
-            const tileInfo = batchHubTileInfo(g, started);
-            return (
-              <PigBatchHubTile
-                key={g.id}
-                group={g}
-                current={current}
-                started={started}
-                feedPerStarted={tileInfo.feedPerStarted}
-                subSummaries={tileInfo.subSummaries}
-                statusColor={sc}
-                onOpen={() => goToBatch(g.id, visiblePigBatches)}
-              />
-            );
-          })}
+        {/* Hub: status comparison columns of nav-only batch tiles. Clicking a
+            tile opens the record page; the full workspace renders there. */}
+        {!recordMode && visiblePigBatches.length > 0 && (
+          <div
+            data-pig-batch-status-columns="1"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: 12,
+              alignItems: 'start',
+            }}
+          >
+            {pigBatchStatusColumns.map((col) => (
+              <section key={col.key} data-pig-batch-status-column={col.key}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    margin: '0 0 8px',
+                    padding: '0 2px',
+                  }}
+                >
+                  <h2 style={{fontSize: 13, color: '#374151', margin: 0}}>{col.label}</h2>
+                  <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>{col.rows.length}</span>
+                </div>
+                {col.rows.length > 0 ? (
+                  col.rows.map((g) => renderPigBatchTile(g, visiblePigBatches))
+                ) : (
+                  <div
+                    style={{
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 6,
+                      padding: '14px 16px',
+                      color: '#9ca3af',
+                      fontSize: 12,
+                    }}
+                  >
+                    No {col.label.toLowerCase()} batches.
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
 
         {/* Record page: the selected batch's full workspace (one group). The
             card body below is unchanged from the legacy inline render; only its
             source is narrowed to the routed group (processed batches still open
             via direct link). */}
         {recordMode && recordGroup && (
-          <>
-            <RecordSequenceNav seq={recordSeq} currentId={recordId} onNavigate={navigateSeq} />
-            <PigBatchPage group={recordGroup} view={pigBatchPageView} />
-          </>
+          <PigBatchPage
+            group={recordGroup}
+            view={pigBatchPageView}
+            recordSeq={recordSeq}
+            recordId={recordId}
+            onNavigateSeq={navigateSeq}
+            onBack={goToHub}
+          />
         )}
       </div>
     </div>

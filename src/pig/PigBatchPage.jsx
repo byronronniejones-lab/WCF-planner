@@ -16,6 +16,7 @@ import {
   pigMortalityForBatch,
   calcAgeRange as libCalcAgeRange,
   parseLiveWeights,
+  processingTripWithResolvedWeights,
   tripTotalLive,
   tripYield,
   computeSubLedgerCurrent,
@@ -38,7 +39,8 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-import {RecordPageBody} from '../shared/RecordPageShell.jsx';
+import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
+import {RecordPageBody, RecordBackLink, RecordTitle} from '../shared/RecordPageShell.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 
@@ -49,7 +51,7 @@ import {usePig} from '../contexts/PigContext.jsx';
 // threaded in via the `view` bundle); shared PigContext is consumed directly
 // here. PigBatchesView remains the hub/router and renders this only when
 // recordGroup exists.
-export default function PigBatchPage({group, view}) {
+export default function PigBatchPage({group, view, recordSeq = null, recordId = null, onNavigateSeq, onBack}) {
   const {authState} = useAuth();
   const {
     breedingCycles,
@@ -126,6 +128,7 @@ export default function PigBatchPage({group, view}) {
     deletePlannedTripById,
     // processing trips
     tripSourceCounts,
+    tripSourceSummary,
     updTrip,
     closeTripForm,
     deleteTrip,
@@ -299,33 +302,21 @@ export default function PigBatchPage({group, view}) {
             </div>
           );
         })()}
-      {/* Lane E CP1: the loaded pig batch record adopts the shared
-          RecordPageBody wrapper (capped record width + the locked
-          data-pig-batch-record-loaded marker). The colored batch header,
-          mortality modal overlay, sub-batch/trip forms, planned-trip controls,
-          FCR/yield math, and the pig.batch collaboration mount are unchanged —
-          only the outer content wrapper is now the shared primitive. Header /
-          back link / loading / not-found stay owned by PigBatchesView.
-
-          Left-aligned CP1 exception (option A): unlike the standalone record
-          pages, pig keeps the back link + RecordSequenceNav in PigBatchesView
-          OUTSIDE this body. A centered body (margin:'0 auto') would detach the
-          card from that far-left back link, so we override to margin:0 +
-          zero horizontal padding — the card caps at 1100 but stays left-
-          anchored under the existing back link, and avoids double mobile inset
-          (PigBatchesView already wraps this in 1rem padding). */}
-      <RecordPageBody
-        maxWidth={1100}
-        style={{margin: 0, paddingLeft: 0, paddingRight: 0}}
-        data-pig-batch-record-loaded="true"
-      >
+      {/* Pig batch owns the standard record-page chrome stack here: Back link,
+          sequence navigation, title, loaded body, and collaboration section. */}
+      <RecordPageBody maxWidth={1100} data-pig-batch-record-loaded="true">
+        <RecordBackLink label="Back to Pig Batches" onBack={onBack} />
+        <RecordSequenceNav seq={recordSeq} currentId={recordId || group.id} onNavigate={onNavigateSeq} />
+        <RecordTitle>{group.batchName}</RecordTitle>
         {[group].map((g) => {
           const cycle = breedingCycles.find((c) => c.id === g.cycleId);
           const tl = cycle ? calcBreedingTimeline(cycle.exposureStart) : null;
           const sc = statusColors[g.status] || statusColors.active;
           const C = cycle ? PIG_GROUP_COLORS[cycle.group] : null;
           const trips = g.processingTrips || [];
-          const totalLive = trips.reduce((s, t) => s + tripTotalLive(t), 0);
+          const tripSourceOptions = {tripSourceSummary};
+          const tripWithActualWeights = (trip) => processingTripWithResolvedWeights(trip, tripSourceOptions);
+          const totalLive = trips.reduce((s, t) => s + tripTotalLive(t, tripSourceOptions), 0);
           const totalHang = trips.reduce((s, t) => s + (parseFloat(t.hangingWeight) || 0), 0);
           // Carcass yield % only counts trips that have a hanging weight
           // entered. Otherwise a trip with no hanging data drags the
@@ -333,7 +324,7 @@ export default function PigBatchPage({group, view}) {
           // numerator, making the % look artificially low.
           const tripsWithHang = trips.filter((t) => (parseFloat(t.hangingWeight) || 0) > 0);
           const yieldHang = tripsWithHang.reduce((s, t) => s + (parseFloat(t.hangingWeight) || 0), 0);
-          const yieldLive = tripsWithHang.reduce((s, t) => s + tripTotalLive(t), 0);
+          const yieldLive = tripsWithHang.reduce((s, t) => s + tripTotalLive(t, tripSourceOptions), 0);
           const overallYield = yieldLive > 0 && yieldHang > 0 ? Math.round((yieldHang / yieldLive) * 1000) / 10 : null;
           // Sub-batches
           const subBatches = g.subBatches || [];
@@ -359,13 +350,13 @@ export default function PigBatchPage({group, view}) {
                 (a, b) => b.date.localeCompare(a.date) || b.submitted_at?.localeCompare(a.submitted_at || '') || 0,
               )[0] || null;
             const transfers = pigTransfersForSub(breeders, g.batchName, sb.name);
-            const tripPigs = pigTripPigsForSub(g.processingTrips || [], sb.id);
+            const tripPigs = pigTripPigsForSub(g.processingTrips || [], sb.id, {...tripSourceOptions, subName: sb.name});
             const mortality = pigMortalityForSub(g, sb.name);
             const started = (parseInt(sb.giltCount) || 0) + (parseInt(sb.boarCount) || 0);
             // Ledger current + processed-aware current via the shared lib
             // helpers so hub + future record page derive these identically.
-            const ledgerCurrent = computeSubLedgerCurrent(g, sb, breeders);
-            const currentCount = computeSubCurrentCount(g, sb, breeders);
+            const ledgerCurrent = computeSubLedgerCurrent(g, sb, breeders, tripSourceOptions);
+            const currentCount = computeSubCurrentCount(g, sb, breeders, tripSourceOptions);
             const dailyCount = latest?.pig_count;
             const adjustedFeed = Math.max(0, rawFeedSub - transfers.feedAllocLbs);
             return {
@@ -416,6 +407,7 @@ export default function PigBatchPage({group, view}) {
           // latest-daily fallback otherwise). One source for hub + record page.
           const currentPigCount = computeBatchCurrentCount(g, breeders, {
             latestDailyPigCount: latestDaily?.pig_count ?? null,
+            tripSourceSummary,
           });
           // Freeze age once the batch is empty AND has at least one
           // processor trip — pin the reference date to the latest trip
@@ -446,7 +438,7 @@ export default function PigBatchPage({group, view}) {
           // Standard FCR definition (lbs feed per lb live weight). The old
           // hybrid (avg-feed-per-pig / avg-live-weight) drifted whenever
           // original-count and pigs-processed weren't equal.
-          const pigsProcessed = trips.reduce((s, t) => s + (parseInt(t.pigCount) || 0), 0);
+          const pigsProcessed = trips.reduce((s, t) => s + (parseInt(tripWithActualWeights(t).pigCount) || 0), 0);
           const feedConversion =
             totalFeed > 0 && totalLive > 0 ? Math.round((totalFeed / totalLive) * 100) / 100 : null;
           const showTripForm = activeTripBatchId === g.id;
@@ -758,7 +750,7 @@ export default function PigBatchPage({group, view}) {
                       },
                       {
                         label: 'Pigs processed',
-                        val: trips.reduce((s, t) => s + (parseInt(t.pigCount) || 0), 0),
+                        val: pigsProcessed,
                         color: '#111827',
                       },
                       {
@@ -2001,58 +1993,79 @@ export default function PigBatchPage({group, view}) {
                         </div>
                         <div className={recordFieldRowClass}>
                           <span style={recordFieldLabel}>Number of pigs</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={tripForm.pigCount || ''}
-                            onChange={(e) => updTrip('pigCount', e.target.value)}
-                            style={recordControl}
-                          />
+                          <div data-pig-trip-source-count={editTripId || 'new'} style={recordControl}>
+                            {(() => {
+                              const source = editTripId
+                                ? tripSourceSummary(editTripId)
+                                : {weights: [], count: 0, totalLive: 0, avgLive: null, counts: {}};
+                              const actual = processingTripWithResolvedWeights(tripForm, {sourceSummary: source});
+                              const count = parseInt(actual.pigCount) || parseLiveWeights(actual.liveWeights).length;
+                              if (source.count > 0) return source.count;
+                              return count > 0 ? count + ' (stored legacy)' : 'No linked weigh-in entries';
+                            })()}
+                          </div>
                         </div>
                         <div className={recordFieldRowClass}>
-                          <span style={recordFieldLabel}>
-                            Live weights — enter each pig's weight separated by commas or spaces
-                          </span>
+                          <span style={recordFieldLabel}>Live weights</span>
                           <div>
-                            <input
-                              value={tripForm.liveWeights}
-                              onChange={(e) => updTrip('liveWeights', e.target.value)}
-                              placeholder="e.g. 245, 268, 231, 255, 240"
-                              style={recordControl}
-                            />
-                            {tripForm.liveWeights &&
-                              (() => {
-                                const wts = parseLiveWeights(tripForm.liveWeights);
-                                const total = wts.reduce((a, b) => a + b, 0);
-                                const avg = wts.length > 0 ? Math.round(total / wts.length) : 0;
-                                return wts.length > 0 ? (
-                                  <div style={{fontSize: 11, color: '#085041', marginTop: 3}}>
-                                    {wts.length} pigs {'\u00b7'} Total: {Math.round(total)} lbs{'\u00b7'} Avg: {avg}{' '}
-                                    lbs/pig
+                            {(() => {
+                              const source = editTripId
+                                ? tripSourceSummary(editTripId)
+                                : {weights: [], count: 0, totalLive: 0, avgLive: null, counts: {}};
+                              const actual = processingTripWithResolvedWeights(tripForm, {sourceSummary: source});
+                              const storedWeights = parseLiveWeights(actual.liveWeights);
+                              const displayWeights = source.weights.length > 0 ? source.weights : storedWeights;
+                              const totalLive = displayWeights.reduce((a, b) => a + b, 0);
+                              const avgLive = displayWeights.length > 0 ? totalLive / displayWeights.length : null;
+                              const keys = Object.keys(source.counts || {});
+                              return (
+                                <>
+                                  <div data-pig-trip-source-weights={editTripId || 'new'} style={recordControl}>
+                                    {displayWeights.length > 0 ? displayWeights.join(', ') : 'No source weights'}
                                   </div>
-                                ) : null;
-                              })()}
-                            {editTripId &&
-                              (() => {
-                                const counts = tripSourceCounts(editTripId);
-                                const keys = Object.keys(counts);
-                                if (keys.length === 0) return null;
-                                return (
-                                  <div
-                                    style={{
-                                      fontSize: 11,
-                                      color: '#065f46',
-                                      marginTop: 6,
-                                      padding: '5px 9px',
-                                      background: '#ecfdf5',
-                                      border: '1px solid #a7f3d0',
-                                      borderRadius: 5,
-                                    }}
-                                  >
-                                    <strong>Sources:</strong> {keys.map((k) => k + ' (' + counts[k] + ')').join(', ')}
-                                  </div>
-                                );
-                              })()}
+                                  {displayWeights.length > 0 && (
+                                    <div style={{fontSize: 11, color: '#085041', marginTop: 3}}>
+                                      {displayWeights.length} pigs {'\u00b7'} Total: {Math.round(totalLive)} lbs{'\u00b7'}{' '}
+                                      Avg: {Math.round(avgLive)} lbs/pig
+                                      {source.count === 0 ? ' (stored legacy)' : ''}
+                                    </div>
+                                  )}
+                                  {keys.length > 0 && (
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        color: '#065f46',
+                                        marginTop: 6,
+                                        padding: '5px 9px',
+                                        background: '#ecfdf5',
+                                        border: '1px solid #a7f3d0',
+                                        borderRadius: 5,
+                                      }}
+                                    >
+                                      <strong>Sources:</strong>{' '}
+                                      {keys.map((k) => k + ' (' + source.counts[k] + ')').join(', ')}
+                                    </div>
+                                  )}
+                                  {editTripId && source.count === 0 && (
+                                    <div
+                                      data-pig-trip-source-fallback={editTripId}
+                                      style={{
+                                        fontSize: 11,
+                                        color: '#92400e',
+                                        marginTop: 6,
+                                        padding: '5px 9px',
+                                        background: '#fffbeb',
+                                        border: '1px solid #fde68a',
+                                        borderRadius: 5,
+                                      }}
+                                    >
+                                      No linked weigh-in entries found. This existing trip is using stored legacy weights;
+                                      new processing trips still come only from Send-to-Trip weigh-in rows.
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                         <div className={recordFieldRowClass}>
@@ -2066,11 +2079,15 @@ export default function PigBatchPage({group, view}) {
                               onChange={(e) => updTrip('hangingWeight', e.target.value)}
                               style={recordControl}
                             />
-                            {tripForm.hangingWeight > 0 && tripTotalLive(tripForm) > 0 && (
-                              <div style={{fontSize: 11, color: '#16a34a', marginTop: 3}}>
-                                Carcass yield: {tripYield(tripForm)}%
-                              </div>
-                            )}
+                            {(() => {
+                              const source = editTripId ? tripSourceSummary(editTripId) : null;
+                              const sourceTrip = processingTripWithResolvedWeights(tripForm, {sourceSummary: source});
+                              return tripForm.hangingWeight > 0 && tripTotalLive(sourceTrip) > 0 ? (
+                                <div style={{fontSize: 11, color: '#16a34a', marginTop: 3}}>
+                                  Carcass yield: {tripYield(sourceTrip)}%
+                                </div>
+                              ) : null;
+                            })()}
                           </div>
                         </div>
                         <div className={recordFieldRowClass}>
@@ -2108,10 +2125,18 @@ export default function PigBatchPage({group, view}) {
                   </div>
                 )}
                 {trips.map((t) => {
-                  const live = tripTotalLive(t);
-                  const yld = tripYield(t);
-                  const wts = parseLiveWeights(t.liveWeights);
-                  const avg = wts.length > 0 ? Math.round(live / wts.length) : 0;
+                  const source = tripSourceSummary(t.id);
+                  const sourceTrip = processingTripWithResolvedWeights(t, {sourceSummary: source});
+                  const live = tripTotalLive(sourceTrip);
+                  const yld = tripYield(sourceTrip);
+                  const wts = source.weights.length > 0 ? source.weights : parseLiveWeights(sourceTrip.liveWeights);
+                  const avg =
+                    source.avgLive != null
+                      ? Math.round(source.avgLive)
+                      : wts.length > 0
+                        ? Math.round(wts.reduce((a, b) => a + b, 0) / wts.length)
+                        : 0;
+                  const pigCount = parseInt(sourceTrip.pigCount) || wts.length;
                   const tripForecast = processingForecastByTripId[t.id] || null;
                   const tripForecastAvg = tripForecast ? tripForecast.avg : null;
                   const forecastDelta = avg > 0 && tripForecastAvg != null ? avg - tripForecastAvg : null;
@@ -2128,7 +2153,9 @@ export default function PigBatchPage({group, view}) {
                       }}
                     >
                       <div style={{fontWeight: 600, minWidth: 90, color: '#111827'}}>{fmt(t.date)}</div>
-                      <span>{parseInt(t.pigCount) || 0} pigs</span>
+                      <span>
+                        {pigCount > 0 ? pigCount : 'No linked'} pigs{source.count === 0 && pigCount > 0 ? ' (stored)' : ''}
+                      </span>
                       {live > 0 && (
                         <span style={{color: '#1d4ed8'}}>
                           Live: {Math.round(live)} lbs{avg > 0 ? ` (avg ${avg} lbs)` : ''}
@@ -2157,8 +2184,8 @@ export default function PigBatchPage({group, view}) {
                           onClick={() => {
                             setTripForm({
                               date: t.date,
-                              pigCount: t.pigCount,
-                              liveWeights: t.liveWeights,
+                              pigCount,
+                              liveWeights: sourceTrip.liveWeights,
                               hangingWeight: t.hangingWeight,
                               notes: t.notes || '',
                             });
@@ -2190,7 +2217,15 @@ export default function PigBatchPage({group, view}) {
                       </div>
                       {wts.length > 0 && (
                         <div style={{width: '100%', fontSize: 10, color: '#9ca3af', marginTop: 1}}>
-                          Weights: {t.liveWeights}
+                          Weights: {wts.join(', ')}
+                        </div>
+                      )}
+                      {source.count === 0 && (
+                        <div
+                          data-pig-trip-source-missing={t.id}
+                          style={{width: '100%', fontSize: 11, color: '#92400e', marginTop: 2}}
+                        >
+                          No linked weigh-in entries. Showing stored legacy weights for this existing trip.
                         </div>
                       )}
                       {(() => {

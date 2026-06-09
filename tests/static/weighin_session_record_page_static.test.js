@@ -212,14 +212,21 @@ describe('WeighInSessionPage — cattle + sheep + pig + broiler support', () => 
   it('does not import pigSlug (unused)', () => {
     expect(pageSrc).not.toContain("from '../lib/pig.js'");
   });
-  it('sendEntriesToTrip checks app_store upsert before stamping', () => {
-    expect(pageSrc).toMatch(/sendEntriesToTrip[\s\S]*?upsertErr[\s\S]*?stampFailed/);
+  it('resolveBatchAndSub matches exact lower-case and slug-like pig batch ids', () => {
+    expect(pageSrc).toContain('function pigBatchLookupKeys(value)');
+    expect(pageSrc).toMatch(/pigBatchNameMatches\(g\.batchName, batchId\)/);
+    expect(pageSrc).toMatch(/pigBatchNameMatches\(s\.name, batchId\)/);
   });
-  it('sendEntriesToTrip throws on stamp failure instead of closing modal', () => {
-    expect(pageSrc).toMatch(/stampFailed[\s\S]*?throw new Error/);
+  it('sendEntriesToTrip stamps source weigh-ins before recording the processing trip', () => {
+    expect(pageSrc).toMatch(/sendEntriesToTrip[\s\S]*?sent_to_trip_id: newTripId[\s\S]*?upsertErr/);
   });
-  it('sendEntriesToTrip throws on app_store upsert failure before any setTripModal(null)', () => {
-    expect(pageSrc).toMatch(/upsertErr[\s\S]*?throw new Error[\s\S]*?setTripModal\(null\)/);
+  it('sendEntriesToTrip throws on stamp failure instead of recording the trip', () => {
+    expect(pageSrc).toMatch(/stampErr[\s\S]*?throw new Error\('Send failed \(stamp source entry\): '/);
+  });
+  it('sendEntriesToTrip clears source stamps if app_store upsert fails before closing the modal', () => {
+    expect(pageSrc).toMatch(
+      /upsertErr[\s\S]*?update\(\{sent_to_trip_id: null, sent_to_group_id: null\}\)[\s\S]*?throw new Error[\s\S]*?setTripModal\(null\)/,
+    );
   });
   it('sendEntriesToTrip throws on all pre-mutation validation failures', () => {
     const fn = pageSrc.match(/async function sendEntriesToTrip[\s\S]*?await loadAll\(\);\s*\}/);
@@ -229,6 +236,12 @@ describe('WeighInSessionPage — cattle + sheep + pig + broiler support', () => 
   });
   it('undoSendToTrip surfaces notice and returns on clearErr', () => {
     expect(pageSrc).toMatch(/undoSendToTrip[\s\S]*?clearErr[\s\S]*?setNotice[\s\S]*?return/);
+  });
+  it('undoSendToTrip reconciles stored subAttributions after removing one source entry', () => {
+    expect(pageSrc).toMatch(/undoSendToTrip[\s\S]*?resolveBatchAndSub\(session && session\.batch_id\)\.sub/);
+    expect(pageSrc).toMatch(
+      /undoSendToTrip[\s\S]*?subAttributions[\s\S]*?Math\.max\(0, \(parseInt\(a\.count\) \|\| 0\) - 1\)/,
+    );
   });
   it('transferToBreeding checks breeders and feeders upserts', () => {
     expect(pageSrc).toMatch(/transferToBreeding[\s\S]*?brUpsertErr[\s\S]*?fgUpsertErr/);

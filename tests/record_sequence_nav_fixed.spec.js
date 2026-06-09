@@ -46,7 +46,9 @@ test('cattle batch: fixed prev/next navigate while scrolled to the bottom', asyn
   const nextBtn = page.locator('[data-record-seq-next="1"]');
   await expect(nextBtn).toBeInViewport();
 
-  const nextLabel = (await nextBtn.innerText()).replace(/[‹›]/g, '').trim();
+  const nextAria = await nextBtn.getAttribute('aria-label');
+  expect(nextAria).toMatch(/^Next record: /);
+  const nextLabel = nextAria.replace(/^Next record: /, '');
   await nextBtn.click();
   await expect(page.locator('[data-record-title="1"]')).toHaveText(nextLabel, {timeout: 10_000});
   await expect(page.locator('[data-record-seq-position="1"]')).toHaveText('2 of 3');

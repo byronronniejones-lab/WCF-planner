@@ -1065,12 +1065,24 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   // ── Pig send-to-trip ──────────────────────────────────────────────────
   const canManagePigPlannedTrips = !!(authState && (authState.role === 'admin' || authState.role === 'management'));
 
+  function pigBatchLookupKeys(value) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return [];
+    const lower = trimmed.toLowerCase();
+    const slug = lower.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return lower === slug ? [lower] : [lower, slug];
+  }
+
+  function pigBatchNameMatches(a, b) {
+    const bKeys = new Set(pigBatchLookupKeys(b));
+    return pigBatchLookupKeys(a).some((key) => bKeys.has(key));
+  }
+
   function resolveBatchAndSub(batchId) {
     if (!batchId) return {parent: null, sub: null};
-    const norm = String(batchId).trim().toLowerCase();
     for (const g of feederGroups) {
-      if ((g.batchName || '').trim().toLowerCase() === norm) return {parent: g, sub: null};
-      const sub = (g.subBatches || []).find((s) => (s.name || '').trim().toLowerCase() === norm);
+      if (pigBatchNameMatches(g.batchName, batchId)) return {parent: g, sub: null};
+      const sub = (g.subBatches || []).find((s) => pigBatchNameMatches(s.name, batchId));
       if (sub) return {parent: g, sub};
     }
     return {parent: null, sub: null};
@@ -1115,6 +1127,19 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     const addWeights = selEntries.map((e) => parseFloat(e.weight) || 0).filter((w) => w > 0);
     const sexLabel = sourceSubSex === 'boar' ? 'Boars' : 'Gilts';
     const newTripId = String(Date.now()) + Math.random().toString(36).slice(2, 6);
+    for (const e of selEntries) {
+      const {error: stampErr} = await sb
+        .from('weigh_ins')
+        .update({sent_to_trip_id: newTripId, sent_to_group_id: groupId})
+        .eq('id', e.id);
+      if (stampErr) {
+        await sb
+          .from('weigh_ins')
+          .update({sent_to_trip_id: null, sent_to_group_id: null})
+          .eq('sent_to_trip_id', newTripId);
+        throw new Error('Send failed (stamp source entry): ' + stampErr.message);
+      }
+    }
     trips.push({
       id: newTripId,
       date: recon.targetTripDate,
@@ -1132,22 +1157,11 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
       .from('app_store')
       .upsert({key: 'ppp-feeders-v1', data: groups}, {onConflict: 'key'});
     if (upsertErr) {
-      throw new Error('Send failed (app_store): ' + upsertErr.message);
-    }
-    let stampFailed = false;
-    for (const e of selEntries) {
-      const {error: stampErr} = await sb
+      await sb
         .from('weigh_ins')
-        .update({sent_to_trip_id: newTripId, sent_to_group_id: groupId})
-        .eq('id', e.id);
-      if (stampErr) {
-        stampFailed = true;
-        setNotice({kind: 'error', message: 'Stamp failed for entry: ' + stampErr.message});
-        break;
-      }
-    }
-    if (stampFailed) {
-      throw new Error('One or more entry stamps failed. The trip was created but not all entries were stamped.');
+        .update({sent_to_trip_id: null, sent_to_group_id: null})
+        .eq('sent_to_trip_id', newTripId);
+      throw new Error('Send failed (app_store): ' + upsertErr.message);
     }
     try {
       await recordActivityEvent(sb, {
@@ -1171,6 +1185,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     if (!canManagePigPlannedTrips) return;
     const groups = feederGroups.slice();
     const gi = groups.findIndex((g) => g.id === entry.sent_to_group_id);
+    const sourceSub = resolveBatchAndSub(session && session.batch_id).sub;
     if (gi >= 0) {
       const g = {...groups[gi]};
       g.processingTrips = (g.processingTrips || []).map((t) => {
@@ -1182,6 +1197,14 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         const idx = parts.findIndex((p) => parseFloat(p) === targetW);
         if (idx >= 0) parts.splice(idx, 1);
         nt.liveWeights = parts.join(' ');
+        if (sourceSub && Array.isArray(nt.subAttributions)) {
+          nt.subAttributions = nt.subAttributions
+            .map((a) => {
+              if (!a || a.subId !== sourceSub.id) return a;
+              return {...a, count: Math.max(0, (parseInt(a.count) || 0) - 1)};
+            })
+            .filter((a) => (parseInt(a && a.count) || 0) > 0);
+        }
         return nt;
       });
       groups[gi] = g;

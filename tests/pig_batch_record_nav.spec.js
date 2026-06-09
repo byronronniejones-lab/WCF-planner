@@ -105,7 +105,7 @@ test('pig.batch hub tiles navigate to the record page; unknown id is not-found',
   await tile1.click();
   await expect(page).toHaveURL(new RegExp(`/pig/batches/${G1}$`));
   await expect(page.locator('text=P-26-91').first()).toBeVisible({timeout: 15_000});
-  await expect(page.locator('text=← Pig Batches').first()).toBeVisible();
+  await expect(page.getByRole('button', {name: /Back to Pig Batches/})).toBeVisible();
   // Sub-batch rows render on the record page (workspace moved here).
   await expect(page.locator('text=P-26-91A').first()).toBeVisible();
   // CP5: Comments + collapsed Activity collaboration section renders here.

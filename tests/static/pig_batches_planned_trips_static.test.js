@@ -81,7 +81,7 @@ describe('Commit 4a — Auto-allocation hard gates', () => {
   it('auto-allocation never sets sent_to_trip_id or sent_to_group_id', () => {
     // Pull the auto-allocation effect body and verify it has no writes
     // to weigh_ins. Defensive — the effect operates on app_store only.
-    const effect = viewSrc.match(/Auto-allocate planned trips[\s\S]*?effectiveAdgLbsPerDay,\s*\]\);/);
+    const effect = viewSrc.match(/Auto-allocate planned trips[\s\S]*?effectiveAdgLbsPerDay[,\s]*\]\);/);
     expect(effect, 'expected to find the auto-allocation effect').not.toBeNull();
     expect(effect[0]).not.toMatch(/sent_to_trip_id/);
     expect(effect[0]).not.toMatch(/sent_to_group_id/);
@@ -89,7 +89,7 @@ describe('Commit 4a — Auto-allocation hard gates', () => {
   });
 
   it('auto-allocation only writes to plannedProcessingTrips, never to processingTrips', () => {
-    const effect = viewSrc.match(/Auto-allocate planned trips[\s\S]*?effectiveAdgLbsPerDay,\s*\]\);/);
+    const effect = viewSrc.match(/Auto-allocate planned trips[\s\S]*?effectiveAdgLbsPerDay[,\s]*\]\);/);
     expect(effect[0]).toMatch(/plannedProcessingTrips/);
     // Negative lock: never assigns to feederGroup.processingTrips inside
     // the effect.
@@ -97,7 +97,7 @@ describe('Commit 4a — Auto-allocation hard gates', () => {
   });
 
   it('auto-allocation planned dates use effective Global ADG, not local rank-matched ADG', () => {
-    const effect = viewSrc.match(/Auto-allocate planned trips[\s\S]*?effectiveAdgLbsPerDay,\s*\]\);/);
+    const effect = viewSrc.match(/Auto-allocate planned trips[\s\S]*?effectiveAdgLbsPerDay[,\s]*\]\);/);
     expect(effect, 'expected to find the auto-allocation effect').not.toBeNull();
     expect(effect[0]).toContain('planned trip dates');
     expect(effect[0]).toMatch(/const adg = effectiveAdgLbsPerDay/);
@@ -425,10 +425,19 @@ describe('CP3 — /pig/batches/<id> record-page routing + hub/record branch', ()
     // CP6: the hub renders the extracted presentational tile and routes on open
     // by group.id; the tile carries the data-pig-batch-tile hook. CP3: the open
     // call also threads the visible hub order for record sequence nav.
+    expect(viewSrc).toMatch(/function renderPigBatchTile\(g, rowsForSequence\)/);
     expect(viewSrc).toMatch(
-      /<PigBatchHubTile[\s\S]*?group=\{g\}[\s\S]*?onOpen=\{\(\) => goToBatch\(g\.id, visiblePigBatches\)\}/,
+      /<PigBatchHubTile[\s\S]*?group=\{g\}[\s\S]*?onOpen=\{\(\) => goToBatch\(g\.id, rowsForSequence\)\}/,
     );
     expect(tileSrc).toMatch(/data-pig-batch-tile=\{group\.id\}/);
+  });
+
+  it('hub renders pig batches in status comparison columns with processed visible by default', () => {
+    expect(viewSrc).toMatch(/const \[showArchBatches, setShowArchBatches\] = React\.useState\(true\)/);
+    expect(viewSrc).toContain('const pigBatchStatusColumns =');
+    expect(viewSrc).toContain('data-pig-batch-status-columns="1"');
+    expect(viewSrc).toContain('data-pig-batch-status-column={col.key}');
+    expect(viewSrc).toMatch(/col\.rows\.map\(\(g\) => renderPigBatchTile\(g, visiblePigBatches\)\)/);
   });
 
   it('renders a not-found state for an unknown id', () => {
@@ -606,22 +615,48 @@ describe('CP10 — processing-trip workflow extracted to usePigProcessingTrips',
   it('preserves the processingTrips persistence + fcrCached set/delete contract', () => {
     expect(procHookSrc).toContain('processingTrips');
     expect(procHookSrc).toMatch(/persistFeeders\(nb\)/);
-    expect(procHookSrc).toMatch(/computePigBatchFCR\(next, dailysForName, breeders\)/);
+    expect(procHookSrc).toMatch(/computePigBatchFCR\(next, dailysForName, breeders, \{tripSourceSummary\}\)/);
     expect(procHookSrc).toMatch(/if \(fcr != null\) next\.fcrCached = fcr;/);
     expect(procHookSrc).toMatch(/else delete next\.fcrCached;/);
   });
 
-  it('preserves subAttributions via the existing-trip spread + numeric coercion + date guard', () => {
+  it('preserves subAttributions via the existing-trip spread + source-derived actuals with legacy fallback', () => {
     expect(procHookSrc).toMatch(/const trip = \{\.\.\.existing, \.\.\.tripFormNum, id: tripId\}/);
-    expect(procHookSrc).toMatch(/\['pigCount', 'hangingWeight'\]\.forEach/);
+    expect(procHookSrc).toContain('const sourceWeights = tripSourceWeights(currentTripId)');
+    expect(procHookSrc).toMatch(/pigCount:\s*hasLinkedSource \? sourceWeights\.length : parseInt\(existing\.pigCount/);
+    expect(procHookSrc).toMatch(/liveWeights:\s*hasLinkedSource \? sourceWeights\.join\(' '\) : existing\.liveWeights/);
+    expect(procHookSrc).toMatch(/\['hangingWeight'\]\.forEach/);
     expect(procHookSrc).toMatch(/if \(!formSnapshot\.date\) return;/);
+    expect(procHookSrc).toMatch(/if \(!currentTripId\) return;/);
     expect(procHookSrc).toMatch(/updated\.sort\(\(a, b\) => a\.date\.localeCompare\(b\.date\)\)/);
   });
 
-  it('preserves the delete confirmation + the sent_to_trip_id source-count load path', () => {
+  it('preserves the delete confirmation + the sent_to_trip_id source-count/weight load path', () => {
     expect(procHookSrc).toContain('Delete this processing trip? This cannot be undone.');
     expect(procHookSrc).toMatch(/\.not\('sent_to_trip_id', 'is', null\)/);
     expect(procHookSrc).toMatch(/from\('weigh_in_sessions'\)/);
+    expect(procHookSrc).toContain('function tripSourceEntries(tripId)');
+    expect(procHookSrc).toContain('function tripSourceWeights(tripId)');
+    expect(procHookSrc).toContain('function tripSourceSummary(tripId)');
+    expect(procHookSrc).toContain('function tripSourceCountsByKey(tripId)');
+    expect(procHookSrc).toContain('pigSourceCountKeys(name)');
+    expect(procHookSrc).toContain('countsByKey: tripSourceCountsByKey(tripId)');
+    expect(pageSrc).toContain('data-pig-trip-source-weights');
+    expect(pageSrc).toContain('data-pig-trip-source-fallback');
+    expect(pageSrc).toContain('const tripWithActualWeights = (trip) =>');
+    expect(pageSrc).toMatch(
+      /const totalLive = trips\.reduce\(\(s, t\) => s \+ tripTotalLive\(t, tripSourceOptions\), 0\)/,
+    );
+    expect(pageSrc).toMatch(
+      /const pigsProcessed = trips\.reduce\(\(s, t\) => s \+ \(parseInt\(tripWithActualWeights\(t\)\.pigCount\) \|\| 0\), 0\)/,
+    );
+  });
+
+  it('source-count resolver normalizes session batch_id keys before falling back to stored attributions', () => {
+    const libSrc = fs.readFileSync(path.join(ROOT, 'src/lib/pig.js'), 'utf8');
+    expect(libSrc).toContain('export function pigSourceCountKeys');
+    expect(libSrc).toContain('sourceCountForSubName(summary && summary.countsByKey, subName)');
+    expect(libSrc).toContain('return sourceCountForSubName(summary && summary.counts, subName)');
   });
 });
 
@@ -631,12 +666,14 @@ describe('CP11 — record-page render surface extracted to PigBatchPage', () => 
     // The view delegates the single-batch workspace to PigBatchPage, gated on
     // recordMode && recordGroup, passing the group + the threaded view bundle.
     expect(viewSrc).toMatch(
-      /recordMode && recordGroup &&[\s\S]*?<PigBatchPage\s+group=\{recordGroup\}\s+view=\{pigBatchPageView\}/,
+      /recordMode && recordGroup &&[\s\S]*?<PigBatchPage[\s\S]*?group=\{recordGroup\}[\s\S]*?view=\{pigBatchPageView\}[\s\S]*?recordSeq=\{recordSeq\}[\s\S]*?recordId=\{recordId\}[\s\S]*?onNavigateSeq=\{navigateSeq\}[\s\S]*?onBack=\{goToHub\}/,
     );
   });
 
-  it('PigBatchPage is a context-consuming component that takes {group, view}', () => {
-    expect(pageSrc).toMatch(/export default function PigBatchPage\(\{group, view\}\)/);
+  it('PigBatchPage is a context-consuming component that takes record chrome props', () => {
+    expect(pageSrc).toMatch(
+      /export default function PigBatchPage\(\{group, view, recordSeq = null, recordId = null, onNavigateSeq, onBack\}\)/,
+    );
     // Consumes the shared contexts directly rather than re-threading them.
     expect(pageSrc).toMatch(/const \{authState\} = useAuth\(\)/);
     expect(pageSrc).toMatch(/= usePig\(\)/);
@@ -660,6 +697,9 @@ describe('CP11 — record-page render surface extracted to PigBatchPage', () => 
     // The RecordCollaborationSection mount moved with the card.
     expect(pageSrc).toContain('RecordCollaborationSection');
     expect(viewSrc).not.toContain('RecordCollaborationSection');
+    expect(pageSrc).toContain('<RecordBackLink');
+    expect(pageSrc).toContain('<RecordSequenceNav');
+    expect(pageSrc).toContain('<RecordTitle>');
   });
 
   it('PigBatchesView keeps the hub-only surfaces (Global ADG, Add Batch, archive, hub tile)', () => {

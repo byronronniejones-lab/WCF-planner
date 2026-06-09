@@ -58,13 +58,6 @@ const SURFACES = [
     nav: "navigate('/layer/housings/' + id, recordSeqNavOptions(recordSeq))",
   },
   {
-    name: 'pig.batch',
-    list: 'src/pig/PigBatchesView.jsx',
-    listContains: ['const visiblePigBatches =', "labeledSeqItems(rows, 'batchName')"],
-    page: 'src/pig/PigBatchesView.jsx',
-    nav: "navigate('/pig/batches/' + encodeURIComponent(id), recordSeqNavOptions(recordSeq))",
-  },
-  {
     name: 'task.instance',
     list: 'src/tasks/MyTasksTab.jsx',
     listContains: [
@@ -109,6 +102,49 @@ describe('CP3 sequence nav — task.instance (CompletedTab)', () => {
   it('passes the completed visible order through route state', () => {
     expect(src).toContain('const taskSeqRows =');
     expect(src).toContain("labeledSeqItems(taskSeqRows, 'title')");
+  });
+});
+
+describe('CP3 sequence nav — pig.batch', () => {
+  const viewSrc = read('src/pig/PigBatchesView.jsx');
+  const pageSrc = read('src/pig/PigBatchPage.jsx');
+  it('hub/router imports helpers and passes the visible-order sequence through route state', () => {
+    expect(viewSrc).toContain(HELPER_IMPORT);
+    expect(viewSrc).toContain('const visiblePigBatches =');
+    expect(viewSrc).toContain("labeledSeqItems(rows, 'batchName')");
+    expect(viewSrc).toContain('recordSeqNavOptions(');
+  });
+  it('hub/router reads route-state sequence and carries it forward', () => {
+    expect(viewSrc).toContain('location.state?.recordSeq');
+    expect(viewSrc).toContain("navigate('/pig/batches/' + encodeURIComponent(id), recordSeqNavOptions(recordSeq))");
+  });
+  it('record component owns the shared RecordSequenceNav render', () => {
+    expect(pageSrc).toContain(NAV_IMPORT);
+    expect(pageSrc).toContain('<RecordSequenceNav');
+    expect(pageSrc).toContain('seq={recordSeq}');
+    expect(pageSrc).toContain('currentId={recordId || group.id}');
+    expect(pageSrc).toContain('onNavigate={onNavigateSeq}');
+  });
+});
+
+describe('CP3 sequence nav — pig.breeding-pig', () => {
+  const src = read('src/pig/SowsView.jsx');
+  it('registry imports helpers and passes the visible-order sequence through route state', () => {
+    expect(src).toContain(HELPER_IMPORT);
+    expect(src).toContain('const breedingPigSeqRows =');
+    expect(src).toContain("labeledSeqItems(rows, 'tag')");
+    expect(src).toContain('recordSeqNavOptions(');
+  });
+  it('record router reads route-state sequence and carries it forward', () => {
+    expect(src).toContain('location.state?.recordSeq');
+    expect(src).toContain("navigate('/pig/sows/' + encodeURIComponent(id), recordSeqNavOptions(recordSeq))");
+  });
+  it('record page renders the shared RecordSequenceNav', () => {
+    expect(src).toContain(NAV_IMPORT);
+    expect(src).toContain('<RecordSequenceNav');
+    expect(src).toContain('seq={recordSeq}');
+    expect(src).toContain('currentId={recordId}');
+    expect(src).toContain('onNavigate={navigateSeq}');
   });
 });
 
@@ -171,12 +207,30 @@ describe('CP3 sequence nav — broiler.batch (now shared)', () => {
 
 describe('RecordSequenceNav — fixed side controls', () => {
   const navSrc = read('src/shared/RecordSequenceNav.jsx');
+  const navCss = read('src/shared/RecordSequenceNav.css');
   it('owns fixed-position side navigation styling with the stable hooks', () => {
-    expect(navSrc).toContain("position: 'fixed'");
+    expect(navCss).toContain('.record-sequence-nav__button');
+    expect(navCss).toContain('position: fixed');
     expect(navSrc).toContain('data-record-seq-nav');
     expect(navSrc).toContain('data-record-seq-prev');
     expect(navSrc).toContain('data-record-seq-next');
     expect(navSrc).toContain('data-record-seq-position');
+  });
+  it('keeps desktop controls icon-only while exposing target labels accessibly', () => {
+    expect(navSrc).toContain("aria-label={prev ? 'Previous record: ' + prevLabel : 'No previous record'}");
+    expect(navSrc).toContain("aria-label={next ? 'Next record: ' + nextLabel : 'No next record'}");
+    expect(navSrc).toContain("title={prev ? 'Previous: ' + prevLabel : 'No previous record'}");
+    expect(navSrc).toContain("title={next ? 'Next: ' + nextLabel : 'No next record'}");
+    expect(navCss).toContain('@media (min-width: 701px)');
+    expect(navCss).toContain('clip: rect(0, 0, 0, 0)');
+  });
+  it('switches to an in-flow compact mobile row instead of side-fixed controls', () => {
+    expect(navSrc).toContain('data-record-seq-mobile');
+    expect(navCss).toContain('@media (max-width: 700px)');
+    expect(navCss).toContain('.record-sequence-nav {');
+    expect(navCss).toContain('position: static');
+    expect(navCss).toContain('grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)');
+    expect(navCss).toContain('transform: none');
   });
   it('renders nothing without a valid sequence', () => {
     expect(navSrc).toContain('if (index === -1) return null');

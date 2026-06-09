@@ -39,6 +39,7 @@ const EXPECTED_READY_MARKERS = new Map([
   ['src/pig/PigBatchesView.jsx', ['data-pig-feeders-loaded']],
   ['src/pig/PigDailyPage.jsx', ['data-pig-daily-record-loaded']],
   ['src/pig/PigDailysView.jsx', ['data-pig-dailys-loaded']],
+  ['src/pig/SowsView.jsx', ['data-breeding-pig-record-loaded']],
   ['src/shared/Header.jsx', ['data-notifications-panel-loaded']],
   ['src/sheep/SheepBatchPage.jsx', ['data-sheep-batch-record-loaded']],
   ['src/sheep/SheepBatchesView.jsx', ['data-sheep-batches-loaded']],
