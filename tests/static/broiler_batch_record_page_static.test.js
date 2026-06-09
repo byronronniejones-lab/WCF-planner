@@ -10,6 +10,7 @@ const pageSrc = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerBatchPage.js
 const listSrc = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerListView.jsx'), 'utf8');
 const formSrc = fs.readFileSync(path.join(ROOT, 'src/broiler/BatchForm.jsx'), 'utf8');
 const timelineSrc = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerTimelineView.jsx'), 'utf8');
+const homeSrc = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerHomeView.jsx'), 'utf8');
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
 const registrySrc = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
 const headerSrc = fs.readFileSync(path.join(ROOT, 'src/shared/Header.jsx'), 'utf8');
@@ -346,5 +347,41 @@ describe('BroilerTimelineView — bar clicks navigate to record page', () => {
   it('clicking a timeline bar navigates to /broiler/batches/<encoded name>', () => {
     expect(timelineSrc).toContain('openBroilerBatch');
     expect(timelineSrc).toContain("navigate('/broiler/batches/' + encodeURIComponent(b.name))");
+  });
+});
+
+describe('BroilerHomeView — active dashboard tiles open the batch record page', () => {
+  it("active batch tiles navigate to the record page via the canonical mechanism (not setView('list'))", () => {
+    // Tile onClick must route to /broiler/batches/<encoded name> via
+    // react-router useNavigate, mirroring BroilerListView/BroilerTimelineView.
+    expect(homeSrc).toContain("import {useNavigate} from 'react-router-dom'");
+    expect(homeSrc).toContain('openBroilerBatch');
+    expect(homeSrc).toContain("navigate('/broiler/batches/' + encodeURIComponent(b.name))");
+    expect(homeSrc).toContain('onClick={() => openBroilerBatch(b)}');
+    // The active-batch tile must no longer fall back to the hub list view.
+    expect(homeSrc).not.toContain("onClick={() => setView('list')}");
+  });
+});
+
+describe('BroilerListView — Batch Comparison Hatchery column', () => {
+  it('Hatchery header appears immediately after Breed in the Batch Comparison table', () => {
+    // The header array literal lists Breed then Hatchery then Time on Farm.
+    expect(listSrc).toMatch(/'Batch',\s*'Breed',\s*'Hatchery',\s*'Time on Farm',/);
+  });
+  it('renders a matching Hatchery body cell from b.hatchery after the Breed cell', () => {
+    // The breed badge cell is immediately followed by the hatchery cell, then
+    // the time-on-farm cell — keeps header/body columns aligned.
+    expect(listSrc).toMatch(/\{cell\(b\.hatchery \|\| null\)\}\s*\{cell\(timeOnFarm\)\}/);
+  });
+});
+
+describe('BroilerHomeView — Lbs Produced trend selects the latest 9 processed batches', () => {
+  it('lbsTrend takes the latest 9 (slice(-9)) of processed batches, oldest-left to newest-right', () => {
+    // procBr is processed-only (status === 'processed'); the trend sorts
+    // processing date ascending (oldest-left) then keeps the latest 9.
+    expect(homeSrc).toMatch(
+      /lbsTrend = \[\.\.\.procBr\][\s\S]*?\.sort\(\(a, b\) => a\.processingDate\.localeCompare\(b\.processingDate\)\)[\s\S]*?\.slice\(-9\)/,
+    );
+    expect(homeSrc).not.toContain('.slice(-10)');
   });
 });

@@ -9,7 +9,9 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const EXPECTED_IMG_OWNERS = [
   'src/components/CattleIcon.jsx',
   'src/components/PlannerIcon.jsx',
+  'src/equipment/EquipmentChecklistEntryPage.jsx',
   'src/equipment/EquipmentDetail.jsx',
+  'src/equipment/EquipmentFuelingEntryPage.jsx',
   'src/equipment/EquipmentMaintenanceModal.jsx',
   'src/equipment/ManualsCard.jsx',
   'src/shared/CommentsSection.jsx',
@@ -19,7 +21,9 @@ const EXPECTED_IMG_OWNERS = [
 ];
 
 const USER_MEDIA_OWNERS = [
+  'src/equipment/EquipmentChecklistEntryPage.jsx',
   'src/equipment/EquipmentDetail.jsx',
+  'src/equipment/EquipmentFuelingEntryPage.jsx',
   'src/equipment/EquipmentMaintenanceModal.jsx',
   'src/shared/CommentsSection.jsx',
   'src/shared/DailyPhotoThumbnails.jsx',

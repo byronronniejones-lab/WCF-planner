@@ -1,5 +1,15 @@
 import {describe, it, expect} from 'vitest';
-import {VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT, ALIASES_EXACT, ALIASES_PREFIX, resolvePathAlias} from './routes.js';
+import {
+  VIEW_TO_PATH,
+  PATH_TO_VIEW,
+  HASH_COMPAT,
+  ALIASES_EXACT,
+  ALIASES_PREFIX,
+  resolvePathAlias,
+  FLEET_ENTRY_ROUTES,
+  fleetFuelingEntryPath,
+  fleetChecklistEntryPath,
+} from './routes.js';
 
 // Tests for the URL ↔ view mapping that drives the Phase 3 router adapter.
 // Two invariants matter most: (1) round-trip integrity so the URL sync effects
@@ -101,6 +111,28 @@ describe('canonical anchors (paths printed on field materials per §7)', () => {
   it('public tasks webform mounts at /dailys/tasks (post 2026-05-06 rename)', () => {
     expect(VIEW_TO_PATH.tasksWebform).toBe('/dailys/tasks');
     expect(PATH_TO_VIEW['/dailys/tasks']).toBe('tasksWebform');
+  });
+});
+
+describe('fleet single-entry record routes (owned by EquipmentHome, not VIEW_TO_PATH)', () => {
+  it('canonical entry-route shapes are /fleet/fueling/:id and /fleet/checklist/:id', () => {
+    expect(FLEET_ENTRY_ROUTES.fuelingEntry).toBe('/fleet/fueling/:id');
+    expect(FLEET_ENTRY_ROUTES.checklistEntry).toBe('/fleet/checklist/:id');
+  });
+
+  it('path helpers build the concrete entry paths', () => {
+    expect(fleetFuelingEntryPath('abc123')).toBe('/fleet/fueling/abc123');
+    expect(fleetChecklistEntryPath('xyz789')).toBe('/fleet/checklist/xyz789');
+  });
+
+  it('entry routes are NOT registered in VIEW_TO_PATH (EquipmentHome owns /fleet/* sub-routing)', () => {
+    // Like /fleet/fuel-log and /fleet/<slug>, registering a param path here
+    // would break the VIEW_TO_PATH ↔ PATH_TO_VIEW round-trip and snap the user
+    // home. main.jsx routes any /fleet/<sub> to view='equipmentHome'.
+    expect(VIEW_TO_PATH.fuelingEntry).toBeUndefined();
+    expect(VIEW_TO_PATH.checklistEntry).toBeUndefined();
+    expect(PATH_TO_VIEW['/fleet/fueling/:id']).toBeUndefined();
+    expect(PATH_TO_VIEW['/fleet/checklist/:id']).toBeUndefined();
   });
 });
 

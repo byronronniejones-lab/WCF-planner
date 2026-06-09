@@ -226,6 +226,33 @@ export default function LightHomePortal({Header}) {
                         <span style={{display: 'block', fontSize: 13, fontWeight: 600, color: palette.tx}}>
                           {a.label}
                         </span>
+                        {/* Type-distinct chips so a checklist streak never reads
+                            like a duplicate service alert. Items are grouped per
+                            piece of equipment in buildEquipmentAttention. */}
+                        <span style={{display: 'flex', flexWrap: 'wrap', gap: 4, margin: '3px 0'}}>
+                          {(Array.isArray(a.items) ? a.items : []).map((it) => (
+                            <span
+                              key={it.key}
+                              data-attention-item-kind={it.kind}
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                letterSpacing: 0.3,
+                                textTransform: 'uppercase',
+                                padding: '1px 7px',
+                                borderRadius: 999,
+                                background: 'rgba(255,255,255,0.7)',
+                                color:
+                                  it.kind === 'overdue' ? '#b91c1c' : it.kind === 'warranty' ? '#1e40af' : '#92400e',
+                                border: '1px solid ' + palette.bd,
+                              }}
+                            >
+                              {it.typeLabel}
+                            </span>
+                          ))}
+                        </span>
+                        {/* Full shared detail (joined per item) — single-text
+                            consumers keep the overdue quantity. */}
                         <span style={{display: 'block', fontSize: 11, color: '#9ca3af'}}>{a.detail}</span>
                       </span>
                     </button>

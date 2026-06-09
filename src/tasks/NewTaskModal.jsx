@@ -17,10 +17,30 @@
 // task-request-photos exist when the SECDEF function validates the
 // path prefix. If upload fails, we abort before the RPC — no orphan
 // task pointing at missing bytes.
+//
+// One-time vs Recurring (Lane 15): the modal carries a One-time /
+// Recurring toggle. One-time keeps the createOneTimeTaskInstanceV2
+// path untouched. Recurring writes a task_templates row through the
+// createRecurringTaskTemplateV2 wrapper (-> create_recurring_task_template
+// SECDEF RPC, mig 105) and the cron generator turns it into instances.
+// task_templates RLS is admin-only, so the RPC is the approved server path
+// that lets non-light authenticated roles create a recurring template; it
+// role-gates server-side and stamps the owner from auth.uid(). We do not
+// mint task instances for recurring directly, and the modal never calls
+// sb.rpc directly (the rpc lives in the wrapper). The recurrence field
+// names/enums mirror RecurringTemplateModal.jsx (recurrence /
+// recurrence_interval / first_due_date, drawn from RECURRENCE_OPTIONS).
+// Light users never see the toggle — the recurring option is not rendered
+// for them (fail closed); their only create path stays one-time.
 
 import React from 'react';
 import {todayCentralISO} from '../lib/dateUtils.js';
-import {createOneTimeTaskInstanceV2, uploadTaskCreationPhotos} from '../lib/tasksCenterMutationsApi.js';
+import {
+  createOneTimeTaskInstanceV2,
+  createRecurringTaskTemplateV2,
+  uploadTaskCreationPhotos,
+} from '../lib/tasksCenterMutationsApi.js';
+import {RECURRENCE_OPTIONS} from '../lib/tasks.js';
 import {
   taskModalErrorNotice as ERROR_NOTICE,
   taskModalFieldLabel as FIELD_LABEL,
@@ -43,7 +63,24 @@ function mintId(prefix) {
   return `${prefix}-${r}`;
 }
 
-export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreated}) {
+// Recurrence dropdown labels — mirror RecurringTemplateModal.jsx so the
+// two surfaces stay in lockstep. Derived from RECURRENCE_OPTIONS
+// (src/lib/tasks.js) so the list always matches the task_templates
+// .recurrence CHECK constraint.
+const RECURRENCE_LABELS = {
+  once: 'One-time',
+  daily: 'Daily',
+  weekly: 'Weekly',
+  biweekly: 'Every 2 weeks',
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+};
+const RECURRENCES = RECURRENCE_OPTIONS.map((key) => ({
+  key,
+  label: RECURRENCE_LABELS[key] || key,
+}));
+
+export default function NewTaskModal({sb, profilesById, authState, isOpen, onClose, onCreated}) {
   const [title, setTitle] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [assigneeId, setAssigneeId] = React.useState('');
@@ -51,12 +88,31 @@ export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreat
   const [photos, setPhotos] = React.useState([]); // array of File
   const [saving, setSaving] = React.useState(false);
   const [err, setErr] = React.useState('');
+  // One-time vs recurring. 'once' keeps the existing instance-create
+  // path; 'recurring' writes a task_templates row instead. Light users
+  // are pinned to 'once' (the toggle never renders for them).
+  const [taskMode, setTaskMode] = React.useState('once');
+  const [recurrence, setRecurrence] = React.useState('weekly');
+  const [interval, setInterval] = React.useState(1);
+
+  // Light users are blocked from the recurring path. Fail closed: detect
+  // the role the same way the rest of the app does (authState.role ===
+  // 'light', see Header.jsx / main.jsx) and, when light, never render the
+  // toggle or recurrence fields. isRecurring can only be true for non-
+  // light roles because setTaskMode('recurring') is unreachable without
+  // the toggle. A missing/unknown role is treated as light so the toggle
+  // never shows without a confirmed non-light role (defense in depth over
+  // the server-side task_templates admin RLS).
+  const isLight = !authState?.role || authState?.role === 'light';
+  const isRecurring = !isLight && taskMode === 'recurring';
 
   // Stable ids minted ONCE when modal opens; persist across re-renders.
-  // Reset only when the modal closes and reopens.
+  // Reset only when the modal closes and reopens. tplId is the stable
+  // template id for the recurring path (idempotent upsert on retry, same
+  // contract as RecurringTemplateModal's newIdRef).
   const idsRef = React.useRef(null);
   if (isOpen && idsRef.current === null) {
-    idsRef.current = {id: mintId('tic-onetime'), csid: mintId('csid')};
+    idsRef.current = {id: mintId('tic-onetime'), csid: mintId('csid'), tplId: mintId('tpl')};
   }
   if (!isOpen && idsRef.current !== null) {
     idsRef.current = null;
@@ -78,6 +134,9 @@ export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreat
     setPhotos([]);
     setSaving(false);
     setErr('');
+    setTaskMode('once');
+    setRecurrence('weekly');
+    setInterval(1);
   }
 
   function handlePhotoSelect(e) {
@@ -112,12 +171,49 @@ export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreat
       return;
     }
     if (!dueDate) {
-      setErr('Due date is required.');
+      setErr(isRecurring ? 'First due date is required.' : 'Due date is required.');
       return;
+    }
+    if (isRecurring) {
+      const intervalNum = Number(interval);
+      if (!Number.isFinite(intervalNum) || intervalNum < 1) {
+        setErr('Interval must be a number ≥ 1.');
+        return;
+      }
+      if (!recurrence) {
+        setErr('Recurrence is required.');
+        return;
+      }
     }
     setSaving(true);
     try {
       const ids = idsRef.current;
+      if (isRecurring) {
+        // Recurring path: write a task_templates row via the SECDEF RPC
+        // (create_recurring_task_template, mig 105). task_templates RLS is
+        // admin-only, so a non-admin direct write would fail; the RPC
+        // role-gates to non-light/non-inactive callers and server-stamps the
+        // owner from auth.uid(). The cron generator materializes instances
+        // from the template; we do NOT mint a task instance here. dueDate
+        // doubles as first_due_date — the same field the one-time path uses.
+        // We omit the server-locked attribution fields (created_by is stamped
+        // server-side). Photos are a one-time-only affordance; templates don't
+        // take creation photos.
+        const tpl = await createRecurringTaskTemplateV2(sb, {
+          id: ids.tplId,
+          title: title.trim(),
+          description: description.trim() || null,
+          assignee_profile_id: assigneeId,
+          recurrence,
+          recurrence_interval: Number(interval),
+          first_due_date: dueDate,
+          active: true,
+        });
+        if (onCreated) onCreated(tpl && tpl.template_id ? tpl.template_id : ids.tplId);
+        reset();
+        if (onClose) onClose();
+        return;
+      }
       const photoPaths = await uploadTaskCreationPhotos(sb, ids.id, photos);
       const result = await createOneTimeTaskInstanceV2(
         sb,
@@ -152,6 +248,46 @@ export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreat
         </div>
 
         <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+          {/* One-time / Recurring toggle. Hidden ENTIRELY for Light
+              users — the recurring option is never rendered for them so
+              they cannot create recurring tasks (fail closed). */}
+          {!isLight && (
+            <div data-new-task-mode-toggle="1">
+              <label style={FIELD_LABEL}>Task type</label>
+              <div style={{display: 'flex', gap: 6}}>
+                {[
+                  {key: 'once', label: 'One-time'},
+                  {key: 'recurring', label: 'Recurring'},
+                ].map((opt) => {
+                  const active = taskMode === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      data-new-task-mode={opt.key}
+                      aria-pressed={active}
+                      onClick={() => setTaskMode(opt.key)}
+                      style={{
+                        flex: 1,
+                        padding: '10px 16px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                        border: active ? '1px solid #085041' : '1px solid #d1d5db',
+                        background: active ? '#085041' : 'white',
+                        color: active ? 'white' : '#374151',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div>
             <label style={FIELD_LABEL} htmlFor="new-task-title">
               Title (min 3 chars)
@@ -201,9 +337,49 @@ export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreat
             </select>
           </div>
 
+          {/* Recurrence + interval — only in recurring mode. Field names
+              mirror RecurringTemplateModal (recurrence /
+              recurrence_interval). */}
+          {isRecurring && (
+            <div style={{display: 'flex', gap: 10}}>
+              <div style={{flex: 1}}>
+                <label style={FIELD_LABEL} htmlFor="new-task-recurrence">
+                  Recurrence
+                </label>
+                <select
+                  id="new-task-recurrence"
+                  data-new-task-field="recurrence"
+                  value={recurrence}
+                  onChange={(e) => setRecurrence(e.target.value)}
+                  style={INPUT}
+                >
+                  {RECURRENCES.map((r) => (
+                    <option key={r.key} value={r.key}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{width: 110}}>
+                <label style={FIELD_LABEL} htmlFor="new-task-interval">
+                  Interval
+                </label>
+                <input
+                  id="new-task-interval"
+                  data-new-task-field="interval"
+                  type="number"
+                  min={1}
+                  value={interval}
+                  onChange={(e) => setInterval(e.target.value)}
+                  style={INPUT}
+                />
+              </div>
+            </div>
+          )}
+
           <div>
             <label style={FIELD_LABEL} htmlFor="new-task-due-date">
-              Due date
+              {isRecurring ? 'First due date' : 'Due date'}
             </label>
             <input
               id="new-task-due-date"
@@ -215,55 +391,59 @@ export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreat
             />
           </div>
 
-          <div>
-            <label style={FIELD_LABEL}>Optional photos (up to 5)</label>
-            <input
-              data-new-task-field="photos"
-              type="file"
-              accept="image/*"
-              multiple
-              disabled={photos.length >= 5}
-              onChange={handlePhotoSelect}
-              style={{fontSize: 13}}
-            />
-            {photos.length > 0 && (
-              <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6}}>
-                {photos.map((p, i) => (
-                  <span
-                    key={i}
-                    data-new-task-photo={i}
-                    style={{
-                      fontSize: 12,
-                      padding: '4px 8px',
-                      background: '#f3f4f6',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: 6,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    {p.name || `Photo ${i + 1}`}
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(i)}
+          {/* Photos are a one-time-only affordance — recurring templates
+              do not carry creation photos. */}
+          {!isRecurring && (
+            <div>
+              <label style={FIELD_LABEL}>Optional photos (up to 5)</label>
+              <input
+                data-new-task-field="photos"
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={photos.length >= 5}
+                onChange={handlePhotoSelect}
+                style={{fontSize: 13}}
+              />
+              {photos.length > 0 && (
+                <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6}}>
+                  {photos.map((p, i) => (
+                    <span
+                      key={i}
+                      data-new-task-photo={i}
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: '#6b7280',
-                        padding: 0,
-                        fontSize: 14,
+                        fontSize: 12,
+                        padding: '4px 8px',
+                        background: '#f3f4f6',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 6,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
                       }}
-                      aria-label={`Remove photo ${i + 1}`}
                     >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+                      {p.name || `Photo ${i + 1}`}
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(i)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#6b7280',
+                          padding: 0,
+                          fontSize: 14,
+                        }}
+                        aria-label={`Remove photo ${i + 1}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {err && (
@@ -277,7 +457,7 @@ export default function NewTaskModal({sb, profilesById, isOpen, onClose, onCreat
             Cancel
           </button>
           <button type="button" data-new-task-save="1" onClick={save} disabled={saving} style={BTN_PRIMARY}>
-            {saving ? 'Saving…' : 'Create Task'}
+            {saving ? 'Saving…' : isRecurring ? 'Create Template' : 'Create Task'}
           </button>
         </div>
       </div>

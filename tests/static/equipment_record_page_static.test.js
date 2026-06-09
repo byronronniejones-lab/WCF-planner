@@ -9,6 +9,8 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const fleetView = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFleetView.jsx'), 'utf8');
 const detail = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentDetail.jsx'), 'utf8');
 const home = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentHome.jsx'), 'utf8');
+const fuelingEntry = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFuelingEntryPage.jsx'), 'utf8');
+const checklistEntry = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentChecklistEntryPage.jsx'), 'utf8');
 const registry = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
 const fuelLog = fs.readFileSync(path.join(ROOT, 'src/equipment/EquipmentFuelLogView.jsx'), 'utf8');
 const csvExport = fs.readFileSync(path.join(ROOT, 'src/lib/csvExport.js'), 'utf8');
@@ -66,6 +68,71 @@ describe('EquipmentDetail — record page structure', () => {
   it('handles hash anchors for comment deep-links', () => {
     expect(detail).toContain('location.hash');
     expect(detail).toContain('scrollIntoView');
+  });
+});
+
+describe('Equipment single-entry record pages (fueling + checklist)', () => {
+  const pages = [
+    ['EquipmentFuelingEntryPage', fuelingEntry, 'data-equipment-fueling-record-loaded="true"', 'fueling'],
+    ['EquipmentChecklistEntryPage', checklistEntry, 'data-equipment-checklist-record-loaded="true"', 'event'],
+  ];
+
+  for (const [name, src, loadedMarker] of pages) {
+    describe(name, () => {
+      it('uses the shared RecordPageShell chrome', () => {
+        expect(src).toContain("from '../shared/RecordPageShell.jsx'");
+        expect(src).toContain('RecordPageBody');
+        expect(src).toContain('RecordTitle');
+        expect(src).toMatch(new RegExp('<RecordPageBody[^>]*' + loadedMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      });
+
+      it('mounts Comments + Activity ONLY via RecordCollaborationSection with equipment.item', () => {
+        expect(src).toContain('RecordCollaborationSection');
+        expect(src).toContain('entityType="equipment.item"');
+        expect(src).toContain('entityId={eq.id}');
+        expect(src).toContain('entityLabel={eq.name}');
+      });
+
+      it('does not import CommentsSection or RecordActivityLog directly', () => {
+        expect(src).not.toContain("from '../shared/CommentsSection.jsx'");
+        expect(src).not.toContain("from '../shared/RecordActivityLog.jsx'");
+      });
+
+      it('does not import ActivityPanel or ActivityModal', () => {
+        expect(src).not.toMatch(/^import ActivityPanel/m);
+        expect(src).not.toMatch(/^import ActivityModal/m);
+      });
+
+      it('renders fail-closed: loading -> loadError (Retry) -> not-found -> record', () => {
+        expect(src).toContain('RecordPageLoading');
+        expect(src).toContain('RecordPageNotFound');
+        // loadError branch with a user-gated Retry, ordered before not-found.
+        expect(src).toMatch(/if \(loading\)[\s\S]*?if \(loadError\)[\s\S]*?Retry[\s\S]*?if \(!equipment/);
+      });
+
+      it('is read-only: no delete button on the entry page', () => {
+        expect(src).not.toMatch(/Delete entry/);
+        expect(src).not.toMatch(/deleteEquipmentFueling|deleteEquipmentMaintenanceEvent/);
+      });
+    });
+  }
+
+  it('EquipmentHome routes /fleet/fueling/<id> and /fleet/checklist/<id> to the entry pages', () => {
+    expect(home).toContain('EquipmentFuelingEntryPage');
+    expect(home).toContain('EquipmentChecklistEntryPage');
+    expect(home).toContain("path.startsWith('/fleet/fueling/')");
+    expect(home).toContain("path.startsWith('/fleet/checklist/')");
+    // The entry subpaths must be matched BEFORE the generic /fleet/<slug> detail
+    // branch so they are not swallowed as a missing equipment slug.
+    expect(home).toMatch(/fleet\/fueling\/[\s\S]*?fleet\/checklist\/[\s\S]*?path\.startsWith\('\/fleet\/'\)/);
+  });
+
+  it('EquipmentDetail links each fueling + checklist row into the entry pages via routes.js helpers', () => {
+    expect(detail).toContain("from '../lib/routes.js'");
+    expect(detail).toContain('fleetFuelingEntryPath');
+    expect(detail).toContain('fleetChecklistEntryPath');
+    expect(detail).toContain('data-equipment-fueling-row-link');
+    expect(detail).toContain('data-equipment-checklist-row-link');
   });
 });
 

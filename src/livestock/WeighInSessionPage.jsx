@@ -613,6 +613,22 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
       setNotice({kind: 'error', message: 'Fix weigh-in entry save errors before completing this session.'});
       return;
     }
+    // Block completion while any entry still carries new_tag_flag — these are
+    // unresolved missing/replacement tags that must be reconciled to a known
+    // cow first. Mirrors WeighInsWebform's pendingReconciles completion gate.
+    const unresolved = (sEntriesRef.current || []).filter((e) => e.new_tag_flag === true);
+    if (unresolved.length > 0) {
+      setNotice({
+        kind: 'error',
+        message:
+          'Resolve ' +
+          unresolved.length +
+          ' missing/new ' +
+          (unresolved.length === 1 ? 'tag' : 'tags') +
+          ' before completing this session.',
+      });
+      return;
+    }
     const canSendToProcessor = session.species === 'sheep' || session.herd === 'finishers';
     if (canSendToProcessor) {
       const flagged = sEntries.filter((e) => e.send_to_processor === true);
@@ -1504,6 +1520,28 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
   const entityLabel = (session.date || '') + ' · ' + groupName;
   const backInfo = SPECIES_BACK[session.species] || {path: '/', label: 'Home'};
 
+  // Cattle/sheep remaining pools — scoped to THIS session's herd/flock, mirroring
+  // WeighInsWebform.remainingTags/remainingCows. Cattle animals carry .herd, sheep
+  // carry .flock; the session stores the group in session.herd for both species.
+  // remainingTags = herd cow tags minus tags already weighed this session.
+  // remainingCows = the same herd cows as full records (the diminishing reconcile
+  // pool). pendingReconciles = entries still flagged new_tag_flag — they block
+  // completion until each is reconciled to a known cow.
+  const animalGroupField = session.species === 'sheep' ? 'flock' : 'herd';
+  const weighedTagSet = new Set(sEntries.map((e) => e.tag).filter(Boolean));
+  const herdCows =
+    isPig || isBroiler
+      ? []
+      : animals
+          .filter((c) => (c[animalGroupField] || null) === (session.herd || null) && c.tag)
+          .sort(
+            (a, b) => (parseFloat(a.tag) || 0) - (parseFloat(b.tag) || 0) || (a.tag || '').localeCompare(b.tag || ''),
+          );
+  const remainingCows = herdCows.filter((c) => !weighedTagSet.has(c.tag));
+  const remainingTags = remainingCows.map((c) => c.tag);
+  const pendingReconciles = isPig || isBroiler ? [] : sEntries.filter((e) => e.new_tag_flag === true);
+  const expectedTags = herdCows.length;
+
   return (
     <RecordPageFrame Header={Header}>
       <RecordPageBody maxWidth={900} data-weighin-session-record-loaded="true">
@@ -1531,6 +1569,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           {session.team_member && <span style={{fontSize: 12, color: '#6b7280'}}>{session.team_member}</span>}
           <span style={{fontSize: 12, color: '#6b7280'}}>
             {sEntries.length} {sEntries.length === 1 ? 'entry' : 'entries'}
+            {!isPig && !isBroiler && expectedTags > 0 ? ' of ' + expectedTags : ''}
           </span>
           {avgAdg != null && (
             <span
@@ -1697,24 +1736,50 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
           })()}
 
         <div style={{display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap'}}>
-          {session.status === 'draft' && (
-            <button
-              onClick={completeSession}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 6,
-                border: '1px solid #047857',
-                background: '#047857',
-                color: 'white',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              ✓ Complete Session
-            </button>
-          )}
+          {session.status === 'draft' &&
+            (() => {
+              // Block completion while any entry still carries new_tag_flag —
+              // these unresolved missing/replacement tags must be reconciled to
+              // a known cow first (mirrors WeighInsWebform's pendingReconciles
+              // gate). The handler-level guard in completeSession is the
+              // authoritative block; this just reflects + disables.
+              const blockComplete = pendingReconciles.length > 0;
+              return (
+                <button
+                  onClick={completeSession}
+                  disabled={blockComplete}
+                  data-weighin-complete-blocked={blockComplete ? '1' : '0'}
+                  title={
+                    blockComplete
+                      ? 'Resolve ' +
+                        pendingReconciles.length +
+                        ' missing/new ' +
+                        (pendingReconciles.length === 1 ? 'tag' : 'tags') +
+                        ' first'
+                      : undefined
+                  }
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    border: '1px solid ' + (blockComplete ? '#9ca3af' : '#047857'),
+                    background: blockComplete ? '#9ca3af' : '#047857',
+                    color: 'white',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: blockComplete ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {blockComplete
+                    ? 'Resolve ' +
+                      pendingReconciles.length +
+                      ' ' +
+                      (pendingReconciles.length === 1 ? 'missing tag' : 'missing tags') +
+                      ' first'
+                    : '✓ Complete Session'}
+                </button>
+              );
+            })()}
           {session.status === 'complete' && (
             <button
               onClick={reopenSession}
@@ -1916,7 +1981,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
             {sEntries.length === 0 && (
               <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8}}>No entries yet.</div>
             )}
-            {sEntries.length > 0 && (
+            {isPig && sEntries.length > 0 && (
               <div
                 style={{
                   display: 'grid',
@@ -1927,305 +1992,14 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
               >
                 {sEntries.map((e) => {
                   const ef = entryEdits[e.id] || entryDraft(e);
-                  if (isPig) {
-                    const isSent = !!e.sent_to_trip_id;
-                    const isTransferred = !!(
-                      e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || '')
-                    );
-                    const isLocked = isSent || isTransferred;
-                    const pigEntryAdg = pigEntryAdgById[e.id];
-                    const hasPigNote = String(ef.note || '').trim().length > 0;
-                    const showPigNoteInput = hasPigNote || openPigNoteEntryIds.has(e.id);
-                    const autosaveState = entryAutosave[e.id];
-                    const autosaveTone =
-                      autosaveState && autosaveState.status === 'error'
-                        ? {color: '#b91c1c', background: '#fef2f2', border: '#fecaca'}
-                        : autosaveState && autosaveState.status === 'saved'
-                          ? {color: '#065f46', background: '#ecfdf5', border: '#a7f3d0'}
-                          : {color: '#6b7280', background: '#f9fafb', border: '#e5e7eb'};
-                    return (
-                      <div
-                        key={e.id}
-                        style={{
-                          background: isSent ? '#ecfdf5' : isTransferred ? '#eef2ff' : 'white',
-                          border: '1px solid ' + (isSent ? '#a7f3d0' : isTransferred ? '#c7d2fe' : '#e5e7eb'),
-                          borderRadius: 6,
-                          padding: '6px 10px',
-                          fontSize: 12,
-                        }}
-                      >
-                        <div style={{display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap'}}>
-                          {!isLocked && session.status === 'draft' && canManagePigPlannedTrips && (
-                            <input
-                              type="checkbox"
-                              checked={selectedEntryIds.has(e.id)}
-                              onChange={() =>
-                                setSelectedEntryIds((prev) => {
-                                  const n = new Set(prev);
-                                  if (n.has(e.id)) n.delete(e.id);
-                                  else n.add(e.id);
-                                  return n;
-                                })
-                              }
-                            />
-                          )}
-                          {isLocked ? (
-                            <span style={{fontWeight: 600, color: '#1e40af', flex: 1}}>{e.weight} lb</span>
-                          ) : (
-                            <>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                placeholder="lb"
-                                value={ef.weight}
-                                onChange={(ev) => setPigEntryField(e, 'weight', ev.target.value)}
-                                onBlur={() => flushPigEntryAutosave(e.id)}
-                                style={{...inp, flex: '0 0 80px', minWidth: 0}}
-                              />
-                              {showPigNoteInput ? (
-                                <input
-                                  type="text"
-                                  placeholder="Note"
-                                  value={ef.note}
-                                  onChange={(ev) => setPigEntryField(e, 'note', ev.target.value)}
-                                  onBlur={() => flushPigEntryAutosave(e.id)}
-                                  style={{...inp, flex: '1 1 120px', minWidth: 100}}
-                                />
-                              ) : (
-                                <button
-                                  type="button"
-                                  data-pig-entry-add-note={e.id}
-                                  onClick={() =>
-                                    setOpenPigNoteEntryIds((prev) => {
-                                      const next = new Set(prev);
-                                      next.add(e.id);
-                                      return next;
-                                    })
-                                  }
-                                  style={{
-                                    fontSize: 10,
-                                    color: '#6b7280',
-                                    background: 'white',
-                                    border: '1px solid #d1d5db',
-                                    borderRadius: 4,
-                                    cursor: 'pointer',
-                                    padding: '3px 7px',
-                                    fontFamily: 'inherit',
-                                  }}
-                                >
-                                  + Note
-                                </button>
-                              )}
-                            </>
-                          )}
-                          {isSent && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                background: '#d1fae5',
-                                color: '#065f46',
-                              }}
-                            >
-                              Sent to trip
-                            </span>
-                          )}
-                          {isTransferred && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                background: '#eef2ff',
-                                color: '#3730a3',
-                              }}
-                            >
-                              Transferred
-                            </span>
-                          )}
-                        </div>
-                        {isLocked && e.note && (
-                          <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>{e.note}</div>
-                        )}
-                        {pigEntryAdg && (
-                          <div
-                            data-pig-entry-adg={e.id}
-                            style={{
-                              display: 'flex',
-                              gap: 6,
-                              alignItems: 'center',
-                              flexWrap: 'wrap',
-                              marginTop: 4,
-                              fontSize: 10,
-                            }}
-                          >
-                            <span
-                              data-pig-entry-prior={e.id}
-                              title={'Prior weigh-in on ' + fmt(pigEntryAdg.priorDate)}
-                              style={{
-                                color: '#374151',
-                                background: '#f9fafb',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: 4,
-                                padding: '1px 6px',
-                              }}
-                            >
-                              {'Prev ' + Math.round(pigEntryAdg.priorWeightLbs) + ' lb · ' + fmt(pigEntryAdg.priorDate)}
-                            </span>
-                            <span
-                              data-entry-days={e.id}
-                              data-pig-entry-days={e.id}
-                              title={'Days since last weigh-in'}
-                              style={{
-                                color: '#374151',
-                                background: '#f9fafb',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: 4,
-                                padding: '1px 6px',
-                              }}
-                            >
-                              {'Days ' + pigEntryAdg.daysBetween}
-                            </span>
-                            <span
-                              data-entry-delta={e.id}
-                              data-pig-entry-delta={e.id}
-                              title={'Weight change since prior weigh-in'}
-                              style={{
-                                fontWeight: 700,
-                                color: pigEntryAdg.weightDeltaLbs >= 0 ? '#065f46' : '#b91c1c',
-                                background: pigEntryAdg.weightDeltaLbs >= 0 ? '#ecfdf5' : '#fef2f2',
-                                border: '1px solid ' + (pigEntryAdg.weightDeltaLbs >= 0 ? '#a7f3d0' : '#fecaca'),
-                                borderRadius: 4,
-                                padding: '1px 6px',
-                              }}
-                            >
-                              {'+/- ' + formatSignedLbs(pigEntryAdg.weightDeltaLbs)}
-                            </span>
-                            <span
-                              title={
-                                'rank ' +
-                                pigEntryAdg.rank +
-                                ' vs prior ' +
-                                fmt(pigEntryAdg.priorDate) +
-                                ' at ' +
-                                Math.round(pigEntryAdg.priorWeightLbs) +
-                                ' lb'
-                              }
-                              style={{
-                                fontWeight: 700,
-                                color: pigEntryAdg.adgLbsPerDay >= 0 ? '#065f46' : '#b91c1c',
-                                background: pigEntryAdg.adgLbsPerDay >= 0 ? '#ecfdf5' : '#fef2f2',
-                                border: '1px solid ' + (pigEntryAdg.adgLbsPerDay >= 0 ? '#a7f3d0' : '#fecaca'),
-                                borderRadius: 4,
-                                padding: '1px 6px',
-                              }}
-                            >
-                              {'ADG ' +
-                                (pigEntryAdg.adgLbsPerDay >= 0 ? '+' : '') +
-                                pigEntryAdg.adgLbsPerDay.toFixed(2) +
-                                ' lb/day'}
-                            </span>
-                          </div>
-                        )}
-                        <div
-                          style={{display: 'flex', gap: 4, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap'}}
-                        >
-                          {isSent && canManagePigPlannedTrips && (
-                            <button
-                              onClick={() => undoSendToTrip(e)}
-                              style={{
-                                fontSize: 10,
-                                color: '#b45309',
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              Undo send
-                            </button>
-                          )}
-                          {isTransferred && (
-                            <button
-                              onClick={() => undoTransferToBreeding(e)}
-                              style={{
-                                fontSize: 10,
-                                color: '#b45309',
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              Undo transfer
-                            </button>
-                          )}
-                          {autosaveState && !isLocked && (
-                            <span
-                              data-entry-autosave={e.id}
-                              data-pig-entry-autosave={e.id}
-                              style={{
-                                fontSize: 10,
-                                color: autosaveTone.color,
-                                background: autosaveTone.background,
-                                border: '1px solid ' + autosaveTone.border,
-                                borderRadius: 4,
-                                padding: '1px 6px',
-                              }}
-                            >
-                              {autosaveState.message}
-                            </span>
-                          )}
-                          {!isLocked && (
-                            <>
-                              <button
-                                onClick={() => openTransferModal(e)}
-                                style={{
-                                  fontSize: 10,
-                                  color: '#3730a3',
-                                  background: 'none',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  padding: '2px 6px',
-                                  fontFamily: 'inherit',
-                                }}
-                              >
-                                → Breeding
-                              </button>
-                              <button
-                                onClick={() => deleteEntry(e)}
-                                style={{
-                                  fontSize: 10,
-                                  color: '#b91c1c',
-                                  background: 'none',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  padding: '2px 6px',
-                                  fontFamily: 'inherit',
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }
-                  const cow = animals.find((c) => c.tag === e.tag);
-                  const prior = priors[e.tag];
-                  const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
-                  const priorDays = prior ? daysBetweenDates(prior.date, curDate) : null;
-                  const weightDelta =
-                    prior && Number.isFinite(parseFloat(e.weight)) && Number.isFinite(parseFloat(prior.weight))
-                      ? parseFloat(e.weight) - parseFloat(prior.weight)
-                      : null;
+                  // Pig entries render as cards in this grid; cattle/sheep render
+                  // in the dense table below. isPig already gates this whole block.
+                  const isSent = !!e.sent_to_trip_id;
+                  const isTransferred = !!(e.transferred_to_breeding || /\[transferred_to_breeding/.test(e.note || ''));
+                  const isLocked = isSent || isTransferred;
+                  const pigEntryAdg = pigEntryAdgById[e.id];
+                  const hasPigNote = String(ef.note || '').trim().length > 0;
+                  const showPigNoteInput = hasPigNote || openPigNoteEntryIds.has(e.id);
                   const autosaveState = entryAutosave[e.id];
                   const autosaveTone =
                     autosaveState && autosaveState.status === 'error'
@@ -2236,170 +2010,459 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                   return (
                     <div
                       key={e.id}
-                      data-entry-tag={e.tag || ''}
                       style={{
-                        background: e.send_to_processor ? '#fef2f2' : 'white',
-                        border:
-                          '1px solid ' + (e.send_to_processor ? '#fca5a5' : e.new_tag_flag ? '#fca5a5' : '#e5e7eb'),
+                        background: isSent ? '#ecfdf5' : isTransferred ? '#eef2ff' : 'white',
+                        border: '1px solid ' + (isSent ? '#a7f3d0' : isTransferred ? '#c7d2fe' : '#e5e7eb'),
                         borderRadius: 6,
                         padding: '6px 10px',
                         fontSize: 12,
                       }}
                     >
-                      <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                        <div style={{display: 'flex', gap: 4, alignItems: 'center'}}>
+                      <div style={{display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap'}}>
+                        {!isLocked && session.status === 'draft' && canManagePigPlannedTrips && (
                           <input
-                            type="text"
-                            placeholder="Tag #"
-                            value={ef.tag}
-                            onChange={(ev) => setEntryField(e, 'tag', ev.target.value)}
-                            onBlur={() => flushEntryAutosave(e.id)}
-                            style={{...inp, flex: '0 0 80px', minWidth: 0}}
+                            type="checkbox"
+                            checked={selectedEntryIds.has(e.id)}
+                            onChange={() =>
+                              setSelectedEntryIds((prev) => {
+                                const n = new Set(prev);
+                                if (n.has(e.id)) n.delete(e.id);
+                                else n.add(e.id);
+                                return n;
+                              })
+                            }
                           />
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            placeholder="lb"
-                            value={ef.weight}
-                            onChange={(ev) => setEntryField(e, 'weight', ev.target.value)}
-                            onBlur={() => flushEntryAutosave(e.id)}
-                            style={{...inp, flex: '0 0 70px', minWidth: 0}}
-                          />
-                          <input
-                            type="text"
-                            placeholder="Note"
-                            value={ef.note}
-                            onChange={(ev) => setEntryField(e, 'note', ev.target.value)}
-                            onBlur={() => flushEntryAutosave(e.id)}
-                            style={{...inp, flex: 1, minWidth: 60}}
-                          />
-                        </div>
-                        <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
-                          {prior && (
-                            <span
-                              data-entry-prior={e.id}
-                              style={{
-                                fontSize: 10,
-                                color: '#374151',
-                                background: '#f9fafb',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: 4,
-                                padding: '1px 6px',
-                              }}
-                              title={'Prior weigh-in on ' + fmt(prior.date)}
-                            >
-                              {'Prev ' + Math.round(prior.weight) + ' lb Â· ' + fmt(prior.date)}
-                            </span>
-                          )}
-                          {priorDays != null && (
-                            <span
-                              data-entry-days={e.id}
-                              title={'Days since last weigh-in'}
-                              style={{
-                                fontSize: 10,
-                                color: '#374151',
-                                background: '#f9fafb',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: 4,
-                                padding: '1px 6px',
-                              }}
-                            >
-                              {'Days ' + priorDays}
-                            </span>
-                          )}
-                          {weightDelta != null && (
-                            <span
-                              data-entry-delta={e.id}
-                              title={'Weight change since prior weigh-in'}
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                background: weightDelta >= 0 ? '#ecfdf5' : '#fef2f2',
-                                color: weightDelta >= 0 ? '#065f46' : '#b91c1c',
-                                border: '1px solid ' + (weightDelta >= 0 ? '#a7f3d0' : '#fecaca'),
-                              }}
-                            >
-                              {'+/- ' + formatSignedLbs(weightDelta)}
-                            </span>
-                          )}
-                          {adg != null && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                background: adg >= 0 ? '#ecfdf5' : '#fef2f2',
-                                color: adg >= 0 ? '#065f46' : '#b91c1c',
-                                border: '1px solid ' + (adg >= 0 ? '#a7f3d0' : '#fecaca'),
-                              }}
-                            >
-                              {(adg >= 0 ? '+' : '') + adg.toFixed(2) + ' lb/d'}
-                            </span>
-                          )}
-                          {e.new_tag_flag && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                background: '#fef2f2',
-                                color: '#b91c1c',
-                              }}
-                            >
-                              NEW TAG
-                            </span>
-                          )}
-                          {!e.new_tag_flag && cow && (
-                            <span style={{fontSize: 11, color: '#6b7280'}}>
-                              {groupLabelsMap[cow.herd || cow.flock] || cow.herd || cow.flock}
-                            </span>
-                          )}
-                          <span style={{fontSize: 10, color: '#9ca3af', marginLeft: 'auto'}}>
-                            {(e.entered_at || '').slice(11, 16)}
-                          </span>
-                        </div>
-                        {e.new_tag_flag && (
-                          <select
-                            onChange={(ev) => {
-                              if (ev.target.value) reconcileNewTag(e, ev.target.value);
-                            }}
-                            defaultValue=""
+                        )}
+                        {isLocked ? (
+                          <span style={{fontWeight: 600, color: '#1e40af', flex: 1}}>{e.weight} lb</span>
+                        ) : (
+                          <>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              placeholder="lb"
+                              value={ef.weight}
+                              onChange={(ev) => setPigEntryField(e, 'weight', ev.target.value)}
+                              onBlur={() => flushPigEntryAutosave(e.id)}
+                              style={{...inp, flex: '0 0 80px', minWidth: 0}}
+                            />
+                            {showPigNoteInput ? (
+                              <input
+                                type="text"
+                                placeholder="Note"
+                                value={ef.note}
+                                onChange={(ev) => setPigEntryField(e, 'note', ev.target.value)}
+                                onBlur={() => flushPigEntryAutosave(e.id)}
+                                style={{...inp, flex: '1 1 120px', minWidth: 100}}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                data-pig-entry-add-note={e.id}
+                                onClick={() =>
+                                  setOpenPigNoteEntryIds((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(e.id);
+                                    return next;
+                                  })
+                                }
+                                style={{
+                                  fontSize: 10,
+                                  color: '#6b7280',
+                                  background: 'white',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: 4,
+                                  cursor: 'pointer',
+                                  padding: '3px 7px',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                + Note
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {isSent && (
+                          <span
                             style={{
-                              fontSize: 11,
-                              padding: '3px 6px',
-                              border: '1px solid #d1d5db',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '1px 6px',
                               borderRadius: 4,
-                              fontFamily: 'inherit',
-                              width: '100%',
+                              background: '#d1fae5',
+                              color: '#065f46',
                             }}
                           >
-                            <option value="">Reconcile to known cow...</option>
-                            {animals
-                              .filter((c) => c.tag)
-                              .sort((a, b) => (parseFloat(a.tag) || 0) - (parseFloat(b.tag) || 0))
-                              .map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {'#' + c.tag + ' (' + (c.herd || c.flock || '?') + ')'}
-                                </option>
-                              ))}
-                          </select>
+                            Sent to trip
+                          </span>
                         )}
+                        {isTransferred && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              background: '#eef2ff',
+                              color: '#3730a3',
+                            }}
+                          >
+                            Transferred
+                          </span>
+                        )}
+                      </div>
+                      {isLocked && e.note && <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>{e.note}</div>}
+                      {pigEntryAdg && (
                         <div
+                          data-pig-entry-adg={e.id}
                           style={{
                             display: 'flex',
-                            gap: 4,
-                            justifyContent: 'flex-end',
+                            gap: 6,
                             alignItems: 'center',
                             flexWrap: 'wrap',
+                            marginTop: 4,
+                            fontSize: 10,
                           }}
                         >
-                          {(session.species === 'sheep' || session.herd === 'finishers') &&
-                            session.status === 'draft' && (
+                          <span
+                            data-pig-entry-prior={e.id}
+                            title={'Prior weigh-in on ' + fmt(pigEntryAdg.priorDate)}
+                            style={{
+                              color: '#374151',
+                              background: '#f9fafb',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: 4,
+                              padding: '1px 6px',
+                            }}
+                          >
+                            {'Prev ' + Math.round(pigEntryAdg.priorWeightLbs) + ' lb · ' + fmt(pigEntryAdg.priorDate)}
+                          </span>
+                          <span
+                            data-entry-days={e.id}
+                            data-pig-entry-days={e.id}
+                            title={'Days since last weigh-in'}
+                            style={{
+                              color: '#374151',
+                              background: '#f9fafb',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: 4,
+                              padding: '1px 6px',
+                            }}
+                          >
+                            {'Days ' + pigEntryAdg.daysBetween}
+                          </span>
+                          <span
+                            data-entry-delta={e.id}
+                            data-pig-entry-delta={e.id}
+                            title={'Weight change since prior weigh-in'}
+                            style={{
+                              fontWeight: 700,
+                              color: pigEntryAdg.weightDeltaLbs >= 0 ? '#065f46' : '#b91c1c',
+                              background: pigEntryAdg.weightDeltaLbs >= 0 ? '#ecfdf5' : '#fef2f2',
+                              border: '1px solid ' + (pigEntryAdg.weightDeltaLbs >= 0 ? '#a7f3d0' : '#fecaca'),
+                              borderRadius: 4,
+                              padding: '1px 6px',
+                            }}
+                          >
+                            {'+/- ' + formatSignedLbs(pigEntryAdg.weightDeltaLbs)}
+                          </span>
+                          <span
+                            title={
+                              'rank ' +
+                              pigEntryAdg.rank +
+                              ' vs prior ' +
+                              fmt(pigEntryAdg.priorDate) +
+                              ' at ' +
+                              Math.round(pigEntryAdg.priorWeightLbs) +
+                              ' lb'
+                            }
+                            style={{
+                              fontWeight: 700,
+                              color: pigEntryAdg.adgLbsPerDay >= 0 ? '#065f46' : '#b91c1c',
+                              background: pigEntryAdg.adgLbsPerDay >= 0 ? '#ecfdf5' : '#fef2f2',
+                              border: '1px solid ' + (pigEntryAdg.adgLbsPerDay >= 0 ? '#a7f3d0' : '#fecaca'),
+                              borderRadius: 4,
+                              padding: '1px 6px',
+                            }}
+                          >
+                            {'ADG ' +
+                              (pigEntryAdg.adgLbsPerDay >= 0 ? '+' : '') +
+                              pigEntryAdg.adgLbsPerDay.toFixed(2) +
+                              ' lb/day'}
+                          </span>
+                        </div>
+                      )}
+                      <div
+                        style={{display: 'flex', gap: 4, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap'}}
+                      >
+                        {isSent && canManagePigPlannedTrips && (
+                          <button
+                            onClick={() => undoSendToTrip(e)}
+                            style={{
+                              fontSize: 10,
+                              color: '#b45309',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px 6px',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Undo send
+                          </button>
+                        )}
+                        {isTransferred && (
+                          <button
+                            onClick={() => undoTransferToBreeding(e)}
+                            style={{
+                              fontSize: 10,
+                              color: '#b45309',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px 6px',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            Undo transfer
+                          </button>
+                        )}
+                        {autosaveState && !isLocked && (
+                          <span
+                            data-entry-autosave={e.id}
+                            data-pig-entry-autosave={e.id}
+                            style={{
+                              fontSize: 10,
+                              color: autosaveTone.color,
+                              background: autosaveTone.background,
+                              border: '1px solid ' + autosaveTone.border,
+                              borderRadius: 4,
+                              padding: '1px 6px',
+                            }}
+                          >
+                            {autosaveState.message}
+                          </span>
+                        )}
+                        {!isLocked && (
+                          <>
+                            <button
+                              onClick={() => openTransferModal(e)}
+                              style={{
+                                fontSize: 10,
+                                color: '#3730a3',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              → Breeding
+                            </button>
+                            <button
+                              onClick={() => deleteEntry(e)}
+                              style={{
+                                fontSize: 10,
+                                color: '#b91c1c',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!isPig && sEntries.length > 0 && (
+              <div data-weighin-entry-list="1" style={{overflowX: 'auto', marginBottom: 8}}>
+                <table
+                  style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    fontSize: 12,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <thead>
+                    <tr style={{borderBottom: '1px solid #e5e7eb', textAlign: 'left'}}>
+                      {[
+                        'Tag',
+                        'Weight',
+                        'Note',
+                        'Prior',
+                        'Days',
+                        '+/-',
+                        'ADG',
+                        session.species === 'sheep' ? 'Flock/Status' : 'Herd/Status',
+                        'Time',
+                        '',
+                      ].map((h, i) => (
+                        <th
+                          key={i}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: '#6b7280',
+                            textTransform: 'uppercase',
+                            letterSpacing: 0.4,
+                            padding: '4px 6px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...sEntries].sort(sortEntriesByTagAsc).map((e) => {
+                      const ef = entryEdits[e.id] || entryDraft(e);
+                      const cow = animals.find((c) => c.tag === e.tag);
+                      const prior = priors[e.tag];
+                      const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
+                      const priorDays = prior ? daysBetweenDates(prior.date, curDate) : null;
+                      const weightDelta =
+                        prior && Number.isFinite(parseFloat(e.weight)) && Number.isFinite(parseFloat(prior.weight))
+                          ? parseFloat(e.weight) - parseFloat(prior.weight)
+                          : null;
+                      const autosaveState = entryAutosave[e.id];
+                      const autosaveTone =
+                        autosaveState && autosaveState.status === 'error'
+                          ? {color: '#b91c1c', background: '#fef2f2', border: '#fecaca'}
+                          : autosaveState && autosaveState.status === 'saved'
+                            ? {color: '#065f46', background: '#ecfdf5', border: '#a7f3d0'}
+                            : {color: '#6b7280', background: '#f9fafb', border: '#e5e7eb'};
+                      const showProcessorCol = session.species === 'sheep' || session.herd === 'finishers';
+                      const td = {padding: '4px 6px', verticalAlign: 'top', borderBottom: '1px solid #f3f4f6'};
+                      return (
+                        <tr
+                          key={e.id}
+                          data-entry-tag={e.tag || ''}
+                          style={{background: e.send_to_processor ? '#fef2f2' : e.new_tag_flag ? '#fef2f2' : 'white'}}
+                        >
+                          <td style={td}>
+                            <input
+                              type="text"
+                              placeholder="Tag #"
+                              value={ef.tag}
+                              onChange={(ev) => setEntryField(e, 'tag', ev.target.value)}
+                              onBlur={() => flushEntryAutosave(e.id)}
+                              style={{...inp, width: 64}}
+                            />
+                          </td>
+                          <td style={td}>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              placeholder="lb"
+                              value={ef.weight}
+                              onChange={(ev) => setEntryField(e, 'weight', ev.target.value)}
+                              onBlur={() => flushEntryAutosave(e.id)}
+                              style={{...inp, width: 60}}
+                            />
+                          </td>
+                          <td style={{...td, minWidth: 120}}>
+                            <input
+                              type="text"
+                              placeholder="Note"
+                              value={ef.note}
+                              onChange={(ev) => setEntryField(e, 'note', ev.target.value)}
+                              onBlur={() => flushEntryAutosave(e.id)}
+                              style={{...inp, width: '100%', minWidth: 100}}
+                            />
+                          </td>
+                          <td style={{...td, whiteSpace: 'nowrap'}}>
+                            {prior ? (
+                              <span
+                                data-entry-prior={e.id}
+                                style={{fontSize: 10, color: '#374151'}}
+                                title={'Prior weigh-in on ' + fmt(prior.date)}
+                              >
+                                {'Prev ' + Math.round(prior.weight) + ' lb · ' + fmt(prior.date)}
+                              </span>
+                            ) : (
+                              <span style={{fontSize: 10, color: '#9ca3af'}}>—</span>
+                            )}
+                          </td>
+                          <td style={{...td, whiteSpace: 'nowrap'}}>
+                            {priorDays != null ? (
+                              <span
+                                data-entry-days={e.id}
+                                title={'Days since last weigh-in'}
+                                style={{fontSize: 10, color: '#374151'}}
+                              >
+                                {'Days ' + priorDays}
+                              </span>
+                            ) : (
+                              <span style={{fontSize: 10, color: '#9ca3af'}}>—</span>
+                            )}
+                          </td>
+                          <td style={{...td, whiteSpace: 'nowrap'}}>
+                            {weightDelta != null ? (
+                              <span
+                                data-entry-delta={e.id}
+                                title={'Weight change since prior weigh-in'}
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  background: weightDelta >= 0 ? '#ecfdf5' : '#fef2f2',
+                                  color: weightDelta >= 0 ? '#065f46' : '#b91c1c',
+                                  border: '1px solid ' + (weightDelta >= 0 ? '#a7f3d0' : '#fecaca'),
+                                }}
+                              >
+                                {'+/- ' + formatSignedLbs(weightDelta)}
+                              </span>
+                            ) : (
+                              <span style={{fontSize: 10, color: '#9ca3af'}}>—</span>
+                            )}
+                          </td>
+                          <td style={{...td, whiteSpace: 'nowrap'}}>
+                            {adg != null ? (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  background: adg >= 0 ? '#ecfdf5' : '#fef2f2',
+                                  color: adg >= 0 ? '#065f46' : '#b91c1c',
+                                  border: '1px solid ' + (adg >= 0 ? '#a7f3d0' : '#fecaca'),
+                                }}
+                              >
+                                {(adg >= 0 ? '+' : '') + adg.toFixed(2) + ' lb/d'}
+                              </span>
+                            ) : (
+                              <span style={{fontSize: 10, color: '#9ca3af'}}>—</span>
+                            )}
+                          </td>
+                          <td style={{...td, whiteSpace: 'nowrap'}}>
+                            {e.new_tag_flag ? (
+                              <span
+                                title="Resolve in the reconcile panel below"
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  background: '#fef2f2',
+                                  color: '#b91c1c',
+                                }}
+                              >
+                                NEW TAG
+                              </span>
+                            ) : showProcessorCol && session.status === 'draft' ? (
                               <button
                                 onClick={() => toggleProcessor(e, !e.send_to_processor)}
                                 style={{
@@ -2416,10 +2479,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                               >
                                 {e.send_to_processor ? '✓ Processor' : '→ Processor'}
                               </button>
-                            )}
-                          {(session.species === 'sheep' || session.herd === 'finishers') &&
-                            session.status !== 'draft' &&
-                            e.send_to_processor && (
+                            ) : showProcessorCol && session.status !== 'draft' && e.send_to_processor ? (
                               <span
                                 style={{
                                   fontSize: 10,
@@ -2432,41 +2492,137 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                               >
                                 ✓ Processor
                               </span>
+                            ) : cow ? (
+                              <span style={{fontSize: 11, color: '#6b7280'}}>
+                                {groupLabelsMap[cow.herd || cow.flock] || cow.herd || cow.flock}
+                              </span>
+                            ) : (
+                              <span style={{fontSize: 10, color: '#9ca3af'}}>—</span>
                             )}
-                          {autosaveState && (
-                            <span
-                              data-entry-autosave={e.id}
+                          </td>
+                          <td style={{...td, whiteSpace: 'nowrap'}}>
+                            <span style={{fontSize: 10, color: '#9ca3af'}}>{(e.entered_at || '').slice(11, 16)}</span>
+                          </td>
+                          <td style={{...td, whiteSpace: 'nowrap', textAlign: 'right'}}>
+                            <div
                               style={{
-                                fontSize: 10,
-                                color: autosaveTone.color,
-                                background: autosaveTone.background,
-                                border: '1px solid ' + autosaveTone.border,
-                                borderRadius: 4,
-                                padding: '1px 6px',
+                                display: 'flex',
+                                gap: 4,
+                                justifyContent: 'flex-end',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
                               }}
                             >
-                              {autosaveState.message}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => deleteEntry(e)}
-                            style={{
-                              fontSize: 10,
-                              color: '#b91c1c',
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: '2px 6px',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
+                              {autosaveState && (
+                                <span
+                                  data-entry-autosave={e.id}
+                                  style={{
+                                    fontSize: 10,
+                                    color: autosaveTone.color,
+                                    background: autosaveTone.background,
+                                    border: '1px solid ' + autosaveTone.border,
+                                    borderRadius: 4,
+                                    padding: '1px 6px',
+                                  }}
+                                >
+                                  {autosaveState.message}
+                                </span>
+                              )}
+                              <button
+                                onClick={() => deleteEntry(e)}
+                                style={{
+                                  fontSize: 10,
+                                  color: '#b91c1c',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '2px 6px',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {!isPig && pendingReconciles.length > 0 && (
+              <div
+                data-weighin-reconcile-panel="1"
+                style={{
+                  marginTop: 8,
+                  marginBottom: 8,
+                  border: '2px solid #f59e0b',
+                  background: '#fffbeb',
+                  borderRadius: 6,
+                  padding: '8px 10px',
+                }}
+              >
+                <div style={{fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4}}>
+                  {'⚠️ ' +
+                    pendingReconciles.length +
+                    ' ' +
+                    (pendingReconciles.length === 1 ? 'missing tag' : 'missing tags') +
+                    ' to reconcile'}
+                </div>
+                <div style={{fontSize: 11, color: '#92400e', marginBottom: 8}}>
+                  Pick which {session.species === 'sheep' ? 'sheep' : 'cow'} each new tag belongs to. Pool narrows as
+                  more animals get weighed.
+                </div>
+                {pendingReconciles.map((e) => (
+                  <div
+                    key={e.id}
+                    style={{
+                      padding: '6px 8px',
+                      background: 'white',
+                      border: '1px solid #fde68a',
+                      borderRadius: 6,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <div style={{fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 4}}>
+                      {'New tag #' + (e.tag || '?') + ' · ' + e.weight + ' lb'}
+                      {e.note ? (
+                        <span style={{fontWeight: 400, color: '#6b7280', fontStyle: 'italic'}}>{' · ' + e.note}</span>
+                      ) : null}
                     </div>
-                  );
-                })}
+                    <select
+                      data-weighin-reconcile-select={e.id}
+                      onChange={(ev) => {
+                        if (ev.target.value) reconcileNewTag(e, ev.target.value);
+                      }}
+                      defaultValue=""
+                      style={{
+                        fontSize: 12,
+                        padding: '4px 8px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: 4,
+                        fontFamily: 'inherit',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <option value="">{'Reconcile to known cow... (' + remainingCows.length + ' remaining)'}</option>
+                      {remainingCows.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {'#' +
+                            c.tag +
+                            ' (' +
+                            (c[animalGroupField] || '?') +
+                            ')' +
+                            (c.sex ? ' · ' + c.sex : '') +
+                            (c.breed ? ' · ' + c.breed : '')}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -2486,6 +2642,26 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
               <span style={{fontSize: 11, fontWeight: 600, color: '#1e40af'}}>+ Add entry:</span>
               {!isPig && (
                 <>
+                  {/* Main workflow: herd-scoped diminishing picker of cows not yet
+                      weighed this session. Picking a tag fills the free-text Tag #
+                      field below (so swap/new-tag escape hatches keep working). */}
+                  {!addForm.priorTag && (
+                    <select
+                      data-weighin-remaining-picker="1"
+                      value=""
+                      onChange={(ev) => {
+                        if (ev.target.value) setAddForm((f) => ({...f, tag: ev.target.value}));
+                      }}
+                      style={{...inp, width: 170}}
+                    >
+                      <option value="">{'Pick tag... (' + remainingTags.length + ' remaining)'}</option>
+                      {remainingCows.map((c) => (
+                        <option key={c.id} value={c.tag}>
+                          {'#' + c.tag + (c.sex ? ' · ' + c.sex : '')}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <input
                     type="text"
                     placeholder="Prior tag (swap)"

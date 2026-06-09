@@ -371,6 +371,31 @@ export async function upsertRecurringTaskTemplate(sb, payload) {
 }
 
 /**
+ * Create a recurring template from the Task Center New Task modal for a
+ * NON-ADMIN authenticated user. task_templates RLS is admin-only, so a
+ * direct write (upsertRecurringTaskTemplate above) only works for admins.
+ * This routes through the create_recurring_task_template SECURITY DEFINER
+ * RPC (mig 105), which role-gates to non-light/non-inactive callers and
+ * server-stamps created_by_profile_id from auth.uid(). Admin and non-admin
+ * both use this path from New Task; the admin RecurringTemplateModal keeps
+ * the direct upsert/update/delete wrappers for full template management.
+ *
+ * Caller mints the id (idempotent on retry; the RPC ON CONFLICT DO NOTHING
+ * returns the existing template id). The RPC ignores any created_by in the
+ * payload — owner identity is the authenticated caller only.
+ */
+export async function createRecurringTaskTemplateV2(sb, template) {
+  if (!template || !template.id) {
+    throw new Error('createRecurringTaskTemplateV2: id required');
+  }
+  const {data, error} = await sb.rpc('create_recurring_task_template', {p_template: template});
+  if (error) {
+    throw new Error(`createRecurringTaskTemplateV2: ${error.message || String(error)}`);
+  }
+  return data;
+}
+
+/**
  * Update specific columns on an existing recurring template. Filter to
  * the same whitelist as upsert (minus id/created_by). Used by the Edit
  * modal so we don't accidentally clobber the original creator id.

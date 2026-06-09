@@ -457,6 +457,47 @@
   color: var(--ok-ink);
 }
 
+/* grouped equipment-attention items: one row per due item, each tagged with a
+   visually-distinct type chip (Service / Checklist / Warranty) so multiple due
+   items on the same piece read as a typed list, not duplicate alerts. */
+.home .litem-types {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.home .litem-type-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.home .litem-type-row .litem-meta {
+  margin-top: 0;
+  min-width: 0;
+}
+.home .type-chip {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.home .type-service {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.home .type-checklist {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+.home .type-warranty {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
 /* feed rows (Next 30 Days) */
 .home .fd-date {
   font-size: 12px;

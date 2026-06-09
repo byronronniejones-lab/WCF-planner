@@ -175,6 +175,20 @@ describe('Public Tasks admin assignee tile', () => {
     expect(adminSrc).toMatch(/data-availability-assignee-id=/);
   });
 
+  // Lane 15 Item 1: the assignee checkbox list is an aligned CSS grid, not
+  // the legacy flex-wrapped inline row. Lock the grid container (display:
+  // grid + auto-fill columns) AND assert the old flex-wrap container style
+  // is gone so a refactor can't silently revert to the cramped inline row.
+  it('assignee checkbox list renders an aligned CSS grid (not a flex-wrap row)', () => {
+    // The grid container is tagged so the shape is greppable.
+    expect(adminSrc).toMatch(/data-availability-assignee-grid="tasks-public"/);
+    // The container style declares a grid with auto-fill columns.
+    expect(adminSrc).toMatch(/display:\s*'grid'/);
+    expect(adminSrc).toMatch(/gridTemplateColumns:\s*'repeat\(auto-fill,\s*minmax\([^)]*\)\s*\)'/);
+    // The legacy flex-wrap container around the checkbox list is gone.
+    expect(adminSrc).not.toMatch(/display:\s*'flex',\s*flexWrap:\s*'wrap',\s*gap:\s*4\}/);
+  });
+
   it('admin tile uses savePublicAssigneeAvailability for assignee writes (not the roster path)', () => {
     expect(adminSrc).toMatch(/savePublicAssigneeAvailability/);
     // The two storage layers MUST be separate — no roster call inside the

@@ -306,6 +306,13 @@ export function buildMissedDailyReports({
   return allMissed.sort((a, b) => b.date.localeCompare(a.date));
 }
 
+// Per-item ordering within a single equipment's grouped notice: overdue
+// service intervals first, then every-fillup checklist streaks, then warranty.
+// The `type` field on each item (service / checklist / warranty) is the
+// operator-facing, visually-distinct category — set inline below — so a 50-hour
+// checklist streak never reads like a duplicate of a service-interval alert.
+const ATTENTION_KIND_ORDER = {overdue: 0, fillup_streak: 1, warranty: 2};
+
 export function buildEquipmentAttention({equipment, equipmentFuelings, equipmentCompletions, missedCleared} = {}) {
   const cleared = asClearedSet(missedCleared);
   const equipmentAttention = [];
@@ -316,17 +323,22 @@ export function buildEquipmentAttention({equipment, equipmentFuelings, equipment
     const intervals = Array.isArray(eq.service_intervals) ? eq.service_intervals : [];
     const completions = (equipmentCompletions || {})[eq.id] || [];
 
+    // All attention items for THIS equipment accumulate here, then collapse into
+    // a single grouped notice below so the same piece never emits multiple
+    // duplicate-looking rows on the home dashboard / light portal.
+    const items = [];
+
     if (Number.isFinite(currentReading) && currentReading > 0 && intervals.length > 0) {
       const statuses = computeIntervalStatus(intervals, completions, currentReading);
       const overdue = statuses.filter((s) => s.overdue).sort((a, b) => a.hours_or_km - b.hours_or_km);
       for (const s of overdue) {
         const over = currentReading - s.next_due;
         const intervalLbl = s.label || s.hours_or_km + unitLabel + ' service';
-        equipmentAttention.push({
+        items.push({
           key: `equip-overdue-${eq.id}|${s.kind}|${s.hours_or_km}`,
           kind: 'overdue',
-          slug: eq.slug,
-          label: eq.name,
+          type: 'service',
+          typeLabel: 'Service',
           // detail stays the FULL string so single-text consumers (e.g.
           // LightHomePortal) keep the overdue quantity. HomeDashboard shows
           // metaLabel (service only) + the quantity in a pastel pill badge.
@@ -358,11 +370,15 @@ export function buildEquipmentAttention({equipment, equipmentFuelings, equipment
           .map((i) => i.label)
           .join(', ');
         const more = itemsWithStreak.length > 2 ? ` +${itemsWithStreak.length - 2} more` : '';
-        equipmentAttention.push({
+        items.push({
           key: `equip-fillup-${eq.id}|streak${maxStreak}|n${itemsWithStreak.length}`,
           kind: 'fillup_streak',
-          slug: eq.slug,
-          label: eq.name,
+          type: 'checklist',
+          typeLabel: 'Checklist',
+          // No metaLabel: checklist items fall back to the FULL detail on the
+          // home dashboard (HomeDashboard renders it.metaLabel || it.detail), so
+          // the max-streak count + sampled item labels stay visible. Only the
+          // overdue-service item carries a truncated metaLabel (quantity -> pill).
           detail: `${itemsWithStreak.length} fillup item${itemsWithStreak.length === 1 ? '' : 's'} skipped (${maxStreak}× max streak): ${sample}${more}`,
           pill: `${itemsWithStreak.length} skipped`,
         });
@@ -378,21 +394,46 @@ export function buildEquipmentAttention({equipment, equipmentFuelings, equipment
         else detail = `Warranty expires in ${-d} day${-d === 1 ? '' : 's'}`;
         const key = `equip-warranty-${eq.id}|${eq.warranty_expiration}`;
         if (!cleared.has(key)) {
-          equipmentAttention.push({
+          items.push({
             key,
             kind: 'warranty',
-            slug: eq.slug,
-            label: eq.name,
+            type: 'warranty',
+            typeLabel: 'Warranty',
             detail,
+            metaLabel: detail,
           });
         }
       }
     }
+
+    if (items.length === 0) return;
+
+    // Order items within the notice (service → checklist → warranty) and collapse
+    // them into ONE grouped notice for this equipment. The primary (first) item
+    // drives the notice-level kind/metaLabel/pill that HomeDashboard's LED color +
+    // pastel badge already read; the notice `detail` joins every item's full text
+    // so single-text consumers (LightHomePortal) still surface all due items with
+    // their overdue quantities. `clearableKey` is the warranty item's key when
+    // the ONLY attention on this piece is the (manually clearable) warranty.
+    items.sort((a, b) => (ATTENTION_KIND_ORDER[a.kind] ?? 9) - (ATTENTION_KIND_ORDER[b.kind] ?? 9));
+    const primary = items[0];
+    const warrantyOnly = items.length === 1 && primary.kind === 'warranty';
+    equipmentAttention.push({
+      key: `equip-attention-${eq.id}`,
+      slug: eq.slug,
+      label: eq.name,
+      kind: primary.kind,
+      type: primary.type,
+      detail: items.map((i) => i.detail).join(' · '),
+      metaLabel: primary.metaLabel,
+      pill: primary.pill,
+      items,
+      clearableKey: warrantyOnly ? primary.key : null,
+    });
   });
 
-  const kindOrder = {overdue: 0, fillup_streak: 1, warranty: 2};
   return equipmentAttention.sort((a, b) => {
-    const ko = (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9);
+    const ko = (ATTENTION_KIND_ORDER[a.kind] ?? 9) - (ATTENTION_KIND_ORDER[b.kind] ?? 9);
     if (ko !== 0) return ko;
     return a.label.localeCompare(b.label);
   });

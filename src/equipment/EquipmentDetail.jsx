@@ -6,7 +6,7 @@
 //   5. Maintenance events (+ Add modal with photo upload)
 //   6. Warranty expiration flag when < 60 days out
 import React from 'react';
-import {useLocation} from 'react-router-dom';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {
   EQUIPMENT_COLOR,
   WARRANTY_WINDOW_DAYS,
@@ -28,6 +28,7 @@ import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx
 import {RecordPageBody, RecordTitle} from '../shared/RecordPageShell.jsx';
 import {LockedTeamMemberField, recordControl, recordTextarea} from '../shared/recordPageControls.jsx';
 import {runMutation, recordStatusChange} from '../lib/entityMutations.js';
+import {fleetFuelingEntryPath, fleetChecklistEntryPath} from '../lib/routes.js';
 import {deleteEquipmentFueling, deleteEquipmentMaintenanceEvent} from '../lib/equipmentLogDeleteApi.js';
 import {imageAltText} from '../lib/imageAlt.js';
 
@@ -43,6 +44,7 @@ export default function EquipmentDetail({
 }) {
   const eq = equipment;
   const location = useLocation();
+  const navigate = useNavigate();
   const reading = eq.tracking_unit === 'km' ? eq.current_km : eq.current_hours;
   const readingLabel = eq.tracking_unit === 'km' ? 'KM' : 'Hours';
   const [expandedFueling, setExpandedFueling] = React.useState(null);
@@ -768,6 +770,29 @@ export default function EquipmentDetail({
                         </span>
                       )}
                       {!noteText && chips.length === 0 && photoCount === 0 && <span>—</span>}
+                      {/* Open the standalone read-only fueling entry record page
+                          (/fleet/fueling/<id>). Stops row-toggle propagation so
+                          the inline-edit expander stays an independent action. */}
+                      <a
+                        href={fleetFuelingEntryPath(f.id)}
+                        data-equipment-fueling-row-link={f.id}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          navigate(fleetFuelingEntryPath(f.id));
+                        }}
+                        title="Open fueling entry"
+                        style={{
+                          marginLeft: 'auto',
+                          flexShrink: 0,
+                          fontSize: 11,
+                          color: '#1d4ed8',
+                          textDecoration: 'none',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Open ↗
+                      </a>
                     </div>
                   </div>
                   {isExp && (
@@ -1190,6 +1215,25 @@ export default function EquipmentDetail({
                     )}
                     {m.team_member && <span style={{fontSize: 11, color: '#9ca3af'}}>· {m.team_member}</span>}
                     <div style={{marginLeft: 'auto', display: 'flex', gap: 6}}>
+                      {/* Open the standalone read-only checklist/service entry
+                          record page (/fleet/checklist/<id>). */}
+                      <a
+                        href={fleetChecklistEntryPath(m.id)}
+                        data-equipment-checklist-row-link={m.id}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigate(fleetChecklistEntryPath(m.id));
+                        }}
+                        title="Open service entry"
+                        style={{
+                          fontSize: 11,
+                          color: '#1d4ed8',
+                          textDecoration: 'none',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Open ↗
+                      </a>
                       <button
                         onClick={() => {
                           setEditingMaintenance(m);

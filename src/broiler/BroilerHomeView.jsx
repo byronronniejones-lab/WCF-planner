@@ -7,6 +7,7 @@
 // an App method.
 // ============================================================================
 import React from 'react';
+import {useNavigate} from 'react-router-dom';
 import {sb} from '../lib/supabase.js';
 import {fmt, fmtS, todayISO} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
@@ -24,11 +25,19 @@ import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 
 export default function BroilerHomeView({Header, loadUsers}) {
+  const navigate = useNavigate();
   const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
   const {batches} = useBatches();
   const {broilerDailys} = useDailysRecent();
   const {setView} = useUI();
   const todayStr = todayISO();
+
+  // Active batch tiles open the broiler batch record page. Mirrors the
+  // canonical navigation used by BroilerListView/BroilerTimelineView:
+  // /broiler/batches/<encodeURIComponent(name)>.
+  function openBroilerBatch(b) {
+    if (b && b.name) navigate('/broiler/batches/' + encodeURIComponent(b.name));
+  }
   const broilerOnFarmCounts = computeBroilerOnFarmCounts(batches, broilerDailys);
   const activeBr = broilerOnFarmCounts.activeBatches;
   // Ignore batches before 2025 for all dashboard metrics
@@ -199,11 +208,12 @@ export default function BroilerHomeView({Header, loadUsers}) {
   const feedCostPct = totalAllCost > 0 ? Math.round((totalFeedCost / totalAllCost) * 100) : null;
   const totalProc = finBr.reduce((s, b) => s + (b.totalToProcessor || 0), 0);
 
-  // Lbs produced trend — last 10 processed batches, sorted oldest to newest
+  // Lbs produced trend — last 9 processed batches, sorted oldest to newest
+  // (oldest-left -> newest-right). procBr is already processed-only.
   const lbsTrend = [...procBr]
     .filter((b) => b.processingDate)
     .sort((a, b) => a.processingDate.localeCompare(b.processingDate))
-    .slice(-10)
+    .slice(-9)
     .map((b) => ({
       name: b.name,
       date: b.processingDate,
@@ -313,20 +323,14 @@ export default function BroilerHomeView({Header, loadUsers}) {
             val={broilerOnFarmCounts.onFarmBirds.toLocaleString()}
             color="#085041"
             sub={
-              broilerOnFarmCounts.startedBirds > 0
-                ? broilerOnFarmCounts.startedBirds.toLocaleString() + ' started'
-                : ''
+              broilerOnFarmCounts.startedBirds > 0 ? broilerOnFarmCounts.startedBirds.toLocaleString() + ' started' : ''
             }
           />
           <StatTile
             label="Birds Started"
             val={broilerOnFarmCounts.startedBirds.toLocaleString()}
             color="#a16207"
-            sub={
-              broilerOnFarmCounts.mortality > 0
-                ? broilerOnFarmCounts.mortality.toLocaleString() + ' mortality'
-                : ''
-            }
+            sub={broilerOnFarmCounts.mortality > 0 ? broilerOnFarmCounts.mortality.toLocaleString() + ' mortality' : ''}
           />
           {(function () {
             var yrBirds = procBrThisYear.reduce(function (s, b) {
@@ -373,7 +377,7 @@ export default function BroilerHomeView({Header, loadUsers}) {
                 ({b, inBrooder, daysToProc, daysActive, feedSoFar, mortSoFar, mortPct, phaseLabel, B2}) => (
                   <div
                     key={b.id}
-                    onClick={() => setView('list')}
+                    onClick={() => openBroilerBatch(b)}
                     style={{
                       background: 'white',
                       border: '1px solid #e5e7eb',

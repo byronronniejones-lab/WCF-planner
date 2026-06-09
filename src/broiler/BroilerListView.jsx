@@ -387,6 +387,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                       {[
                         'Batch',
                         'Breed',
+                        'Hatchery',
                         'Time on Farm',
                         'Schooner',
                         'Birds Arrived',
@@ -503,6 +504,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                               <span style={{color: '#9ca3af'}}>—</span>
                             )}
                           </td>
+                          {cell(b.hatchery || null)}
                           {cell(timeOnFarm)}
                           <td style={{padding: '7px 10px'}}>
                             {sch ? (

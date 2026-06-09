@@ -104,6 +104,29 @@ export const VIEW_TO_PATH = {
   fuelSupply: '/fuel-supply',
 };
 
+// Per-entry record pages under the /fleet/* world. Like the Fuel Log and
+// per-piece detail sub-routes, EquipmentHome owns these internally — main.jsx
+// routes any /fleet/<sub> path to view='equipmentHome' (see PATH_TO_VIEW note
+// above), so they are intentionally NOT registered in VIEW_TO_PATH. Adding a
+// param path like /fleet/fueling/:id there would break the VIEW_TO_PATH ↔
+// PATH_TO_VIEW round-trip (param templates can't round-trip a literal path) and
+// snap the user home. They live here as the single source of truth for the
+// canonical path shapes so views never hardcode the prefix in more than one
+// place. EquipmentHome dispatches /fleet/fueling/<id> → fueling-entry and
+// /fleet/checklist/<id> → checklist-entry sub-views.
+export const FLEET_ENTRY_ROUTES = {
+  fuelingEntry: '/fleet/fueling/:id',
+  checklistEntry: '/fleet/checklist/:id',
+};
+
+// Build the concrete path for a single fueling / checklist entry record page.
+export function fleetFuelingEntryPath(id) {
+  return '/fleet/fueling/' + id;
+}
+export function fleetChecklistEntryPath(id) {
+  return '/fleet/checklist/' + id;
+}
+
 // Reverse map: path → view. Used by the URL sync adapter on mount and on
 // popstate to figure out what view the URL currently points at.
 export const PATH_TO_VIEW = Object.fromEntries(Object.entries(VIEW_TO_PATH).map(([v, p]) => [p, v]));

@@ -81,13 +81,21 @@ function TeamAvailabilityEditor({loadUsers}) {
     marginBottom: 16,
   };
   const rowStyle = {
-    display: 'inline-flex',
+    display: 'flex',
     alignItems: 'center',
     gap: 6,
     padding: '4px 8px',
     fontSize: 12,
     color: '#374151',
     cursor: 'pointer',
+  };
+  // Aligned CSS grid: rows/columns auto-fill so the list reads cleanly on
+  // desktop and collapses to a single column on narrow/mobile widths.
+  const assigneeGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+    gap: 4,
+    alignItems: 'center',
   };
 
   const hiddenAssigneeIds = new Set(publicAssigneeAv.hiddenProfileIds || []);
@@ -111,7 +119,7 @@ function TeamAvailabilityEditor({loadUsers}) {
         Active planner users are included by default. Uncheck to hide a user from the public Tasks Assign-to dropdown.
       </div>
       <div style={{fontSize: 11, color: '#6b7280', marginBottom: 6, fontWeight: 600}}>Assignee (planner users)</div>
-      <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
+      <div data-availability-assignee-grid="tasks-public" style={assigneeGridStyle}>
         {eligibleProfiles.length === 0 ? (
           <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No eligible planner users yet.</span>
         ) : (

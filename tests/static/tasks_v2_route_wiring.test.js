@@ -613,6 +613,81 @@ describe('Tasks v2 T6 — create_one_time_task_instance wrapper contract', () =>
   });
 });
 
+// ============================================================================
+// Lane 15 — NewTaskModal One-time / Recurring toggle.
+// ----------------------------------------------------------------------------
+// The Task Center create modal gained a One-time / Recurring toggle. The
+// recurring branch writes a task_templates row through the SECDEF RPC wrapper
+// createRecurringTaskTemplateV2 (-> create_recurring_task_template, mig 105;
+// cron generates the instances). task_templates RLS is admin-only, so the RPC
+// is the approved server path that lets non-light authenticated roles create a
+// recurring template without hitting an RLS write failure. Locks:
+//   * The toggle exists and is gated so Light users cannot create
+//     recurring tasks — the role check (authState.role === 'light')
+//     guards rendering, fail closed (UI gate; the RPC re-checks server-side).
+//   * The recurring path calls the createRecurringTaskTemplateV2 wrapper, NOT
+//     the admin-only direct upsert and NOT generate_system_task_instance.
+//   * The modal itself never calls sb.rpc( directly — the rpc lives in the
+//     wrapper (tasks-writes-via-wrappers contract).
+//   * RECURRENCE_OPTIONS is imported from tasks.js (no hard-coded subset),
+//     matching RecurringTemplateModal.
+// ============================================================================
+describe('Lane 15 — NewTaskModal one-time / recurring toggle', () => {
+  it('renders a One-time / Recurring toggle gated behind a Light-user role check', () => {
+    // The toggle container is tagged, and the per-mode buttons stamp the
+    // mode key (data-new-task-mode={opt.key}) so the rendered DOM exposes
+    // a stable hook for each mode.
+    expect(newTaskModal).toMatch(/data-new-task-mode-toggle="1"/);
+    expect(newTaskModal).toMatch(/data-new-task-mode=\{opt\.key\}/);
+    // Both modes exist as option keys driving the toggle.
+    expect(newTaskModal).toMatch(/key:\s*'once'/);
+    expect(newTaskModal).toMatch(/key:\s*'recurring'/);
+    // Light users are detected the canonical way and the toggle is hidden
+    // for them (fail closed). The role check must reference 'light'.
+    expect(newTaskModal).toMatch(/authState\?\.role\s*===\s*'light'/);
+    // The toggle render is gated by the non-light flag.
+    expect(newTaskModal).toMatch(/\{!isLight\s*&&\s*\(/);
+  });
+
+  it('Light users cannot enter the recurring path (isRecurring forced false when light)', () => {
+    // isRecurring must AND-in the non-light guard so a Light role can
+    // never reach the template-write branch even if taskMode were poked.
+    expect(newTaskModal).toMatch(/const\s+isRecurring\s*=\s*!isLight\s*&&\s*taskMode\s*===\s*'recurring'/);
+  });
+
+  it('recurring path uses the createRecurringTaskTemplateV2 wrapper (SECDEF RPC), not the admin-only direct upsert', () => {
+    // The recurring branch calls the SECDEF-RPC wrapper and imports it from
+    // the mutations module. It must NOT use the admin-only direct
+    // upsertRecurringTaskTemplate (which would RLS-fail for non-admins).
+    expect(newTaskModal).toMatch(/createRecurringTaskTemplateV2\s*\(/);
+    expect(newTaskModal).toMatch(
+      /import\s*\{[\s\S]*?createRecurringTaskTemplateV2[\s\S]*?\}\s*from\s*['"]\.\.\/lib\/tasksCenterMutationsApi\.js['"]/,
+    );
+    expect(newTaskModal).not.toMatch(/upsertRecurringTaskTemplate/);
+  });
+
+  it('recurring path never calls generate_system_task_instance or sb.rpc directly', () => {
+    expect(newTaskModal).not.toMatch(/generate_system_task_instance/);
+    // No direct sb.rpc( call in the modal — it goes through the one-time
+    // wrapper (createOneTimeTaskInstanceV2) and the recurring wrapper
+    // (createRecurringTaskTemplateV2, which owns the sb.rpc call). Frontend
+    // must never mint recurring instances directly.
+    expect(newTaskModal).not.toMatch(/sb\.rpc\(/);
+  });
+
+  it('recurrence dropdown derives from RECURRENCE_OPTIONS (no hard-coded subset)', () => {
+    expect(newTaskModal).toMatch(/import\s*\{\s*RECURRENCE_OPTIONS\s*\}\s*from\s*['"]\.\.\/lib\/tasks\.js['"]/);
+    expect(newTaskModal).toMatch(/RECURRENCE_OPTIONS\.map\(/);
+  });
+
+  it('recurring branch writes recurrence + recurrence_interval + first_due_date (template shape)', () => {
+    // The recurring save payload mirrors the task_templates column names
+    // used by RecurringTemplateModal.
+    expect(newTaskModal).toMatch(/recurrence_interval\s*:/);
+    expect(newTaskModal).toMatch(/first_due_date\s*:/);
+  });
+});
+
 describe('Tasks v2 T7 — complete_task_instance wrapper contract', () => {
   it('completeTaskInstanceV2 calls complete_task_instance with v2 named args (note + paths array)', () => {
     expect(tasksCenterMutationsApi).toMatch(/export\s+async\s+function\s+completeTaskInstanceV2/);

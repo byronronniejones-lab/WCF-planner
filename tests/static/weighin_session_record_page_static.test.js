@@ -17,14 +17,15 @@ const sheepCacheSrc = fs.readFileSync(path.join(ROOT, 'src/lib/sheepCache.js'), 
 const csvExport = fs.readFileSync(path.join(ROOT, 'src/lib/csvExport.js'), 'utf8');
 const printExport = fs.readFileSync(path.join(ROOT, 'src/lib/printExport.js'), 'utf8');
 const savedViewsApi = fs.readFileSync(path.join(ROOT, 'src/lib/savedViewsApi.js'), 'utf8');
-const pigEntryBranchStart = pageSrc.indexOf('if (isPig) {');
-const pigEntryBranchEnd = pageSrc.indexOf('const cow = animals.find', pigEntryBranchStart);
-const pigEntryBranch = pageSrc.slice(pigEntryBranchStart, pigEntryBranchEnd);
-const cattleSheepEntryBranchStart = pageSrc.indexOf('const cow = animals.find', pigEntryBranchEnd);
-const cattleSheepEntryBranchEnd = pageSrc.indexOf(
-  '<span style={{fontSize: 11, fontWeight: 600',
-  cattleSheepEntryBranchStart,
-);
+// Cattle/sheep entries now render as a dense table (Lane 18); pig entries keep
+// the card grid. The two render branches are guarded by stable conditions used
+// as slice anchors. Pig branch: from the pig grid guard to the cattle/sheep
+// table guard. Cattle/sheep branch: from the table guard to the reconcile-panel
+// guard (the table itself, excluding the Add-entry form + reconcile panel).
+const pigEntryBranchStart = pageSrc.indexOf('{isPig && sEntries.length > 0 && (');
+const cattleSheepEntryBranchStart = pageSrc.indexOf('{!isPig && sEntries.length > 0 && (');
+const cattleSheepEntryBranchEnd = pageSrc.indexOf('{!isPig && pendingReconciles.length > 0 && (');
+const pigEntryBranch = pageSrc.slice(pigEntryBranchStart, cattleSheepEntryBranchStart);
 const cattleSheepEntryBranch = pageSrc.slice(cattleSheepEntryBranchStart, cattleSheepEntryBranchEnd);
 const entryAutosaveStart = pageSrc.indexOf('async function saveEntryDraft');
 const entryAutosaveEnd = pageSrc.indexOf('function isEntryLocked', entryAutosaveStart);
@@ -311,6 +312,9 @@ describe('WeighInSessionPage — cattle entry operations', () => {
     expect(cattleSheepEntryBranch).toContain('data-entry-delta');
     expect(cattleSheepEntryBranch).toContain('daysBetweenDates');
     expect(cattleSheepEntryBranch).toContain("'+/- ' + formatSignedLbs");
+    // The dense-table days cell must keep the 'Days ' text prefix the e2e
+    // floor asserts (weighin_session_record_pages.spec.js: 'Days 27').
+    expect(cattleSheepEntryBranch).toContain("'Days ' + priorDays");
   });
   it('has delete-entry', () => {
     expect(pageSrc).toContain('deleteEntry');
@@ -338,6 +342,85 @@ describe('WeighInSessionPage — cattle entry operations', () => {
   it('has tag-swap retag flow', () => {
     expect(pageSrc).toContain('priorTag');
     expect(pageSrc).toContain('Swap + Add');
+  });
+});
+
+describe('WeighInSessionPage — cattle weigh-in entry parity (Lane 18)', () => {
+  it('renders cattle/sheep entries as a dense table, not a card grid', () => {
+    // The card-grid wrapper is now pig-only; cattle/sheep use a <table> with a
+    // stable list marker.
+    expect(cattleSheepEntryBranch).toContain('data-weighin-entry-list="1"');
+    expect(cattleSheepEntryBranch).toContain('<table');
+    expect(cattleSheepEntryBranch).toContain('<thead>');
+    expect(cattleSheepEntryBranch).toContain('<tbody>');
+    expect(cattleSheepEntryBranch).toContain('<tr');
+    // No card-grid auto-fill template inside the cattle/sheep branch anymore.
+    expect(cattleSheepEntryBranch).not.toContain('minmax(260px, 1fr)');
+  });
+  it('sorts the cattle/sheep table ascending by numeric tag', () => {
+    expect(cattleSheepEntryBranch).toContain('[...sEntries].sort(sortEntriesByTagAsc)');
+  });
+  it('keeps the per-row autosave handlers wired identically in the table cells', () => {
+    expect(cattleSheepEntryBranch).toContain("setEntryField(e, 'tag', ev.target.value)");
+    expect(cattleSheepEntryBranch).toContain("setEntryField(e, 'weight', ev.target.value)");
+    expect(cattleSheepEntryBranch).toContain("setEntryField(e, 'note', ev.target.value)");
+    expect(cattleSheepEntryBranch).toContain('flushEntryAutosave(e.id)');
+    expect(cattleSheepEntryBranch).toContain('data-entry-autosave={e.id}');
+    expect(cattleSheepEntryBranch).toContain('deleteEntry(e)');
+    // Reconciliation is driven from the dedicated panel (below the table), not
+    // an in-row select.
+    expect(pageSrc).toContain('reconcileNewTag(e, ev.target.value)');
+  });
+  it('still uses autosave (no explicit per-row Save/Submit) for cattle/sheep entries — save-model guard', () => {
+    expect(pageSrc).toContain('scheduleEntryAutosave');
+    expect(pageSrc).toContain('flushEntryAutosave');
+    expect(pageSrc).toContain('saveEntryDraft');
+    expect(pageSrc).toContain('WEIGHIN_ENTRY_AUTOSAVE_DELAY_MS = 700');
+    expect(cattleSheepEntryBranch).not.toMatch(/>\s*Save\s*</);
+    expect(cattleSheepEntryBranch).not.toMatch(/>\s*Submit\s*</);
+  });
+  it('computes herd-scoped remaining pools (not all cattle)', () => {
+    // Scope to the session herd/flock, minus tags already weighed this session.
+    expect(pageSrc).toContain('const animalGroupField');
+    expect(pageSrc).toContain('const weighedTagSet');
+    expect(pageSrc).toContain('const herdCows');
+    expect(pageSrc).toMatch(/herdCows\s*=[\s\S]*?\(c\[animalGroupField\] \|\| null\) === \(session\.herd \|\| null\)/);
+    expect(pageSrc).toContain('const remainingCows = herdCows.filter((c) => !weighedTagSet.has(c.tag))');
+    expect(pageSrc).toContain('const remainingTags = remainingCows.map((c) => c.tag)');
+  });
+  it('main add-entry workflow offers a herd-scoped diminishing picker of remaining cows', () => {
+    expect(pageSrc).toContain('data-weighin-remaining-picker="1"');
+    expect(pageSrc).toMatch(/data-weighin-remaining-picker[\s\S]*?remainingCows\.map/);
+    expect(pageSrc).toMatch(/remainingTags\.length \+ ' remaining/);
+  });
+  it('reconcile panel is scoped to remaining HERD cows, not all animals', () => {
+    // The dedicated reconcile panel only offers remainingCows (herd-scoped),
+    // never the full animals list.
+    expect(pageSrc).toContain('data-weighin-reconcile-panel="1"');
+    const panelStart = pageSrc.indexOf('data-weighin-reconcile-panel');
+    const panelEnd = pageSrc.indexOf('<RecordCollaborationSection', panelStart);
+    const panel = pageSrc.slice(panelStart, panelEnd);
+    expect(panel).toContain('remainingCows.map');
+    // Never iterate the full animals directory inside the reconcile/add surface.
+    expect(panel).not.toMatch(/animals\.(map|filter|sort)/);
+  });
+  it('preserves reconcileNewTag mechanics (tag swap, old_tags, clear flag, comment stitch, Activity)', () => {
+    expect(pageSrc).toMatch(/async function reconcileNewTag[\s\S]*?old_tags: updatedOldTags/);
+    expect(pageSrc).toMatch(/reconcileNewTag[\s\S]*?new_tag_flag: false/);
+    expect(pageSrc).toMatch(/reconcileNewTag[\s\S]*?cattle_comments|reconcileNewTag[\s\S]*?commentsTable2/);
+    expect(pageSrc).toMatch(/reconcileNewTag[\s\S]*?Reconciled new tag/);
+  });
+  it('blocks completion while unresolved new_tag_flag entries remain (handler + button)', () => {
+    // Handler-level gate in completeSession.
+    expect(pageSrc).toMatch(
+      /async function completeSession[\s\S]*?new_tag_flag === true[\s\S]*?before completing this session/,
+    );
+    // pendingReconciles derived from new_tag_flag entries.
+    expect(pageSrc).toContain('const pendingReconciles');
+    expect(pageSrc).toMatch(/pendingReconciles[\s\S]*?new_tag_flag === true/);
+    // Complete button disabled + relabeled while pending.
+    expect(pageSrc).toContain('data-weighin-complete-blocked');
+    expect(pageSrc).toMatch(/pendingReconciles\.length > 0[\s\S]*?disabled=\{blockComplete\}/);
   });
 });
 

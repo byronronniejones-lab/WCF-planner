@@ -170,6 +170,9 @@ function TaskCenterView({Header, sb, authState}) {
           // Pass the assignable subset — NewTaskModal's dropdown must
           // not surface hidden profiles per Codex amendment.
           profilesById: assignableProfilesById,
+          // authState drives the One-time / Recurring toggle gate:
+          // Light users never see the Recurring option (fail closed).
+          authState,
           isOpen: newTaskOpen,
           onClose: () => setNewTaskOpen(false),
           // Fire the cross-component refresh signal so the Header badge

@@ -790,7 +790,14 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                 const badge = a.kind === 'overdue' ? 'badge-danger' : 'badge-warn';
                 // Pastel quantity badge ("10 h overdue" / "6 skipped"), design parity.
                 const badgeText = a.pill || (a.kind === 'overdue' ? 'Overdue' : 'Skipped');
-                const isClearable = a.kind === 'warranty';
+                // Warranty-only notices keep the manual Clear; any piece with a
+                // service/checklist item is auto-clearing and shows the pill.
+                const isClearable = !!a.clearableKey;
+                // Group of typed items for this one piece of equipment. Each
+                // carries a type chip (Service / Checklist / Warranty) so a
+                // 50-hour checklist streak never reads like a duplicate service
+                // alert. The notice routes via its primary kind.
+                const items = Array.isArray(a.items) ? a.items : [];
                 return (
                   <li
                     key={a.key}
@@ -802,9 +809,16 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                     <span className={'eq-led ' + led} />
                     <div className="litem-body">
                       <div className="litem-title">{a.label}</div>
-                      {/* overdue: service-only meta (quantity is in the pill);
-                          fillup/warranty fall back to the full detail. */}
-                      <div className="litem-meta">{a.metaLabel || a.detail}</div>
+                      <div className="litem-types">
+                        {items.map((it) => (
+                          <div className="litem-type-row" key={it.key} data-attention-item-kind={it.kind}>
+                            <span className={'type-chip type-' + it.type}>{it.typeLabel}</span>
+                            {/* service: service-only meta (quantity is in the pill);
+                                checklist/warranty fall back to the full detail. */}
+                            <span className="litem-meta">{it.metaLabel || it.detail}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     {isClearable ? (
                       <button
@@ -812,7 +826,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                         className="btn-clear"
                         onClick={(e) => {
                           e.stopPropagation();
-                          clearMissedEntry(a.key);
+                          clearMissedEntry(a.clearableKey);
                         }}
                       >
                         Clear

@@ -17,6 +17,8 @@ import UsersModal from '../auth/UsersModal.jsx';
 import EquipmentFleetView from './EquipmentFleetView.jsx';
 import EquipmentFuelLogView from './EquipmentFuelLogView.jsx';
 import EquipmentDetail from './EquipmentDetail.jsx';
+import EquipmentFuelingEntryPage from './EquipmentFuelingEntryPage.jsx';
+import EquipmentChecklistEntryPage from './EquipmentChecklistEntryPage.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
@@ -102,8 +104,21 @@ export default function EquipmentHome({
   const path = location.pathname;
   let subView = 'fleet';
   let detailSlug = null;
+  // Single-entry record pages: /fleet/fueling/<id> and /fleet/checklist/<id>.
+  // These reuse EquipmentHome's already-loaded equipment/fuelings/maintenance
+  // arrays (the same data path EquipmentDetail consumes) and render one row
+  // read-only. They must be matched BEFORE the generic /fleet/<slug> detail
+  // branch, which would otherwise swallow them as a (missing) equipment slug.
+  let fuelingEntryId = null;
+  let checklistEntryId = null;
   if (path === '/fleet/fuel-log') subView = 'fuel-log';
-  else if (path.startsWith('/fleet/')) {
+  else if (path.startsWith('/fleet/fueling/')) {
+    fuelingEntryId = path.slice('/fleet/fueling/'.length);
+    subView = 'fueling-entry';
+  } else if (path.startsWith('/fleet/checklist/')) {
+    checklistEntryId = path.slice('/fleet/checklist/'.length);
+    subView = 'checklist-entry';
+  } else if (path.startsWith('/fleet/')) {
     detailSlug = path.slice('/fleet/'.length);
     subView = 'detail';
   }
@@ -115,6 +130,18 @@ export default function EquipmentHome({
   const activeEq = detailSlug
     ? equipment.find((e) => e.slug === detailSlug) || equipment.find((e) => e.id === detailSlug)
     : null;
+
+  // Single-entry record-page resolution. The entry is looked up by id from the
+  // already-loaded fuelings / maintenance arrays, then its parent equipment is
+  // resolved by the entry's equipment_id. Both resolve to null while loading or
+  // on a not-found id, which the entry pages render fail-closed.
+  const activeFueling = fuelingEntryId ? fuelings.find((f) => String(f.id) === String(fuelingEntryId)) || null : null;
+  const fuelingEq = activeFueling ? equipment.find((e) => e.id === activeFueling.equipment_id) || null : null;
+  const activeChecklist = checklistEntryId
+    ? maintenance.find((m) => String(m.id) === String(checklistEntryId)) || null
+    : null;
+  const checklistEq = activeChecklist ? equipment.find((e) => e.id === activeChecklist.equipment_id) || null : null;
+
   // Originating fleet order handed through route state; absent on direct links
   // and the equipment-tech quick-pick nav. Fleet routes are keyed by slug.
   const recordSeq = location.state?.recordSeq || null;
@@ -237,31 +264,68 @@ export default function EquipmentHome({
           </div>
         )}
 
-        {loading && !missingSchema && (
-          <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>
-        )}
+        {/* Single-entry record pages own their own fail-closed loading order
+            (loading -> loadError -> not-found -> record + Retry), so the
+            generic spinner/error block is suppressed on those subviews. */}
+        {(() => {
+          const isEntrySubview = subView === 'fueling-entry' || subView === 'checklist-entry';
+          return (
+            <>
+              {loading && !missingSchema && !isEntrySubview && (
+                <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>
+              )}
 
-        {!loading && !missingSchema && loadError && (
-          <div data-equipment-load-error="true">
-            <InlineNotice notice={loadError} />
-            <button
-              type="button"
-              onClick={() => loadAll()}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 7,
-                border: '1px solid #d1d5db',
-                background: 'white',
-                color: '#57534e',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Retry
-            </button>
-          </div>
+              {!loading && !missingSchema && loadError && !isEntrySubview && (
+                <div data-equipment-load-error="true">
+                  <InlineNotice notice={loadError} />
+                  <button
+                    type="button"
+                    onClick={() => loadAll()}
+                    style={{
+                      padding: '7px 14px',
+                      borderRadius: 7,
+                      border: '1px solid #d1d5db',
+                      background: 'white',
+                      color: '#57534e',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
+
+        {!missingSchema && subView === 'fueling-entry' && (
+          <EquipmentFuelingEntryPage
+            sb={sb}
+            fmt={fmt}
+            equipment={fuelingEq}
+            fueling={activeFueling}
+            authState={authState}
+            loading={loading}
+            loadError={loadError}
+            onRetry={() => loadAll()}
+            onBack={() => navigate(fuelingEq ? '/fleet/' + fuelingEq.slug : '/fleet')}
+          />
+        )}
+        {!missingSchema && subView === 'checklist-entry' && (
+          <EquipmentChecklistEntryPage
+            sb={sb}
+            fmt={fmt}
+            equipment={checklistEq}
+            event={activeChecklist}
+            authState={authState}
+            loading={loading}
+            loadError={loadError}
+            onRetry={() => loadAll()}
+            onBack={() => navigate(checklistEq ? '/fleet/' + checklistEq.slug : '/fleet')}
+          />
         )}
 
         {!loading && !missingSchema && !loadError && subView === 'fleet' && !isEquipmentTech && (
