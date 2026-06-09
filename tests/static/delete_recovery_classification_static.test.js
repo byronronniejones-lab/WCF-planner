@@ -132,6 +132,13 @@ function hasProcessingBatchDeleteRpcs() {
   );
 }
 
+function hasWeighInDeleteRpcs() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/weighInDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/101_weighin_delete_activity_rpcs.sql'))
+  );
+}
+
 function expectedDeleteTableCounts() {
   const expected = new Map(EXPECTED_DELETE_TABLE_COUNTS);
   if (hasTransactionalCalvingDeleteRpc()) expected.delete('cattle_calving_records');
@@ -140,6 +147,13 @@ function expectedDeleteTableCounts() {
   if (hasProcessingBatchDeleteRpcs()) {
     expected.delete('cattle_processing_batches');
     expected.delete('sheep_processing_batches');
+  }
+  // Weigh-in entry/session delete moved to SECDEF RPCs (mig 101): the
+  // weigh_in_sessions delete is gone entirely; weigh_ins drops 4 -> 3 (the
+  // broiler grid clear + two anon-webform deletes remain).
+  if (hasWeighInDeleteRpcs()) {
+    expected.delete('weigh_in_sessions');
+    expected.set('weigh_ins', 3);
   }
   return expected;
 }
@@ -150,6 +164,11 @@ function expectedDeleteRecoveryClass() {
   if (hasProcessingBatchDeleteRpcs()) {
     expected.delete('cattle_processing_batches');
     expected.delete('sheep_processing_batches');
+  }
+  // weigh_ins (3) still has client deletes and stays classified; only the
+  // weigh_in_sessions root delete is fully gone after mig 101.
+  if (hasWeighInDeleteRpcs()) {
+    expected.delete('weigh_in_sessions');
   }
   return expected;
 }
@@ -283,6 +302,44 @@ describe('delete/recovery classification inventory', () => {
     // Both delete their batch root and log a record.deleted audit event in-txn.
     expect(migration).toMatch(/DELETE FROM public\.cattle_processing_batches/);
     expect(migration).toMatch(/DELETE FROM public\.sheep_processing_batches/);
+    expect(migration).toMatch(/INSERT INTO public\.activity_events/);
+    expect(migration).toContain("'record.deleted'");
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('locks the weigh-in entry/session delete as RPC-backed after migration 101', () => {
+    const tables = collectDeleteTables();
+
+    if (!hasWeighInDeleteRpcs()) {
+      expect(tables.get('weigh_in_sessions')).toBe(1);
+      expect(tables.get('weigh_ins')).toBe(4);
+      return;
+    }
+
+    const api = fs.readFileSync(path.join(ROOT, 'src/lib/weighInDeleteApi.js'), 'utf8');
+    const migration = fs.readFileSync(
+      path.join(ROOT, 'supabase-migrations/101_weighin_delete_activity_rpcs.sql'),
+      'utf8',
+    );
+
+    // The session root delete is fully gone; weigh_ins drops to 3 (broiler grid
+    // clear + two anon-webform deletes intentionally left untouched).
+    expect(tables.has('weigh_in_sessions')).toBe(false);
+    expect(tables.get('weigh_ins')).toBe(3);
+
+    expect(api).toContain('export async function deleteWeighInEntry');
+    expect(api).toContain("rpc('delete_weigh_in_entry'");
+    expect(api).toContain('export async function deleteWeighInSession');
+    expect(api).toContain("rpc('delete_weigh_in_session'");
+
+    for (const fn of ['delete_weigh_in_entry', 'delete_weigh_in_session']) {
+      expect(migration).toMatch(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}[\\s\\S]*?SECURITY DEFINER`));
+      expect(migration).toContain(`REVOKE ALL ON FUNCTION public.${fn}(text, text, text) FROM PUBLIC, anon`);
+      expect(migration).toContain(`GRANT EXECUTE ON FUNCTION public.${fn}(text, text, text) TO authenticated`);
+    }
+    // Entry + session deletions and their record.deleted audit events are in-txn.
+    expect(migration).toMatch(/DELETE FROM public\.weigh_ins/);
+    expect(migration).toMatch(/DELETE FROM public\.weigh_in_sessions/);
     expect(migration).toMatch(/INSERT INTO public\.activity_events/);
     expect(migration).toContain("'record.deleted'");
     expect(migration).toContain("NOTIFY pgrst, 'reload schema'");

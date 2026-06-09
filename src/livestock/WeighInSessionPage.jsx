@@ -23,6 +23,7 @@ import {loadCattleWeighInsCached, invalidateCattleWeighInsCache} from '../lib/ca
 import {loadSheepWeighInsCached, invalidateSheepWeighInsCache} from '../lib/sheepCache.js';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
 import {detachSheepFromBatch} from '../lib/sheepProcessingBatch.js';
+import {deleteWeighInEntry, deleteWeighInSession} from '../lib/weighInDeleteApi.js';
 import {runMutation, recordFieldChange, recordStatusChange, recordActivityEvent} from '../lib/entityMutations.js';
 import {buildChanges} from '../lib/activityChangeDiff.js';
 import {
@@ -555,30 +556,19 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
             }
           }
         }
-        try {
-          await recordActivityEvent(sb, {
-            entityType: 'weighin.session',
-            entityId: session.id,
-            eventType: 'record.deleted',
-            entityLabel: sessionLabel(),
-            body: 'Deleted session with ' + sEntries.length + ' entries',
-          });
-        } catch (_e) {
-          /* best-effort */
+        // Audit-grade transactional delete (migration 101): the session row,
+        // its cascaded weigh_ins, the cattle/sheep weigh-in comments, and the
+        // record.deleted Activity event all commit in one transaction. The
+        // detach reverts + "delete anyway?" confirmation above stay client-side.
+        const r = await deleteWeighInSession(sb, {
+          sessionId: session.id,
+          entityLabel: sessionLabel(),
+          teamMember: authState && authState.name ? authState.name : null,
+        });
+        if (!r.ok) {
+          setNotice({kind: 'error', message: 'Could not delete session: ' + (r.error || r.reason || 'unknown error')});
+          return;
         }
-        if (!isPig && !isBroiler) {
-          const wis = await sb.from('weigh_ins').select('id').eq('session_id', session.id);
-          const wiIds = ((wis && wis.data) || []).map((r) => r.id);
-          if (wiIds.length > 0) {
-            const commentsTable = session.species === 'sheep' ? 'sheep_comments' : 'cattle_comments';
-            try {
-              await sb.from(commentsTable).delete().eq('source', 'weigh_in').in('reference_id', wiIds);
-            } catch (_e) {
-              /* table may not exist on legacy schemas */
-            }
-          }
-        }
-        await sb.from('weigh_in_sessions').delete().eq('id', session.id);
         invalidateCache();
         navigate(backInfo.path);
       }
@@ -886,19 +876,17 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     if (isEntryLocked(e)) return;
     window._wcfConfirmDelete('Delete this weigh-in entry?', async () => {
       async function finish() {
-        const {error} = await sb.from('weigh_ins').delete().eq('id', e.id);
-        if (!error) {
-          try {
-            await recordActivityEvent(sb, {
-              entityType: 'weighin.session',
-              entityId: session.id,
-              eventType: 'record.deleted',
-              entityLabel: sessionLabel(),
-              body: 'Deleted entry #' + (e.tag || '?') + ' (' + (e.weight || '?') + ' lb)',
-            });
-          } catch (_e) {
-            /* best-effort */
-          }
+        // Audit-grade transactional delete (migration 101): the weigh_ins row
+        // and its record.deleted Activity event commit in one transaction. The
+        // detach revert + "delete anyway?" confirmation above stay client-side.
+        const r = await deleteWeighInEntry(sb, {
+          entryId: e.id,
+          entityLabel: sessionLabel(),
+          teamMember: authState && authState.name ? authState.name : null,
+        });
+        if (!r.ok) {
+          setNotice({kind: 'error', message: 'Could not delete entry: ' + (r.error || r.reason || 'unknown error')});
+          return;
         }
         invalidateCache();
         await loadAll();

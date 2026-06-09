@@ -205,7 +205,9 @@ const EXPECTED_DYNAMIC_MUTATIONS = [
   'src/lib/useOfflineSubmit.js|cfg.table|insert',
   'src/livestock/WeighInSessionPage.jsx|animalTable|update',
   'src/livestock/WeighInSessionPage.jsx|commentsTable2|update',
-  'src/livestock/WeighInSessionPage.jsx|commentsTable|delete',
+  // The weighin session delete's dynamic cattle/sheep comment cleanup moved into
+  // delete_weigh_in_session (SECDEF, mig 101); no client-side commentsTable
+  // delete remains on this page.
   'src/livestock/WeighInSessionPage.jsx|swapTable|update',
 ];
 
@@ -256,6 +258,13 @@ function hasProcessingBatchDeleteRpcs() {
   );
 }
 
+function hasWeighInDeleteRpcs() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/weighInDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/101_weighin_delete_activity_rpcs.sql'))
+  );
+}
+
 function expectedLiteralMutationTotals() {
   const expected = new Map(EXPECTED_LITERAL_MUTATION_TOTALS);
   // The two literal calving deletes (CattleAnimalPage + CattleHerdsView) route
@@ -268,6 +277,13 @@ function expectedLiteralMutationTotals() {
   if (hasProcessingBatchDeleteRpcs()) {
     expected.set('delete', expected.get('delete') - 2);
     expected.set('update', expected.get('update') - 1);
+  }
+  // Weigh-in lifecycle RPCs (mig 101) move WeighInSessionPage deleteEntry
+  // (weigh_ins delete) and deleteSession (weigh_in_sessions delete) into SECDEF
+  // RPCs: -2 delete. The session's dynamic comment cleanup also moved server-side
+  // but was never counted in these LITERAL totals.
+  if (hasWeighInDeleteRpcs()) {
+    expected.set('delete', expected.get('delete') - 2);
   }
   return expected;
 }
@@ -283,6 +299,11 @@ function expectedOwnerOperationCounts() {
     expected.delete('src/sheep/SheepBatchPage.jsx|delete');
     expected.set('src/sheep/SheepBatchPage.jsx|update', 3);
   }
+  // mig 101 removes the entry + session literal deletes; only the broiler grid
+  // clear (weigh_ins delete) remains in WeighInSessionPage.
+  if (hasWeighInDeleteRpcs()) {
+    expected.set('src/livestock/WeighInSessionPage.jsx|delete', 1);
+  }
   return expected;
 }
 
@@ -293,6 +314,12 @@ function expectedTableOperationCounts() {
     expected.delete('cattle_processing_batches|delete');
     expected.delete('sheep_processing_batches|delete');
     expected.set('sheep|update', 3);
+  }
+  // mig 101: the only literal weigh_in_sessions delete is gone; weigh_ins drops
+  // from 4 to 3 (broiler grid clear remains).
+  if (hasWeighInDeleteRpcs()) {
+    expected.delete('weigh_in_sessions|delete');
+    expected.set('weigh_ins|delete', 3);
   }
   return expected;
 }

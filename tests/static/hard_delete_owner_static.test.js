@@ -30,7 +30,10 @@ const EXPECTED_DELETE_OWNERS = new Map([
   ['src/lib/savedViewsApi.js', 1],
   ['src/lib/tasksAdminApi.js', 1],
   ['src/lib/tasksCenterMutationsApi.js', 1],
-  ['src/livestock/WeighInSessionPage.jsx', 3],
+  // WeighInSessionPage.deleteEntry (weigh_ins) + deleteSession (weigh_in_sessions)
+  // moved to the SECDEF weigh-in delete RPCs (migration 101); only the broiler
+  // grid-clear weigh_ins delete remains here.
+  ['src/livestock/WeighInSessionPage.jsx', 1],
   ['src/webforms/WeighInsWebform.jsx', 5],
 ]);
 
@@ -58,8 +61,11 @@ const EXPECTED_DELETE_TABLES = new Map([
   ['profiles', 1],
   ['sheep_comments', 1],
   ['task_templates', 2],
-  ['weigh_in_sessions', 1],
-  ['weigh_ins', 4],
+  // weigh_in_sessions delete + one weigh_ins delete moved to the SECDEF weigh-in
+  // delete RPCs (migration 101). No runtime client delete remains on
+  // weigh_in_sessions; weigh_ins drops to 3 (broiler grid clear + the two
+  // anon-webform deletes left intentionally untouched).
+  ['weigh_ins', 3],
 ]);
 
 function stripComments(src) {
@@ -118,7 +124,7 @@ describe('Supabase hard-delete owner boundary', () => {
     const {owners, total} = collectSupabaseDeletes();
     const {unexpected, missing, wrongCounts} = diffMap(EXPECTED_DELETE_OWNERS, owners);
 
-    expect(total).toBe(25);
+    expect(total).toBe(23);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);

@@ -358,8 +358,12 @@ describe('WeighInSessionPage — Activity audit logging', () => {
     expect(pageSrc).toContain("from: 'complete'");
     expect(pageSrc).toContain("to: 'draft'");
   });
-  it('logs record.deleted on session delete', () => {
-    expect(pageSrc).toContain("eventType: 'record.deleted'");
+  it('routes session delete through the transactional delete_weigh_in_session RPC (record.deleted logged in-txn)', () => {
+    expect(pageSrc).toContain("from '../lib/weighInDeleteApi.js'");
+    expect(pageSrc).toMatch(/async function deleteSession[\s\S]*?deleteWeighInSession\(sb,/);
+    // The record.deleted audit now lives in the SECDEF RPC (mig 101), not as a
+    // best-effort client recordActivityEvent on this page.
+    expect(pageSrc).not.toContain("eventType: 'record.deleted'");
   });
   it('logs record.created on add entry', () => {
     expect(pageSrc).toContain("eventType: 'record.created'");
@@ -377,8 +381,10 @@ describe('WeighInSessionPage — Activity audit logging', () => {
     expect(pageSrc).toContain('insErr');
     expect(pageSrc).toMatch(/insErr\)[\s\S]*?return[\s\S]*?record\.created/);
   });
-  it('delete-entry checks delete error before logging record.deleted', () => {
-    expect(pageSrc).toMatch(/\.delete\(\)\.eq\('id', e\.id\)[\s\S]*?if \(!error\)[\s\S]*?record\.deleted/);
+  it('delete-entry routes through the transactional delete_weigh_in_entry RPC and surfaces failures', () => {
+    expect(pageSrc).toMatch(/async function deleteEntry[\s\S]*?deleteWeighInEntry\(sb,/);
+    expect(pageSrc).not.toMatch(/\.delete\(\)\.eq\('id', e\.id\)/);
+    expect(pageSrc).toMatch(/deleteWeighInEntry\(sb,[\s\S]*?if \(!r\.ok\)[\s\S]*?setNotice/);
   });
 });
 
