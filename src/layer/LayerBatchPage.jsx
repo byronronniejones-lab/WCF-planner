@@ -24,7 +24,8 @@ import {toISO, addDays} from '../lib/dateUtils.js';
 import {BROODERS, SCHOONERS, BROODER_CLEANOUT, SCHOONER_CLEANOUT, overlaps} from '../lib/broiler.js';
 import {computeProjectedCount, computeHousingDisplayCount, computeLayerFeedCost} from '../lib/layerHousing.js';
 import {getHousingCap, computeBatchStats, computeHousingStats} from './layerBatchStats.js';
-import {recordFieldChange} from '../lib/activityApi.js';
+import {recordFieldChange, recordStatusChange} from '../lib/activityApi.js';
+import {deleteLayerBatch} from '../lib/layerBatchDeleteApi.js';
 
 const EMPTY_BATCH_DRAFT = {
   name: '',
@@ -192,6 +193,11 @@ export default function LayerBatchPage({
   }
 
   async function persistBatchRec(rec) {
+    // Capture the persisted status BEFORE the write so we can emit a single
+    // best-effort status.changed Activity event only on a real active<->retired
+    // flip (not on every debounced autosave tick — once persisted, batch.status
+    // matches rec.status on the next render and this never re-fires).
+    const priorStatus = batch ? batch.status : null;
     setBatchSaving(true);
     const {error} = await sb.from('layer_batches').upsert(rec, {onConflict: 'id'});
     setBatchSaving(false);
@@ -206,6 +212,19 @@ export default function LayerBatchPage({
       });
     }
     setBatchPending(false);
+    if (batch && priorStatus && rec.status && priorStatus !== rec.status) {
+      try {
+        await recordStatusChange(sb, {
+          entityType: 'layer.batch',
+          entityId: batch.id,
+          entityLabel: rec.name || batch.name || batch.id,
+          from: priorStatus,
+          to: rec.status,
+        });
+      } catch (_e) {
+        /* best-effort */
+      }
+    }
     return true;
   }
 
@@ -294,15 +313,17 @@ export default function LayerBatchPage({
       'Delete batch ' + batch.name + '? This will also delete all its housings. This cannot be undone.',
       async () => {
         clearTimeout(batchAutoSaveTimer.current);
-        await sb.from('layer_housings').delete().eq('batch_id', batch.id);
+        // Transactional delete via SECDEF RPC (mig 106): clears child housings +
+        // deletes the batch root + writes one deletion audit event server-side,
+        // all in one transaction. Replaces the two raw client deletes.
+        const res = await deleteLayerBatch(sb, batch.id);
+        if (!res || !res.ok) {
+          setNotice({kind: 'error', message: 'Delete failed: ' + (res?.error || res?.reason || 'unknown error')});
+          return;
+        }
         if (typeof setLayerHousings === 'function') {
           const nextHousings = (layerHousings || []).filter((h) => h.batch_id !== batch.id);
           setLayerHousings(nextHousings);
-        }
-        const {error} = await sb.from('layer_batches').delete().eq('id', batch.id);
-        if (error) {
-          setNotice({kind: 'error', message: 'Delete failed: ' + error.message});
-          return;
         }
         if (typeof setLayerBatches === 'function') {
           setLayerBatches((prev) => prev.filter((b) => b.id !== batch.id));

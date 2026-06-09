@@ -10,6 +10,7 @@
 import React from 'react';
 import {useNavigate, useLocation} from 'react-router-dom';
 import {sb} from '../lib/supabase.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
 import {fmt, fmtS, todayISO} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
 import {
@@ -35,6 +36,32 @@ import BroilerBatchPage from './BroilerBatchPage.jsx';
 
 function broilerBatchHref(b) {
   return '/broiler/batches/' + encodeURIComponent(b && b.name ? b.name : '');
+}
+
+// Best-effort broiler.batch status.changed Activity (entity_id = batch.name —
+// the broiler batch identity). Never blocks the status flip: try/catch +
+// swallowed promise reject. Does not change the archive/reactivate behavior.
+function recordBroilerStatusChange(b, from, to) {
+  const name = b && b.name ? b.name : null;
+  if (!name) return;
+  try {
+    recordActivityEvent(sb, {
+      entityType: 'broiler.batch',
+      entityId: name,
+      eventType: 'status.changed',
+      entityLabel: name,
+      body: 'Broiler batch ' + name + ' status changed from ' + from + ' to ' + to,
+      payload: {
+        record: 'broiler.batch',
+        name,
+        breed: (b && b.breed) || null,
+        hatchery: (b && b.hatchery) || null,
+        changes: [{field: 'status', label: 'Status', from, to, old_present: !!from, new_present: !!to}],
+      },
+    }).catch(() => {});
+  } catch (_e) {
+    /* best-effort — never block the status flip */
+  }
 }
 
 function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, confirmDelete, canDeleteAnything}) {
@@ -302,6 +329,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                             const nb = batches.map((x) => (x.id === b.id ? {...x, status: 'processed'} : x));
                             setBatches(nb);
                             persist(nb);
+                            recordBroilerStatusChange(b, b.status || 'active', 'processed');
                           }}
                           style={{
                             fontSize: 11,
@@ -671,6 +699,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                           });
                           setBatches(nb);
                           persist(nb);
+                          recordBroilerStatusChange(b, b.status || 'processed', 'active');
                         }}
                         style={{
                           fontSize: 11,

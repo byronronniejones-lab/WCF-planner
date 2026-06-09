@@ -22,7 +22,7 @@ import {loadSheepWeighInsCached} from '../lib/sheepCache.js';
 import {softDeleteSheepAnimal} from '../lib/sheepDeleteApi.js';
 import {transferSheepAnimal} from '../lib/animalTransferApi.js';
 import {deleteSheepLambingRecord} from '../lib/sheepLambingApi.js';
-import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
+import {runMutation, recordFieldChange, recordActivityEvent} from '../lib/entityMutations.js';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 
 const FLOCK_LABELS = {
@@ -224,6 +224,38 @@ export default function SheepAnimalPage({sb, fmt, authState, Header}) {
     if (error) {
       setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return false;
+    }
+    // Best-effort sheep.animal Activity (entity_id = dam's id): a new lambing
+    // record. The mig 094 delete RPC already logs a deletion event against the
+    // dam; emit the symmetric record.created here so the audit stream isn't
+    // one-sided. Logged only after the insert succeeds; never blocks the save.
+    try {
+      const liveBorn = rec.total_born - rec.deaths;
+      await recordActivityEvent(sb, {
+        entityType: 'sheep.animal',
+        entityId: sheepRecord.id,
+        eventType: 'record.created',
+        entityLabel: sheepRecord.tag || sheepRecord.id,
+        body:
+          'Recorded lambing on ' +
+          rec.lambing_date +
+          ': ' +
+          rec.total_born +
+          ' born' +
+          (rec.deaths ? ', ' + rec.deaths + ' died' : ''),
+        payload: {
+          record: 'sheep.lambing',
+          lambingRecordId: rec.id,
+          dam_tag: rec.dam_tag,
+          lambing_date: rec.lambing_date,
+          total_born: rec.total_born,
+          deaths: rec.deaths,
+          live_born: liveBorn,
+          complications: rec.complications_flag,
+        },
+      });
+    } catch (_e) {
+      /* best-effort — never block the save */
     }
     await loadAll();
     return true;

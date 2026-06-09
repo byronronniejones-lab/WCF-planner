@@ -129,20 +129,23 @@ describe('LayerBatchPage — Edit Batch modal preserves existing semantics', () 
   });
 });
 
-describe('LayerBatchPage — hard delete cascade preserved, no record.deleted', () => {
+describe('LayerBatchPage — delete routed through the SECDEF RPC (mig 106)', () => {
   it('has Delete Batch button gated on canEdit and routed through confirmDelete', () => {
     expect(batchPage).toContain('data-layer-batch-delete');
     expect(batchPage).toContain('confirmDelete');
   });
-  it('cascades housings hard-delete before deleting the batch row', () => {
-    expect(batchPage).toMatch(
-      /handleDeleteBatch[\s\S]*?from\('layer_housings'\)[\s\S]*?\.delete\(\)[\s\S]*?from\('layer_batches'\)[\s\S]*?\.delete\(\)/,
-    );
+  it('routes handleDeleteBatch through deleteLayerBatch instead of two raw client deletes', () => {
+    // The transactional SECDEF RPC (mig 106) now does the child-housing clear +
+    // batch-root delete + record.deleted audit in one transaction; the page no
+    // longer issues raw .delete() on either layer table.
+    expect(batchPage).toMatch(/handleDeleteBatch[\s\S]*?deleteLayerBatch\(sb, batch\.id\)/);
+    expect(batchPage).not.toMatch(/from\('layer_housings'\)[\s\S]*?\.delete\(\)/);
+    expect(batchPage).not.toMatch(/from\('layer_batches'\)[\s\S]*?\.delete\(\)/);
   });
-  it('does not log record.deleted Activity for the hard delete', () => {
+  it('does not emit a client record.deleted Activity event (the RPC audits server-side)', () => {
     expect(batchPage).not.toContain("eventType: 'record.deleted'");
   });
-  it('navigates back to /layer/batches after delete', () => {
+  it('navigates back to /layer/batches after a successful delete', () => {
     expect(batchPage).toMatch(/handleDeleteBatch[\s\S]*?navigate\('\/layer\/batches'\)/);
   });
 });

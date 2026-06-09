@@ -8,6 +8,7 @@
 // ============================================================================
 import React from 'react';
 import {sb} from '../lib/supabase.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
 import {fmtS} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
 import {
@@ -111,6 +112,7 @@ export default function PigBatchesView({
     subAutoSaveTimer,
     pigAutoSaveTimer,
     partitionDirtyRef,
+    breeders,
   });
   // The hub Add-Batch flow + the feeder-form partition editor (both stay in this
   // view) use these two; the rest of the sub-batch API is consumed on the record
@@ -548,23 +550,57 @@ export default function PigBatchesView({
     );
   }
 
+  // Best-effort pig.batch status.changed Activity (entity_id = group.id).
+  // Never blocks the archive/unarchive mutation (try/catch + swallowed reject).
+  function recordBatchStatusChange(group, from, to, subCascadeCount) {
+    if (!group) return;
+    try {
+      recordActivityEvent(sb, {
+        entityType: 'pig.batch',
+        entityId: group.id,
+        eventType: 'status.changed',
+        entityLabel: group.batchName || group.id,
+        body:
+          'Batch ' +
+          (group.batchName || group.id) +
+          ' status changed from ' +
+          from +
+          ' to ' +
+          to +
+          (subCascadeCount
+            ? ' (' + subCascadeCount + ' sub-batch' + (subCascadeCount === 1 ? '' : 'es') + ' cascaded)'
+            : ''),
+        payload: {
+          changes: [{field: 'status', label: 'Status', from, to, old_present: true, new_present: true}],
+          subCascadeCount: subCascadeCount || 0,
+        },
+      }).catch(() => {});
+    } catch (_e) {
+      /* best-effort — never block the status change */
+    }
+  }
   function archiveBatch(batchId) {
     window._wcfConfirm(
       'Mark this batch as processed? It will be hidden from the webform.',
       () => {
+        const target = feederGroups.find((g) => g.id === batchId) || null;
+        const subCascadeCount = target ? (target.subBatches || []).filter((s) => s.status !== 'processed').length : 0;
         const nb = feederGroups.map((g) =>
           g.id === batchId
             ? {...g, status: 'processed', subBatches: (g.subBatches || []).map((s) => ({...s, status: 'processed'}))}
             : g,
         );
         persistFeeders(nb);
+        recordBatchStatusChange(target, 'active', 'processed', subCascadeCount);
       },
       'Mark Processed',
     );
   }
   function unarchiveBatch(batchId) {
+    const target = feederGroups.find((g) => g.id === batchId) || null;
     const nb = feederGroups.map((g) => (g.id === batchId ? {...g, status: 'active'} : g));
     persistFeeders(nb);
+    recordBatchStatusChange(target, 'processed', 'active', 0);
   }
   // Sub-batch CRUD (archive/unarchive/persist/validate/upd/close/save/delete)
   // lives in usePigSubBatches (CP8); the form JSX below consumes the handlers.
@@ -1359,12 +1395,54 @@ export default function PigBatchesView({
                       onClick={() => {
                         confirmDelete('Delete this batch? This cannot be undone.', () => {
                           clearTimeout(pigAutoSaveTimer.current);
+                          // Snapshot the batch root (with its sub/trip/mortality
+                          // counts) BEFORE the filter, for the best-effort
+                          // record.deleted Activity payload.
+                          const removed = feederGroups.find((g) => g.id === editFeederId) || null;
                           const nb = feederGroups.filter((g) => g.id !== editFeederId);
                           setFeederGroups(nb);
                           persistFeeders(nb);
                           setShowFeederForm(false);
                           setEditFeederId(null);
                           setOriginalFeederForm(null);
+                          // Best-effort pig.batch Activity (entity_id = group.id):
+                          // batch root deleted. Never blocks the mutation.
+                          try {
+                            const subCount = removed ? (removed.subBatches || []).length : 0;
+                            const tripCount = removed ? (removed.processingTrips || []).length : 0;
+                            const mortalityCount = removed
+                              ? (removed.pigMortalities || []).reduce((a, m) => a + (parseInt(m.count) || 0), 0)
+                              : 0;
+                            recordActivityEvent(sb, {
+                              entityType: 'pig.batch',
+                              entityId: removed ? removed.id : editFeederId,
+                              eventType: 'record.deleted',
+                              entityLabel: (removed && removed.batchName) || editFeederId,
+                              body:
+                                'Deleted batch ' +
+                                ((removed && removed.batchName) || editFeederId) +
+                                ' (' +
+                                subCount +
+                                ' sub-batch' +
+                                (subCount === 1 ? '' : 'es') +
+                                ', ' +
+                                tripCount +
+                                ' trip' +
+                                (tripCount === 1 ? '' : 's') +
+                                ', ' +
+                                mortalityCount +
+                                ' mortality)',
+                              payload: {
+                                record: 'pig.batch',
+                                batchName: (removed && removed.batchName) || null,
+                                subBatchCount: subCount,
+                                processingTripCount: tripCount,
+                                mortalityCount,
+                              },
+                            }).catch(() => {});
+                          } catch (_e) {
+                            /* best-effort — never block the delete */
+                          }
                         });
                       }}
                       style={S.btnDanger}

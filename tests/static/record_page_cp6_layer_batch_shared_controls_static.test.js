@@ -97,8 +97,11 @@ describe('CP6: LayerBatchPage adopts shared record-page controls', () => {
     expect(src).not.toMatch(/setLayerHousings\(\s*\(/);
   });
 
-  it('keeps Delete Batch as a hard delete cascade and adds no record.deleted Activity', () => {
+  it('routes Delete Batch through the SECDEF RPC (mig 106) and emits no client record.deleted', () => {
     expect(src).toContain('confirmDelete');
+    // The page no longer issues client deletes or a client record.deleted event;
+    // delete_layer_batch does the cascade + audit server-side in one transaction.
+    expect(src).toContain('deleteLayerBatch(sb, batch.id)');
     expect(src).not.toContain('record.deleted');
   });
 });

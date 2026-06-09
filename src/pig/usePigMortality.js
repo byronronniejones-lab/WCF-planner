@@ -1,5 +1,6 @@
 import {useState} from 'react';
 import {sb} from '../lib/supabase.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
 import {todayISO} from '../lib/dateUtils.js';
 
 // Pig.batch mortality workflow (CP7 extraction from PigBatchesView). Owns the
@@ -59,14 +60,43 @@ export function usePigMortality({feederGroups, setFeederGroups, setNotice, authS
       setMortalityBusy(false);
       return;
     }
+    // Close the modal + clear busy immediately once the save commits; the
+    // audit emit below is best-effort and must not delay the UI.
     setMortalityBusy(false);
     setMortalityModal(null);
+    // Best-effort pig.batch Activity (entity_id = group.id = batchId): a new
+    // mortality record. Logged only after the upsert succeeds; never blocks.
+    try {
+      await recordActivityEvent(sb, {
+        entityType: 'pig.batch',
+        entityId: batchId,
+        eventType: 'record.created',
+        entityLabel: (target && target.batchName) || batchId,
+        body: 'Recorded mortality: ' + count + (subName ? ' in "' + subName + '"' : '') + ' by ' + entry.team_member,
+        payload: {
+          record: 'pig.mortality',
+          batchName: (target && target.batchName) || null,
+          mortalityId: entry.id,
+          subBatchId: subId,
+          subBatchName: subName,
+          count,
+          comment: entry.comment,
+          team_member: entry.team_member,
+        },
+      });
+    } catch (_e) {
+      /* best-effort — never block the save */
+    }
   }
 
   async function deleteMortality(batchId, entryId) {
     if (!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this mortality entry?', async () => {
       setNotice(null);
+      // Snapshot the parent group + the entry being removed BEFORE the filter,
+      // so the best-effort Activity payload can describe what was deleted.
+      const target = feederGroups.find((g) => g.id === batchId) || null;
+      const removed = target ? (target.pigMortalities || []).find((m) => m.id === entryId) || null : null;
       const nb = feederGroups.map((g) =>
         g.id === batchId ? {...g, pigMortalities: (g.pigMortalities || []).filter((m) => m.id !== entryId)} : g,
       );
@@ -75,6 +105,36 @@ export function usePigMortality({feederGroups, setFeederGroups, setNotice, authS
         await sb.from('app_store').upsert({key: 'ppp-feeders-v1', data: nb}, {onConflict: 'key'});
       } catch (e) {
         setNotice({kind: 'error', message: 'Delete failed: ' + (e.message || 'unknown')});
+        return;
+      }
+      // Best-effort pig.batch Activity (entity_id = group.id = batchId): mortality
+      // record deleted. Logged only after the upsert succeeds; never blocks.
+      try {
+        await recordActivityEvent(sb, {
+          entityType: 'pig.batch',
+          entityId: batchId,
+          eventType: 'record.deleted',
+          entityLabel: (target && target.batchName) || batchId,
+          body:
+            'Deleted mortality record' +
+            (removed
+              ? ': ' +
+                (parseInt(removed.count) || 0) +
+                (removed.sub_batch_name ? ' in "' + removed.sub_batch_name + '"' : '')
+              : ''),
+          payload: {
+            record: 'pig.mortality',
+            batchName: (target && target.batchName) || null,
+            mortalityId: entryId,
+            subBatchId: removed ? removed.sub_batch_id : null,
+            subBatchName: removed ? removed.sub_batch_name : null,
+            count: removed ? parseInt(removed.count) || 0 : null,
+            comment: removed ? removed.comment : null,
+            team_member: removed ? removed.team_member : null,
+          },
+        });
+      } catch (_e) {
+        /* best-effort — never block the delete */
       }
     });
   }

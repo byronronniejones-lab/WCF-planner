@@ -21,6 +21,7 @@ import {
 import {recordFieldRowClass, recordFieldLabel, recordControl, recordTextarea} from '../shared/recordPageControls.jsx';
 import {computeProjectedCount, computeHousingDisplayCount} from '../lib/layerHousing.js';
 import {getHousingCap, computeHousingStats} from './layerBatchStats.js';
+import {recordStatusChange} from '../lib/activityApi.js';
 
 const EMPTY_HOUSING_DRAFT = {
   housing_name: '',
@@ -184,6 +185,11 @@ export default function LayerHousingPage({
     } else {
       setErr('');
     }
+    // Capture the persisted status BEFORE the write so the edit-modal Status
+    // select (which can both retire AND un-retire) emits one best-effort
+    // status.changed event only on a real flip — not on every autosave tick
+    // (once persisted, housing.status matches rec.status next render).
+    const priorStatus = housing ? housing.status : null;
     setHousingSaving(true);
     const {error} = await sb.from('layer_housings').upsert(rec, {onConflict: 'id'});
     setHousingSaving(false);
@@ -195,6 +201,19 @@ export default function LayerHousingPage({
     if (typeof setLayerHousings === 'function') {
       const nextHousings = (layerHousings || []).map((x) => (x.id === rec.id ? rec : x));
       setLayerHousings(nextHousings);
+    }
+    if (housing && priorStatus && rec.status && priorStatus !== rec.status) {
+      try {
+        await recordStatusChange(sb, {
+          entityType: 'layer.housing',
+          entityId: housing.id,
+          entityLabel: rec.housing_name || housing.housing_name || housing.id,
+          from: priorStatus,
+          to: rec.status,
+        });
+      } catch (_e) {
+        /* best-effort */
+      }
     }
     return true;
   }
@@ -239,6 +258,7 @@ export default function LayerHousingPage({
   async function retireNow() {
     if (!canEdit || !housing) return;
     setNotice(null);
+    const priorStatus = housing.status;
     const updated = {...housing, status: 'retired', retired_date: housing.retired_date || todayStr()};
     const {error} = await sb.from('layer_housings').upsert(updated, {onConflict: 'id'});
     if (error) {
@@ -248,6 +268,21 @@ export default function LayerHousingPage({
     if (typeof setLayerHousings === 'function') {
       const nextHousings = (layerHousings || []).map((x) => (x.id === updated.id ? updated : x));
       setLayerHousings(nextHousings);
+    }
+    // Best-effort status.changed audit on the layer.housing entity for the
+    // active -> retired flip (only when the status actually transitioned).
+    if (priorStatus !== updated.status) {
+      try {
+        await recordStatusChange(sb, {
+          entityType: 'layer.housing',
+          entityId: housing.id,
+          entityLabel: housing.housing_name || housing.id,
+          from: priorStatus,
+          to: updated.status,
+        });
+      } catch (_e) {
+        /* best-effort */
+      }
     }
   }
 

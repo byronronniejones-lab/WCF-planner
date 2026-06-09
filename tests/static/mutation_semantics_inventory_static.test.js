@@ -273,6 +273,27 @@ function hasEquipmentLogDeleteRpcs() {
   );
 }
 
+function hasLayerBatchDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/layerBatchDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/106_delete_layer_batch_rpc.sql'))
+  );
+}
+
+function hasFuelBillDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/fuelBillDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/107_delete_fuel_bill_rpc.sql'))
+  );
+}
+
+function hasFeedInputDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/feedInputDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/108_delete_feed_input_rpc.sql'))
+  );
+}
+
 function expectedLiteralMutationTotals() {
   const expected = new Map(EXPECTED_LITERAL_MUTATION_TOTALS);
   // The two literal calving deletes (CattleAnimalPage + CattleHerdsView) route
@@ -299,6 +320,25 @@ function expectedLiteralMutationTotals() {
   if (hasEquipmentLogDeleteRpcs()) {
     expected.set('delete', expected.get('delete') - 2);
   }
+  // Layer-batch lifecycle RPC (mig 106) moves LayerBatchPage.handleDeleteBatch
+  // (layer_housings child clear + layer_batches root) into one SECDEF RPC:
+  // -2 delete.
+  if (hasLayerBatchDeleteRpc()) {
+    expected.set('delete', expected.get('delete') - 2);
+  }
+  // Fuel-bill delete RPC (mig 107) moves FuelBillsView BillDetail.del
+  // (fuel_bills root; lines cascade) into a SECDEF RPC: -1 delete. The
+  // BillUploadModal rollback fuel_bills delete stays a direct client delete.
+  if (hasFuelBillDeleteRpc()) {
+    expected.set('delete', expected.get('delete') - 1);
+  }
+  // Feed-input delete RPC (mig 108) moves LivestockFeedInputsPanel
+  // deleteFeedPermanently (cattle_feed_inputs root; tests cascade) into a SECDEF
+  // RPC: -1 delete. The deleteTest cattle_feed_tests delete stays a direct client
+  // delete (it is tightened in-place, not moved server-side).
+  if (hasFeedInputDeleteRpc()) {
+    expected.set('delete', expected.get('delete') - 1);
+  }
   return expected;
 }
 
@@ -322,6 +362,19 @@ function expectedOwnerOperationCounts() {
   if (hasEquipmentLogDeleteRpcs()) {
     expected.delete('src/equipment/EquipmentDetail.jsx|delete');
   }
+  // mig 106 removes both LayerBatchPage literal deletes (housing + batch root).
+  if (hasLayerBatchDeleteRpc()) {
+    expected.delete('src/layer/LayerBatchPage.jsx|delete');
+  }
+  // mig 107 drops FuelBillsView from 2 deletes to 1 (BillUploadModal rollback).
+  if (hasFuelBillDeleteRpc()) {
+    expected.set('src/admin/FuelBillsView.jsx|delete', 1);
+  }
+  // mig 108 drops LivestockFeedInputsPanel from 2 deletes to 1 (deleteTest's
+  // cattle_feed_tests delete remains; deleteFeedPermanently moves to the RPC).
+  if (hasFeedInputDeleteRpc()) {
+    expected.set('src/admin/LivestockFeedInputsPanel.jsx|delete', 1);
+  }
   return expected;
 }
 
@@ -343,6 +396,22 @@ function expectedTableOperationCounts() {
   if (hasEquipmentLogDeleteRpcs()) {
     expected.delete('equipment_fuelings|delete');
     expected.delete('equipment_maintenance_events|delete');
+  }
+  // mig 106: both layer delete targets are gone from client source.
+  if (hasLayerBatchDeleteRpc()) {
+    expected.delete('layer_batches|delete');
+    expected.delete('layer_housings|delete');
+  }
+  // mig 107: the bill-root delete moves to the RPC; fuel_bills drops 2 -> 1
+  // (BillUploadModal rollback delete remains).
+  if (hasFuelBillDeleteRpc()) {
+    expected.set('fuel_bills|delete', 1);
+  }
+  // mig 108: the feed-input root delete moves to the RPC; no runtime client
+  // delete remains on cattle_feed_inputs (the cattle_feed_tests delete in
+  // deleteTest is unaffected).
+  if (hasFeedInputDeleteRpc()) {
+    expected.delete('cattle_feed_inputs|delete');
   }
   return expected;
 }

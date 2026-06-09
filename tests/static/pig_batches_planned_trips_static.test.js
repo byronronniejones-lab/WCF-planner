@@ -541,8 +541,11 @@ describe('CP8 — sub-batch workflow extracted to usePigSubBatches', () => {
   });
 
   it('the hook keeps the explicit dependency signature (React-context-free)', () => {
+    // `breeders` was added (read-only) so deleteSubBatch can count orphaned
+    // sub→breeding transfers for its best-effort pig.batch record.deleted Activity
+    // payload (pig data is app_store JSON; no SECDEF delete RPC exists).
     expect(subHookSrc).toMatch(
-      /export function usePigSubBatches\(\{\s*feederGroups,\s*setFeederGroups,\s*persistFeeders,\s*setNotice,\s*confirmDelete,\s*subAutoSaveTimer,\s*pigAutoSaveTimer,\s*partitionDirtyRef,?\s*\}\)/,
+      /export function usePigSubBatches\(\{\s*feederGroups,\s*setFeederGroups,\s*persistFeeders,\s*setNotice,\s*confirmDelete,\s*subAutoSaveTimer,\s*pigAutoSaveTimer,\s*partitionDirtyRef,\s*breeders,?\s*\}\)/,
     );
   });
 

@@ -146,6 +146,27 @@ function hasEquipmentLogDeleteRpcs() {
   );
 }
 
+function hasLayerBatchDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/layerBatchDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/106_delete_layer_batch_rpc.sql'))
+  );
+}
+
+function hasFuelBillDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/fuelBillDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/107_delete_fuel_bill_rpc.sql'))
+  );
+}
+
+function hasFeedInputDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/feedInputDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/108_delete_feed_input_rpc.sql'))
+  );
+}
+
 function expectedDeleteTableCounts() {
   const expected = new Map(EXPECTED_DELETE_TABLE_COUNTS);
   if (hasTransactionalCalvingDeleteRpc()) expected.delete('cattle_calving_records');
@@ -168,6 +189,24 @@ function expectedDeleteTableCounts() {
     expected.delete('equipment_fuelings');
     expected.delete('equipment_maintenance_events');
   }
+  // Layer batch + housing deletes moved to the SECDEF delete_layer_batch RPC
+  // (mig 106): no runtime client delete remains on either layer table.
+  if (hasLayerBatchDeleteRpc()) {
+    expected.delete('layer_batches');
+    expected.delete('layer_housings');
+  }
+  // Fuel-bill root delete moved to the SECDEF delete_fuel_bill RPC (mig 107):
+  // fuel_bills drops 2 -> 1 (the BillUploadModal rollback delete remains, so the
+  // table stays classified as document-index).
+  if (hasFuelBillDeleteRpc()) {
+    expected.set('fuel_bills', 1);
+  }
+  // Feed-input root delete moved to the SECDEF delete_feed_input RPC (mig 108):
+  // no runtime client delete remains on cattle_feed_inputs (the cattle_feed_tests
+  // delete in deleteTest is unaffected and stays classified as admin-feed-config).
+  if (hasFeedInputDeleteRpc()) {
+    expected.delete('cattle_feed_inputs');
+  }
   return expected;
 }
 
@@ -186,6 +225,15 @@ function expectedDeleteRecoveryClass() {
   if (hasEquipmentLogDeleteRpcs()) {
     expected.delete('equipment_fuelings');
     expected.delete('equipment_maintenance_events');
+  }
+  if (hasLayerBatchDeleteRpc()) {
+    expected.delete('layer_batches');
+    expected.delete('layer_housings');
+  }
+  // mig 108: cattle_feed_inputs no longer has a client delete; drop its class so
+  // it is not flagged stale (cattle_feed_tests keeps its admin-feed-config class).
+  if (hasFeedInputDeleteRpc()) {
+    expected.delete('cattle_feed_inputs');
   }
   return expected;
 }
@@ -442,6 +490,124 @@ describe('delete/recovery classification inventory', () => {
     // delete_equipment_fueling(text) is intentionally NOT dropped.
     expect(migration).toContain('DROP FUNCTION IF EXISTS public.delete_equipment_fueling(text, text, text)');
     expect(migration).not.toMatch(/DROP FUNCTION[^\n]*delete_equipment_fueling\(text\)\s*;/);
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('locks the layer-batch delete as RPC-backed after migration 106', () => {
+    const tables = collectDeleteTables();
+
+    if (!hasLayerBatchDeleteRpc()) {
+      expect(tables.get('layer_batches')).toBe(1);
+      expect(tables.get('layer_housings')).toBe(1);
+      return;
+    }
+
+    const api = fs.readFileSync(path.join(ROOT, 'src/lib/layerBatchDeleteApi.js'), 'utf8');
+    const migration = fs.readFileSync(path.join(ROOT, 'supabase-migrations/106_delete_layer_batch_rpc.sql'), 'utf8');
+
+    // No runtime client delete remains on either layer table.
+    expect(tables.has('layer_batches')).toBe(false);
+    expect(tables.has('layer_housings')).toBe(false);
+
+    expect(api).toContain('export async function deleteLayerBatch');
+    expect(api).toContain("rpc('delete_layer_batch'");
+
+    expect(migration).toMatch(/CREATE OR REPLACE FUNCTION public\.delete_layer_batch[\s\S]*?SECURITY DEFINER/);
+    // One transaction: child housings cleared, root deleted, record.deleted
+    // logged. layer_dailys / egg_dailys are intentionally NOT cascaded.
+    expect(migration).toMatch(/DELETE FROM public\.layer_housings/);
+    expect(migration).toMatch(/DELETE FROM public\.layer_batches/);
+    expect(migration).toMatch(/INSERT INTO public\.activity_events/);
+    expect(migration).not.toMatch(/DELETE FROM public\.layer_dailys/);
+    expect(migration).not.toMatch(/DELETE FROM public\.egg_dailys/);
+    expect(migration).toContain("'record.deleted'");
+    expect(migration).toContain('REVOKE ALL ON FUNCTION public.delete_layer_batch(text) FROM PUBLIC, anon');
+    expect(migration).toContain('GRANT EXECUTE ON FUNCTION public.delete_layer_batch(text) TO authenticated');
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('locks the fuel-bill delete as RPC-backed after migration 107', () => {
+    const tables = collectDeleteTables();
+
+    if (!hasFuelBillDeleteRpc()) {
+      // Before mig 107: FuelBillsView has both the bill-root delete + the
+      // BillUploadModal rollback delete.
+      expect(tables.get('fuel_bills')).toBe(2);
+      return;
+    }
+
+    const api = fs.readFileSync(path.join(ROOT, 'src/lib/fuelBillDeleteApi.js'), 'utf8');
+    const migration = fs.readFileSync(path.join(ROOT, 'supabase-migrations/107_delete_fuel_bill_rpc.sql'), 'utf8');
+
+    // The bill-root delete is gone; only the BillUploadModal rollback delete
+    // remains on fuel_bills (a partial-state cleanup of a just-inserted bill,
+    // intentionally a direct client delete).
+    expect(tables.get('fuel_bills')).toBe(1);
+
+    expect(api).toContain('export async function deleteFuelBill');
+    expect(api).toContain("rpc('delete_fuel_bill'");
+
+    expect(migration).toMatch(/CREATE OR REPLACE FUNCTION public\.delete_fuel_bill[\s\S]*?SECURITY DEFINER/);
+    expect(migration).toMatch(/SET search_path = public/);
+    // One transaction: bill root deleted (lines cascade via the bill_id
+    // ON DELETE CASCADE FK — the RPC does NOT delete fuel_bill_lines directly),
+    // record.deleted logged on the registered equipment.item entity.
+    expect(migration).toMatch(/DELETE FROM public\.fuel_bills/);
+    expect(migration).not.toMatch(/DELETE FROM public\.fuel_bill_lines/);
+    expect(migration).toMatch(/INSERT INTO public\.activity_events/);
+    expect(migration).toContain("'record.deleted'");
+    expect(migration).toContain("'equipment.item'");
+    // Admin-only gate (the Bills tab is admin-gated) + FOR UPDATE lock so
+    // read+audit+delete is idempotent under concurrency.
+    expect(migration).toContain('public.is_admin()');
+    expect(migration).toMatch(/FOR UPDATE/);
+    expect(migration).toContain('REVOKE ALL ON FUNCTION public.delete_fuel_bill(text) FROM PUBLIC, anon');
+    expect(migration).toContain('GRANT EXECUTE ON FUNCTION public.delete_fuel_bill(text) TO authenticated');
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('locks the feed-input delete as RPC-backed after migration 108', () => {
+    const tables = collectDeleteTables();
+
+    if (!hasFeedInputDeleteRpc()) {
+      // Before mig 108: LivestockFeedInputsPanel has the feed-input root delete
+      // (cattle_feed_inputs) + the deleteTest cattle_feed_tests delete.
+      expect(tables.get('cattle_feed_inputs')).toBe(1);
+      return;
+    }
+
+    const api = fs.readFileSync(path.join(ROOT, 'src/lib/feedInputDeleteApi.js'), 'utf8');
+    const migration = fs.readFileSync(path.join(ROOT, 'supabase-migrations/108_delete_feed_input_rpc.sql'), 'utf8');
+
+    // The feed-input root delete is gone; cattle_feed_tests keeps its delete (the
+    // deleteTest path stays a direct client delete, tightened in place).
+    expect(tables.has('cattle_feed_inputs')).toBe(false);
+    expect(tables.get('cattle_feed_tests')).toBe(1);
+
+    expect(api).toContain('export async function deleteFeedInput');
+    expect(api).toContain("rpc('delete_feed_input'");
+
+    expect(migration).toMatch(/CREATE OR REPLACE FUNCTION public\.delete_feed_input[\s\S]*?SECURITY DEFINER/);
+    expect(migration).toMatch(/SET search_path = public/);
+    // One transaction: feed-input root deleted (tests cascade via the
+    // feed_input_id ON DELETE CASCADE FK — the RPC does NOT delete
+    // cattle_feed_tests directly), record.deleted logged on the synthetic
+    // cattle.forecast singleton stream (entity_id = 'cattle-forecast'), matching
+    // the client recordFeedInputDeletedActivity entity.
+    expect(migration).toMatch(/DELETE FROM public\.cattle_feed_inputs/);
+    expect(migration).not.toMatch(/DELETE FROM public\.cattle_feed_tests/);
+    expect(migration).toMatch(/INSERT INTO public\.activity_events/);
+    expect(migration).toContain("'record.deleted'");
+    expect(migration).toContain("'cattle.forecast'");
+    expect(migration).toContain("'cattle-forecast'");
+    expect(migration).toContain('feed_input_action');
+    // Authenticated-only gate (mirrors feed_inputs_auth_write FOR ALL TO
+    // authenticated) + FOR UPDATE lock so read+audit+delete is idempotent under
+    // concurrency. No role gate is added (none exists on the table).
+    expect(migration).toMatch(/auth\.uid\(\)/);
+    expect(migration).toMatch(/FOR UPDATE/);
+    expect(migration).toContain('REVOKE ALL ON FUNCTION public.delete_feed_input(text) FROM PUBLIC, anon');
+    expect(migration).toContain('GRANT EXECUTE ON FUNCTION public.delete_feed_input(text) TO authenticated');
     expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
   });
 

@@ -7,6 +7,7 @@
 
 import React from 'react';
 import {sb} from '../lib/supabase.js';
+import {deleteFuelBill} from '../lib/fuelBillDeleteApi.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 
@@ -232,13 +233,31 @@ function BillDetail({bill, lines, onChanged}) {
       async () => {
         setDeleteNotice(null);
         setBusy(true);
-        if (bill.pdf_path) await sb.storage.from('fuel-bills').remove([bill.pdf_path]);
-        const {error} = await sb.from('fuel_bills').delete().eq('id', bill.id);
-        setBusy(false);
-        if (error) {
-          setDeleteNotice({kind: 'error', message: 'Delete failed: ' + error.message});
+        // Transactional SECDEF delete (mig 107): deletes the fuel_bills root +
+        // cascades fuel_bill_lines + writes one record.deleted Activity event.
+        const r = await deleteFuelBill(sb, bill.id);
+        if (!r || !r.ok) {
+          setBusy(false);
+          const why =
+            r && r.reason === 'no_bill'
+              ? 'Bill no longer exists (already deleted).'
+              : (r && (r.error || r.reason)) || 'unknown error';
+          setDeleteNotice({kind: 'error', message: 'Delete failed: ' + why});
           return;
         }
+        // Best-effort storage PDF removal, ordered AFTER the RPC succeeds so a
+        // failed delete never orphan-removes the PDF. A storage failure here
+        // does not fail the delete (the bill row + lines are already gone) and
+        // must not strand the Delete button busy or skip onChanged() — wrap so
+        // a rejecting remove() can't throw out of the fire-and-forget onConfirm.
+        if (bill.pdf_path) {
+          try {
+            await sb.storage.from('fuel-bills').remove([bill.pdf_path]);
+          } catch (_e) {
+            /* best-effort cleanup; the bill + lines are already deleted */
+          }
+        }
+        setBusy(false);
         onChanged();
       },
     );

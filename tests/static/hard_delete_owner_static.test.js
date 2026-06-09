@@ -6,6 +6,44 @@ import {describe, expect, it} from 'vitest';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 
+// Layer-batch lifecycle RPC (mig 106): LayerBatchPage.handleDeleteBatch routes
+// its two raw client deletes (layer_housings child clear + layer_batches root)
+// through delete_layer_batch instead, so once the wrapper + migration exist the
+// page has no runtime .delete() and neither layer table is a client delete
+// target anymore.
+function hasLayerBatchDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/layerBatchDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/106_delete_layer_batch_rpc.sql'))
+  );
+}
+
+// Fuel-bill delete RPC (mig 107): FuelBillsView BillDetail.del routes the
+// fuel_bills root hard-delete through delete_fuel_bill instead. The
+// BillUploadModal rollback delete (a partial-state cleanup of a just-inserted
+// bill) stays a direct client delete, so FuelBillsView drops from 2 client
+// deletes to 1 and fuel_bills drops from 2 to 1 once the wrapper + migration
+// exist.
+function hasFuelBillDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/fuelBillDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/107_delete_fuel_bill_rpc.sql'))
+  );
+}
+
+// Feed-input delete RPC (mig 108): LivestockFeedInputsPanel.deleteFeedPermanently
+// routes the cattle_feed_inputs root hard-delete through delete_feed_input
+// instead (tests cascade via the FK). The deleteTest cattle_feed_tests delete
+// stays a direct client delete, so LivestockFeedInputsPanel drops from 2 client
+// deletes to 1 and cattle_feed_inputs drops from 1 to 0 once the wrapper +
+// migration exist.
+function hasFeedInputDeleteRpc() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/feedInputDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/108_delete_feed_input_rpc.sql'))
+  );
+}
+
 const EXPECTED_DELETE_OWNERS = new Map([
   ['src/admin/EquipmentMaterialsEditor.jsx', 2],
   ['src/admin/FuelBillsView.jsx', 2],
@@ -24,6 +62,9 @@ const EXPECTED_DELETE_OWNERS = new Map([
   // .delete() anymore.
   // EquipmentDetail fueling + maintenance-event deletes moved to the SECDEF
   // equipment-log delete RPCs (migration 102); no runtime client delete remains.
+  // LayerBatchPage.handleDeleteBatch (layer_housings child clear + layer_batches
+  // root) moved to the SECDEF delete_layer_batch RPC (migration 106); the entry
+  // is removed below via the override helper once the wrapper + migration exist.
   ['src/layer/LayerBatchPage.jsx', 2],
   ['src/lib/cattleForecastApi.js', 2],
   // Saved views are user preferences (mig 095), not a soft-delete entity root —
@@ -58,6 +99,9 @@ const EXPECTED_DELETE_TABLES = new Map([
   ['equipment_service_materials', 1],
   ['fuel_bills', 2],
   ['fuel_supplies', 1],
+  // layer_batches + layer_housings client deletes moved to the SECDEF
+  // delete_layer_batch RPC (migration 106); both entries are removed below via
+  // the override helper once the wrapper + migration exist.
   ['layer_batches', 1],
   ['layer_housings', 1],
   ['profiles', 1],
@@ -112,6 +156,49 @@ function collectSupabaseDeletes() {
   return {owners, tables, total};
 }
 
+function expectedDeleteOwners() {
+  const expected = new Map(EXPECTED_DELETE_OWNERS);
+  // mig 106: LayerBatchPage routes its two deletes through delete_layer_batch,
+  // so it has no runtime client delete anymore.
+  if (hasLayerBatchDeleteRpc()) expected.delete('src/layer/LayerBatchPage.jsx');
+  // mig 107: FuelBillsView routes the bill-root delete through delete_fuel_bill;
+  // only the BillUploadModal rollback delete remains (2 -> 1).
+  if (hasFuelBillDeleteRpc()) expected.set('src/admin/FuelBillsView.jsx', 1);
+  // mig 108: LivestockFeedInputsPanel routes the feed-input root delete through
+  // delete_feed_input; only the deleteTest cattle_feed_tests delete remains
+  // (2 -> 1).
+  if (hasFeedInputDeleteRpc()) expected.set('src/admin/LivestockFeedInputsPanel.jsx', 1);
+  return expected;
+}
+
+function expectedDeleteTables() {
+  const expected = new Map(EXPECTED_DELETE_TABLES);
+  // mig 106: no runtime client delete remains on either layer table.
+  if (hasLayerBatchDeleteRpc()) {
+    expected.delete('layer_batches');
+    expected.delete('layer_housings');
+  }
+  // mig 107: the bill-root delete moves to the RPC; the BillUploadModal rollback
+  // delete remains, so fuel_bills drops 2 -> 1.
+  if (hasFuelBillDeleteRpc()) expected.set('fuel_bills', 1);
+  // mig 108: the feed-input root delete moves to the RPC; no runtime client
+  // delete remains on cattle_feed_inputs (the cattle_feed_tests delete stays).
+  if (hasFeedInputDeleteRpc()) expected.delete('cattle_feed_inputs');
+  return expected;
+}
+
+function expectedDeleteTotal() {
+  // 21 before mig 106; LayerBatchPage's two deletes drop out once mig 106 lands
+  // (19), FuelBillsView's bill-root delete drops out once mig 107 lands (18),
+  // and LivestockFeedInputsPanel's feed-input root delete drops out once mig 108
+  // lands (17).
+  let total = 21;
+  if (hasLayerBatchDeleteRpc()) total -= 2;
+  if (hasFuelBillDeleteRpc()) total -= 1;
+  if (hasFeedInputDeleteRpc()) total -= 1;
+  return total;
+}
+
 function diffMap(expected, actual) {
   const unexpected = [...actual.keys()].filter((key) => !expected.has(key));
   const missing = [...expected.keys()].filter((key) => !actual.has(key));
@@ -124,9 +211,9 @@ function diffMap(expected, actual) {
 describe('Supabase hard-delete owner boundary', () => {
   it('keeps runtime table deletes in known owner modules', () => {
     const {owners, total} = collectSupabaseDeletes();
-    const {unexpected, missing, wrongCounts} = diffMap(EXPECTED_DELETE_OWNERS, owners);
+    const {unexpected, missing, wrongCounts} = diffMap(expectedDeleteOwners(), owners);
 
-    expect(total).toBe(21);
+    expect(total).toBe(expectedDeleteTotal());
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
@@ -134,7 +221,7 @@ describe('Supabase hard-delete owner boundary', () => {
 
   it('keeps runtime table-delete targets in the known table set', () => {
     const {tables} = collectSupabaseDeletes();
-    const {unexpected, missing, wrongCounts} = diffMap(EXPECTED_DELETE_TABLES, tables);
+    const {unexpected, missing, wrongCounts} = diffMap(expectedDeleteTables(), tables);
 
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);

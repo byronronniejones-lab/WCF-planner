@@ -3,6 +3,7 @@ import React from 'react';
 import {renderCattleIconLabel} from '../components/CattleIcon.jsx';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 import {recordActivityEvent} from '../lib/entityMutations.js';
+import {deleteFeedInput} from '../lib/feedInputDeleteApi.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 
@@ -200,7 +201,11 @@ const LivestockFeedInputsPanel = ({sb}) => {
     return perUnit / wt;
   }
 
-  async function recordFeedInputActivity({eventType, body, payload}) {
+  // Best-effort by default (logs to console and swallows). Pass surfaceErrors:true
+  // to RE-THROW the failure so a caller can surface a warning to the operator
+  // instead of silently losing the audit (used by the test-delete path so a
+  // failed record.deleted is visible — see deleteTest).
+  async function recordFeedInputActivity({eventType, body, payload, surfaceErrors = false}) {
     try {
       await recordActivityEvent(sb, {
         ...FEED_ACTIVITY_ENTITY,
@@ -210,6 +215,7 @@ const LivestockFeedInputsPanel = ({sb}) => {
       });
     } catch (e) {
       console.warn('feed input Activity log failed:', e && e.message ? e.message : e);
+      if (surfaceErrors) throw e;
     }
   }
 
@@ -236,6 +242,11 @@ const LivestockFeedInputsPanel = ({sb}) => {
     });
   }
 
+  // Retained for any FUTURE non-RPC feed-input delete path. The permanent-delete
+  // path (deleteFeedPermanently) now routes through delete_feed_input (mig 108),
+  // which writes the record.deleted Activity in the same transaction, so this
+  // best-effort client helper is no longer called there.
+  // eslint-disable-next-line no-unused-vars -- kept for non-RPC delete paths (mig 108)
   async function recordFeedInputDeletedActivity(feed) {
     if (!feed) return;
     await recordFeedInputActivity({
@@ -287,6 +298,9 @@ const LivestockFeedInputsPanel = ({sb}) => {
         feed_test_id: test.id,
         effective_date: test.effective_date || null,
       },
+      // Surface a failed test-delete audit to the caller (deleteTest) so it can
+      // warn the operator rather than silently losing the record.deleted event.
+      surfaceErrors: true,
     });
   }
 
@@ -491,10 +505,29 @@ const LivestockFeedInputsPanel = ({sb}) => {
   async function deleteTest(testId, pdfPath) {
     if (!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete('Delete this test result? PDF will also be removed. This cannot be undone.', async () => {
+      setTestNotice(null);
       const currentFeed =
         feeds.find((f) => f.id === editingId) ||
         (form ? buildFeedRecord(form, editingId) : {id: editingId, name: editingId});
       const test = feedTests.find((t) => t.id === testId);
+      // Delete the DB row FIRST so a failed delete never orphan-removes the PDF.
+      const {error} = await sb.from('cattle_feed_tests').delete().eq('id', testId);
+      if (error) {
+        setTestNotice({kind: 'error', message: 'Could not delete test: ' + error.message});
+        return;
+      }
+      // Row gone: surface (don't silently swallow) a record.deleted Activity
+      // failure as a warning so the operator knows the audit didn't land, while
+      // still proceeding with the (already-successful) row delete + PDF cleanup.
+      try {
+        await recordFeedTestDeletedActivity(currentFeed, test);
+      } catch (e) {
+        setTestNotice({
+          kind: 'warning',
+          message: 'Test deleted, but the activity log entry failed to record: ' + (e && e.message ? e.message : e),
+        });
+      }
+      // Best-effort storage cleanup AFTER the row delete succeeds.
       if (pdfPath) {
         try {
           await sb.storage.from('cattle-feed-pdfs').remove([pdfPath]);
@@ -502,26 +535,40 @@ const LivestockFeedInputsPanel = ({sb}) => {
           /* best-effort storage cleanup */
         }
       }
-      const {error} = await sb.from('cattle_feed_tests').delete().eq('id', testId);
-      if (error) {
-        setTestNotice({kind: 'error', message: 'Could not delete test: ' + error.message});
-        return;
-      }
-      await recordFeedTestDeletedActivity(currentFeed, test);
       await loadTests(editingId);
     });
   }
   // Permanent delete of the feed itself — cascades to tests and PDFs.
   // Historical cattle_dailys snapshots remain intact (jsonb values, not FK).
+  //
+  // Routed through the transactional SECDEF RPC delete_feed_input (migration
+  // 108): the RPC deletes the cattle_feed_inputs root, cascades the child
+  // cattle_feed_tests via the feed_input_id ON DELETE CASCADE FK, and writes the
+  // ONE record.deleted Activity event in the same transaction — so the audit is
+  // guaranteed and we no longer call the best-effort client
+  // recordFeedInputDeletedActivity here. The storage PDF bulk-removal stays a
+  // best-effort client step AFTER the RPC succeeds, so a failed/blocked delete
+  // never orphan-removes the children's PDFs.
   async function deleteFeedPermanently(id) {
     if (!window._wcfConfirmDelete) return;
     window._wcfConfirmDelete(
       'Permanently delete this feed? All historical test results and PDFs will be removed. Daily reports already submitted keep their snapshot values. This cannot be undone.',
       async () => {
         setNotice(null);
-        const feed = feeds.find((f) => f.id === id) || (form ? buildFeedRecord(form, id) : {id, name: id});
+        // Collect the children's PDF paths BEFORE the delete so we can sweep
+        // storage after the RPC removes the rows (the RPC + cascade clear the DB
+        // rows; the PDFs live in storage and are cleaned up best-effort here).
         const {data: tests} = await sb.from('cattle_feed_tests').select('pdf_path').eq('feed_input_id', id);
         const pdfPaths = (tests || []).map((t) => t.pdf_path).filter(Boolean);
+        const result = await deleteFeedInput(sb, id);
+        if (!result || !result.ok) {
+          const reason = result && result.reason ? result.reason : 'unknown';
+          const detail = result && result.error ? ': ' + result.error : ' (' + reason + ')';
+          setNotice({kind: 'error', message: 'Could not delete' + detail});
+          return;
+        }
+        // RPC succeeded (root + tests gone, Activity logged in-txn). Sweep the
+        // children's PDFs best-effort.
         if (pdfPaths.length > 0) {
           try {
             await sb.storage.from('cattle-feed-pdfs').remove(pdfPaths);
@@ -529,12 +576,6 @@ const LivestockFeedInputsPanel = ({sb}) => {
             /* best-effort storage cleanup */
           }
         }
-        const {error} = await sb.from('cattle_feed_inputs').delete().eq('id', id);
-        if (error) {
-          setNotice({kind: 'error', message: 'Could not delete: ' + error.message});
-          return;
-        }
-        await recordFeedInputDeletedActivity(feed);
         await loadFeeds();
         cancelForm();
       },

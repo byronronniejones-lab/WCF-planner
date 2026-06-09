@@ -485,8 +485,8 @@ describe('Activity Layer — event type labels', () => {
 describe('Activity Layer — pilot surface: layer batch notes (field.updated)', () => {
   const layerPageSrc = fs.readFileSync(path.join(ROOT, 'src/layer/LayerBatchPage.jsx'), 'utf8');
 
-  it('imports recordFieldChange from activityApi', () => {
-    expect(layerPageSrc).toContain("import {recordFieldChange} from '../lib/activityApi.js'");
+  it('imports recordFieldChange (+ recordStatusChange for the mig-106 retire audit) from activityApi', () => {
+    expect(layerPageSrc).toContain("import {recordFieldChange, recordStatusChange} from '../lib/activityApi.js'");
   });
 
   it('tracks initial notes via batchInitialNotesRef', () => {

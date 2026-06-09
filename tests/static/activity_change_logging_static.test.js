@@ -13,6 +13,13 @@ const sheepAnimalPage = fs.readFileSync(path.join(ROOT, 'src/sheep/SheepAnimalPa
 const eqAdmin = fs.readFileSync(path.join(ROOT, 'src/admin/EquipmentWebformsAdmin.jsx'), 'utf8');
 const livestockFeedInputs = fs.readFileSync(path.join(ROOT, 'src/admin/LivestockFeedInputsPanel.jsx'), 'utf8');
 const diffHelper = fs.readFileSync(path.join(ROOT, 'src/lib/activityChangeDiff.js'), 'utf8');
+const pigBatchesView = fs.readFileSync(path.join(ROOT, 'src/pig/PigBatchesView.jsx'), 'utf8');
+const pigSubBatches = fs.readFileSync(path.join(ROOT, 'src/pig/usePigSubBatches.js'), 'utf8');
+const pigMortality = fs.readFileSync(path.join(ROOT, 'src/pig/usePigMortality.js'), 'utf8');
+const pigProcessingTrips = fs.readFileSync(path.join(ROOT, 'src/pig/usePigProcessingTrips.js'), 'utf8');
+const pigBreedingView = fs.readFileSync(path.join(ROOT, 'src/pig/BreedingView.jsx'), 'utf8');
+const mainJsx = fs.readFileSync(path.join(ROOT, 'src/main.jsx'), 'utf8');
+const broilerListView = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerListView.jsx'), 'utf8');
 
 function stripComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -55,7 +62,9 @@ describe('Activity change logging - cattle.animal', () => {
 
 describe('Activity change logging - sheep.animal', () => {
   it('SheepAnimalPage imports runMutation and recordFieldChange', () => {
-    expect(sheepAnimalPage).toContain("import {runMutation, recordFieldChange} from '../lib/entityMutations.js'");
+    expect(sheepAnimalPage).toContain(
+      "import {runMutation, recordFieldChange, recordActivityEvent} from '../lib/entityMutations.js'",
+    );
   });
 
   it('SheepAnimalPage imports buildChanges', () => {
@@ -75,6 +84,31 @@ describe('Activity change logging - sheep.animal', () => {
 
   it('does not route deletes through record.deleted', () => {
     expect(sheepAnimalPage.match(/record\.deleted/g)).toBeNull();
+  });
+
+  it('imports recordActivityEvent for the best-effort lambing-add emit', () => {
+    expect(sheepAnimalPage).toMatch(/import \{[^}]*recordActivityEvent[^}]*\} from '\.\.\/lib\/entityMutations\.js'/);
+  });
+
+  it('addLambingRecord emits a best-effort sheep.animal record.created scoped to the dam', () => {
+    // The mig 094 delete RPC already logs record.deleted against the dam's
+    // sheep.animal record; adding a lambing must emit the symmetric
+    // record.created so the audit stream is not one-sided.
+    const fn = sheepAnimalPage.match(/async function addLambingRecord\([\s\S]*?\n {2}\}/);
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toContain('recordActivityEvent(sb');
+    expect(fn[0]).toContain("entityType: 'sheep.animal'");
+    // Scoped to the dam's id, NOT the lambing record id.
+    expect(fn[0]).toContain('entityId: sheepRecord.id');
+    expect(fn[0]).toContain("eventType: 'record.created'");
+    // Lambing summary (date + counts) rides the payload.
+    expect(fn[0]).toContain("record: 'sheep.lambing'");
+    expect(fn[0]).toContain('lambing_date: rec.lambing_date');
+    expect(fn[0]).toContain('total_born: rec.total_born');
+    // Best-effort: logged only AFTER the insert succeeds (error path returns
+    // first), wrapped in try/catch so it never blocks the save.
+    expect(fn[0]).toMatch(/if \(error\) \{[\s\S]*?return false;[\s\S]*?recordActivityEvent\(sb/);
+    expect(fn[0]).toMatch(/try \{[\s\S]*?recordActivityEvent[\s\S]*?\} catch \(_e\) \{/);
   });
 });
 
@@ -161,7 +195,7 @@ describe('Custom editable-table Activity — cattle forecast hide/unhide (CP1)',
   it('mounts a month-filtered Activity log inside each expanded forecast month bucket', () => {
     expect(cattleForecast).toContain('RecordCollaborationSection');
     expect(cattleForecast).toContain('data-month-activity-log={bucket.monthKey}');
-    expect(cattleForecast).toContain("ev?.payload?.month_key === bucket.monthKey");
+    expect(cattleForecast).toContain('ev?.payload?.month_key === bucket.monthKey');
     expect(cattleForecast).toMatch(
       /<RecordCollaborationSection[\s\S]*?entityType="cattle\.forecast"[\s\S]*?entityId="cattle-forecast"[\s\S]*?activityEventFilter=\{activityEventFilter\}[\s\S]*?showComments=\{false\}/,
     );
@@ -242,13 +276,44 @@ describe('Custom editable-table Activity — feed inputs and feed tests (CP2)', 
     expect(closeBody).toContain('await saveFeed(form, null, {recordActivity: true})');
   });
 
-  it('delete Activity is logged only after the delete write succeeds', () => {
+  it('test-delete Activity is logged only after the delete write succeeds', () => {
+    // deleteTest deletes the cattle_feed_tests row FIRST, bails on error, then
+    // logs the record.deleted Activity (and only then sweeps the PDF + reloads).
     expect(livestockFeedInputs).toMatch(
       /from\('cattle_feed_tests'\)\.delete\(\)\.eq\('id', testId\);[\s\S]*?if \(error\) \{[\s\S]*?return;[\s\S]*?await recordFeedTestDeletedActivity\(currentFeed, test\)/,
     );
+  });
+
+  it('test-delete sweeps the PDF AFTER the row delete succeeds (no orphan removal on failure)', () => {
+    // The storage PDF remove must come AFTER the .delete() + error bail, so a
+    // failed/blocked delete never orphan-removes the PDF.
     expect(livestockFeedInputs).toMatch(
-      /from\('cattle_feed_inputs'\)\.delete\(\)\.eq\('id', id\);[\s\S]*?if \(error\) \{[\s\S]*?return;[\s\S]*?await recordFeedInputDeletedActivity\(feed\)/,
+      /from\('cattle_feed_tests'\)\.delete\(\)\.eq\('id', testId\);[\s\S]*?if \(error\) \{[\s\S]*?return;[\s\S]*?storage\.from\('cattle-feed-pdfs'\)\.remove\(\[pdfPath\]\)/,
     );
+  });
+
+  it('test-delete surfaces a warning (does not silently swallow) when the record.deleted Activity fails', () => {
+    // recordFeedTestDeletedActivity re-throws (surfaceErrors:true) and deleteTest
+    // catches it to show an InlineNotice warning rather than losing the audit.
+    expect(livestockFeedInputs).toContain('surfaceErrors: true');
+    expect(livestockFeedInputs).toMatch(
+      /await recordFeedTestDeletedActivity\(currentFeed, test\);[\s\S]*?catch \(e\) \{[\s\S]*?setTestNotice\(\{[\s\S]*?kind: 'warning'/,
+    );
+  });
+
+  it('feed-input permanent delete routes through the SECDEF RPC (mig 108), not a client cattle_feed_inputs delete', () => {
+    // The permanent-delete path moved to delete_feed_input (mig 108): no client
+    // cattle_feed_inputs .delete() remains, the wrapper is called, and the
+    // redundant client recordFeedInputDeletedActivity is NOT invoked on this path
+    // (the RPC writes the record.deleted Activity in the same transaction).
+    expect(livestockFeedInputs).toContain("import {deleteFeedInput} from '../lib/feedInputDeleteApi.js'");
+    const fn = livestockFeedInputs.match(/async function deleteFeedPermanently\([\s\S]*?\n {2}\}/);
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toContain('deleteFeedInput(sb, id)');
+    expect(fn[0]).not.toMatch(/from\('cattle_feed_inputs'\)\.delete\(\)/);
+    expect(fn[0]).not.toContain('recordFeedInputDeletedActivity');
+    // The PDF bulk-remove stays best-effort AFTER the RPC succeeds.
+    expect(fn[0]).toMatch(/result[\s\S]*?\.ok[\s\S]*?storage\.from\('cattle-feed-pdfs'\)\.remove\(pdfPaths\)/);
   });
 });
 
@@ -271,8 +336,180 @@ describe('mig 076 — _activity_can_read cattle.forecast branch', () => {
   });
 });
 
+describe('Activity change logging - pig.batch (best-effort client events, app_store JSON)', () => {
+  // Pig batch/sub-batch/trip/mortality data lives in app_store JSON (ppp-feeders-v1),
+  // NOT a relational table, so there is no SECDEF delete RPC. The pig.batch Activity
+  // stream (mounted in PigBatchPage, entity_id = group.id) is fed by best-effort
+  // recordActivityEvent calls from the mutation hooks/view. Every emit is wrapped in
+  // try/catch (+ swallowed promise reject) so it can never block the mutation.
+
+  it('the four pig mutation sources import recordActivityEvent from activityApi', () => {
+    for (const src of [pigBatchesView, pigSubBatches, pigMortality, pigProcessingTrips]) {
+      expect(src).toMatch(/import \{[^}]*recordActivityEvent[^}]*\} from '\.\.\/lib\/activityApi\.js'/);
+    }
+  });
+
+  it('every pig emit targets the pig.batch stream (entity_id = group.id)', () => {
+    for (const src of [pigBatchesView, pigSubBatches, pigMortality, pigProcessingTrips]) {
+      expect(src).toContain("entityType: 'pig.batch'");
+    }
+  });
+
+  it('usePigSubBatches.deleteSubBatch emits a best-effort record.deleted sub-batch event', () => {
+    const fn = pigSubBatches.match(/function deleteSubBatch\([\s\S]*?\n {2}\}/);
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toContain('recordActivityEvent(sb');
+    expect(fn[0]).toContain("entityType: 'pig.batch'");
+    expect(fn[0]).toContain('entityId: batchId');
+    expect(fn[0]).toContain("eventType: 'record.deleted'");
+    // Orphaned attribution/transfer/mortality counts ride in the payload.
+    expect(fn[0]).toContain('orphanedTransfers');
+    expect(fn[0]).toContain('orphanedTripPigs');
+    expect(fn[0]).toContain('orphanedMortality');
+    // Best-effort: try/catch wrap + swallowed reject; the persist still runs.
+    expect(fn[0]).toContain('persistFeeders(nb)');
+    expect(fn[0]).toMatch(/try \{[\s\S]*?recordActivityEvent[\s\S]*?\}\)\.catch\(\(\) => \{\}\)/);
+  });
+
+  it('usePigMortality emits record.created on save and record.deleted on delete (after the upsert)', () => {
+    const save = pigMortality.match(/async function saveMortality\([\s\S]*?\n {2}\}/);
+    expect(save).not.toBeNull();
+    expect(save[0]).toContain("eventType: 'record.created'");
+    expect(save[0]).toContain("entityType: 'pig.batch'");
+    expect(save[0]).toContain('entityId: batchId');
+    // Logged only after the app_store upsert succeeds (the error path returns first).
+    expect(save[0]).toMatch(/upsert\([\s\S]*?recordActivityEvent\(sb/);
+
+    const del = pigMortality.match(/async function deleteMortality\([\s\S]*?\n {2}\}/);
+    expect(del).not.toBeNull();
+    expect(del[0]).toContain("eventType: 'record.deleted'");
+    expect(del[0]).toContain('entityId: batchId');
+    expect(del[0]).toMatch(/upsert\([\s\S]*?recordActivityEvent\(sb/);
+  });
+
+  it('usePigProcessingTrips.deleteTrip emits a best-effort record.deleted trip event', () => {
+    const fn = pigProcessingTrips.match(/function deleteTrip\([\s\S]*?\n {2}\}/);
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toContain("eventType: 'record.deleted'");
+    expect(fn[0]).toContain('entityId: batchId');
+    expect(fn[0]).toContain("record: 'pig.processingTrip'");
+    // Trip date + pigCount + weights ride the payload.
+    expect(fn[0]).toContain('pigCount');
+    expect(fn[0]).toContain('hangingWeight');
+    expect(fn[0]).toMatch(/try \{[\s\S]*?recordActivityEvent[\s\S]*?\}\)\.catch\(\(\) => \{\}\)/);
+  });
+
+  it('PigBatchesView emits record.deleted for the batch root and status.changed for archive/unarchive', () => {
+    expect(pigBatchesView).toContain("eventType: 'record.deleted'");
+    expect(pigBatchesView).toContain("record: 'pig.batch'");
+    // Root delete carries sub/trip/mortality cascade counts.
+    expect(pigBatchesView).toContain('subBatchCount');
+    expect(pigBatchesView).toContain('processingTripCount');
+    expect(pigBatchesView).toContain('mortalityCount');
+    // archive/unarchive route through a shared status.changed helper.
+    expect(pigBatchesView).toContain('function recordBatchStatusChange(');
+    expect(pigBatchesView).toContain("eventType: 'status.changed'");
+    expect(pigBatchesView).toContain('subCascadeCount');
+  });
+
+  it('does NOT change pig delete BEHAVIOR — no blocking guard added around the deletes', () => {
+    // The deletes still filter + persist unconditionally; the Activity emit is
+    // additive and swallowed. Assert the persist/setFeederGroups calls survive.
+    expect(pigSubBatches).toContain('persistFeeders(nb)');
+    expect(pigProcessingTrips).toContain('persistFeeders(nb)');
+    expect(pigBatchesView).toContain('setFeederGroups(nb)');
+  });
+
+  it('pig breeding cycles are intentionally SKIPPED — no pig.breeding entity is invented', () => {
+    // BreedingView deletes a breeding cycle but pig breeding has NO registered
+    // Activity entity/stream (the registry only has pig.batch + pig.daily for pig;
+    // breeding/forecast workflow entities are cattle-only). So we do NOT emit there
+    // and we must not fabricate a pig.breeding entity_type.
+    expect(pigBreedingView).not.toContain('recordActivityEvent');
+    expect(pigBreedingView).not.toContain('pig.breeding');
+    const registry = fs.readFileSync(path.join(ROOT, 'src/lib/activityRegistry.js'), 'utf8');
+    expect(registry).not.toContain("'pig.breeding'");
+    expect(registry).not.toContain('PIG_BREEDING');
+  });
+});
+
+describe('Activity change logging - broiler.batch (best-effort client events, app_store JSON)', () => {
+  // Broiler batches live in app_store JSON (ppp-v4), NOT a relational table, so
+  // there is no SECDEF delete RPC. The broiler.batch Activity stream (mounted in
+  // BroilerBatchPage, entity_id = batch.name) is fed by best-effort
+  // recordActivityEvent calls: the batch delete in src/main.jsx del(id), and the
+  // process/reactivate status flips in BroilerListView. Every emit is wrapped in
+  // try/catch (+ swallowed promise reject) so it can never block the mutation.
+
+  it('main.jsx and BroilerListView import recordActivityEvent from activityApi', () => {
+    for (const src of [mainJsx, broilerListView]) {
+      expect(src).toMatch(/import \{[^}]*recordActivityEvent[^}]*\} from '\.[./]*lib\/activityApi\.js'/);
+    }
+  });
+
+  it('every broiler emit targets the broiler.batch stream (entity_id = batch.name)', () => {
+    for (const src of [mainJsx, broilerListView]) {
+      expect(src).toContain("entityType: 'broiler.batch'");
+    }
+  });
+
+  it('main.jsx del(id) emits a best-effort record.deleted AFTER the persist', () => {
+    const fn = mainJsx.match(/function del\(id\) \{[\s\S]*?\n {2}\}/);
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toContain('recordActivityEvent(sb');
+    expect(fn[0]).toContain("entityType: 'broiler.batch'");
+    expect(fn[0]).toContain('entityId: name');
+    expect(fn[0]).toContain("eventType: 'record.deleted'");
+    // breed/hatchery/status/processing context ride in the payload.
+    expect(fn[0]).toContain('breed:');
+    expect(fn[0]).toContain('hatchery:');
+    expect(fn[0]).toContain('status:');
+    expect(fn[0]).toContain('processingDate:');
+    // Best-effort: logged only after persist; try/catch + swallowed reject; the
+    // delete still filters + persists unconditionally (behavior unchanged).
+    expect(fn[0]).toMatch(/persist\(nb\)[\s\S]*?recordActivityEvent\(sb/);
+    expect(fn[0]).toMatch(/try \{[\s\S]*?recordActivityEvent[\s\S]*?\}\)\.catch\(\(\) => \{\}\)/);
+  });
+
+  it('BroilerListView routes process/reactivate flips through a shared status.changed helper', () => {
+    expect(broilerListView).toContain('function recordBroilerStatusChange(');
+    expect(broilerListView).toContain("eventType: 'status.changed'");
+    expect(broilerListView).toContain('entityId: name');
+    // Both flip sites call the helper after persist (process -> processed,
+    // reactivate -> active); the persist still runs unconditionally.
+    expect(broilerListView).toContain("recordBroilerStatusChange(b, b.status || 'active', 'processed')");
+    expect(broilerListView).toContain("recordBroilerStatusChange(b, b.status || 'processed', 'active')");
+    expect(broilerListView).toMatch(/persist\(nb\);\s*recordBroilerStatusChange\(/);
+    // Best-effort: try/catch + swallowed reject inside the helper.
+    const fn = broilerListView.match(/function recordBroilerStatusChange\([\s\S]*?\n\}/);
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toMatch(/try \{[\s\S]*?recordActivityEvent[\s\S]*?\}\)\.catch\(\(\) => \{\}\)/);
+  });
+
+  it('does NOT change broiler delete/persist BEHAVIOR — emit is additive and swallowed', () => {
+    // del still filters + persists; the status flips still map + persist.
+    const fn = mainJsx.match(/function del\(id\) \{[\s\S]*?\n {2}\}/);
+    expect(fn[0]).toContain('batches.filter((b) => b.id !== id)');
+    expect(fn[0]).toContain('persist(nb)');
+    expect(broilerListView).toContain("{...x, status: 'processed'}");
+    expect(broilerListView).toContain("{...x, status: 'active'}");
+  });
+});
+
 describe('Activity change logging - no direct table access', () => {
-  const allSrc = [cattleHerds, cattleForecast, sheepFlocks, eqAdmin, livestockFeedInputs];
+  const allSrc = [
+    cattleHerds,
+    cattleForecast,
+    sheepFlocks,
+    eqAdmin,
+    livestockFeedInputs,
+    pigBatchesView,
+    pigSubBatches,
+    pigMortality,
+    pigProcessingTrips,
+    mainJsx,
+    broilerListView,
+  ];
   for (const src of allSrc) {
     it('does not reference .from(activity_events)', () => {
       expect(src).not.toMatch(/\.from\(['"]activity_events['"]\)/);

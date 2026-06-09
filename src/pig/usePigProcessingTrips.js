@@ -1,5 +1,6 @@
 import {useState, useEffect} from 'react';
 import {sb} from '../lib/supabase.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
 import {computePigBatchFCR, pigSourceCountKeys} from '../lib/pig.js';
 
 // Pig.batch processing-trip workflow (CP10 extraction from PigBatchesView).
@@ -166,6 +167,10 @@ export function usePigProcessingTrips({
 
   function deleteTrip(batchId, tripId) {
     confirmDelete('Delete this processing trip? This cannot be undone.', () => {
+      // Snapshot the parent group + the trip being removed BEFORE the filter,
+      // so the best-effort Activity payload can describe what was deleted.
+      const parent = feederGroups.find((g) => g.id === batchId) || null;
+      const removed = parent ? (parent.processingTrips || []).find((t) => t.id === tripId) || null : null;
       const nb = feederGroups.map((g) => {
         if (g.id !== batchId) return g;
         const next = {...g, processingTrips: (g.processingTrips || []).filter((t) => t.id !== tripId)};
@@ -179,6 +184,28 @@ export function usePigProcessingTrips({
         return next;
       });
       persistFeeders(nb);
+      // Best-effort pig.batch Activity (entity_id = group.id = batchId): a
+      // processing trip was deleted. Never blocks the mutation (try/catch).
+      try {
+        recordActivityEvent(sb, {
+          entityType: 'pig.batch',
+          entityId: batchId,
+          eventType: 'record.deleted',
+          entityLabel: (parent && parent.batchName) || batchId,
+          body: 'Deleted processing trip' + (removed && removed.date ? ' (' + removed.date + ')' : ''),
+          payload: {
+            record: 'pig.processingTrip',
+            batchName: (parent && parent.batchName) || null,
+            tripId,
+            date: removed ? removed.date || null : null,
+            pigCount: removed ? parseInt(removed.pigCount) || 0 : null,
+            liveWeights: removed ? removed.liveWeights || null : null,
+            hangingWeight: removed ? parseFloat(removed.hangingWeight) || 0 : null,
+          },
+        }).catch(() => {});
+      } catch (_e) {
+        /* best-effort — never block the delete */
+      }
     });
   }
 

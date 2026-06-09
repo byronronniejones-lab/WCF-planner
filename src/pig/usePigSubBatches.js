@@ -1,4 +1,7 @@
 import {useState} from 'react';
+import {sb} from '../lib/supabase.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
+import {pigTransfersForSub, pigMortalityForSub, pigTripPigsForSub} from '../lib/pig.js';
 
 // Pig.batch sub-batch (partition) workflow (CP8 extraction from PigBatchesView).
 // Owns the sub-form state plus the add/edit/autosave/close/save/delete/archive
@@ -18,6 +21,9 @@ import {useState} from 'react';
 //   subAutoSaveTimer/pigAutoSaveTimer — shared debounce refs (props)
 //   partitionDirtyRef              — shared with closeFeederForm (view-owned ref):
 //                                    set here on a partition edit, cleared there
+//   breeders                       — transfer source rows; read READ-ONLY here only
+//                                    to count orphaned sub→breeding transfers for the
+//                                    best-effort delete Activity payload
 export function usePigSubBatches({
   feederGroups,
   setFeederGroups,
@@ -27,6 +33,7 @@ export function usePigSubBatches({
   subAutoSaveTimer,
   pigAutoSaveTimer,
   partitionDirtyRef,
+  breeders,
 }) {
   const [showSubForm, setShowSubForm] = useState(null); // batchId or null
   const [subForm, setSubForm] = useState({name: '', giltCount: 0, boarCount: 0, originalPigCount: 0, notes: ''});
@@ -200,10 +207,46 @@ export function usePigSubBatches({
 
   function deleteSubBatch(batchId, subId) {
     confirmDelete('Delete this sub-batch? This cannot be undone.', () => {
+      // Snapshot the parent + sub (and any attribution/transfer/mortality counts
+      // orphaned by the delete) BEFORE the filter removes the row, so the
+      // best-effort Activity payload can describe what was actually removed.
+      const parent = feederGroups.find((g) => g.id === batchId) || null;
+      const sub = parent ? (parent.subBatches || []).find((s) => s.id === subId) || null : null;
       const nb = feederGroups.map((g) =>
         g.id !== batchId ? g : {...g, subBatches: (g.subBatches || []).filter((s) => s.id !== subId)},
       );
       persistFeeders(nb);
+      // Best-effort pig.batch Activity: sub-batch delete on the parent group's
+      // stream (entity_id = group.id). Never blocks the mutation (try/catch).
+      try {
+        const subName = (sub && sub.name) || null;
+        const transfers = sub ? pigTransfersForSub(breeders, parent && parent.batchName, subName) : null;
+        const orphanedTransfers = transfers ? transfers.count : 0;
+        const orphanedTripPigs = pigTripPigsForSub(parent && parent.processingTrips, subId);
+        const orphanedMortality = subName ? pigMortalityForSub(parent, subName) : 0;
+        recordActivityEvent(sb, {
+          entityType: 'pig.batch',
+          entityId: batchId,
+          eventType: 'record.deleted',
+          entityLabel: (parent && parent.batchName) || batchId,
+          body:
+            'Deleted sub-batch ' +
+            (subName ? '"' + subName + '"' : '(unnamed)') +
+            ' from ' +
+            ((parent && parent.batchName) || 'batch'),
+          payload: {
+            record: 'pig.subBatch',
+            batchName: (parent && parent.batchName) || null,
+            subBatchId: subId,
+            subBatchName: subName,
+            orphanedTransfers,
+            orphanedTripPigs,
+            orphanedMortality,
+          },
+        }).catch(() => {});
+      } catch (_e) {
+        /* best-effort — never block the delete */
+      }
     });
   }
 

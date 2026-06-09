@@ -32,6 +32,7 @@ installGlobalListeners();
 import {wcfSendEmail} from './lib/email.js';
 import {wcfSelectAll} from './lib/pagination.js';
 import {softDeleteDailyReport} from './lib/dailyReportsApi.js';
+import {recordActivityEvent} from './lib/activityApi.js';
 
 // Phase 2.0.1: AuthContext owns the auth-related useState hooks. App() reads
 // them via useAuth(); effects + helpers + derived values stay in App.
@@ -3290,9 +3291,35 @@ function App() {
 
   function del(id) {
     confirmDelete('Delete this batch? This cannot be undone.', () => {
+      const removed = batches.find((b) => b.id === id) || null;
       const nb = batches.filter((b) => b.id !== id);
       setBatches(nb);
       persist(nb);
+      // Best-effort broiler.batch Activity (entity_id = batch.name — the broiler
+      // batch identity). Never blocks the delete: try/catch + swallowed reject.
+      try {
+        const name = (removed && removed.name) || null;
+        if (name) {
+          recordActivityEvent(sb, {
+            entityType: 'broiler.batch',
+            entityId: name,
+            eventType: 'record.deleted',
+            entityLabel: name,
+            body: 'Deleted broiler batch ' + name + (removed && removed.status ? ' (' + removed.status + ')' : ''),
+            payload: {
+              record: 'broiler.batch',
+              name,
+              breed: (removed && removed.breed) || null,
+              hatchery: (removed && removed.hatchery) || null,
+              status: (removed && removed.status) || null,
+              totalToProcessor: (removed && removed.totalToProcessor) || null,
+              processingDate: (removed && removed.processingDate) || null,
+            },
+          }).catch(() => {});
+        }
+      } catch (_e) {
+        /* best-effort — never block the delete */
+      }
     });
   }
 
