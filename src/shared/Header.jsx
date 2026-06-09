@@ -210,6 +210,26 @@ const MENU_DIVIDER = {
   margin: '4px 0',
 };
 
+const ROLE_PREVIEW_LABELS = {
+  admin: 'Admin',
+  management: 'Management',
+  farm_team: 'Farm Team',
+  equipment_tech: 'Equipment Tech',
+  light: 'Light',
+  inactive: 'Inactive',
+};
+
+const ROLE_PREVIEW_SELECT = {
+  width: '100%',
+  padding: '7px 9px',
+  borderRadius: 8,
+  border: '1px solid #d1d5db',
+  background: 'white',
+  color: '#111827',
+  fontSize: 12,
+  fontFamily: 'inherit',
+};
+
 // Section pill that sits next to the brand on the dark bar (BROILERS,
 // CATTLE, SHEEP, etc.). Hidden under @media (max-width: 600px) via the
 // data-header-section-pill hook so mobile gets a quieter brand while
@@ -224,7 +244,17 @@ const SECTION_PILL_STYLE = {
 };
 
 export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, ConfirmActionModal}) {
-  const {authState, saveStatus, setShowUsers} = useAuth();
+  const {
+    authState,
+    realAuthState,
+    saveStatus,
+    setShowUsers,
+    rolePreview,
+    setRolePreview,
+    clearRolePreview,
+    rolePreviewRoles,
+    canUseRolePreview,
+  } = useAuth();
   const {view, setView, showMenu, setShowMenu} = useUI();
   const headerNavigate = useNavigate();
   const {showForm, setShowForm} = useBatches();
@@ -418,11 +448,23 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
     setShowMenu(false);
   }
 
+  function chooseRolePreview(nextRole) {
+    if (nextRole) setRolePreview(nextRole);
+    else clearRolePreview();
+    setShowForm(false);
+    setShowBreedForm(false);
+    setShowFarrowForm(false);
+    setView('home');
+    setShowMenu(false);
+  }
+
   const isAdmin = authState?.role === 'admin';
   // Lane 1 CP1: Light users are contained to the field portal. Their menu shows
   // only Home, Dailys, Equipment, and Sign Out (Tasks stays on the header icon).
   // Activity is hidden; the Admin section is already isAdmin-gated below.
   const isLight = authState?.role === 'light';
+  const realRoleLabel = ROLE_PREVIEW_LABELS[realAuthState?.role] || realAuthState?.role || 'Unknown';
+  const previewRoleLabel = ROLE_PREVIEW_LABELS[rolePreview] || rolePreview;
 
   // After any view change that keeps us in a sub-nav section, nudge the
   // active tab into the visible scroll area. Only scrolls if the active
@@ -849,6 +891,28 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
                     </>
                   )}
 
+                  {canUseRolePreview && (
+                    <>
+                      <div style={MENU_DIVIDER} />
+                      <span style={MENU_SECTION_LABEL}>Role Preview</span>
+                      <div data-role-preview-menu="1" style={{padding: '8px 16px 12px'}}>
+                        <select
+                          data-role-preview-select="1"
+                          value={rolePreview || ''}
+                          onChange={(e) => chooseRolePreview(e.target.value)}
+                          style={ROLE_PREVIEW_SELECT}
+                        >
+                          <option value="">Actual role ({realRoleLabel})</option>
+                          {(rolePreviewRoles || []).map((role) => (
+                            <option key={role} value={role}>
+                              {ROLE_PREVIEW_LABELS[role] || role}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+
                   <div style={MENU_DIVIDER} />
                   <button
                     data-header-menu-item="sign-out"
@@ -866,6 +930,59 @@ export default function Header({sb, signOut, loadUsers, DeleteConfirmModal, Conf
           )}
         </div>
       </div>
+      {canUseRolePreview && rolePreview && (
+        <div
+          data-role-preview-banner="1"
+          style={{
+            background: '#fffbeb',
+            borderBottom: '1px solid #fde68a',
+            color: '#78350f',
+            padding: '8px 1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          <span>
+            Previewing {previewRoleLabel}. Server permissions remain {realRoleLabel}.
+          </span>
+          <select
+            data-role-preview-banner-select="1"
+            value={rolePreview || ''}
+            onChange={(e) => chooseRolePreview(e.target.value)}
+            style={{...ROLE_PREVIEW_SELECT, width: 180, padding: '5px 8px'}}
+          >
+            <option value="">Actual role ({realRoleLabel})</option>
+            {(rolePreviewRoles || []).map((role) => (
+              <option key={role} value={role}>
+                {ROLE_PREVIEW_LABELS[role] || role}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            data-role-preview-exit="1"
+            onClick={() => chooseRolePreview('')}
+            style={{
+              marginLeft: 'auto',
+              padding: '5px 10px',
+              borderRadius: 999,
+              border: '1px solid #f59e0b',
+              background: 'white',
+              color: '#78350f',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 700,
+              fontFamily: 'inherit',
+            }}
+          >
+            Exit preview
+          </button>
+        </div>
+      )}
       {/* ── Light sub-nav bar — only in section views with tabs ── */}
       {/* Wrapper carries position:relative so the right-edge chevron hint
           in index.html can anchor to the viewport edge instead of the
