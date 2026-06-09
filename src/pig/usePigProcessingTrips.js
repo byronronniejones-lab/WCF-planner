@@ -1,6 +1,6 @@
 import {useState, useEffect} from 'react';
 import {sb} from '../lib/supabase.js';
-import {computePigBatchFCR} from '../lib/pig.js';
+import {computePigBatchFCR, pigSourceCountKeys} from '../lib/pig.js';
 
 // Pig.batch processing-trip workflow (CP10 extraction from PigBatchesView).
 // Owns the trip-source tracking state (weigh_ins.sent_to_trip_id ->
@@ -53,23 +53,63 @@ export function usePigProcessingTrips({
       setTripSessionBatch(m);
     })();
   }, []);
+  function tripSourceEntries(tripId) {
+    if (!tripId) return [];
+    return tripSentWeighins
+      .filter((e) => e.sent_to_trip_id === tripId)
+      .slice()
+      .sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
+  }
+  function tripSourceWeights(tripId) {
+    return tripSourceEntries(tripId)
+      .map((e) => parseFloat(e.weight) || 0)
+      .filter((w) => w > 0);
+  }
   function tripSourceCounts(tripId) {
-    if (!tripId) return {};
     const counts = {};
-    tripSentWeighins.forEach((e) => {
-      if (e.sent_to_trip_id !== tripId) return;
+    tripSourceEntries(tripId).forEach((e) => {
       const name = tripSessionBatch[e.session_id] || 'Unknown session';
       counts[name] = (counts[name] || 0) + 1;
     });
     return counts;
   }
+  function tripSourceCountsByKey(tripId) {
+    const counts = {};
+    tripSourceEntries(tripId).forEach((e) => {
+      const name = tripSessionBatch[e.session_id] || 'Unknown session';
+      pigSourceCountKeys(name).forEach((key) => {
+        counts[key] = (counts[key] || 0) + 1;
+      });
+    });
+    return counts;
+  }
+  function tripSourceSummary(tripId) {
+    const weights = tripSourceWeights(tripId);
+    const totalLive = weights.reduce((a, b) => a + b, 0);
+    const avgLive = weights.length > 0 ? totalLive / weights.length : null;
+    return {
+      weights,
+      count: weights.length,
+      totalLive,
+      avgLive,
+      counts: tripSourceCounts(tripId),
+      countsByKey: tripSourceCountsByKey(tripId),
+    };
+  }
 
   function persistTrip(batchId, formSnapshot, currentTripId) {
     if (!formSnapshot.date) return;
-    const tripFormNum = {...formSnapshot};
-    ['pigCount', 'hangingWeight'].forEach((key) => {
-      const v = tripFormNum[key];
-      tripFormNum[key] = v === '' || v == null ? 0 : parseFloat(v) || 0;
+    const sourceWeights = tripSourceWeights(currentTripId);
+    // Processing trips are actual processor events sourced from sent weigh-in
+    // entries. Do not create a NEW processing trip unless it has stamped
+    // weigh_in rows. Legacy existing trips can still be edited with their
+    // stored pigCount/liveWeights until a source backfill links them.
+    if (!currentTripId) return;
+    const hasLinkedSource = sourceWeights.length > 0;
+    const tripFormBase = {...formSnapshot};
+    ['hangingWeight'].forEach((key) => {
+      const v = tripFormBase[key];
+      tripFormBase[key] = v === '' || v == null ? 0 : parseFloat(v) || 0;
     });
     const tripId = currentTripId || String(Date.now());
     const nb = feederGroups.map((g) => {
@@ -79,6 +119,11 @@ export function usePigProcessingTrips({
       // future ad-hoc keys) by spreading the existing trip first when
       // editing. Same shape rule as persistSubBatch.
       const existing = currentTripId ? trips.find((t) => t.id === currentTripId) || {} : {};
+      const tripFormNum = {
+        ...tripFormBase,
+        pigCount: hasLinkedSource ? sourceWeights.length : parseInt(existing.pigCount ?? tripFormBase.pigCount) || 0,
+        liveWeights: hasLinkedSource ? sourceWeights.join(' ') : existing.liveWeights || tripFormBase.liveWeights || '',
+      };
       const trip = {...existing, ...tripFormNum, id: tripId};
       const updated = currentTripId ? trips.map((t) => (t.id === currentTripId ? trip : t)) : [...trips, trip];
       updated.sort((a, b) => a.date.localeCompare(b.date));
@@ -91,7 +136,7 @@ export function usePigProcessingTrips({
       // when trips change. If the helper returns null (no valid trips
       // remaining, or rawFeed <= credits), CLEAR the cache so the transfer
       // flow falls back to the default rather than using a stale ratio.
-      const fcr = computePigBatchFCR(next, dailysForName, breeders);
+      const fcr = computePigBatchFCR(next, dailysForName, breeders, {tripSourceSummary});
       if (fcr != null) next.fcrCached = fcr;
       else delete next.fcrCached;
       return next;
@@ -128,7 +173,7 @@ export function usePigProcessingTrips({
         // If no valid trips remain, CLEAR the cache so the transfer flow
         // falls back to the 3.5 industry default rather than driving
         // future allocations off a stale ratio.
-        const fcr = computePigBatchFCR(next, dailysForName, breeders);
+        const fcr = computePigBatchFCR(next, dailysForName, breeders, {tripSourceSummary});
         if (fcr != null) next.fcrCached = fcr;
         else delete next.fcrCached;
         return next;
@@ -137,5 +182,13 @@ export function usePigProcessingTrips({
     });
   }
 
-  return {tripSourceCounts, updTrip, closeTripForm, deleteTrip};
+  return {
+    tripSourceCounts,
+    tripSourceEntries,
+    tripSourceWeights,
+    tripSourceSummary,
+    updTrip,
+    closeTripForm,
+    deleteTrip,
+  };
 }

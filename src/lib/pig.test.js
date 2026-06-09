@@ -4,9 +4,12 @@ import {
   cycleRecords,
   calcAgeRange,
   activePigFeederDailyTargets,
+  pigSourceCountKeys,
   parseLiveWeights,
+  processingTripWithResolvedWeights,
   tripTotalLive,
   tripYield,
+  computePigBatchFCR,
   computeSubLedgerCurrent,
   computeSubCurrentCount,
   computeBatchCurrentCount,
@@ -268,6 +271,13 @@ describe('activePigFeederDailyTargets', () => {
   });
 });
 
+describe('pigSourceCountKeys', () => {
+  it('normalizes source batch ids by exact lower-case and slug form', () => {
+    expect(pigSourceCountKeys(' P 26 01A ')).toEqual(['p 26 01a', 'p-26-01a']);
+    expect(pigSourceCountKeys('P-26-01A')).toEqual(['p-26-01a']);
+  });
+});
+
 describe('parseLiveWeights', () => {
   it('returns [] for empty/missing input', () => {
     expect(parseLiveWeights('')).toEqual([]);
@@ -321,6 +331,43 @@ describe('tripYield', () => {
   });
 });
 
+describe('processingTripWithResolvedWeights', () => {
+  it('uses linked weigh-in source weights when present', () => {
+    const trip = {id: 't1', pigCount: 2, liveWeights: '200 210'};
+    const actual = processingTripWithResolvedWeights(trip, {
+      tripSourceSummary: () => ({weights: [250, 260, 270], count: 3, counts: {}}),
+    });
+    expect(actual.pigCount).toBe(3);
+    expect(actual.liveWeights).toBe('250 260 270');
+  });
+
+  it('falls back to stored legacy trip weights when no source rows are linked', () => {
+    const trip = {id: 'legacy', pigCount: 2, liveWeights: '200 210'};
+    const actual = processingTripWithResolvedWeights(trip, {
+      tripSourceSummary: () => ({weights: [], count: 0, counts: {}}),
+    });
+    expect(actual.pigCount).toBe(2);
+    expect(actual.liveWeights).toBe('200 210');
+  });
+});
+
+describe('computePigBatchFCR', () => {
+  it('uses linked source weights but falls back to stored legacy weights per trip', () => {
+    const group = {
+      batchName: 'P-26-02',
+      legacyFeedLbs: 900,
+      processingTrips: [
+        {id: 'linked', pigCount: 1, liveWeights: '100'},
+        {id: 'legacy', pigCount: 2, liveWeights: '200 200'},
+      ],
+      subBatches: [],
+    };
+    const tripSourceSummary = (id) =>
+      id === 'linked' ? {weights: [250, 250], count: 2, counts: {}} : {weights: [], count: 0, counts: {}};
+    expect(computePigBatchFCR(group, () => [], [], {tripSourceSummary})).toBe(1);
+  });
+});
+
 // Shared ledger fixture mirroring the p2601 scenario: parent P-26-01 with
 // gilts/boars 10/10, sub A (gilts) with 1 mortality + 2 transferred + 5 trip
 // pigs, sub B (boars) untouched.
@@ -359,6 +406,35 @@ describe('computeSubLedgerCurrent', () => {
       processingTrips: [{id: 't1', pigCount: 99, subAttributions: [{subId: 'a', count: 99}]}],
     });
     expect(computeSubLedgerCurrent(g, g.subBatches[0], ledgerBreeders)).toBe(0);
+  });
+
+  it('uses linked source counts by sub name when available', () => {
+    const g = ledgerGroup({
+      processingTrips: [{id: 't1', pigCount: 1, subAttributions: [{subId: 'a', count: 1}]}],
+    });
+    const tripSourceSummary = () => ({weights: [280, 290, 300, 310], count: 4, counts: {'P-26-01A': 4}});
+    expect(computeSubLedgerCurrent(g, g.subBatches[0], ledgerBreeders, {tripSourceSummary})).toBe(3);
+  });
+
+  it('uses linked source counts keyed by normalized session batch_id before stale subAttributions', () => {
+    const g = ledgerGroup({
+      processingTrips: [{id: 't1', pigCount: 1, subAttributions: [{subId: 'a', count: 1}]}],
+    });
+    const tripSourceSummary = () => ({
+      weights: [280, 290, 300, 310],
+      count: 4,
+      counts: {' p 26 01a ': 4},
+      countsByKey: {'p-26-01a': 4},
+    });
+    expect(computeSubLedgerCurrent(g, g.subBatches[0], ledgerBreeders, {tripSourceSummary})).toBe(3);
+  });
+
+  it('normalizes legacy source counts maps when countsByKey is absent', () => {
+    const g = ledgerGroup({
+      processingTrips: [{id: 't1', pigCount: 1, subAttributions: [{subId: 'a', count: 1}]}],
+    });
+    const tripSourceSummary = () => ({weights: [280, 290, 300, 310], count: 4, counts: {' p 26 01a ': 4}});
+    expect(computeSubLedgerCurrent(g, g.subBatches[0], ledgerBreeders, {tripSourceSummary})).toBe(3);
   });
 
   it('ignores the processed status (raw ledger, pre-override)', () => {
@@ -402,6 +478,23 @@ describe('computeBatchCurrentCount', () => {
       subBatches: [],
     };
     expect(computeBatchCurrentCount(parentOnly, [])).toBe(6); // 12 − 5 − 0 − 1
+  });
+
+  it('uses linked source counts with stored fallback in the parent-only ledger', () => {
+    const parentOnly = {
+      batchName: 'P-25-10',
+      giltCount: 10,
+      boarCount: 0,
+      pigMortalities: [],
+      processingTrips: [
+        {id: 'linked', pigCount: 1, liveWeights: '100'},
+        {id: 'legacy', pigCount: 2, liveWeights: '200 200'},
+      ],
+      subBatches: [],
+    };
+    const tripSourceSummary = (id) =>
+      id === 'linked' ? {weights: [250, 250, 250], count: 3, counts: {}} : {weights: [], count: 0, counts: {}};
+    expect(computeBatchCurrentCount(parentOnly, [], {tripSourceSummary})).toBe(5);
   });
 
   it('clamps the parent-only ledger to 0', () => {

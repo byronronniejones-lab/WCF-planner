@@ -54,9 +54,12 @@ describe('CP7: PigBatchPage adopts shared record-page controls', () => {
 
   it('preserves the processing trip form handlers', () => {
     expect(src).toContain("updTrip('date'");
-    expect(src).toContain("updTrip('pigCount'");
-    expect(src).toContain("updTrip('liveWeights'");
     expect(src).toContain("updTrip('hangingWeight'");
+    expect(src).toContain("updTrip('notes'");
+    expect(src).toContain('tripSourceSummary(editTripId)');
+    expect(src).toContain('data-pig-trip-source-weights');
+    expect(src).not.toContain("updTrip('liveWeights'");
+    expect(src).not.toContain("updTrip('pigCount'");
     expect(src).toContain('closeTripForm');
     expect(src).toContain('deleteTrip(g.id');
   });
@@ -88,9 +91,12 @@ describe('CP7: PigBatchPage adopts shared record-page controls', () => {
 // combined hub/record Header). Per the ratified CP1 ruling: RecordPageBody
 // only, no RecordTitle (would duplicate the colored batch header), and no
 // RecordPageFrame/Loading/NotFound conversion.
-describe('Lane E CP1: PigBatchPage adopts the shared RecordPageBody chrome', () => {
+describe('Lane E: PigBatchPage owns shared record-page chrome', () => {
   it('imports RecordPageBody from the shared record-page shell', () => {
-    expect(src).toMatch(/import\s*\{\s*RecordPageBody\s*\}\s*from\s*'\.\.\/shared\/RecordPageShell\.jsx'/);
+    expect(src).toMatch(
+      /import\s*\{\s*RecordPageBody,\s*RecordBackLink,\s*RecordTitle\s*\}\s*from\s*'\.\.\/shared\/RecordPageShell\.jsx'/,
+    );
+    expect(src).toContain("import RecordSequenceNav from '../shared/RecordSequenceNav.jsx'");
   });
 
   it('wraps the loaded record content in RecordPageBody', () => {
@@ -102,23 +108,25 @@ describe('Lane E CP1: PigBatchPage adopts the shared RecordPageBody chrome', () 
     expect(src).toMatch(/<RecordPageBody[\s\S]*?data-pig-batch-record-loaded="true"/);
   });
 
-  it('keeps the body LEFT-aligned (CP1 exception) so it lines up under the PigBatchesView back link', () => {
-    // Pig owns the back link + RecordSequenceNav in PigBatchesView, OUTSIDE this
-    // body. The default centered margin:'0 auto' would detach the card from the
-    // far-left back link, so CP1 overrides to margin:0 + zero horizontal padding
-    // (also avoids double mobile inset under PigBatchesView's 1rem padding).
+  it('renders Back, sequence nav, and RecordTitle inside the loaded body', () => {
+    const bodyMatch = src.match(/<RecordPageBody[\s\S]*?<\/RecordPageBody>/);
+    expect(bodyMatch).not.toBeNull();
+    expect(bodyMatch[0]).toContain('<RecordBackLink');
+    expect(bodyMatch[0]).toContain('<RecordSequenceNav');
+    expect(bodyMatch[0]).toContain('<RecordTitle>');
+    expect(bodyMatch[0]).toContain('onBack={onBack}');
+    expect(bodyMatch[0]).toContain('currentId={recordId || group.id}');
+  });
+
+  it('uses the default centered RecordPageBody instead of the retired left-aligned exception', () => {
     const body = src.match(/<RecordPageBody[\s\S]*?>/);
     expect(body).not.toBeNull();
-    expect(body[0]).toContain('margin: 0');
-    expect(body[0]).toContain('paddingLeft: 0');
-    expect(body[0]).toContain('paddingRight: 0');
+    expect(body[0]).not.toContain('margin: 0');
+    expect(body[0]).not.toContain('paddingLeft: 0');
+    expect(body[0]).not.toContain('paddingRight: 0');
   });
 
-  it('does NOT add RecordTitle (the colored batch header is preserved as the record title in CP1)', () => {
-    expect(src).not.toContain('RecordTitle');
-  });
-
-  it('does NOT take over Header/frame/loading/not-found ownership (stays in PigBatchesView)', () => {
+  it('still leaves Header/loading/not-found ownership in PigBatchesView', () => {
     expect(src).not.toContain('RecordPageFrame');
     expect(src).not.toContain('RecordPageLoading');
     expect(src).not.toContain('RecordPageNotFound');

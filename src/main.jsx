@@ -1285,6 +1285,7 @@ function App() {
     const isSheepBatchesSubpath = !exactPathView && location.pathname.startsWith('/sheep/batches/');
     const isBroilerDailysSubpath = !exactPathView && location.pathname.startsWith('/broiler/dailys/');
     const isPigDailysSubpath = !exactPathView && location.pathname.startsWith('/pig/dailys/');
+    const isPigSowsSubpath = !exactPathView && location.pathname.startsWith('/pig/sows/');
     const isCattleDailysSubpath = !exactPathView && location.pathname.startsWith('/cattle/dailys/');
     const isSheepDailysSubpath = !exactPathView && location.pathname.startsWith('/sheep/dailys/');
     const isLayerDailysSubpath = !exactPathView && location.pathname.startsWith('/layer/dailys/');
@@ -1313,27 +1314,29 @@ function App() {
                     ? 'broilerdailys'
                     : isPigDailysSubpath
                       ? 'pigdailys'
-                      : isCattleDailysSubpath
-                        ? 'cattledailys'
-                        : isSheepDailysSubpath
-                          ? 'sheepdailys'
-                          : isLayerDailysSubpath
-                            ? 'layerdailys'
-                            : isEggDailysSubpath
-                              ? 'eggdailys'
-                              : isLayerBatchesSubpath
-                                ? 'layerbatches'
-                                : isLayerHousingsSubpath
+                      : isPigSowsSubpath
+                        ? 'sows'
+                        : isCattleDailysSubpath
+                          ? 'cattledailys'
+                          : isSheepDailysSubpath
+                            ? 'sheepdailys'
+                            : isLayerDailysSubpath
+                              ? 'layerdailys'
+                              : isEggDailysSubpath
+                                ? 'eggdailys'
+                                : isLayerBatchesSubpath
                                   ? 'layerbatches'
-                                  : isBroilerBatchesSubpath
-                                    ? 'list'
-                                    : isPigBatchesSubpath
-                                      ? 'pigbatches'
-                                      : isTasksSubpath
-                                        ? 'tasks'
-                                        : isWeighInSessionSubpath
-                                          ? 'weighinsessions'
-                                          : exactPathView;
+                                  : isLayerHousingsSubpath
+                                    ? 'layerbatches'
+                                    : isBroilerBatchesSubpath
+                                      ? 'list'
+                                      : isPigBatchesSubpath
+                                        ? 'pigbatches'
+                                        : isTasksSubpath
+                                          ? 'tasks'
+                                          : isWeighInSessionSubpath
+                                            ? 'weighinsessions'
+                                            : exactPathView;
     if (viewFromUrl && viewFromUrl !== view) {
       syncingFromUrl.current = true;
       setView(viewFromUrl);
@@ -1382,6 +1385,7 @@ function App() {
     // Don't clobber daily record sub-paths — each DailysView router owns them.
     if (view === 'broilerdailys' && location.pathname.startsWith('/broiler/dailys/')) return;
     if (view === 'pigdailys' && location.pathname.startsWith('/pig/dailys/')) return;
+    if (view === 'sows' && location.pathname.startsWith('/pig/sows/')) return;
     if (view === 'cattledailys' && location.pathname.startsWith('/cattle/dailys/')) return;
     if (view === 'sheepdailys' && location.pathname.startsWith('/sheep/dailys/')) return;
     if (view === 'layerdailys' && location.pathname.startsWith('/layer/dailys/')) return;

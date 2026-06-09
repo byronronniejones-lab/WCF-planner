@@ -135,6 +135,14 @@ export function pigSlug(s) {
     .replace(/^-|-$/g, '');
 }
 
+export function pigSourceCountKeys(s) {
+  const trimmed = String(s || '').trim();
+  if (!trimmed) return [];
+  const lower = trimmed.toLowerCase();
+  const slug = pigSlug(trimmed);
+  return lower === slug ? [lower] : [lower, slug];
+}
+
 // Resolve a session.batch_id (slug or exact name) to a sub-batch id on the
 // parent feeder group. Returns null if no match.
 export function resolveSubByBatchId(parentGroup, batchId) {
@@ -200,10 +208,15 @@ export function pigTransfersForBatch(breeders, parentBatchName) {
 }
 
 // Sum trip pigs attributed to a specific sub via trip.subAttributions.
-export function pigTripPigsForSub(trips, subId) {
+export function pigTripPigsForSub(trips, subId, options = {}) {
   if (!Array.isArray(trips)) return 0;
   let n = 0;
   for (const t of trips) {
+    const sourceCount = processingTripSourceCountForSub(t, subId, options);
+    if (sourceCount != null) {
+      n += sourceCount;
+      continue;
+    }
     const atts = t && Array.isArray(t.subAttributions) ? t.subAttributions : [];
     for (const a of atts) if (a && a.subId === subId) n += parseInt(a.count) || 0;
   }
@@ -235,11 +248,64 @@ export function parseLiveWeights(str) {
     .map((v) => parseFloat(v))
     .filter((v) => !isNaN(v) && v > 0);
 }
-export function tripTotalLive(trip) {
-  return parseLiveWeights(trip && trip.liveWeights).reduce((a, b) => a + b, 0);
+
+function sourceSummaryForTrip(trip, options = {}) {
+  if (!options) return null;
+  if (typeof options === 'function') return options(trip && trip.id);
+  if (typeof options.tripSourceSummary === 'function') return options.tripSourceSummary(trip && trip.id);
+  if (options.sourceSummary) return options.sourceSummary;
+  return null;
 }
-export function tripYield(trip) {
-  const live = tripTotalLive(trip);
+
+function sourceWeightsFromSummary(summary) {
+  return Array.isArray(summary && summary.weights)
+    ? summary.weights.map((w) => parseFloat(w) || 0).filter((w) => w > 0)
+    : [];
+}
+
+function sourceCountForSubName(counts, subName) {
+  if (!counts || !subName || typeof counts !== 'object') return null;
+  const subKeys = new Set(pigSourceCountKeys(subName));
+  if (subKeys.size === 0) return null;
+  for (const [key, count] of Object.entries(counts)) {
+    const countKeys = pigSourceCountKeys(key);
+    if (countKeys.some((k) => subKeys.has(k))) return parseInt(count) || 0;
+  }
+  return null;
+}
+
+function processingTripSourceCountForSub(trip, subId, options = {}) {
+  if (!subId) return null;
+  const summary = sourceSummaryForTrip(trip, options);
+  const sourceWeights = sourceWeightsFromSummary(summary);
+  if (sourceWeights.length === 0) return null;
+  const subName = options && options.subName;
+  const keyedCount = sourceCountForSubName(summary && summary.countsByKey, subName);
+  if (keyedCount != null) return keyedCount;
+  return sourceCountForSubName(summary && summary.counts, subName);
+}
+
+export function processingTripWithResolvedWeights(trip, options = {}) {
+  const sourceWeights = sourceWeightsFromSummary(sourceSummaryForTrip(trip, options));
+  if (sourceWeights.length > 0) {
+    return {...(trip || {}), pigCount: sourceWeights.length, liveWeights: sourceWeights.join(' ')};
+  }
+  return {
+    ...(trip || {}),
+    pigCount: parseInt(trip && trip.pigCount) || 0,
+    liveWeights: (trip && trip.liveWeights) || '',
+  };
+}
+
+export function processingTripPigCount(trip, options = {}) {
+  return parseInt(processingTripWithResolvedWeights(trip, options).pigCount) || 0;
+}
+
+export function tripTotalLive(trip, options = {}) {
+  return parseLiveWeights(processingTripWithResolvedWeights(trip, options).liveWeights).reduce((a, b) => a + b, 0);
+}
+export function tripYield(trip, options = {}) {
+  const live = tripTotalLive(trip, options);
   const hang = parseFloat(trip && trip.hangingWeight) || 0;
   if (!live || !hang) return null;
   return Math.round((hang / live) * 1000) / 10;
@@ -257,12 +323,12 @@ export function tripYield(trip) {
 // `dailysForName` is a closure-captured helper from PigBatchesView that
 // matches a sub-batch / parent name against pig_dailys rows. Lifted as an
 // arg so this helper stays React-free.
-export function computePigBatchFCR(group, dailysForName, breeders) {
+export function computePigBatchFCR(group, dailysForName, breeders, options = {}) {
   if (!group) return null;
   const trips = group.processingTrips || [];
   let totalLive = 0;
   for (const t of trips) {
-    totalLive += tripTotalLive(t);
+    totalLive += tripTotalLive(t, options);
   }
   if (!(totalLive > 0)) return null;
   const subs = group.subBatches || [];
@@ -308,9 +374,12 @@ export function pigMortalityForBatch(group) {
 // Per-sub ledger current: started − trip pigs − transfers − mortality, clamped
 // to >= 0. This is the raw ledger remainder BEFORE the processed-status
 // override (callers that need the discrepancy check read this directly).
-export function computeSubLedgerCurrent(group, sub, breeders) {
+export function computeSubLedgerCurrent(group, sub, breeders, options = {}) {
   const started = (parseInt(sub.giltCount) || 0) + (parseInt(sub.boarCount) || 0);
-  const tripPigs = pigTripPigsForSub((group && group.processingTrips) || [], sub.id);
+  const tripPigs = pigTripPigsForSub((group && group.processingTrips) || [], sub.id, {
+    ...options,
+    subName: sub && sub.name,
+  });
   const transfers = pigTransfersForSub(breeders, group && group.batchName, sub.name);
   const mortality = pigMortalityForSub(group, sub.name);
   return Math.max(0, started - tripPigs - transfers.count - mortality);
@@ -318,8 +387,8 @@ export function computeSubLedgerCurrent(group, sub, breeders) {
 
 // Per-sub current count for display: 0 when the sub is processed, otherwise the
 // ledger current.
-export function computeSubCurrentCount(group, sub, breeders) {
-  return sub.status === 'processed' ? 0 : computeSubLedgerCurrent(group, sub, breeders);
+export function computeSubCurrentCount(group, sub, breeders, options = {}) {
+  return sub.status === 'processed' ? 0 : computeSubLedgerCurrent(group, sub, breeders, options);
 }
 
 // Batch (parent feeder group) current count.
@@ -341,12 +410,15 @@ export function batchStartedCount(group) {
   return 0;
 }
 
-export function computeBatchCurrentCount(group, breeders, {latestDailyPigCount = null} = {}) {
+export function computeBatchCurrentCount(group, breeders, {latestDailyPigCount = null, tripSourceSummary = null} = {}) {
   const subs = (group && group.subBatches) || [];
   if (subs.length > 0) {
-    return subs.reduce((s, sub) => s + computeSubCurrentCount(group, sub, breeders), 0);
+    return subs.reduce((s, sub) => s + computeSubCurrentCount(group, sub, breeders, {tripSourceSummary}), 0);
   }
-  const parentTrips = ((group && group.processingTrips) || []).reduce((s, t) => s + (parseInt(t.pigCount) || 0), 0);
+  const parentTrips = ((group && group.processingTrips) || []).reduce(
+    (s, t) => s + processingTripPigCount(t, {tripSourceSummary}),
+    0,
+  );
   const parentTransfers = pigTransfersForBatch(breeders, group && group.batchName).count;
   const parentMort = pigMortalityForBatch(group);
   const parentStarted = batchStartedCount(group);

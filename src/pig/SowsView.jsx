@@ -6,17 +6,20 @@
 // comes in as a prop.
 // ============================================================================
 import React from 'react';
-import {sb} from '../lib/supabase.js';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {fmt, fmtS, todayISO, addDays} from '../lib/dateUtils.js';
+import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
+import {printRows} from '../lib/printExport.js';
+import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 import {S} from '../lib/styles.js';
 import {calcBreedingTimeline, buildCycleSeqMap, cycleLabel, PIG_GROUPS, PIG_GROUP_COLORS} from '../lib/pig.js';
-import UsersModal from '../auth/UsersModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-import {useAuth} from '../contexts/AuthContext.jsx';
+import OperationalListEmptyState from '../shared/OperationalListEmptyState.jsx';
+import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
+import {RecordPageBody, RecordBackLink, RecordPageNotFound, RecordTitle} from '../shared/RecordPageShell.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
-import {useUI} from '../contexts/UIContext.jsx';
 
 export default function SowsView({
   Header,
@@ -27,10 +30,12 @@ export default function SowsView({
   confirmDelete,
   resolveSire,
 }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [leaderboardExpanded, setLeaderboardExpanded] = React.useState(false);
   const [showArchived, setShowArchived] = React.useState(false);
   const [notice, setNotice] = React.useState(null);
-  const {authState, showUsers, setShowUsers, allUsers, setAllUsers} = useAuth();
+  const [exportNotice, setExportNotice] = React.useState('');
   const {
     breedingCycles,
     farrowingRecs,
@@ -49,11 +54,8 @@ export default function SowsView({
     setOriginOptions,
     sowSearch,
     setSowSearch,
-    expandedSow,
-    setExpandedSow,
   } = usePig();
   const {pigDailys} = useDailysRecent();
-  const {setView} = useUI();
   const cycleSeqMap = buildCycleSeqMap(breedingCycles);
   // ── Helpers ──
   function pigAge(birthDate) {
@@ -90,10 +92,92 @@ export default function SowsView({
     });
   }
 
-  const activePigs = sortPigs(breeders.filter((p) => !p.archived));
-  const archivedPigs = sortPigs(breeders.filter((p) => p.archived));
+  const breederSearchQ = (sowSearch || '').trim().toLowerCase();
+  function breederMatchesSearch(pig) {
+    if (!breederSearchQ) return true;
+    return [pig.tag, pig.sex, pig.group ? 'Group ' + pig.group : '', pig.status, pig.breed, pig.origin, pig.notes]
+      .map((v) => String(v || '').toLowerCase())
+      .some((v) => v.includes(breederSearchQ));
+  }
+
+  const activePigs = sortPigs(breeders.filter((p) => !p.archived && breederMatchesSearch(p)));
+  const archivedPigs = sortPigs(breeders.filter((p) => p.archived && breederMatchesSearch(p)));
   const activeSows = activePigs.filter((p) => p.sex === 'Sow' || p.sex === 'Gilt');
   const activeBoars = activePigs.filter((p) => p.sex === 'Boar');
+  const breedingPigSeqRows = [...activeSows, ...activeBoars, ...(showArchived ? archivedPigs : [])];
+  const filteredBreederCount = breedingPigSeqRows.length;
+  const recordMode = location.pathname.startsWith('/pig/sows/');
+  const recordRawId = recordMode ? location.pathname.slice('/pig/sows/'.length).split('/')[0] || '' : null;
+  let recordId = recordRawId;
+  if (recordMode) {
+    try {
+      recordId = decodeURIComponent(recordRawId);
+    } catch {
+      recordId = recordRawId;
+    }
+  }
+  const recordSeq = location.state?.recordSeq || null;
+  const recordPig = recordMode ? breeders.find((p) => String(p.id) === String(recordId)) : null;
+
+  function goToBreedingPigs() {
+    navigate('/pig/sows');
+  }
+
+  function navigateSeq(id) {
+    navigate('/pig/sows/' + encodeURIComponent(id), recordSeqNavOptions(recordSeq));
+  }
+
+  function openBreedingPigRecord(pig, rows) {
+    navigate('/pig/sows/' + encodeURIComponent(pig.id), recordSeqNavOptions(labeledSeqItems(rows, 'tag')));
+  }
+
+  function breedingPigTitle(pig) {
+    if (!pig) return 'Breeding Pig';
+    const sex = pig.sex ? ' ' + pig.sex : '';
+    return '#' + (pig.tag || pig.id) + sex;
+  }
+
+  function latestBreederWeight(pig) {
+    const weighins = Array.isArray(pig.weighins) ? pig.weighins : [];
+    return weighins.length > 0 ? weighins[weighins.length - 1].weight : pig.lastWeight;
+  }
+
+  function breedingPigExportColumns() {
+    return [
+      {header: 'Tag', value: (pig) => pig.tag},
+      {header: 'Sex', value: (pig) => pig.sex},
+      {header: 'Group', value: (pig) => (pig.group ? 'Group ' + pig.group : '')},
+      {header: 'Status', value: (pig) => pig.status},
+      {header: 'Breed', value: (pig) => pig.breed},
+      {header: 'Origin', value: (pig) => pig.origin},
+      {header: 'Birth date', value: (pig) => pig.birthDate},
+      {header: 'Age', value: (pig) => pigAge(pig.birthDate)},
+      {header: 'Last weight', value: (pig) => latestBreederWeight(pig)},
+      {header: 'Purchase date', value: (pig) => pig.purchaseDate},
+      {header: 'Purchase amount', value: (pig) => pig.purchaseAmount},
+      {header: 'Litters', value: (pig) => sowFarrowStats(pig.tag).litters},
+      {header: 'Alive total', value: (pig) => sowFarrowStats(pig.tag).alive},
+      {header: 'Notes', value: (pig) => pig.notes},
+      {header: 'Record ID', value: (pig) => pig.id},
+    ];
+  }
+
+  function handleExportCsv() {
+    const columns = breedingPigExportColumns();
+    const ok = downloadCsv(csvFilename('pig-breeding-pigs'), rowsToCsv(columns, breedingPigSeqRows));
+    setExportNotice(ok ? '' : 'CSV export is only available in the browser.');
+  }
+
+  function handlePrintRows() {
+    const columns = breedingPigExportColumns();
+    const ok = printRows({
+      title: 'Breeding Pigs',
+      subtitle: breedingPigSeqRows.length + ' visible breeding pigs',
+      columns,
+      rows: breedingPigSeqRows,
+    });
+    setExportNotice(ok ? '' : 'Print is only available in the browser.');
+  }
 
   // Leaderboard
   const leaderboard = activeSows
@@ -304,7 +388,6 @@ export default function SowsView({
 
   function PigTile({pig}) {
     const stats = sowFarrowStats(pig.tag);
-    const C = pig.group ? PIG_GROUP_COLORS[pig.group] : null;
     const isSow = pig.sex === 'Sow' || pig.sex === 'Gilt';
     const history = isSow ? sowFarrowHistory(pig.tag) : [];
     // Breeding-pig weights are entered ONLY on the tile (Ronnie's rule).
@@ -324,7 +407,7 @@ export default function SowsView({
       setWInput('');
       setWBusy(false);
     }
-    const latestWeight = weighins.length > 0 ? weighins[weighins.length - 1].weight : pig.lastWeight;
+    const latestWeight = latestBreederWeight(pig);
     return (
       <div
         style={{
@@ -358,7 +441,31 @@ export default function SowsView({
           style={{padding: '12px 16px', background: 'white', borderBottom: '1px solid #e5e7eb', cursor: 'pointer'}}
         >
           <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}}>
-            #{pig.tag} <span style={{fontSize: 12, fontWeight: 400, color: '#6b7280'}}>{pig.sex}</span>
+            <span>
+              #{pig.tag} <span style={{fontSize: 12, fontWeight: 400, color: '#6b7280'}}>{pig.sex}</span>
+            </span>
+            <button
+              type="button"
+              data-breeding-pig-record-link={pig.id}
+              onClick={(e) => {
+                e.stopPropagation();
+                openBreedingPigRecord(pig, breedingPigSeqRows);
+              }}
+              style={{
+                float: 'right',
+                padding: '3px 8px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                background: 'white',
+                color: '#085041',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 600,
+                fontFamily: 'inherit',
+              }}
+            >
+              Record
+            </button>
           </div>
           <div style={{fontSize: 11, color: '#9ca3af', marginTop: 2}}>
             {pig.breed || '\u2014'} {'\u00b7'} {pigAge(pig.birthDate)}
@@ -578,6 +685,246 @@ export default function SowsView({
     );
   }
 
+  function BreedingPigRecordDetails({pig}) {
+    const stats = sowFarrowStats(pig.tag);
+    const isSow = pig.sex === 'Sow' || pig.sex === 'Gilt';
+    const history = isSow ? sowFarrowHistory(pig.tag) : [];
+    const weighins = Array.isArray(pig.weighins) ? pig.weighins : [];
+    const latestWeight = latestBreederWeight(pig);
+    const fieldStyle = {background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 12px'};
+    const labelStyle = {fontSize: 11, color: '#6b7280', marginBottom: 3};
+    const valueStyle = {fontSize: 14, color: '#111827', fontWeight: 600};
+    const value = (v) => (v == null || v === '' ? '\u2014' : v);
+
+    return (
+      <div data-breeding-pig-record-details="1" style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+        <div
+          style={{
+            background: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: 8,
+            padding: 14,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))',
+            gap: 10,
+          }}
+        >
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Tag #</div>
+            <div style={valueStyle}>{value(pig.tag)}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Sex</div>
+            <div style={valueStyle}>{value(pig.sex)}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Group</div>
+            <div style={valueStyle}>{pig.group ? 'Group ' + pig.group : 'No group'}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Status</div>
+            <div style={valueStyle}>{value(pig.status)}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Breed</div>
+            <div style={valueStyle}>{value(pig.breed)}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Origin</div>
+            <div style={valueStyle}>{value(pig.origin)}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Birth Date</div>
+            <div style={valueStyle}>
+              {pig.birthDate ? fmtS(pig.birthDate) + ' (' + pigAge(pig.birthDate) + ')' : '\u2014'}
+            </div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Last Recorded Weight</div>
+            <div style={valueStyle}>{latestWeight ? latestWeight + ' lbs' : '\u2014'}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Purchase Date</div>
+            <div style={valueStyle}>{pig.purchaseDate ? fmtS(pig.purchaseDate) : '\u2014'}</div>
+          </div>
+          <div style={fieldStyle}>
+            <div style={labelStyle}>Purchase Amount</div>
+            <div style={valueStyle}>
+              {pig.purchaseAmount ? '$' + Number(pig.purchaseAmount).toLocaleString() : '\u2014'}
+            </div>
+          </div>
+          {isSow && (
+            <>
+              <div style={fieldStyle}>
+                <div style={labelStyle}>Litters</div>
+                <div style={valueStyle}>{stats.litters}</div>
+              </div>
+              <div style={fieldStyle}>
+                <div style={labelStyle}>Alive Total</div>
+                <div style={{...valueStyle, color: '#065f46'}}>{stats.alive}</div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {weighins.length > 0 && (
+          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 14}}>
+            <div style={{fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8}}>Weight History</div>
+            <div data-breeding-pig-weight-history={pig.id} style={{display: 'flex', flexWrap: 'wrap', gap: '6px 12px'}}>
+              {weighins
+                .slice()
+                .reverse()
+                .map((w, wi) => (
+                  <span key={wi} style={{fontSize: 12, color: '#6b7280'}}>
+                    <strong style={{color: '#111827'}}>{w.weight} lb</strong>{' '}
+                    <span style={{color: '#9ca3af'}}>{fmtS(w.date)}</span>
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {isSow && history.length > 0 && (
+          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: 14}}>
+            <div style={{fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8}}>Farrowing History</div>
+            <div data-breeding-pig-farrowing-history={pig.id} style={{display: 'flex', flexDirection: 'column'}}>
+              {history
+                .filter(function (h2) {
+                  if (h2.missed && h2.tl && h2.tl.farrowingEnd >= todayISO()) return false;
+                  return true;
+                })
+                .map(function (h, hi) {
+                  if (h.missed) {
+                    return (
+                      <div
+                        key={hi}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '7px 0',
+                          borderBottom: hi < history.length - 1 ? '1px solid #f3f4f6' : 'none',
+                          fontSize: 12,
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: '#b91c1c',
+                            fontWeight: 700,
+                            background: '#fef2f2',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            fontSize: 10,
+                          }}
+                        >
+                          MISSED
+                        </span>
+                        <span style={{color: '#6b7280'}}>
+                          {cycleLabel(h.cycle, cycleSeqMap) + ' - ' + fmt(h.cycle.exposureStart)}
+                        </span>
+                        {h.sire && <span style={{color: '#9ca3af'}}>{'Sire: ' + h.sire}</span>}
+                      </div>
+                    );
+                  }
+                  const born = parseInt(h.rec.totalBorn) || 0;
+                  const dead = parseInt(h.rec.deaths) || 0;
+                  const alive = born - dead;
+                  return (
+                    <div
+                      key={hi}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '7px 0',
+                        borderBottom: hi < history.length - 1 ? '1px solid #f3f4f6' : 'none',
+                        fontSize: 12,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span style={{color: '#374151', fontWeight: 700, minWidth: 90}}>{fmt(h.rec.farrowingDate)}</span>
+                      <span style={{color: '#065f46', fontWeight: 700}}>{alive + ' alive'}</span>
+                      <span style={{color: '#9ca3af'}}>{born + ' born'}</span>
+                      {dead > 0 && <span style={{color: '#b91c1c'}}>{dead + ' died'}</span>}
+                      {h.cycle && <span style={{color: '#9ca3af'}}>{cycleLabel(h.cycle, cycleSeqMap)}</span>}
+                      {h.sire && <span style={{color: '#9ca3af'}}>{h.sire}</span>}
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
+        {pig.transferredFromBatch &&
+          (() => {
+            const tfb = pig.transferredFromBatch;
+            const sourceLabel = tfb.subBatchName || tfb.batchName || '?';
+            const dateStr = tfb.transferDate ? ' on ' + fmtS(tfb.transferDate) : '';
+            const sexNoun = pig.sex === 'Boar' ? 'boar' : pig.sex === 'Sow' ? 'sow' : 'gilt';
+            return (
+              <div
+                data-breeding-pig-transfer-note={pig.id}
+                style={{
+                  padding: '8px 12px',
+                  background: '#f5f3ff',
+                  border: '1px solid #ddd6fe',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: '#5b21b6',
+                  fontWeight: 700,
+                }}
+              >
+                {'This ' + sexNoun + ' was saved from ' + sourceLabel + dateStr + '.'}
+              </div>
+            );
+          })()}
+
+        {pig.notes && (
+          <div
+            data-breeding-pig-notes={pig.id}
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 8,
+              padding: 14,
+              fontSize: 13,
+              color: '#4b5563',
+            }}
+          >
+            <div style={{fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 6}}>Notes</div>
+            {pig.notes}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (recordMode && !recordPig) {
+    return (
+      <RecordPageNotFound
+        Header={Header}
+        backLabel="Back to Breeding Pigs"
+        onBack={goToBreedingPigs}
+        message="Breeding pig not found."
+        data-breeding-pig-record-not-found="true"
+      />
+    );
+  }
+
+  if (recordMode && recordPig) {
+    return (
+      <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+        <Header />
+        <RecordPageBody maxWidth={960} data-breeding-pig-record-loaded="true">
+          <RecordBackLink label="Back to Breeding Pigs" onBack={goToBreedingPigs} />
+          <RecordSequenceNav seq={recordSeq} currentId={recordId} onNavigate={navigateSeq} />
+          <RecordTitle>{breedingPigTitle(recordPig)}</RecordTitle>
+          <BreedingPigRecordDetails pig={recordPig} />
+        </RecordPageBody>
+      </div>
+    );
+  }
+
   return (
     <div>
       <Header />
@@ -762,41 +1109,113 @@ export default function SowsView({
           );
         })()}
 
-        {/* Add pig button */}
-        <div style={{display: 'flex', justifyContent: 'flex-end'}}>
-          <button
-            onClick={() => {
-              setNotice(null);
-              setBreederForm({
-                tag: '',
-                sex: 'Sow',
-                group: '1',
-                status: 'Sow Group',
-                breed: '',
-                origin: '',
-                birthDate: '',
-                lastWeight: '',
-                purchaseDate: '',
-                purchaseAmount: '',
-                notes: '',
-              });
-              setEditBreederId(null);
-              setShowBreederForm(true);
-            }}
-            style={{
-              padding: '7px 18px',
-              borderRadius: 8,
-              border: 'none',
-              background: '#085041',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            + Add Pig
-          </button>
+        {/* Search + add pig */}
+        <div
+          style={{display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center'}}
+        >
+          <div style={{display: 'flex', gap: 8, alignItems: 'center', flex: '1 1 280px', maxWidth: 520}}>
+            <input
+              data-breeding-pig-search="1"
+              value={sowSearch || ''}
+              onChange={(e) => setSowSearch(e.target.value)}
+              placeholder="Search tag, group, breed, status..."
+              style={{flex: 1, minWidth: 0}}
+            />
+            {sowSearch && (
+              <button
+                type="button"
+                data-breeding-pig-search-clear="1"
+                onClick={() => setSowSearch('')}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #d1d5db',
+                  background: 'white',
+                  color: '#4b5563',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
+            <button
+              type="button"
+              data-breeding-pigs-export-csv="1"
+              onClick={handleExportCsv}
+              disabled={breedingPigSeqRows.length === 0}
+              style={{
+                padding: '7px 12px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                background: 'white',
+                color: breedingPigSeqRows.length === 0 ? '#9ca3af' : '#085041',
+                cursor: breedingPigSeqRows.length === 0 ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: 'inherit',
+              }}
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              data-breeding-pigs-print="1"
+              onClick={handlePrintRows}
+              disabled={breedingPigSeqRows.length === 0}
+              style={{
+                padding: '7px 12px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                background: 'white',
+                color: breedingPigSeqRows.length === 0 ? '#9ca3af' : '#085041',
+                cursor: breedingPigSeqRows.length === 0 ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: 'inherit',
+              }}
+            >
+              Print
+            </button>
+            <button
+              onClick={() => {
+                setNotice(null);
+                setBreederForm({
+                  tag: '',
+                  sex: 'Sow',
+                  group: '1',
+                  status: 'Sow Group',
+                  breed: '',
+                  origin: '',
+                  birthDate: '',
+                  lastWeight: '',
+                  purchaseDate: '',
+                  purchaseAmount: '',
+                  notes: '',
+                });
+                setEditBreederId(null);
+                setShowBreederForm(true);
+              }}
+              style={{
+                padding: '7px 18px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#085041',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              + Add Pig
+            </button>
+          </div>
         </div>
+        {exportNotice && <div style={{fontSize: 12, color: '#b91c1c'}}>{exportNotice}</div>}
 
         {/* Add/Edit form — modal overlay */}
         {showBreederForm && (
@@ -1138,6 +1557,14 @@ export default function SowsView({
             )}
           </div>
         )}
+
+        <OperationalListEmptyState
+          totalCount={breeders.length}
+          filteredCount={filteredBreederCount}
+          emptyLabel="No breeding pigs yet"
+          filteredLabel="No breeding pigs match the current search"
+          data-empty-state="breeding-pigs"
+        />
 
         {/* ── FEED CONSUMPTION ── */}
         {(() => {

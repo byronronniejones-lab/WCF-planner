@@ -17,7 +17,8 @@ const EXPECTED_LITERAL_MUTATION_TOTALS = new Map([
   // -1 update from retiring per-equipment team_members assignment.
   // -1 update from removing the team-roster → equipment.team_members cascade
   //    in WebformsAdminView (roster teardown).
-  ['update', 80],
+  // +2 update from pig processing trip source-entry stamping + rollback.
+  ['update', 82],
   // -3 upsert from deleting teamMembers.js (2) + teamAvailability.js (1), the
   //    webform_config roster/availability writers (roster teardown).
   ['upsert', 40],
@@ -88,7 +89,7 @@ const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
   ['src/lib/tasksCenterMutationsApi.js|upsert', 1],
   ['src/livestock/WeighInSessionPage.jsx|delete', 3],
   ['src/livestock/WeighInSessionPage.jsx|insert', 3],
-  ['src/livestock/WeighInSessionPage.jsx|update', 13],
+  ['src/livestock/WeighInSessionPage.jsx|update', 15],
   ['src/livestock/WeighInSessionPage.jsx|upsert', 6],
   ['src/main.jsx|update', 1],
   ['src/main.jsx|upsert', 14],
@@ -197,7 +198,7 @@ const EXPECTED_TABLE_OPERATION_COUNTS = new Map([
   ['weigh_in_sessions|update', 7],
   ['weigh_ins|delete', 4],
   ['weigh_ins|insert', 7],
-  ['weigh_ins|update', 15],
+  ['weigh_ins|update', 17],
 ]);
 
 const EXPECTED_DYNAMIC_MUTATIONS = [

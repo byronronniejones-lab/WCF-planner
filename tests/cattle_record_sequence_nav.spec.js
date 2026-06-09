@@ -66,8 +66,10 @@ test.describe('Cattle record-page sequence navigation', () => {
 
     const nextBtn = page.locator('[data-record-seq-next="1"]');
     await expect(nextBtn).toBeEnabled();
-    // The Next label is the neighbor's tag (e.g. "#SEQ-B"); strip the chevron.
-    const nextLabel = (await nextBtn.innerText()).replace(/[‹›]/g, '').trim();
+    // The Next label is the neighbor's tag (e.g. "#SEQ-B").
+    const nextAria = await nextBtn.getAttribute('aria-label');
+    expect(nextAria).toMatch(/^Next record: /);
+    const nextLabel = nextAria.replace(/^Next record: /, '');
     expect(nextLabel).toMatch(/^#SEQ-[ABC]$/);
 
     await nextBtn.click();

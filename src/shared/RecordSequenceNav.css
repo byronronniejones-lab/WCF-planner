@@ -1,0 +1,125 @@
+.record-sequence-nav {
+  position: fixed;
+  inset: auto 0 14px;
+  z-index: 600;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.record-sequence-nav__button {
+  position: fixed;
+  top: 50%;
+  width: 42px;
+  min-height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #374151;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.14),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-weight: 700;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}
+
+.record-sequence-nav__button--prev {
+  left: max(12px, calc(50% - 580px));
+}
+
+.record-sequence-nav__button--next {
+  right: max(12px, calc(50% - 580px));
+}
+
+.record-sequence-nav__button:disabled {
+  color: #9ca3af;
+  background: #f9fafb;
+  cursor: default;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.record-sequence-nav__chevron {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.record-sequence-nav__mobile-label {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-sequence-nav__position {
+  pointer-events: auto;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+@media (min-width: 701px) {
+  .record-sequence-nav__button .record-sequence-nav__mobile-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .record-sequence-nav {
+    position: static;
+    inset: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    margin: 6px 0 12px;
+    pointer-events: auto;
+  }
+
+  .record-sequence-nav__button {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    gap: 6px;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .record-sequence-nav__button--prev {
+    justify-content: flex-start;
+  }
+
+  .record-sequence-nav__button--next {
+    justify-content: flex-end;
+  }
+
+  .record-sequence-nav__chevron {
+    font-size: 20px;
+  }
+
+  .record-sequence-nav__position {
+    box-shadow: none;
+    white-space: nowrap;
+  }
+}
