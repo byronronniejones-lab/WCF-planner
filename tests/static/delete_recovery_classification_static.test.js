@@ -395,7 +395,10 @@ describe('delete/recovery classification inventory', () => {
     expect(tables.has('equipment_maintenance_events')).toBe(false);
 
     expect(api).toContain('export async function deleteEquipmentFueling');
-    expect(api).toContain("rpc('delete_equipment_fueling'");
+    // Renamed in migration 104 to avoid colliding with the migration-091
+    // owner-scoped delete_equipment_fueling(text).
+    expect(api).toContain("rpc('admin_delete_equipment_fueling'");
+    expect(api).not.toContain("rpc('delete_equipment_fueling'");
     expect(api).toContain('export async function deleteEquipmentMaintenanceEvent');
     expect(api).toContain("rpc('delete_equipment_maintenance_event'");
 
@@ -415,6 +418,30 @@ describe('delete/recovery classification inventory', () => {
     expect(migration).toMatch(/DELETE FROM public\.equipment_maintenance_events/);
     expect(migration).toMatch(/INSERT INTO public\.activity_events/);
     expect(migration).toContain("'record.deleted'");
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('renames the privileged fueling delete RPC to remove the mig-091 collision (migration 104)', () => {
+    const p = path.join(ROOT, 'supabase-migrations/104_rename_equipment_fueling_delete_rpc.sql');
+    if (!fs.existsSync(p)) return; // follow-up not present yet
+    const migration = fs.readFileSync(p, 'utf8');
+
+    // New unambiguous name, same SECDEF + role gate + FOR UPDATE + audit semantics.
+    expect(migration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.admin_delete_equipment_fueling[\s\S]*?SECURITY DEFINER/,
+    );
+    expect(migration).toContain("'admin', 'management', 'farm_team', 'equipment_tech'");
+    expect(migration).toMatch(/FOR UPDATE/);
+    expect(migration).toContain(
+      'REVOKE ALL ON FUNCTION public.admin_delete_equipment_fueling(text, text, text) FROM PUBLIC, anon',
+    );
+    expect(migration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.admin_delete_equipment_fueling(text, text, text) TO authenticated',
+    );
+    // Drops the colliding mig-102 overload; the mig-091 owner-scoped
+    // delete_equipment_fueling(text) is intentionally NOT dropped.
+    expect(migration).toContain('DROP FUNCTION IF EXISTS public.delete_equipment_fueling(text, text, text)');
+    expect(migration).not.toMatch(/DROP FUNCTION[^\n]*delete_equipment_fueling\(text\)\s*;/);
     expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
   });
 
