@@ -139,6 +139,13 @@ function hasWeighInDeleteRpcs() {
   );
 }
 
+function hasEquipmentLogDeleteRpcs() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/equipmentLogDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/102_equipment_log_delete_activity_rpcs.sql'))
+  );
+}
+
 function expectedDeleteTableCounts() {
   const expected = new Map(EXPECTED_DELETE_TABLE_COUNTS);
   if (hasTransactionalCalvingDeleteRpc()) expected.delete('cattle_calving_records');
@@ -155,6 +162,12 @@ function expectedDeleteTableCounts() {
     expected.delete('weigh_in_sessions');
     expected.set('weigh_ins', 3);
   }
+  // Equipment fueling/maintenance deletes moved to SECDEF RPCs (mig 102): no
+  // runtime client delete remains on either equipment-log table.
+  if (hasEquipmentLogDeleteRpcs()) {
+    expected.delete('equipment_fuelings');
+    expected.delete('equipment_maintenance_events');
+  }
   return expected;
 }
 
@@ -169,6 +182,10 @@ function expectedDeleteRecoveryClass() {
   // weigh_in_sessions root delete is fully gone after mig 101.
   if (hasWeighInDeleteRpcs()) {
     expected.delete('weigh_in_sessions');
+  }
+  if (hasEquipmentLogDeleteRpcs()) {
+    expected.delete('equipment_fuelings');
+    expected.delete('equipment_maintenance_events');
   }
   return expected;
 }
@@ -340,6 +357,62 @@ describe('delete/recovery classification inventory', () => {
     // Entry + session deletions and their record.deleted audit events are in-txn.
     expect(migration).toMatch(/DELETE FROM public\.weigh_ins/);
     expect(migration).toMatch(/DELETE FROM public\.weigh_in_sessions/);
+    expect(migration).toMatch(/INSERT INTO public\.activity_events/);
+    expect(migration).toContain("'record.deleted'");
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('hardens the weigh-in delete RPCs with FOR UPDATE (migration 103 follow-up)', () => {
+    const p = path.join(ROOT, 'supabase-migrations/103_weighin_delete_for_update_hardening.sql');
+    if (!fs.existsSync(p)) return; // follow-up not present yet
+    const migration = fs.readFileSync(p, 'utf8');
+    for (const fn of ['delete_weigh_in_entry', 'delete_weigh_in_session']) {
+      expect(migration).toMatch(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}[\\s\\S]*?SECURITY DEFINER`));
+    }
+    // One FOR UPDATE per function: both the entry read and the session read lock
+    // their target row so read+audit+delete is idempotent under concurrency.
+    expect((migration.match(/FOR UPDATE/g) || []).length).toBeGreaterThanOrEqual(2);
+    expect(migration).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('locks the equipment fueling/maintenance delete as RPC-backed after migration 102', () => {
+    const tables = collectDeleteTables();
+
+    if (!hasEquipmentLogDeleteRpcs()) {
+      expect(tables.get('equipment_fuelings')).toBe(1);
+      expect(tables.get('equipment_maintenance_events')).toBe(1);
+      return;
+    }
+
+    const api = fs.readFileSync(path.join(ROOT, 'src/lib/equipmentLogDeleteApi.js'), 'utf8');
+    const migration = fs.readFileSync(
+      path.join(ROOT, 'supabase-migrations/102_equipment_log_delete_activity_rpcs.sql'),
+      'utf8',
+    );
+
+    // No runtime client delete remains on either equipment-log table.
+    expect(tables.has('equipment_fuelings')).toBe(false);
+    expect(tables.has('equipment_maintenance_events')).toBe(false);
+
+    expect(api).toContain('export async function deleteEquipmentFueling');
+    expect(api).toContain("rpc('delete_equipment_fueling'");
+    expect(api).toContain('export async function deleteEquipmentMaintenanceEvent');
+    expect(api).toContain("rpc('delete_equipment_maintenance_event'");
+
+    for (const fn of ['delete_equipment_fueling', 'delete_equipment_maintenance_event']) {
+      expect(migration).toMatch(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}[\\s\\S]*?SECURITY DEFINER`));
+      expect(migration).toContain(`REVOKE ALL ON FUNCTION public.${fn}(text, text, text) FROM PUBLIC, anon`);
+      expect(migration).toContain(`GRANT EXECUTE ON FUNCTION public.${fn}(text, text, text) TO authenticated`);
+    }
+    // The fueling RPC mirrors the migration-092 privileged-delete role gate; the
+    // maintenance RPC stays authenticated-only (its table has no role gate).
+    expect(migration).toContain("'admin', 'management', 'farm_team', 'equipment_tech'");
+    // Both row reads lock FOR UPDATE so the read+audit+delete is idempotent under
+    // concurrency (no double-audit, no false ok on a second 0-row delete).
+    expect((migration.match(/FOR UPDATE/g) || []).length).toBeGreaterThanOrEqual(2);
+    // Both delete their row + log a record.deleted Activity event in-txn.
+    expect(migration).toMatch(/DELETE FROM public\.equipment_fuelings/);
+    expect(migration).toMatch(/DELETE FROM public\.equipment_maintenance_events/);
     expect(migration).toMatch(/INSERT INTO public\.activity_events/);
     expect(migration).toContain("'record.deleted'");
     expect(migration).toContain("NOTIFY pgrst, 'reload schema'");

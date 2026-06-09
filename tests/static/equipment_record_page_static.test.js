@@ -69,6 +69,29 @@ describe('EquipmentDetail — record page structure', () => {
   });
 });
 
+describe('EquipmentDetail — transactional log deletes (Lane A CP3)', () => {
+  it('routes fueling + maintenance deletes through the SECDEF delete RPC wrappers', () => {
+    expect(detail).toContain("from '../lib/equipmentLogDeleteApi.js'");
+    expect(detail).toMatch(/async function deleteFueling[\s\S]*?deleteEquipmentFueling\(sb,/);
+    expect(detail).toMatch(/async function deleteMaintenance[\s\S]*?deleteEquipmentMaintenanceEvent\(sb,/);
+  });
+
+  it('no longer issues direct client deletes against the equipment-log tables', () => {
+    expect(detail).not.toMatch(/from\('equipment_fuelings'\)[\s\S]{0,80}?\.delete\(/);
+    expect(detail).not.toMatch(/from\('equipment_maintenance_events'\)[\s\S]{0,80}?\.delete\(/);
+  });
+
+  it('surfaces RPC failure via notice and only resyncs/reloads on success', () => {
+    // Fueling: failure sets a notice and returns before the current-reading
+    // resync; success path keeps syncCurrentReadingFromFuelings + onReload.
+    expect(detail).toMatch(
+      /deleteEquipmentFueling\(sb,[\s\S]*?if \(!r\.ok\)[\s\S]*?setNotice[\s\S]*?return[\s\S]*?syncCurrentReadingFromFuelings\(\)[\s\S]*?onReload\(\)/,
+    );
+    // Maintenance: failure now surfaces a notice instead of a silent reload.
+    expect(detail).toMatch(/deleteEquipmentMaintenanceEvent\(sb,[\s\S]*?if \(!r\.ok\)[\s\S]*?setNotice[\s\S]*?return/);
+  });
+});
+
 describe('EquipmentHome — ID and slug routing', () => {
   it('resolves detail by slug', () => {
     expect(home).toContain('e.slug === detailSlug');

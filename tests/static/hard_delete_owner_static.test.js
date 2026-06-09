@@ -22,7 +22,8 @@ const EXPECTED_DELETE_OWNERS = new Map([
   // longer direct-delete a processing-batch root — both route through the
   // SECDEF lifecycle RPCs (migration 100), so neither file has a runtime
   // .delete() anymore.
-  ['src/equipment/EquipmentDetail.jsx', 2],
+  // EquipmentDetail fueling + maintenance-event deletes moved to the SECDEF
+  // equipment-log delete RPCs (migration 102); no runtime client delete remains.
   ['src/layer/LayerBatchPage.jsx', 2],
   ['src/lib/cattleForecastApi.js', 2],
   // Saved views are user preferences (mig 095), not a soft-delete entity root —
@@ -50,8 +51,9 @@ const EXPECTED_DELETE_TABLES = new Map([
   ['cattle_forecast_hidden', 1],
   // cattle_processing_batches + sheep_processing_batches deletes moved to the
   // SECDEF lifecycle RPCs (migration 100); no runtime client delete remains.
-  ['equipment_fuelings', 1],
-  ['equipment_maintenance_events', 1],
+  // equipment_fuelings + equipment_maintenance_events deletes moved to the
+  // SECDEF equipment-log delete RPCs (migration 102); no runtime client delete
+  // remains on either table.
   ['equipment_material_clears', 1],
   ['equipment_service_materials', 1],
   ['fuel_bills', 2],
@@ -124,7 +126,7 @@ describe('Supabase hard-delete owner boundary', () => {
     const {owners, total} = collectSupabaseDeletes();
     const {unexpected, missing, wrongCounts} = diffMap(EXPECTED_DELETE_OWNERS, owners);
 
-    expect(total).toBe(23);
+    expect(total).toBe(21);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);

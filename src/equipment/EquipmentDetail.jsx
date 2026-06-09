@@ -28,6 +28,7 @@ import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx
 import {RecordPageBody, RecordTitle} from '../shared/RecordPageShell.jsx';
 import {LockedTeamMemberField, recordControl, recordTextarea} from '../shared/recordPageControls.jsx';
 import {runMutation, recordStatusChange} from '../lib/entityMutations.js';
+import {deleteEquipmentFueling, deleteEquipmentMaintenanceEvent} from '../lib/equipmentLogDeleteApi.js';
 import {imageAltText} from '../lib/imageAlt.js';
 
 export default function EquipmentDetail({
@@ -328,9 +329,16 @@ export default function EquipmentDetail({
   async function deleteFueling(fuelingId) {
     window._wcfConfirmDelete('Delete this fueling entry? This cannot be undone.', async () => {
       setNotice(null);
-      const {error} = await sb.from('equipment_fuelings').delete().eq('id', fuelingId);
-      if (error) {
-        setNotice({kind: 'error', message: 'Delete failed: ' + error.message});
+      // Audit-grade transactional delete (migration 102): the fueling row + its
+      // record.deleted Activity event commit in one transaction. The
+      // current-reading resync stays client-side and runs after success.
+      const r = await deleteEquipmentFueling(sb, {
+        fuelingId,
+        entityLabel: eq.name,
+        teamMember: authState && authState.name ? authState.name : null,
+      });
+      if (!r.ok) {
+        setNotice({kind: 'error', message: 'Delete failed: ' + (r.error || r.reason || 'unknown error')});
         return;
       }
       await syncCurrentReadingFromFuelings();
@@ -339,7 +347,19 @@ export default function EquipmentDetail({
   }
   async function deleteMaintenance(id) {
     window._wcfConfirmDelete('Delete this maintenance event?', async () => {
-      await sb.from('equipment_maintenance_events').delete().eq('id', id);
+      setNotice(null);
+      // Audit-grade transactional delete (migration 102): row + record.deleted
+      // Activity commit in one transaction; failures now surface instead of a
+      // silent reload.
+      const r = await deleteEquipmentMaintenanceEvent(sb, {
+        eventId: id,
+        entityLabel: eq.name,
+        teamMember: authState && authState.name ? authState.name : null,
+      });
+      if (!r.ok) {
+        setNotice({kind: 'error', message: 'Delete failed: ' + (r.error || r.reason || 'unknown error')});
+        return;
+      }
       onReload();
     });
   }

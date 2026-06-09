@@ -265,6 +265,13 @@ function hasWeighInDeleteRpcs() {
   );
 }
 
+function hasEquipmentLogDeleteRpcs() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/equipmentLogDeleteApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/102_equipment_log_delete_activity_rpcs.sql'))
+  );
+}
+
 function expectedLiteralMutationTotals() {
   const expected = new Map(EXPECTED_LITERAL_MUTATION_TOTALS);
   // The two literal calving deletes (CattleAnimalPage + CattleHerdsView) route
@@ -283,6 +290,12 @@ function expectedLiteralMutationTotals() {
   // RPCs: -2 delete. The session's dynamic comment cleanup also moved server-side
   // but was never counted in these LITERAL totals.
   if (hasWeighInDeleteRpcs()) {
+    expected.set('delete', expected.get('delete') - 2);
+  }
+  // Equipment-log lifecycle RPCs (mig 102) move EquipmentDetail deleteFueling
+  // (equipment_fuelings) and deleteMaintenance (equipment_maintenance_events)
+  // into SECDEF RPCs: -2 delete.
+  if (hasEquipmentLogDeleteRpcs()) {
     expected.set('delete', expected.get('delete') - 2);
   }
   return expected;
@@ -304,6 +317,10 @@ function expectedOwnerOperationCounts() {
   if (hasWeighInDeleteRpcs()) {
     expected.set('src/livestock/WeighInSessionPage.jsx|delete', 1);
   }
+  // mig 102 removes both EquipmentDetail literal deletes (fueling + maintenance).
+  if (hasEquipmentLogDeleteRpcs()) {
+    expected.delete('src/equipment/EquipmentDetail.jsx|delete');
+  }
   return expected;
 }
 
@@ -320,6 +337,11 @@ function expectedTableOperationCounts() {
   if (hasWeighInDeleteRpcs()) {
     expected.delete('weigh_in_sessions|delete');
     expected.set('weigh_ins|delete', 3);
+  }
+  // mig 102: both equipment-log delete targets are gone from client source.
+  if (hasEquipmentLogDeleteRpcs()) {
+    expected.delete('equipment_fuelings|delete');
+    expected.delete('equipment_maintenance_events|delete');
   }
   return expected;
 }
