@@ -26,8 +26,10 @@ const SURFACES = [
     list: 'src/cattle/CattleBatchesView.jsx',
     listContains: [
       // Processed batches are collapsed behind Show Processed Batches; they
-      // only join the sequence when that section is expanded.
-      'const batchSeqRows = [...scheduledList, ...active, ...(showCompleted ? completed : [])]',
+      // only join the sequence when that section is expanded. The redesign
+      // passes the FILTERED+SORTED visible rows (scheduledVisible / activeVisible
+      // / completedVisible) so nav stepping matches what the operator sees.
+      'const batchSeqRows = [...scheduledVisible, ...activeVisible, ...(showCompleted ? completedVisible : [])]',
       "labeledSeqItems(batchSeqRows, 'name')",
     ],
     page: 'src/cattle/CattleBatchPage.jsx',
@@ -36,17 +38,20 @@ const SURFACES = [
   {
     name: 'sheep.processing',
     list: 'src/sheep/SheepBatchesView.jsx',
-    listContains: ['const batchSeqRows = [...planned, ...completed]', "labeledSeqItems(batchSeqRows, 'name')"],
+    // Redesign converted the planned/completed sections into one unified grid;
+    // the filtered+sorted set (sortedBatches) is the single visible-order source
+    // for render, record-sequence nav, and CSV/print.
+    listContains: ['const batchSeqRows = sortedBatches', "labeledSeqItems(batchSeqRows, 'name')"],
     page: 'src/sheep/SheepBatchPage.jsx',
     nav: "navigate('/sheep/batches/' + id, recordSeqNavOptions(recordSeq))",
   },
   {
     name: 'layer.batch',
     list: 'src/layer/LayerBatchesView.jsx',
-    listContains: [
-      'const batchSeqRows = [...activeBatches, ...retiredBatches]',
-      "labeledSeqItems(batchSeqRows, 'name')",
-    ],
+    // Redesign serves a unified inspection grid; the filtered+sorted set
+    // (sorted) is the single visible-order source for render, record-sequence
+    // nav, and CSV/print.
+    listContains: ['const batchSeqRows = sorted', "labeledSeqItems(batchSeqRows, 'name')"],
     page: 'src/layer/LayerBatchPage.jsx',
     nav: "navigate('/layer/batches/' + id, recordSeqNavOptions(recordSeq))",
   },

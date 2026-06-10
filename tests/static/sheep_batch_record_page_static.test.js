@@ -99,9 +99,13 @@ describe('SheepBatchesHub - cold-boot readiness', () => {
 
   it('keeps load failures non-dismissible with a retry action and blocks hub rows', () => {
     expect(listSrc).toMatch(/\{!showForm && loadError && \([\s\S]*?onClick=\{loadAll\}[\s\S]*?Retry/);
+    // The two prior planned/completed swimlanes collapsed into a single
+    // unified scan-grid. Every batch-data render branch (empty state, no-match
+    // state, and the rows grid) must still be gated behind !loadError so a
+    // failed boot read shows the Retry, not stale/partial rows.
     expect(listSrc).toMatch(/!loading && !loadError && batches\.length === 0/);
-    expect(listSrc).toMatch(/!loading && !loadError && planned\.length > 0/);
-    expect(listSrc).toMatch(/!loading && !loadError && completed\.length > 0/);
+    expect(listSrc).toMatch(/!loading && !loadError && batches\.length > 0 && sortedBatches\.length === 0/);
+    expect(listSrc).toMatch(/!loading && !loadError && sortedBatches\.length > 0/);
   });
 });
 

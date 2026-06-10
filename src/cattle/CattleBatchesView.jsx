@@ -10,7 +10,32 @@ import {loadForecastSettings, loadHeiferIncludes, loadHidden} from '../lib/cattl
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {buildProcessingBatchExportColumns} from '../lib/operationalExportColumns.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
+import {
+  listSavedViews,
+  createSavedView,
+  updateSavedView,
+  deleteSavedView,
+  buildViewState,
+} from '../lib/savedViewsApi.js';
+import {
+  CATTLE_BATCH_STATUS_KEYS,
+  CATTLE_BATCH_SORT_KEYS,
+  buildCattleBatchPredicate,
+  buildCattleBatchComparator,
+} from '../lib/cattleBatchFilters.js';
 import CattleBatchPage from './CattleBatchPage.jsx';
+
+const CATTLE_BATCHES_SURFACE_KEY = 'cattle.batches';
+
+const CATTLE_BATCH_STATUS_LABELS = {scheduled: 'Scheduled', active: 'Active', complete: 'Processed'};
+const CATTLE_BATCH_SORT_LABELS = {
+  batchName: 'Batch name',
+  status: 'Status',
+  plannedDate: 'Process date',
+  animalCount: 'Cow count',
+  yieldPct: 'Yield %',
+};
 
 const CattleBatchesHub = ({
   sb,
@@ -43,6 +68,21 @@ const CattleBatchesHub = ({
   const [showCompleted, setShowCompleted] = useState(false);
   const [scheduleDateDraft, setScheduleDateDraft] = useState({});
   const [notice, setNotice] = useState(null);
+
+  // ── Operational-list toolbar state (search / status / range filters + a
+  // single active sort rule). Persisted per-surface so a refresh keeps the
+  // operator's working set. Saved views layer on top via savedViewsApi. ──
+  const [filters, setFilters] = usePersistentViewState('cattle.batches.filters', {});
+  const [sortRule, setSortRule] = usePersistentViewState('cattle.batches.sortRule', {key: 'plannedDate', dir: 'desc'});
+  const [savedViews, setSavedViews] = useState([]);
+  const [savedViewsError, setSavedViewsError] = useState(null);
+  const [savedViewsLoading, setSavedViewsLoading] = useState(true);
+  const [selectedViewId, setSelectedViewId] = useState('');
+  const [showSaveViewForm, setShowSaveViewForm] = useState(false);
+  const [saveViewName, setSaveViewName] = useState('');
+  const [saveViewVisibility, setSaveViewVisibility] = useState('private');
+  const [savedViewBusy, setSavedViewBusy] = useState(false);
+  const myProfileId = (authState && authState.user && authState.user.id) || null;
 
   async function loadAll() {
     setLoading(true);
@@ -113,6 +153,25 @@ const CattleBatchesHub = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function loadSavedViews() {
+    setSavedViewsLoading(true);
+    try {
+      const rows = await listSavedViews(sb, CATTLE_BATCHES_SURFACE_KEY);
+      setSavedViews(rows);
+      setSavedViewsError(null);
+      setSelectedViewId((cur) => (cur && rows.some((r) => r.id === cur) ? cur : ''));
+    } catch (e) {
+      setSavedViews([]);
+      setSavedViewsError(e.message || String(e));
+    } finally {
+      setSavedViewsLoading(false);
+    }
+  }
+  useEffect(() => {
+    loadSavedViews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const forecast = useMemo(() => {
     if (!forecastSettings) return null;
     const realBatchesOnly = batches.filter((b) => b.status === 'active' || b.status === 'complete');
@@ -171,22 +230,66 @@ const CattleBatchesHub = ({
 
   const active = batches.filter((b) => b.status === 'active');
   const completed = batches.filter((b) => b.status === 'complete');
-  // Visible/rendered order for record sequence nav (scheduled → active → then
-  // processed ONLY when the Show Processed Batches section is expanded).
-  // Virtual/planned forecast tiles are excluded — they don't route.
-  const batchSeqRows = [...scheduledList, ...active, ...(showCompleted ? completed : [])];
-  const batchExportRows = batchSeqRows.map((batch) => {
+
+  // Enrich a pipeline batch into the export/filter shape the rest of the view
+  // (and the shared processing-batch export columns) read. Scheduled rows are
+  // forecast-backed (animalIds, no cows_detail); active/processed rows carry a
+  // cows_detail array. animal_count + yield_pct are the fields the toolbar
+  // filters/sorts on, so deriving them here keeps filter + sort + CSV/print on
+  // one shape.
+  function enrichBatch(batch) {
     const detailRows = Array.isArray(batch.cows_detail) ? batch.cows_detail : [];
     const totalLiveWeight = detailRows.reduce((sum, row) => sum + (parseFloat(row.live_weight) || 0), 0);
     const totalHangingWeight = detailRows.reduce((sum, row) => sum + (parseFloat(row.hanging_weight) || 0), 0);
     return {
       ...batch,
+      // Operational exports + the count filter/sort count ATTACHED detail rows
+      // only (Lane K contract, parity with sheep). Scheduled/forecast batches
+      // still display "N cows forecast" separately via batch.animalIds.
       animal_count: detailRows.length,
       total_live_weight: totalLiveWeight,
       total_hanging_weight: totalHangingWeight,
       yield_pct: totalLiveWeight > 0 && totalHangingWeight > 0 ? (totalHangingWeight / totalLiveWeight) * 100 : null,
     };
-  });
+  }
+
+  // One predicate + comparator drive filtering/sorting across every pipeline
+  // section (scheduled / active / processed). Filtering runs on the enriched
+  // shape; we keep each section's ORIGINAL rows aligned so render + nav still
+  // pass the real batch objects through. Single active sort rule (right-sized).
+  const batchPredicate = buildCattleBatchPredicate(filters);
+  const batchComparator = buildCattleBatchComparator(sortRule);
+  function applyToolbar(rows) {
+    return rows
+      .map((b) => ({raw: b, enriched: enrichBatch(b)}))
+      .filter((pair) => batchPredicate(pair.enriched))
+      .sort((a, b) => batchComparator(a.enriched, b.enriched));
+  }
+  const scheduledPairs = applyToolbar(scheduledList);
+  const activePairs = applyToolbar(active);
+  const completedPairs = applyToolbar(completed);
+  const scheduledVisible = scheduledPairs.map((p) => p.raw);
+  const activeVisible = activePairs.map((p) => p.raw);
+  const completedVisible = completedPairs.map((p) => p.raw);
+
+  // Visible/rendered order for record sequence nav (scheduled → active → then
+  // processed ONLY when the Show Processed Batches section is expanded).
+  // Virtual/planned forecast tiles are excluded — they don't route. This is the
+  // filtered + sorted set, so nav stepping matches what the operator sees.
+  const batchSeqRows = [...scheduledVisible, ...activeVisible, ...(showCompleted ? completedVisible : [])];
+  // CSV/print is fed the SAME filtered + sorted set (enriched), never the raw
+  // batches list.
+  const batchExportRows = [...scheduledPairs, ...activePairs, ...(showCompleted ? completedPairs : [])].map(
+    (p) => p.enriched,
+  );
+
+  // Routable total (pre-filter) vs visible (post-filter) for the "N of M"
+  // count + the filtered-no-results empty state. Completed only counts toward
+  // the total when its section is expanded (same rule as the rendered set).
+  const routableTotal = scheduledList.length + active.length + (showCompleted ? completed.length : 0);
+  const visibleTotal = batchSeqRows.length;
+  const filtersActive = Object.keys(filters || {}).length > 0;
+
   const exportColumns = buildProcessingBatchExportColumns({fmt, animalLabel: 'Cow'});
 
   function handleExportCsv() {
@@ -211,6 +314,199 @@ const CattleBatchesHub = ({
     });
     if (!ok) setNotice({kind: 'warning', message: 'Print export is unavailable in this browser.'});
   }
+
+  // ── Toolbar helpers (filter mutation + saved-view CRUD) ──────────────────
+  function setFilter(key, value) {
+    setFilters((prev) => {
+      const next = {...prev};
+      if (
+        value == null ||
+        value === '' ||
+        (Array.isArray(value) && value.length === 0) ||
+        (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)
+      ) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return next;
+    });
+    setSelectedViewId('');
+  }
+  function setRangeBound(key, bound, raw) {
+    setFilters((prev) => {
+      const cur = prev[key] && typeof prev[key] === 'object' ? {...prev[key]} : {};
+      if (raw === '' || raw == null) {
+        delete cur[bound];
+      } else {
+        const num = parseInt(raw, 10);
+        if (!Number.isFinite(num)) delete cur[bound];
+        else cur[bound] = num;
+      }
+      const next = {...prev};
+      if (Object.keys(cur).length === 0) delete next[key];
+      else next[key] = cur;
+      return next;
+    });
+    setSelectedViewId('');
+  }
+  function setDateBound(key, bound, raw) {
+    setFilters((prev) => {
+      const cur = prev[key] && typeof prev[key] === 'object' ? {...prev[key]} : {};
+      if (raw === '' || raw == null) delete cur[bound];
+      else cur[bound] = raw;
+      const next = {...prev};
+      if (Object.keys(cur).length === 0) delete next[key];
+      else next[key] = cur;
+      return next;
+    });
+    setSelectedViewId('');
+  }
+  function toggleStatus(value) {
+    setFilters((prev) => {
+      const curList = Array.isArray(prev.status) ? prev.status : [];
+      const nextList = curList.includes(value) ? curList.filter((x) => x !== value) : [...curList, value];
+      const next = {...prev};
+      if (nextList.length === 0) delete next.status;
+      else next.status = nextList;
+      return next;
+    });
+    setSelectedViewId('');
+  }
+  function clearAllFilters() {
+    setFilters({});
+    setSelectedViewId('');
+  }
+  function setSortKey(key) {
+    setSortRule((prev) => ({key, dir: (prev && prev.dir) || 'asc'}));
+    setSelectedViewId('');
+  }
+  function flipSortDir() {
+    setSortRule((prev) => ({
+      key: (prev && prev.key) || 'plannedDate',
+      dir: prev && prev.dir === 'asc' ? 'desc' : 'asc',
+    }));
+    setSelectedViewId('');
+  }
+
+  const selectedView = savedViews.find((v) => v.id === selectedViewId) || null;
+  const selectedViewIsMine = !!(selectedView && myProfileId && selectedView.owner_profile_id === myProfileId);
+  const myViews = savedViews.filter((v) => myProfileId && v.owner_profile_id === myProfileId);
+  const publicOtherViews = savedViews.filter(
+    (v) => v.visibility === 'public' && !(myProfileId && v.owner_profile_id === myProfileId),
+  );
+
+  function cattleBatchesViewState() {
+    return buildViewState({filters, sortRules: [sortRule], viewMode: 'grouped'});
+  }
+  function applySavedView(view) {
+    if (!view) return;
+    const st = view.view_state || {};
+    setFilters(st.filters && typeof st.filters === 'object' ? st.filters : {});
+    const rules = Array.isArray(st.sortRules) ? st.sortRules : [];
+    setSortRule(rules[0] && rules[0].key ? rules[0] : {key: 'plannedDate', dir: 'desc'});
+  }
+  function onSelectSavedView(id) {
+    setSelectedViewId(id);
+    if (!id) return;
+    applySavedView(savedViews.find((v) => v.id === id));
+  }
+  function openSaveViewForm() {
+    setSaveViewName('');
+    setSaveViewVisibility('private');
+    setShowSaveViewForm(true);
+  }
+  async function submitSaveView() {
+    const name = saveViewName.trim();
+    if (!name) {
+      setNotice({kind: 'error', message: 'Name the view before saving.'});
+      return;
+    }
+    setSavedViewBusy(true);
+    try {
+      const created = await createSavedView(sb, {
+        surfaceKey: CATTLE_BATCHES_SURFACE_KEY,
+        name,
+        visibility: saveViewVisibility,
+        viewState: cattleBatchesViewState(),
+      });
+      setShowSaveViewForm(false);
+      await loadSavedViews();
+      if (created && created.id) setSelectedViewId(created.id);
+    } catch (e) {
+      setNotice({kind: 'error', message: 'Save view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+  async function updateSelectedView() {
+    if (!selectedView || !selectedViewIsMine) return;
+    setSavedViewBusy(true);
+    try {
+      await updateSavedView(sb, selectedView.id, {viewState: cattleBatchesViewState()});
+      await loadSavedViews();
+      setNotice({kind: 'success', message: 'Updated "' + selectedView.name + '" to the current filters/sort.'});
+    } catch (e) {
+      setNotice({kind: 'error', message: 'Update view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+  async function proceedDeleteSelectedView(view) {
+    setSavedViewBusy(true);
+    try {
+      await deleteSavedView(sb, view.id);
+      setSelectedViewId('');
+      await loadSavedViews();
+      setNotice({kind: 'success', message: 'Deleted saved view "' + view.name + '".'});
+    } catch (e) {
+      setNotice({kind: 'error', message: 'Delete view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+  function deleteSelectedView() {
+    if (!selectedView || !selectedViewIsMine) return;
+    const view = selectedView;
+    const run = () => {
+      void proceedDeleteSelectedView(view);
+    };
+    if (window._wcfConfirmDelete) {
+      window._wcfConfirmDelete('Delete saved view "' + view.name + '"?', run);
+    } else {
+      run();
+    }
+  }
+
+  const toolbarInputS = {
+    fontSize: 12,
+    padding: '6px 10px',
+    border: '1px solid #d1d5db',
+    borderRadius: 6,
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  };
+  const savedViewGhostBtnS = {
+    padding: '6px 12px',
+    borderRadius: 6,
+    border: '1px solid #d1d5db',
+    background: 'white',
+    color: '#374151',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  };
+  const savedViewPrimaryBtnS = {...savedViewGhostBtnS, border: '1px solid #1d4ed8', color: '#1d4ed8'};
+  const savedViewRadioLabelS = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 12,
+    color: '#374151',
+    cursor: 'pointer',
+  };
 
   return (
     <div
@@ -314,6 +610,302 @@ const CattleBatchesHub = ({
         </div>
 
         {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'…'}</div>}
+
+        {/* Saved views row — degrades to a small notice if it can't load,
+            never blocking the list/filters below. */}
+        {!loading && !loadError && (
+          <div
+            data-cattle-batches-saved-views-row
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              padding: '10px 14px',
+              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+            {savedViewsError ? (
+              <span style={{fontSize: 12, color: '#b91c1c'}} data-cattle-batches-saved-views-error>
+                Saved views unavailable. Filters still work.
+              </span>
+            ) : (
+              <>
+                <select
+                  data-cattle-batches-saved-view-select
+                  value={selectedViewId}
+                  disabled={savedViewsLoading}
+                  onChange={(e) => onSelectSavedView(e.target.value)}
+                  style={{...toolbarInputS, width: 'auto', minWidth: 200}}
+                >
+                  <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
+                  {myViews.length > 0 && (
+                    <optgroup label="My views">
+                      {myViews.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {publicOtherViews.length > 0 && (
+                    <optgroup label="Public views">
+                      {publicOtherViews.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {selectedViewIsMine && (
+                  <>
+                    <button
+                      type="button"
+                      data-cattle-batches-saved-view-update
+                      onClick={updateSelectedView}
+                      disabled={savedViewBusy}
+                      style={savedViewGhostBtnS}
+                    >
+                      Update to current
+                    </button>
+                    <button
+                      type="button"
+                      data-cattle-batches-saved-view-delete
+                      onClick={deleteSelectedView}
+                      disabled={savedViewBusy}
+                      style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+                <span style={{flex: 1}} />
+                <button
+                  type="button"
+                  data-cattle-batches-saved-view-save-open
+                  onClick={openSaveViewForm}
+                  disabled={savedViewBusy}
+                  style={savedViewPrimaryBtnS}
+                >
+                  Save current view
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {!loading && !loadError && showSaveViewForm && (
+          <div
+            data-cattle-batches-saved-view-form
+            style={{
+              background: 'white',
+              border: '1px solid #bfdbfe',
+              borderRadius: 10,
+              padding: '10px 14px',
+              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <input
+              data-cattle-batches-saved-view-name
+              type="text"
+              value={saveViewName}
+              placeholder="View name"
+              onChange={(e) => setSaveViewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitSaveView();
+              }}
+              style={{...toolbarInputS, flex: 1, minWidth: 200}}
+            />
+            <label style={savedViewRadioLabelS}>
+              <input
+                type="radio"
+                name="saveCattleBatchViewVisibility"
+                checked={saveViewVisibility === 'private'}
+                onChange={() => setSaveViewVisibility('private')}
+                data-cattle-batches-saved-view-visibility="private"
+              />
+              Private
+            </label>
+            <label style={savedViewRadioLabelS}>
+              <input
+                type="radio"
+                name="saveCattleBatchViewVisibility"
+                checked={saveViewVisibility === 'public'}
+                onChange={() => setSaveViewVisibility('public')}
+                data-cattle-batches-saved-view-visibility="public"
+              />
+              Public
+            </label>
+            <button
+              type="button"
+              data-cattle-batches-saved-view-save
+              onClick={submitSaveView}
+              disabled={savedViewBusy}
+              style={savedViewPrimaryBtnS}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSaveViewForm(false)}
+              disabled={savedViewBusy}
+              style={savedViewGhostBtnS}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Operational toolbar — search + status + planned-date range + cow
+            count range + sort + direction, filtering/sorting across every
+            pipeline section at once. Right-sized: a single flat row, not the
+            multi-group chip popovers of the herds tab. */}
+        {!loading && !loadError && (
+          <div
+            data-cattle-batches-toolbar
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 10,
+              padding: '12px 16px',
+              marginBottom: 14,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+              <input
+                type="text"
+                data-cattle-batches-search
+                value={(filters && filters.textSearch) || ''}
+                onChange={(e) => setFilter('textSearch', e.target.value)}
+                placeholder="Search batch name, notes..."
+                style={{...toolbarInputS, flex: 1, minWidth: 200}}
+              />
+              <div
+                style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}
+                data-cattle-batches-status-filter
+              >
+                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Status</span>
+                {CATTLE_BATCH_STATUS_KEYS.map((s) => {
+                  const on = Array.isArray(filters && filters.status) && filters.status.includes(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      data-cattle-batches-status-option={s}
+                      onClick={() => toggleStatus(s)}
+                      style={{
+                        fontSize: 12,
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: '1px solid ' + (on ? '#1d4ed8' : '#d1d5db'),
+                        background: on ? '#eff6ff' : 'white',
+                        color: on ? '#1e40af' : '#374151',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {CATTLE_BATCH_STATUS_LABELS[s]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 6}} data-cattle-batches-planned-range>
+                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Process date</span>
+                <input
+                  type="date"
+                  data-cattle-batches-planned-after
+                  value={(filters && filters.plannedDateRange && filters.plannedDateRange.after) || ''}
+                  onChange={(e) => setDateBound('plannedDateRange', 'after', e.target.value)}
+                  style={{...toolbarInputS, width: 'auto'}}
+                />
+                <span style={{fontSize: 11, color: '#9ca3af'}}>to</span>
+                <input
+                  type="date"
+                  data-cattle-batches-planned-before
+                  value={(filters && filters.plannedDateRange && filters.plannedDateRange.before) || ''}
+                  onChange={(e) => setDateBound('plannedDateRange', 'before', e.target.value)}
+                  style={{...toolbarInputS, width: 'auto'}}
+                />
+              </div>
+              <div style={{display: 'flex', alignItems: 'center', gap: 6}} data-cattle-batches-count-range>
+                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Cows</span>
+                <input
+                  type="number"
+                  min="0"
+                  data-cattle-batches-count-min
+                  value={(filters && filters.animalCountRange && filters.animalCountRange.min) ?? ''}
+                  onChange={(e) => setRangeBound('animalCountRange', 'min', e.target.value)}
+                  placeholder="min"
+                  style={{...toolbarInputS, width: 72}}
+                />
+                <span style={{fontSize: 11, color: '#9ca3af'}}>to</span>
+                <input
+                  type="number"
+                  min="0"
+                  data-cattle-batches-count-max
+                  value={(filters && filters.animalCountRange && filters.animalCountRange.max) ?? ''}
+                  onChange={(e) => setRangeBound('animalCountRange', 'max', e.target.value)}
+                  placeholder="max"
+                  style={{...toolbarInputS, width: 72}}
+                />
+              </div>
+              <span style={{flex: 1}} />
+              <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Sort</span>
+                <select
+                  data-cattle-batches-sort-key
+                  value={(sortRule && sortRule.key) || 'plannedDate'}
+                  onChange={(e) => setSortKey(e.target.value)}
+                  style={{...toolbarInputS, width: 'auto'}}
+                >
+                  {CATTLE_BATCH_SORT_KEYS.map((k) => (
+                    <option key={k} value={k}>
+                      {CATTLE_BATCH_SORT_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  data-cattle-batches-sort-dir
+                  onClick={flipSortDir}
+                  title={sortRule && sortRule.dir === 'desc' ? 'Descending' : 'Ascending'}
+                  style={savedViewGhostBtnS}
+                >
+                  {sortRule && sortRule.dir === 'desc' ? 'Desc ↓' : 'Asc ↑'}
+                </button>
+              </div>
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+              <span style={{fontSize: 12, color: '#6b7280'}} data-cattle-batches-count>
+                {visibleTotal} of {routableTotal} {routableTotal === 1 ? 'batch' : 'batches'}
+              </span>
+              {filtersActive && (
+                <button
+                  type="button"
+                  data-cattle-batches-clear-filters
+                  onClick={clearAllFilters}
+                  style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Show Planned Batches (virtual, top, collapsed) */}
         {!loading && !loadError && (
@@ -435,57 +1027,69 @@ const CattleBatchesHub = ({
                 marginBottom: 8,
               }}
             >
-              Scheduled ({scheduledList.length})
+              Scheduled ({scheduledVisible.length}
+              {scheduledVisible.length !== scheduledList.length ? ' of ' + scheduledList.length : ''})
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-              {scheduledList.map((sb2) => (
-                <div
-                  key={sb2.id}
-                  data-scheduled-batch={sb2.name}
-                  data-batch-row={sb2.id}
-                  onClick={() =>
-                    navigate('/cattle/batches/' + sb2.id, recordSeqNavOptions(labeledSeqItems(batchSeqRows, 'name')))
-                  }
-                  className="hoverable-tile"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                    padding: '8px 10px',
-                    background: 'white',
-                    border: '1px solid #fde68a',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <strong style={{color: '#92400e'}}>{sb2.name}</strong>
-                  <span
+            {scheduledVisible.length === 0 ? (
+              <div
+                data-cattle-batches-scheduled-empty-filtered
+                style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}
+              >
+                No scheduled batches match the current filters.
+              </div>
+            ) : (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+                {scheduledVisible.map((sb2) => (
+                  <div
+                    key={sb2.id}
+                    data-scheduled-batch={sb2.name}
+                    data-batch-row={sb2.id}
+                    onClick={() =>
+                      navigate('/cattle/batches/' + sb2.id, recordSeqNavOptions(labeledSeqItems(batchSeqRows, 'name')))
+                    }
+                    className="hoverable-tile"
                     style={{
-                      fontSize: 10,
-                      padding: '1px 6px',
-                      background: '#fffbeb',
-                      color: '#92400e',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      flexWrap: 'wrap',
+                      padding: '8px 10px',
+                      background: 'white',
                       border: '1px solid #fde68a',
-                      borderRadius: 4,
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      cursor: 'pointer',
                     }}
                   >
-                    Scheduled
-                  </span>
-                  <span style={{color: '#6b7280'}}>
-                    {sb2.animalIds.length} {sb2.animalIds.length === 1 ? 'cow' : 'cows'} forecast
-                  </span>
-                  {sb2.planned_process_date && <span style={{color: '#065f46'}}>{fmt(sb2.planned_process_date)}</span>}
-                  <span style={{flex: 1}} />
-                  <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>
-                    Cattle remain forecast-backed until sent from WeighIns
-                  </span>
-                </div>
-              ))}
-            </div>
+                    <strong style={{color: '#92400e'}}>{sb2.name}</strong>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: '1px 6px',
+                        background: '#fffbeb',
+                        color: '#92400e',
+                        border: '1px solid #fde68a',
+                        borderRadius: 4,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Scheduled
+                    </span>
+                    <span style={{color: '#6b7280'}}>
+                      {sb2.animalIds.length} {sb2.animalIds.length === 1 ? 'cow' : 'cows'} forecast
+                    </span>
+                    {sb2.planned_process_date && (
+                      <span style={{color: '#065f46'}}>{fmt(sb2.planned_process_date)}</span>
+                    )}
+                    <span style={{flex: 1}} />
+                    <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>
+                      Cattle remain forecast-backed until sent from WeighIns
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -502,7 +1106,8 @@ const CattleBatchesHub = ({
                 marginBottom: 8,
               }}
             >
-              Active ({active.length})
+              Active ({activeVisible.length}
+              {activeVisible.length !== active.length ? ' of ' + active.length : ''})
             </div>
             {active.length === 0 ? (
               <div
@@ -519,9 +1124,24 @@ const CattleBatchesHub = ({
                 No active batches. Cattle enter an active batch only via the Send-to-Processor flag on a finishers
                 weigh-in session.
               </div>
+            ) : activeVisible.length === 0 ? (
+              <div
+                data-cattle-batches-active-empty-filtered
+                style={{
+                  background: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 12,
+                  padding: '1.25rem',
+                  textAlign: 'center',
+                  color: '#6b7280',
+                  fontSize: 13,
+                }}
+              >
+                No active batches match the current filters.
+              </div>
             ) : (
               <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-                {active.map((b) => {
+                {activeVisible.map((b) => {
                   const rows = Array.isArray(b.cows_detail) ? b.cows_detail : [];
                   const totalLive = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
                   const totalHang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
@@ -597,9 +1217,16 @@ const CattleBatchesHub = ({
                 <div style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}>
                   No processed batches yet.
                 </div>
+              ) : completedVisible.length === 0 ? (
+                <div
+                  data-cattle-batches-processed-empty-filtered
+                  style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}
+                >
+                  No processed batches match the current filters.
+                </div>
               ) : (
                 <div style={{display: 'flex', flexDirection: 'column', gap: 10, padding: '0.5rem 0'}}>
-                  {completed.map((b) => {
+                  {completedVisible.map((b) => {
                     const rows = Array.isArray(b.cows_detail) ? b.cows_detail : [];
                     const totalLive = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
                     const totalHang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);

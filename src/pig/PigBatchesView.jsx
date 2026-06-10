@@ -48,6 +48,15 @@ import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {buildPigBatchExportColumns} from '../lib/operationalExportColumns.js';
+import {PIG_BATCH_SORT_KEYS, buildPigBatchPredicate, buildPigBatchComparator} from '../lib/pigBatchFilters.js';
+import {
+  listSavedViews,
+  createSavedView,
+  updateSavedView,
+  deleteSavedView,
+  buildViewState,
+} from '../lib/savedViewsApi.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {usePig} from '../contexts/PigContext.jsx';
@@ -62,6 +71,16 @@ import PigBatchPage from './PigBatchPage.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 import {RecordPageLoading, RecordPageNotFound} from '../shared/RecordPageShell.jsx';
+
+const PIG_BATCHES_SURFACE_KEY = 'pig.batches';
+const PIG_BATCH_SORT_KEY_LABELS = {
+  batchName: 'Batch name',
+  status: 'Status',
+  started: 'Started pigs',
+  current: 'Current pigs',
+  feedPerStarted: 'Feed / started',
+  startDate: 'Start date',
+};
 
 export default function PigBatchesView({
   Header,
@@ -81,6 +100,20 @@ export default function PigBatchesView({
   // action entry; failure paths set + return.
   const [notice, setNotice] = React.useState(null);
   const [showArchBatches, setShowArchBatches] = React.useState(true);
+  // Right-sized operational-list parity: search + status + a couple of
+  // hub-specific filters, a single active sort rule, and saved views. State is
+  // persisted per-surface (mirrors cattle/sheep) so the hub remembers the
+  // operator's last filter/sort across reloads.
+  const [filters, setFilters] = usePersistentViewState('pig.batches.filters', {});
+  const [sortRule, setSortRule] = usePersistentViewState('pig.batches.sortRule', {key: 'status', dir: 'asc'});
+  const [savedViews, setSavedViews] = React.useState([]);
+  const [savedViewsError, setSavedViewsError] = React.useState(null);
+  const [savedViewsLoading, setSavedViewsLoading] = React.useState(true);
+  const [selectedViewId, setSelectedViewId] = React.useState('');
+  const [showSaveViewForm, setShowSaveViewForm] = React.useState(false);
+  const [saveViewName, setSaveViewName] = React.useState('');
+  const [saveViewVisibility, setSaveViewVisibility] = React.useState('private');
+  const [savedViewBusy, setSavedViewBusy] = React.useState(false);
   // Tracks whether the parent modal's partition editor has unsaved sub-batch
   // count changes. closeFeederForm reads this so a fast close (<1.5s) still
   // flushes the pending partition write — the shared pigAutoSaveTimer would
@@ -173,15 +206,38 @@ export default function PigBatchesView({
   const recordGroup = recordMode ? (feederGroups || []).find((g) => g.id === recordId) : null;
   // Originating list order handed through route state; absent on direct links.
   const recordSeq = location.state?.recordSeq || null;
-  // Visible hub order: active batches first, then processed at the bottom
-  // (stable within each group, so persisted order is preserved inside the
-  // active block and inside the processed block). Processed rows are hidden
-  // entirely when the Show/Hide toggle is off. One unified row stack (no status
-  // swimlanes); this same array is the record-sequence + CSV/print order.
-  const visiblePigBatches = (feederGroups || [])
-    .filter((g) => showArchBatches || g.status !== 'processed')
-    .slice()
-    .sort((a, b) => (a.status === 'processed' ? 1 : 0) - (b.status === 'processed' ? 1 : 0));
+  // Per-batch metrics (started / current / feed-per-started) keyed by group.id.
+  // These need breeders + dailys, so the pure filter lib can't derive them — the
+  // view computes them once here and threads the map through `ctx` so the
+  // started/current/feedPerStarted SORTS agree with what each row renders. Same
+  // math the hub tile uses (latestDailyPigCount + batchHubTileInfo).
+  const pigBatchMetricsById = React.useMemo(() => {
+    const map = {};
+    for (const g of feederGroups || []) {
+      const started = batchStartedCount(g);
+      const current = computeBatchCurrentCount(g, breeders, {
+        latestDailyPigCount: latestDailyPigCountForBatch(g),
+        tripSourceSummary: processingTrips.tripSourceSummary,
+      });
+      const tileInfo = batchHubTileInfo(g, started);
+      map[g.id] = {started, current, feedPerStarted: tileInfo.feedPerStarted};
+    }
+    return map;
+    // breeders / dailys / processingTrips feed the ledger + feed math; recompute
+    // when any change. dailysForName closes over pigDailys (in deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feederGroups, breeders, pigDailys, processingTrips.tripSourceSummary]);
+  const pigBatchFilterCtx = {metricsById: pigBatchMetricsById};
+  // Visible hub order: the Show/Hide-processed toggle gates processed rows, then
+  // the operator's search + filters narrow the set, then the active sort rule
+  // orders it (with processed always below active as a stable default grouping —
+  // preserves the legacy active-first/processed-bottom hub order). This SAME
+  // array is the rendered set, the record-sequence order passed to row
+  // click-through, and the CSV/print export feed. One unified row stack (no
+  // status swimlanes).
+  const pigBatchesAfterToggle = (feederGroups || []).filter((g) => showArchBatches || g.status !== 'processed');
+  const filteredPigBatches = pigBatchesAfterToggle.filter(buildPigBatchPredicate(filters, pigBatchFilterCtx));
+  const visiblePigBatches = filteredPigBatches.slice().sort(buildPigBatchComparator(sortRule, pigBatchFilterCtx));
   const goToBatch = (id, rows) =>
     navigate(
       '/pig/batches/' + encodeURIComponent(id),
@@ -262,11 +318,143 @@ export default function PigBatchesView({
     }
     const ok = printRows({
       title: 'Pig Batches',
-      subtitle: pigBatchExportRows.length + ' visible batches',
+      subtitle: pigBatchExportRows.length + ' batches' + (activeFilterCount > 0 ? ' (filtered)' : ''),
       columns: exportColumns,
       rows: pigBatchExportRows,
     });
     if (!ok) setNotice({kind: 'warning', message: 'Print export is unavailable in this browser.'});
+  }
+
+  // ── Filter / sort helpers ─────────────────────────────────────────────────
+  const myProfileId = (authState && authState.user && authState.user.id) || null;
+  function setFilter(key, value) {
+    setFilters((prev) => ({...prev, [key]: value}));
+  }
+  function clearFilter(key) {
+    setFilters((prev) => {
+      const next = {...prev};
+      delete next[key];
+      return next;
+    });
+  }
+  function clearAllFilters() {
+    setFilters({});
+  }
+  const activeFilterCount = Object.keys(filters).filter((k) => {
+    const v = filters[k];
+    if (v == null) return false;
+    if (typeof v === 'string') return v.trim() !== '' && v !== 'all';
+    if (typeof v === 'object') return Object.values(v).some((x) => x != null && x !== '');
+    return true;
+  }).length;
+
+  // ── Saved views (migration 095) ────────────────────────────────────────────
+  // A failure here degrades the saved-view control only (disabled select + small
+  // notice) — the list + filters keep working (cold-boot safety, parity with
+  // cattle/sheep). Ownership is server-stamped; never send owner_profile_id.
+  async function loadSavedViews() {
+    setSavedViewsLoading(true);
+    try {
+      const rows = await listSavedViews(sb, PIG_BATCHES_SURFACE_KEY);
+      setSavedViews(rows);
+      setSavedViewsError(null);
+      setSelectedViewId((cur) => (cur && rows.some((r) => r.id === cur) ? cur : ''));
+    } catch (e) {
+      setSavedViews([]);
+      setSavedViewsError(e.message || String(e));
+    } finally {
+      setSavedViewsLoading(false);
+    }
+  }
+  React.useEffect(() => {
+    loadSavedViews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedView = savedViews.find((v) => v.id === selectedViewId) || null;
+  const selectedViewIsMine = !!(selectedView && myProfileId && selectedView.owner_profile_id === myProfileId);
+  const myViews = savedViews.filter((v) => myProfileId && v.owner_profile_id === myProfileId);
+  const publicOtherViews = savedViews.filter(
+    (v) => v.visibility === 'public' && !(myProfileId && v.owner_profile_id === myProfileId),
+  );
+  // surface_key 'pig.batches' — buildViewState normalizes the persisted shape.
+  function pigBatchesViewState() {
+    return buildViewState({filters, sortRules: [{key: sortRule.key, dir: sortRule.dir}], viewMode: 'flat'});
+  }
+  function applyPigBatchesSavedView(view) {
+    if (!view) return;
+    const st = view.view_state || {};
+    setFilters(st.filters && typeof st.filters === 'object' ? st.filters : {});
+    const first = Array.isArray(st.sortRules) && st.sortRules[0] ? st.sortRules[0] : {key: 'status', dir: 'asc'};
+    setSortRule({key: first.key || 'status', dir: first.dir === 'desc' ? 'desc' : 'asc'});
+  }
+  function onSelectSavedView(id) {
+    setSelectedViewId(id);
+    if (!id) return;
+    applyPigBatchesSavedView(savedViews.find((v) => v.id === id));
+  }
+  function openSaveViewForm() {
+    setSaveViewName('');
+    setSaveViewVisibility('private');
+    setShowSaveViewForm(true);
+  }
+  async function submitSaveView() {
+    const name = saveViewName.trim();
+    if (!name) {
+      setNotice({kind: 'error', message: 'Name the view before saving.'});
+      return;
+    }
+    setSavedViewBusy(true);
+    try {
+      const created = await createSavedView(sb, {
+        surfaceKey: PIG_BATCHES_SURFACE_KEY,
+        name,
+        visibility: saveViewVisibility,
+        viewState: pigBatchesViewState(),
+      });
+      setShowSaveViewForm(false);
+      await loadSavedViews();
+      if (created?.id) setSelectedViewId(created.id);
+    } catch (e) {
+      setNotice({kind: 'error', message: 'Save view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+  async function updateSelectedView() {
+    if (!selectedView || !selectedViewIsMine) return;
+    setSavedViewBusy(true);
+    try {
+      await updateSavedView(sb, selectedView.id, {viewState: pigBatchesViewState()});
+      await loadSavedViews();
+      setNotice({kind: 'success', message: 'Updated "' + selectedView.name + '" to the current filters/sort.'});
+    } catch (e) {
+      setNotice({kind: 'error', message: 'Update view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+  function deleteSelectedView() {
+    if (!selectedView || !selectedViewIsMine) return;
+    const view = selectedView;
+    const run = async () => {
+      setSavedViewBusy(true);
+      try {
+        await deleteSavedView(sb, view.id);
+        setSelectedViewId('');
+        await loadSavedViews();
+        setNotice({kind: 'success', message: 'Deleted saved view "' + view.name + '".'});
+      } catch (e) {
+        setNotice({kind: 'error', message: 'Delete view failed: ' + (e.message || String(e))});
+      } finally {
+        setSavedViewBusy(false);
+      }
+    };
+    if (window._wcfConfirmDelete) {
+      window._wcfConfirmDelete('Delete saved view "' + view.name + '"?', () => void run());
+    } else {
+      void run();
+    }
   }
   // Processing-trip source tracking + handlers live in usePigProcessingTrips
   // (CP10); tripSourceCounts is consumed by the trip JSX via the hook.
@@ -1570,10 +1758,481 @@ export default function PigBatchesView({
           </div>
         )}
 
+        {/* Operational-list toolbar: search + status + hub-specific filters,
+            a single active sort rule + direction toggle, the saved-views picker,
+            a Clear affordance, and a "<visible> of <total>" count. Renders in hub
+            mode whenever there's at least one batch so the operator can always
+            narrow the list. Right-sized — one row, single sort rule (no
+            multi-rule chip popovers). */}
+        {!recordMode && (feederGroups || []).length > 0 && (
+          <div
+            data-pig-batches-toolbar="1"
+            style={{marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8}}
+          >
+            {/* Saved views row */}
+            <div
+              data-pig-batches-saved-views-row
+              style={{
+                background: 'white',
+                border: '1px solid #e5e7eb',
+                borderRadius: 10,
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+              {savedViewsError ? (
+                <span style={{fontSize: 12, color: '#b91c1c'}} data-pig-batches-saved-views-error>
+                  Saved views unavailable. Filters still work.
+                </span>
+              ) : (
+                <>
+                  <select
+                    data-pig-batches-saved-view-select
+                    value={selectedViewId}
+                    disabled={savedViewsLoading}
+                    onChange={(e) => onSelectSavedView(e.target.value)}
+                    style={{
+                      borderRadius: 6,
+                      border: '1px solid #d1d5db',
+                      background: 'white',
+                      color: '#374151',
+                      fontSize: 12,
+                      padding: '6px 10px',
+                      minWidth: 200,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <option value="">{savedViewsLoading ? 'Loading…' : 'Select a saved view'}</option>
+                    {myViews.length > 0 && (
+                      <optgroup label="My views">
+                        {myViews.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name + (v.visibility === 'public' ? ' — public' : ' — private')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {publicOtherViews.length > 0 && (
+                      <optgroup label="Public views">
+                        {publicOtherViews.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  {selectedViewIsMine && (
+                    <>
+                      <button
+                        type="button"
+                        data-pig-batches-saved-view-update
+                        onClick={updateSelectedView}
+                        disabled={savedViewBusy}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          border: '1px solid #d1d5db',
+                          background: 'white',
+                          color: '#374151',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Update to current
+                      </button>
+                      <button
+                        type="button"
+                        data-pig-batches-saved-view-delete
+                        onClick={deleteSelectedView}
+                        disabled={savedViewBusy}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          border: '1px solid #fecaca',
+                          background: 'white',
+                          color: '#b91c1c',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                  <span style={{flex: 1}} />
+                  <button
+                    type="button"
+                    data-pig-batches-saved-view-save-open
+                    onClick={openSaveViewForm}
+                    disabled={savedViewBusy}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      border: '1px solid #085041',
+                      background: 'white',
+                      color: '#085041',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Save current view
+                  </button>
+                </>
+              )}
+            </div>
+            {showSaveViewForm && (
+              <div
+                data-pig-batches-saved-view-form
+                style={{
+                  background: 'white',
+                  border: '1px solid #a7f3d0',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <input
+                  data-pig-batches-saved-view-name
+                  type="text"
+                  value={saveViewName}
+                  placeholder="View name"
+                  onChange={(e) => setSaveViewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitSaveView();
+                  }}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    fontSize: 12,
+                    padding: '6px 10px',
+                    flex: 1,
+                    minWidth: 200,
+                    fontFamily: 'inherit',
+                  }}
+                />
+                <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#374151'}}>
+                  <input
+                    type="radio"
+                    name="savePigBatchesViewVisibility"
+                    checked={saveViewVisibility === 'private'}
+                    onChange={() => setSaveViewVisibility('private')}
+                    data-pig-batches-saved-view-visibility="private"
+                  />
+                  Private
+                </label>
+                <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#374151'}}>
+                  <input
+                    type="radio"
+                    name="savePigBatchesViewVisibility"
+                    checked={saveViewVisibility === 'public'}
+                    onChange={() => setSaveViewVisibility('public')}
+                    data-pig-batches-saved-view-visibility="public"
+                  />
+                  Public
+                </label>
+                <button
+                  type="button"
+                  data-pig-batches-saved-view-save
+                  onClick={submitSaveView}
+                  disabled={savedViewBusy}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #085041',
+                    background: '#085041',
+                    color: 'white',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveViewForm(false)}
+                  disabled={savedViewBusy}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#374151',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {/* Filter + sort row */}
+            <div
+              style={{
+                background: 'white',
+                border: '1px solid #e5e7eb',
+                borderRadius: 10,
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                flexWrap: 'wrap',
+              }}
+            >
+              <input
+                type="text"
+                data-pig-batches-search
+                value={filters.textSearch || ''}
+                placeholder="Search batch name, sub-batch, notes…"
+                onChange={(e) => setFilter('textSearch', e.target.value)}
+                style={{
+                  borderRadius: 6,
+                  border: '1px solid #d1d5db',
+                  fontSize: 13,
+                  padding: '6px 10px',
+                  flex: 1,
+                  minWidth: 200,
+                  fontFamily: 'inherit',
+                }}
+              />
+              <select
+                data-pig-batches-filter-status
+                value={filters.status || 'all'}
+                onChange={(e) =>
+                  e.target.value === 'all' ? clearFilter('status') : setFilter('status', e.target.value)
+                }
+                style={{
+                  borderRadius: 6,
+                  border: '1px solid #d1d5db',
+                  background: 'white',
+                  color: '#374151',
+                  fontSize: 12,
+                  padding: '6px 10px',
+                  fontFamily: 'inherit',
+                }}
+              >
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="processed">Processed</option>
+              </select>
+              <select
+                data-pig-batches-filter-subbatches
+                value={filters.hasSubBatches == null ? 'any' : filters.hasSubBatches ? 'yes' : 'no'}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === 'any') clearFilter('hasSubBatches');
+                  else setFilter('hasSubBatches', v === 'yes');
+                }}
+                style={{
+                  borderRadius: 6,
+                  border: '1px solid #d1d5db',
+                  background: 'white',
+                  color: '#374151',
+                  fontSize: 12,
+                  padding: '6px 10px',
+                  fontFamily: 'inherit',
+                }}
+              >
+                <option value="any">Any partitioning</option>
+                <option value="yes">Has sub-batches</option>
+                <option value="no">No sub-batches</option>
+              </select>
+              <span style={{display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#6b7280'}}>
+                Started
+                <input
+                  type="number"
+                  min="0"
+                  data-pig-batches-filter-started-min
+                  value={filters.startedRange?.min ?? ''}
+                  placeholder="min"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const parsed = parseInt(raw, 10);
+                    const min = raw === '' || Number.isNaN(parsed) ? null : parsed;
+                    const max = filters.startedRange?.max ?? null;
+                    if (min == null && max == null) clearFilter('startedRange');
+                    else setFilter('startedRange', {min, max});
+                  }}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    fontSize: 12,
+                    padding: '6px 8px',
+                    width: 70,
+                    fontFamily: 'inherit',
+                  }}
+                />
+                <span style={{color: '#9ca3af'}}>–</span>
+                <input
+                  type="number"
+                  min="0"
+                  data-pig-batches-filter-started-max
+                  value={filters.startedRange?.max ?? ''}
+                  placeholder="max"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const parsed = parseInt(raw, 10);
+                    const max = raw === '' || Number.isNaN(parsed) ? null : parsed;
+                    const min = filters.startedRange?.min ?? null;
+                    if (min == null && max == null) clearFilter('startedRange');
+                    else setFilter('startedRange', {min, max});
+                  }}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    fontSize: 12,
+                    padding: '6px 8px',
+                    width: 70,
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </span>
+              <span style={{display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#6b7280'}}>
+                Started date
+                <input
+                  type="date"
+                  data-pig-batches-filter-start-after
+                  value={filters.startDateRange?.after ?? ''}
+                  onChange={(e) => {
+                    const after = e.target.value || null;
+                    const before = filters.startDateRange?.before ?? null;
+                    if (!after && !before) clearFilter('startDateRange');
+                    else setFilter('startDateRange', {after, before});
+                  }}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    fontSize: 12,
+                    padding: '5px 8px',
+                    fontFamily: 'inherit',
+                  }}
+                />
+                <span style={{color: '#9ca3af'}}>–</span>
+                <input
+                  type="date"
+                  data-pig-batches-filter-start-before
+                  value={filters.startDateRange?.before ?? ''}
+                  onChange={(e) => {
+                    const before = e.target.value || null;
+                    const after = filters.startDateRange?.after ?? null;
+                    if (!after && !before) clearFilter('startDateRange');
+                    else setFilter('startDateRange', {after, before});
+                  }}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    fontSize: 12,
+                    padding: '5px 8px',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </span>
+              <span style={{display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#6b7280'}}>
+                Sort
+                <select
+                  data-pig-batches-sort-key
+                  value={sortRule.key}
+                  onChange={(e) => setSortRule({key: e.target.value, dir: sortRule.dir})}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#374151',
+                    fontSize: 12,
+                    padding: '6px 10px',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {PIG_BATCH_SORT_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {PIG_BATCH_SORT_KEY_LABELS[key] || key}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  data-pig-batches-sort-dir
+                  onClick={() => setSortRule({key: sortRule.key, dir: sortRule.dir === 'asc' ? 'desc' : 'asc'})}
+                  title={sortRule.dir === 'asc' ? 'Ascending' : 'Descending'}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#374151',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {sortRule.dir === 'asc' ? '↑ Asc' : '↓ Desc'}
+                </button>
+              </span>
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  data-pig-batches-clear-filters
+                  onClick={clearAllFilters}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    color: '#b91c1c',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: '6px 12px',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+              <span style={{flex: 1}} />
+              <span data-pig-batches-count style={{fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap'}}>
+                {visiblePigBatches.length} of {pigBatchesAfterToggle.length}
+              </span>
+            </div>
+          </div>
+        )}
+
         {!recordMode && (feederGroups || []).length === 0 && !showFeederForm && (
           <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af', fontSize: 13}}>
             No pig batches yet — farm-born batches appear here once you record the cycle's first farrowing; use "+ Add
             Manual Batch" for manual/admin batches.
+          </div>
+        )}
+
+        {/* Filtered-no-results: there ARE batches in scope but the active
+            filters match none. Distinct from the true-empty message above so
+            the operator knows to widen/clear filters rather than add a batch. */}
+        {!recordMode && pigBatchesAfterToggle.length > 0 && visiblePigBatches.length === 0 && (
+          <div
+            data-pig-batches-no-match
+            style={{textAlign: 'center', padding: '2.5rem', color: '#9ca3af', fontSize: 13}}
+          >
+            No pig batches match the current filters.
           </div>
         )}
 

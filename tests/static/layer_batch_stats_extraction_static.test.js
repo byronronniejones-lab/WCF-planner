@@ -82,7 +82,10 @@ describe('LayerBatchesView — migrated to record pages', () => {
   });
 
   it('tiles navigate to /layer/batches/<id>', () => {
-    expect(viewSrc).toContain("navigate('/layer/batches/' + batch.id");
+    // Cards -> unified grid: the row click navigates to /layer/batches/<id>
+    // using the renamed grid row var (batch -> row), still carrying the
+    // SORTED set (batchSeqRows) as the record-sequence order.
+    expect(viewSrc).toContain("navigate('/layer/batches/' + row.id");
   });
 
   it('activityRegistry routes layer.batch + layer.housing to per-record routes', () => {

@@ -445,10 +445,13 @@ describe('CP3 — /pig/batches/<id> record-page routing + hub/record branch', ()
     expect(viewSrc).toContain('data-pig-batch-grid="1"');
     expect(viewSrc).toMatch(/gridTemplateColumns:\s*PIG_BATCH_GRID_COLUMNS/);
     expect(viewSrc).toMatch(/visiblePigBatches\.map\(\(g\) => renderPigBatchTile\(g, visiblePigBatches\)\)/);
-    // Active rows render first, processed sorted to the bottom (stable sort).
-    expect(viewSrc).toMatch(
-      /\.sort\(\(a, b\) => \(a\.status === 'processed' \? 1 : 0\) - \(b\.status === 'processed' \? 1 : 0\)\)/,
-    );
+    // Operational-list parity: visiblePigBatches is now the predicate-filtered,
+    // comparator-sorted set. Active rows still render first with processed at
+    // the bottom — that grouping moved into buildPigBatchComparator (the lib
+    // sorts processed below active before the active key), so the view applies
+    // the predicate then the comparator over the show/hide-processed slice.
+    expect(viewSrc).toMatch(/\.filter\(buildPigBatchPredicate\(filters, pigBatchFilterCtx\)\)/);
+    expect(viewSrc).toMatch(/\.sort\(buildPigBatchComparator\(sortRule, pigBatchFilterCtx\)\)/);
     // The tile owns the same shared column template so header + rows align.
     expect(tileSrc).toMatch(/export const PIG_BATCH_GRID_COLUMNS =/);
     expect(tileSrc).toMatch(/gridTemplateColumns:\s*PIG_BATCH_GRID_COLUMNS/);

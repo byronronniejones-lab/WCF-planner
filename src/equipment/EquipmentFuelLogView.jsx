@@ -271,8 +271,30 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
       >
         <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
         {savedViewsError ? (
-          <span style={{fontSize: 12, color: '#b91c1c'}} data-equipment-fuel-log-saved-views-error>
+          <span
+            style={{fontSize: 12, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 8}}
+            data-equipment-fuel-log-saved-views-error
+          >
             Saved views unavailable. Filters still work.
+            <button
+              type="button"
+              data-equipment-fuel-log-saved-views-retry
+              onClick={loadSavedViews}
+              disabled={savedViewsLoading}
+              style={{
+                fontSize: 11,
+                padding: '3px 10px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                background: 'white',
+                color: '#374151',
+                cursor: savedViewsLoading ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: 600,
+              }}
+            >
+              {savedViewsLoading ? 'Retrying…' : 'Retry'}
+            </button>
           </span>
         ) : (
           <>
