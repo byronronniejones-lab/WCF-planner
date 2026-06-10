@@ -380,6 +380,11 @@ test('comment hash scroll: navigate to #comment-<id> scrolls target into view', 
   const commentEl = page.locator('[data-comment-id]').first();
   await expect(commentEl).toBeVisible({timeout: 10_000});
   await expect(commentEl).toContainText('Hash scroll test comment', {timeout: 5_000});
+  // Posted timestamp is visible without hover: absolute farm time + fresh age
+  // (clock skew between runner and DB may shift 'just now' to 'Xm ago').
+  await expect(commentEl.locator('[data-comment-posted-at="1"]')).toHaveText(
+    /\d{2}\/\d{2}\/\d{2} \d{1,2}:\d{2} (AM|PM) · (just now|\d+m ago)/,
+  );
   const rawId = await commentEl.getAttribute('data-comment-id');
   const commentId = 'comment-' + rawId;
 

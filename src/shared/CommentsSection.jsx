@@ -10,6 +10,7 @@ import {
   COMMENT_CHANGE_EVENT,
 } from '../lib/commentsApi.js';
 import {renderMentionSegments} from '../lib/activityApi.js';
+import {fmtCentralDateTime} from '../lib/dateUtils.js';
 import {uploadCommentAttachment, getAttachmentSignedUrl, MAX_COMMENT_ATTACHMENTS} from '../lib/commentAttachments.js';
 import {imageAltText} from '../lib/imageAlt.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
@@ -125,17 +126,24 @@ const EDIT_HISTORY = {
   overflowY: 'auto',
 };
 
-function fmtRelative(iso) {
+// Posted/edited/deleted stamps render the absolute farm time
+// (America/Chicago via fmtCentralDateTime — Comments follow the same
+// Central-time lock as Tasks) so every comment shows a readable timestamp
+// without hover. Fresh comments (<24h) append a short relative age so a
+// live discussion still reads at a glance.
+function fmtPostedAt(iso) {
+  const absolute = fmtCentralDateTime(iso);
   try {
-    const d = new Date(iso);
-    const diff = (Date.now() - d.getTime()) / 1000;
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return d.toLocaleString();
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    // diff < 60 (not 0..60) so server-stamped times slightly ahead of the
+    // client clock still read 'just now' instead of dropping the suffix.
+    if (diff < 60) return absolute + ' · just now';
+    if (diff < 3600) return absolute + ' · ' + Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return absolute + ' · ' + Math.floor(diff / 3600) + 'h ago';
   } catch (_e) {
-    return iso || '';
+    /* absolute stamp alone */
   }
+  return absolute;
 }
 
 const URL_RE = /(https?:\/\/[^\s<>"')\]]+)/g;
@@ -452,7 +460,7 @@ export default function CommentsSection({sb, authState, entityType, entityId, en
                 {expanded && (
                   <div style={{marginTop: 6, color: '#6b7280', fontStyle: 'normal'}}>
                     <div style={{fontSize: 11, marginBottom: 2}}>
-                      by {c.author_display_name || 'Unknown'} · deleted {fmtRelative(c.deleted_at)}
+                      by {c.author_display_name || 'Unknown'} · deleted {fmtCentralDateTime(c.deleted_at)}
                     </div>
                     <div style={{...BODY, color: '#6b7280'}}>{c.body}</div>
                   </div>
@@ -465,7 +473,7 @@ export default function CommentsSection({sb, authState, entityType, entityId, en
             <div key={c.id} id={'comment-' + c.id} data-comment-id={c.id} data-comment-deleted="0" style={COMMENT_ROW}>
               <div style={COMMENT_HEAD}>
                 <span style={AUTHOR}>{c.redacted ? '(redacted)' : c.author_display_name || 'Unknown user'}</span>
-                <span>· {fmtRelative(c.created_at)}</span>
+                <span data-comment-posted-at="1">· {fmtPostedAt(c.created_at)}</span>
                 {c.edited_at && (
                   <button type="button" onClick={() => toggleEditHistory(c.id)} style={LINK_BTN}>
                     edited
@@ -597,7 +605,7 @@ export default function CommentsSection({sb, authState, entityType, entityId, en
                   {editHistory.map((e) => (
                     <div key={e.id} style={{padding: '4px 0', borderBottom: '1px solid #e5e7eb'}}>
                       <div style={{fontSize: 11, color: '#6b7280'}}>
-                        {e.editor_display_name || 'Unknown'} · {fmtRelative(e.edited_at)}
+                        {e.editor_display_name || 'Unknown'} · {fmtCentralDateTime(e.edited_at)}
                       </div>
                       <div style={{fontSize: 12, color: '#374151', whiteSpace: 'pre-wrap', marginTop: 2}}>
                         {e.previous_body}

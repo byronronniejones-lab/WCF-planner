@@ -357,3 +357,25 @@ describe('migration 071 — attachment path validation', () => {
     }
   });
 });
+
+describe('CommentsSection — visible posted timestamps', () => {
+  // Comments are discussion; every rendered comment must show a readable
+  // posted timestamp without hover, in farm time (America/Chicago via the
+  // canonical fmtCentralDateTime owner — same Central-time lock as Tasks).
+  it('renders the posted stamp on every comment via fmtPostedAt + fmtCentralDateTime', () => {
+    expect(sectionSrc).toMatch(/import \{fmtCentralDateTime\} from '\.\.\/lib\/dateUtils\.js'/);
+    expect(sectionSrc).toContain('data-comment-posted-at="1"');
+    expect(sectionSrc).toMatch(/fmtPostedAt\(c\.created_at\)/);
+    expect(sectionSrc).toMatch(/const absolute = fmtCentralDateTime\(iso\)/);
+  });
+  it('deleted/edit-history stamps use the absolute farm-time format too', () => {
+    expect(sectionSrc).toMatch(/deleted \{fmtCentralDateTime\(c\.deleted_at\)\}/);
+    expect(sectionSrc).toMatch(/fmtCentralDateTime\(e\.edited_at\)/);
+  });
+  it('does not regress to relative-only or hover-only timestamps', () => {
+    // The old fmtRelative helper hid the absolute time for fresh comments;
+    // a title-only stamp would require hover. Both are rejected.
+    expect(sectionSrc).not.toMatch(/function fmtRelative\(/);
+    expect(sectionSrc).not.toMatch(/title=\{[^}]*created_at/);
+  });
+});
