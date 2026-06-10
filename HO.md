@@ -117,11 +117,11 @@ stay short.
 
 ### Parallel Codex Worktree
 
-As of 2026-06-10, after prune, the only worktrees are the primary CC worktree
-`C:\Users\Ronni\WCF-planner` (on `main`, tracking `origin/main`) and the detached
-`C:\Users\Ronni\WCF-planner-light-audit`. The former
-`C:\Users\Ronni\WCF-planner-codex` worktree no longer exists — it was removed
-when its merged branch was pruned. There is no standing Codex worktree.
+Do not rely on a remembered worktree list. At session start, inspect
+`git worktree list`, `git status --short`, and recent `git log`; the actual
+current inventory belongs in `PROJECT.md` Current State. Merged Codex worktrees
+from prior lanes may still exist until Ronnie approves pruning, but they are not
+standing build worktrees and must not be reused for new lanes.
 
 For every new parallel lane, create a FRESH scoped worktree + branch from current
 `main` (for example `git worktree add -b <scope>/<lane> <path> origin/main`);
@@ -137,8 +137,7 @@ per-lane Codex worktree, not in the main CC worktree at
 Parallel-build rules:
 
 - Codex should create a fresh scoped worktree + branch from current `main` for
-  each assigned build lane, such as `codex/<short-lane-name>` (no standing Codex
-  worktree exists after the prune).
+  each assigned build lane, such as `codex/<short-lane-name>`.
 - Codex must check `git status --short`, recent git log, and sync/rebase from
   current `main` before starting a Codex build lane.
 - Do not have CC and Codex edit the same files or same lane at the same time

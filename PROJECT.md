@@ -8,19 +8,15 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-10.
-Current pushed checkpoint: `origin/main` commit `d7fc2c9` (all source pushed; no
-docs-vs-code split). On top of the `ab39eb2` three-lane ship, 2026-06-10 pushed
-two integrations: (1) two power-failure-recovery lanes — source-wide
-record/shared/auth visual-token closure + the Pig Batches unified inspection grid
-(`b192a2a`, merged `434c6b3`), and the daily-photo anon-policy drop (migration
-`109`) + roster-teardown cleanup (`44be516`, merged `a3e6220`); and (2)
-operational-list parity — right-sized search/filter/sort/saved-views + filtered
-CSV/print across six hubs (Pig, Cattle, Broiler, Layer, Sheep Batches +
-Equipment Fleet; Layer + Sheep also converted cards→unified grid) (`21a4532`,
-merged `6b650aa`), plus the scoped modal/action token closure, Lane E/I
-(`49a94f9`, merged `d7fc2c9`). Netlify auto-deploys from GitHub `main`; `d7fc2c9`
-was live-verified on 2026-06-10 by asset-hash rotation to
-`assets/main-CkhY001g.js` (matching the local build).
+Current pushed checkpoint: `origin/main` commit `b562ac5` (all source pushed; no
+docs-vs-code split). On 2026-06-10, after the `d7fc2c9` operational-list/token
+checkpoint, four code-only lanes shipped live: global openable hover affordance
+(`1881593`), visible comment farm-time timestamps (`e80e161`), Pig Batch Metrics
+Grid Cleanup with estimate labeling (`2e960cb`, merged `b0e89eb`), and Broiler
+weigh-in-sourced read-only Week 4/6 weights (`0bb7689`, merged `b562ac5`).
+Netlify auto-deploys from GitHub `main`; `b562ac5` was live-verified on
+2026-06-10 by 200 response, asset-hash rotation to `assets/main-DIBi75mC.js`,
+and served hover/focus CSS.
 Migration series live through 109 (`109` PROD-applied 2026-06-10).
 Production URL: https://wcfplanner.com.
 
@@ -166,22 +162,25 @@ plus a guard update in the same change.
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Current `origin/main`: `d7fc2c9` (all source pushed; no docs-vs-code split). On
-  top of the `ab39eb2` three-lane ship, 2026-06-10 pushed: the two
-  power-failure-recovery lanes (record/shared/auth token closure + Pig Batches
-  unified grid, `b192a2a`→`434c6b3`; daily-photo anon-policy drop migration `109`
-  + roster cleanup, `44be516`→`a3e6220`), then operational-list parity across six
-  hubs (`21a4532`→`6b650aa`) and the scoped modal/action token closure, Lane E/I
-  (`49a94f9`→`d7fc2c9`). See Latest Shipped Checkpoint for per-lane detail.
-- Live verification: `https://wcfplanner.com/` served `assets/main-CkhY001g.js`
-  after the `d7fc2c9` push (asset-hash rotation), matching the local build and
-  confirming the runtime deployed, not merely that `origin/main` advanced.
-- Integrated-`main` validation before the final push: `npm run lint` 0 errors,
-  `npm test` 206 files / 5485 passed, `npm run build` green.
-- Local main dirty state: only untracked local artifacts remain — the homepage
+- Current `origin/main`: `b562ac5` (pushed and live 2026-06-10; no docs-vs-code
+  split). On top of the `d7fc2c9` operational-list/token checkpoint, 2026-06-10
+  shipped four code-only lanes: global openable hover affordance (`1881593`),
+  visible comment posted timestamps (`e80e161`), Pig Batch Metrics Grid Cleanup
+  with estimate labeling (`2e960cb`, merged via `b0e89eb`), and Broiler
+  weigh-in-sourced read-only week weights (`0bb7689`, merged via `b562ac5`). See
+  Latest Shipped Checkpoint for per-lane detail.
+- Live verification: `https://wcfplanner.com/` returned 200 after the `b562ac5`
+  push; the served asset hash rotated from `assets/main-CkhY001g.js` to
+  `assets/main-DIBi75mC.js`, and the served HTML contains the new hover/focus CSS
+  contract. No Netlify commit status was needed for this verification.
+- Integrated-`main` validation before the `b562ac5` push: `npm run lint` 0
+  errors, `npm test` 208 files / 5508 passed, `npm run build` green, plus focused
+  Pig Batch sequence-nav and Broiler batch-record-edit Playwright specs green on
+  the merged tree.
+- Local main dirty state: only untracked local artifacts remain: the homepage
   design reference folder (`WCF Planner Redesign/`) and throwaway screenshot
-  folders (`cp4-shots/`, `lanee-shots/`). None are production source; all are
-  intentionally excluded from commits.
+  folders (`cp4-shots/`, `hover-shots/`, `lanee-shots/`). None are production
+  source; all are intentionally excluded from commits.
 - Migration `109` (`drop_daily_photos_anon_insert`) applied to TEST (`exec_sql`)
   then PROD (`psql --single-transaction`, `ON_ERROR_STOP=1`) and verified
   2026-06-10: precheck found all three daily-photos storage policies present; the
@@ -201,15 +200,18 @@ plus a guard update in the same change.
   children gone + one `record.deleted` audit) inside a rolled-back transaction
   (zero PROD trace). `106` auth-gated, `107` admin-gated, `108` authenticated
   (mirrors each surface's existing access).
-- Parallel worktrees: only the primary `C:\Users\Ronni\WCF-planner` (`main`) and
-  `C:\Users\Ronni\WCF-planner-light-audit` (detached at `ab39eb2`) remain; the
-  four merged feature worktrees/branches from this session
-  (`cc/operational-list-parity-sprint`, `codex/record-token-parity-sprint`,
-  `cc/list-export-closure`, `codex/record-token-closure`) were pruned after
-  merge. Start a new parallel lane by creating a fresh scoped branch from current
-  `main` in a worktree.
-- Open code gates: none for `origin/main` `d7fc2c9`. No PROD migration, Storage,
-  Vault, or Edge Function deploy gate is open.
+- Parallel worktrees: primary `C:\Users\Ronni\WCF-planner` is on `main` at
+  `b562ac5`; `C:\Users\Ronni\WCF-planner-light-audit` remains detached at
+  `ab39eb2`; the merged Codex lane worktrees
+  `C:\Users\Ronni\WCF-planner-codex-pig-metrics` (`2e960cb`) and
+  `C:\Users\Ronni\WCF-planner-codex-broiler-weighins-readonly` (`0bb7689`) still
+  exist and are prunable after Ronnie confirms. Do not reuse merged Codex
+  worktrees; start any new parallel lane from current `main` in a fresh scoped
+  worktree/branch.
+- Open code gates: none for `origin/main` `b562ac5`. No PROD migration, Storage,
+  Vault, or Edge Function deploy gate is open. The four lanes shipped after
+  `d7fc2c9` contain no migrations, schema, RLS, or storage changes; there is no
+  database work to apply.
 - PROD-applied numbered migration series is live through `109`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
   cleanup `085` was applied before unique-index migration `084`.
@@ -277,6 +279,27 @@ Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
 
+- Four code-only UI/data-display lanes, pushed `origin/main` `b562ac5`
+  (2026-06-10). No migrations, schema changes, RLS changes, Storage, Vault, or
+  Edge Function work. Netlify PROD was verified by 200 response, asset rotation
+  to `assets/main-DIBi75mC.js`, and served hover/focus CSS:
+  - Global openable hover affordance (`1881593`): the active HTML entries own the
+    shared `.hoverable-tile` / `.hoverable-row` CSS contract. Tile/card openables
+    use `.hoverable-tile`; table rows use `.hoverable-row`; hover/focus styles
+    are paint-only and keyboard-visible.
+  - Comments farm-time timestamps (`e80e161`): every rendered comment shows a
+    visible absolute posted stamp using canonical Central farm time; fresh
+    comments may append a short relative suffix. Deleted-comment and edit-history
+    stamps use the same absolute format.
+  - Pig Batch Metrics Grid Cleanup (`2e960cb`, merged `b0e89eb`): Pig Batches
+    hub rows now use the locked 14-column inspection grid, whole-row open
+    affordance, active newest-first/default status sort, processed current head
+    forced to `0`, CSV/print parity with the row model, and UI-only `~` estimate
+    marking plus provenance note for proportional sex-split current/feed values.
+  - Broiler weigh-in-sourced read-only week weights (`0bb7689`, merged
+    `b562ac5`): Broiler batch record Week 4 and Week 6 weight values render as
+    read-only display fields sourced from completed weigh-ins; direct
+    `BatchForm` edits to `week4Lbs` / `week6Lbs` are guard-locked out.
 - Operational-list parity + modal token closure, pushed `origin/main` `d7fc2c9`
   (2026-06-10). Code/tests only; no migration/storage/Vault/deploy. Two
   integrated lanes, disjoint files, conflict-free:
@@ -579,18 +602,18 @@ work:
 ### Current Local Gates
 
 No PROD migration, storage, deploy, Vault, commit, push, or merge gate is open as
-of `origin/main` `d7fc2c9`.
+of `origin/main` `b562ac5`.
 
 - Main CC worktree `C:\Users\Ronni\WCF-planner` is on `main` at `origin/main`
-  `d7fc2c9`. The only untracked local artifacts are the homepage design reference
+  `b562ac5`. The only untracked local artifacts are the homepage design reference
   folder (`WCF Planner Redesign/`) and throwaway screenshot folders
-  (`cp4-shots/`, `lanee-shots/`).
-- Only one parallel worktree remains: `C:\Users\Ronni\WCF-planner-light-audit`
-  (detached at `ab39eb2`). The four feature worktrees/branches from this session
-  (`cc/operational-list-parity-sprint`, `codex/record-token-parity-sprint`,
-  `cc/list-export-closure`, `codex/record-token-closure`) were pruned after
-  merge. Create a fresh scoped branch from current `main` in a worktree for the
-  next parallel build lane.
+  (`cp4-shots/`, `hover-shots/`, `lanee-shots/`).
+- Existing parallel worktrees: `C:\Users\Ronni\WCF-planner-light-audit` remains
+  detached at `ab39eb2`; the merged Codex lane worktrees
+  `C:\Users\Ronni\WCF-planner-codex-pig-metrics` and
+  `C:\Users\Ronni\WCF-planner-codex-broiler-weighins-readonly` still exist and
+  are prunable after Ronnie confirms. Create a fresh scoped branch from current
+  `main` in a new worktree for the next parallel build lane.
 
 If a new session sees additional dirty state, inspect it before planning; do not
 assume it is disposable. Create new scoped worktrees/branches only for active
@@ -674,6 +697,24 @@ Shipped 2026-06-10 (this session, pushed `origin/main` `d7fc2c9`):
   send-to-processor + equipment modals (`49a94f9`).
 Detail in Latest Shipped Checkpoint above; six-hub visual screenshots waived by
 Ronnie.
+Shipped later 2026-06-10 (removed from queue, pushed `origin/main` `b562ac5`):
+- Global openable hover affordance: shared `.hoverable-tile` / `.hoverable-row`
+  CSS contract across active HTML entries, with div/card vs `tr` ownership,
+  paint-only hover/focus, and visible keyboard focus.
+- Pig Batch Metrics Grid Cleanup: the Pig Batches hub now uses the locked
+  14-column inspection grid, whole-row open affordance, active newest-first sort,
+  processed current head `0`, row-model CSV/print parity, and UI-only `~`
+  estimate labeling/provenance for proportional sex-split current/feed values.
+- Broiler weigh-in-sourced read-only week weights: Broiler batch record Week 4
+  and Week 6 weight values are read-only display values pulled from completed
+  weigh-ins; direct `BatchForm` edits to `week4Lbs` / `week6Lbs` are forbidden by
+  static guard.
+- Comment timestamps: every rendered comment shows a visible absolute Central
+  farm-time posted stamp, with fresh relative suffix where applicable; deleted
+  and edit-history timestamps use the same farm-time format.
+Validation before push: lint 0 errors, `npm test` 208 files / 5508 passed, build
+green, focused Pig Batch sequence-nav and Broiler record-edit Playwright specs
+green. No migrations/schema/RLS/storage/PROD DB work.
 Shipped 2026-06-09 (this session, code checkpoint `ab39eb2`, followed by docs
 wrap `b5f433d`; visual preview waived by Ronnie for this push):
 - Lane 15 Tasks creation/public config: Public Tasks assignee checkbox grid;
@@ -743,51 +784,49 @@ Locked queue direction from Ronnie (2026-06-09):
 - Homepage/program KPIs should use a uniform frame with domain-specific metrics
   inside that frame.
 
-Next-session priority lanes (planned 2026-06-10):
+Next-session priority lanes after the 2026-06-10 wrap:
 
-1. Codex - Pig Batch Metrics Grid Cleanup. Class: `DEFECT`/`ENH`. Size: medium.
-   Scope: Pig Batches hub only. Replace the packed sub-batch metric pills and
-   redundant `Open` column with an inspection table whose visible columns are:
-   `Batch`, `Status`, `Started Head`, `Current Head`, `Total Feed`,
-   `Feed / Pig`, `Gilts Started`, `Gilts Current`, `Gilts Total Feed`,
-   `Gilts Feed / Pig`, `Boars Started`, `Boars Current`, `Boars Total Feed`,
-   and `Boars Feed / Pig`. The whole row should open the batch record using the
-   shared openable-row hover class; do not build the global hover redesign in
-   this lane. Sort active batches newest-first so `P-27-01` appears above
-   `P-26-02`; keep processed batches at the bottom. Processed/closed batches
-   should display current head as `0` on the hub. `Feed / Pig` is the readable
-   hub label for the normalized feed metric; keep the implementation consistent
-   with the current per-started-head calculation unless Ronnie explicitly
-   reopens the formula. Preserve CSV/print/filter/saved-view behavior with the
-   new column model.
-   Success criteria: hub rows are legible at a glance, no sub-batch metric is
-   hidden in a dense chip, the latest active batch sorts first, processed current
-   counts do not show stale live head counts, and the row hover clearly signals
-   openability without an `Open` column.
-   Guard target: Pig Batch hub static guards, pure comparator/filter tests,
-   processed-current metric coverage, export/print column checks, and focused Pig
-   Batch Playwright smoke where practical. Migration/Storage/PROD gate: none
-   expected; if a live data correction is discovered, stop for Ronnie approval
-   before any PROD mutation.
+1. Source-wide home-like openable hover affordance rollout. Class: `ENH`/`DEFECT`.
+   Size: medium/large. Scope: every app surface where a card, tile, row, or
+   button visibly opens a modal, record page, or section. The shipped
+   `1881593` lane created the shared `.hoverable-tile` / `.hoverable-row` CSS
+   contract and wired representative surfaces only; it did not complete the
+   product request. Use the approved home-page affordances as the source of
+   truth:
+   - Program nav tiles (`Broilers`, `Layers`, `Pigs`, `Cattle`, `Sheep`,
+     `Equipment`) use the `.tile:hover` model.
+   - Lifted clickable cards (`Processing`, `Admin`, `Weather`,
+     `Animals on Farm`, `Production`) use the `.lift:hover` model. Current
+     production `HomeWeatherCard` is clickable and has `cursor: pointer` but
+     has drifted from the approved redesign because the collapsed weather card
+     does not carry the `card weather lift` treatment; include it in the lane.
+   - Home list rows (`Missed Daily Reports`, `Equipment Attention`,
+     `Next 30 Days`) use the `.litem:hover` row wash model.
+   - Small command buttons (`Clear`, `Clear all`, `Back to Home`, Weather modal
+     controls such as `Refresh`, `Load Radar`, `Play`, `Hide`, and close) use
+     button-style hover, not full card lift.
+   - Admin daily-report record tiles use `.hoverable-tile`.
+   Audit source-wide for clickable div/card/table-row/list-row surfaces that
+   open record pages, modals, or section destinations; apply the right shared
+   affordance, add `role="button"` / `tabIndex={0}` / Enter+Space handling where
+   a non-button element is the whole action, and keep non-openable rows visually
+   plain. Guard target: expand `openable_hover_affordance_static.test.js` beyond
+   representative surfaces, add focused Playwright screenshots/smokes for home
+   Weather + a representative record page list + modal-opening tile/row, and run
+   format, lint, relevant static tests, build. Migration/Storage/PROD gate:
+   none.
 
-2. CC - Global Openable Hover Affordance. Class: `ENH`. Size: medium.
-   Scope: cross-app hover/focus polish for openable rows/cards. Formalize one
-   global `.hoverable-tile` style, or the equivalent shared class, so openable
-   operational rows and cards share the home-screen feel: pointer cursor,
-   subtle hover highlight/lift/border/shadow where appropriate,
-   `:focus-visible` keyboard affordance, and no layout shift. Audit existing
-   `className="hoverable-tile"` usage and make sure dense tables, list tiles,
-   home/dashboard tiles, and record-linked cards improve without becoming noisy.
-   Remove explicit `Open` affordances only where the whole row/card already opens
-   and the removal is safe; otherwise document remaining explicit affordances as
-   intentional follow-up. Do not redesign Pig Batch columns in this lane.
-   Success criteria: openable things across the app feel consistently clickable,
-   non-openable rows stay visually plain, keyboard users get the same affordance,
-   and the Pig Batch metrics lane can consume the shared hover class without
-   inventing a local style.
-   Guard target: global style/static guard for the hover class, representative
-   row/tile ownership guards, targeted UI smoke where practical, plus format,
-   lint, relevant static tests, and build. Migration/Storage/PROD gate: none.
+2. Triage pre-existing cattle calf/dam lineage Playwright failures. Class:
+   `DEFECT`. Size: small/medium. Scope: Cattle animal record lineage rendering
+   and the associated Playwright spec only unless the investigation proves a
+   wider cattle data contract issue. Current known symptom on clean `main` before
+   the hover/pig/broiler/comments lanes: `tests/cattle_calf_dam_link.spec.js`
+   has 4 UI failures because `[data-lineage-section]` never renders inside
+   `#cow-<id>`. First step is to reproduce on current `origin/main` `b562ac5`,
+   confirm whether this is product regression or stale test expectation, then
+   either restore the lineage section or update the spec/guard to the actual
+   intended cattle record contract. Migration/Storage/PROD gate: none expected;
+   stop for Ronnie before any data mutation or schema/RPC change.
 
 Sprint assignment (executed 2026-06-08): the CC Sprints 1 + 2 (Lane 0
 correctness, Lane A audit/RPC atomicity) and Codex Sprints 3 + 4 (Lanes B/C +
@@ -1559,6 +1598,11 @@ the guard deliberately.
 - `RecordActivityLog` filters `comment.posted` and shows audit only.
 - `CommentsSection` owns user discussion, attachments, edit history, soft
   delete, and mentions.
+- `CommentsSection` renders a visible posted timestamp for every comment via
+  `data-comment-posted-at="1"` and the canonical Central farm-time formatter;
+  fresh comments may append a short relative suffix. Deleted-comment and
+  edit-history stamps use the same absolute farm-time format. Comment timestamps
+  must not be hover-only.
 - Mention bodies stay human-readable `@Name`. UUIDs do not appear in body text.
 - Mention notifications route to the operational record page and target comment.
 - Valid notification types: `task_completed`, `mention`, `comment_mention`.
@@ -1739,14 +1783,26 @@ Workflow/worktable entities:
 - Pig weigh-in entry autosaves; the tile shows a days-since-last-weigh-in delta
   alongside the previous session so the gap between weigh-ins is visible at a
   glance.
-- Pig batch hub tiles show started count, current count, feed per pig started,
-  and sub-batch chips.
+- Pig Batches hub rows use the locked 14-column inspection grid: `Batch`,
+  `Status`, `Started Head`, `Current Head`, `Total Feed`, `Feed / Pig`,
+  `Gilts Started`, `Gilts Current`, `Gilts Total Feed`, `Gilts Feed / Pig`,
+  `Boars Started`, `Boars Current`, `Boars Total Feed`, and `Boars Feed / Pig`.
+  The whole row opens the batch record, active batches default newest-first,
+  processed batches sort below active batches with `Current Head` forced to `0`,
+  and CSV/print use the same row metric model. Sex-split current/feed values
+  derived proportionally from started-head split render in the UI with a `~`
+  marker and provenance note; CSV/print values remain plain numbers unless a
+  later column-model decision changes that.
 
 ### Broiler, Layers, And Feed Planning
 
 - Broiler batches live in `ppp-v4`.
 - Login-gated `/weighins` cannot read or mutate `app_store.ppp-v4` directly.
 - Week 4/6 completion uses `stamp_broiler_batch_avg` RPC.
+- Broiler batch record Week 4 and Week 6 weight fields are read-only display
+  values sourced from completed weigh-ins. `BatchForm` must not provide editable
+  `week4Lbs` / `week6Lbs` inputs or direct `upd('week4Lbs')` /
+  `upd('week6Lbs')` write paths; not-yet-stamped values display "Not recorded".
 - Layer `current_count` is the physical anchor; projected count subtracts
   mortalities since anchor.
 - Feed math lives in `src/lib/feedPlanner.js` and `src/lib/feedOrderBasis.js`.
@@ -1854,6 +1910,12 @@ Workflow/worktable entities:
 
 - Design tokens and visual contract details are in `## Design System`.
 
+- Global openable affordance is shared through `.hoverable-tile` for card/div
+  openables and `.hoverable-row` for table-row openables. The CSS block lives
+  byte-identically in the active HTML entries, provides pointer, hover,
+  `:focus-visible`, and active states, and must stay paint-only/no-layout-shift.
+  Do not put `.hoverable-tile` on `<tr>` or `.hoverable-row` on non-`tr`
+  elements; `openable_hover_affordance_static.test.js` locks the contract.
 - `RecordPageShell` owns record-page frame/loading/not-found/body/title chrome.
 - `RecordCollaborationSection` is the only component that composes
   `CommentsSection` and `RecordActivityLog`.
@@ -1905,6 +1967,7 @@ update the guard in the same lane and explain why:
 - Legacy Activity retirement.
 - Load/retry readiness inventory.
 - Shared UI extraction contract.
+- Openable hover affordance contract.
 
 ---
 
@@ -1932,6 +1995,7 @@ Focused starting points:
 | Notifications            | `tests/static/notifications_static.test.js`, `tests/notifications_task_completed.spec.js`                                                                        |
 | Tasks                    | `tests/static/tasks_*.test.js`, `src/lib/tasksCenterApi.test.js`, `src/lib/tasksAdminApi.test.js`, `tests/tasks_v2_*.spec.js`                                  |
 | Record pages             | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js`, `tests/record_sequence_nav_fixed.spec.js`, `tests/static/record_sequence_nav_cp3_static.test.js`, `tests/static/save_model_contract_static.test.js` |
+| Openable affordance      | `tests/static/openable_hover_affordance_static.test.js`                                                                                                         |
 | Home / dashboard alerts  | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/light_user_portal_static.test.js`, `tests/light_home_alerts.spec.js`, `tests/home_dashboard_equipment.spec.js` |
 | Readiness                | `tests/static/load_retry_robustness_inventory_static.test.js`, `tests/static/*readiness*`                                                                       |
 | Mutation/delete/recovery | `tests/static/mutation_semantics_inventory_static.test.js`, `tests/static/delete_recovery_classification_static.test.js`, `tests/static/hard_delete_owner_static.test.js` |
@@ -1939,8 +2003,8 @@ Focused starting points:
 | Sheep                    | `tests/static/sheep_*.test.js`, `tests/sheep_*.spec.js`, `src/lib/sheepFlockFilters.test.js`                                                                     |
 | Daily reports            | `tests/static/daily_*.test.js`, `tests/static/daily_hub_saved_views_csv_static.test.js`, `tests/static/cp2_daily_writes_via_rpc_static.test.js`, `tests/daily_*.spec.js` |
 | Feed planning            | `src/lib/feedPlanner.test.js`, `src/lib/feedOrderBasis.test.js`, `tests/static/feed_order_board_static.test.js`                                                 |
-| Pig                      | `src/lib/pig*.test.js`, `tests/pig_*.spec.js`                                                                                                                   |
-| Broiler/layer            | `src/lib/broiler.test.js`, `tests/static/broiler_hatch_activation_static.test.js`, `src/layer/*.test.js`, `tests/broiler_*.spec.js`, `tests/layer_*.spec.js`    |
+| Pig                      | `src/lib/pig*.test.js`, `src/lib/pigBatchGridMetrics.test.js`, `tests/static/pig_batches_planned_trips_static.test.js`, `tests/pig_*.spec.js`                  |
+| Broiler/layer            | `src/lib/broiler.test.js`, `tests/static/broiler_hatch_activation_static.test.js`, `tests/static/broiler_batch_record_page_static.test.js`, `src/layer/*.test.js`, `tests/broiler_*.spec.js`, `tests/layer_*.spec.js` |
 | Equipment                | `src/lib/equipment.test.js`, `tests/static/equipment_*.test.js`, `tests/equipment_*.spec.js`                                                                    |
 | Export / print           | `src/lib/csvExport.test.js`, `src/lib/printExport.test.js`, `tests/static/weighin_session_record_page_static.test.js`                                          |
 | Login/offline webforms   | `tests/static/light_user_portal_static.test.js`, `tests/offline_*.spec.js`, `tests/daily_report_photos.spec.js`             |
