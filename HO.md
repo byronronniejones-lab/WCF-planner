@@ -117,24 +117,28 @@ stay short.
 
 ### Parallel Codex Worktree
 
-Parallel worktrees exist at:
+As of 2026-06-10, after prune, the only worktrees are the primary CC worktree
+`C:\Users\Ronni\WCF-planner` (on `main`, tracking `origin/main`) and the detached
+`C:\Users\Ronni\WCF-planner-light-audit`. The former
+`C:\Users\Ronni\WCF-planner-codex` worktree no longer exists — it was removed
+when its merged branch was pruned. There is no standing Codex worktree.
 
-`C:\Users\Ronni\WCF-planner-codex` and `C:\Users\Ronni\WCF-planner-light-audit`
-
-Each has its own `node_modules`. As of 2026-06-09 both sit detached at current
-`main` after branch cleanup (all merged `codex/*` lane branches pruned). For a
-new parallel lane, create a scoped `codex/<lane>` branch from current `main` in a
-worktree rather than reusing a merged/old branch.
+For every new parallel lane, create a FRESH scoped worktree + branch from current
+`main` (for example `git worktree add -b <scope>/<lane> <path> origin/main`);
+each needs its own `node_modules` (`npm ci`). Do not reuse a merged/old branch or
+assume a Codex worktree already exists.
 
 Default ownership is unchanged: Codex is still planning lead and reviewer, and
 CC is still primary builder. Ronnie may explicitly assign a build lane to Codex
-when parallel work would save time. Codex-owned build work happens in the Codex
-worktree, not in the main CC worktree at `C:\Users\Ronni\WCF-planner`.
+when parallel work would save time. Codex-owned build work happens in a fresh
+per-lane Codex worktree, not in the main CC worktree at
+`C:\Users\Ronni\WCF-planner`.
 
 Parallel-build rules:
 
-- Codex should create or switch to a scoped branch in the Codex worktree for
-  each assigned build lane, such as `codex/<short-lane-name>`.
+- Codex should create a fresh scoped worktree + branch from current `main` for
+  each assigned build lane, such as `codex/<short-lane-name>` (no standing Codex
+  worktree exists after the prune).
 - Codex must check `git status --short`, recent git log, and sync/rebase from
   current `main` before starting a Codex build lane.
 - Do not have CC and Codex edit the same files or same lane at the same time

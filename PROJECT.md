@@ -877,9 +877,10 @@ below.
     approved `.home.theme-crisp` composition unless Ronnie reopens the design.
     Guard target: typography, radius, button-control, z-index, shared-ui/token
     static guards, plus targeted visual Playwright/screenshots where needed.
-11. Lane J - Cross-cutting product and accessibility policy. PARTIAL; the
-    home-dashboard KPI uniform-frame item is CLOSED 2026-06-09 — DROPPED, program
-    dashboards stay program-specific (the only home target was dead code).
+11. Lane J - Cross-cutting product and accessibility policy. SHIPPED (core)
+    2026-06-08; the one open item (home-dashboard KPI uniform frame) was DROPPED
+    2026-06-09 — program dashboards stay program-specific (the only home target
+    was dead code), so no Lane J work remains open.
     Class: `DECISION`. Size: medium.
     Shipped 2026-06-08: shared Delete/Confirm modals have focus-trap behavior via
     `useModalFocusTrap.js`; central-date defaults are guarded across admin
@@ -888,8 +889,10 @@ below.
     policy shipped (`04fd932`): `src/lib/imageAlt.js` (`imageAltText`) drives
     every user-media `<img>` owner with contextual fallbacks and marks decorative
     images `aria-hidden`, locked by `image_alt_text_policy_static.test.js`.
-    Remaining: baseline home-dashboard KPI rules should use one uniform frame
-    while allowing domain-specific metrics inside the frame.
+    Remaining: none — the only open item (home-dashboard KPI uniform frame) was
+    dropped above. Reopen only for a new Ronnie-approved cross-cutting product or
+    accessibility policy decision. (The general "program KPIs use a uniform frame"
+    principle stays in Locked queue direction as forward guidance, not open work.)
     Guard target: route/nav/date/a11y static guards plus focused Playwright once
     more decisions are made.
 12. Lane K - Export/print parity. OPERATIONAL-HUB SCOPE SHIPPED 2026-06-09
