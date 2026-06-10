@@ -24,6 +24,7 @@ const EXPECTED_READY_MARKERS = new Map([
   ['src/dashboard/MySubmissions.jsx', ['data-my-submissions-loaded']],
   ['src/equipment/EquipmentChecklistEntryPage.jsx', ['data-equipment-checklist-record-loaded']],
   ['src/equipment/EquipmentDetail.jsx', ['data-equipment-record-loaded']],
+  ['src/equipment/EquipmentFleetView.jsx', ['data-equipment-fleet-loaded']],
   ['src/equipment/EquipmentFuelingEntryPage.jsx', ['data-equipment-fueling-record-loaded']],
   ['src/equipment/EquipmentHome.jsx', ['data-equipment-home-loaded']],
   ['src/layer/EggDailyPage.jsx', ['data-egg-daily-record-loaded']],

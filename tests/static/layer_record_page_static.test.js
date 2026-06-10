@@ -279,7 +279,10 @@ describe('LayerBatchesView — cleaned hub', () => {
     expect(listSrc).toContain("location.pathname.startsWith('/layer/housings/')");
   });
   it('tiles navigate to /layer/batches/<id>', () => {
-    expect(listSrc).toContain("navigate('/layer/batches/' + batch.id");
+    // Cards -> unified grid: the row click navigates to /layer/batches/<id>
+    // using the renamed grid row var (batch -> row), still carrying the
+    // SORTED set (batchSeqRows) as the record-sequence order.
+    expect(listSrc).toContain("navigate('/layer/batches/' + row.id");
   });
   it('no inline selected-batch workspace remains', () => {
     expect(listSrc).not.toContain('selectedBatchId');
@@ -318,7 +321,10 @@ describe('Layer cold-boot readiness required metric reads', () => {
 
   it('hub clears stale metric state and blocks metric-backed tiles while loadError is active', () => {
     expect(listSrc).toMatch(/setRawLayerDailys\(\[\]\);\s*\n\s*setRawEggDailys\(\[\]\);/);
-    expect(listSrc).toMatch(/!loading && !loadError && \(/);
+    // Cards -> unified grid: the metric-backed tile block is the inspection grid,
+    // still gated on !loading && !loadError (the redesign added a sorted.length > 0
+    // clause so an empty filtered set falls through to the shared empty state).
+    expect(listSrc).toMatch(/!loading && !loadError && sorted\.length > 0 && \(/);
     expect(listSrc).toContain("data-layer-batches-loaded={loading || loadError ? 'false' : 'true'}");
   });
 

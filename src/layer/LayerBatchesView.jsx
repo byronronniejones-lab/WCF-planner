@@ -1,31 +1,66 @@
 // LayerBatchesView — hub + router for layer batches and housings.
 //
-// Hub shows nav-only batch tiles (active + retired) with summary stats.
-// Tile clicks navigate to /layer/batches/<id>. The per-record workspace
-// (metadata edit, lifecycle phases, housings list, batch delete cascade)
-// lives on LayerBatchPage; layer.housing records have their own page at
-// /layer/housings/<id>. Both record pages own Comments + collapsed
-// Activity via RecordCollaborationSection.
+// Hub shows a unified vertical inspection grid (header row + aligned nav-only
+// rows) of layer batches with summary stats, plus a right-sized toolbar:
+// search, status, supplier, start-date range, bird-count range, a single
+// active sort rule, saved views (surface_key 'layer.batches'), and CSV/print
+// export of the filtered+sorted set. Filter/sort semantics live in the pure
+// lib src/lib/layerBatchFilters.js. Row clicks navigate to /layer/batches/<id>
+// with the SORTED set as the record-sequence order. The per-record workspace
+// (metadata edit, lifecycle phases, housings list, batch delete cascade) lives
+// on LayerBatchPage; layer.housing records have their own page at
+// /layer/housings/<id>. Both record pages own Comments + collapsed Activity
+// via RecordCollaborationSection.
 import React from 'react';
 import {useNavigate, useLocation} from 'react-router-dom';
 import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import OperationalListEmptyState from '../shared/OperationalListEmptyState.jsx';
 import {computeHousingDisplayCount, computeLayerFeedCost} from '../lib/layerHousing.js';
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {buildLayerBatchExportColumns} from '../lib/operationalExportColumns.js';
+import {
+  listSavedViews,
+  createSavedView,
+  updateSavedView,
+  deleteSavedView,
+  buildViewState,
+} from '../lib/savedViewsApi.js';
+import {usePersistentViewState} from '../lib/usePersistentViewState.js';
+import {LAYER_BATCH_SORT_KEYS, buildLayerBatchPredicate, buildLayerBatchComparator} from '../lib/layerBatchFilters.js';
 import {computeBatchStats} from './layerBatchStats.js';
 import LayerBatchPage from './LayerBatchPage.jsx';
 import LayerHousingPage from './LayerHousingPage.jsx';
 
-// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
-const StatPill = ({label, val, color = '#374151'}) => (
-  <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 70}}>
-    <div style={{fontSize: 11, color: '#9ca3af', marginBottom: 2}}>{label}</div>
-    <div style={{fontWeight: 700, fontSize: 13, color}}>{val}</div>
-  </div>
-);
+const LAYER_BATCHES_SURFACE_KEY = 'layer.batches';
+
+const LAYER_BATCH_STATUS_OPTIONS = [
+  {key: 'active', label: 'Active'},
+  {key: 'retired', label: 'Retired'},
+];
+
+const LAYER_BATCH_SORT_KEY_LABELS = {
+  batchName: 'Batch name',
+  status: 'Status',
+  startDate: 'Start date',
+  birdCount: 'Bird count',
+};
+
+const LAYER_BATCH_SORT_DIR_LABELS = {
+  batchName: {asc: 'A to Z', desc: 'Z to A'},
+  status: {asc: 'active to retired', desc: 'retired to active'},
+  startDate: {asc: 'oldest first', desc: 'newest first'},
+  birdCount: {asc: 'fewest first', desc: 'most first'},
+};
+
+// Shared column template for the unified Layer Batches inspection grid. The hub
+// header row and every batch row consume the SAME template so the columns stay
+// aligned, Podio-style. Tracks:
+//   Batch | Status | Housings | Hens | Feed | Mort. | Dozens | Cost | Open
+const LAYER_BATCH_GRID_COLUMNS = 'minmax(120px, 1.4fr) 84px minmax(120px, 1.6fr) 70px 92px 64px 72px 84px 56px';
 
 const LayerBatchesHub = ({
   sb,
@@ -50,6 +85,29 @@ const LayerBatchesHub = ({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const myProfileId = authState?.user?.id || null;
+
+  // Right-sized list parity: a single toolbar row of filters + a single active
+  // sort rule, persisted across navigation via usePersistentViewState.
+  const [fSearch, setFSearch] = usePersistentViewState('layer.batches.search', '');
+  const [fStatus, setFStatus] = usePersistentViewState('layer.batches.status', '');
+  const [fSupplier, setFSupplier] = usePersistentViewState('layer.batches.supplier', '');
+  const [fStartAfter, setFStartAfter] = usePersistentViewState('layer.batches.startAfter', '');
+  const [fStartBefore, setFStartBefore] = usePersistentViewState('layer.batches.startBefore', '');
+  const [fBirdMin, setFBirdMin] = usePersistentViewState('layer.batches.birdMin', '');
+  const [fBirdMax, setFBirdMax] = usePersistentViewState('layer.batches.birdMax', '');
+  const [sortKey, setSortKey] = usePersistentViewState('layer.batches.sortKey', 'status');
+  const [sortDir, setSortDir] = usePersistentViewState('layer.batches.sortDir', 'asc');
+
+  const [savedViews, setSavedViews] = useState([]);
+  const [savedViewsError, setSavedViewsError] = useState(null);
+  const [savedViewsLoading, setSavedViewsLoading] = useState(true);
+  const [selectedViewId, setSelectedViewId] = useState('');
+  const [showSaveViewForm, setShowSaveViewForm] = useState(false);
+  const [saveViewName, setSaveViewName] = useState('');
+  const [saveViewVisibility, setSaveViewVisibility] = useState('private');
+  const [savedViewBusy, setSavedViewBusy] = useState(false);
+  const [savedViewNotice, setSavedViewNotice] = useState(null);
 
   const [showAddBatch, setShowAddBatch] = useState(false);
   const [addName, setAddName] = useState('');
@@ -136,6 +194,27 @@ const LayerBatchesHub = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingEdit]);
 
+  // Saved views degrade locally: a load failure shows a small notice but never
+  // blocks the list or the filters.
+  const loadSavedViews = React.useCallback(async () => {
+    setSavedViewsLoading(true);
+    try {
+      const rows = await listSavedViews(sb, LAYER_BATCHES_SURFACE_KEY);
+      setSavedViews(rows);
+      setSavedViewsError(null);
+      setSelectedViewId((cur) => (cur && rows.some((r) => r.id === cur) ? cur : ''));
+    } catch (e) {
+      setSavedViews([]);
+      setSavedViewsError(e.message || String(e));
+    } finally {
+      setSavedViewsLoading(false);
+    }
+  }, [sb]);
+
+  useEffect(() => {
+    loadSavedViews();
+  }, [loadSavedViews]);
+
   const batchStats = React.useMemo(
     () => computeBatchStats(layerBatches || [], layerHousings || [], rawLayerDailys, rawEggDailys),
     [layerBatches, layerHousings, rawLayerDailys, rawEggDailys],
@@ -192,11 +271,36 @@ const LayerBatchesHub = ({
     navigate('/layer/batches/' + id);
   }
 
+  const totalBatches = (layerBatches || []).length;
   const activeBatches = (layerBatches || []).filter((b) => b.status === 'active');
-  const retiredBatches = (layerBatches || []).filter((b) => b.status === 'retired');
-  // Combined visible order (active → retired) for record sequence nav.
-  const batchSeqRows = [...activeBatches, ...retiredBatches];
-  const layerBatchExportRows = batchSeqRows.map((batch) => {
+
+  // Filter values for the lib live as a plain object so saved views round-trip
+  // the exact predicate input. Empty range fields collapse to null so the
+  // predicate treats them as inactive.
+  const numOrNull = (v) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  const filters = {
+    textSearch: fSearch,
+    status: fStatus,
+    supplier: fSupplier,
+    startDateRange: {after: fStartAfter || null, before: fStartBefore || null},
+    birdCountRange: {min: numOrNull(fBirdMin), max: numOrNull(fBirdMax)},
+  };
+  const sortRule = {key: sortKey, dir: sortDir};
+  const hasActiveFilters = !!(fSearch || fStatus || fSupplier || fStartAfter || fStartBefore || fBirdMin || fBirdMax);
+
+  // Distinct suppliers observed on the batches, for the supplier dropdown.
+  const supplierOpts = [...new Set((layerBatches || []).map((b) => b.supplier).filter(Boolean))].sort();
+
+  // filtered = predicate over all batches; sorted = single active sort rule.
+  // The SORTED set drives render, record-sequence nav, and CSV/print export.
+  const filtered = (layerBatches || []).filter(buildLayerBatchPredicate(filters));
+  const sorted = [...filtered].sort(buildLayerBatchComparator(sortRule));
+  const batchSeqRows = sorted;
+
+  function decorateBatch(batch) {
     const stats = batchStats[batch.id] || {};
     const activeHousings = (layerHousings || []).filter((h) => h.batch_id === batch.id && h.status === 'active');
     const currentHens = activeHousings.reduce(
@@ -215,7 +319,8 @@ const LayerBatchesHub = ({
       total_dozens: stats.totalEggs > 0 ? Math.floor(stats.totalEggs / 12) : 0,
       feed_cost: computeLayerFeedCost(stats.starterFeed, stats.growerFeed, stats.layerFeed, batch),
     };
-  });
+  }
+  const layerBatchExportRows = sorted.map(decorateBatch);
   const exportColumns = buildLayerBatchExportColumns({fmt});
   function handleExportCsv() {
     if (!layerBatchExportRows.length) {
@@ -239,12 +344,151 @@ const LayerBatchesHub = ({
     });
     if (!ok) setNotice({kind: 'warning', message: 'Print export is unavailable in this browser.'});
   }
-  const batchColors = [
-    {bg: '#ecfdf5', bd: '#a7f3d0', tx: '#065f46'},
-    {bg: '#eff6ff', bd: '#bfdbfe', tx: '#1e40af'},
-    {bg: '#fffbeb', bd: '#fde68a', tx: '#92400e'},
-    {bg: '#f5f3ff', bd: '#ddd6fe', tx: '#5b21b6'},
-  ];
+
+  function clearFilters() {
+    setFSearch('');
+    setFStatus('');
+    setFSupplier('');
+    setFStartAfter('');
+    setFStartBefore('');
+    setFBirdMin('');
+    setFBirdMax('');
+  }
+
+  // ── Saved views (surface_key 'layer.batches') ──────────────────────────────
+  const selectedView = savedViews.find((v) => v.id === selectedViewId) || null;
+  const selectedViewIsMine = !!(selectedView && myProfileId && selectedView.owner_profile_id === myProfileId);
+  const myViews = savedViews.filter((v) => myProfileId && v.owner_profile_id === myProfileId);
+  const publicOtherViews = savedViews.filter(
+    (v) => v.visibility === 'public' && !(myProfileId && v.owner_profile_id === myProfileId),
+  );
+
+  function layerBatchesViewState() {
+    return buildViewState({
+      filters,
+      sortRules: [{key: sortKey, dir: sortDir}],
+      viewMode: 'flat',
+    });
+  }
+
+  function applyLayerBatchesSavedView(view) {
+    if (!view) return;
+    const st = view.view_state || {};
+    const f = st.filters && typeof st.filters === 'object' ? st.filters : {};
+    setFSearch(typeof f.textSearch === 'string' ? f.textSearch : '');
+    setFStatus(typeof f.status === 'string' ? f.status : '');
+    setFSupplier(typeof f.supplier === 'string' ? f.supplier : '');
+    const sdr = f.startDateRange && typeof f.startDateRange === 'object' ? f.startDateRange : {};
+    setFStartAfter(typeof sdr.after === 'string' ? sdr.after : '');
+    setFStartBefore(typeof sdr.before === 'string' ? sdr.before : '');
+    const bcr = f.birdCountRange && typeof f.birdCountRange === 'object' ? f.birdCountRange : {};
+    setFBirdMin(bcr.min != null ? String(bcr.min) : '');
+    setFBirdMax(bcr.max != null ? String(bcr.max) : '');
+    const rule = Array.isArray(st.sortRules) && st.sortRules[0] ? st.sortRules[0] : null;
+    setSortKey(rule && LAYER_BATCH_SORT_KEYS.includes(rule.key) ? rule.key : 'status');
+    setSortDir(rule && rule.dir === 'desc' ? 'desc' : 'asc');
+    setSavedViewNotice(null);
+  }
+
+  function onSelectSavedView(id) {
+    setSelectedViewId(id);
+    setSavedViewNotice(null);
+    if (!id) return;
+    applyLayerBatchesSavedView(savedViews.find((v) => v.id === id));
+  }
+
+  function openSaveViewForm() {
+    setSaveViewName('');
+    setSaveViewVisibility('private');
+    setSavedViewNotice(null);
+    setShowSaveViewForm(true);
+  }
+
+  async function submitSaveView() {
+    const name = saveViewName.trim();
+    if (!name) {
+      setSavedViewNotice({kind: 'error', message: 'Name the view before saving.'});
+      return;
+    }
+    setSavedViewBusy(true);
+    try {
+      const created = await createSavedView(sb, {
+        surfaceKey: LAYER_BATCHES_SURFACE_KEY,
+        name,
+        visibility: saveViewVisibility,
+        viewState: layerBatchesViewState(),
+      });
+      setShowSaveViewForm(false);
+      setSavedViewNotice({kind: 'success', message: 'Saved view "' + name + '".'});
+      await loadSavedViews();
+      if (created?.id) setSelectedViewId(created.id);
+    } catch (e) {
+      setSavedViewNotice({kind: 'error', message: 'Save view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+
+  async function updateSelectedView() {
+    if (!selectedView || !selectedViewIsMine) return;
+    setSavedViewBusy(true);
+    try {
+      await updateSavedView(sb, selectedView.id, {viewState: layerBatchesViewState()});
+      await loadSavedViews();
+      setSavedViewNotice({kind: 'success', message: 'Updated "' + selectedView.name + '" to the current filters.'});
+    } catch (e) {
+      setSavedViewNotice({kind: 'error', message: 'Update view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+
+  async function proceedDeleteSelectedView(view) {
+    setSavedViewBusy(true);
+    try {
+      await deleteSavedView(sb, view.id);
+      setSelectedViewId('');
+      await loadSavedViews();
+      setSavedViewNotice({kind: 'success', message: 'Deleted saved view "' + view.name + '".'});
+    } catch (e) {
+      setSavedViewNotice({kind: 'error', message: 'Delete view failed: ' + (e.message || String(e))});
+    } finally {
+      setSavedViewBusy(false);
+    }
+  }
+
+  function deleteSelectedView() {
+    if (!selectedView || !selectedViewIsMine || !window._wcfConfirmDelete) return;
+    window._wcfConfirmDelete('Delete saved view "' + selectedView.name + '"?', () => {
+      void proceedDeleteSelectedView(selectedView);
+    });
+  }
+
+  const fieldS = {
+    padding: '6px 10px',
+    borderRadius: 6,
+    border: '1px solid #d1d5db',
+    fontSize: 12,
+    fontFamily: 'inherit',
+    background: 'white',
+    width: 'auto',
+  };
+  const savedViewGhostBtnS = {
+    ...fieldS,
+    color: '#374151',
+    fontWeight: 600,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  };
+  const savedViewPrimaryBtnS = {...savedViewGhostBtnS, border: '1px solid #92400e', color: '#92400e'};
+  const savedViewRadioLabelS = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 12,
+    color: '#374151',
+    cursor: 'pointer',
+  };
 
   return (
     <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
@@ -279,8 +523,9 @@ const LayerBatchesHub = ({
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}}>
           <div style={{fontSize: 20, fontWeight: 700, color: '#111827'}}>
             Layer Batches
-            <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280', marginLeft: 8}}>
-              {activeBatches.length} active
+            <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280', marginLeft: 8}} data-layer-batches-count>
+              {sorted.length} of {totalBatches}
+              {totalBatches > 0 ? ' · ' + activeBatches.length + ' active' : ''}
             </span>
           </div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
@@ -340,242 +585,438 @@ const LayerBatchesHub = ({
           </div>
         </div>
 
+        {!loadError && (
+          <>
+            <div
+              data-layer-batches-saved-views-row
+              style={{
+                background: 'white',
+                border: '1px solid #e5e7eb',
+                borderRadius: 10,
+                padding: '10px 14px',
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+              {savedViewsError ? (
+                <span style={{fontSize: 12, color: '#b91c1c'}} data-layer-batches-saved-views-error>
+                  Saved views unavailable. Filters still work.
+                </span>
+              ) : (
+                <>
+                  <select
+                    data-layer-batches-saved-view-select
+                    value={selectedViewId}
+                    disabled={savedViewsLoading}
+                    onChange={(e) => onSelectSavedView(e.target.value)}
+                    style={{...fieldS, minWidth: 200}}
+                  >
+                    <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
+                    {myViews.length > 0 && (
+                      <optgroup label="My views">
+                        {myViews.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {publicOtherViews.length > 0 && (
+                      <optgroup label="Public views">
+                        {publicOtherViews.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  {selectedViewIsMine && (
+                    <>
+                      <button
+                        type="button"
+                        data-layer-batches-saved-view-update
+                        onClick={updateSelectedView}
+                        disabled={savedViewBusy}
+                        style={savedViewGhostBtnS}
+                      >
+                        Update to current
+                      </button>
+                      <button
+                        type="button"
+                        data-layer-batches-saved-view-delete
+                        onClick={deleteSelectedView}
+                        disabled={savedViewBusy}
+                        style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                  <span style={{flex: 1}} />
+                  {savedViewNotice && (
+                    <span style={{fontSize: 12, color: savedViewNotice.kind === 'success' ? '#065f46' : '#b91c1c'}}>
+                      {savedViewNotice.message}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    data-layer-batches-saved-view-save-open
+                    onClick={openSaveViewForm}
+                    disabled={savedViewBusy || savedViewsLoading}
+                    style={savedViewPrimaryBtnS}
+                  >
+                    Save current view
+                  </button>
+                </>
+              )}
+            </div>
+            {showSaveViewForm && (
+              <div
+                data-layer-batches-saved-view-form
+                style={{
+                  background: 'white',
+                  border: '1px solid #fde68a',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <input
+                  data-layer-batches-saved-view-name
+                  type="text"
+                  value={saveViewName}
+                  placeholder="View name"
+                  onChange={(e) => setSaveViewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitSaveView();
+                  }}
+                  style={{...fieldS, flex: 1, minWidth: 200}}
+                />
+                <label style={savedViewRadioLabelS}>
+                  <input
+                    type="radio"
+                    name="saveLayerBatchesViewVisibility"
+                    checked={saveViewVisibility === 'private'}
+                    onChange={() => setSaveViewVisibility('private')}
+                    data-layer-batches-saved-view-visibility="private"
+                  />
+                  Private
+                </label>
+                <label style={savedViewRadioLabelS}>
+                  <input
+                    type="radio"
+                    name="saveLayerBatchesViewVisibility"
+                    checked={saveViewVisibility === 'public'}
+                    onChange={() => setSaveViewVisibility('public')}
+                    data-layer-batches-saved-view-visibility="public"
+                  />
+                  Public
+                </label>
+                <button
+                  type="button"
+                  data-layer-batches-saved-view-save
+                  onClick={submitSaveView}
+                  disabled={savedViewBusy}
+                  style={savedViewPrimaryBtnS}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveViewForm(false)}
+                  disabled={savedViewBusy}
+                  style={savedViewGhostBtnS}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            <div
+              data-layer-batches-toolbar
+              style={{display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center'}}
+            >
+              <input
+                type="text"
+                data-layer-batches-search
+                value={fSearch}
+                placeholder="Search batch / supplier"
+                onChange={(e) => setFSearch(e.target.value)}
+                style={{...fieldS, minWidth: 180}}
+              />
+              <select
+                data-layer-batches-status-filter
+                value={fStatus}
+                onChange={(e) => setFStatus(e.target.value)}
+                style={fieldS}
+              >
+                <option value="">All statuses</option>
+                {LAYER_BATCH_STATUS_OPTIONS.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                data-layer-batches-supplier-filter
+                value={fSupplier}
+                onChange={(e) => setFSupplier(e.target.value)}
+                style={fieldS}
+              >
+                <option value="">All suppliers</option>
+                {supplierOpts.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <span style={{fontSize: 11, color: '#6b7280'}}>Start</span>
+              <input
+                type="date"
+                data-layer-batches-start-after
+                value={fStartAfter}
+                onChange={(e) => setFStartAfter(e.target.value)}
+                style={{...fieldS, width: 130}}
+              />
+              <span style={{fontSize: 12, color: '#6b7280'}}>to</span>
+              <input
+                type="date"
+                data-layer-batches-start-before
+                value={fStartBefore}
+                onChange={(e) => setFStartBefore(e.target.value)}
+                style={{...fieldS, width: 130}}
+              />
+              <span style={{fontSize: 11, color: '#6b7280'}}>Birds</span>
+              <input
+                type="number"
+                min="0"
+                data-layer-batches-bird-min
+                value={fBirdMin}
+                placeholder="min"
+                onChange={(e) => setFBirdMin(e.target.value)}
+                style={{...fieldS, width: 78}}
+              />
+              <input
+                type="number"
+                min="0"
+                data-layer-batches-bird-max
+                value={fBirdMax}
+                placeholder="max"
+                onChange={(e) => setFBirdMax(e.target.value)}
+                style={{...fieldS, width: 78}}
+              />
+              <span style={{flex: 1}} />
+              <select
+                data-layer-batches-sort-key
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value)}
+                style={fieldS}
+              >
+                {LAYER_BATCH_SORT_KEYS.map((k) => (
+                  <option key={k} value={k}>
+                    {LAYER_BATCH_SORT_KEY_LABELS[k] || k}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                data-layer-batches-sort-dir
+                onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                style={{...savedViewGhostBtnS}}
+                title="Toggle sort direction"
+              >
+                {(LAYER_BATCH_SORT_DIR_LABELS[sortKey] && LAYER_BATCH_SORT_DIR_LABELS[sortKey][sortDir]) ||
+                  (sortDir === 'desc' ? 'desc' : 'asc')}
+              </button>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  data-layer-batches-clear-filters
+                  onClick={clearFilters}
+                  style={{...fieldS, color: '#6b7280', cursor: 'pointer', fontWeight: 600}}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
         {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading...</div>}
 
-        {!loading && !loadError && (
-          <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-            {activeBatches.map((batch, bi) => {
-              const stats = batchStats[batch.id] || {};
-              const housings = (layerHousings || []).filter((h) => h.batch_id === batch.id);
-              const activeH = housings.filter((h) => h.status === 'active');
-              const isRetHome = batch.name === 'Retirement Home';
-              const bc = batchColors[bi % batchColors.length];
+        {!loading && !loadError && totalBatches === 0 && (
+          <div
+            data-empty-state="true-empty"
+            style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: 12,
+              padding: '2rem',
+              textAlign: 'center',
+              color: '#6b7280',
+              fontSize: 13,
+            }}
+          >
+            No layer batches yet. Click <strong>+ New Batch</strong> to plan one.
+          </div>
+        )}
+
+        {/* true-empty (totalBatches === 0) is handled by the richer block above
+            with the +New Batch call to action; the shared component renders the
+            filtered-no-results message only. */}
+        {totalBatches > 0 && (
+          <OperationalListEmptyState
+            loading={loading}
+            loadError={loadError}
+            totalCount={totalBatches}
+            filteredCount={sorted.length}
+            emptyLabel="No layer batches yet"
+            filteredLabel="No layer batches match the current filters"
+          />
+        )}
+
+        {!loading && !loadError && sorted.length > 0 && (
+          <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}>
+            {/* Header row — same grid template as every batch row below. */}
+            <div
+              data-layer-batches-grid-header
+              style={{
+                display: 'grid',
+                gridTemplateColumns: LAYER_BATCH_GRID_COLUMNS,
+                gap: 10,
+                alignItems: 'center',
+                padding: '8px 14px',
+                borderBottom: '1px solid #e5e7eb',
+                background: '#f9fafb',
+                fontSize: 10,
+                fontWeight: 700,
+                color: '#6b7280',
+                textTransform: 'uppercase',
+                letterSpacing: 0.3,
+              }}
+            >
+              <span>Batch</span>
+              <span>Status</span>
+              <span>Housings</span>
+              <span>Hens</span>
+              <span>Feed</span>
+              <span>Mort.</span>
+              <span>Dozens</span>
+              <span>Cost</span>
+              <span style={{textAlign: 'right'}}>Open</span>
+            </div>
+            {layerBatchExportRows.map((row) => {
+              const stats = batchStats[row.id] || {};
+              const isRetired = row.status === 'retired';
+              const isRetHome = row.name === 'Retirement Home';
+              const statusLabel = isRetHome ? 'Permanent' : isRetired ? 'Retired' : 'Active';
+              const fc = row.feed_cost;
               return (
                 <div
-                  key={batch.id}
-                  data-layer-batch-tile={batch.id}
+                  key={row.id}
+                  data-layer-batch-tile={row.id}
                   onClick={() =>
-                    navigate('/layer/batches/' + batch.id, recordSeqNavOptions(labeledSeqItems(batchSeqRows, 'name')))
+                    navigate('/layer/batches/' + row.id, recordSeqNavOptions(labeledSeqItems(batchSeqRows, 'name')))
                   }
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 12,
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                  }}
                   className="hoverable-tile"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: LAYER_BATCH_GRID_COLUMNS,
+                    gap: 10,
+                    alignItems: 'center',
+                    padding: '10px 14px',
+                    borderBottom: '1px solid #f3f4f6',
+                    cursor: 'pointer',
+                    background: isRetired ? '#fafafa' : 'white',
+                    opacity: isRetired ? 0.85 : 1,
+                  }}
                 >
-                  <div
+                  {/* Batch */}
+                  <span
                     style={{
-                      background: bc.bg,
-                      borderBottom: '1px solid ' + bc.bd,
-                      padding: '10px 20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      flexWrap: 'wrap',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      color: '#111827',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <span style={{fontSize: 15, fontWeight: 700, color: bc.tx}}>{batch.name}</span>
+                    {row.name}
+                  </span>
+                  {/* Status */}
+                  <span style={{justifySelf: 'start'}}>
                     <span
                       style={{
                         fontSize: 10,
                         fontWeight: 700,
                         padding: '2px 8px',
                         borderRadius: 10,
-                        background: '#d1fae5',
-                        color: '#065f46',
+                        background: isRetired ? '#f3f4f6' : '#d1fae5',
+                        color: isRetired ? '#6b7280' : '#065f46',
                         textTransform: 'uppercase',
                       }}
                     >
-                      {isRetHome ? 'Permanent' : 'Active'}
+                      {statusLabel}
                     </span>
-                    {(batch.brooder_entry_date || batch.arrival_date) &&
-                      (() => {
-                        const anchor = batch.brooder_entry_date || batch.arrival_date;
-                        const months = +((new Date() - new Date(anchor + 'T12:00:00')) / 86400000 / 30.44).toFixed(1);
-                        return months > 0 ? (
-                          <span style={{fontSize: 11, color: bc.tx, opacity: 0.85}}>{months + ' months old'}</span>
-                        ) : null;
-                      })()}
-                  </div>
-                  <div style={{padding: '12px 20px', display: 'flex', gap: 20, alignItems: 'flex-start'}}>
-                    <div style={{flex: 1}}>
-                      {activeH.length > 0 && (
-                        <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8}}>
-                          {activeH.map((h) => (
-                            <span
-                              key={h.id}
-                              style={{
-                                fontSize: 11,
-                                background: bc.bg,
-                                border: '1px solid ' + bc.bd,
-                                color: bc.tx,
-                                padding: '2px 8px',
-                                borderRadius: 6,
-                                fontWeight: 600,
-                              }}
-                            >
-                              {'🏠 ' + h.housing_name}
-                              {(() => {
-                                const c = computeHousingDisplayCount(h, rawLayerDailys);
-                                return c > 0 ? ' · ' + c + ' hens' : '';
-                              })()}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{display: 'flex', gap: 20, flexShrink: 0}}>
-                      <StatPill
-                        label="Feed"
-                        val={stats.totalFeed > 0 ? Math.round(stats.totalFeed).toLocaleString() + ' lbs' : '—'}
-                        color="#92400e"
-                      />
-                      <StatPill
-                        label="Mort."
-                        val={stats.totalMort > 0 ? stats.totalMort : '0'}
-                        color={stats.totalMort > 10 ? '#b91c1c' : '#374151'}
-                      />
-                      <StatPill
-                        label="Dozens"
-                        val={stats.totalEggs > 0 ? Math.floor(stats.totalEggs / 12).toLocaleString() : '—'}
-                        color="#065f46"
-                      />
-                      {(() => {
-                        const fc = computeLayerFeedCost(stats.starterFeed, stats.growerFeed, stats.layerFeed, batch);
-                        return (
-                          <StatPill
-                            label="Cost"
-                            val={
-                              fc != null
-                                ? '$' +
-                                  fc.toLocaleString(undefined, {
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 0,
-                                  })
-                                : '—'
-                            }
-                            color="#065f46"
-                          />
-                        );
-                      })()}
-                    </div>
-                  </div>
+                  </span>
+                  {/* Active housings */}
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: row.active_housing_names ? '#374151' : '#9ca3af',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {row.active_housing_names ? '🏠 ' + row.active_housing_names : '—'}
+                  </span>
+                  {/* Current hens */}
+                  <span style={{fontSize: 12, color: '#374151', fontVariantNumeric: 'tabular-nums'}}>
+                    {row.current_hens > 0 ? <strong>{row.current_hens.toLocaleString()}</strong> : '—'}
+                  </span>
+                  {/* Feed */}
+                  <span style={{fontSize: 12, color: stats.totalFeed > 0 ? '#92400e' : '#9ca3af'}}>
+                    {stats.totalFeed > 0 ? (
+                      <strong>{Math.round(stats.totalFeed).toLocaleString() + ' lb'}</strong>
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                  {/* Mortality */}
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: stats.totalMort > 10 ? '#b91c1c' : '#374151',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {row.total_mortality > 0 ? row.total_mortality : '0'}
+                  </span>
+                  {/* Dozens */}
+                  <span style={{fontSize: 12, color: row.total_dozens > 0 ? '#065f46' : '#9ca3af'}}>
+                    {row.total_dozens > 0 ? row.total_dozens.toLocaleString() : '—'}
+                  </span>
+                  {/* Cost */}
+                  <span style={{fontSize: 12, color: fc != null ? '#065f46' : '#9ca3af'}}>
+                    {fc != null
+                      ? '$' + fc.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})
+                      : '—'}
+                  </span>
+                  {/* Open */}
+                  <span style={{fontSize: 12, color: '#085041', fontWeight: 600, textAlign: 'right'}}>{'Open ->'}</span>
                 </div>
               );
             })}
-
-            {retiredBatches.length > 0 && (
-              <>
-                <div style={{fontSize: 12, fontWeight: 600, color: '#4b5563', letterSpacing: 0.3, marginTop: 8}}>
-                  RETIRED BATCHES
-                </div>
-                {retiredBatches.map((batch, bi) => {
-                  const stats = batchStats[batch.id] || {};
-                  return (
-                    <div
-                      key={batch.id}
-                      data-layer-batch-tile={batch.id}
-                      onClick={() =>
-                        navigate(
-                          '/layer/batches/' + batch.id,
-                          recordSeqNavOptions(labeledSeqItems(batchSeqRows, 'name')),
-                        )
-                      }
-                      style={{
-                        background: bi % 2 === 0 ? '#f9fafb' : '#f3f4f6',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: 12,
-                        padding: '14px 20px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        gap: 20,
-                        alignItems: 'center',
-                        opacity: 0.8,
-                      }}
-                      className="hoverable-tile"
-                    >
-                      <div style={{flex: 1}}>
-                        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                          <span style={{fontSize: 14, fontWeight: 700, color: '#374151'}}>{batch.name}</span>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '2px 8px',
-                              borderRadius: 10,
-                              background: '#f3f4f6',
-                              color: '#6b7280',
-                              textTransform: 'uppercase',
-                            }}
-                          >
-                            Retired
-                          </span>
-                          {(batch.brooder_entry_date || batch.arrival_date) &&
-                            (() => {
-                              const anchor = batch.brooder_entry_date || batch.arrival_date;
-                              const months = +(
-                                (new Date() - new Date(anchor + 'T12:00:00')) /
-                                86400000 /
-                                30.44
-                              ).toFixed(1);
-                              return months > 0 ? (
-                                <span style={{fontSize: 11, color: '#9ca3af'}}>{months + ' months old'}</span>
-                              ) : null;
-                            })()}
-                        </div>
-                      </div>
-                      <div style={{display: 'flex', gap: 20, flexShrink: 0}}>
-                        <StatPill
-                          label="Feed"
-                          val={stats.totalFeed > 0 ? Math.round(stats.totalFeed).toLocaleString() + ' lbs' : '—'}
-                        />
-                        <StatPill label="Mort." val={stats.totalMort || '0'} />
-                        <StatPill
-                          label="Dozens"
-                          val={stats.totalEggs > 0 ? Math.floor(stats.totalEggs / 12).toLocaleString() : '—'}
-                        />
-                        {(() => {
-                          const fc = computeLayerFeedCost(stats.starterFeed, stats.growerFeed, stats.layerFeed, batch);
-                          return (
-                            <StatPill
-                              label="Cost"
-                              val={
-                                fc != null
-                                  ? '$' +
-                                    fc.toLocaleString(undefined, {
-                                      minimumFractionDigits: 0,
-                                      maximumFractionDigits: 0,
-                                    })
-                                  : '—'
-                              }
-                            />
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {activeBatches.length === 0 && retiredBatches.length === 0 && (
-              <div
-                style={{
-                  background: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 12,
-                  padding: '2rem',
-                  textAlign: 'center',
-                  color: '#6b7280',
-                  fontSize: 13,
-                }}
-              >
-                No layer batches yet. Click <strong>+ New Batch</strong> to plan one.
-              </div>
-            )}
           </div>
         )}
       </div>

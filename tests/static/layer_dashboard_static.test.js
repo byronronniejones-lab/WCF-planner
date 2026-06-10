@@ -55,7 +55,9 @@ describe('Layer housing count — display helper consistency', () => {
   });
 
   it('LayerBatchesView hub chip uses computeHousingDisplayCount', () => {
-    expect(batchesSrc).toContain('computeHousingDisplayCount(h, rawLayerDailys)');
+    // Cards -> unified grid: the per-housing reduce var was renamed h -> housing
+    // in decorateBatch; still computeHousingDisplayCount(<housing>, rawLayerDailys).
+    expect(batchesSrc).toContain('computeHousingDisplayCount(housing, rawLayerDailys)');
     expect(batchesSrc).not.toMatch(/h\.current_count\s*\?\s*['"].*hens/);
   });
 
