@@ -92,12 +92,11 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   // Inline edit of a Recent-entries row (cattle/sheep/pig). editingEntryId =
-  // the weigh_ins row being edited; editDraft holds the pending changes. Tag
-  // is intentionally not editable on the webform -- the admin weigh-ins tab
-  // is the sophisticated fix-it surface. Delete + re-add via tag picker if
-  // the wrong cow was selected.
+  // the weigh_ins row being edited; editDraft holds the pending changes.
+  // Cattle/sheep edits mirror the entry surface: tag, missing-tag flag, weight,
+  // and note. Pig edits remain weight/note only because pig entries are tagless.
   const [editingEntryId, setEditingEntryId] = React.useState(null);
-  const [editDraft, setEditDraft] = React.useState({weight: '', note: ''});
+  const [editDraft, setEditDraft] = React.useState({tag: '', weight: '', note: '', newTagFlag: false});
   // Send-to-processor modal shown at Complete time when a cattle finishers
   // session has at least one send_to_processor=true entry.
   const [showProcessorModal, setShowProcessorModal] = React.useState(false);
@@ -331,6 +330,36 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     const prior = priorByTag[tag];
     const priorStr = prior ? Math.round(prior.weight) + ' lb' : 'new';
     return '#' + tag + sex + ' \u00b7 ' + age + ' \u00b7 ' + priorStr;
+  }
+
+  function findDirectoryAnimalByTag(tag) {
+    const t = String(tag || '').trim();
+    if (!t) return null;
+    if (species === 'cattle') return cattleList.find((c) => c.herd === cattleHerd && String(c.tag || '') === t) || null;
+    if (species === 'sheep') return sheepList.find((s) => s.flock === sheepFlock && String(s.tag || '') === t) || null;
+    return null;
+  }
+
+  function entryTagUsedByAnotherEntry(tag, entryId) {
+    const t = String(tag || '').trim();
+    if (!t) return false;
+    return entries.some((e) => e.id !== entryId && String(e.tag || '') === t);
+  }
+
+  function buildEditableTagOptions(entry) {
+    if (species !== 'cattle' && species !== 'sheep') return [];
+    const rows =
+      species === 'cattle'
+        ? cattleList.filter((c) => c.herd === cattleHerd && c.tag)
+        : sheepList.filter((s) => s.flock === sheepFlock && s.tag);
+    const byTag = new Map();
+    rows.forEach((animal) => {
+      const tag = String(animal.tag || '');
+      if (!tag) return;
+      if (entryTagUsedByAnotherEntry(tag, entry.id) && tag !== String(entry.tag || '')) return;
+      byTag.set(tag, animal);
+    });
+    return Array.from(byTag.values()).sort((a, b) => sortEntriesByTagAsc({tag: a.tag}, {tag: b.tag}));
   }
 
   // Load entries when session is set, and (for broiler/pig) hydrate the grid
@@ -872,7 +901,12 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
   }
   function startEditEntry(entry) {
     setEditingEntryId(entry.id);
-    setEditDraft({weight: String(entry.weight ?? ''), note: entry.note || ''});
+    setEditDraft({
+      tag: entry.tag || '',
+      weight: String(entry.weight ?? ''),
+      note: entry.note || '',
+      newTagFlag: !!entry.new_tag_flag,
+    });
     setErr('');
   }
   async function saveEditEntry(entry) {
@@ -883,6 +917,52 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     }
     setErr('');
     const newNote = (editDraft.note || '').trim();
+    const newTag = (editDraft.tag || '').trim();
+    const editingTaggedAnimal = species === 'cattle' || species === 'sheep';
+    const editNewTagFlag = species === 'cattle' && !!editDraft.newTagFlag;
+    let updates = {weight: w, note: newNote || null};
+
+    if (editingTaggedAnimal) {
+      if (!newTag) {
+        setErr('Tag is required.');
+        return;
+      }
+      if (entryTagUsedByAnotherEntry(newTag, entry.id)) {
+        setErr('Tag #' + newTag + ' is already weighed in this session.');
+        return;
+      }
+      if (entry.target_processing_batch_id && newTag !== String(entry.tag || '')) {
+        setErr('This entry is already attached to a processing batch. Remove that first before changing tag.');
+        return;
+      }
+      const animal = findDirectoryAnimalByTag(newTag);
+      if (species === 'sheep' && !animal) {
+        setErr('Pick a sheep from this flock.');
+        return;
+      }
+      if (species === 'cattle') {
+        if (editNewTagFlag && animal) {
+          setErr('Tag #' + newTag + ' is already assigned to a cow. Use existing tag instead of Missing Tag.');
+          return;
+        }
+        if (!editNewTagFlag && !animal) {
+          setErr('Pick an existing cow or mark this as Missing Tag.');
+          return;
+        }
+      }
+      let nextReconcileIntent = null;
+      if (editNewTagFlag) nextReconcileIntent = 'replacement';
+      else if (entry.reconcile_intent === 'new_cow' && newTag === String(entry.tag || '')) {
+        nextReconcileIntent = 'new_cow';
+      }
+      updates = {
+        tag: newTag,
+        weight: w,
+        note: newNote || null,
+        new_tag_flag: editNewTagFlag,
+        reconcile_intent: nextReconcileIntent,
+      };
+    }
 
     // Phase 1C-D — pig fresh: edit local entries[] only, no DB call. Locks
     // offline edit-before-Save-Draft (Codex review v3 #1).
@@ -893,10 +973,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     }
 
     setBusy(true);
-    const {error} = await sb
-      .from('weigh_ins')
-      .update({weight: w, note: newNote || null})
-      .eq('id', entry.id);
+    const {error} = await sb.from('weigh_ins').update(updates).eq('id', entry.id);
     if (error) {
       setBusy(false);
       setErr('Save failed: ' + error.message);
@@ -905,15 +982,15 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     // Cattle: keep cattle_comments in sync with the entry's note. Delete any
     // prior comment, then re-insert if the new note is non-empty. Keeps the
     // cow's timeline accurate if a team member fat-fingers a note.
-    if (species === 'cattle' && entry.tag) {
+    if (species === 'cattle' && newTag) {
       try {
         await sb.from('cattle_comments').delete().eq('source', 'weigh_in').eq('reference_id', entry.id);
         if (newNote) {
-          const cow = cattleList.find((c) => c.tag === entry.tag);
+          const cow = cattleList.find((c) => c.tag === newTag);
           await sb.from('cattle_comments').insert({
             id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
             cattle_id: cow ? cow.id : null,
-            cattle_tag: entry.tag,
+            cattle_tag: newTag,
             comment: newNote,
             team_member: teamMember || null,
             source: 'weigh_in',
@@ -924,7 +1001,9 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
         /* table may not exist yet */
       }
     }
-    setEntries((prev) => prev.map((e) => (e.id === entry.id ? {...e, weight: w, note: newNote || null} : e)));
+    setEntries((prev) =>
+      prev.map((e) => (e.id === entry.id ? {...e, ...updates, note: newNote || null, weight: w} : e)),
+    );
     setEditingEntryId(null);
     setBusy(false);
   }
@@ -2804,10 +2883,14 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                 const prior = priorByTag[e.tag];
                 const adg = prior ? adgLbPerDay(prior.weight, prior.date, e.weight, curDate) : null;
                 const isEditing = editingEntryId === e.id;
+                const editRequiresTag = species === 'cattle' || species === 'sheep';
+                const editSaveDisabled =
+                  busy || !(parseFloat(editDraft.weight) > 0) || (editRequiresTag && !(editDraft.tag || '').trim());
                 if (isEditing)
                   return (
                     <div
                       key={e.id}
+                      data-public-weighin-entry-edit="1"
                       data-breeding-blacklist-recent-entry={isBlacklisted ? '1' : undefined}
                       style={{
                         padding: isBlacklisted ? '8px 8px' : '8px 0',
@@ -2821,51 +2904,121 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         boxSizing: 'border-box',
                       }}
                     >
-                      <div style={{display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap'}}>
-                        {e.tag && (
-                          <span
+                      <div style={{marginBottom: 2}}>
+                        <label style={{...lblS, fontSize: 12}}>Tag #</label>
+                        {species === 'cattle' && editDraft.newTagFlag ? (
+                          <input
+                            data-public-weighin-edit-tag="1"
+                            type="text"
+                            value={editDraft.tag}
+                            onChange={(ev) => setEditDraft((d) => ({...d, tag: ev.target.value}))}
+                            placeholder="New/missing tag #"
                             style={{
-                              fontWeight: 700,
-                              color: isBlacklisted ? '#991b1b' : '#111827',
-                              minWidth: 50,
+                              ...inpS,
                               fontSize: 12,
+                              padding: '7px 10px',
+                              border: '1px solid #f59e0b',
+                              background: '#fffbeb',
+                            }}
+                          />
+                        ) : (
+                          <select
+                            data-public-weighin-edit-tag="1"
+                            value={editDraft.tag}
+                            onChange={(ev) => setEditDraft((d) => ({...d, tag: ev.target.value}))}
+                            style={{
+                              ...inpS,
+                              fontSize: 12,
+                              padding: '7px 10px',
+                              ...(species === 'cattle' &&
+                              findDirectoryAnimalByTag(editDraft.tag) &&
+                              findDirectoryAnimalByTag(editDraft.tag).breeding_blacklist
+                                ? blacklistSelectS
+                                : {}),
                             }}
                           >
-                            #{e.tag}
-                          </span>
+                            <option value="">Select tag...</option>
+                            {buildEditableTagOptions(e).map((optionAnimal) => (
+                              <option
+                                key={optionAnimal.id || optionAnimal.tag}
+                                value={optionAnimal.tag}
+                                data-breeding-blacklist-option={optionAnimal.breeding_blacklist ? '1' : undefined}
+                                style={optionAnimal.breeding_blacklist ? blacklistOptionS : undefined}
+                              >
+                                {formatAnimalOption(optionAnimal, session && session.date)}
+                              </option>
+                            ))}
+                          </select>
                         )}
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={editDraft.weight}
-                          onChange={(ev) => setEditDraft((d) => ({...d, weight: ev.target.value}))}
-                          placeholder="lb"
-                          style={{
-                            fontSize: 13,
-                            padding: '6px 10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: 6,
-                            fontFamily: 'inherit',
-                            width: 90,
-                          }}
-                        />
+                        {species === 'cattle' && (
+                          <div style={{display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap'}}>
+                            <button
+                              type="button"
+                              onClick={() => setEditDraft((d) => ({...d, newTagFlag: false}))}
+                              data-public-weighin-edit-existing-tag="1"
+                              style={{
+                                flex: '1 1 120px',
+                                padding: '6px 8px',
+                                borderRadius: 7,
+                                border: '1px solid #d1d5db',
+                                background: editDraft.newTagFlag ? 'white' : '#ecfdf5',
+                                color: '#065f46',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              Use existing tag
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditDraft((d) => ({...d, newTagFlag: true}))}
+                              data-public-weighin-edit-missing-tag="1"
+                              style={{
+                                flex: '1 1 120px',
+                                padding: '6px 8px',
+                                borderRadius: 7,
+                                border: '1px dashed #b45309',
+                                background: editDraft.newTagFlag ? '#fffbeb' : 'white',
+                                color: '#92400e',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              Missing Tag
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <input
-                        type="text"
-                        value={editDraft.note}
-                        onChange={(ev) => setEditDraft((d) => ({...d, note: ev.target.value}))}
-                        placeholder="Note (optional)"
-                        style={{
-                          fontSize: 13,
-                          padding: '6px 10px',
-                          border: '1px solid #d1d5db',
-                          borderRadius: 6,
-                          fontFamily: 'inherit',
-                          width: '100%',
-                          boxSizing: 'border-box',
-                        }}
-                      />
+                      <div style={{display: 'grid', gridTemplateColumns: 'minmax(0, 120px) minmax(0, 1fr)', gap: 8}}>
+                        <div>
+                          <label style={{...lblS, fontSize: 12}}>Weight (lbs) *</label>
+                          <input
+                            data-public-weighin-edit-weight="1"
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={editDraft.weight}
+                            onChange={(ev) => setEditDraft((d) => ({...d, weight: ev.target.value}))}
+                            placeholder="0"
+                            style={{...inpS, fontSize: 12, padding: '7px 10px'}}
+                          />
+                        </div>
+                        <div>
+                          <label style={{...lblS, fontSize: 12}}>Note</label>
+                          <textarea
+                            data-public-weighin-edit-note="1"
+                            value={editDraft.note}
+                            onChange={(ev) => setEditDraft((d) => ({...d, note: ev.target.value}))}
+                            rows={2}
+                            placeholder="Optional"
+                            style={{...inpS, fontSize: 12, padding: '7px 10px', resize: 'vertical'}}
+                          />
+                        </div>
+                      </div>
                       <div style={{display: 'flex', gap: 6, justifyContent: 'flex-end'}}>
                         <button
                           onClick={() => setEditingEntryId(null)}
@@ -2884,21 +3037,16 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         </button>
                         <button
                           onClick={() => saveEditEntry(e)}
-                          disabled={busy || !(parseFloat(editDraft.weight) > 0)}
+                          disabled={editSaveDisabled}
                           style={{
                             padding: '5px 14px',
                             borderRadius: 6,
                             border: 'none',
-                            background:
-                              busy || !(parseFloat(editDraft.weight) > 0)
-                                ? '#9ca3af'
-                                : species === 'sheep'
-                                  ? '#0f766e'
-                                  : '#1e40af',
+                            background: editSaveDisabled ? '#9ca3af' : species === 'sheep' ? '#0f766e' : '#1e40af',
                             color: 'white',
                             fontSize: 12,
                             fontWeight: 600,
-                            cursor: busy || !(parseFloat(editDraft.weight) > 0) ? 'not-allowed' : 'pointer',
+                            cursor: editSaveDisabled ? 'not-allowed' : 'pointer',
                             fontFamily: 'inherit',
                           }}
                         >

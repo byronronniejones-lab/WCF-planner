@@ -139,6 +139,19 @@ describe('WeighInsWebform.jsx static lock', () => {
     expect(source).toContain('birthDate: newCowBirthDate');
   });
 
+  it('lets public cattle and sheep recent-entry edits change the full entry fields', () => {
+    expect(source).toContain("{tag: '', weight: '', note: '', newTagFlag: false}");
+    expect(source).toContain('data-public-weighin-entry-edit="1"');
+    expect(source).toContain('data-public-weighin-edit-tag="1"');
+    expect(source).toContain('data-public-weighin-edit-weight="1"');
+    expect(source).toContain('data-public-weighin-edit-note="1"');
+    expect(source).toContain('data-public-weighin-edit-missing-tag="1"');
+    expect(source).toContain('tag: newTag');
+    expect(source).toContain('new_tag_flag: editNewTagFlag');
+    expect(source).toContain("if (editNewTagFlag) nextReconcileIntent = 'replacement'");
+    expect(source).toContain('entryTagUsedByAnotherEntry(newTag, entry.id)');
+  });
+
   it('aligns public cattle and sheep recent entries on a fixed grid', () => {
     expect(source).toContain('data-public-weighin-recent-entry-grid="1"');
     expect(source).toContain("gridTemplateColumns: '64px 54px minmax(82px, 1fr) 72px 88px minmax(0, 86px) 92px'");
