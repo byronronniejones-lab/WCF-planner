@@ -70,8 +70,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
   const [entryMode, setEntryMode] = React.useState('normal');
   const [newCowSex, setNewCowSex] = React.useState('cow');
   const [newCowBirthDate, setNewCowBirthDate] = React.useState('');
-  // Optional prior tag for "+ New Cow" — captures the tag the cow was wearing
-  // when purchased from another farm so its history is recorded on arrival.
+  // Prior tag is only for Swap Tag, where an existing cow is being retagged.
   const [priorTagInput, setPriorTagInput] = React.useState('');
   // Pig/broiler grid: 30 weight slots (2 cols x 15 rows), single session note
   const [weightInputs, setWeightInputs] = React.useState(Array(30).fill(''));
@@ -671,7 +670,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
   // Cattle entry modes:
   //   'normal'      — pick existing tag, weigh in
   //   'new_cow'     — create a fresh cattle row in the session's herd (for
-  //                   never-tagged calves etc). priorTag optional.
+  //                   never-tagged calves etc). No prior tag is captured here.
   //   'replacement' — flag the entry; reconcile to a known cow later
   //                   (when we don't know which cow lost its tag yet).
   //   'retag'       — NEW: retag a known cow on the spot. Caller supplies
@@ -721,10 +720,6 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
         setErr('Tag #' + tag + ' already exists in the directory.');
         return;
       }
-      if (priorTag && priorTag.trim() === tag.trim()) {
-        setErr('Prior tag and new tag cannot be the same.');
-        return;
-      }
     }
     let retagCow = null;
     if (mode === 'retag') {
@@ -754,19 +749,13 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     // For new_cow: create the cattle row first so the weigh-in references a real cow.
     if (mode === 'new_cow' && herd) {
       const cowId = String(Date.now() + 1) + Math.random().toString(36).slice(2, 6);
-      // Known at entry time → labeled as "Purchase tag" (source='import') per
-      // the workflow-based convention Ronnie picked for auto-select.
-      const oldTags =
-        priorTag && priorTag.trim()
-          ? [{tag: priorTag.trim(), changed_at: new Date().toISOString(), source: 'import'}]
-          : [];
       const cowRec = {
         id: cowId,
         tag: tag,
         herd: herd,
         sex: sex,
         birth_date: birthDate || null,
-        old_tags: oldTags,
+        old_tags: [],
       };
       const cowIns = await sb.from('cattle').insert(cowRec);
       if (cowIns.error) {
@@ -2062,6 +2051,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         setEntryMode('replacement');
                         setTagInput('');
                         setNewCowBirthDate('');
+                        setPriorTagInput('');
                       }}
                       style={{
                         flex: '1 1 120px',
@@ -2168,19 +2158,6 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                       type="date"
                       value={newCowBirthDate}
                       onChange={(e) => setNewCowBirthDate(e.target.value)}
-                      style={inpS}
-                    />
-                  </div>
-                  <div style={{marginBottom: 0}}>
-                    <label style={lblS}>
-                      Prior tag{' '}
-                      <span style={{fontSize: 10, color: '#9ca3af'}}>(optional — e.g. tag from selling farm)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={priorTagInput}
-                      onChange={(e) => setPriorTagInput(e.target.value)}
-                      placeholder="leave blank if none"
                       style={inpS}
                     />
                   </div>
@@ -3284,7 +3261,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         data-breeding-blacklist-option={c.breeding_blacklist ? '1' : undefined}
                         style={c.breeding_blacklist ? blacklistOptionS : undefined}
                       >
-                        {'#' + c.tag + (c.sex ? ' \u00b7 ' + c.sex : '') + (c.breed ? ' \u00b7 ' + c.breed : '')}
+                        {formatAnimalOption(c, session && session.date) + (c.breed ? ' \u00b7 ' + c.breed : '')}
                       </option>
                     ))}
                   </select>

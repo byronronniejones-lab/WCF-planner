@@ -131,12 +131,32 @@ describe('WeighInsWebform.jsx static lock', () => {
     expect(source).toContain("return '#' + tag + sex +");
   });
 
+  it('shows prior weights in the public reconcile dropdown labels', () => {
+    const start = source.indexOf('pendingReconciles.map');
+    const end = source.indexOf('{entries.length > 0 &&', start);
+    const reconcileBlock = source.slice(start, end);
+    expect(reconcileBlock).toContain('remainingCows.map');
+    expect(reconcileBlock).toContain('formatAnimalOption(c, session && session.date)');
+    expect(reconcileBlock).toContain('data-breeding-blacklist-option');
+  });
+
   it('lets inline new-cow weigh-in entries capture optional DOB', () => {
     expect(source).toContain('const [newCowBirthDate, setNewCowBirthDate] = React.useState');
     expect(source).toContain('birth_date: birthDate || null');
     expect(source).toContain('type="date"');
     expect(source).toContain('value={newCowBirthDate}');
     expect(source).toContain('birthDate: newCowBirthDate');
+  });
+
+  it('does not ask for prior tag in the public new-cow weigh-in flow', () => {
+    const start = source.indexOf("entryMode === 'new_cow'");
+    const end = source.indexOf("entryMode === 'retag'", start);
+    const newCowBlock = source.slice(start, end);
+    expect(newCowBlock).toContain('New tag # *');
+    expect(newCowBlock).toContain('DOB');
+    expect(newCowBlock).not.toContain('Prior tag');
+    expect(newCowBlock).not.toContain('priorTagInput');
+    expect(source).toContain('old_tags: []');
   });
 
   it('lets public cattle and sheep recent-entry edits change the full entry fields', () => {
