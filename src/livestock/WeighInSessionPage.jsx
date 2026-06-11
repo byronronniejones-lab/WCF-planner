@@ -55,6 +55,7 @@ const inp = {
   fontFamily: 'inherit',
   boxSizing: 'border-box',
 };
+const BLACKLIST_OPTION_STYLE = {backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 700};
 const WEIGHIN_ENTRY_AUTOSAVE_DELAY_MS = 700;
 const WEIGHIN_ENTRY_ACTIVITY_EXCLUDE = [
   'id',
@@ -980,24 +981,29 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         setNotice({kind: 'error', message: 'Prior tag and new tag cannot be the same.'});
         return;
       }
-      const existingAtNewTag = animals.find((c) => c.tag === tag);
-      if (existingAtNewTag) {
-        setNotice({kind: 'error', message: 'Tag #' + tag + ' is already assigned to another cow.'});
-        return;
-      }
       const cow = findAnimalByPriorTag(priorTag, animals);
       if (!cow) {
         setNotice({kind: 'error', message: 'No cow found with prior tag #' + priorTag + '.'});
         return;
       }
-      const updatedOldTags = (Array.isArray(cow.old_tags) ? cow.old_tags : []).concat([
-        {tag: priorTag, changed_at: new Date().toISOString(), source: 'import'},
-      ]);
-      const swapTable = session.species === 'sheep' ? 'sheep' : 'cattle';
-      const cowUpd = await sb.from(swapTable).update({tag, old_tags: updatedOldTags}).eq('id', cow.id);
-      if (cowUpd.error) {
-        setNotice({kind: 'error', message: 'Tag swap failed: ' + cowUpd.error.message});
+      const existingAtNewTag = animals.find((c) => c.tag === tag);
+      if (existingAtNewTag && existingAtNewTag.id !== cow.id) {
+        setNotice({kind: 'error', message: 'Tag #' + tag + ' is already assigned to another cow.'});
         return;
+      }
+      const existingOldTags = Array.isArray(cow.old_tags) ? cow.old_tags : [];
+      const priorTagAlreadyRecorded = existingOldTags.some((oldTag) => String(oldTag && oldTag.tag) === priorTag);
+      const updatedOldTags = priorTagAlreadyRecorded
+        ? existingOldTags
+        : existingOldTags.concat([{tag: priorTag, changed_at: new Date().toISOString(), source: 'import'}]);
+      const swapTable = session.species === 'sheep' ? 'sheep' : 'cattle';
+      const cowNeedsUpdate = cow.tag !== tag || updatedOldTags !== existingOldTags;
+      if (cowNeedsUpdate) {
+        const cowUpd = await sb.from(swapTable).update({tag, old_tags: updatedOldTags}).eq('id', cow.id);
+        if (cowUpd.error) {
+          setNotice({kind: 'error', message: 'Tag swap failed: ' + cowUpd.error.message});
+          return;
+        }
       }
       const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
       const {error: insErr} = await sb.from('weigh_ins').insert({
@@ -1007,7 +1013,7 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         weight,
         note: addForm.note || null,
         new_tag_flag: false,
-        reconcile_intent: 'retag',
+        reconcile_intent: null,
         entered_at: new Date().toISOString(),
       });
       if (insErr) {
@@ -2633,7 +2639,16 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                     >
                       <option value="">{'Reconcile to known cow... (' + remainingCows.length + ' remaining)'}</option>
                       {remainingCows.map((c) => (
-                        <option key={c.id} value={c.id}>
+                        <option
+                          key={c.id}
+                          value={c.id}
+                          data-breeding-blacklist-option={
+                            session.species === 'cattle' && c.breeding_blacklist ? '1' : undefined
+                          }
+                          style={
+                            session.species === 'cattle' && c.breeding_blacklist ? BLACKLIST_OPTION_STYLE : undefined
+                          }
+                        >
                           {'#' +
                             c.tag +
                             ' (' +
@@ -2679,7 +2694,16 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
                     >
                       <option value="">{'Pick tag... (' + remainingTags.length + ' remaining)'}</option>
                       {remainingCows.map((c) => (
-                        <option key={c.id} value={c.tag}>
+                        <option
+                          key={c.id}
+                          value={c.tag}
+                          data-breeding-blacklist-option={
+                            session.species === 'cattle' && c.breeding_blacklist ? '1' : undefined
+                          }
+                          style={
+                            session.species === 'cattle' && c.breeding_blacklist ? BLACKLIST_OPTION_STYLE : undefined
+                          }
+                        >
                           {'#' + c.tag + (c.sex ? ' · ' + c.sex : '')}
                         </option>
                       ))}

@@ -189,7 +189,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     setErr('');
     if (species === 'cattle') {
       sb.from('cattle')
-        .select('id, tag, herd, birth_date, sex, breed, old_tags')
+        .select('id, tag, herd, birth_date, sex, breed, old_tags, breeding_blacklist')
         .is('deleted_at', null)
         .then(({data}) => {
           if (data) setCattleList(data);
@@ -321,14 +321,15 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     const adg = (parseFloat(curWt) - parseFloat(priorWt)) / days;
     return Number.isFinite(adg) ? adg : null;
   }
-  // Format an animal directory row for the tag dropdown: '#101 · 2y 3m · 850 lb'.
+  // Format an animal directory row for the tag dropdown: '#101 · cow · 2y 3m · 850 lb'.
   // Missing birth → age '—'; missing prior weight → 'new'.
   function formatAnimalOption(animal, sessionDate) {
     const tag = animal.tag || '?';
+    const sex = animal.sex ? ' \u00b7 ' + animal.sex : '';
     const age = ageYM(animal.birth_date, sessionDate);
     const prior = priorByTag[tag];
     const priorStr = prior ? Math.round(prior.weight) + ' lb' : 'new';
-    return '#' + tag + ' · ' + age + ' · ' + priorStr;
+    return '#' + tag + sex + ' \u00b7 ' + age + ' \u00b7 ' + priorStr;
   }
 
   // Load entries when session is set, and (for broiler/pig) hydrate the grid
@@ -705,13 +706,14 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
         setErr('Prior tag and new tag cannot be the same.');
         return;
       }
-      if (cattleList.find((c) => c.tag === tag.trim())) {
-        setErr('Tag #' + tag + ' is already assigned to another cow.');
-        return;
-      }
       retagCow = findCowByPriorTag(priorTag);
       if (!retagCow) {
         setErr('No cow found with prior tag #' + priorTag + '. Check the number or use + Missing Tag instead.');
+        return;
+      }
+      const existingAtNewTag = cattleList.find((c) => c.tag === tag.trim());
+      if (existingAtNewTag && existingAtNewTag.id !== retagCow.id) {
+        setErr('Tag #' + tag + ' is already assigned to another cow.');
         return;
       }
     }
@@ -744,18 +746,28 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
       // Tag known at entry → "Purchase tag" (source='import'). Matches the
       // common case of bulk-retagging a newly-purchased group whose prior
       // tag was the selling-farm number.
-      const updatedOldTags = (Array.isArray(retagCow.old_tags) ? retagCow.old_tags : []).concat([
-        {tag: priorTag.trim(), changed_at: new Date().toISOString(), source: 'import'},
-      ]);
-      const cowUpd = await sb.from('cattle').update({tag: tag.trim(), old_tags: updatedOldTags}).eq('id', retagCow.id);
-      if (cowUpd.error) {
-        setBusy(false);
-        setErr('Could not retag cow: ' + cowUpd.error.message);
-        return;
-      }
-      setCattleList((prev) =>
-        prev.map((c) => (c.id === retagCow.id ? {...c, tag: tag.trim(), old_tags: updatedOldTags} : c)),
+      const existingOldTags = Array.isArray(retagCow.old_tags) ? retagCow.old_tags : [];
+      const priorTagAlreadyRecorded = existingOldTags.some(
+        (oldTag) => String(oldTag && oldTag.tag) === priorTag.trim(),
       );
+      const updatedOldTags = priorTagAlreadyRecorded
+        ? existingOldTags
+        : existingOldTags.concat([{tag: priorTag.trim(), changed_at: new Date().toISOString(), source: 'import'}]);
+      const cowNeedsUpdate = retagCow.tag !== tag.trim() || updatedOldTags !== existingOldTags;
+      if (cowNeedsUpdate) {
+        const cowUpd = await sb
+          .from('cattle')
+          .update({tag: tag.trim(), old_tags: updatedOldTags})
+          .eq('id', retagCow.id);
+        if (cowUpd.error) {
+          setBusy(false);
+          setErr('Could not retag cow: ' + cowUpd.error.message);
+          return;
+        }
+        setCattleList((prev) =>
+          prev.map((c) => (c.id === retagCow.id ? {...c, tag: tag.trim(), old_tags: updatedOldTags} : c)),
+        );
+      }
     }
     const rec = {
       id,
@@ -764,8 +776,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
       weight: parseFloat(weight),
       note: note || null,
       new_tag_flag: mode === 'replacement',
-      reconcile_intent:
-        mode === 'replacement' ? 'replacement' : mode === 'new_cow' ? 'new_cow' : mode === 'retag' ? 'retag' : null,
+      reconcile_intent: mode === 'replacement' ? 'replacement' : mode === 'new_cow' ? 'new_cow' : null,
     };
     const {error} = await sb.from('weigh_ins').insert(rec);
     if (error) {
@@ -1218,6 +1229,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     color: '#111827',
     boxSizing: 'border-box',
   };
+  const blacklistOptionS = {backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 700};
   const lblS = {display: 'block', fontSize: 13, color: '#374151', marginBottom: 5, fontWeight: 500};
   const logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
@@ -1862,7 +1874,12 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                       {remainingTags.map((t) => {
                         const cow = cattleList.find((c) => c.tag === t && c.herd === cattleHerd);
                         return (
-                          <option key={t} value={t}>
+                          <option
+                            key={t}
+                            value={t}
+                            data-breeding-blacklist-option={cow && cow.breeding_blacklist ? '1' : undefined}
+                            style={cow && cow.breeding_blacklist ? blacklistOptionS : undefined}
+                          >
                             {cow ? formatAnimalOption(cow, session && session.date) : '#' + t}
                           </option>
                         );
@@ -2996,7 +3013,12 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   >
                     <option value="">{'Which cow is this? (' + remainingCows.length + ' remaining)'}</option>
                     {remainingCows.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <option
+                        key={c.id}
+                        value={c.id}
+                        data-breeding-blacklist-option={c.breeding_blacklist ? '1' : undefined}
+                        style={c.breeding_blacklist ? blacklistOptionS : undefined}
+                      >
                         {'#' + c.tag + (c.sex ? ' \u00b7 ' + c.sex : '') + (c.breed ? ' \u00b7 ' + c.breed : '')}
                       </option>
                     ))}

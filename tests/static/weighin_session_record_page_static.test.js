@@ -356,6 +356,17 @@ describe('WeighInSessionPage — cattle entry operations', () => {
     expect(pageSrc).toContain('priorTag');
     expect(pageSrc).toContain('Swap + Add');
   });
+  it('does not write forbidden retag reconcile_intent for resolved swap-tag entries', () => {
+    expect(pageSrc).not.toContain("reconcile_intent: 'retag'");
+    expect(pageSrc).toContain('reconcile_intent: null');
+    expect(pageSrc).toContain('existingAtNewTag && existingAtNewTag.id !== cow.id');
+  });
+  it('shades blacklisted cattle in add/reconcile dropdowns', () => {
+    expect(pageSrc).toContain('BLACKLIST_OPTION_STYLE');
+    expect(pageSrc).toContain('data-breeding-blacklist-option');
+    expect(pageSrc).toContain("backgroundColor: '#fee2e2'");
+    expect(pageSrc).toContain("color: '#991b1b'");
+  });
 });
 
 describe('WeighInSessionPage — cattle weigh-in entry parity (Lane 18)', () => {

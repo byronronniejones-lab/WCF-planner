@@ -85,6 +85,31 @@ describe('WeighInsWebform.jsx static lock', () => {
   it('pig recent-entries header renders the live entries.length count', () => {
     expect(source).toMatch(/'Recent entries \(' \+ entries\.length \+ '\)'/);
   });
+
+  it('does not write forbidden retag reconcile_intent for resolved swap-tag entries', () => {
+    expect(source).not.toContain("mode === 'retag' ? 'retag'");
+    expect(source).toContain(
+      "reconcile_intent: mode === 'replacement' ? 'replacement' : mode === 'new_cow' ? 'new_cow' : null",
+    );
+  });
+
+  it('allows retry after a partial swap-tag side effect for the same cow', () => {
+    expect(source).toContain('existingAtNewTag && existingAtNewTag.id !== retagCow.id');
+    expect(source).toContain('cowNeedsUpdate');
+  });
+
+  it('shades blacklisted cattle in the public weigh-in dropdowns', () => {
+    expect(source).toContain('breeding_blacklist');
+    expect(source).toContain('blacklistOptionS');
+    expect(source).toContain('data-breeding-blacklist-option');
+    expect(source).toContain("backgroundColor: '#fee2e2'");
+    expect(source).toContain("color: '#991b1b'");
+  });
+
+  it('includes sex in the public animal dropdown label', () => {
+    expect(source).toContain('const sex = animal.sex ?');
+    expect(source).toContain("return '#' + tag + sex +");
+  });
 });
 
 describe('public webform app_store boundary', () => {
