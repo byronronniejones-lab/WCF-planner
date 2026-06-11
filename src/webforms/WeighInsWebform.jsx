@@ -1839,7 +1839,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
   if (stage === 'session' && session)
     return (
       <div style={wfBg}>
-        <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '1rem'}}>
+        <div style={{maxWidth: 640, margin: '0 auto', paddingTop: '1rem'}}>
           {logoEl}
           <div style={cardS}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10}}>

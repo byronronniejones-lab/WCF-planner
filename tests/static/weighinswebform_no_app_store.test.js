@@ -126,6 +126,11 @@ describe('WeighInsWebform.jsx static lock', () => {
     expect(source).toContain("width: '100%'");
     expect(source).not.toContain("overflowX: 'auto'");
   });
+
+  it('keeps the active weighing screen wide enough for aligned recent-entry columns', () => {
+    expect(source).toContain("stage === 'session' && session");
+    expect(source).toContain('style={{maxWidth: 640, margin:');
+  });
 });
 
 describe('public webform app_store boundary', () => {
