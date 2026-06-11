@@ -512,13 +512,6 @@
   color: var(--text);
   font-weight: 750;
 }
-.home .animal-history-table td:first-child span {
-  display: block;
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-}
 .home .animal-history-total-cell {
   color: var(--brand) !important;
   font-weight: 800 !important;

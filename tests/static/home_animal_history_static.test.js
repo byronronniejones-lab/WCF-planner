@@ -41,6 +41,7 @@ describe('Home Animals on Farm history route', () => {
     expect(pageSrc).toContain('data-animal-history-retry="1"');
     expect(pageSrc).toContain('<InlineNotice notice={loadError} />');
     expect(pageSrc).toContain('CHART_SERIES');
+    expect(pageSrc).not.toContain('{row.snapshotDate}');
   });
 
   it('animalHistory helper exports month-end species logic', () => {
@@ -55,5 +56,6 @@ describe('Home Animals on Farm history route', () => {
     ]) {
       expect(helperSrc).toContain(`export ${name === 'ANIMAL_HISTORY_SPECIES' ? 'const' : 'function'} ${name}`);
     }
+    expect(helperSrc).toContain("export const ANIMAL_HISTORY_START_MONTH = '2024-10'");
   });
 });

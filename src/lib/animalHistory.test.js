@@ -1,26 +1,37 @@
 import {describe, expect, it} from 'vitest';
 import {
+  ANIMAL_HISTORY_START_MONTH,
   broilersOnFarmAt,
   buildAnimalHistoryRows,
   cattleOnFarmAt,
+  formatAnimalHistoryMonth,
   layersOnFarmAt,
   pigsOnFarmAt,
   sheepOnFarmAt,
 } from './animalHistory.js';
 
 describe('animal history month-end counts', () => {
-  it('builds newest-first rows from the earliest planner evidence through the current month', () => {
+  it('builds newest-first rows from the Oct 2024 floor through the current month', () => {
     const rows = buildAnimalHistoryRows(
       {
-        batches: [{name: 'B-24-01', hatchDate: '2024-02-10', processingDate: '2024-04-15', birdCountActual: 10}],
+        batches: [{name: 'B-24-01', hatchDate: '2024-02-10', processingDate: '2024-11-15', birdCountActual: 10}],
         broilerDailys: [],
       },
-      '2024-05-10',
+      '2024-12-10',
     );
 
-    expect(rows.map((r) => r.month)).toEqual(['2024-05', '2024-04', '2024-03', '2024-02']);
-    expect(rows.find((r) => r.month === '2024-03').broilers).toBe(10);
-    expect(rows.find((r) => r.month === '2024-04').broilers).toBe(0);
+    expect(ANIMAL_HISTORY_START_MONTH).toBe('2024-10');
+    expect(rows.map((r) => r.month)).toEqual(['2024-12', '2024-11', '2024-10']);
+    expect(rows.find((r) => r.month === '2024-10').broilers).toBe(10);
+    expect(rows.find((r) => r.month === '2024-11').broilers).toBe(0);
+  });
+
+  it('formats month and snapshot labels without local-time month rollback', () => {
+    expect(formatAnimalHistoryMonth('2026-06')).toBe('Jun 2026');
+  });
+
+  it('does not invent rows before any planner evidence exists', () => {
+    expect(buildAnimalHistoryRows({}, '2026-06-11')).toEqual([]);
   });
 
   it('counts broilers from hatch through the day before processing with mortality through the snapshot', () => {

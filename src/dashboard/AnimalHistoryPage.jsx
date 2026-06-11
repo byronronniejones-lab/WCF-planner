@@ -286,7 +286,6 @@ export default function AnimalHistoryPage({Header}) {
                   <tr key={row.month}>
                     <td>
                       <strong>{formatAnimalHistoryMonth(row.month)}</strong>
-                      <span>{row.snapshotDate}</span>
                     </td>
                     {ANIMAL_HISTORY_SPECIES.map((species) => (
                       <td key={species.key}>{valueLabel(row[species.key])}</td>

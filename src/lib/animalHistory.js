@@ -10,6 +10,7 @@ export const ANIMAL_HISTORY_SPECIES = Object.freeze([
 
 export const ACTIVE_CATTLE_HERDS = Object.freeze(['mommas', 'backgrounders', 'finishers', 'bulls']);
 export const ACTIVE_SHEEP_FLOCKS = Object.freeze(['rams', 'ewes', 'feeders']);
+export const ANIMAL_HISTORY_START_MONTH = '2024-10';
 
 const ACTIVE_CATTLE_SET = new Set(ACTIVE_CATTLE_HERDS);
 const ACTIVE_SHEEP_SET = new Set(ACTIVE_SHEEP_FLOCKS);
@@ -461,9 +462,13 @@ export function inferAnimalHistoryStartMonth(data = {}) {
 
 export function buildAnimalHistoryRows(data = {}, asOfDate = new Date()) {
   const today = isoDate(asOfDate) || new Date().toISOString().slice(0, 10);
-  const startMonth = inferAnimalHistoryStartMonth(data);
+  const inferredStartMonth = inferAnimalHistoryStartMonth(data);
   const endMonth = monthKey(today);
-  if (!startMonth || !endMonth) return [];
+  if (!inferredStartMonth || !endMonth) return [];
+  const startMonth =
+    inferredStartMonth && inferredStartMonth > ANIMAL_HISTORY_START_MONTH
+      ? inferredStartMonth
+      : ANIMAL_HISTORY_START_MONTH;
   return monthsBetween(startMonth, endMonth)
     .map((month) => {
       const snapshotDate = snapshotDateForMonth(month, today);
@@ -482,10 +487,21 @@ export function buildAnimalHistoryRows(data = {}, asOfDate = new Date()) {
     .reverse();
 }
 
+function formatUtcDate(value, options) {
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(value || ''));
+  if (!match) return value || '';
+  const year = parseInt(match[1], 10);
+  const monthNum = parseInt(match[2], 10);
+  const day = parseInt(match[3] || '1', 10);
+  return new Date(Date.UTC(year, monthNum - 1, day)).toLocaleDateString('en-US', {
+    ...options,
+    timeZone: 'UTC',
+  });
+}
+
 export function formatAnimalHistoryMonth(month) {
   if (!/^\d{4}-\d{2}$/.test(String(month || ''))) return month || '';
-  const [year, monthNum] = month.split('-').map((v) => parseInt(v, 10));
-  return new Date(Date.UTC(year, monthNum - 1, 1)).toLocaleDateString('en-US', {month: 'short', year: 'numeric'});
+  return formatUtcDate(month, {month: 'short', year: 'numeric'});
 }
 
 export const _animalHistoryInternals = {

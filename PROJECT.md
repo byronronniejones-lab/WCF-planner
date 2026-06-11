@@ -8,15 +8,18 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-11.
-Current pushed checkpoint: `origin/main` commit `841f99e` (docs wrap only).
-Current pushed source checkpoint: `b562ac5`. On 2026-06-10, after the `d7fc2c9`
-operational-list/token checkpoint, four code-only lanes shipped live: global
-openable hover affordance (`1881593`), visible comment farm-time timestamps
-(`e80e161`), Pig Batch Metrics Grid Cleanup with estimate labeling (`2e960cb`,
-merged `b0e89eb`), and Broiler weigh-in-sourced read-only Week 4/6 weights
-(`0bb7689`, merged `b562ac5`). Netlify auto-deploys from GitHub `main`;
-`b562ac5` was live-verified on 2026-06-10 by 200 response, asset-hash rotation
-to `assets/main-DIBi75mC.js`, and served hover/focus CSS.
+Current pushed checkpoint: `origin/main` commit `bb8fdad` (pushed and
+live-verified 2026-06-11).
+Current pushed source checkpoint: `bb8fdad`. The 2026-06-11 push integrated the
+source-wide openable hover rollout (`0efff11`), Codex Lane E/F load-error chrome
+closure (`8226ae6`, merged `920f8c2`), Codex Lane I record-title compact-size
+slice (`27337d7`, merged `a2788ae`), cattle calf/dam lineage stale-spec triage
+(`9d17855`), Animals on Farm monthly history page (`6d1ffd5`, merged
+`bb8fdad`), and the `PROJECT.md` reconciliation (`0d25ec2`). Netlify
+auto-deploys from GitHub `main`; `bb8fdad` was live-verified on 2026-06-11 by
+200 response, asset-hash rotation from `assets/main-DIBi75mC.js` to
+`assets/main-BTJCETCA.js`, and served-JS probes for `/animals-on-farm` plus the
+hoverable-tile affordance contract.
 Migration series live through 109 (`109` PROD-applied 2026-06-10).
 Production URL: https://wcfplanner.com.
 
@@ -164,35 +167,27 @@ plus a guard update in the same change.
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Current `origin/main`: `841f99e` (docs-only wrap, pushed 2026-06-10).
-  Current pushed source checkpoint remains `b562ac5` (pushed and live
-  2026-06-10). On top of the `d7fc2c9` operational-list/token checkpoint,
-  2026-06-10 shipped four code-only lanes: global openable hover affordance
-  (`1881593`), visible comment posted timestamps (`e80e161`), Pig Batch Metrics
-  Grid Cleanup with estimate labeling (`2e960cb`, merged via `b0e89eb`), and
-  Broiler weigh-in-sourced read-only week weights (`0bb7689`, merged via
-  `b562ac5`). See Latest Shipped Checkpoint for per-lane detail.
-- Live verification: `https://wcfplanner.com/` returned 200 after the `b562ac5`
-  push; the served asset hash rotated from `assets/main-CkhY001g.js` to
-  `assets/main-DIBi75mC.js`, and the served HTML contains the new hover/focus CSS
-  contract. No Netlify commit status was needed for this verification.
-- Integrated source validation before the `b562ac5` push: `npm run lint` 0
-  errors, `npm test` 208 files / 5508 passed, `npm run build` green, plus focused
-  Pig Batch sequence-nav and Broiler batch-record-edit Playwright specs green on
-  the merged tree.
-- Local integrated state as of this update (2026-06-11, unpushed): primary
-  `C:\Users\Ronni\WCF-planner` is on `main` at `a2788ae` with three source lanes
-  committed and merged locally, pending Ronnie's push gate:
-  - `0efff11` source-wide openable hover affordance rollout (shared
-    `src/shared/openable.js` openableProps keyboard helper, HomeWeatherCard
-    `card weather-card lift` adoption, source-wide keyboard-ownership guard,
-    `.prettierignore` gains `WCF Planner Redesign/`).
-  - `8226ae6` (merged `920f8c2`) Codex Lane E/F closure: daily + equipment
-    record pages delegate load-error chrome to `RecordPageLoadError`.
-  - `27337d7` (merged `a2788ae`) Codex Lane I slice: batch/session record
-    titles `fontSize` 24 -> 22 plus the retired-JSX-fontSize guard.
-  Untracked local artifacts only (`WCF Planner Redesign/` and screenshot
-  folders, including `rollout-shots/` and `lane-i-shots/` before/after sets);
+- Current `origin/main`: `bb8fdad` (pushed and live 2026-06-11). On top of the
+  earlier 2026-06-10 checkpoints, the 2026-06-11 push shipped the source-wide
+  openable hover rollout, Lane E/F load-error chrome closure, Lane I record-title
+  compact-size slice, cattle calf/dam lineage spec triage, Animals on Farm
+  monthly history page, and a docs reconciliation. See Latest Shipped Checkpoint
+  for per-lane detail.
+- Live verification: `https://wcfplanner.com/` returned 200 after the `bb8fdad`
+  push; the served asset hash rotated from `assets/main-DIBi75mC.js` to
+  `assets/main-BTJCETCA.js`, and the served JS contains both the
+  `/animals-on-farm` route string and the hoverable-tile affordance contract.
+- Integrated source validation before the `bb8fdad` push: `npm run format:check`
+  green, `npm run lint` 0 errors, `npm test` 211 files / 5540 passed,
+  `npm run build` green, and `git diff --check` clean.
+- Local primary state as of this update (2026-06-11): primary
+  `C:\Users\Ronni\WCF-planner` is on `main` at `bb8fdad`, matching
+  `origin/main`. Current tracked local changes are this `PROJECT.md`
+  reconciliation plus a small Animals on Farm display polish: table/line rows are
+  cut off before Oct 2024, month labels render in UTC to avoid local-time month
+  rollback, and the table month sublabel is removed. Current untracked local
+  artifacts are `WCF Planner Redesign/`, `codex-draft-backup/`, `cp4-shots/`,
+  `hover-shots/`, `lane-i-shots/`, `lanee-shots/`, and `rollout-shots/`;
   `git status --short` is the source of truth.
 - Migration `109` (`drop_daily_photos_anon_insert`) applied to TEST (`exec_sql`)
   then PROD (`psql --single-transaction`, `ON_ERROR_STOP=1`) and verified
@@ -214,21 +209,20 @@ plus a guard update in the same change.
   (zero PROD trace). `106` auth-gated, `107` admin-gated, `108` authenticated
   (mirrors each surface's existing access).
 - Parallel worktrees: primary `C:\Users\Ronni\WCF-planner` is on `main` at
-  `a2788ae`; `C:\Users\Ronni\WCF-planner-light-audit` remains detached at
+  `bb8fdad`; `C:\Users\Ronni\WCF-planner-light-audit` remains detached at
   `ab39eb2`; merged Codex lane worktrees
   `C:\Users\Ronni\WCF-planner-codex-pig-metrics` (`2e960cb`),
   `C:\Users\Ronni\WCF-planner-codex-broiler-weighins-readonly` (`0bb7689`),
-  `C:\Users\Ronni\WCF-planner-codex-lane-ef-closure` (`8226ae6`), and
-  `C:\Users\Ronni\WCF-planner-codex-lane-i-token-cleanup` (`27337d7`) still
-  exist and are prunable after Ronnie confirms. Do not reuse merged Codex
-  worktrees; start any new parallel lane from current `main` in a fresh scoped
-  worktree/branch.
+  `C:\Users\Ronni\WCF-planner-codex-lane-ef-closure` (`8226ae6`),
+  `C:\Users\Ronni\WCF-planner-codex-lane-i-token-cleanup` (`27337d7`), and
+  `C:\Users\Ronni\WCF-planner-codex-animal-history` (`6d1ffd5`) still exist and
+  are prunable after Ronnie confirms. Do not reuse merged Codex worktrees; start
+  any new parallel lane from current `main` in a fresh scoped worktree/branch.
 - Open gates: no PROD migration, Storage, Vault, or Edge Function deploy gate is
-  open. `origin/main` is at `841f99e`; local `main` is ahead at `a2788ae` with
-  the three integrated 2026-06-11 source lanes (openable rollout, Lane E/F
-  load-error closure, Lane I title-size slice) awaiting Ronnie's push approval.
-  None of the three contain migrations, schema, RLS, or storage changes; there
-  is no database work to apply for them.
+  open. `origin/main` is at `bb8fdad` and live; the 2026-06-11 push contained no
+  migrations, schema, RLS, Storage, Vault, or Edge Function work, so there is no
+  database work to apply for it. Current tracked local changes need the normal
+  commit/push gate after validation.
 - PROD-applied numbered migration series is live through `109`. Migration `082`
   is unused; migration `083` is shelved. Operational note: the daily duplicate
   cleanup `085` was applied before unique-index migration `084`.
@@ -296,9 +290,41 @@ Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
 
-- Docs-only project wrap, pushed `origin/main` `841f99e` (2026-06-10). No source,
-  migration, schema, RLS, Storage, Vault, Edge Function, or production-behavior
-  change. The current pushed source checkpoint remains `b562ac5`.
+- 2026-06-11 source + docs integration, pushed `origin/main` `bb8fdad`
+  (live-verified 2026-06-11). No migrations, schema changes, RLS changes,
+  Storage, Vault, or Edge Function work. Netlify PROD was verified by 200
+  response, asset rotation from `assets/main-DIBi75mC.js` to
+  `assets/main-BTJCETCA.js`, and served-JS probes for `/animals-on-farm` plus
+  the hoverable-tile affordance contract. Integrated validation before push:
+  `npm run format:check` green, `npm run lint` 0 errors, `npm test` 211 files /
+  5540 passed, `npm run build` green, `git diff --check` clean. Landed:
+  - Source-wide openable hover affordance rollout (`0efff11`): every openable
+    card/tile/row/expander carries `.hoverable-tile` / `.hoverable-row` plus
+    keyboard activation through shared `src/shared/openable.js` where needed;
+    HomeWeatherCard adopted the approved `card weather-card lift` treatment;
+    timeline chart bars intentionally keep their bespoke tooltip/outline hover.
+  - Codex Lane E/F load-error chrome closure (`8226ae6`, merged `920f8c2`): six
+    daily record pages plus equipment fueling/checklist entry pages delegate
+    fail-closed load-error chrome to `RecordPageLoadError`, preserving retry
+    hooks and loaded/error markers.
+  - Codex Lane I record-title compact-size slice (`27337d7`, merged
+    `a2788ae`): six batch/session record pages move `RecordTitle` fontSize 24 to
+    the canonical compact size 22; the static token guard now catches retired JSX
+    fontSize props.
+  - Cattle calf/dam lineage stale-spec triage (`9d17855`): the Playwright spec
+    now exercises the intended herd-list row click -> `/cattle/herds/<id>` record
+    page contract, where `CattleAnimalPage` composes `CowDetail` and
+    `[data-lineage-section]`; product source was not changed.
+  - Animals on Farm monthly history page (`6d1ffd5`, merged `bb8fdad`):
+    homepage Animals on Farm opens `/animals-on-farm`, a newest-first monthly
+    table plus multi-series line graph for Broilers, Layer Hens, Pigs, Cattle,
+    Sheep, and Total, built from shared `animalHistory.js` snapshot logic and
+    guarded by unit/static readiness coverage.
+  - Docs reconciliation (`0d25ec2`) refreshed the project map through the
+    integrated local lanes before the final lineage and Animals on Farm commits.
+- Earlier docs-only project wrap, pushed `origin/main` `841f99e` (2026-06-10).
+  No source, migration, schema, RLS, Storage, Vault, Edge Function, or
+  production-behavior change.
 - Four code-only UI/data-display lanes, pushed `origin/main` `b562ac5`
   (2026-06-10). No migrations, schema changes, RLS changes, Storage, Vault, or
   Edge Function work. Netlify PROD was verified by 200 response, asset rotation
@@ -622,20 +648,23 @@ work:
 ### Current Local Gates
 
 No PROD migration, storage, deploy, Vault, or Edge Function gate is open as of
-`origin/main` `841f99e`.
+`origin/main` `bb8fdad`.
 
-- Main CC worktree `C:\Users\Ronni\WCF-planner` is on `main` at `a2788ae` with
-  the three integrated 2026-06-11 source lanes committed locally and awaiting
-  Ronnie's push approval. The only working-tree changes are this docs
-  reconciliation plus untracked local artifact folders.
+- Main worktree `C:\Users\Ronni\WCF-planner` is on `main` at `bb8fdad`,
+  matching `origin/main`. Current tracked local changes are this `PROJECT.md`
+  reconciliation plus a small Animals on Farm display polish: table/line rows are
+  cut off before Oct 2024, month labels render in UTC to avoid local-time month
+  rollback, and the table month sublabel is removed. These local changes need the
+  normal commit/push gate after validation.
 - Existing parallel worktrees: `C:\Users\Ronni\WCF-planner-light-audit` remains
   detached at `ab39eb2`; the merged Codex lane worktrees
   `C:\Users\Ronni\WCF-planner-codex-pig-metrics`,
   `C:\Users\Ronni\WCF-planner-codex-broiler-weighins-readonly`,
-  `C:\Users\Ronni\WCF-planner-codex-lane-ef-closure`, and
-  `C:\Users\Ronni\WCF-planner-codex-lane-i-token-cleanup` still exist and are
-  prunable after Ronnie confirms. Create a fresh scoped branch from current
-  `main` in a new worktree for any additional parallel build lane.
+  `C:\Users\Ronni\WCF-planner-codex-lane-ef-closure`,
+  `C:\Users\Ronni\WCF-planner-codex-lane-i-token-cleanup`, and
+  `C:\Users\Ronni\WCF-planner-codex-animal-history` still exist and are prunable
+  after Ronnie confirms. Create a fresh scoped branch from current `main` in a
+  new worktree for any additional parallel build lane.
 
 If a new session sees additional dirty state, inspect it before planning; do not
 assume it is disposable. Create new scoped worktrees/branches only for active
@@ -738,30 +767,32 @@ Shipped later 2026-06-10 (removed from queue, pushed `origin/main` `b562ac5`):
 Validation before push: lint 0 errors, `npm test` 208 files / 5508 passed, build
 green, focused Pig Batch sequence-nav and Broiler record-edit Playwright specs
 green. No migrations/schema/RLS/storage/PROD DB work.
-Integrated locally 2026-06-11 (merged to local `main` `a2788ae`, unpushed —
-push gate pending):
+Shipped 2026-06-11 (removed from queue, pushed `origin/main` `bb8fdad`):
 - Source-wide openable hover affordance rollout (`0efff11`): every openable
   card/tile/row/expander carries `.hoverable-tile`/`.hoverable-row` plus
-  keyboard activation via the shared `src/shared/openable.js` openableProps
-  helper; HomeWeatherCard collapsed card adopts the approved
-  `card weather-card lift` treatment as a real button; home `.litem.is-link`
-  rows gain keyboard activation and a paint-only focus ring; timeline chart
-  bars intentionally keep their bespoke tooltip/outline hover. Keyboard
-  ownership is now a source-wide rule in
-  `openable_hover_affordance_static.test.js`; Playwright covers home weather,
-  fleet tile, and broiler-row keyboard activation. UI before/after approved by
-  Ronnie (rollout-shots/).
+  keyboard activation via shared `src/shared/openable.js` where needed.
+  HomeWeatherCard collapsed card adopted the approved `card weather-card lift`
+  treatment; timeline chart bars intentionally keep their bespoke tooltip/
+  outline hover.
 - Codex Lane E/F closure (`8226ae6`, merged `920f8c2`): the six daily record
   pages and equipment fueling/checklist entry pages delegate fail-closed
-  load-error chrome to `RecordPageLoadError` (now accepting retryButtonProps);
-  load-error markers and the daily retry hook are preserved and guarded.
-- Codex Lane I slice (`27337d7`, merged `a2788ae`): batch/session record
-  titles move `RecordTitle` fontSize 24 -> 22 (canonical compact size) on six
-  pages; `record_page_token_closure_static` now also catches retired JSX
-  fontSize props. Before/after captured in lane-i-shots/.
-Integrated-tree validation after the merges: `npm run format:check` green,
-`npm run lint` 0 errors, `npm test` 208 files / 5523 passed, `npm run build`
-green, `git diff --check` clean. No migration/schema/RLS/storage/PROD DB work.
+  load-error chrome to `RecordPageLoadError`; retry hooks and loaded/error
+  markers are preserved and guarded.
+- Codex Lane I slice (`27337d7`, merged `a2788ae`): batch/session record titles
+  move `RecordTitle` fontSize 24 -> 22 (canonical compact size) on six pages;
+  `record_page_token_closure_static` now catches retired JSX fontSize props.
+- Cattle calf/dam lineage triage (`9d17855`): the pre-existing Playwright
+  failures were stale inline-expansion expectations; the spec now follows the
+  herd-list row click to the cattle animal record page and asserts lineage there.
+  Product source was unchanged.
+- Animals on Farm monthly history page (`6d1ffd5`, merged `bb8fdad`): homepage
+  Animals on Farm opens `/animals-on-farm`, with newest-first monthly table,
+  multi-series line graph, species totals, fail-closed loading, and static/unit
+  guards.
+Validation before push: `npm run format:check` green, `npm run lint` 0 errors,
+`npm test` 211 files / 5540 passed, `npm run build` green, `git diff --check`
+clean. Netlify live verification passed; no migration/schema/RLS/storage/PROD DB
+work.
 Shipped 2026-06-09 (this session, code checkpoint `ab39eb2`, followed by docs
 wrap `b5f433d`; visual preview waived by Ronnie for this push):
 - Lane 15 Tasks creation/public config: Public Tasks assignee checkbox grid;
@@ -830,46 +861,17 @@ Locked queue direction from Ronnie (2026-06-09):
 - Program dashboards stay program-specific unless Ronnie reopens the dropped Lane
   J KPI-frame decision.
 
-Current open queue after the 2026-06-11 reconciliation:
+Current open queue after the 2026-06-11 `bb8fdad` push:
 
-1. Source-wide home-like openable hover affordance rollout. SHIPPED locally
-   2026-06-11 (`0efff11`, merged on local `main`, push pending). The full
-   product request is complete: every openable card/tile/row/expander carries
-   the shared affordance plus keyboard activation (openableProps helper);
-   HomeWeatherCard adopted the approved `card weather-card lift` treatment;
-   home `.litem.is-link` rows are keyboard-openable with a focus ring; the
-   static guard enforces keyboard ownership source-wide. Intentional skips
-   (documented in the lane report): broiler/pig timeline chart bars keep their
-   bespoke tooltip/outline hover because the contract wash would erase bar
-   color identity, and both targets stay keyboard-reachable via their list
-   surfaces. Reopen only for a newly found mouse-only openable (the guard
-   should catch hoverable-class drift automatically).
-
-2. Triage pre-existing cattle calf/dam lineage Playwright failures. Class:
-   `DEFECT`. Size: small/medium. Scope: Cattle animal record lineage rendering
-   and the associated Playwright spec only unless the investigation proves a
-   wider cattle data contract issue. Historical symptom on clean `main` before
-   the hover/pig/broiler/comments lanes: `tests/cattle_calf_dam_link.spec.js`
-   had 4 UI failures because `[data-lineage-section]` never rendered inside
-   `#cow-<id>`. Current source includes the lineage section in
-   `src/cattle/CowDetail.jsx`, so first reproduce the Playwright spec in a
-   test-equipped clean worktree at current `origin/main` before building. If it
-   still fails, decide whether the runtime regression is product code or stale
-   test expectation; then restore behavior or update the spec/guard to the
-   intended cattle record contract. Migration/Storage/PROD gate: none expected;
-   stop for Ronnie before any data mutation or schema/RPC change.
-
-3. Residual source-wide visual-token cleanup (Lane I). Class: `ENH`. Size:
-   medium/large only once scoped. The shared-token slices and record/shared/auth
-   closure are shipped, and the batch/session record-title compact-size slice
-   (`RecordTitle` fontSize 24 -> 22 on six pages, plus the retired-JSX-fontSize
-   guard) merged to local `main` 2026-06-11 (`27337d7`/`a2788ae`, push pending).
-   Source still contains legacy typography/radius/color values outside the
-   guarded shared primitives and documented exceptions. Start only from a named
-   inventory/surface group, preserve approved exceptions such as public webform
-   styling and `.home.theme-crisp`, add or expand token guards, and capture
-   targeted screenshots for visible UI changes. Migration/Storage/PROD gate:
-   none expected.
+1. Residual source-wide visual-token cleanup (Lane I). Class: `ENH`. Size:
+   medium/large only once scoped. The shared-token slices, record/shared/auth
+   closure, modal/action closure, and batch/session record-title compact-size
+   slice are shipped. Source still contains legacy typography/radius/color values
+   outside the guarded shared primitives and documented exceptions. Start only
+   from a named inventory/surface group, preserve approved exceptions such as
+   public webform styling and `.home.theme-crisp`, add or expand token guards,
+   and capture targeted screenshots for visible UI changes. Migration/Storage/
+   PROD gate: none expected.
 
 Sprint assignment (executed 2026-06-08): the CC Sprints 1 + 2 (Lane 0
 correctness, Lane A audit/RPC atomicity) and Codex Sprints 3 + 4 (Lanes B/C +
@@ -916,14 +918,15 @@ work is only the Current open queue above unless Ronnie reopens a lane.
    surface that violates the contract or for a Ronnie-approved change to the
    save/indicator model.
 6. Lane E - Record-page shell and chrome parity. SHIPPED/CLOSED; the final
-   closure merged to local `main` 2026-06-11 (`920f8c2`), push pending.
+   closure shipped 2026-06-11 (`8226ae6`, merged `920f8c2`, pushed via
+   `bb8fdad`).
    Shipped slices: `EquipmentDetail` adopted `RecordPageBody`/`RecordTitle` and
    exposes `data-equipment-record-loaded`; daily record pages route canonical
    action buttons through `recordPageControls`; non-daily record pages use shared
    action tokens; `RecordPageLoadError` is the shared load-error primitive; and
    `PigBatchPage` now owns full `RecordPageFrame`/`RecordPageBody`/
    `RecordTitle` chrome while preserving its heavier workflow. The 2026-06-11
-   local closure moves the six daily record pages plus equipment fueling/checklist
+   closure moves the six daily record pages plus equipment fueling/checklist
    entry pages onto `RecordPageLoadError`, preserving retry hooks and loaded/error
    data markers. Guard coverage: `record_page_shell_static.test.js`,
    `record_page_cp7_pig_batch_shared_controls_static.test.js`,
@@ -995,6 +998,9 @@ work is only the Current open queue above unless Ronnie reopens a lane.
     weigh-in / send-to-processor / equipment modals adopt shared
     `recordSaveButton` / `recordSecondaryButton`; guards `modal_action_tokens_static`,
     `task_modal_tokens_static`).
+    Shipped 2026-06-11: batch/session record titles use the canonical compact
+    `RecordTitle` fontSize 22 on six pages, and
+    `record_page_token_closure_static` catches retired JSX fontSize props.
     Open queue item: residual source-wide typography/radius/color drift outside
     the shipped shared primitives and documented exceptions; visible UI changes
     need targeted screenshots. Any future homepage visual changes should preserve
@@ -1235,6 +1241,10 @@ unless Ronnie changes the contract:
   program tiles, Processing/Admin utility row, live weather, Animals-on-Farm
   counts, Production placeholder card, missed-daily/equipment/material alerts,
   Next 30 Days, and admin Last-5-Days.
+- `/animals-on-farm`: opened from the Home Animals on Farm card; shows newest-
+  first monthly species counts and a multi-series line graph for Broilers, Layer
+  Hens, Pigs, Cattle, Sheep, and Total. Current local polish cuts the history
+  range off before Oct 2024 and removes the table month sublabel.
 - Broiler: home, timeline, batches, feed, dailys, weigh-ins.
 - Pig: home, breeding, farrowing, sows, batches, feed, dailys, weigh-ins.
 - Layer: home, groups, batches, dailys, eggs.
@@ -2034,7 +2044,7 @@ Focused starting points:
 | Tasks                    | `tests/static/tasks_*.test.js`, `src/lib/tasksCenterApi.test.js`, `src/lib/tasksAdminApi.test.js`, `tests/tasks_v2_*.spec.js`                                  |
 | Record pages             | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js`, `tests/record_sequence_nav_fixed.spec.js`, `tests/static/record_sequence_nav_cp3_static.test.js`, `tests/static/save_model_contract_static.test.js` |
 | Openable affordance      | `tests/static/openable_hover_affordance_static.test.js`                                                                                                         |
-| Home / dashboard alerts  | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/light_user_portal_static.test.js`, `tests/light_home_alerts.spec.js`, `tests/home_dashboard_equipment.spec.js` |
+| Home / dashboard alerts  | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/home_animal_history_static.test.js`, `src/lib/animalHistory.test.js`, `tests/static/light_user_portal_static.test.js`, `tests/light_home_alerts.spec.js`, `tests/home_dashboard_equipment.spec.js` |
 | Readiness                | `tests/static/load_retry_robustness_inventory_static.test.js`, `tests/static/*readiness*`                                                                       |
 | Mutation/delete/recovery | `tests/static/mutation_semantics_inventory_static.test.js`, `tests/static/delete_recovery_classification_static.test.js`, `tests/static/hard_delete_owner_static.test.js` |
 | Cattle                   | `tests/static/cattle_*.test.js`, `tests/cattle_*.spec.js`, `src/lib/cattleHerdFilters.test.js`, `tests/static/app_saved_views_migration_static.test.js`         |
