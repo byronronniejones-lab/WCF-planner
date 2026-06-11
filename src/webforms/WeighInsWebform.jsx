@@ -2736,6 +2736,17 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               // (rams / ewes / feeders / null). Ronnie 2026-04-27.
               const isFeeders = species === 'sheep' && !!session;
               const showProcessorBtn = isFinishers || isFeeders;
+              const recentEntryGridS = {
+                display: 'grid',
+                gridTemplateColumns: '64px 54px 96px 78px 96px minmax(70px, 1fr) 104px',
+                gap: 8,
+                alignItems: 'center',
+                minWidth: 570,
+              };
+              const recentEntryCellS = {
+                minWidth: 0,
+                whiteSpace: 'nowrap',
+              };
               const renderRow = (e, highlight) => {
                 const animal = directory.find((a) => a.tag === e.tag);
                 const age = ageYM(animal ? animal.birth_date : null, curDate);
@@ -2840,47 +2851,54 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                       fontSize: 12,
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: 2,
+                      gap: 3,
+                      background: highlight ? '#fff7ed' : 'transparent',
+                      overflowX: 'auto',
                     }}
                   >
-                    <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-                      {e.tag && <span style={{fontWeight: 700, color: '#111827', minWidth: 50}}>#{e.tag}</span>}
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{age}</span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>
+                    <div data-public-weighin-recent-entry-grid="1" style={recentEntryGridS}>
+                      <span style={{...recentEntryCellS, fontWeight: 700, color: '#111827'}}>
+                        {e.tag ? '#' + e.tag : '\u2014'}
+                      </span>
+                      <span style={{...recentEntryCellS, fontSize: 11, color: '#6b7280'}}>{age}</span>
+                      <span style={{...recentEntryCellS, fontSize: 11, color: '#6b7280'}}>
                         {prior ? 'prior ' + Math.round(prior.weight) + ' lb' : 'no prior'}
                       </span>
-                      <span style={{fontWeight: 600, color: '#1e40af'}}>{e.weight} lb</span>
-                      {adg != null && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            padding: '1px 6px',
-                            borderRadius: 4,
-                            background: adg >= 0 ? '#ecfdf5' : '#fef2f2',
-                            color: adg >= 0 ? '#065f46' : '#b91c1c',
-                            border: '1px solid ' + (adg >= 0 ? '#a7f3d0' : '#fecaca'),
-                          }}
-                        >
-                          {(adg >= 0 ? '+' : '') + adg.toFixed(2) + ' lb/d'}
-                        </span>
-                      )}
-                      {e.new_tag_flag && (
-                        <span
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            padding: '1px 5px',
-                            borderRadius: 4,
-                            background: '#fef2f2',
-                            color: '#b91c1c',
-                          }}
-                        >
-                          NEW TAG
-                        </span>
-                      )}
-                      <div style={{marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center'}}>
-                        {showProcessorBtn && (
+                      <span style={{...recentEntryCellS, fontWeight: 600, color: '#1e40af'}}>{e.weight} lb</span>
+                      <span style={recentEntryCellS}>
+                        {adg != null ? (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              background: adg >= 0 ? '#ecfdf5' : '#fef2f2',
+                              color: adg >= 0 ? '#065f46' : '#b91c1c',
+                              border: '1px solid ' + (adg >= 0 ? '#a7f3d0' : '#fecaca'),
+                            }}
+                          >
+                            {(adg >= 0 ? '+' : '') + adg.toFixed(2) + ' lb/d'}
+                          </span>
+                        ) : (
+                          <span aria-hidden="true" />
+                        )}
+                      </span>
+                      <span style={recentEntryCellS}>
+                        {e.new_tag_flag ? (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: 4,
+                              background: '#fef2f2',
+                              color: '#b91c1c',
+                            }}
+                          >
+                            NEW TAG
+                          </span>
+                        ) : showProcessorBtn ? (
                           <button
                             onClick={() => toggleProcessor(e, !e.send_to_processor)}
                             title={
@@ -2900,9 +2918,21 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                               fontFamily: 'inherit',
                             }}
                           >
-                            {e.send_to_processor ? '✓ Processor' : '→ Processor'}
+                            {e.send_to_processor ? '\u2713 Processor' : '\u2192 Processor'}
                           </button>
+                        ) : (
+                          <span aria-hidden="true" />
                         )}
+                      </span>
+                      <div
+                        style={{
+                          ...recentEntryCellS,
+                          display: 'flex',
+                          gap: 4,
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                        }}
+                      >
                         <button
                           onClick={() => startEditEntry(e)}
                           style={{
@@ -2933,7 +2963,19 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         </button>
                       </div>
                     </div>
-                    {e.note && <div style={{fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>{e.note}</div>}
+                    {e.note && (
+                      <div
+                        style={{
+                          marginLeft: 0,
+                          fontSize: 11,
+                          color: '#6b7280',
+                          fontStyle: 'italic',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {e.note}
+                      </div>
+                    )}
                   </div>
                 );
               };
