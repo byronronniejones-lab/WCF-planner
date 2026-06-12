@@ -42,12 +42,32 @@ import {
 } from './tasks.js';
 import {compressImage} from './photoCompress.js';
 
+export const MAX_TASK_PHOTOS_PER_TASK = 5;
+
+function normalizedPhotoCount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
+}
+
+export function remainingTaskPhotoSlots(existingPhotoCount = 0) {
+  return Math.max(0, MAX_TASK_PHOTOS_PER_TASK - normalizedPhotoCount(existingPhotoCount));
+}
+
+export function assertTaskPhotoLimit(existingPhotoCount, newPhotoCount, helperName = 'task photos') {
+  const existing = normalizedPhotoCount(existingPhotoCount);
+  const incoming = normalizedPhotoCount(newPhotoCount);
+  if (existing + incoming > MAX_TASK_PHOTOS_PER_TASK) {
+    throw new Error(`${helperName}: max ${MAX_TASK_PHOTOS_PER_TASK} photos per task`);
+  }
+}
+
 // ── Filename helpers ────────────────────────────────────────────────────
 //
 // v1 used a single deterministic filename per kind ('photo-1.jpg' for
-// request photos, 'completion-1.jpg' for completion). v2 supports up to
-// 5 of each, so filenames are slot-indexed. Filenames must not contain
-// '/' or '\\' (RPC validation enforces this).
+// request photos, 'completion-1.jpg' for completion). v2 keeps slot-
+// indexed filenames while the task as a whole is capped at 5 photos.
+// Filenames must not contain '/' or '\\' (RPC validation enforces this).
 
 export function buildCreationPhotoFilename(slotIndex) {
   // 1-indexed for human readability of stored paths.
@@ -107,7 +127,7 @@ async function uploadOnePhoto(sb, bucket, storagePath, dbPath, blobOrFile, helpe
 }
 
 /**
- * Upload up to 5 creation photos for a one-time task to the
+ * Upload up to 5 total task photos for a one-time task to the
  * task-request-photos bucket. Returns the array of DB-prefixed paths
  * in the same order as the input blobs (parallel array). Caller passes
  * the stable instanceId minted when the modal opens.
@@ -118,9 +138,7 @@ async function uploadOnePhoto(sb, bucket, storagePath, dbPath, blobOrFile, helpe
  */
 export async function uploadTaskCreationPhotos(sb, instanceId, blobs) {
   if (!Array.isArray(blobs) || blobs.length === 0) return [];
-  if (blobs.length > 5) {
-    throw new Error('uploadTaskCreationPhotos: max 5 creation photos');
-  }
+  assertTaskPhotoLimit(0, blobs.length, 'uploadTaskCreationPhotos');
   const out = [];
   for (let i = 0; i < blobs.length; i++) {
     const storagePath = buildCreationPhotoStoragePath(instanceId, i);
@@ -139,18 +157,16 @@ export async function uploadTaskCreationPhotos(sb, instanceId, blobs) {
 }
 
 /**
- * Upload up to 5 completion photos for an existing task to the
+ * Upload completion photos for an existing task to the
  * task-photos bucket. CRITICAL: pass the row's assigneeUid
  * (`task.assignee_profile_id`), not the current caller — admin
  * completing someone else's task still writes under the assignee's
  * directory because the v2 RPC validates the path prefix against the
  * row's assignee_profile_id. Per the §7 contract.
  */
-export async function uploadTaskCompletionPhotos(sb, assigneeUid, instanceId, blobs) {
+export async function uploadTaskCompletionPhotos(sb, assigneeUid, instanceId, blobs, {existingPhotoCount = 0} = {}) {
   if (!Array.isArray(blobs) || blobs.length === 0) return [];
-  if (blobs.length > 5) {
-    throw new Error('uploadTaskCompletionPhotos: max 5 completion photos');
-  }
+  assertTaskPhotoLimit(existingPhotoCount, blobs.length, 'uploadTaskCompletionPhotos');
   const out = [];
   for (let i = 0; i < blobs.length; i++) {
     const storagePath = buildCompletionPhotoStoragePathV2(assigneeUid, instanceId, i);

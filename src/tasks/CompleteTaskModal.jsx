@@ -6,7 +6,8 @@
 // from mig 040.
 //
 // Required: completion note (non-empty).
-// Optional: up to 5 completion photos.
+// Optional photos stay capped at 5 total per task, including any
+// creation photos already attached.
 //
 // CRITICAL — the §7 photo-storage contract: completion photos go under
 // task-photos/<row.assignee_profile_id>/<instance_id>/, NOT under the
@@ -16,7 +17,13 @@
 // its first arg precisely so this is hard to miss.
 
 import React from 'react';
-import {completeTaskInstanceV2, uploadTaskCompletionPhotos} from '../lib/tasksCenterMutationsApi.js';
+import {loadTaskInstancePhotos} from '../lib/tasksCenterApi.js';
+import {
+  completeTaskInstanceV2,
+  MAX_TASK_PHOTOS_PER_TASK,
+  remainingTaskPhotoSlots,
+  uploadTaskCompletionPhotos,
+} from '../lib/tasksCenterMutationsApi.js';
 import {
   taskModalErrorNotice as ERROR_NOTICE,
   taskModalFieldLabel as FIELD_LABEL,
@@ -27,11 +34,23 @@ import {
   taskModalPrimaryButton as BTN_PRIMARY,
 } from './taskModalStyles.js';
 
-export default function CompleteTaskModal({sb, task, isOpen, onClose, onCompleted, authState}) {
+function legacyTaskPhotoCount(task) {
+  const paths = new Set();
+  if (task?.request_photo_path) paths.add(task.request_photo_path);
+  if (task?.completion_photo_path) paths.add(task.completion_photo_path);
+  return paths.size;
+}
+
+export default function CompleteTaskModal({sb, task, isOpen, onClose, onCompleted}) {
   const [note, setNote] = React.useState('');
   const [photos, setPhotos] = React.useState([]);
   const [saving, setSaving] = React.useState(false);
   const [err, setErr] = React.useState('');
+  const [existingPhotoCount, setExistingPhotoCount] = React.useState(0);
+  const [photoCountLoaded, setPhotoCountLoaded] = React.useState(false);
+  const taskId = task?.id;
+  const taskRequestPhotoPath = task?.request_photo_path;
+  const taskCompletionPhotoPath = task?.completion_photo_path;
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -39,8 +58,56 @@ export default function CompleteTaskModal({sb, task, isOpen, onClose, onComplete
       setPhotos([]);
       setSaving(false);
       setErr('');
+      setExistingPhotoCount(0);
+      setPhotoCountLoaded(false);
     }
   }, [isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen || !taskId) return undefined;
+    let cancelled = false;
+    const fallbackCount = legacyTaskPhotoCount({
+      request_photo_path: taskRequestPhotoPath,
+      completion_photo_path: taskCompletionPhotoPath,
+    });
+    setExistingPhotoCount(fallbackCount);
+    setPhotoCountLoaded(false);
+
+    async function loadExistingCount() {
+      if (!sb || !taskId) {
+        setPhotoCountLoaded(true);
+        return;
+      }
+      try {
+        const rows = await loadTaskInstancePhotos(sb, taskId);
+        if (cancelled) return;
+        const paths = new Set();
+        for (const row of rows || []) {
+          paths.add(row?.storage_path || row?.id);
+        }
+        setExistingPhotoCount(paths.size > 0 ? paths.size : fallbackCount);
+      } catch (_e) {
+        if (!cancelled) setExistingPhotoCount(fallbackCount);
+      } finally {
+        if (!cancelled) setPhotoCountLoaded(true);
+      }
+    }
+
+    loadExistingCount();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, sb, taskId, taskRequestPhotoPath, taskCompletionPhotoPath]);
+
+  const remainingPhotoSlots = remainingTaskPhotoSlots(existingPhotoCount);
+  const availablePhotoSlots = photoCountLoaded ? Math.max(0, remainingPhotoSlots - photos.length) : 0;
+  const photoLimitMessage = `Tasks can have up to ${MAX_TASK_PHOTOS_PER_TASK} photos.`;
+  const photoLabel =
+    !photoCountLoaded
+      ? 'Optional completion photos (checking slots)'
+      : remainingPhotoSlots <= 0
+        ? `Optional completion photos (0 of ${MAX_TASK_PHOTOS_PER_TASK} slots left)`
+        : `Optional completion photos (${availablePhotoSlots} of ${MAX_TASK_PHOTOS_PER_TASK} slots left)`;
 
   if (!isOpen || !task) return null;
 
@@ -50,8 +117,16 @@ export default function CompleteTaskModal({sb, task, isOpen, onClose, onComplete
 
   function handlePhotoSelect(e) {
     const files = Array.from(e.target.files || []);
-    const next = [...photos, ...files].slice(0, 5);
+    if (availablePhotoSlots <= 0) {
+      setErr(photoLimitMessage);
+      e.target.value = '';
+      return;
+    }
+    const next = [...photos, ...files.slice(0, availablePhotoSlots)];
     setPhotos(next);
+    if (files.length > availablePhotoSlots) {
+      setErr(photoLimitMessage);
+    }
     e.target.value = '';
   }
 
@@ -66,12 +141,18 @@ export default function CompleteTaskModal({sb, task, isOpen, onClose, onComplete
       setErr('Completion note is required.');
       return;
     }
+    if (photos.length > remainingPhotoSlots) {
+      setErr(photoLimitMessage);
+      return;
+    }
     setSaving(true);
     try {
       // Use the ROW's assignee_profile_id, not the caller. Per §7 the
       // path prefix must match the row assignee even when admin
       // completes someone else's task.
-      const photoPaths = await uploadTaskCompletionPhotos(sb, task.assignee_profile_id, task.id, photos);
+      const photoPaths = await uploadTaskCompletionPhotos(sb, task.assignee_profile_id, task.id, photos, {
+        existingPhotoCount,
+      });
       const result = await completeTaskInstanceV2(sb, task.id, note.trim(), photoPaths);
       if (onCompleted) onCompleted(task.id, result);
       if (onClose) onClose();
@@ -112,13 +193,13 @@ export default function CompleteTaskModal({sb, task, isOpen, onClose, onComplete
           </div>
 
           <div>
-            <label style={FIELD_LABEL}>Optional completion photos (up to 5)</label>
+            <label style={FIELD_LABEL}>{photoLabel}</label>
             <input
               data-complete-task-field="photos"
               type="file"
               accept="image/*"
               multiple
-              disabled={photos.length >= 5}
+              disabled={availablePhotoSlots <= 0}
               onChange={handlePhotoSelect}
               style={{fontSize: 13}}
             />

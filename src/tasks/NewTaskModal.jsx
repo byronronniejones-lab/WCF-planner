@@ -5,7 +5,7 @@
 // the designation/source fields server-side from auth.uid(); we never
 // pass any of them client-side. The RPC also enforces title >= 3 chars,
 // description non-empty, due_date present, assignee eligibility
-// (role != 'inactive'), and max 5 creation photos.
+// (role != 'inactive'), and max 5 photos per task.
 //
 // Idempotency: id and client_submission_id are minted once when the
 // modal opens and stay stable across Save retries while the modal is
@@ -13,7 +13,7 @@
 // the existing instance_id on retry, so a second Save after a flaky
 // network never double-creates.
 //
-// Photos: optional, up to 5. Uploaded BEFORE the RPC so the rows in
+// Photos: optional, up to 5 per task. Uploaded BEFORE the RPC so the rows in
 // task-request-photos exist when the SECDEF function validates the
 // path prefix. If upload fails, we abort before the RPC — no orphan
 // task pointing at missing bytes.
@@ -38,6 +38,7 @@ import {todayCentralISO} from '../lib/dateUtils.js';
 import {
   createOneTimeTaskInstanceV2,
   createRecurringTaskTemplateV2,
+  MAX_TASK_PHOTOS_PER_TASK,
   uploadTaskCreationPhotos,
 } from '../lib/tasksCenterMutationsApi.js';
 import {RECURRENCE_OPTIONS} from '../lib/tasks.js';
@@ -141,8 +142,12 @@ export default function NewTaskModal({sb, profilesById, authState, isOpen, onClo
 
   function handlePhotoSelect(e) {
     const files = Array.from(e.target.files || []);
-    const next = [...photos, ...files].slice(0, 5);
+    const room = Math.max(0, MAX_TASK_PHOTOS_PER_TASK - photos.length);
+    const next = [...photos, ...files.slice(0, room)];
     setPhotos(next);
+    if (files.length > room) {
+      setErr(`Tasks can have up to ${MAX_TASK_PHOTOS_PER_TASK} photos.`);
+    }
     e.target.value = '';
   }
 
@@ -395,13 +400,13 @@ export default function NewTaskModal({sb, profilesById, authState, isOpen, onClo
               do not carry creation photos. */}
           {!isRecurring && (
             <div>
-              <label style={FIELD_LABEL}>Optional photos (up to 5)</label>
+              <label style={FIELD_LABEL}>Optional photos (up to {MAX_TASK_PHOTOS_PER_TASK})</label>
               <input
                 data-new-task-field="photos"
                 type="file"
                 accept="image/*"
                 multiple
-                disabled={photos.length >= 5}
+                disabled={photos.length >= MAX_TASK_PHOTOS_PER_TASK}
                 onChange={handlePhotoSelect}
                 style={{fontSize: 13}}
               />
