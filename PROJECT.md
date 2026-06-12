@@ -7,20 +7,27 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-11.
-Current pushed checkpoint: `origin/main` commit `bb8fdad` (pushed and
-live-verified 2026-06-11).
-Current pushed source checkpoint: `bb8fdad`. The 2026-06-11 push integrated the
-source-wide openable hover rollout (`0efff11`), Codex Lane E/F load-error chrome
-closure (`8226ae6`, merged `920f8c2`), Codex Lane I record-title compact-size
-slice (`27337d7`, merged `a2788ae`), cattle calf/dam lineage stale-spec triage
-(`9d17855`), Animals on Farm monthly history page (`6d1ffd5`, merged
-`bb8fdad`), and the `PROJECT.md` reconciliation (`0d25ec2`). Netlify
-auto-deploys from GitHub `main`; `bb8fdad` was live-verified on 2026-06-11 by
-200 response, asset-hash rotation from `assets/main-DIBi75mC.js` to
-`assets/main-BTJCETCA.js`, and served-JS probes for `/animals-on-farm` plus the
-hoverable-tile affordance contract.
-Migration series live through 109 (`109` PROD-applied 2026-06-10).
+Last updated: 2026-06-12.
+Current source checkpoint for this wrap: `8394162` (final `PROJECT.md` wrap
+commit sits on top; use git log for the exact docs hash after push).
+Current pushed source checkpoint before the wrap commit: `8394162`. Since the
+`bb8fdad` integration,
+`main` has shipped Animals on Farm display polish (`c61fab0`), cattle weigh-in
+swap/blacklist dropdown repairs (`9159ca5`), retag weight-history preservation
+(`1c2ba9a`), cattle calf-row heifer promotion (`c3a5815`, migration `110`),
+public weigh-in recent-entry layout polish (`1ac176b`, `a434cf9`, `9ef74c7`),
+weigh-in note mirroring and cattle cues (`534e50a`, migration `111`), public
+weigh-in entry edit parity (`85dcdeb`), new-cow/reconcile label refinement
+(`37668fd`), admin-created password setting (`cdcc39d`), Public Tasks assignee
+polish (`693dd4a`), Light portal daily-report review hub (`a56e57e`, migration
+`113`), task photo cap parity (`d8951d4`, migration `114`), Cattle Log field
+journal (`3c74b5d`, migration `112`), and task-row photo thumbnails
+(`8394162`). Netlify auto-deploys from GitHub `main`; `d8951d4` front-end was
+verified on 2026-06-12 by 200 response, served asset `assets/main-R7Kx-3KI.js`,
+and served-JS probes for `Enter Daily Reports`, `View Past Reports`, and task
+photo cap text. Ronnie screenshot-verified the Cattle Log build before this
+wrap. PROD-applied migrations include `112` (PROD-applied 2026-06-12); pushed
+source still contains pending migrations `113` and `114`.
 Production URL: https://wcfplanner.com.
 
 ---
@@ -167,28 +174,43 @@ plus a guard update in the same change.
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Current `origin/main`: `bb8fdad` (pushed and live 2026-06-11). On top of the
-  earlier 2026-06-10 checkpoints, the 2026-06-11 push shipped the source-wide
-  openable hover rollout, Lane E/F load-error chrome closure, Lane I record-title
-  compact-size slice, cattle calf/dam lineage spec triage, Animals on Farm
-  monthly history page, and a docs reconciliation. See Latest Shipped Checkpoint
-  for per-lane detail.
-- Live verification: `https://wcfplanner.com/` returned 200 after the `bb8fdad`
-  push; the served asset hash rotated from `assets/main-DIBi75mC.js` to
-  `assets/main-BTJCETCA.js`, and the served JS contains both the
-  `/animals-on-farm` route string and the hoverable-tile affordance contract.
-- Integrated source validation before the `bb8fdad` push: `npm run format:check`
-  green, `npm run lint` 0 errors, `npm test` 211 files / 5540 passed,
-  `npm run build` green, and `git diff --check` clean.
-- Local primary state as of this update (2026-06-11): primary
-  `C:\Users\Ronni\WCF-planner` is on `main` at `bb8fdad`, matching
-  `origin/main`. Current tracked local changes are this `PROJECT.md`
-  reconciliation plus a small Animals on Farm display polish: table/line rows are
-  cut off before Oct 2024, month labels render in UTC to avoid local-time month
-  rollback, and the table month sublabel is removed. Current untracked local
-  artifacts are `WCF Planner Redesign/`, `codex-draft-backup/`, `cp4-shots/`,
-  `hover-shots/`, `lane-i-shots/`, `lanee-shots/`, and `rollout-shots/`;
-  `git status --short` is the source of truth.
+- Current source checkpoint for this wrap: `8394162`; final `PROJECT.md` wrap
+  commit sits on top. Since the `bb8fdad` integration, `main` shipped Animals on
+  Farm display polish, the public cattle weigh-in fixes and layout polish, retag
+  weight-history preservation, calf-row heifer promotion, weigh-in note
+  mirroring, full public entry edit parity, new-cow/reconcile label refinement,
+  admin-created password setting, Public Tasks assignee polish, the Light portal
+  daily-report review hub, task photo cap parity, the Cattle Log field journal,
+  and task-row photo thumbnails. See Latest Shipped Checkpoint for per-lane
+  detail.
+- Live verification: `https://wcfplanner.com/` returned 200 on 2026-06-12 and is
+  serving `assets/main-R7Kx-3KI.js`; the served JS contains `Enter Daily
+  Reports`, `View Past Reports`, and task photo cap text.
+- Integrated source validation before the `37668fd` push: `npm run format:check`
+  green, `npm run lint` 0 errors, `npm test` 212 files / 5567 passed,
+  `npm run build` green, and `git diff --check` clean. Later hotfix lanes used
+  focused tests/lint/build; see Latest Shipped Checkpoint for scope.
+- Local primary state as of this update (2026-06-12): primary
+  `C:\Users\Ronni\WCF-planner` is on `main` at source checkpoint `8394162`, with
+  only this `PROJECT.md` wrap pending before push. Current untracked local
+  artifacts include `WCF Planner Redesign/`, screenshot folders, and draft/backup
+  folders; `git status --short` is the source of truth.
+- Migration `112` (`cattle_log`) applied to PROD 2026-06-12 after Ronnie
+  screenshot-verified the Cattle Log build: singleton `cattle.log` comment-backed
+  field journal, issue sidecar, tag links/mirrors, unknown-calf detail capture
+  and resolver, @mention notification/deeplink support, role-aware issue toggle,
+  Light/webform entry point, and offline create/photo queue support.
+- Migration `111` (`weigh_in_note_record_comments`) applied to TEST and PROD
+  2026-06-11: weigh-in entry/session notes now mirror into canonical
+  record-page `comments` for cattle, sheep, pig, and broiler targets using
+  deterministic `wi-note-*` / `wis-note-*` ids. Edits update the same comment and
+  deletes remove it, so notes made during weigh-ins appear on the corresponding
+  animal or batch record without relying on hidden legacy comment timelines.
+- Migration `110` (`cattle_calf_row_heifer_promote`) applied to TEST and PROD
+  2026-06-11: a cattle-row trigger now promotes an active dam from `heifer` to
+  `cow` when a calf row is inserted or updated with that dam's current tag or a
+  non-import old tag. The migration also backfilled existing active heifers with
+  calf-row evidence and writes a calving-source audit comment.
 - Migration `109` (`drop_daily_photos_anon_insert`) applied to TEST (`exec_sql`)
   then PROD (`psql --single-transaction`, `ON_ERROR_STOP=1`) and verified
   2026-06-10: precheck found all three daily-photos storage policies present; the
@@ -208,8 +230,8 @@ plus a guard update in the same change.
   children gone + one `record.deleted` audit) inside a rolled-back transaction
   (zero PROD trace). `106` auth-gated, `107` admin-gated, `108` authenticated
   (mirrors each surface's existing access).
-- Parallel worktrees: primary `C:\Users\Ronni\WCF-planner` is on `main` at
-  `bb8fdad`; `C:\Users\Ronni\WCF-planner-light-audit` remains detached at
+- Parallel worktrees: primary `C:\Users\Ronni\WCF-planner` is on `main` at source
+  checkpoint `8394162`; `C:\Users\Ronni\WCF-planner-light-audit` remains detached at
   `ab39eb2`; merged Codex lane worktrees
   `C:\Users\Ronni\WCF-planner-codex-pig-metrics` (`2e960cb`),
   `C:\Users\Ronni\WCF-planner-codex-broiler-weighins-readonly` (`0bb7689`),
@@ -218,14 +240,13 @@ plus a guard update in the same change.
   `C:\Users\Ronni\WCF-planner-codex-animal-history` (`6d1ffd5`) still exist and
   are prunable after Ronnie confirms. Do not reuse merged Codex worktrees; start
   any new parallel lane from current `main` in a fresh scoped worktree/branch.
-- Open gates: no PROD migration, Storage, Vault, or Edge Function deploy gate is
-  open. `origin/main` is at `bb8fdad` and live; the 2026-06-11 push contained no
-  migrations, schema, RLS, Storage, Vault, or Edge Function work, so there is no
-  database work to apply for it. Current tracked local changes need the normal
-  commit/push gate after validation.
-- PROD-applied numbered migration series is live through `109`. Migration `082`
-  is unused; migration `083` is shelved. Operational note: the daily duplicate
-  cleanup `085` was applied before unique-index migration `084`.
+- Open gates: PROD migration gates remain open for pushed source migrations
+  `113` (Light daily-report 3-day own-record edit/delete window) and `114` (task
+  photo 5-total DB backstop). They are not recorded here as PROD-applied. No
+  Storage, Vault, or Edge Function deploy gate is open.
+- PROD-applied numbered migrations include `112`. Migration `082` is unused;
+  migration `083` is shelved. Operational note: the daily duplicate cleanup
+  `085` was applied before unique-index migration `084`.
 - Migration `100` (`processing_batch_lifecycle_rpcs`) was applied to TEST
   (`exec_sql`) then PROD (`psql --single-transaction`, `ON_ERROR_STOP=1`) and
   verified on 2026-06-08: `unschedule_cattle_processing_batch` and
@@ -289,6 +310,78 @@ listed:
 Earlier load-bearing migrations (`057`–`079`) are summarized under Supabase
 Migrations below and in git history; this list keeps the most recent shipped
 work:
+
+- 2026-06-12 session-close source checkpoint `8394162` plus final docs wrap.
+  Ronnie screenshot-verified the Cattle Log UI before wrap; CC committed the
+  build as `3c74b5d` and applied migration `112` to PROD. Codex then landed the
+  Task Center thumbnail hotfix as `8394162`. Landed since `d8951d4`:
+  - Cattle Log field journal (`3c74b5d`, migration `112`, PROD-applied
+    2026-06-12): new `/cattle/log` page and Light/webform tile entry point,
+    comment-backed singleton log, default Issues filter, manager/admin instant
+    issue toggle, keyword search, @mention notifications/deeplinks, #tag
+    matching to active cattle/current tags then non-import prior tags, mirrored
+    cow-record display, calf-detail capture for unknown tags, automatic resolver
+    when the cow is later created, role-aware How-to-use, and offline create
+    queue with photo attachments.
+  - Task row photo thumbnails (`8394162`): My Tasks and Completed rows render
+    signed private-bucket thumbnails instead of the old icon button while
+    preserving the click-through `TaskPhotoLightbox`.
+  Validation on the Codex thumbnail hotfix: targeted eslint, task/activity/photo
+  static tests, and `npm run build` green. CC's Cattle Log commit records its
+  own focused guard/test coverage and Ronnie screenshot review.
+
+- 2026-06-12 hotfix/source checkpoint, pushed `origin/main` `d8951d4`
+  (front-end live-served 2026-06-12). Netlify served `assets/main-R7Kx-3KI.js`
+  with live JS probes for the Light daily-report review hub and task photo cap
+  text. Landed since `37668fd`:
+  - Admin user management hotfix (`cdcc39d`): admins can create a user and set a
+    password directly, avoiding email deliverability blockers.
+  - Public Tasks assignee polish (`693dd4a`): the assignee-availability table was
+    restyled into an aligned, readable admin surface.
+  - Light portal report-review hub (`a56e57e`, migration `113`): the Light home
+    portal now separates Enter Daily Reports from View Past Reports and exposes
+    daily-report logs/equipment review links instead of the old My Submissions
+    focus. Migration `113` is the server-side 3-day own-record edit/delete
+    window and is pending PROD apply as of this wrap.
+  - Task photo cap parity (`d8951d4`, migration `114`): task creation/completion
+    photos are capped at 5 total per task in the client and protected by a
+    pending DB trigger migration. Focused validation for this lane: task photo
+    unit/static tests, task route/photo static guards, targeted eslint, and
+    `npm run build`.
+
+- 2026-06-12 weigh-in source checkpoint, pushed `origin/main` `37668fd`
+  (live-verified 2026-06-12). Netlify PROD was verified by 200 response,
+  `assets/main-CLOx_JA7.js`, and served-JS probes for `/animals-on-farm`, public
+  weigh-in entry edit, and the reconcile dropdown prompt. Integrated validation
+  before the latest push: `npm run format:check` green, `npm run lint` 0 errors,
+  `npm test` 212 files / 5567 passed, `npm run build` green,
+  `git diff --check` clean. Landed since `bb8fdad`:
+  - Animals on Farm display polish (`c61fab0`): table and line graph start at
+    Oct 2024, month labels avoid local-time rollback, the confusing table
+    sublabel was removed, and the page guards were refreshed.
+  - Cattle public weigh-in repair and cues (`9159ca5`): Swap Tag saves without
+    violating the reconcile-intent check, cattle dropdown options include sex,
+    blacklisted cattle shade red in the picker, and blacklisted/recent-entry cues
+    are guarded.
+  - Retag weight-history preservation (`1c2ba9a`): current and prior tag history
+    lookup keeps weight history visible after a cow is retagged.
+  - Calf-row dam automation (`c3a5815`, migration `110`): calf-row dam links now
+    promote heifers to cows with a calving-source audit comment, including an
+    idempotent backfill for existing rows.
+  - Public weigh-in recent-entry layout polish (`1ac176b`, `a434cf9`,
+    `9ef74c7`): cattle/sheep recent entries align on a fixed grid, the row
+    scrollbars were removed, and the session layout width was adjusted so edit
+    actions fit.
+  - Weigh-in notes and cattle cues (`534e50a`, migration `111`): weigh-in notes
+    now mirror into canonical record-page comments for cattle, sheep, pig, and
+    broiler records; public cattle dropdown/recent-entry blacklist cues remain
+    visible.
+  - Public entry edit parity (`85dcdeb`): cattle/sheep recent-entry edits can
+    change tag, missing-tag mode, weight, and note with duplicate/unknown-tag
+    safeguards.
+  - New-cow/reconcile label refinement (`37668fd`): `+ New Cow` no longer asks
+    for a prior tag, and the reconcile dropdown uses the prior-weight-aware
+    animal label (`tag`, sex, age, prior weight, plus breed).
 
 - 2026-06-11 source + docs integration, pushed `origin/main` `bb8fdad`
   (live-verified 2026-06-11). No migrations, schema changes, RLS changes,
@@ -647,15 +740,17 @@ work:
 
 ### Current Local Gates
 
-No PROD migration, storage, deploy, Vault, or Edge Function gate is open as of
-`origin/main` `bb8fdad`.
+PROD migration gates are open for pushed source migrations `113` and `114` as of
+source checkpoint `8394162`; no Storage, Vault, or Edge Function gate is open.
 
-- Main worktree `C:\Users\Ronni\WCF-planner` is on `main` at `bb8fdad`,
-  matching `origin/main`. Current tracked local changes are this `PROJECT.md`
-  reconciliation plus a small Animals on Farm display polish: table/line rows are
-  cut off before Oct 2024, month labels render in UTC to avoid local-time month
-  rollback, and the table month sublabel is removed. These local changes need the
-  normal commit/push gate after validation.
+- Main worktree `C:\Users\Ronni\WCF-planner` is on `main` at source checkpoint
+  `8394162`; this `PROJECT.md` wrap is the only tracked local change expected
+  before the final push. Local untracked screenshot/draft/backup folders may
+  remain and should not be committed unless Ronnie explicitly asks.
+- Pushed-but-not-recorded-PROD migrations: `113_light_daily_report_edit_window`
+  and `114_task_photo_total_limit`. Apply and verify them before claiming the
+  server-side Light 3-day daily-edit window or DB task-photo total trigger is
+  live. Migration `112_cattle_log` is PROD-applied.
 - Existing parallel worktrees: `C:\Users\Ronni\WCF-planner-light-audit` remains
   detached at `ab39eb2`; the merged Codex lane worktrees
   `C:\Users\Ronni\WCF-planner-codex-pig-metrics`,
@@ -793,6 +888,29 @@ Validation before push: `npm run format:check` green, `npm run lint` 0 errors,
 `npm test` 211 files / 5540 passed, `npm run build` green, `git diff --check`
 clean. Netlify live verification passed; no migration/schema/RLS/storage/PROD DB
 work.
+Shipped 2026-06-12 (removed from queue, pushed `origin/main` `37668fd`):
+- Animals on Farm display polish: table and line graph now start at Oct 2024,
+  month labeling avoids local-time rollback, and the table month sublabel was
+  removed.
+- Public cattle weigh-in fixes: Swap Tag saves cleanly under the
+  reconcile-intent constraint; current/prior tag history keeps retagged cow
+  weight history visible; blacklisted cattle stay red in the dropdown and recent
+  entries; cattle option labels include sex.
+- Calf-row dam automation: migration `110` promotes a heifer to cow when a calf
+  row is linked to her as dam, with a calving-source audit comment and existing
+  row backfill.
+- Public weigh-in recent-entry layout polish: fixed-grid row alignment, removed
+  row scrollbars, widened active session layout.
+- Weigh-in note mirroring: migration `111` mirrors cattle/sheep/pig/broiler
+  entry/session notes into canonical record-page comments.
+- Public weigh-in entry edit parity: recent-entry edits can change tag,
+  missing-tag mode, weight, and note with duplicate/unknown-tag safeguards.
+- New Cow / reconcile refinement: `+ New Cow` no longer asks for prior tag, and
+  the reconcile dropdown shows the prior-weight-aware animal label.
+Validation before latest push: `npm run format:check` green, `npm run lint` 0
+errors, `npm test` 212 files / 5567 passed, `npm run build` green,
+`git diff --check` clean. Netlify live verification passed; migrations `110` and
+`111` are already PROD-applied; no storage/Vault/Edge Function work.
 Shipped 2026-06-09 (this session, code checkpoint `ab39eb2`, followed by docs
 wrap `b5f433d`; visual preview waived by Ronnie for this push):
 - Lane 15 Tasks creation/public config: Public Tasks assignee checkbox grid;
@@ -861,7 +979,7 @@ Locked queue direction from Ronnie (2026-06-09):
 - Program dashboards stay program-specific unless Ronnie reopens the dropped Lane
   J KPI-frame decision.
 
-Current open queue after the 2026-06-11 `bb8fdad` push:
+Current open queue after the 2026-06-12 `8394162` source checkpoint:
 
 1. Residual source-wide visual-token cleanup (Lane I). Class: `ENH`. Size:
    medium/large only once scoped. The shared-token slices, record/shared/auth
@@ -1111,43 +1229,19 @@ work is only the Current open queue above unless Ronnie reopens a lane.
     Guard target: home/equipment attention static guards, equipment record-page
     guards, Activity/comment guards, and focused equipment Playwright.
 18. Cattle Weigh-In Record Page Entry Parity. SHIPPED 2026-06-09. Class: `DEFECT`/`ENH`. Size: medium.
-    Context: herd selection for cattle weigh-in sessions still works (not a gap).
-    The parity gap is on the authenticated cattle weigh-in record page
-    (`WeighInSessionPage`): the public `WeighInsWebform` still has the desired
-    cattle workflow — `remainingTags` (herd-scoped cow tags minus tags already
-    weighed in the session), `remainingCows` (herd-scoped unaccounted-for cows for
-    replacement/lost-tag reconciliation), `pendingReconciles` (`new_tag_flag`
-    entries that must reconcile before completion), and "Pool narrows as more cows
-    get weighed" behavior. The record page has lower-level reconcile/tag-swap
-    mechanics, but its entry UI is free-text and the reconcile dropdown shows all
-    cattle with tags, not the diminishing herd-scoped pool.
-    Direction:
-    - Convert cattle weigh-in record-page entries from card/grid to a dense
-      list/table sorted ascending by numeric tag.
-    - Preserve autosave/edit, delete, note, prior weight/date, days-since, weight
-      delta, ADG, processor flag, comments/Activity side effects, and record-page
-      chrome.
-    - Columns for scanning: Tag, Weight, Note, Prior, Days, +/- Delta, ADG,
-      Herd/Status or Processor, Time, Actions.
-    - Normal cattle entry defaults to a herd-scoped "available cows to weigh"
-      picker/list that removes cows already weighed in that session.
-    - Lost/replacement/new-tag entries use a dedicated reconciliation panel scoped
-      to that session's remaining herd cows, not all cattle.
-    - Reconciliation keeps existing behavior: update the cow's current tag, append
-      the prior tag into `old_tags`, clear `weigh_ins.new_tag_flag`, stitch
-      `cattle_comments` to the cow/tag, and log Activity.
-    - Block completion while unresolved `new_tag_flag` entries remain (matching the
-      public form).
-    - Keep explicit swap/new-tag escape hatches, but make the main workflow
-      picker/list driven.
-    Guard target: static guard that the cattle record page computes/uses
-    herd-scoped diminishing pools (`remainingTags`/`remainingCows` or equivalent);
-    static guard that the reconcile dropdown does not use all animals blindly;
-    static/Playwright guard that cattle entries render as a list/table sorted
-    ascending by tag; focused Playwright for a cattle session (choose herd/session,
-    weigh cows from the diminishing list, create a replacement/new-tag entry,
-    reconcile it to a remaining cow, and verify completion is blocked until
-    resolved).
+    Shipped behavior: the authenticated cattle weigh-in record page
+    (`WeighInSessionPage`) uses dense tag-ascending entry rows, herd-scoped
+    diminishing pools for normal entries and replacement reconciliation, and
+    completion blocking while unresolved `new_tag_flag` entries remain.
+    Reconciliation updates the cow current tag, appends the prior tag into
+    `old_tags`, clears `weigh_ins.new_tag_flag`, stitches legacy cattle comments,
+    and logs Activity. Later public-form follow-ups through `37668fd` kept the
+    same operational contract visible on the login-gated form: prior-weight-aware
+    reconcile labels, retag weight-history preservation, no prior-tag field for
+    `+ New Cow`, and full recent-entry edit parity.
+    Guard target: `tests/static/weighin_session_record_page_static.test.js`,
+    `tests/static/weighinswebform_no_app_store.test.js`, and focused weigh-in
+    Playwright when the end-to-end flow is changed.
 
 ### Light-User Portal Contract
 
@@ -1165,7 +1259,7 @@ Shipped contract:
 - Light users land on a contained portal with only allowed surfaces: webform hub,
   daily report forms, six daily list/record views, Add Feed, equipment
   fueling/checklist, fuel supply, Tasks, legacy pig daily form, and My
-  Submissions.
+  Submissions / View Past Reports, plus the Cattle Log webform tile.
 - Weigh-ins are intentionally not a Light surface.
 - Light can read all daily report records in the allowed daily surfaces,
   including legacy rows, but can edit/delete only rows where
@@ -1180,6 +1274,10 @@ Shipped contract:
 - Equipment fueling and fuel supply own-record edits/deletes for Light happen in
   My Submissions through ownership RPCs. Privileged fleet/admin surfaces remain
   available to privileged roles under RLS/RPC controls.
+- Light home separates daily entry from review: `Enter Daily Reports` opens the
+  form-entry path, while `View Past Reports` exposes daily-report logs and the
+  Equipment tab review links. Fuel Log/Add Feed are not separate Light review
+  targets because Add Feed is captured through daily reports.
 - The Light home portal (`LightHomePortal.jsx`) shows read-only alert cards above
   the shortcut grid — Missed Daily Reports and Equipment Attention — plus a
   Next-30 events list below (only when there are events). These reuse the shared
@@ -1243,13 +1341,15 @@ unless Ronnie changes the contract:
   Next 30 Days, and admin Last-5-Days.
 - `/animals-on-farm`: opened from the Home Animals on Farm card; shows newest-
   first monthly species counts and a multi-series line graph for Broilers, Layer
-  Hens, Pigs, Cattle, Sheep, and Total. Current local polish cuts the history
-  range off before Oct 2024 and removes the table month sublabel.
+  Hens, Pigs, Cattle, Sheep, and Total. The history range starts at Oct 2024 and
+  the table omits the old month sublabel.
 - Broiler: home, timeline, batches, feed, dailys, weigh-ins.
 - Pig: home, breeding, farrowing, sows, batches, feed, dailys, weigh-ins.
 - Layer: home, groups, batches, dailys, eggs.
 - Cattle: home, herds, breeding, forecast, processing batches, dailys,
   weigh-ins.
+- Cattle Log: `/cattle/log` is the free-flowing field journal for cattle program
+  observations, also reachable to Light users through the webforms tile.
 - Sheep: home, flocks, processing batches, dailys, weigh-ins.
 - Equipment/Fleet: `/fleet` with fleet list, fuel log, and equipment detail.
 - Task Center: `/tasks`.
@@ -1439,9 +1539,36 @@ Current PROD architecture includes these load-bearing migrations:
   PROD 2026-06-09. (`105`-`108` all SECDEF, `search_path public`, REVOKE
   anon / GRANT authenticated, `NOTIFY pgrst`; ids are TEXT slugs so the params
   are `text`, not `uuid`.)
+- `109` `drop_daily_photos_anon_insert`: drops the dead anon INSERT policy from
+  the `daily-photos` bucket while preserving authenticated insert/select
+  policies. Applied TEST + PROD 2026-06-10.
+- `110` `cattle_calf_row_heifer_promote`: adds the
+  `cattle_promote_heifer_from_calf_row` trigger/function so calf-row `dam_tag`
+  links promote active heifer dams to cows and write a calving-source audit
+  comment. Matching resolves current tag first, then non-import old tags; the
+  migration backfills existing active heifers with calf-row evidence. Applied
+  TEST + PROD 2026-06-11.
+- `111` `weigh_in_note_record_comments`: server-side triggers mirror weigh-in
+  entry/session notes into canonical `comments` rows for cattle, sheep, pig, and
+  broiler record pages with deterministic `wi-note-*` / `wis-note-*` ids. Edits
+  update the same comment and deletes remove it. Applied TEST + PROD
+  2026-06-11.
+- `112` `cattle_log`: creates the cattle log sidecar tables/RPCs/triggers for
+  the singleton `cattle.log` comment-backed field journal, issue state, tag
+  links/mirrors, unknown-calf detail capture/resolution, and locked Activity
+  access branch. Applied TEST by CC and PROD-applied 2026-06-12.
 
 Special migration notes:
 
+- `112` is PROD-applied even though pushed source also contains higher-numbered
+  pending migrations `113` and `114`; apply status is not purely numeric during
+  this wrap.
+- `113` `light_daily_report_edit_window` is in pushed source (`a56e57e`) but is
+  not recorded here as PROD-applied. It adds the server-side Light-user
+  3-day own-record daily edit/delete window.
+- `114` `task_photo_total_limit` is in pushed source (`d8951d4`) but is not
+  recorded here as PROD-applied. It adds the `task_instance_photos` 5-total
+  trigger backstop.
 - `082` is intentionally unused.
 - `083` public webform submitter identity is shelved and must not be applied
   unless Ronnie reverses the auth-only webform direction.
@@ -1646,6 +1773,10 @@ the guard deliberately.
 - `RecordActivityLog` filters `comment.posted` and shows audit only.
 - `CommentsSection` owns user discussion, attachments, edit history, soft
   delete, and mentions.
+- Weigh-in notes mirror into canonical record-page `comments` via migration
+  `111`: cattle/sheep entry notes land on animal records, pig/broiler entry or
+  session notes land on batch records, edits update the deterministic note
+  comment, and deletes remove it.
 - `CommentsSection` renders a visible posted timestamp for every comment via
   `data-comment-posted-at="1"` and the canonical Central farm-time formatter;
   fresh comments may append a short relative suffix. Deleted-comment and
@@ -1713,6 +1844,10 @@ Workflow/worktable entities:
   `restore_cattle_animal`.
 - Sheep soft-delete/restore: `soft_delete_sheep_animal`,
   `restore_sheep_animal`.
+- Heifer-to-cow promotion fires from both calving records and calf-row dam links.
+  Migration `110` covers the calf-row path: when a calf row's `dam_tag` points
+  to an active heifer by current tag or non-import old tag, the dam becomes
+  `cow` and gets a calving-source audit comment.
 - Animal restores reject active tag conflicts.
 - Normal reads filter `deleted_at IS NULL`.
 - Admin can inspect deleted rows where RLS/RPC supports it.
@@ -1732,6 +1867,18 @@ Workflow/worktable entities:
 - `CattleBreedingView` mounts the audit-only `cattle.breeding` workflow Activity
   stream (`RecordCollaborationSection`, entity_id `cattle-breeding`,
   `showComments=false`), populated by the migration `094` cycle RPCs.
+- Public cattle weigh-ins keep operational tag context visible: dropdown labels
+  include sex, blacklist state stays red in dropdown and weighed lists, retagged
+  animals retain prior weight-history lookup, `+ New Cow` does not ask for prior
+  tag, and replacement-tag reconcile options use the same prior-weight-aware
+  animal label as the main picker.
+- Cattle Log (`/cattle/log`) is a comment-backed program field journal on the
+  singleton `cattle.log` entity. It defaults to the Issues filter, supports
+  keyword search, @mentions, photo attachments, offline create replay, and
+  role-aware issue clearing. `#tag` mentions mirror entries onto matched active
+  cow records; unknown tags collect required calf details and resolve when the
+  cow record is later created. Mirrored cow-record entries are read-through
+  references back to the Cattle Log, not independently editable record comments.
 - Sheep Flocks saved views use `src/lib/savedViewsApi.js` over `app_saved_views`
   with `surface_key = 'sheep.flocks'`, capturing search/filter/sort state; load
   failures degrade to an inline notice and never block the flock hub. Sheep
@@ -1880,6 +2027,11 @@ Workflow/worktable entities:
 - Frontend must not call `generate_system_task_instance`.
 - `task_instance_photos` is canonical. Legacy single-photo columns are display
   fallback only.
+- Task photos are capped at 5 total per task across creation and completion.
+  The client uses `MAX_TASK_PHOTOS_PER_TASK`; migration `114` is the DB backstop
+  and is pending PROD apply as of this wrap.
+- My Tasks and Completed rows render signed private-bucket thumbnails through
+  `TaskPhotoThumbnailButton`; the click target still opens `TaskPhotoLightbox`.
 - Task assignee dropdowns use `loadTaskAssignableProfilesById` and fail closed
   on `webform_config` read errors.
 - Header task badge soft-fails and must not break Header rendering.
