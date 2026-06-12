@@ -74,28 +74,35 @@ function TeamAvailabilityEditor({loadUsers}) {
   }
 
   const card = {
-    background: 'white',
-    border: '1px solid #e5e7eb',
-    borderRadius: 10,
-    padding: '14px 16px',
-    marginBottom: 16,
+    background: 'linear-gradient(180deg, #ffffff 0%, #fbfdfc 100%)',
+    border: '1px solid #d8e4de',
+    borderRadius: 8,
+    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.06)',
+    marginBottom: 18,
+    overflow: 'hidden',
   };
   const rowStyle = {
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: '34px minmax(0, 1fr) auto',
     alignItems: 'center',
-    gap: 6,
-    padding: '4px 8px',
+    gap: 10,
+    minHeight: 54,
+    padding: '10px 12px',
+    border: '1px solid #e5e7eb',
+    borderRadius: 8,
+    background: '#ffffff',
+    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
     fontSize: 12,
-    color: '#374151',
+    color: '#1f2937',
     cursor: 'pointer',
+    transition: 'border-color 120ms ease, box-shadow 120ms ease, background 120ms ease',
   };
   // Aligned CSS grid: rows/columns auto-fill so the list reads cleanly on
   // desktop and collapses to a single column on narrow/mobile widths.
   const assigneeGridStyle = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: 4,
-    alignItems: 'center',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+    gap: 8,
   };
 
   const hiddenAssigneeIds = new Set(publicAssigneeAv.hiddenProfileIds || []);
@@ -103,53 +110,170 @@ function TeamAvailabilityEditor({loadUsers}) {
     .filter((u) => u && u.id && u.role !== 'inactive')
     .slice()
     .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+  const hiddenCount = eligibleProfiles.filter((u) => hiddenAssigneeIds.has(u.id)).length;
+  const includedCount = eligibleProfiles.length - hiddenCount;
+  const roleLabels = {
+    admin: 'Admin',
+    management: 'Management',
+    farm_team: 'Farm Team',
+    light: 'Light',
+    equipment_tech: 'Equipment',
+  };
+
+  function initialsFor(user) {
+    const source = String(user.full_name || user.email || user.id || '').trim();
+    if (!source) return '?';
+    const parts = source
+      .replace(/@.*/, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : source.slice(0, 2);
+    return letters.toUpperCase();
+  }
 
   return (
     <div style={card}>
-      <div style={{fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 6}}>
-        Public Tasks &mdash; Assignees
-        <span style={{fontSize: 11, fontWeight: 400, color: '#9ca3af', marginLeft: 8}}>
-          who can be assigned a public task
-        </span>
-      </div>
       <div
-        data-availability-default-copy="tasks-public"
-        style={{fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.5, fontStyle: 'italic'}}
+        style={{
+          padding: '14px 16px 12px',
+          borderBottom: '1px solid #e5e7eb',
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 12,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+        }}
       >
-        Active planner users are included by default. Uncheck to hide a user from the public Tasks Assign-to dropdown.
+        <div>
+          <div style={{fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 4}}>
+            Public Tasks &mdash; Assignees
+          </div>
+          <div
+            data-availability-default-copy="tasks-public"
+            style={{fontSize: 12, color: '#64748b', lineHeight: 1.45, maxWidth: 560}}
+          >
+            Active planner users are included by default. Uncheck to hide a user from the public Tasks Assign-to dropdown.
+          </div>
+        </div>
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '5px 9px',
+            borderRadius: 999,
+            background: '#ecfdf5',
+            border: '1px solid #bbf7d0',
+            color: '#065f46',
+            fontSize: 11,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {includedCount} included
+          {hiddenCount > 0 ? ` / ${hiddenCount} hidden` : ''}
+        </div>
       </div>
-      <div style={{fontSize: 11, color: '#6b7280', marginBottom: 6, fontWeight: 600}}>Assignee (planner users)</div>
-      <div data-availability-assignee-grid="tasks-public" style={assigneeGridStyle}>
-        {eligibleProfiles.length === 0 ? (
-          <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No eligible planner users yet.</span>
-        ) : (
-          eligibleProfiles.map((u) => {
-            const isHidden = hiddenAssigneeIds.has(u.id);
-            return (
-              <label
-                key={u.id}
-                data-availability-assignee-row="tasks-public"
-                data-availability-assignee-id={u.id}
-                data-availability-assignee-hidden={isHidden ? '1' : '0'}
-                style={rowStyle}
-              >
-                <input
-                  type="checkbox"
-                  checked={!isHidden}
-                  disabled={busy}
-                  onChange={(e) => onToggleAssignee(u.id, !e.target.checked)}
-                  style={{margin: 0, accentColor: '#085041'}}
-                />
-                <span>{u.full_name || u.email || u.id.slice(0, 8)}</span>
-              </label>
-            );
-          })
-        )}
+      <div style={{padding: 16}}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 8,
+            gap: 10,
+          }}
+        >
+          <div style={{fontSize: 11, color: '#64748b', fontWeight: 800, textTransform: 'uppercase'}}>
+            Assignee (planner users)
+          </div>
+          {busy && <div style={{fontSize: 11, color: '#64748b'}}>Saving...</div>}
+        </div>
+        <div data-availability-assignee-grid="tasks-public" style={assigneeGridStyle}>
+          {eligibleProfiles.length === 0 ? (
+            <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No eligible planner users yet.</span>
+          ) : (
+            eligibleProfiles.map((u) => {
+              const isHidden = hiddenAssigneeIds.has(u.id);
+              const name = u.full_name || u.email || u.id.slice(0, 8);
+              return (
+                <label
+                  key={u.id}
+                  data-availability-assignee-row="tasks-public"
+                  data-availability-assignee-id={u.id}
+                  data-availability-assignee-hidden={isHidden ? '1' : '0'}
+                  style={{
+                    ...rowStyle,
+                    borderColor: isHidden ? '#e5e7eb' : '#b7d7ca',
+                    background: isHidden ? '#f8fafc' : '#ffffff',
+                    opacity: busy ? 0.72 : 1,
+                    cursor: busy ? 'wait' : 'pointer',
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: isHidden ? '#e5e7eb' : '#dff4eb',
+                      color: isHidden ? '#64748b' : '#085041',
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {initialsFor(u)}
+                  </span>
+                  <span style={{minWidth: 0}}>
+                    <span
+                      style={{
+                        display: 'block',
+                        color: isHidden ? '#64748b' : '#111827',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {name}
+                    </span>
+                    <span style={{display: 'block', color: '#94a3b8', fontSize: 11, marginTop: 2}}>
+                      {roleLabels[u.role] || u.role || 'Planner user'}
+                    </span>
+                  </span>
+                  <span style={{display: 'inline-flex', alignItems: 'center', gap: 7}}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: isHidden ? '#64748b' : '#085041',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {isHidden ? 'Hidden' : 'Included'}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={!isHidden}
+                      disabled={busy}
+                      onChange={(e) => onToggleAssignee(u.id, !e.target.checked)}
+                      style={{margin: 0, accentColor: '#085041', width: 16, height: 16}}
+                    />
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
       </div>
       {err && (
         <div
           style={{
-            marginTop: 10,
+            margin: '0 16px 16px',
             background: '#fef2f2',
             border: '1px solid #fecaca',
             color: '#b91c1c',
