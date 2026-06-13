@@ -403,6 +403,7 @@ describe('cattle log client — no direct table access (RPC-only)', () => {
     const page = read('src/cattle/CattleLogPage.jsx');
     const tables = [...page.matchAll(/\.from\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]);
     expect(tables).toEqual(['cattle']);
+    expect(page).toContain(".select('id, tag, old_tags, herd, sex, birth_date, origin, breed, dam_tag')");
     expect(page).toContain(".is('deleted_at', null)");
     expect(page).toContain(".in('herd', CATTLE_HERDS)");
   });
@@ -523,6 +524,9 @@ describe('CattleLogPage — contracted data hooks and behavior anchors', () => {
       'data-cattle-log-filter-all',
       'data-cattle-log-calf-panel',
       'data-cattle-log-unresolved-note',
+      'data-cattle-log-unmatched-calves',
+      'data-cattle-log-unmatched-calves-count',
+      'data-cattle-log-unmatched-calf-row',
       'data-cattle-log-howto',
       'data-cattle-log-load-more',
     ]) {
@@ -551,6 +555,20 @@ describe('CattleLogPage — contracted data hooks and behavior anchors', () => {
     expect(page).toContain('Could not load the Cattle Log');
     expect(page).toContain('InlineNotice');
     expect(page).toContain('Retry');
+  });
+
+  it('shows unmatched calves above the issue log by reusing the shared Herds predicate', () => {
+    expect(page).toContain("import {isUnmatchedCalf} from '../lib/cattleHerdFilters.js';");
+    expect(page).toContain('isUnmatchedCalf(c, todayMs)');
+    expect(page).toContain('data-cattle-log-unmatched-calves="1"');
+    const filtersIdx = page.indexOf('data-cattle-log-filter-issues="1"');
+    const unmatchedIdx = page.indexOf('data-cattle-log-unmatched-calves="1"');
+    const queueIdx = page.indexOf('data-cattle-log-needs-attention-row={r.id}');
+    const listIdx = page.indexOf('data-cattle-log-row={e.id}');
+    expect(filtersIdx).toBeGreaterThan(-1);
+    expect(unmatchedIdx).toBeGreaterThan(filtersIdx);
+    expect(unmatchedIdx).toBeLessThan(queueIdx);
+    expect(queueIdx).toBeLessThan(listIdx);
   });
 
   it('gates roles per contract (view/add vs manage)', () => {

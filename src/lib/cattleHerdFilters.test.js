@@ -225,13 +225,13 @@ describe('herd exception predicates', () => {
     expect(isNonCalvingCow(cow({tag: 'NO-DOB', birth_date: null}), recs, TODAY)).toBe(false);
   });
 
-  it('Unmatched Calves = any sex, recent DOB or no DOB, with no dam_tag', () => {
-    expect(isUnmatchedCalf(cow({tag: 'YOUNG', sex: 'steer', birth_date: '2026-01-02', dam_tag: null}), TODAY)).toBe(
+  it('Unmatched Calves = any sex, DOB in the last 9 months or no DOB, with no dam_tag', () => {
+    expect(isUnmatchedCalf(cow({tag: 'YOUNG', sex: 'steer', birth_date: '2025-08-02', dam_tag: null}), TODAY)).toBe(
       true,
     );
     expect(isUnmatchedCalf(cow({tag: 'NO-DOB', sex: 'bull', birth_date: null, dam_tag: null}), TODAY)).toBe(true);
-    expect(isUnmatchedCalf(cow({tag: 'MATCHED', birth_date: '2026-01-02', dam_tag: 'M001'}), TODAY)).toBe(false);
-    expect(isUnmatchedCalf(cow({tag: 'OLDER', birth_date: '2026-01-01', dam_tag: null}), TODAY)).toBe(false);
+    expect(isUnmatchedCalf(cow({tag: 'MATCHED', birth_date: '2025-08-02', dam_tag: 'M001'}), TODAY)).toBe(false);
+    expect(isUnmatchedCalf(cow({tag: 'OLDER', birth_date: '2025-08-01', dam_tag: null}), TODAY)).toBe(false);
     expect(isUnmatchedCalf(cow({tag: 'FUTURE', birth_date: '2026-06-01', dam_tag: null}), TODAY)).toBe(false);
   });
 
