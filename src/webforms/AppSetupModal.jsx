@@ -1,8 +1,8 @@
 // AppSetupModal — shared "App Setup" modal used by the public daily-reports
 // hub (WebformHub) and the public equipment hub (FuelingHub). Teaches the
-// canonical URLs and the Add-to-Home-Screen install flow on iOS Safari +
-// Android Chrome. No service worker yet, so the copy includes the offline
-// caveat: queued submissions stay tied to the same browser storage.
+// canonical URLs, the Add-to-Home-Screen install flow on iOS Safari +
+// Android Chrome, and the app-shell cache expectation. Queued submissions
+// still stay tied to the same browser storage.
 import React from 'react';
 
 const overlayS = {
@@ -115,8 +115,9 @@ export default function AppSetupModal({onClose}) {
         </ul>
 
         <div style={calloutS}>
-          Heads up: this app does not have offline-cache yet. Start forms with signal when possible. If something says
-          {' "queued"'} or {'"saved on this device,"'} reconnect and reopen the same home-screen icon to flush.
+          Offline cache starts after the app has opened online at least once. Queued submissions still live on this
+          device, so reconnect and reopen the same home-screen icon when something says {'"queued"'} or
+          {' "saved on this device."'}
         </div>
 
         <div style={{marginTop: 16, textAlign: 'right'}}>
