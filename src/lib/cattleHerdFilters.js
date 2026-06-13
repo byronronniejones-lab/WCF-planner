@@ -230,7 +230,7 @@ export function isUnmatchedCalf(cow, todayMs) {
   if (!cow) return false;
   if (String(cow.dam_tag || '').trim()) return false;
   if (!cow.birth_date) return true;
-  const youngCutoff = monthsAgoISO(todayMs, 4);
+  const youngCutoff = monthsAgoISO(todayMs, 9);
   const todayISO = isoDateFromMs(todayMs);
   return !!youngCutoff && !!todayISO && cow.birth_date >= youngCutoff && cow.birth_date <= todayISO;
 }

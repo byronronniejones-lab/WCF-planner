@@ -28,6 +28,7 @@ import {
 } from '../lib/commentAttachments.js';
 import {imageAltText} from '../lib/imageAlt.js';
 import {CATTLE_HERDS, CATTLE_HERD_LABELS} from '../lib/cattle.js';
+import {isUnmatchedCalf} from '../lib/cattleHerdFilters.js';
 import {
   submitCattleLogEntry,
   editCattleLogEntry,
@@ -178,6 +179,30 @@ const filterBtn = (active) => ({
   background: active ? '#085041' : 'white',
   color: active ? 'white' : '#374151',
 });
+
+function sexLabel(sex) {
+  const found = SEX_OPTIONS.find(([value]) => value === sex);
+  return found ? found[1] : sex || 'Sex missing';
+}
+
+function compareUnmatchedCalves(a, b) {
+  const aHerd = CATTLE_HERDS.indexOf(a && a.herd);
+  const bHerd = CATTLE_HERDS.indexOf(b && b.herd);
+  const herdCmp = (aHerd < 0 ? 999 : aHerd) - (bHerd < 0 ? 999 : bHerd);
+  if (herdCmp) return herdCmp;
+  const aTag = String((a && a.tag) || '');
+  const bTag = String((b && b.tag) || '');
+  if (!aTag && !bTag) return 0;
+  if (!aTag) return 1;
+  if (!bTag) return -1;
+  return aTag.localeCompare(bTag, undefined, {numeric: true, sensitivity: 'base'});
+}
+
+function unmatchedCalfMeta(calf) {
+  const herd = CATTLE_HERD_LABELS[calf.herd] || calf.herd || 'Herd missing';
+  const dob = calf.birth_date ? 'DOB ' + calf.birth_date : 'DOB missing';
+  return [herd, sexLabel(calf.sex), dob].filter(Boolean).join(' | ');
+}
 
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 function PaperAirplaneIcon() {
@@ -698,7 +723,7 @@ export default function CattleLogPage({sb, authState, Header}) {
     let cancelled = false;
     setCattleStatus('loading');
     sb.from('cattle')
-      .select('id, tag, old_tags, herd, sex, birth_date, origin, breed')
+      .select('id, tag, old_tags, herd, sex, birth_date, origin, breed, dam_tag')
       .is('deleted_at', null)
       .in('herd', CATTLE_HERDS)
       .then(({data, error}) => {
@@ -735,6 +760,10 @@ export default function CattleLogPage({sb, authState, Header}) {
     () => new Set((cattleRows || []).map((c) => String(c.tag || '')).filter(Boolean)),
     [cattleRows],
   );
+  const unmatchedCalves = useMemo(() => {
+    const todayMs = Date.now();
+    return (cattleRows || []).filter((c) => isUnmatchedCalf(c, todayMs)).sort(compareUnmatchedCalves);
+  }, [cattleRows]);
 
   // ── mentionable profiles (cattle-log-specific RPC; cached promise) ──
   const mentionablesPromiseRef = useRef(null);
@@ -1322,6 +1351,100 @@ export default function CattleLogPage({sb, authState, Header}) {
             style={{...CONTROL, maxWidth: 280}}
           />
         </div>
+
+        {unmatchedCalves.length > 0 && (
+          <section
+            data-cattle-log-unmatched-calves="1"
+            style={{
+              ...CARD,
+              borderColor: '#f59e0b',
+              background: '#fffbeb',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10}}>
+              <div>
+                <div style={{fontSize: 12, fontWeight: 700, color: '#92400e', textTransform: 'uppercase'}}>
+                  Unmatched Calves
+                </div>
+                <div style={{fontSize: 13, color: '#374151'}}>Calves still missing a dam on the herd record.</div>
+              </div>
+              <span
+                data-cattle-log-unmatched-calves-count={unmatchedCalves.length}
+                style={{
+                  minWidth: 28,
+                  height: 28,
+                  borderRadius: 999,
+                  background: '#92400e',
+                  color: 'white',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                {unmatchedCalves.length}
+              </span>
+            </div>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8}}>
+              {unmatchedCalves.map((calf) => {
+                const canOpen = !!tagChipOpenCow && !!calf.id;
+                const rowStyle = {
+                  border: '1px solid #fde68a',
+                  background: 'white',
+                  borderRadius: 6,
+                  padding: '8px 10px',
+                  fontFamily: 'inherit',
+                  textAlign: 'left',
+                  color: '#111827',
+                  cursor: canOpen ? 'pointer' : 'default',
+                  minWidth: 0,
+                };
+                const content = (
+                  <>
+                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8}}>
+                      <span style={{fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere'}}>
+                        #{calf.tag || 'No tag'}
+                      </span>
+                      <span style={{fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase'}}>
+                        Needs dam
+                      </span>
+                    </div>
+                    <div style={{fontSize: 12, color: '#4b5563', marginTop: 3}}>{unmatchedCalfMeta(calf)}</div>
+                    {(calf.breed || calf.origin) && (
+                      <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>
+                        {[calf.breed, calf.origin].filter(Boolean).join(' | ')}
+                      </div>
+                    )}
+                  </>
+                );
+                return canOpen ? (
+                  <button
+                    key={calf.id || calf.tag}
+                    type="button"
+                    data-cattle-log-unmatched-calf-row={calf.id || calf.tag}
+                    aria-label={'Open cattle record for ' + (calf.tag || calf.id)}
+                    onClick={() => openCow(calf.id)}
+                    style={rowStyle}
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <div
+                    key={calf.id || calf.tag}
+                    data-cattle-log-unmatched-calf-row={calf.id || calf.tag}
+                    style={rowStyle}
+                  >
+                    {content}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* ── Offline queue rows (top of the list) ── */}
         {(queuedRows.length > 0 || attentionRows.length > 0) && (

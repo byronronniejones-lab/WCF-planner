@@ -40,6 +40,7 @@ describe('Cattle herd exception filters + groups', () => {
   it('Unmatched Calves is a checkbox-style filter in Lineage/Other (no Exceptions group)', () => {
     expect(herdsView).toContain("unmatchedCalves: 'Unmatched Calves'");
     expect(herdsView).toContain("CHECKBOX_FILTER_KEYS = new Set(['unmatchedCalves'])");
+    expect(filtersLib).toMatch(/export function isUnmatchedCalf[\s\S]*monthsAgoISO\(todayMs, 9\)/);
     // Rendered as a labeled checkbox (not a pill/popover chip).
     expect(herdsView).toContain('function renderCheckboxFilter');
     expect(herdsView).toContain('data-cattle-special-filter={key}');

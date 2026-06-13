@@ -83,7 +83,20 @@ async function submitEntryViaRpc(
   return data;
 }
 
-async function seedCow(supabaseAdmin, {id, tag, herd = 'finishers', sex = 'steer', oldTags = []}) {
+async function seedCow(
+  supabaseAdmin,
+  {
+    id,
+    tag,
+    herd = 'finishers',
+    sex = 'steer',
+    oldTags = [],
+    birthDate = null,
+    damTag = null,
+    breed = null,
+    origin = null,
+  },
+) {
   const {error} = await supabaseAdmin.from('cattle').upsert(
     {
       id,
@@ -91,6 +104,10 @@ async function seedCow(supabaseAdmin, {id, tag, herd = 'finishers', sex = 'steer
       herd,
       sex,
       old_tags: oldTags,
+      birth_date: birthDate,
+      dam_tag: damTag,
+      breed,
+      origin,
       deleted_at: null,
       deleted_by: null,
       processing_batch_id: null,
@@ -105,6 +122,10 @@ async function waitForLogLoaded(page) {
 }
 
 const COMPOSER_TEXTAREA = '[data-cattle-log-composer="1"] [data-mention-textarea="1"]';
+
+function daysFromTodayISO(days) {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 // --------------------------------------------------------------------------
 // Test 1 — composer create
@@ -156,6 +177,63 @@ test('composer create: entry lands as a cattle.log comment with issue-state and 
   // deep-link anchor.
   await expect(page.locator(`[data-cattle-log-issue-toggle="${comments[0].id}"]`)).toBeChecked();
   await expect(page.locator(`#comment-${comments[0].id}`)).toBeVisible();
+});
+
+// --------------------------------------------------------------------------
+// Test 1b - unmatched calves reminder
+// --------------------------------------------------------------------------
+test('unmatched calves reminder: lists active calves without dams above the issue log', async ({
+  page,
+  supabaseAdmin,
+  resetDb,
+}) => {
+  await resetDb();
+  await clearCattleLogData(supabaseAdmin);
+  await seedAdminProfile(supabaseAdmin);
+
+  await seedCow(supabaseAdmin, {
+    id: 'cow-unmatched-recent',
+    tag: '901',
+    herd: 'finishers',
+    sex: 'steer',
+    birthDate: daysFromTodayISO(-30),
+    breed: 'Angus',
+    origin: 'Farm born',
+  });
+  await seedCow(supabaseAdmin, {
+    id: 'cow-unmatched-no-dob',
+    tag: '902',
+    herd: 'backgrounders',
+    sex: 'bull',
+    birthDate: null,
+  });
+  await seedCow(supabaseAdmin, {
+    id: 'cow-matched-recent',
+    tag: '903',
+    herd: 'finishers',
+    sex: 'steer',
+    birthDate: daysFromTodayISO(-30),
+    damTag: '100',
+  });
+  await seedCow(supabaseAdmin, {
+    id: 'cow-unmatched-too-old',
+    tag: '904',
+    herd: 'finishers',
+    sex: 'steer',
+    birthDate: daysFromTodayISO(-310),
+  });
+
+  await page.goto('/cattle/log');
+  await waitForLogLoaded(page);
+
+  const section = page.locator('[data-cattle-log-unmatched-calves="1"]');
+  await expect(section).toBeVisible({timeout: 10_000});
+  await expect(section.locator('[data-cattle-log-unmatched-calf-row]')).toHaveCount(2);
+  await expect(section.locator('[data-cattle-log-unmatched-calves-count="2"]')).toBeVisible();
+  await expect(section).toContainText('#901');
+  await expect(section).toContainText('#902');
+  await expect(section).not.toContainText('#903');
+  await expect(section).not.toContainText('#904');
 });
 
 // --------------------------------------------------------------------------
