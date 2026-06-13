@@ -18,6 +18,7 @@ import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter, useLocation, useNavigate} from 'react-router-dom';
 import {VIEW_TO_PATH, PATH_TO_VIEW, HASH_COMPAT, resolvePathAlias} from './lib/routes.js';
+import {registerAppServiceWorker} from './lib/serviceWorkerRegistration.js';
 
 // Phase 2.0.0: foundation lib helpers extracted from this file. Importing
 // here makes them available throughout the verbatim-ported app body without
@@ -302,6 +303,7 @@ function applyManifestHref(pathname) {
   }
 }
 applyManifestHref(window.location.pathname);
+registerAppServiceWorker();
 
 // ── LAZY LOAD SHEETJS ──
 // SheetJS (xlsx) is ~600KB minified and only used when opening processor
