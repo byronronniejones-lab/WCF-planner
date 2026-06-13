@@ -967,7 +967,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
         </section>
 
         {isAdmin && allRecentReports.length > 0 && (
-          <section className="block">
+          <section className="block admin-daily-block">
             <div className="block-head">
               <h2 className="section-label">Last 5 Days — All Daily Reports</h2>
             </div>

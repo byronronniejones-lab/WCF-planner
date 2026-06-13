@@ -152,12 +152,12 @@ export default function HomeWeatherCard() {
       React.createElement('span', {style: {fontSize: 22}}, weatherIcon(current.weatherCode)),
       React.createElement(
         'span',
-        {style: {fontSize: 20, fontWeight: 700, color: '#111827'}},
+        {style: {fontSize: 20, fontWeight: 700, color: '#000000'}},
         Math.round(current.temp) + '°',
       ),
       React.createElement(
         'span',
-        {style: {fontSize: 12, color: '#6b7280'}},
+        {style: {fontSize: 12, color: 'var(--text-muted)'}},
         'H:' + Math.round(today.high) + '° L:' + Math.round(today.low) + '°',
       ),
       today.precipProb > 10 &&
@@ -166,7 +166,7 @@ export default function HomeWeatherCard() {
           {style: {fontSize: 12, color: '#2563eb', fontWeight: 600}},
           Math.round(today.precipProb) + '% rain',
         ),
-      React.createElement('span', {style: {fontSize: 12, color: '#374151', flex: 1, minWidth: 120}}, rainSummary),
+      React.createElement('span', {style: {fontSize: 12, color: '#000000', flex: 1, minWidth: 120}}, rainSummary),
       freezeWarning &&
         React.createElement(
           'span',
@@ -244,11 +244,11 @@ export default function HomeWeatherCard() {
             {style: {display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}},
             React.createElement(
               'div',
-              {style: {fontSize: 18, fontWeight: 700, color: '#111827'}},
+              {style: {fontSize: 18, fontWeight: 700, color: '#000000'}},
               weatherIcon(current.weatherCode) + ' ' + Math.round(current.temp) + '°F',
               React.createElement(
                 'span',
-                {style: {fontSize: 13, fontWeight: 400, color: '#6b7280', marginLeft: 8}},
+                {style: {fontSize: 13, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8}},
                 weatherLabel(current.weatherCode),
               ),
             ),
@@ -282,7 +282,7 @@ export default function HomeWeatherCard() {
                     border: 'none',
                     fontSize: 20,
                     cursor: 'pointer',
-                    color: '#6b7280',
+                    color: 'var(--text-muted)',
                     padding: '0 4px',
                   },
                 },
@@ -301,7 +301,7 @@ export default function HomeWeatherCard() {
                 padding: '12px 16px',
                 marginBottom: 16,
                 fontSize: 13,
-                color: '#374151',
+                color: '#000000',
               },
             },
             React.createElement(
@@ -321,7 +321,7 @@ export default function HomeWeatherCard() {
             {style: {marginBottom: 16}},
             React.createElement(
               'div',
-              {style: {fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 8}},
+              {style: {fontSize: 13, fontWeight: 700, color: '#000000', marginBottom: 8}},
               'Rain Timing — Next 48h',
             ),
             React.createElement(
@@ -358,7 +358,7 @@ export default function HomeWeatherCard() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     fontSize: 10,
-                    color: '#9ca3af',
+                    color: 'var(--text-muted)',
                     marginTop: 2,
                     minWidth: 360,
                   },
@@ -376,7 +376,7 @@ export default function HomeWeatherCard() {
             {style: {marginBottom: 16}},
             React.createElement(
               'div',
-              {style: {fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 8}},
+              {style: {fontSize: 13, fontWeight: 700, color: '#000000', marginBottom: 8}},
               dailyLabel,
             ),
             React.createElement(
@@ -399,13 +399,13 @@ export default function HomeWeatherCard() {
                   },
                   React.createElement(
                     'span',
-                    {style: {width: 36, fontWeight: 600, color: '#374151'}},
+                    {style: {width: 36, fontWeight: 600, color: '#000000'}},
                     i === 0 ? 'Today' : fmtDay(d.date),
                   ),
                   React.createElement('span', {style: {width: 24, textAlign: 'center'}}, weatherIcon(d.weatherCodeMax)),
                   React.createElement(
                     'span',
-                    {style: {width: 60, textAlign: 'right', color: '#111827', fontWeight: 600}},
+                    {style: {width: 60, textAlign: 'right', color: '#000000', fontWeight: 600}},
                     Math.round(d.tempMax) + '°/' + Math.round(d.tempMin) + '°',
                   ),
                   d.precipProbMax > 10 &&
@@ -443,7 +443,7 @@ export default function HomeWeatherCard() {
             React.createElement(
               'div',
               {style: {display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}},
-              React.createElement('span', {style: {fontSize: 13, fontWeight: 700, color: '#111827'}}, 'Radar'),
+              React.createElement('span', {style: {fontSize: 13, fontWeight: 700, color: '#000000'}}, 'Radar'),
               !radarOpen
                 ? React.createElement(
                     'button',
@@ -484,7 +484,7 @@ export default function HomeWeatherCard() {
                     radarFrames &&
                       React.createElement(
                         'span',
-                        {style: {fontSize: 11, color: '#6b7280', minWidth: 40}},
+                        {style: {fontSize: 11, color: 'var(--text-muted)', minWidth: 40}},
                         frameTimeLabel,
                       ),
                     React.createElement(
@@ -513,7 +513,7 @@ export default function HomeWeatherCard() {
               radarError &&
               React.createElement(
                 'div',
-                {style: {fontSize: 12, color: '#9ca3af', padding: '16px 0'}},
+                {style: {fontSize: 12, color: 'var(--text-muted)', padding: '16px 0'}},
                 'Radar unavailable',
               ),
             radarOpen &&
@@ -615,7 +615,7 @@ export default function HomeWeatherCard() {
                         bottom: 8,
                         left: 8,
                         fontSize: 10,
-                        color: '#374151',
+                        color: '#000000',
                         background: 'rgba(255,255,255,.8)',
                         padding: '2px 6px',
                         borderRadius: 4,
@@ -640,7 +640,7 @@ export default function HomeWeatherCard() {
                   },
                   React.createElement(
                     'div',
-                    {style: {display: 'flex', gap: 10, fontSize: 10, color: '#6b7280'}},
+                    {style: {display: 'flex', gap: 10, fontSize: 10, color: 'var(--text-muted)'}},
                     React.createElement(
                       'span',
                       null,
@@ -689,7 +689,7 @@ export default function HomeWeatherCard() {
                   ),
                   React.createElement(
                     'span',
-                    {style: {fontSize: 9, color: '#9ca3af'}},
+                    {style: {fontSize: 9, color: 'var(--text-muted)'}},
                     '© OpenStreetMap · Weather data by RainViewer',
                   ),
                 ),
