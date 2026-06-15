@@ -91,7 +91,7 @@ export default function NewTodoModal({sb, isOpen, onClose, onCreated, defaultSec
   return (
     <div style={taskModalOverlay} role="dialog" aria-modal="true" aria-label="New to do" data-todo-new-modal="1">
       <div style={taskModalPanel}>
-        <h2 style={{fontSize: 18, margin: '0 0 12px', color: '#111827'}}>New To Do</h2>
+        <h2 style={{fontSize: 18, margin: '0 0 12px', color: 'var(--ink)'}}>New To Do</h2>
 
         <label style={taskModalFieldLabel} htmlFor="todo-new-title">
           What needs doing?
@@ -166,7 +166,7 @@ export default function NewTodoModal({sb, isOpen, onClose, onCreated, defaultSec
         {photos.length > 0 ? (
           <div style={{display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6}}>
             {photos.map((f, i) => (
-              <div key={i} style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#374151'}}>
+              <div key={i} style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink)'}}>
                 <span style={{overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{f.name}</span>
                 <button
                   type="button"

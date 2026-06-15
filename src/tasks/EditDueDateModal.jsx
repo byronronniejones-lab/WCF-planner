@@ -114,14 +114,14 @@ export default function EditDueDateModal({sb, task, isOpen, isAdmin, profilesByI
     <div data-edit-due-date-modal="1" style={OVERLAY} onClick={close}>
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>Edit Due Date</h2>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>Edit Due Date</h2>
           <button type="button" onClick={close} style={BTN_GHOST}>
             Cancel
           </button>
         </div>
 
-        <div style={{fontSize: 13, color: '#374151', marginBottom: 14}}>
-          <div style={{fontWeight: 600, color: '#111827'}}>{task.title}</div>
+        <div style={{fontSize: 13, color: 'var(--ink)', marginBottom: 14}}>
+          <div style={{fontWeight: 600, color: 'var(--ink)'}}>{task.title}</div>
           <div style={{...SUB, marginTop: 2}}>
             Current due {fmt(task.due_date)}
             {' · '}
@@ -171,7 +171,7 @@ export default function EditDueDateModal({sb, task, isOpen, isAdmin, profilesByI
                   data-edit-due-history-role={row.edited_by_role}
                   style={HISTORY_ROW}
                 >
-                  <span style={{fontWeight: 600, color: '#111827'}}>
+                  <span style={{fontWeight: 600, color: 'var(--ink)'}}>
                     {fmt(row.prior_due_date)} → {fmt(row.new_due_date)}
                   </span>
                   <span style={{...SUB, marginLeft: 8}}>

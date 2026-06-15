@@ -209,7 +209,7 @@ export default function RecurringTemplateModal({
     >
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>
             {isEdit ? 'Edit Recurring Template' : 'New Recurring Template'}
           </h2>
           <button type="button" onClick={close} style={BTN_GHOST}>
@@ -330,7 +330,7 @@ export default function RecurringTemplateModal({
             />
           </div>
 
-          <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151'}}>
+          <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)'}}>
             <input
               type="checkbox"
               data-recurring-template-field="active"

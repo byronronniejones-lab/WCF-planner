@@ -51,9 +51,9 @@ import {taskModalFieldLabel, taskModalInput, taskModalPrimaryButton, taskModalGh
 const ACTION_BTN = {
   padding: '8px 14px',
   borderRadius: 6,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink)',
   cursor: 'pointer',
   fontSize: 13,
   fontWeight: 600,
@@ -282,7 +282,7 @@ export default function TodoItemPage({sb, authState, Header}) {
           ) : null}
         </div>
 
-        <div style={{fontSize: 13, color: '#6b7280', margin: '6px 0 12px'}}>
+        <div style={{fontSize: 13, color: 'var(--ink-muted)', margin: '6px 0 12px'}}>
           {todoSectionLabel(item.section)} · {item.created_by_name} · {formatDaysSinceListed(item.created_at)}
           {item.due_date ? ` · Due ${fmt(item.due_date)}` : ''}
         </div>
@@ -291,7 +291,13 @@ export default function TodoItemPage({sb, authState, Header}) {
 
         {editing ? (
           <div
-            style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: 14, marginBottom: 14}}
+            style={{
+              background: 'white',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: 14,
+              marginBottom: 14,
+            }}
             data-todo-edit-panel="1"
           >
             <label style={taskModalFieldLabel} htmlFor="todo-edit-title">
@@ -371,11 +377,11 @@ export default function TodoItemPage({sb, authState, Header}) {
               <div
                 style={{
                   background: 'white',
-                  border: '1px solid #e5e7eb',
+                  border: '1px solid var(--border)',
                   borderRadius: 10,
                   padding: 14,
                   fontSize: 14,
-                  color: '#374151',
+                  color: 'var(--ink)',
                   whiteSpace: 'pre-line',
                   marginBottom: 14,
                 }}
@@ -408,11 +414,11 @@ export default function TodoItemPage({sb, authState, Header}) {
           <div
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 10,
               padding: 14,
               fontSize: 13,
-              color: '#374151',
+              color: 'var(--ink)',
               marginBottom: 14,
             }}
             data-todo-completion-info="1"

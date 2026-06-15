@@ -85,7 +85,7 @@ export default function TodoCompleteModal({sb, item, authState, isOpen, onClose,
       data-todo-complete-modal="1"
     >
       <div style={taskModalSmallPanel}>
-        <h2 style={{fontSize: 18, margin: '0 0 10px', color: '#111827'}}>Complete To Do</h2>
+        <h2 style={{fontSize: 18, margin: '0 0 10px', color: 'var(--ink)'}}>Complete To Do</h2>
         <div style={taskModalReadOnlyBlock}>{item.title}</div>
 
         <label style={taskModalFieldLabel} htmlFor="todo-complete-note">
@@ -117,7 +117,7 @@ export default function TodoCompleteModal({sb, item, authState, isOpen, onClose,
         {photos.length > 0 ? (
           <div style={{display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6}}>
             {photos.map((f, i) => (
-              <div key={i} style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#374151'}}>
+              <div key={i} style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink)'}}>
                 <span style={{overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{f.name}</span>
                 <button
                   type="button"

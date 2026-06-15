@@ -40,13 +40,13 @@ const CARD = {
   padding: '12px 14px',
   marginBottom: 10,
   boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
 };
-const SUB = {fontSize: 12, color: '#6b7280'};
+const SUB = {fontSize: 12, color: 'var(--ink-muted)'};
 const SECTION_HEADER = {
   fontSize: 13,
   fontWeight: 700,
-  color: '#374151',
+  color: 'var(--ink)',
   margin: '4px 0 8px',
   textTransform: 'uppercase',
   letterSpacing: 0.4,
@@ -54,7 +54,7 @@ const SECTION_HEADER = {
 const BUCKET_HEADER = {
   fontSize: 12,
   fontWeight: 700,
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   margin: '10px 0 6px',
   textTransform: 'uppercase',
   letterSpacing: 0.5,
@@ -91,9 +91,9 @@ const FILTER_BAR = {
 const FILTER_CHIP_BASE = {
   padding: '5px 12px',
   borderRadius: 999,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
@@ -101,9 +101,9 @@ const FILTER_CHIP_BASE = {
 };
 const FILTER_CHIP_ACTIVE = {
   ...FILTER_CHIP_BASE,
-  background: '#085041',
-  border: '1px solid #085041',
-  color: 'white',
+  background: 'white',
+  border: '1px solid var(--brand)',
+  color: 'var(--brand)',
 };
 
 const FILTERS = [
@@ -206,7 +206,7 @@ function CompletedRow({sb, ti, profilesById, onOpenPhotos, onNavigate}) {
           style={{
             fontSize: 15,
             fontWeight: 600,
-            color: '#111827',
+            color: 'var(--ink)',
             flex: '1 1 200px',
             minWidth: 0,
             wordBreak: 'break-word',
@@ -222,7 +222,7 @@ function CompletedRow({sb, ti, profilesById, onOpenPhotos, onNavigate}) {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && onNavigate) onNavigate(ti);
             }}
-            style={{cursor: 'pointer', color: '#1d4ed8', textDecoration: 'none'}}
+            style={{cursor: 'pointer', color: 'var(--ink)', textDecoration: 'none'}}
           >
             {ti.title}
           </span>
@@ -239,7 +239,7 @@ function CompletedRow({sb, ti, profilesById, onOpenPhotos, onNavigate}) {
         </div>
         <div style={{...SUB, whiteSpace: 'nowrap'}}>
           Completed:{' '}
-          <span data-completed-at={ti.completed_at || ''} style={{color: '#374151'}}>
+          <span data-completed-at={ti.completed_at || ''} style={{color: 'var(--ink)'}}>
             {fmtCentralDateTime(ti.completed_at)}
           </span>
         </div>
@@ -249,26 +249,26 @@ function CompletedRow({sb, ti, profilesById, onOpenPhotos, onNavigate}) {
         {assigneeName && (
           <>
             {' · Assigned to '}
-            <span style={{color: '#374151'}}>{assigneeName}</span>
+            <span style={{color: 'var(--ink)'}}>{assigneeName}</span>
           </>
         )}
         {completedByName && (
           <>
             {' · By '}
-            <span data-completed-by-name={completedByName} style={{color: '#374151'}}>
+            <span data-completed-by-name={completedByName} style={{color: 'var(--ink)'}}>
               {completedByName}
             </span>
           </>
         )}
       </div>
       {ti.completion_note && (
-        <div data-completion-note="1" style={{fontSize: 13, color: '#374151', marginTop: 6, whiteSpace: 'pre-wrap'}}>
+        <div data-completion-note="1" style={{fontSize: 13, color: 'var(--ink)', marginTop: 6, whiteSpace: 'pre-wrap'}}>
           {ti.completion_note}
         </div>
       )}
       {attribution && (
         <div style={{...SUB, marginTop: 4}} data-task-attribution-label={attribution.label}>
-          {attribution.label}: <span style={{color: '#374151'}}>{attribution.name}</span>
+          {attribution.label}: <span style={{color: 'var(--ink)'}}>{attribution.name}</span>
         </div>
       )}
       {(photo.hasRequest || photo.hasCompletion) && (
@@ -419,7 +419,7 @@ export default function CompletedTab({sb}) {
           <div style={SECTION_HEADER}>Completed tasks ({visibleRows.length})</div>
           {visibleRows.length === 0 ? (
             <div style={CARD}>
-              <div style={{fontSize: 13, color: '#374151'}}>
+              <div style={{fontSize: 13, color: 'var(--ink)'}}>
                 {filter === 'all'
                   ? 'No completed tasks yet.'
                   : 'No matches for the active filter. Try the All chip to see every completed task.'}

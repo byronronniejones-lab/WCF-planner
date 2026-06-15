@@ -165,15 +165,17 @@ export default function CompleteTaskModal({sb, task, isOpen, onClose, onComplete
     <div data-complete-task-modal="1" style={OVERLAY} onClick={close}>
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>Complete Task</h2>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>Complete Task</h2>
           <button type="button" onClick={close} style={BTN_GHOST}>
             Cancel
           </button>
         </div>
 
-        <div data-complete-task-row={task.id} style={{fontSize: 13, color: '#374151', marginBottom: 14}}>
-          <div style={{fontWeight: 600, color: '#111827'}}>{task.title}</div>
-          {task.due_date && <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Due {task.due_date}</div>}
+        <div data-complete-task-row={task.id} style={{fontSize: 13, color: 'var(--ink)', marginBottom: 14}}>
+          <div style={{fontWeight: 600, color: 'var(--ink)'}}>{task.title}</div>
+          {task.due_date && (
+            <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>Due {task.due_date}</div>
+          )}
         </div>
 
         <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
@@ -211,8 +213,8 @@ export default function CompleteTaskModal({sb, task, isOpen, onClose, onComplete
                     style={{
                       fontSize: 12,
                       padding: '4px 8px',
-                      background: '#f3f4f6',
-                      border: '1px solid #e5e7eb',
+                      background: 'var(--divider)',
+                      border: '1px solid var(--border)',
                       borderRadius: 6,
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -227,7 +229,7 @@ export default function CompleteTaskModal({sb, task, isOpen, onClose, onComplete
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
-                        color: '#6b7280',
+                        color: 'var(--ink-muted)',
                         padding: 0,
                         fontSize: 14,
                       }}

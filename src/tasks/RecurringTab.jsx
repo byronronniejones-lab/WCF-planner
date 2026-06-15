@@ -57,13 +57,13 @@ const CARD = {
   padding: '12px 14px',
   marginBottom: 10,
   boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
 };
-const SUB = {fontSize: 12, color: '#6b7280'};
+const SUB = {fontSize: 12, color: 'var(--ink-muted)'};
 const SECTION_HEADER = {
   fontSize: 13,
   fontWeight: 700,
-  color: '#374151',
+  color: 'var(--ink)',
   margin: '14px 0 8px',
   textTransform: 'uppercase',
   letterSpacing: 0.4,
@@ -71,7 +71,7 @@ const SECTION_HEADER = {
 const SUBSECTION_HEADER = {
   fontSize: 12,
   fontWeight: 700,
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   margin: '10px 0 6px',
   textTransform: 'uppercase',
   letterSpacing: 0.5,
@@ -93,9 +93,9 @@ const INACTIVE_TOGGLE_BTN = {
   gap: 8,
   padding: '9px 10px',
   borderRadius: 8,
-  border: '1px solid #e5e7eb',
-  background: '#f9fafb',
-  color: '#374151',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-2)',
+  color: 'var(--ink)',
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 12,
@@ -118,7 +118,7 @@ const LOAD_RETRY_BTN = {
 };
 const GROUP_HEADER = {
   background: 'white',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
   borderRadius: 8,
   padding: '8px 12px',
   marginBottom: 8,
@@ -166,8 +166,8 @@ function InstanceLine({ti}) {
       data-task-row={ti.id}
       data-task-designation={ti.designation || ''}
       style={{
-        background: '#f9fafb',
-        border: '1px solid #e5e7eb',
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
         borderRadius: 8,
         padding: '8px 12px',
         marginBottom: 6,
@@ -178,7 +178,7 @@ function InstanceLine({ti}) {
         flexWrap: 'wrap',
       }}
     >
-      <div style={{fontSize: 13, color: '#111827', fontWeight: 500, flex: '1 1 200px', minWidth: 0}}>{ti.title}</div>
+      <div style={{fontSize: 13, color: 'var(--ink)', fontWeight: 500, flex: '1 1 200px', minWidth: 0}}>{ti.title}</div>
       <div style={{...SUB, whiteSpace: 'nowrap'}}>
         Due <span data-due-date={ti.due_date}>{fmt(ti.due_date)}</span>
       </div>
@@ -233,12 +233,12 @@ function DeleteTemplateConfirm({sb, template, isOpen, onClose, onDeleted}) {
         style={{background: 'white', borderRadius: 12, padding: 18, width: 'min(480px, 96vw)', fontFamily: 'inherit'}}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{fontSize: 18, margin: 0, color: '#111827', marginBottom: 8}}>Delete Recurring Template</h2>
-        <div style={{fontSize: 13, color: '#374151', marginBottom: 12}}>
-          This deletes the template <span style={{fontWeight: 600, color: '#111827'}}>{template.title}</span>. Existing
-          instances stay alive — they move to the Orphaned recurring tasks group.
+        <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)', marginBottom: 8}}>Delete Recurring Template</h2>
+        <div style={{fontSize: 13, color: 'var(--ink)', marginBottom: 12}}>
+          This deletes the template <span style={{fontWeight: 600, color: 'var(--ink)'}}>{template.title}</span>.
+          Existing instances stay alive — they move to the Orphaned recurring tasks group.
         </div>
-        <label style={{fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block'}}>
+        <label style={{fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 4, display: 'block'}}>
           Type DELETE to confirm
         </label>
         <input
@@ -250,7 +250,7 @@ function DeleteTemplateConfirm({sb, template, isOpen, onClose, onDeleted}) {
           style={{
             width: '100%',
             padding: '8px 10px',
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--border-strong)',
             borderRadius: 8,
             fontSize: 14,
             fontFamily: 'inherit',
@@ -281,9 +281,9 @@ function DeleteTemplateConfirm({sb, template, isOpen, onClose, onDeleted}) {
             style={{
               padding: '8px 14px',
               borderRadius: 8,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               cursor: 'pointer',
               fontSize: 13,
               fontWeight: 500,
@@ -423,7 +423,7 @@ export default function RecurringTab({sb, authState}) {
       <div key={key} data-recurring-template={key}>
         <button type="button" onClick={() => toggle(b)} style={GROUP_HEADER}>
           <div style={{display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0}}>
-            <div style={{fontSize: 14, fontWeight: 600, color: '#111827', wordBreak: 'break-word'}}>
+            <div style={{fontSize: 14, fontWeight: 600, color: 'var(--ink)', wordBreak: 'break-word'}}>
               {b.template.title}
               {b.template.active ? (
                 <span data-template-state="active" style={PILL_ACTIVE}>
@@ -445,7 +445,7 @@ export default function RecurringTab({sb, authState}) {
           </div>
           <span
             data-tasks-group-state={isOpen ? 'expanded' : 'collapsed'}
-            style={{fontSize: 13, color: '#6b7280', marginLeft: 8}}
+            style={{fontSize: 13, color: 'var(--ink-muted)', marginLeft: 8}}
           >
             {isOpen ? '▾' : '▸'}
           </span>
@@ -461,9 +461,9 @@ export default function RecurringTab({sb, authState}) {
                   style={{
                     padding: '4px 10px',
                     borderRadius: 6,
-                    border: '1px solid #d1d5db',
+                    border: '1px solid var(--border-strong)',
                     background: 'white',
-                    color: '#374151',
+                    color: 'var(--ink)',
                     cursor: 'pointer',
                     fontSize: 12,
                     fontWeight: 500,
@@ -562,7 +562,7 @@ export default function RecurringTab({sb, authState}) {
 
           {grouped.templates.length === 0 ? (
             <div style={CARD}>
-              <div style={{fontSize: 13, color: '#374151'}}>No recurring templates configured.</div>
+              <div style={{fontSize: 13, color: 'var(--ink)'}}>No recurring templates configured.</div>
             </div>
           ) : (
             <>
@@ -573,7 +573,7 @@ export default function RecurringTab({sb, authState}) {
                 </div>
                 {activeBuckets.length === 0 ? (
                   <div style={CARD}>
-                    <div style={{fontSize: 13, color: '#374151'}}>No active templates.</div>
+                    <div style={{fontSize: 13, color: 'var(--ink)'}}>No active templates.</div>
                   </div>
                 ) : (
                   activeBuckets.map(renderTemplateCard)
@@ -589,7 +589,7 @@ export default function RecurringTab({sb, authState}) {
                     onClick={() => setShowInactive((v) => !v)}
                     style={INACTIVE_TOGGLE_BTN}
                   >
-                    <span style={{fontSize: 13, color: '#6b7280'}}>{showInactive ? '▾' : '▸'}</span>
+                    <span style={{fontSize: 13, color: 'var(--ink-muted)'}}>{showInactive ? '▾' : '▸'}</span>
                     Inactive templates ({inactiveBuckets.length})
                   </button>
                   {showInactive && <div style={{marginTop: 8}}>{inactiveBuckets.map(renderTemplateCard)}</div>}

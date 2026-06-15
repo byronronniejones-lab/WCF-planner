@@ -64,15 +64,15 @@ export default function DeleteTaskModal({sb, task, isOpen, onClose, onDeleted}) 
     <div data-delete-task-modal="1" style={OVERLAY} onClick={close}>
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>Delete Task</h2>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>Delete Task</h2>
           <button type="button" onClick={close} style={BTN_GHOST}>
             Cancel
           </button>
         </div>
 
-        <div style={{fontSize: 13, color: '#374151', marginBottom: 12}}>
-          This deletes <span style={{fontWeight: 600, color: '#111827'}}>{task.title}</span> and any associated photos,
-          audit history, and sidecar rows. Completed tasks cannot be deleted; this only applies to open tasks.
+        <div style={{fontSize: 13, color: 'var(--ink)', marginBottom: 12}}>
+          This deletes <span style={{fontWeight: 600, color: 'var(--ink)'}}>{task.title}</span> and any associated
+          photos, audit history, and sidecar rows. Completed tasks cannot be deleted; this only applies to open tasks.
         </div>
 
         <label style={FIELD_LABEL} htmlFor="delete-task-confirm">

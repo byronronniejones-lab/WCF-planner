@@ -136,7 +136,7 @@ export default function TodoPhotoThumbs({sb, photos}) {
         >
           <div style={taskPhotoLightboxPanel} onClick={(e) => e.stopPropagation()}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12}}>
-              <div style={{fontSize: 13, fontWeight: 600, color: '#374151'}}>
+              <div style={{fontSize: 13, fontWeight: 600, color: 'var(--ink)'}}>
                 {kindLabel(current.kind)} ({viewerIndex + 1} / {list.length})
               </div>
               <button type="button" style={taskPhotoLightboxButton} onClick={() => setViewerIndex(null)}>
@@ -151,9 +151,9 @@ export default function TodoPhotoThumbs({sb, photos}) {
                   style={{maxWidth: '100%', maxHeight: '66vh', objectFit: 'contain'}}
                 />
               ) : viewerState === 'loading' ? (
-                <div style={{color: '#9ca3af', fontSize: 13}}>Loading…</div>
+                <div style={{color: 'var(--ink-faint)', fontSize: 13}}>Loading…</div>
               ) : (
-                <div style={{color: '#9ca3af', fontSize: 13}}>Photo unavailable — close and retry.</div>
+                <div style={{color: 'var(--ink-faint)', fontSize: 13}}>Photo unavailable — close and retry.</div>
               )}
             </div>
             {list.length > 1 ? (

@@ -287,7 +287,7 @@ export default function TaskInstancePage({sb, authState, Header}) {
             </div>
 
             {record.description && (
-              <div style={{marginTop: 10, fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap'}}>
+              <div style={{marginTop: 10, fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap'}}>
                 {record.description}
               </div>
             )}
@@ -330,13 +330,13 @@ export default function TaskInstancePage({sb, authState, Header}) {
                     aria-label={label}
                     style={{
                       background: 'none',
-                      border: '1px solid #d1d5db',
+                      border: '1px solid var(--border-strong)',
                       borderRadius: 6,
                       padding: '4px 10px',
                       cursor: 'pointer',
                       fontSize: 12,
                       fontFamily: 'inherit',
-                      color: '#374151',
+                      color: 'var(--ink)',
                     }}
                   >
                     🖼 {label}

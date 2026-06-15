@@ -17,7 +17,7 @@ const CARD = {
 };
 
 const H = {fontSize: 14, fontWeight: 700, color: '#085041', margin: '14px 0 4px'};
-const P = {fontSize: 13, color: '#374151', margin: '0 0 6px', lineHeight: 1.5};
+const P = {fontSize: 13, color: 'var(--ink)', margin: '0 0 6px', lineHeight: 1.5};
 
 export default function TodoHowTo({onClose, canManage}) {
   return (
@@ -40,7 +40,7 @@ export default function TodoHowTo({onClose, canManage}) {
     >
       <div style={CARD} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>How to use the To Do List</h2>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>How to use the To Do List</h2>
           <button
             type="button"
             onClick={onClose}
@@ -50,7 +50,7 @@ export default function TodoHowTo({onClose, canManage}) {
               background: 'transparent',
               fontSize: 18,
               cursor: 'pointer',
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontFamily: 'inherit',
             }}
           >

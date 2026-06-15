@@ -43,13 +43,13 @@ import {isTodoParticipant, readTasksCenterMode, writeTasksCenterMode} from '../l
 
 const PAGE_BG = {
   minHeight: '100vh',
-  background: '#f9fafb',
+  background: 'var(--surface-2)',
   fontFamily: 'inherit',
 };
 const TAB_BAR = {
   display: 'flex',
   gap: 4,
-  borderBottom: '1px solid #e5e7eb',
+  borderBottom: '1px solid var(--border)',
   marginBottom: 14,
   flexWrap: 'wrap',
 };
@@ -60,14 +60,14 @@ const TAB_BTN_BASE = {
   padding: '8px 14px',
   fontSize: 13,
   fontWeight: 600,
-  color: '#6b7280',
+  color: 'var(--ink-muted)',
   cursor: 'pointer',
   fontFamily: 'inherit',
 };
 const TAB_BTN_ACTIVE = {
   ...TAB_BTN_BASE,
-  color: '#085041',
-  borderBottom: '2px solid #085041',
+  color: 'var(--brand)',
+  borderBottom: '2px solid var(--brand)',
 };
 
 const TABS = [
@@ -83,7 +83,7 @@ const TABS = [
 const MODE_TOGGLE_WRAP = {
   display: 'flex',
   background: 'white',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   borderRadius: 14,
   padding: 4,
   gap: 4,
@@ -95,7 +95,7 @@ const MODE_BTN_BASE = {
   borderRadius: 10,
   border: 'none',
   background: 'transparent',
-  color: '#374151',
+  color: 'var(--ink)',
   cursor: 'pointer',
   fontSize: 15,
   fontWeight: 700,
@@ -104,8 +104,8 @@ const MODE_BTN_BASE = {
 };
 const MODE_BTN_ACTIVE = {
   ...MODE_BTN_BASE,
-  background: '#085041',
-  color: 'white',
+  background: 'white',
+  color: 'var(--brand)',
 };
 
 function TasksModeToggle({mode, onChange}) {
@@ -243,8 +243,8 @@ function TaskCenterView({Header, sb, authState, forceMode}) {
           }}
         >
           <div>
-            <h1 style={{fontSize: 20, margin: 0, color: '#111827'}}>Task Center</h1>
-            <div style={{fontSize: 12, color: '#6b7280'}}>
+            <h1 style={{fontSize: 20, margin: 0, color: 'var(--ink)'}}>Task Center</h1>
+            <div style={{fontSize: 12, color: 'var(--ink-muted)'}}>
               All open tasks across the farm. Your tasks are highlighted at the top of the My Tasks tab.
             </div>
           </div>

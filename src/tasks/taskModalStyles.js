@@ -36,7 +36,7 @@ export const taskModalSystemRulePanel = {
 export const taskModalFieldLabel = {
   fontSize: 12,
   fontWeight: 600,
-  color: '#374151',
+  color: 'var(--ink)',
   marginBottom: 4,
   display: 'block',
 };
@@ -44,7 +44,7 @@ export const taskModalFieldLabel = {
 export const taskModalInput = {
   width: '100%',
   padding: '8px 11px',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   borderRadius: 6,
   fontSize: 14,
   fontFamily: 'inherit',
@@ -52,12 +52,12 @@ export const taskModalInput = {
 };
 
 export const taskModalReadOnlyBlock = {
-  background: '#f9fafb',
-  border: '1px solid #e5e7eb',
+  background: 'var(--surface-2)',
+  border: '1px solid var(--border)',
   borderRadius: 6,
   padding: '8px 12px',
   fontSize: 13,
-  color: '#374151',
+  color: 'var(--ink)',
   marginBottom: 10,
 };
 
@@ -86,9 +86,9 @@ export const taskModalDangerButton = {
 
 export const taskModalGhostButton = {
   ...taskModalButtonBase,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink)',
 };
 
 export const taskModalErrorNotice = {
@@ -102,15 +102,15 @@ export const taskModalErrorNotice = {
 };
 
 export const taskModalHistoryRow = {
-  background: '#f9fafb',
-  border: '1px solid #e5e7eb',
+  background: 'var(--surface-2)',
+  border: '1px solid var(--border)',
   borderRadius: 6,
   padding: '6px 10px',
   fontSize: 12,
-  color: '#374151',
+  color: 'var(--ink)',
 };
 
-export const taskModalSubtleText = {fontSize: 12, color: '#6b7280'};
+export const taskModalSubtleText = {fontSize: 12, color: 'var(--ink-muted)'};
 
 export const taskPhotoLightboxOverlay = {
   ...taskModalOverlay,

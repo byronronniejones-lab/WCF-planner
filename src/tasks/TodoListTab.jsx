@@ -48,9 +48,9 @@ import TodoHowTo from './TodoHowTo.jsx';
 const CHIP_BASE = {
   padding: '7px 14px',
   borderRadius: 999,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink-muted)',
   cursor: 'pointer',
   fontSize: 13,
   fontWeight: 600,
@@ -58,16 +58,16 @@ const CHIP_BASE = {
 };
 const CHIP_ACTIVE = {
   ...CHIP_BASE,
-  border: '1px solid #085041',
-  background: '#085041',
-  color: 'white',
+  border: '1px solid var(--brand)',
+  background: 'white',
+  color: 'var(--brand)',
 };
 const SMALL_BTN = {
   padding: '6px 10px',
   borderRadius: 6,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink)',
   cursor: 'pointer',
   fontSize: 12,
   fontWeight: 600,
@@ -150,7 +150,7 @@ function TodoRow({
         gap: 10,
         alignItems: 'flex-start',
         background: dragOver ? '#fef3c7' : 'white',
-        border: dragOver ? '1px dashed #f59e0b' : '1px solid #e5e7eb',
+        border: dragOver ? '1px dashed #f59e0b' : '1px solid var(--border)',
         borderRadius: 10,
         padding: '10px 12px',
         opacity: dragging ? 0.4 : 1,
@@ -160,7 +160,7 @@ function TodoRow({
         <span
           aria-hidden="true"
           title="Drag to reorder"
-          style={{cursor: 'grab', color: '#9ca3af', fontSize: 15, lineHeight: '20px', userSelect: 'none'}}
+          style={{cursor: 'grab', color: 'var(--ink-faint)', fontSize: 15, lineHeight: '20px', userSelect: 'none'}}
           onClick={(e) => e.stopPropagation()}
         >
           ≡
@@ -169,7 +169,7 @@ function TodoRow({
 
       <div style={{flex: 1, minWidth: 0}}>
         <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-          <span style={{fontSize: 14, fontWeight: 600, color: '#111827'}}>{item.title}</span>
+          <span style={{fontSize: 14, fontWeight: 600, color: 'var(--ink)'}}>{item.title}</span>
           {pending ? (
             <span style={PENDING_BADGE} data-todo-pending-badge="1">
               Awaiting approval
@@ -181,7 +181,7 @@ function TodoRow({
           <div
             style={{
               fontSize: 13,
-              color: '#4b5563',
+              color: 'var(--ink-muted)',
               marginTop: 2,
               display: '-webkit-box',
               WebkitLineClamp: 2,
@@ -192,7 +192,7 @@ function TodoRow({
             {item.description}
           </div>
         ) : null}
-        <div style={{fontSize: 12, color: '#6b7280', marginTop: 4}}>
+        <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 4}}>
           {item.created_by_name} · {formatDaysSinceListed(item.created_at)}
           {pending && item.completion_submitted_by_name
             ? ` · Done by ${item.completion_submitted_by_name}, needs manager sign-off`
@@ -431,7 +431,7 @@ export default function TodoListTab({sb, authState}) {
   // clicks are possible and the list never flashes.
   const body =
     loading && items.length === 0 && completed.length === 0 ? (
-      <div style={{padding: 24, color: '#6b7280', fontSize: 13}}>Loading…</div>
+      <div style={{padding: 24, color: 'var(--ink-muted)', fontSize: 13}}>Loading…</div>
     ) : loadError ? (
       <div style={{maxWidth: 560}}>
         <InlineNotice notice={loadError} onDismiss={() => setLoadError(null)} />
@@ -450,12 +450,12 @@ export default function TodoListTab({sb, authState}) {
             <div key={s.key} data-todo-section={s.key} style={{marginBottom: 18}}>
               <div style={{display: 'flex', alignItems: 'baseline', gap: 8, margin: '0 0 8px'}}>
                 <h2 style={{fontSize: 15, fontWeight: 700, color: '#085041', margin: 0}}>{s.label}</h2>
-                <span style={{fontSize: 12, color: '#6b7280'}}>
+                <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>
                   {sectionItems.length} item{sectionItems.length === 1 ? '' : 's'}
                 </span>
               </div>
               {sectionItems.length === 0 ? (
-                <div style={{fontSize: 13, color: '#9ca3af', padding: '6px 2px 2px'}}>
+                <div style={{fontSize: 13, color: 'var(--ink-faint)', padding: '6px 2px 2px'}}>
                   {pendingOnly ? 'Nothing awaiting approval here.' : 'Nothing here yet — add the first item.'}
                 </div>
               ) : (
@@ -535,7 +535,10 @@ export default function TodoListTab({sb, authState}) {
           );
         })}
 
-        <div data-todo-completed-section="1" style={{marginTop: 8, borderTop: '1px solid #e5e7eb', paddingTop: 12}}>
+        <div
+          data-todo-completed-section="1"
+          style={{marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 12}}
+        >
           <button
             type="button"
             data-todo-completed-toggle="1"
@@ -548,7 +551,7 @@ export default function TodoListTab({sb, authState}) {
               fontFamily: 'inherit',
               fontSize: 14,
               fontWeight: 700,
-              color: '#374151',
+              color: 'var(--ink)',
               padding: 0,
               display: 'flex',
               alignItems: 'center',
@@ -561,7 +564,7 @@ export default function TodoListTab({sb, authState}) {
           {completedOpen ? (
             <div style={{display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10}}>
               {completedVisible.length === 0 ? (
-                <div style={{fontSize: 13, color: '#9ca3af'}}>No completed items yet.</div>
+                <div style={{fontSize: 13, color: 'var(--ink-faint)'}}>No completed items yet.</div>
               ) : (
                 completedVisible.map((item) => (
                   <div
@@ -571,23 +574,23 @@ export default function TodoListTab({sb, authState}) {
                     {...openableProps(() => navigate('/tasks/todo/' + encodeURIComponent(item.id)))}
                     aria-label={`Open completed to do: ${item.title}`}
                     style={{
-                      background: '#f9fafb',
-                      border: '1px solid #e5e7eb',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)',
                       borderRadius: 10,
                       padding: '8px 12px',
                     }}
                   >
                     <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-                      <span style={{fontSize: 14, fontWeight: 600, color: '#374151'}}>{item.title}</span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>{todoSectionLabel(item.section)}</span>
+                      <span style={{fontSize: 14, fontWeight: 600, color: 'var(--ink)'}}>{item.title}</span>
+                      <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{todoSectionLabel(item.section)}</span>
                     </div>
-                    <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>
+                    <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>
                       Done by {item.completion_submitted_by_name || 'Unknown'}
                       {item.approved_by_name ? ` · approved by ${item.approved_by_name}` : ''}
                       {item.approved_at ? ` · ${fmt(centralISOFor(item.approved_at))}` : ''}
                     </div>
                     {item.completion_note ? (
-                      <div style={{fontSize: 12, color: '#4b5563', marginTop: 2}}>{item.completion_note}</div>
+                      <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>{item.completion_note}</div>
                     ) : null}
                     {Array.isArray(item.photos) && item.photos.length > 0 ? (
                       <div style={{marginTop: 6}} onClick={(e) => e.stopPropagation()}>
@@ -616,8 +619,8 @@ export default function TodoListTab({sb, authState}) {
         }}
       >
         <div>
-          <h1 style={{fontSize: 20, margin: 0, color: '#111827'}}>To Do List</h1>
-          <div style={{fontSize: 12, color: '#6b7280'}}>
+          <h1 style={{fontSize: 20, margin: 0, color: 'var(--ink)'}}>To Do List</h1>
+          <div style={{fontSize: 12, color: 'var(--ink-muted)'}}>
             Shared open work anyone can pick up. Order is priority — managers arrange the list.
           </div>
         </div>

@@ -122,7 +122,7 @@ export default function ConvertTodoModal({sb, item, profilesById, isOpen, onClos
       data-todo-convert-modal="1"
     >
       <div style={taskModalPanel}>
-        <h2 style={{fontSize: 18, margin: '0 0 4px', color: '#111827'}}>Convert into a Task</h2>
+        <h2 style={{fontSize: 18, margin: '0 0 4px', color: 'var(--ink)'}}>Convert into a Task</h2>
         <div style={{...taskModalSubtleText, marginBottom: 12}}>
           The To Do stays on the list unless this task is created. Tweak anything before submitting.
         </div>
@@ -183,7 +183,7 @@ export default function ConvertTodoModal({sb, item, profilesById, isOpen, onClos
 
         {originationPhotos.length > 0 ? (
           <label
-            style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', marginBottom: 6}}
+            style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', marginBottom: 6}}
           >
             <input type="checkbox" checked={carryPhotos} onChange={(e) => setCarryPhotos(e.target.checked)} />
             Carry the item&apos;s {originationPhotos.length} photo{originationPhotos.length > 1 ? 's' : ''} into the

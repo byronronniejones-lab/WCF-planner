@@ -59,11 +59,11 @@ export default function TodoRejectModal({sb, item, isOpen, onClose, onRejected})
       data-todo-reject-modal="1"
     >
       <div style={taskModalSmallPanel}>
-        <h2 style={{fontSize: 18, margin: '0 0 10px', color: '#111827'}}>Reject completion</h2>
+        <h2 style={{fontSize: 18, margin: '0 0 10px', color: 'var(--ink)'}}>Reject completion</h2>
         <div style={taskModalReadOnlyBlock}>
           {item.title}
           {item.completion_submitted_by_name ? (
-            <div style={{fontSize: 12, color: '#6b7280', marginTop: 4}}>
+            <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 4}}>
               Submitted by {item.completion_submitted_by_name}
               {item.completion_note ? ` — “${item.completion_note}”` : ''}
             </div>

@@ -140,10 +140,10 @@ export default function TaskPhotoLightbox({sb, task, isOpen, onClose}) {
     <div data-task-photo-lightbox="1" style={OVERLAY} onClick={close}>
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12}}>
-          <div style={{fontSize: 13, color: '#374151', fontWeight: 600}}>
+          <div style={{fontSize: 13, color: 'var(--ink)', fontWeight: 600}}>
             {task && task.title ? task.title : 'Task photo'}
             {total > 0 && (
-              <span data-lightbox-position={`${index + 1}/${total}`} style={{color: '#6b7280', marginLeft: 8}}>
+              <span data-lightbox-position={`${index + 1}/${total}`} style={{color: 'var(--ink-muted)', marginLeft: 8}}>
                 ({index + 1} / {total})
               </span>
             )}
@@ -153,9 +153,9 @@ export default function TaskPhotoLightbox({sb, task, isOpen, onClose}) {
           </button>
         </div>
 
-        {loading && <div style={{fontSize: 13, color: '#6b7280'}}>Loading photos…</div>}
+        {loading && <div style={{fontSize: 13, color: 'var(--ink-muted)'}}>Loading photos…</div>}
         {!loading && total === 0 && (
-          <div data-lightbox-empty="1" style={{fontSize: 13, color: '#6b7280'}}>
+          <div data-lightbox-empty="1" style={{fontSize: 13, color: 'var(--ink-muted)'}}>
             No photos for this task.
           </div>
         )}
@@ -175,7 +175,7 @@ export default function TaskPhotoLightbox({sb, task, isOpen, onClose}) {
                 <div style={{color: '#fca5a5', fontSize: 13}}>Could not load photo.</div>
               )}
             </div>
-            <div style={{fontSize: 12, color: '#6b7280'}}>
+            <div style={{fontSize: 12, color: 'var(--ink-muted)'}}>
               {KIND_LABEL[current.kind] || current.kind} · slot {current.sort_order + 1}
               {current.__legacy && ' (legacy single-path fallback)'}
             </div>

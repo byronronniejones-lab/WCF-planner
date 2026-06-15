@@ -104,20 +104,20 @@ export default function SystemRuleEditModal({sb, isOpen, rule, profilesById, onC
     <div data-system-rule-modal="1" style={OVERLAY} onClick={close}>
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>Edit System Rule</h2>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>Edit System Rule</h2>
           <button type="button" onClick={close} style={BTN_GHOST}>
             Cancel
           </button>
         </div>
 
         <div style={READ_ONLY_BLOCK} data-system-rule-readonly="1">
-          <div style={{fontWeight: 600, color: '#111827'}}>{rule.name}</div>
+          <div style={{fontWeight: 600, color: 'var(--ink)'}}>{rule.name}</div>
           <div style={{...SUB, marginTop: 2}}>
             id: <span data-system-rule-readonly-id={rule.id}>{rule.id}</span>
             {' · kind: '}
             <span data-system-rule-readonly-kind={rule.generator_kind}>{rule.generator_kind}</span>
           </div>
-          {rule.description && <div style={{...SUB, marginTop: 4, color: '#4b5563'}}>{rule.description}</div>}
+          {rule.description && <div style={{...SUB, marginTop: 4, color: 'var(--ink-muted)'}}>{rule.description}</div>}
         </div>
 
         <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
@@ -156,7 +156,7 @@ export default function SystemRuleEditModal({sb, isOpen, rule, profilesById, onC
             />
           </div>
 
-          <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151'}}>
+          <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)'}}>
             <input
               type="checkbox"
               data-system-rule-field="active"

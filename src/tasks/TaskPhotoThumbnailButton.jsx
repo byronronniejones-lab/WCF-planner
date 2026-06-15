@@ -9,8 +9,8 @@ const BUTTON = {
   width: 48,
   height: 38,
   borderRadius: 6,
-  border: '1px solid #d1d5db',
-  background: '#f3f4f6',
+  border: '1px solid var(--border-strong)',
+  background: 'var(--divider)',
   padding: 0,
   overflow: 'hidden',
   cursor: 'pointer',
@@ -30,11 +30,11 @@ const FALLBACK = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: '#6b7280',
+  color: 'var(--ink-muted)',
   fontSize: 10,
   fontWeight: 700,
   letterSpacing: 0.2,
-  background: 'linear-gradient(135deg, #f8fafc, #e5e7eb)',
+  background: 'linear-gradient(135deg, var(--surface-2), var(--border))',
 };
 
 const COUNT_BADGE = {

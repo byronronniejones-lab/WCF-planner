@@ -246,7 +246,7 @@ export default function NewTaskModal({sb, profilesById, authState, isOpen, onClo
     <div data-new-task-modal="1" style={OVERLAY} onClick={close}>
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>New Task</h2>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>New Task</h2>
           <button type="button" onClick={close} style={BTN_GHOST}>
             Cancel
           </button>
@@ -280,9 +280,9 @@ export default function NewTaskModal({sb, profilesById, authState, isOpen, onClo
                         fontSize: 13,
                         fontWeight: 600,
                         fontFamily: 'inherit',
-                        border: active ? '1px solid #085041' : '1px solid #d1d5db',
-                        background: active ? '#085041' : 'white',
-                        color: active ? 'white' : '#374151',
+                        border: active ? '1px solid var(--brand)' : '1px solid var(--border-strong)',
+                        background: 'white',
+                        color: active ? 'var(--brand)' : 'var(--ink-muted)',
                       }}
                     >
                       {opt.label}
@@ -419,8 +419,8 @@ export default function NewTaskModal({sb, profilesById, authState, isOpen, onClo
                       style={{
                         fontSize: 12,
                         padding: '4px 8px',
-                        background: '#f3f4f6',
-                        border: '1px solid #e5e7eb',
+                        background: 'var(--divider)',
+                        border: '1px solid var(--border)',
                         borderRadius: 6,
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -435,7 +435,7 @@ export default function NewTaskModal({sb, profilesById, authState, isOpen, onClo
                           background: 'none',
                           border: 'none',
                           cursor: 'pointer',
-                          color: '#6b7280',
+                          color: 'var(--ink-muted)',
                           padding: 0,
                           fontSize: 14,
                         }}

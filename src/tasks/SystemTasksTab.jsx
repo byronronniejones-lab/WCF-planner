@@ -55,13 +55,13 @@ const CARD = {
   padding: '12px 14px',
   marginBottom: 10,
   boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
 };
-const SUB = {fontSize: 12, color: '#6b7280'};
+const SUB = {fontSize: 12, color: 'var(--ink-muted)'};
 const SECTION_HEADER = {
   fontSize: 13,
   fontWeight: 700,
-  color: '#374151',
+  color: 'var(--ink)',
   margin: '14px 0 8px',
   textTransform: 'uppercase',
   letterSpacing: 0.4,
@@ -69,7 +69,7 @@ const SECTION_HEADER = {
 const SUBSECTION_HEADER = {
   fontSize: 12,
   fontWeight: 700,
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   margin: '10px 0 6px',
   textTransform: 'uppercase',
   letterSpacing: 0.5,
@@ -91,9 +91,9 @@ const INACTIVE_TOGGLE_BTN = {
   gap: 8,
   padding: '9px 10px',
   borderRadius: 8,
-  border: '1px solid #e5e7eb',
-  background: '#f9fafb',
-  color: '#374151',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-2)',
+  color: 'var(--ink)',
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 12,
@@ -116,7 +116,7 @@ const LOAD_RETRY_BTN = {
 };
 const GROUP_HEADER = {
   background: 'white',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
   borderRadius: 8,
   padding: '8px 12px',
   marginBottom: 8,
@@ -202,8 +202,8 @@ function SystemInstanceLine({ti, todayStr, profilesById}) {
       data-task-row={ti.id}
       data-task-designation={ti.designation || ''}
       style={{
-        background: '#f9fafb',
-        border: '1px solid #e5e7eb',
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
         borderRadius: 8,
         padding: '8px 12px',
         marginBottom: 6,
@@ -212,7 +212,9 @@ function SystemInstanceLine({ti, todayStr, profilesById}) {
       <div
         style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap'}}
       >
-        <div style={{fontSize: 13, color: '#111827', fontWeight: 500, flex: '1 1 200px', minWidth: 0}}>{ti.title}</div>
+        <div style={{fontSize: 13, color: 'var(--ink)', fontWeight: 500, flex: '1 1 200px', minWidth: 0}}>
+          {ti.title}
+        </div>
         <div style={{...SUB, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6}}>
           {due === 'overdue' && (
             <span data-due-state="overdue" style={BADGE_OVERDUE}>
@@ -230,14 +232,14 @@ function SystemInstanceLine({ti, todayStr, profilesById}) {
       <div style={{...SUB, marginTop: 4}}>
         {assigneeName && (
           <>
-            Assigned to <span style={{color: '#374151'}}>{assigneeName}</span>
+            Assigned to <span style={{color: 'var(--ink)'}}>{assigneeName}</span>
           </>
         )}
         {ti.from_system_source_event_key && (
           <>
             {assigneeName ? ' · ' : ''}
             Source event{' '}
-            <span data-source-event-key={ti.from_system_source_event_key} style={{color: '#374151'}}>
+            <span data-source-event-key={ti.from_system_source_event_key} style={{color: 'var(--ink)'}}>
               {ti.from_system_source_event_key}
             </span>
           </>
@@ -335,7 +337,7 @@ export default function SystemTasksTab({sb, authState}) {
       <div key={key} data-system-rule={key}>
         <button type="button" onClick={() => toggle(key)} style={GROUP_HEADER}>
           <div style={{display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0}}>
-            <div style={{fontSize: 14, fontWeight: 600, color: '#111827', wordBreak: 'break-word'}}>
+            <div style={{fontSize: 14, fontWeight: 600, color: 'var(--ink)', wordBreak: 'break-word'}}>
               {b.rule.name}
               <span style={{...SUB, marginLeft: 6, fontWeight: 500}}>({b.rule.id})</span>
               {b.rule.active ? (
@@ -361,11 +363,13 @@ export default function SystemTasksTab({sb, authState}) {
               {' · '}
               <span data-rule-open-count={b.openCount}>{b.openCount}</span> open
             </div>
-            {b.rule.description && <div style={{...SUB, marginTop: 2, color: '#4b5563'}}>{b.rule.description}</div>}
+            {b.rule.description && (
+              <div style={{...SUB, marginTop: 2, color: 'var(--ink-muted)'}}>{b.rule.description}</div>
+            )}
           </div>
           <span
             data-tasks-group-state={isOpen ? 'expanded' : 'collapsed'}
-            style={{fontSize: 13, color: '#6b7280', marginLeft: 8}}
+            style={{fontSize: 13, color: 'var(--ink-muted)', marginLeft: 8}}
           >
             {isOpen ? '▾' : '▸'}
           </span>
@@ -381,9 +385,9 @@ export default function SystemTasksTab({sb, authState}) {
                   style={{
                     padding: '4px 10px',
                     borderRadius: 6,
-                    border: '1px solid #d1d5db',
+                    border: '1px solid var(--border-strong)',
                     background: 'white',
-                    color: '#374151',
+                    color: 'var(--ink)',
                     cursor: 'pointer',
                     fontSize: 12,
                     fontWeight: 500,
@@ -442,7 +446,7 @@ export default function SystemTasksTab({sb, authState}) {
           <div style={SECTION_HEADER}>System rules ({grouped.rules.length})</div>
           {grouped.rules.length === 0 ? (
             <div style={CARD}>
-              <div style={{fontSize: 13, color: '#374151'}}>No system rules configured.</div>
+              <div style={{fontSize: 13, color: 'var(--ink)'}}>No system rules configured.</div>
             </div>
           ) : (
             <>
@@ -453,7 +457,7 @@ export default function SystemTasksTab({sb, authState}) {
                 </div>
                 {activeBuckets.length === 0 ? (
                   <div style={CARD}>
-                    <div style={{fontSize: 13, color: '#374151'}}>No active rules.</div>
+                    <div style={{fontSize: 13, color: 'var(--ink)'}}>No active rules.</div>
                   </div>
                 ) : (
                   activeBuckets.map(renderRuleCard)
@@ -469,7 +473,7 @@ export default function SystemTasksTab({sb, authState}) {
                     onClick={() => setShowInactive((v) => !v)}
                     style={INACTIVE_TOGGLE_BTN}
                   >
-                    <span style={{fontSize: 13, color: '#6b7280'}}>{showInactive ? '▾' : '▸'}</span>
+                    <span style={{fontSize: 13, color: 'var(--ink-muted)'}}>{showInactive ? '▾' : '▸'}</span>
                     Inactive rules ({inactiveBuckets.length})
                   </button>
                   {showInactive && <div style={{marginTop: 8}}>{inactiveBuckets.map(renderRuleCard)}</div>}

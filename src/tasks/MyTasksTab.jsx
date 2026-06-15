@@ -67,13 +67,13 @@ const CARD = {
   padding: '12px 14px',
   marginBottom: 10,
   boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
 };
-const SUB = {fontSize: 12, color: '#6b7280'};
+const SUB = {fontSize: 12, color: 'var(--ink-muted)'};
 const SECTION_HEADER = {
   fontSize: 13,
   fontWeight: 700,
-  color: '#374151',
+  color: 'var(--ink)',
   margin: '14px 0 8px',
   textTransform: 'uppercase',
   letterSpacing: 0.4,
@@ -81,7 +81,7 @@ const SECTION_HEADER = {
 const BUCKET_HEADER = {
   fontSize: 12,
   fontWeight: 700,
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   margin: '10px 0 6px',
   textTransform: 'uppercase',
   letterSpacing: 0.5,
@@ -106,7 +106,7 @@ const BUCKET_DOT_UPCOMING = {
 };
 const GROUP_HEADER = {
   background: 'white',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
   borderRadius: 8,
   padding: '8px 12px',
   marginBottom: 8,
@@ -145,9 +145,9 @@ const COMPLETE_BTN = {
 const ROW_GHOST_BTN = {
   padding: '4px 10px',
   borderRadius: 6,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink)',
   cursor: 'pointer',
   fontSize: 12,
   fontWeight: 500,
@@ -186,9 +186,9 @@ const FILTER_BAR = {
 const FILTER_CHIP_BASE = {
   padding: '5px 12px',
   borderRadius: 999,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
@@ -196,9 +196,9 @@ const FILTER_CHIP_BASE = {
 };
 const FILTER_CHIP_ACTIVE = {
   ...FILTER_CHIP_BASE,
-  background: '#085041',
-  border: '1px solid #085041',
-  color: 'white',
+  background: 'white',
+  border: '1px solid var(--brand)',
+  color: 'var(--brand)',
 };
 
 const FILTERS = [
@@ -264,7 +264,7 @@ function TaskRow({
           style={{
             fontSize: 15,
             fontWeight: 600,
-            color: '#111827',
+            color: 'var(--ink)',
             flex: '1 1 200px',
             minWidth: 0,
             wordBreak: 'break-word',
@@ -280,7 +280,7 @@ function TaskRow({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && onNavigate) onNavigate(ti);
             }}
-            style={{cursor: 'pointer', color: '#1d4ed8', textDecoration: 'none'}}
+            style={{cursor: 'pointer', color: 'var(--ink)', textDecoration: 'none'}}
           >
             {ti.title}
           </span>
@@ -310,11 +310,11 @@ function TaskRow({
         </div>
       </div>
       {ti.description && (
-        <div style={{fontSize: 13, color: '#374151', marginTop: 4, whiteSpace: 'pre-wrap'}}>{ti.description}</div>
+        <div style={{fontSize: 13, color: 'var(--ink)', marginTop: 4, whiteSpace: 'pre-wrap'}}>{ti.description}</div>
       )}
       {attribution && (
         <div style={{...SUB, marginTop: 4}} data-task-attribution-label={attribution.label}>
-          {attribution.label}: <span style={{color: '#374151'}}>{attribution.name}</span>
+          {attribution.label}: <span style={{color: 'var(--ink)'}}>{attribution.name}</span>
         </div>
       )}
       <div style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8}}>
@@ -631,7 +631,7 @@ export default function MyTasksTab({sb, authState}) {
             <div style={SECTION_HEADER}>My open tasks ({mineCount})</div>
             {mineCount === 0 ? (
               <div style={CARD}>
-                <div style={{fontSize: 13, color: '#374151'}}>
+                <div style={{fontSize: 13, color: 'var(--ink)'}}>
                   {filter === 'all'
                     ? 'Nothing assigned to you right now. Browse other open tasks below, or use + New Task above to create one.'
                     : 'No matches for the active filter. Try the All chip, or check the other open tasks below.'}
@@ -650,7 +650,7 @@ export default function MyTasksTab({sb, authState}) {
             <div style={SECTION_HEADER}>All other open tasks ({otherCount})</div>
             {otherGroups.length === 0 ? (
               <div style={CARD}>
-                <div style={{fontSize: 13, color: '#374151'}}>
+                <div style={{fontSize: 13, color: 'var(--ink)'}}>
                   {filter === 'all' ? 'No other open tasks.' : 'No other open tasks match the active filter.'}
                 </div>
               </div>
@@ -661,12 +661,12 @@ export default function MyTasksTab({sb, authState}) {
                 return (
                   <div key={key} data-tasks-group={key}>
                     <button type="button" onClick={() => toggleGroup(g.profileId)} style={GROUP_HEADER}>
-                      <span style={{fontSize: 14, fontWeight: 600, color: '#111827'}}>
+                      <span style={{fontSize: 14, fontWeight: 600, color: 'var(--ink)'}}>
                         {g.name} <span style={{...SUB, marginLeft: 4}}>({g.tasks.length})</span>
                       </span>
                       <span
                         data-tasks-group-state={isOpen ? 'expanded' : 'collapsed'}
-                        style={{fontSize: 13, color: '#6b7280'}}
+                        style={{fontSize: 13, color: 'var(--ink-muted)'}}
                       >
                         {isOpen ? '▾' : '▸'}
                       </span>

@@ -87,14 +87,14 @@ export default function AssignTaskModal({sb, task, isOpen, profilesById, onClose
     <div data-assign-task-modal="1" style={OVERLAY} onClick={close}>
       <div style={PANEL} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8}}>
-          <h2 style={{fontSize: 18, margin: 0, color: '#111827'}}>Reassign Task</h2>
+          <h2 style={{fontSize: 18, margin: 0, color: 'var(--ink)'}}>Reassign Task</h2>
           <button type="button" onClick={close} style={BTN_GHOST}>
             Cancel
           </button>
         </div>
 
-        <div style={{fontSize: 13, color: '#374151', marginBottom: 14}}>
-          <div style={{fontWeight: 600, color: '#111827'}}>{task.title}</div>
+        <div style={{fontSize: 13, color: 'var(--ink)', marginBottom: 14}}>
+          <div style={{fontWeight: 600, color: 'var(--ink)'}}>{task.title}</div>
         </div>
 
         <label style={FIELD_LABEL} htmlFor="assign-task-target">
