@@ -27,6 +27,7 @@ export const VIEW_TO_PATH = {
   // Home
   home: '/',
   animalHistory: '/animals-on-farm',
+  production: '/production',
 
   // Broiler
   broilerHome: '/broiler',

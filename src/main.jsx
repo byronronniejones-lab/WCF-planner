@@ -223,6 +223,7 @@ import LayerBatchesView from './layer/LayerBatchesView.jsx';
 // VIEW_TO_PROGRAM as props (they still live in App).
 import HomeDashboard from './dashboard/HomeDashboard.jsx';
 import AnimalHistoryPage from './dashboard/AnimalHistoryPage.jsx';
+import ProductionPage from './dashboard/ProductionPage.jsx';
 import LightHomePortal from './dashboard/LightHomePortal.jsx';
 import MySubmissions from './dashboard/MySubmissions.jsx';
 
@@ -1648,6 +1649,7 @@ function App() {
   const VALID_VIEWS = [
     'home',
     'animalHistory',
+    'production',
     'broilerHome',
     'pigsHome',
     'layersHome',
@@ -3481,6 +3483,7 @@ function App() {
     return React.createElement(HomeDashboard, {Header, loadUsers, canAccessProgram, VIEW_TO_PROGRAM});
   }
   if (view === 'animalHistory') return React.createElement(AnimalHistoryPage, {Header});
+  if (view === 'production') return React.createElement(ProductionPage, {Header, setView});
 
   // ── VIEW PAST REPORTS (legacy /my-submissions route) ──
   if (view === 'mySubmissions') return React.createElement(MySubmissions, {Header});

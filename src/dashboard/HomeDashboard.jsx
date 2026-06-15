@@ -39,6 +39,9 @@ import {useCattleHome} from '../contexts/CattleHomeContext.jsx';
 import {useSheepHome} from '../contexts/SheepHomeContext.jsx';
 import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
+import {computeHousingDisplayCount} from '../lib/layerHousing.js';
+import {loadProductionSources} from '../lib/productionApi.js';
+import {buildProductionModel, homeProductionStats} from '../lib/production.js';
 
 // Daily-report kind → dedicated record-page route. Home "Last 5 Days" tiles
 // navigate straight to the record page instead of waking the legacy dailys-hub
@@ -115,8 +118,8 @@ function WrenchGlyph() {
   );
 }
 
-// Coming-soon destination for not-yet-built top-level areas (Processing,
-// Production, Animals on Farm). Rendered as a full in-app page via local
+// Coming-soon destination for not-yet-built top-level areas (Processing and
+// future sections). Rendered as a full in-app page via local
 // HomeDashboard state — a real, safe destination, NOT a broken route. Keeps
 // the app chrome (Header) and offers an explicit Back to Home.
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -156,9 +159,12 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   const navigate = useNavigate();
 
   // Coming-soon overlay target for not-yet-built top-level areas (Processing /
-  // Production / Animals on Farm). null = show the dashboard; a label string =
+  // future sections). null = show the dashboard; a label string =
   // show the in-app coming-soon page. Cleared by its Back button.
   const [comingSoon, setComingSoon] = React.useState(null);
+  const productionYear = new Date().getFullYear();
+  const [productionSources, setProductionSources] = React.useState(null);
+  const [productionLoading, setProductionLoading] = React.useState(true);
 
   const role = authState?.role;
   const isAdmin = role === 'admin';
@@ -241,6 +247,28 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
       cancelled = true;
     };
   }, [materialsTick]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setProductionLoading(true);
+    loadProductionSources(sb, {
+      fromDate: `${productionYear}-01-01`,
+      toDate: `${productionYear}-12-31`,
+    })
+      .then((loaded) => {
+        if (!cancelled) setProductionSources(loaded);
+      })
+      .catch((error) => {
+        console.error('production summary load:', error);
+        if (!cancelled) setProductionSources(null);
+      })
+      .finally(() => {
+        if (!cancelled) setProductionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [productionYear]);
 
   // Auto-status counts for poultry
   const broilerOnFarmCounts = computeBroilerOnFarmCounts(batches, broilerDailys);
@@ -374,6 +402,11 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   const hasAnyActivePig =
     activePigFeederDailyTargets(feederGroups).length > 0 || (breeders || []).some((b) => !b.archived);
   const activeLayerGroups2 = (layerGroups || []).filter((g) => g.status === 'active');
+  const productionModel = React.useMemo(() => buildProductionModel(productionSources || {}), [productionSources]);
+  const productionStats = React.useMemo(
+    () => homeProductionStats(productionModel, productionYear),
+    [productionModel, productionYear],
+  );
 
   // ── Admin weekly table data ──
   const fiveDaysAgo = toISO(addDays(new Date(), -5));
@@ -664,64 +697,21 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
           );
         })()}
 
-        {/* Production · current year — figures are NOT yet wired (no verified
-            processed-count source across species + eggs), so values render blank
-            ("—") rather than fabricated. Per Ronnie the card ships present and
-            clicks through to the in-app coming-soon page. Year label is dynamic
-            and rolls over on Jan 1. */}
-        <button
-          type="button"
-          className="card stats lift"
-          data-status="not-built"
-          onClick={() => setComingSoon('Production')}
-        >
+        <button type="button" className="card stats lift" onClick={() => setView('production')}>
           <div className="stats-head">
-            <div className="card-label">Production · {new Date().getFullYear()}</div>
+            <div className="card-label">Production - {productionYear}</div>
             <Chevron className="go" />
           </div>
-          <div className="stat-row">
-            <div className="stat">
-              <div className="stat-n">—</div>
-              <div className="stat-l">
-                <span className="sdot sdot-broiler" />
-                Broilers
+          <div className="stat-row" data-home-grid="production">
+            {productionStats.map((stat) => (
+              <div className="stat" key={stat.programKey}>
+                <div className="stat-n">{productionLoading ? '--' : stat.value}</div>
+                <div className="stat-l">
+                  <span className={`sdot sdot-${stat.programKey === 'egg' ? 'layer' : stat.programKey}`} />
+                  {stat.label}
+                </div>
               </div>
-            </div>
-            <div className="stat">
-              <div className="stat-n">—</div>
-              <div className="stat-l">
-                <span className="sdot sdot-layer" />
-                Eggs
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-n">—</div>
-              <div className="stat-l">
-                <span className="sdot sdot-pig" />
-                Pigs
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-n">—</div>
-              <div className="stat-l">
-                <span className="sdot sdot-cattle" />
-                Cattle
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-n">—</div>
-              <div className="stat-l">
-                <span className="sdot sdot-sheep" />
-                Sheep
-              </div>
-            </div>
-            <div className="stat stat-total">
-              <div className="stat-n">—</div>
-              <div className="stat-l">
-                <span className="sdot sdot-total" />
-                Total
-              </div>
-            </div>
+            ))}
           </div>
         </button>
 

@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const EXPECTED_APP_STORE_OWNERS = new Map([
   ['src/dashboard/HomeDashboard.jsx', 2],
   ['src/lib/broiler.js', 4],
+  ['src/lib/productionApi.js', 1],
   ['src/livestock/WeighInSessionPage.jsx', 10],
   ['src/main.jsx', 4],
   ['src/pig/PigBatchesView.jsx', 2],
@@ -68,7 +69,7 @@ describe('app_store boundary', () => {
       .filter(([rel, count]) => seen.get(rel) !== count)
       .map(([rel, count]) => `${rel}: expected ${count}, saw ${seen.get(rel) ?? 0}`);
 
-    expect(total).toBe(26);
+    expect(total).toBe(27);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
