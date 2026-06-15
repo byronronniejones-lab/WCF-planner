@@ -887,11 +887,11 @@ item plus the full team-member roster teardown - `TasksWebform` submitter locked
 to the signed-in user (migration `097`), all `team_roster` / `team_availability`
 code + storage removed (migration `098`), and the `daily_photos_auth_insert`
 storage policy added so authenticated photo uploads work (migration `099`).
-Low-priority roster-teardown follow-up: delete or repurpose the skipped
-`broiler_weigh_in_schooners` T_negative app_store-isolation test if it is still
-moot under the authed admin shell. Source isolation stays locked by
-`tests/static/weighinswebform_no_app_store`. The old `daily_photos_anon_insert`
-policy follow-up is complete via migration `109`.
+Roster-teardown follow-ups are closed: the obsolete
+`broiler_weigh_in_schooners` T_negative runtime app_store-isolation test was
+removed after `/weighins` became login-required, source isolation stays locked
+by `tests/static/weighinswebform_no_app_store`, and the old
+`daily_photos_anon_insert` policy follow-up is complete via migration `109`.
 Shipped 2026-06-08 (removed/trimmed from queue): Lane 0 InlineNotice correctness
 (all four flat-prop call sites + `info` kind + forecast Issues suppression — the
 final Lane 0 items); Lane A processing-batch lifecycle RPCs (migration `100`);
