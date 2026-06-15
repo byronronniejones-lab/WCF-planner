@@ -80,7 +80,7 @@ const CowDetail = ({
   const editInp = {
     fontSize: 12,
     padding: '5px 8px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 5,
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -104,7 +104,7 @@ const CowDetail = ({
   const sectionTitle = {
     fontSize: 11,
     fontWeight: 700,
-    color: '#4b5563',
+    color: 'var(--ink-muted)',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 6,
@@ -129,7 +129,7 @@ const CowDetail = ({
   const findByTag = (t) => (t && Array.isArray(cattleList) ? cattleList.find((x) => x.tag === t) : null);
   const accentColor = (HERD_COLORS && HERD_COLORS[cow.herd] && HERD_COLORS[cow.herd].tx) || '#991b1b';
   const linkStyle = {
-    color: '#1d4ed8',
+    color: 'var(--brand)',
     cursor: 'pointer',
     textDecoration: 'underline',
     background: 'none',
@@ -188,7 +188,7 @@ const CowDetail = ({
           >
             {'\u2190 Back' + (backToTag ? ' to #' + backToTag : '')}
           </button>
-          <span style={{fontSize: 11, color: '#6b7280'}}>— you navigated here from another cow</span>
+          <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>— you navigated here from another cow</span>
         </div>
       )}
       {/* Header: editable tag + labeled herd/sex/breed selects + close X */}
@@ -199,7 +199,7 @@ const CowDetail = ({
           gap: 10,
           marginBottom: 10,
           paddingBottom: 8,
-          borderBottom: '1px solid #f3f4f6',
+          borderBottom: '1px solid var(--divider)',
           flexWrap: 'wrap',
         }}
       >
@@ -217,7 +217,7 @@ const CowDetail = ({
           <div
             style={{
               fontSize: 10,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontWeight: 600,
               marginBottom: 2,
               textTransform: 'uppercase',
@@ -238,7 +238,7 @@ const CowDetail = ({
           <div
             style={{
               fontSize: 10,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontWeight: 600,
               marginBottom: 2,
               textTransform: 'uppercase',
@@ -260,7 +260,7 @@ const CowDetail = ({
           <div
             style={{
               fontSize: 10,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontWeight: 600,
               marginBottom: 2,
               textTransform: 'uppercase',
@@ -294,9 +294,9 @@ const CowDetail = ({
             style={{
               marginLeft: 'auto',
               background: 'none',
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               borderRadius: 6,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               cursor: 'pointer',
               fontSize: 18,
               lineHeight: 1,
@@ -315,21 +315,21 @@ const CowDetail = ({
           <div
             style={{
               fontSize: 12,
-              color: '#374151',
+              color: 'var(--ink)',
               display: 'grid',
               gridTemplateColumns: '120px 1fr',
               gap: '4px 8px',
               alignItems: 'center',
             }}
           >
-            <span style={{color: '#9ca3af'}}>Reg #:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Reg #:</span>
             <input
               type="text"
               defaultValue={cow.registration_num || ''}
               onBlur={patchOnBlur('registration_num', 'text')}
               style={editInp}
             />
-            <span style={{color: '#9ca3af'}}>% Wagyu:</span>
+            <span style={{color: 'var(--ink-faint)'}}>% Wagyu:</span>
             <input
               type="number"
               min="0"
@@ -338,7 +338,7 @@ const CowDetail = ({
               onBlur={patchOnBlur('pct_wagyu', 'number')}
               style={editInp}
             />
-            <span style={{color: '#9ca3af'}}>Origin:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Origin:</span>
             <select defaultValue={cow.origin || ''} onChange={patchOnChange('origin')} style={editInp}>
               <option value="">{'\u2014 select \u2014'}</option>
               {(originOpts || [])
@@ -352,32 +352,32 @@ const CowDetail = ({
                 <option value={cow.origin}>{cow.origin}</option>
               )}
             </select>
-            <span style={{color: '#9ca3af'}}>Birth:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Birth:</span>
             <input
               type="date"
               defaultValue={cow.birth_date || ''}
               onBlur={patchOnBlur('birth_date', 'text')}
               style={editInp}
             />
-            <span style={{color: '#9ca3af'}}>Age:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Age:</span>
             <span
               style={{
                 fontSize: 12,
                 padding: '5px 8px',
-                color: '#6b7280',
+                color: 'var(--ink-muted)',
                 fontFamily: 'inherit',
               }}
             >
               {ageLabel || '—'}
             </span>
-            <span style={{color: '#9ca3af'}}>Purchased:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Purchased:</span>
             <input
               type="date"
               defaultValue={cow.purchase_date || ''}
               onBlur={patchOnBlur('purchase_date', 'text')}
               style={editInp}
             />
-            <span style={{color: '#9ca3af'}}>Purchase $:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Purchase $:</span>
             <input
               type="number"
               min="0"
@@ -388,7 +388,7 @@ const CowDetail = ({
             />
             {(cow.sex === 'cow' || cow.sex === 'heifer') && (
               <>
-                <span style={{color: '#9ca3af'}}>Breeding:</span>
+                <span style={{color: 'var(--ink-faint)'}}>Breeding:</span>
                 <select
                   defaultValue={cow.breeding_status || ''}
                   onChange={patchOnChange('breeding_status')}
@@ -409,14 +409,14 @@ const CowDetail = ({
           <div
             style={{
               fontSize: 12,
-              color: '#374151',
+              color: 'var(--ink)',
               display: 'grid',
               gridTemplateColumns: '120px 1fr',
               gap: '4px 8px',
               alignItems: 'center',
             }}
           >
-            <span style={{color: '#9ca3af'}}>Dam tag #:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Dam tag #:</span>
             <input
               type="text"
               defaultValue={cow.dam_tag || ''}
@@ -425,13 +425,13 @@ const CowDetail = ({
             />
             {cow.dam_tag && findByTag(cow.dam_tag) && (
               <>
-                <span style={{color: '#9ca3af'}}>{}</span>
-                <span style={{fontSize: 11, color: '#6b7280'}}>
+                <span style={{color: 'var(--ink-faint)'}}>{}</span>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                   <TagLink tag={cow.dam_tag} prefix="View " /> {'(' + (findByTag(cow.dam_tag).breed || '?') + ')'}
                 </span>
               </>
             )}
-            <span style={{color: '#9ca3af'}}>Sire tag #:</span>
+            <span style={{color: 'var(--ink-faint)'}}>Sire tag #:</span>
             <input
               type="text"
               defaultValue={cow.sire_tag || ''}
@@ -440,8 +440,8 @@ const CowDetail = ({
             />
             {cow.sire_tag && findByTag(cow.sire_tag) && (
               <>
-                <span style={{color: '#9ca3af'}}>{}</span>
-                <span style={{fontSize: 11, color: '#6b7280'}}>
+                <span style={{color: 'var(--ink-faint)'}}>{}</span>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                   <TagLink tag={cow.sire_tag} prefix="View " /> {'(' + (findByTag(cow.sire_tag).breed || '?') + ')'}
                 </span>
               </>
@@ -450,7 +450,7 @@ const CowDetail = ({
         </div>
       </div>
       {/* Prior Tags editor */}
-      <div style={{marginTop: 12, paddingTop: 10, borderTop: '1px solid #f3f4f6'}}>
+      <div style={{marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--divider)'}}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
           <div style={sectionTitle}>Prior Tags</div>
           <button
@@ -458,7 +458,7 @@ const CowDetail = ({
             onClick={addOldTag}
             style={{
               fontSize: 11,
-              color: '#1d4ed8',
+              color: 'var(--brand)',
               background: 'none',
               border: '1px dashed #bfdbfe',
               borderRadius: 5,
@@ -471,7 +471,7 @@ const CowDetail = ({
           </button>
         </div>
         {(cow.old_tags || []).length === 0 && (
-          <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>No prior tags recorded.</div>
+          <div style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>No prior tags recorded.</div>
         )}
         {(cow.old_tags || []).map((t, ti) => (
           <div
@@ -639,7 +639,14 @@ const CowDetail = ({
             <div style={{marginTop: 12}}>
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
                 <div style={{...sectionTitle, marginBottom: 0}}>Weight History ({rows.length})</div>
-                <div style={{display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid #d1d5db'}}>
+                <div
+                  style={{
+                    display: 'flex',
+                    borderRadius: 6,
+                    overflow: 'hidden',
+                    border: '1px solid var(--border-strong)',
+                  }}
+                >
                   {[
                     {k: 'table', l: 'Table'},
                     {k: 'chart', l: 'Chart'},
@@ -650,13 +657,13 @@ const CowDetail = ({
                       style={{
                         padding: '3px 10px',
                         border: 'none',
-                        borderRight: oi < 1 ? '1px solid #d1d5db' : 'none',
+                        borderRight: oi < 1 ? '1px solid var(--border-strong)' : 'none',
                         fontFamily: 'inherit',
                         fontSize: 10,
                         fontWeight: 600,
                         cursor: 'pointer',
-                        background: weightView === o.k ? '#1e40af' : 'white',
-                        color: weightView === o.k ? 'white' : '#6b7280',
+                        background: 'white',
+                        color: weightView === o.k ? '#1e40af' : 'var(--ink-muted)',
                       }}
                     >
                       {o.l}
@@ -669,7 +676,7 @@ const CowDetail = ({
                 <div
                   style={{
                     background: 'white',
-                    border: '1px solid #e5e7eb',
+                    border: '1px solid var(--border)',
                     borderRadius: 6,
                     overflow: 'hidden',
                     maxWidth: 640,
@@ -680,14 +687,14 @@ const CowDetail = ({
                       display: 'grid',
                       gridTemplateColumns: '120px 80px 80px 80px 90px',
                       gap: 0,
-                      background: '#f9fafb',
+                      background: 'var(--surface-2)',
                       padding: '6px 12px',
                       fontSize: 10,
                       fontWeight: 700,
-                      color: '#6b7280',
+                      color: 'var(--ink-muted)',
                       textTransform: 'uppercase',
                       letterSpacing: 0.5,
-                      borderBottom: '1px solid #e5e7eb',
+                      borderBottom: '1px solid var(--border)',
                     }}
                   >
                     <div>Date</div>
@@ -707,12 +714,12 @@ const CowDetail = ({
                           gap: 0,
                           padding: '6px 12px',
                           fontSize: 12,
-                          borderBottom: i < desc.length - 1 ? '1px solid #f3f4f6' : 'none',
+                          borderBottom: i < desc.length - 1 ? '1px solid var(--divider)' : 'none',
                           fontVariantNumeric: 'tabular-nums',
                           background: isBaseline ? '#fafafa' : 'white',
                         }}
                       >
-                        <div style={{color: '#111827'}}>
+                        <div style={{color: 'var(--ink)'}}>
                           {fmt(r.date)}
                           {r.isReceiving && (
                             <div
@@ -731,10 +738,12 @@ const CowDetail = ({
                             </div>
                           )}
                         </div>
-                        <div style={{textAlign: 'right', fontWeight: 700, color: '#111827'}}>
+                        <div style={{textAlign: 'right', fontWeight: 700, color: 'var(--ink)'}}>
                           {r.wt.toLocaleString()} lb
                         </div>
-                        <div style={{textAlign: 'right', color: '#6b7280'}}>{r.dDays != null ? r.dDays : '\u2014'}</div>
+                        <div style={{textAlign: 'right', color: 'var(--ink-muted)'}}>
+                          {r.dDays != null ? r.dDays : '\u2014'}
+                        </div>
                         <div
                           style={{
                             textAlign: 'right',
@@ -756,8 +765,8 @@ const CowDetail = ({
                         padding: '8px 12px',
                         fontSize: 11,
                         background: '#f3f4f6',
-                        borderTop: '2px solid #d1d5db',
-                        color: '#374151',
+                        borderTop: '2px solid var(--border-strong)',
+                        color: 'var(--ink)',
                         display: 'flex',
                         gap: 10,
                         flexWrap: 'wrap',
@@ -770,7 +779,7 @@ const CowDetail = ({
                           textTransform: 'uppercase',
                           letterSpacing: 0.5,
                           fontSize: 10,
-                          color: '#6b7280',
+                          color: 'var(--ink-muted)',
                         }}
                       >
                         Lifetime
@@ -791,7 +800,14 @@ const CowDetail = ({
               )}
 
               {weightView === 'chart' && (
-                <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 12px'}}>
+                <div
+                  style={{
+                    background: 'white',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '10px 12px',
+                  }}
+                >
                   <svg
                     viewBox={'0 0 ' + W + ' ' + H}
                     preserveAspectRatio="none"
@@ -928,9 +944,9 @@ const CowDetail = ({
                       style={{
                         marginTop: 6,
                         paddingTop: 8,
-                        borderTop: '1px solid #f3f4f6',
+                        borderTop: '1px solid var(--divider)',
                         fontSize: 11,
-                        color: '#374151',
+                        color: 'var(--ink)',
                         textAlign: 'center',
                       }}
                     >
@@ -1077,9 +1093,9 @@ const CowDetail = ({
                   style={{
                     padding: '6px 12px',
                     borderRadius: 6,
-                    border: '1px solid #d1d5db',
+                    border: '1px solid var(--border-strong)',
                     background: 'white',
-                    color: '#6b7280',
+                    color: 'var(--ink-muted)',
                     fontSize: 12,
                     cursor: 'pointer',
                     fontFamily: 'inherit',
@@ -1117,7 +1133,11 @@ const CowDetail = ({
             });
             if (combined.length === 0) {
               if (showCalvingForm) return null;
-              return <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>No calving records yet.</div>;
+              return (
+                <div style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+                  No calving records yet.
+                </div>
+              );
             }
             return combined.map(function (r) {
               var calfCow = r.calf_tag ? findByTag(r.calf_tag) : null;
@@ -1126,7 +1146,7 @@ const CowDetail = ({
                   key={r.id}
                   style={{
                     background: 'white',
-                    border: '1px solid #e5e7eb',
+                    border: '1px solid var(--border)',
                     borderRadius: 6,
                     padding: '6px 10px',
                     marginBottom: 4,
@@ -1137,7 +1157,7 @@ const CowDetail = ({
                     alignItems: 'center',
                   }}
                 >
-                  <strong style={{color: '#111827'}}>{r.calving_date ? fmt(r.calving_date) : 'date unknown'}</strong>
+                  <strong style={{color: 'var(--ink)'}}>{r.calving_date ? fmt(r.calving_date) : 'date unknown'}</strong>
                   {r.calf_tag &&
                     (calfCow && onNavigateToCow ? (
                       <button
@@ -1146,7 +1166,7 @@ const CowDetail = ({
                           onNavigateToCow(calfCow);
                         }}
                         style={{
-                          color: '#1d4ed8',
+                          color: 'var(--brand)',
                           cursor: 'pointer',
                           textDecoration: 'underline',
                           background: 'none',
@@ -1162,7 +1182,7 @@ const CowDetail = ({
                       <span style={{color: '#7f1d1d'}}>{'calf #' + r.calf_tag}</span>
                     ))}
                   {calfCow && (
-                    <span style={{fontSize: 10, color: '#6b7280'}}>
+                    <span style={{fontSize: 10, color: 'var(--ink-muted)'}}>
                       {'\u00b7 ' +
                         (HERD_LABELS[calfCow.herd] || calfCow.herd) +
                         (calfCow.breed ? ' \u00b7 ' + calfCow.breed : '')}
@@ -1171,9 +1191,11 @@ const CowDetail = ({
                   {r.complications_flag && (
                     <span style={{color: '#b91c1c', fontWeight: 600}}>{'\u26a0 complications'}</span>
                   )}
-                  {r.notes && <span style={{color: '#6b7280', fontStyle: 'italic'}}>{r.notes}</span>}
+                  {r.notes && <span style={{color: 'var(--ink-muted)', fontStyle: 'italic'}}>{r.notes}</span>}
                   {r.synthetic && (
-                    <span style={{fontSize: 10, color: '#9ca3af', fontStyle: 'italic'}}>{'(from calf record)'}</span>
+                    <span style={{fontSize: 10, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+                      {'(from calf record)'}
+                    </span>
                   )}
                   {!r.synthetic && onDeleteCalving && (
                     <button
@@ -1207,7 +1229,7 @@ const CowDetail = ({
               key={r.id}
               style={{
                 background: 'white',
-                border: '1px solid #e5e7eb',
+                border: '1px solid var(--border)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 marginBottom: 4,
@@ -1217,7 +1239,7 @@ const CowDetail = ({
                 flexWrap: 'wrap',
               }}
             >
-              <strong style={{color: '#111827'}}>{fmt(r.calving_date)}</strong>
+              <strong style={{color: 'var(--ink)'}}>{fmt(r.calving_date)}</strong>
               {r.calf_tag && <span style={{color: '#7f1d1d'}}>calf #{r.calf_tag}</span>}
             </div>
           ))}
@@ -1238,7 +1260,7 @@ const CowDetail = ({
                 flex: 1,
                 fontSize: 12,
                 padding: '6px 10px',
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 borderRadius: 6,
                 fontFamily: 'inherit',
               }}
@@ -1273,7 +1295,7 @@ const CowDetail = ({
                     key={c.id}
                     style={{
                       background: 'white',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid var(--border)',
                       borderRadius: 6,
                       padding: '6px 10px',
                       marginBottom: 4,
@@ -1311,9 +1333,9 @@ const CowDetail = ({
                       >
                         {c.source}
                       </span>
-                      <span style={{color: '#9ca3af'}}>{fmt((c.created_at || '').slice(0, 10))}</span>
+                      <span style={{color: 'var(--ink-faint)'}}>{fmt((c.created_at || '').slice(0, 10))}</span>
                       {c.team_member && (
-                        <span style={{color: '#9ca3af', fontWeight: 600}}>{'\u00b7 ' + c.team_member}</span>
+                        <span style={{color: 'var(--ink-faint)', fontWeight: 600}}>{'\u00b7 ' + c.team_member}</span>
                       )}
                       {!isEditing && onEditComment && (
                         <button
@@ -1325,7 +1347,7 @@ const CowDetail = ({
                           style={{
                             marginLeft: 'auto',
                             fontSize: 10,
-                            color: '#1d4ed8',
+                            color: 'var(--brand)',
                             background: 'none',
                             border: 'none',
                             cursor: 'pointer',
@@ -1364,7 +1386,7 @@ const CowDetail = ({
                             width: '100%',
                             fontSize: 11,
                             padding: '4px 8px',
-                            border: '1px solid #d1d5db',
+                            border: '1px solid var(--border-strong)',
                             borderRadius: 5,
                             fontFamily: 'inherit',
                             boxSizing: 'border-box',
@@ -1403,9 +1425,9 @@ const CowDetail = ({
                             style={{
                               padding: '3px 10px',
                               borderRadius: 5,
-                              border: '1px solid #d1d5db',
+                              border: '1px solid var(--border-strong)',
                               background: 'white',
-                              color: '#6b7280',
+                              color: 'var(--ink-muted)',
                               fontSize: 10,
                               cursor: 'pointer',
                               fontFamily: 'inherit',
@@ -1416,14 +1438,14 @@ const CowDetail = ({
                         </div>
                       </div>
                     ) : (
-                      <div style={{color: '#374151'}}>{c.comment}</div>
+                      <div style={{color: 'var(--ink)'}}>{c.comment}</div>
                     )}
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>No comments yet.</div>
+            <div style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>No comments yet.</div>
           )}
           {cow.breeding_blacklist && (
             <div
@@ -1464,7 +1486,7 @@ const CowDetail = ({
           display: 'flex',
           gap: 6,
           flexWrap: 'wrap',
-          borderTop: '1px solid #e5e7eb',
+          borderTop: '1px solid var(--border)',
           paddingTop: 10,
         }}
       >

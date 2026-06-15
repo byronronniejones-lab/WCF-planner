@@ -363,7 +363,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
             {batch.status}
           </span>
           {!isScheduled && (
-            <span style={{fontSize: 12, color: '#6b7280'}}>
+            <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>
               {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
             </span>
           )}
@@ -382,7 +382,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
           <div
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 10,
               padding: '14px 18px',
               marginBottom: 12,
@@ -434,9 +434,9 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                     fontSize: 11,
                     padding: '4px 10px',
                     borderRadius: 5,
-                    border: '1px solid #d1d5db',
+                    border: '1px solid var(--border-strong)',
                     background: 'white',
-                    color: '#374151',
+                    color: 'var(--ink)',
                     cursor: 'pointer',
                     fontFamily: 'inherit',
                   }}
@@ -471,7 +471,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
           <div
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 10,
               padding: '14px 18px',
               marginBottom: 12,
@@ -534,9 +534,9 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                       fontSize: 12,
                       padding: '10px 16px',
                       borderRadius: 6,
-                      border: '1px solid #1d4ed8',
+                      border: '1px solid var(--brand)',
                       background: 'white',
-                      color: '#1d4ed8',
+                      color: 'var(--brand)',
                       cursor: 'pointer',
                       fontFamily: 'inherit',
                       fontWeight: 600,
@@ -554,7 +554,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                 gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
                 gap: 8,
                 fontSize: 11,
-                color: '#4b5563',
+                color: 'var(--ink-muted)',
                 marginBottom: 10,
               }}
             >
@@ -563,7 +563,11 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                 value={totalLive > 0 ? Math.round(totalLive).toLocaleString() + ' lb' : '—'}
               />
               <Stat label="Hanging wt" value={totalHang > 0 ? Math.round(totalHang).toLocaleString() + ' lb' : '—'} />
-              <Stat label="Yield" value={yieldPct ? yieldPct + '%' : '—'} color={yieldPct ? '#065f46' : '#9ca3af'} />
+              <Stat
+                label="Yield"
+                value={yieldPct ? yieldPct + '%' : '—'}
+                color={yieldPct ? '#065f46' : 'var(--ink-faint)'}
+              />
               <Stat label="Cost" value={batch.processing_cost ? '$' + batch.processing_cost.toLocaleString() : '—'} />
             </div>
 
@@ -578,15 +582,17 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                   const weightStyle = {
                     fontSize: 13,
                     padding: '6px 8px',
-                    border: '1px solid #e5e7eb',
+                    border: '1px solid var(--border)',
                     borderRadius: 5,
                     fontFamily: 'inherit',
                     width: '100%',
                     minWidth: 70,
                     boxSizing: 'border-box',
-                    background: weightDisabled ? '#f9fafb' : 'white',
-                    color: '#111827',
+                    background: weightDisabled ? 'var(--surface-2)' : 'white',
+                    color: 'var(--ink)',
                     opacity: 1,
+                    // iOS disabled-input legibility fix (infrastructure value,
+                    // like getReadableText) — locked by cattle_batch_record_page_static.
                     WebkitTextFillColor: '#111827',
                   };
                   return (
@@ -594,17 +600,17 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                       key={r.cattle_id}
                       data-batch-cow-row={r.cattle_id}
                       style={{
-                        border: '1px solid #f3f4f6',
+                        border: '1px solid var(--divider)',
                         borderRadius: 6,
                         padding: '8px 10px',
                         fontSize: 12,
                       }}
                     >
                       <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4}}>
-                        <span style={{fontWeight: 700, color: '#111827', minWidth: 50}}>
+                        <span style={{fontWeight: 700, color: 'var(--ink)', minWidth: 50}}>
                           {'#' + (r.tag || cow?.tag || '?')}
                         </span>
-                        <span style={{fontSize: 11, color: '#6b7280'}}>{cow?.breed || '—'}</span>
+                        <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{cow?.breed || '—'}</span>
                         {y && <span style={{fontSize: 11, fontWeight: 600, color: '#065f46'}}>{y + '% yield'}</span>}
                         <span style={{flex: 1}} />
                         {canEdit && !isComplete && (
@@ -628,7 +634,14 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                       </div>
                       <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
                         <label style={{flex: '1 1 120px', minWidth: 0}}>
-                          <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase', marginBottom: 2}}>
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: 'var(--ink-muted)',
+                              textTransform: 'uppercase',
+                              marginBottom: 2,
+                            }}
+                          >
                             Live wt (lb)
                           </div>
                           <input
@@ -654,7 +667,14 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                           />
                         </label>
                         <label style={{flex: '1 1 120px', minWidth: 0}}>
-                          <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase', marginBottom: 2}}>
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: 'var(--ink-muted)',
+                              textTransform: 'uppercase',
+                              marginBottom: 2,
+                            }}
+                          >
                             Hanging wt (lb)
                           </div>
                           <input
@@ -686,10 +706,12 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
               </div>
             )}
             {rows.length === 0 && !isScheduled && (
-              <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No cows attached yet.</div>
+              <div style={{fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic'}}>No cows attached yet.</div>
             )}
             {batch.notes && (
-              <div style={{marginTop: 6, fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>{batch.notes}</div>
+              <div style={{marginTop: 6, fontSize: 11, color: 'var(--ink-muted)', fontStyle: 'italic'}}>
+                {batch.notes}
+              </div>
             )}
           </div>
         )}
@@ -706,10 +728,10 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
   );
 }
 
-function Stat({label, value, color = '#111827'}) {
+function Stat({label, value, color = 'var(--ink)'}) {
   return (
     <div>
-      <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>{label}</div>
+      <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>{label}</div>
       <div style={{fontWeight: 600, color}}>{value}</div>
     </div>
   );

@@ -28,7 +28,7 @@ const CollapsibleOutcomeSections = ({
             key={h}
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 10,
               marginBottom: 8,
               overflow: 'hidden',
@@ -39,7 +39,8 @@ const CollapsibleOutcomeSections = ({
               className="hoverable-tile"
               style={{
                 padding: '10px 16px',
-                background: hc.bg,
+                background: 'white',
+                borderLeft: '3px solid ' + hc.bd,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -73,13 +74,13 @@ const CollapsibleOutcomeSections = ({
                   const clickable = !!onCowClick;
                   const pInfo = processingInfo ? processingInfo(c) : null;
                   return (
-                    <div key={c.id} id={'cow-' + c.id} style={{borderTop: '1px solid #f3f4f6'}}>
+                    <div key={c.id} id={'cow-' + c.id} style={{borderTop: '1px solid var(--divider)'}}>
                       <div
                         {...(clickable ? openableProps(() => onCowClick(c)) : {})}
                         style={{
                           padding: '8px 16px',
                           fontSize: 12,
-                          color: '#4b5563',
+                          color: 'var(--ink-muted)',
                           display: 'flex',
                           gap: 10,
                           flexWrap: 'wrap',
@@ -88,24 +89,26 @@ const CollapsibleOutcomeSections = ({
                         }}
                         className={clickable ? 'hoverable-tile' : ''}
                       >
-                        {clickable && <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>}
-                        <span style={{fontWeight: 600, color: '#111827', minWidth: 60}}>
+                        {clickable && <span style={{fontSize: 11, color: 'var(--ink-faint)'}}>{'▶'}</span>}
+                        <span style={{fontWeight: 600, color: 'var(--ink)', minWidth: 60}}>
                           {c.tag ? '#' + c.tag : '(no tag)'}
                         </span>
                         <span>{c.sex || '—'}</span>
                         <span>{c.breed || '—'}</span>
                         {c.death_date && <span>{'died ' + fmt(c.death_date)}</span>}
                         {c.sale_date && <span>{'sold ' + fmt(c.sale_date)}</span>}
-                        {pInfo && <span style={{color: '#6b7280'}}>{'processed ' + fmt(pInfo.date)}</span>}
+                        {pInfo && <span style={{color: 'var(--ink-muted)'}}>{'processed ' + fmt(pInfo.date)}</span>}
                         {pInfo && pInfo.age && (
-                          <span style={{fontWeight: 600, color: '#4b5563'}}>{pInfo.age + ' at processing'}</span>
+                          <span style={{fontWeight: 600, color: 'var(--ink-muted)'}}>
+                            {pInfo.age + ' at processing'}
+                          </span>
                         )}
                       </div>
                     </div>
                   );
                 })}
                 {cows.length > 50 && (
-                  <div style={{padding: '8px 16px', fontSize: 11, color: '#9ca3af'}}>
+                  <div style={{padding: '8px 16px', fontSize: 11, color: 'var(--ink-faint)'}}>
                     {cows.length - 50} more {'—'} click "View all" above to filter to this section.
                   </div>
                 )}

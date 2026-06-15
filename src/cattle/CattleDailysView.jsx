@@ -443,7 +443,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const fi = {
     padding: '6px 10px',
     borderRadius: 6,
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     fontSize: 12,
     fontFamily: 'inherit',
     background: 'white',
@@ -456,9 +456,9 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
   const savedViewGhostBtnS = {
     padding: '6px 12px',
     borderRadius: 6,
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     background: 'white',
-    color: '#374151',
+    color: 'var(--ink)',
     fontSize: 12,
     fontWeight: 600,
     cursor: 'pointer',
@@ -471,7 +471,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
     alignItems: 'center',
     gap: 4,
     fontSize: 12,
-    color: '#374151',
+    color: 'var(--ink)',
     cursor: 'pointer',
   };
 
@@ -484,7 +484,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
 
   return (
     <div
-      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      style={{minHeight: '100vh', background: 'var(--bg-page)'}}
       data-cattle-dailys-loaded={loading || loadError ? 'false' : 'true'}
     >
       <Header />
@@ -500,8 +500,10 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
           }}
         >
           <div>
-            <div style={{fontSize: 15, fontWeight: 700, color: '#111827'}}>Daily Reports</div>
-            <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>{records.length.toLocaleString()} total</div>
+            <div style={{fontSize: 15, fontWeight: 700, color: 'var(--ink)'}}>Daily Reports</div>
+            <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>
+              {records.length.toLocaleString()} total
+            </div>
           </div>
           <div style={{display: 'flex', gap: 8}}>
             <button
@@ -543,7 +545,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               data-cattle-dailys-saved-views-row
               style={{
                 background: 'white',
-                border: '1px solid #e5e7eb',
+                border: '1px solid var(--border)',
                 borderRadius: 10,
                 padding: '10px 14px',
                 marginBottom: 8,
@@ -553,7 +555,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                 flexWrap: 'wrap',
               }}
             >
-              <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+              <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
               {savedViewsError ? (
                 <span style={{fontSize: 12, color: '#b91c1c'}} data-cattle-dailys-saved-views-error>
                   Saved views unavailable. Filters still work.
@@ -699,7 +701,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
         {/* Filters */}
         <div style={{display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center'}}>
           <input type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} style={{...fi, width: 130}} />
-          <span style={{fontSize: 12, color: '#6b7280'}}>to</span>
+          <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>to</span>
           <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} style={{...fi, width: 130}} />
           <select value={fHerd} onChange={(e) => setFHerd(e.target.value)} style={fi}>
             <option value="">All herds</option>
@@ -731,7 +733,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                 setFTo('');
                 setSrcFilter('all');
               }}
-              style={{...fi, color: '#6b7280', cursor: 'pointer'}}
+              style={{...fi, color: 'var(--ink-muted)', cursor: 'pointer'}}
             >
               Clear
             </button>
@@ -741,7 +743,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               display: 'flex',
               borderRadius: 6,
               overflow: 'hidden',
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               marginLeft: 'auto',
             }}
           >
@@ -756,13 +758,13 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                 style={{
                   padding: '5px 10px',
                   border: 'none',
-                  borderRight: oi < 2 ? '1px solid #d1d5db' : 'none',
+                  borderRight: oi < 2 ? '1px solid var(--border-strong)' : 'none',
                   fontFamily: 'inherit',
                   fontSize: 11,
                   fontWeight: 600,
                   cursor: 'pointer',
-                  background: srcFilter === o.k ? '#991b1b' : 'white',
-                  color: srcFilter === o.k ? 'white' : '#6b7280',
+                  background: 'white',
+                  color: srcFilter === o.k ? '#991b1b' : 'var(--ink-muted)',
                 }}
               >
                 {o.l}
@@ -776,7 +778,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
             disabled={loading || !!loadError}
             style={{
               ...fi,
-              color: loading || loadError ? '#9ca3af' : '#374151',
+              color: loading || loadError ? 'var(--ink-faint)' : 'var(--ink)',
               fontWeight: 600,
               cursor: loading || loadError ? 'not-allowed' : 'pointer',
             }}
@@ -790,7 +792,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
             disabled={loading || !!loadError}
             style={{
               ...fi,
-              color: loading || loadError ? '#9ca3af' : '#374151',
+              color: loading || loadError ? 'var(--ink-faint)' : 'var(--ink)',
               fontWeight: 600,
               cursor: loading || loadError ? 'not-allowed' : 'pointer',
             }}
@@ -809,9 +811,9 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               marginBottom: 12,
               padding: '7px 14px',
               borderRadius: 6,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 12,
               fontWeight: 600,
               cursor: 'pointer',
@@ -822,7 +824,9 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
           </button>
         )}
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
-        {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'\u2026'}</div>}
+        {loading && (
+          <div style={{textAlign: 'center', padding: '3rem', color: 'var(--ink-faint)'}}>Loading{'\u2026'}</div>
+        )}
         <OperationalListEmptyState
           loading={loading}
           loadError={loadError}
@@ -841,7 +845,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                 const prevDate = i > 0 ? filtered[i - 1].date : null;
                 const showDivider = prevDate && prevDate !== d.date;
                 const dateIdx = dates.indexOf(d.date);
-                const shadeBg = dateIdx % 2 === 0 ? 'white' : '#f8fafc';
+                const shadeBg = dateIdx % 2 === 0 ? 'white' : 'var(--surface-2)';
                 const hc = HERD_COLORS[d.herd] || HERD_COLORS.mommas;
                 const feedSummary =
                   Array.isArray(d.feeds) && d.feeds.length > 0
@@ -875,7 +879,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                           ? '1.5px solid #fca5a5'
                           : d.source === 'add_feed_webform'
                             ? '1px solid #fde68a'
-                            : '1px solid #e5e7eb',
+                            : '1px solid var(--border)',
                         padding: '10px 14px',
                         display: 'flex',
                         flexDirection: 'column',
@@ -892,7 +896,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                           gap: 12,
                         }}
                       >
-                        <span style={{fontSize: 12, color: '#6b7280'}}>{fmt(d.date)}</span>
+                        <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>{fmt(d.date)}</span>
                         <span style={{display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden'}}>
                           <span
                             style={{
@@ -1030,7 +1034,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
           </div>
         )}
         {hasMore && (
-          <div style={{textAlign: 'center', padding: '0.5rem', fontSize: 11, color: '#9ca3af'}}>
+          <div style={{textAlign: 'center', padding: '0.5rem', fontSize: 11, color: 'var(--ink-faint)'}}>
             Loading more records{'\u2026'}
           </div>
         )}
@@ -1074,7 +1078,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
             <div
               style={{
                 padding: '14px 20px',
-                borderBottom: '1px solid #e5e7eb',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -1090,7 +1094,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                   setEditId(null);
                   setForm(null);
                 }}
-                style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
+                style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--ink-faint)'}}
               >
                 {'\u00d7'}
               </button>
@@ -1134,9 +1138,11 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               </div>
 
               {/* Feeds */}
-              <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 10}}>
+              <div style={{gridColumn: '1/-1', borderTop: '1px solid var(--border)', paddingTop: 10}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
-                  <span style={{fontSize: 11, fontWeight: 700, color: '#4b5563', letterSpacing: 0.5}}>FEEDS</span>
+                  <span style={{fontSize: 11, fontWeight: 700, color: 'var(--ink-muted)', letterSpacing: 0.5}}>
+                    FEEDS
+                  </span>
                   <button
                     type="button"
                     onClick={() =>
@@ -1225,10 +1231,10 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                         onClick={() => setForm({...form, feeds: form.feeds.filter((_, i) => i !== ri)})}
                         style={{
                           padding: '4px 8px',
-                          border: '1px solid #d1d5db',
+                          border: '1px solid var(--border-strong)',
                           borderRadius: 5,
                           background: 'white',
-                          color: '#9ca3af',
+                          color: 'var(--ink-faint)',
                           cursor: 'pointer',
                         }}
                       >
@@ -1264,9 +1270,11 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               </div>
 
               {/* Minerals */}
-              <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 10}}>
+              <div style={{gridColumn: '1/-1', borderTop: '1px solid var(--border)', paddingTop: 10}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
-                  <span style={{fontSize: 11, fontWeight: 700, color: '#4b5563', letterSpacing: 0.5}}>MINERALS</span>
+                  <span style={{fontSize: 11, fontWeight: 700, color: 'var(--ink-muted)', letterSpacing: 0.5}}>
+                    MINERALS
+                  </span>
                   <button
                     type="button"
                     onClick={() => setForm({...form, minerals: [...(form.minerals || []), {feedId: '', lbs: ''}]})}
@@ -1342,10 +1350,10 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
                         onClick={() => setForm({...form, minerals: form.minerals.filter((_, i) => i !== ri)})}
                         style={{
                           padding: '4px 8px',
-                          border: '1px solid #d1d5db',
+                          border: '1px solid var(--border-strong)',
                           borderRadius: 5,
                           background: 'white',
-                          color: '#9ca3af',
+                          color: 'var(--ink-faint)',
                           cursor: 'pointer',
                         }}
                       >
@@ -1428,7 +1436,7 @@ const CattleDailysHub = ({sb, fmt, Header, authState, pendingEdit, setPendingEdi
               )}
               <DailyPhotoThumbnails photos={form?.photos} />
             </div>
-            <div style={{padding: '12px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8}}>
+            <div style={{padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8}}>
               <button onClick={saveEdit} style={{...S.btnPrimary, width: 'auto'}}>
                 Save
               </button>

@@ -87,25 +87,31 @@ if (typeof document !== 'undefined' && !document.getElementById(CLOG_CSS_ID)) {
     '.wcf-clog-grid{display:block;}' +
     '.wcf-clog-head{display:none !important;}' +
     '.wcf-clog-cell{margin-bottom:6px;}' +
-    '.wcf-clog-mobile-label{display:inline-block;font-size:10px;font-weight:600;color:#9ca3af;' +
+    '.wcf-clog-mobile-label{display:inline-block;font-size:10px;font-weight:600;color:var(--ink-faint);' +
     'text-transform:uppercase;letter-spacing:.4px;margin-right:6px;}' +
     '}';
   document.head.appendChild(el);
 }
 
 // ── shared style tokens ─────────────────────────────────────────────────────
-const CARD = {background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: 14, fontFamily: 'inherit'};
+const CARD = {
+  background: 'white',
+  border: '1px solid var(--border)',
+  borderRadius: 10,
+  padding: 14,
+  fontFamily: 'inherit',
+};
 const CONTROL = {
   fontSize: 13,
   padding: '7px 10px',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   borderRadius: 6,
   fontFamily: 'inherit',
   width: '100%',
   boxSizing: 'border-box',
   background: 'white',
 };
-const LBL = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+const LBL = {fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3, fontWeight: 500};
 const PRIMARY_BTN = {
   padding: '10px 16px',
   borderRadius: 6,
@@ -124,9 +130,9 @@ const PRIMARY_BTN_DISABLED = {...PRIMARY_BTN, background: '#9ca3af', borderColor
 const SMALL_BTN = {
   padding: '4px 10px',
   borderRadius: 6,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink)',
   fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
@@ -175,9 +181,9 @@ const filterBtn = (active) => ({
   fontWeight: 600,
   cursor: 'pointer',
   fontFamily: 'inherit',
-  border: active ? '2px solid #085041' : '1px solid #d1d5db',
-  background: active ? '#085041' : 'white',
-  color: active ? 'white' : '#374151',
+  border: active ? '2px solid #085041' : '1px solid var(--border-strong)',
+  background: 'white',
+  color: active ? '#085041' : 'var(--ink-muted)',
 });
 
 function sexLabel(sex) {
@@ -312,10 +318,10 @@ function CattleLogAttachmentThumb({sb, att, signedUrls, setSignedUrls}) {
           gap: 4,
           padding: '4px 8px',
           borderRadius: 6,
-          border: '1px solid #e5e7eb',
-          background: '#f3f4f6',
+          border: '1px solid var(--border)',
+          background: 'var(--divider)',
           fontSize: 11,
-          color: '#2563eb',
+          color: 'var(--brand)',
           textDecoration: 'none',
         }}
       >
@@ -336,8 +342,8 @@ function CattleLogAttachmentThumb({sb, att, signedUrls, setSignedUrls}) {
         height: 60,
         borderRadius: 6,
         overflow: 'hidden',
-        border: '1px solid #e5e7eb',
-        background: '#f3f4f6',
+        border: '1px solid var(--border)',
+        background: 'var(--divider)',
         flexShrink: 0,
       }}
     >
@@ -351,7 +357,7 @@ function CattleLogAttachmentThumb({sb, att, signedUrls, setSignedUrls}) {
         <span
           style={{
             fontSize: 10,
-            color: '#9ca3af',
+            color: 'var(--ink-faint)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -424,7 +430,7 @@ function EntryBody({body, mentionedNames, tagLinks, onOpenCow}) {
       }
     }
   }
-  return <div style={{fontSize: 13, color: '#111827', lineHeight: 1.5, overflowWrap: 'anywhere'}}>{out}</div>;
+  return <div style={{fontSize: 13, color: 'var(--ink)', lineHeight: 1.5, overflowWrap: 'anywhere'}}>{out}</div>;
 }
 
 // Per-unmatched-tag calf-note panel. Required: herd, DOB (+ estimated flag),
@@ -1169,7 +1175,7 @@ export default function CattleLogPage({sb, authState, Header}) {
   // ── render ──
   if (!allowed) {
     return (
-      <div style={{minHeight: '100vh', background: '#f1f3f2'}} data-cattle-log-error="1">
+      <div style={{minHeight: '100vh', background: 'var(--bg-page)'}} data-cattle-log-error="1">
         {typeof Header === 'function' ? <Header /> : null}
         <div style={{padding: '1.25rem', maxWidth: 720, margin: '0 auto'}}>
           <InlineNotice notice={{kind: 'error', message: 'You do not have access to the Cattle Log.'}} />
@@ -1180,7 +1186,7 @@ export default function CattleLogPage({sb, authState, Header}) {
 
   return (
     <div
-      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      style={{minHeight: '100vh', background: 'var(--bg-page)'}}
       data-cattle-log-loaded={!loading && !loadError ? '1' : undefined}
       data-cattle-log-error={loadError ? '1' : undefined}
     >
@@ -1205,7 +1211,7 @@ export default function CattleLogPage({sb, authState, Header}) {
       >
         {/* Title row */}
         <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
-          <div style={{fontSize: 20, fontWeight: 700, color: '#111827'}}>Cattle Log</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: 'var(--ink)'}}>Cattle Log</div>
           <span style={{flex: 1}} />
           <button
             data-cattle-log-howto="1"
@@ -1281,8 +1287,8 @@ export default function CattleLogPage({sb, authState, Header}) {
               flexWrap: 'wrap',
             }}
           >
-            <div style={{display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: '#6b7280'}}>
-              <label style={{cursor: 'pointer', color: '#2563eb', fontSize: 12}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--ink-muted)'}}>
+              <label style={{cursor: 'pointer', color: 'var(--brand)', fontSize: 12}}>
                 📎 Add photos
                 <input
                   ref={fileInputRef}
@@ -1307,7 +1313,7 @@ export default function CattleLogPage({sb, authState, Header}) {
                   disabled={forceIssue || submitting}
                   onChange={(e) => setComposerIssue(e.target.checked)}
                 />
-                <span style={{fontWeight: 600, color: '#374151'}}>Issue</span>
+                <span style={{fontWeight: 600, color: 'var(--ink)'}}>Issue</span>
                 {forceIssue && <span style={{fontSize: 11, whiteSpace: 'nowrap'}}>(required for unknown tags)</span>}
               </label>
             </div>
@@ -1369,7 +1375,7 @@ export default function CattleLogPage({sb, authState, Header}) {
                 <div style={{fontSize: 12, fontWeight: 700, color: '#92400e', textTransform: 'uppercase'}}>
                   Unmatched Calves
                 </div>
-                <div style={{fontSize: 13, color: '#374151'}}>Calves still missing a dam on the herd record.</div>
+                <div style={{fontSize: 13, color: 'var(--ink)'}}>Calves still missing a dam on the herd record.</div>
               </div>
               <span
                 data-cattle-log-unmatched-calves-count={unmatchedCalves.length}
@@ -1399,7 +1405,7 @@ export default function CattleLogPage({sb, authState, Header}) {
                   padding: '8px 10px',
                   fontFamily: 'inherit',
                   textAlign: 'left',
-                  color: '#111827',
+                  color: 'var(--ink)',
                   cursor: canOpen ? 'pointer' : 'default',
                   minWidth: 0,
                 };
@@ -1413,9 +1419,9 @@ export default function CattleLogPage({sb, authState, Header}) {
                         Needs dam
                       </span>
                     </div>
-                    <div style={{fontSize: 12, color: '#4b5563', marginTop: 3}}>{unmatchedCalfMeta(calf)}</div>
+                    <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 3}}>{unmatchedCalfMeta(calf)}</div>
                     {(calf.breed || calf.origin) && (
-                      <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>
+                      <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 2}}>
                         {[calf.breed, calf.origin].filter(Boolean).join(' | ')}
                       </div>
                     )}
@@ -1476,9 +1482,9 @@ export default function CattleLogPage({sb, authState, Header}) {
                     NEEDS ATTENTION
                   </span>
                   <span style={{fontWeight: 600}}>{QUEUE_ERROR_LABELS[r.errorClass] || 'Error'}</span>
-                  <span style={{color: '#9ca3af'}}>{fmtCentralDateTime(r.createdAt)}</span>
+                  <span style={{color: 'var(--ink-faint)'}}>{fmtCentralDateTime(r.createdAt)}</span>
                 </div>
-                <div style={{color: '#111827', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: 4}}>
+                <div style={{color: 'var(--ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: 4}}>
                   {(r.payload && r.payload.body) || ''}
                 </div>
                 {r.errorMessage && (
@@ -1531,9 +1537,9 @@ export default function CattleLogPage({sb, authState, Header}) {
                     QUEUED
                   </span>
                   <span>will send when reconnected</span>
-                  <span style={{color: '#9ca3af'}}>{fmtCentralDateTime(r.createdAt)}</span>
+                  <span style={{color: 'var(--ink-faint)'}}>{fmtCentralDateTime(r.createdAt)}</span>
                 </div>
-                <div style={{color: '#111827', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>
+                <div style={{color: 'var(--ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>
                   {(r.payload && r.payload.body) || ''}
                 </div>
               </div>
@@ -1543,7 +1549,7 @@ export default function CattleLogPage({sb, authState, Header}) {
 
         {/* ── List (fail-closed) ── */}
         {loading ? (
-          <div style={{...CARD, color: '#6b7280', fontSize: 13}}>Loading…</div>
+          <div style={{...CARD, color: 'var(--ink-muted)', fontSize: 13}}>Loading…</div>
         ) : loadError ? (
           <div style={CARD}>
             <InlineNotice notice={loadError} />
@@ -1557,10 +1563,10 @@ export default function CattleLogPage({sb, authState, Header}) {
               className="wcf-clog-grid wcf-clog-head"
               style={{
                 padding: '8px 0',
-                borderBottom: '1px solid #e5e7eb',
+                borderBottom: '1px solid var(--border)',
                 fontSize: 11,
                 fontWeight: 600,
-                color: '#6b7280',
+                color: 'var(--ink-muted)',
                 textTransform: 'uppercase',
                 letterSpacing: 0.4,
               }}
@@ -1571,7 +1577,7 @@ export default function CattleLogPage({sb, authState, Header}) {
               <div>Issue</div>
             </div>
             {entries.length === 0 && (
-              <div style={{padding: '14px 0', fontSize: 13, color: '#6b7280'}}>
+              <div style={{padding: '14px 0', fontSize: 13, color: 'var(--ink-muted)'}}>
                 {filter === 'issues' ? 'No open issues.' : 'No log entries yet.'}
               </div>
             )}
@@ -1585,12 +1591,12 @@ export default function CattleLogPage({sb, authState, Header}) {
                   id={'comment-' + e.id}
                   data-cattle-log-row={e.id}
                   className="wcf-clog-grid"
-                  style={{padding: '10px 0', borderBottom: '1px solid #f3f4f6'}}
+                  style={{padding: '10px 0', borderBottom: '1px solid var(--divider)'}}
                 >
-                  <div className="wcf-clog-cell" style={{fontSize: 12, color: '#6b7280'}}>
+                  <div className="wcf-clog-cell" style={{fontSize: 12, color: 'var(--ink-muted)'}}>
                     {fmtCentralDateTime(e.created_at)}
                   </div>
-                  <div className="wcf-clog-cell" style={{fontSize: 13, fontWeight: 600, color: '#111827'}}>
+                  <div className="wcf-clog-cell" style={{fontSize: 13, fontWeight: 600, color: 'var(--ink)'}}>
                     {e.author_name || 'Unknown user'}
                   </div>
                   <div className="wcf-clog-cell" style={{minWidth: 0}}>
@@ -1645,9 +1651,9 @@ export default function CattleLogPage({sb, authState, Header}) {
                                   gap: 4,
                                   padding: '3px 8px',
                                   borderRadius: 6,
-                                  border: '1px solid #e5e7eb',
-                                  background: '#f3f4f6',
-                                  color: '#374151',
+                                  border: '1px solid var(--border)',
+                                  background: 'var(--divider)',
+                                  color: 'var(--ink)',
                                 }}
                               >
                                 {a.name || 'photo'}
@@ -1671,7 +1677,7 @@ export default function CattleLogPage({sb, authState, Header}) {
                               </span>
                             ))}
                             {editing.newFiles.map((f, i) => (
-                              <span key={'new-' + i} style={{color: '#6b7280'}}>
+                              <span key={'new-' + i} style={{color: 'var(--ink-muted)'}}>
                                 + {f.name}
                               </span>
                             ))}
@@ -1684,7 +1690,7 @@ export default function CattleLogPage({sb, authState, Header}) {
                           />
                         </div>
                         <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap'}}>
-                          <label style={{cursor: 'pointer', color: '#2563eb', fontSize: 12}}>
+                          <label style={{cursor: 'pointer', color: 'var(--brand)', fontSize: 12}}>
                             📎 Add photos
                             <input
                               ref={editFileInputRef}
@@ -1781,10 +1787,10 @@ export default function CattleLogPage({sb, authState, Header}) {
                           </div>
                         )}
                         <div style={{display: 'flex', alignItems: 'center', gap: 10, marginTop: 4}}>
-                          {e.edited_at && <span style={{fontSize: 11, color: '#6b7280'}}>edited</span>}
+                          {e.edited_at && <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>edited</span>}
                           {isAuthor && (
                             <button
-                              style={{...LINK_BTN, color: '#2563eb'}}
+                              style={{...LINK_BTN, color: 'var(--brand)'}}
                               data-cattle-log-edit={e.id}
                               onClick={() => startEdit(e)}
                             >

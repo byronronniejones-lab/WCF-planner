@@ -154,16 +154,16 @@ const CattleBreedingView = ({
   const inpS = {
     fontSize: 13,
     padding: '7px 10px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 6,
     fontFamily: 'inherit',
     width: '100%',
     boxSizing: 'border-box',
   };
-  const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+  const lbl = {fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3, fontWeight: 500};
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -178,8 +178,9 @@ const CattleBreedingView = ({
       <div style={{padding: '1rem', maxWidth: 1100, margin: '0 auto'}}>
         {!showForm && <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />}
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
-          <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}}>
-            Breeding Cycles <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280'}}>({cycles.length})</span>
+          <div style={{fontSize: 16, fontWeight: 700, color: 'var(--ink)'}}>
+            Breeding Cycles{' '}
+            <span style={{fontSize: 13, fontWeight: 400, color: 'var(--ink-muted)'}}>({cycles.length})</span>
           </div>
           <button
             onClick={openAdd}
@@ -199,16 +200,18 @@ const CattleBreedingView = ({
           </button>
         </div>
 
-        {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'\u2026'}</div>}
+        {loading && (
+          <div style={{textAlign: 'center', padding: '2rem', color: 'var(--ink-faint)'}}>Loading{'\u2026'}</div>
+        )}
         {!loading && cycles.length === 0 && (
           <div
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 12,
               padding: '2rem',
               textAlign: 'center',
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontSize: 13,
             }}
           >
@@ -233,10 +236,12 @@ const CattleBreedingView = ({
             return (
               <div
                 key={c.id}
-                style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 18px'}}
+                style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px'}}
               >
                 <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap'}}>
-                  <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{cattleCycleLabel(c, seqMap)}</span>
+                  <span style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>
+                    {cattleCycleLabel(c, seqMap)}
+                  </span>
                   <span
                     style={{
                       fontSize: 10,
@@ -250,7 +255,7 @@ const CattleBreedingView = ({
                   >
                     {status}
                   </span>
-                  <span style={{fontSize: 11, color: '#6b7280'}}>
+                  <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                     {cowList.length} {cowList.length === 1 ? 'cow' : 'cows'}{' '}
                     {bullList.length > 0 ? '\u00b7 bulls: ' + bullList.join(', ') : ''}
                   </span>
@@ -259,7 +264,7 @@ const CattleBreedingView = ({
                     style={{
                       marginLeft: 'auto',
                       fontSize: 11,
-                      color: '#1d4ed8',
+                      color: 'var(--brand)',
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
@@ -275,27 +280,33 @@ const CattleBreedingView = ({
                       gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                       gap: 8,
                       fontSize: 11,
-                      color: '#4b5563',
+                      color: 'var(--ink-muted)',
                     }}
                   >
                     <div>
-                      <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Bull Exposure</div>
+                      <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>
+                        Bull Exposure
+                      </div>
                       <div style={{fontWeight: 600}}>
                         {fmt(c.bull_exposure_start)} {'\u2014'} {fmt(tl.exposureEnd)}
                       </div>
                     </div>
                     <div>
-                      <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Preg Check</div>
+                      <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>
+                        Preg Check
+                      </div>
                       <div style={{fontWeight: 600}}>{fmt(tl.pregCheckDate)}</div>
                     </div>
                     <div>
-                      <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Calving Window</div>
+                      <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>
+                        Calving Window
+                      </div>
                       <div style={{fontWeight: 600}}>
                         {fmt(tl.calvingStart)} {'\u2014'} {fmt(tl.calvingEnd)}
                       </div>
                     </div>
                     <div>
-                      <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Wean By</div>
+                      <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>Wean By</div>
                       <div style={{fontWeight: 600}}>{fmt(tl.weaningDate)}</div>
                     </div>
                   </div>
@@ -317,7 +328,9 @@ const CattleBreedingView = ({
                   </div>
                 )}
                 {c.notes && (
-                  <div style={{marginTop: 8, fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>{c.notes}</div>
+                  <div style={{marginTop: 8, fontSize: 11, color: 'var(--ink-muted)', fontStyle: 'italic'}}>
+                    {c.notes}
+                  </div>
                 )}
               </div>
             );
@@ -378,7 +391,7 @@ const CattleBreedingView = ({
             <div
               style={{
                 padding: '14px 20px',
-                borderBottom: '1px solid #e5e7eb',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -394,7 +407,7 @@ const CattleBreedingView = ({
                   setEditId(null);
                   setForm(null);
                 }}
-                style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
+                style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--ink-faint)'}}
               >
                 {'\u00d7'}
               </button>
@@ -409,7 +422,7 @@ const CattleBreedingView = ({
                   onChange={(e) => setForm({...form, bull_exposure_start: e.target.value})}
                   style={inpS}
                 />
-                <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>
+                <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 3}}>
                   All other dates auto-compute: 65d exposure {'\u2192'} 30d preg check {'\u2192'} 9mo gestation{' '}
                   {'\u2192'} 65d calving {'\u2192'} 7mo nursing.
                 </div>
@@ -452,7 +465,7 @@ const CattleBreedingView = ({
                 />
               </div>
             </div>
-            <div style={{padding: '12px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8}}>
+            <div style={{padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8}}>
               <button
                 onClick={saveCycle}
                 style={{
@@ -496,9 +509,9 @@ const CattleBreedingView = ({
                 style={{
                   padding: '8px 16px',
                   borderRadius: 7,
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   background: 'white',
-                  color: '#6b7280',
+                  color: 'var(--ink-muted)',
                   fontSize: 13,
                   cursor: 'pointer',
                   fontFamily: 'inherit',

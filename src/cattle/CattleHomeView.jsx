@@ -334,15 +334,21 @@ const CattleHomeView = ({
             key={it.l}
             style={{
               padding: '8px 10px',
-              background: '#f9fafb',
-              border: '1px solid #f3f4f6',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--divider)',
               borderRadius: 8,
               minWidth: 0,
               overflow: 'hidden',
             }}
           >
             <div
-              style={{fontSize: 9, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2}}
+              style={{
+                fontSize: 9,
+                color: 'var(--ink-faint)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+                marginBottom: 2,
+              }}
             >
               {it.l}
             </div>
@@ -350,7 +356,7 @@ const CattleHomeView = ({
               style={{
                 fontSize: 13,
                 fontWeight: 700,
-                color: it.warn ? '#b91c1c' : it.color || '#111827',
+                color: it.warn ? '#b91c1c' : it.color || 'var(--ink)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -359,7 +365,7 @@ const CattleHomeView = ({
               {it.v}
               {it.trend}
             </div>
-            {it.sub && <div style={{fontSize: 9, color: '#9ca3af', marginTop: 2}}>{it.sub}</div>}
+            {it.sub && <div style={{fontSize: 9, color: 'var(--ink-faint)', marginTop: 2}}>{it.sub}</div>}
             {it.pct != null && (
               <div style={{fontSize: 10, fontWeight: 700, color: pctOfTargetColor(it.pct), marginTop: 2}}>
                 {Math.round(it.pct) + '% of target'}
@@ -373,7 +379,13 @@ const CattleHomeView = ({
 
   const PeriodToggle = ({val, setVal, opts}) => (
     <div
-      style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #d1d5db', width: 'fit-content'}}
+      style={{
+        display: 'flex',
+        borderRadius: 8,
+        overflow: 'hidden',
+        border: '1px solid var(--border-strong)',
+        width: 'fit-content',
+      }}
     >
       {opts.map(({v, l}) => (
         <button
@@ -381,13 +393,13 @@ const CattleHomeView = ({
           onClick={() => setVal(v)}
           style={{
             padding: '6px 14px',
-            border: 'none',
+            border: val === v ? '1px solid #991b1b' : '1px solid var(--border-strong)',
             fontFamily: 'inherit',
             fontSize: 11,
             fontWeight: 600,
             cursor: 'pointer',
-            background: val === v ? '#991b1b' : 'white',
-            color: val === v ? 'white' : '#6b7280',
+            background: 'white',
+            color: val === v ? '#991b1b' : 'var(--ink-muted)',
           }}
         >
           {l}
@@ -403,18 +415,26 @@ const CattleHomeView = ({
   const prevFromISO = new Date(Date.now() - (cattleDashPeriod * 2 - 1) * 86400000).toISOString().slice(0, 10);
 
   const StatTile = ({label, val, sub, color = '#991b1b'}) => (
-    <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px'}}>
-      <div style={{fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4}}>
+    <div style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px'}}>
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--ink-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: 0.8,
+          marginBottom: 4,
+        }}
+      >
         {label}
       </div>
       <div style={{fontSize: 24, fontWeight: 700, color, lineHeight: 1}}>{val}</div>
-      {sub && <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>{sub}</div>}
+      {sub && <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 3}}>{sub}</div>}
     </div>
   );
 
   return (
     <div
-      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      style={{minHeight: '100vh', background: 'var(--bg-page)'}}
       data-cattle-home-loaded={loading || loadError ? 'false' : 'true'}
     >
       {showUsers && (
@@ -479,9 +499,9 @@ const CattleHomeView = ({
             <StatTile
               label="Mortality 30d"
               val={totalMort30.toString()}
-              color={totalMort30 > 0 ? '#b91c1c' : '#374151'}
+              color={totalMort30 > 0 ? '#b91c1c' : 'var(--ink)'}
             />
-            <StatTile label="Reports 30d" val={dailys.length.toString()} color="#374151" />
+            <StatTile label="Reports 30d" val={dailys.length.toString()} color="var(--ink)" />
             <StatTile
               label="Feed Cost 30d"
               val={totalFeedCost30 > 0 ? '$' + Math.round(totalFeedCost30).toLocaleString() : '\u2014'}
@@ -524,29 +544,34 @@ const CattleHomeView = ({
             </span>
             {forecastTile.nextBatch ? (
               <>
-                <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                <span style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>
                   Next: {forecastTile.nextBatch.name}
                 </span>
-                <span style={{fontSize: 12, color: '#6b7280'}}>
+                <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>
                   {forecastTile.nextBatch.label} \u00b7 {forecastTile.nextBatch.animalIds.length}{' '}
                   {forecastTile.nextBatch.animalIds.length === 1 ? 'cow' : 'cows'}
                 </span>
               </>
             ) : (
-              <span style={{fontSize: 13, color: '#6b7280', fontStyle: 'italic'}}>No planned batch yet</span>
+              <span style={{fontSize: 13, color: 'var(--ink-muted)', fontStyle: 'italic'}}>No planned batch yet</span>
             )}
             <span style={{flex: 1}} />
-            <span style={{fontSize: 12, color: '#374151'}}>
-              <strong>{forecastTile.currentYearReady}</strong> ready <span style={{color: '#9ca3af'}}>this year</span>
+            <span style={{fontSize: 12, color: 'var(--ink)'}}>
+              <strong>{forecastTile.currentYearReady}</strong> ready{' '}
+              <span style={{color: 'var(--ink-faint)'}}>this year</span>
             </span>
-            <span style={{fontSize: 11, color: '#1d4ed8', textDecoration: 'underline'}}>Open Forecast {'\u2192'}</span>
+            <span style={{fontSize: 11, color: 'var(--brand)', textDecoration: 'underline'}}>
+              Open Forecast {'\u2192'}
+            </span>
           </div>
         )}
 
         {/* Per-herd breakdown */}
         {!loadError && (
           <div>
-            <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', marginBottom: 8, letterSpacing: 0.3}}>
+            <div
+              style={{fontSize: 13, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 8, letterSpacing: 0.3}}
+            >
               HERD BREAKDOWN
             </div>
             <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10}}>
@@ -562,7 +587,7 @@ const CattleHomeView = ({
                     {...openableProps(() => setView('cattleherds'))}
                     style={{
                       background: 'white',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid var(--border)',
                       borderRadius: 12,
                       padding: '14px 16px',
                       cursor: 'pointer',
@@ -571,14 +596,14 @@ const CattleHomeView = ({
                   >
                     <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
                       <span style={{fontSize: 14, fontWeight: 700, color: HERD_COLORS[h]}}>{HERD_LABELS[h]}</span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>
+                      <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                         {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
                       </span>
                     </div>
-                    <div style={{fontSize: 12, color: '#374151'}}>
+                    <div style={{fontSize: 12, color: 'var(--ink)'}}>
                       Live wt: <strong>{lw > 0 ? Math.round(lw).toLocaleString() + ' lbs' : '\u2014'}</strong>
                     </div>
-                    <div style={{fontSize: 12, color: '#374151'}}>
+                    <div style={{fontSize: 12, color: 'var(--ink)'}}>
                       Cow units: <strong>{cu > 0 ? cu.toFixed(1) : '\u2014'}</strong>
                     </div>
                     {est > 0 && (
@@ -587,7 +612,7 @@ const CattleHomeView = ({
                       </div>
                     )}
                     {t && (
-                      <div style={{fontSize: 11, color: '#9ca3af', marginTop: 4}}>
+                      <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 4}}>
                         {'Target: DM ' +
                           t.target_dm_pct_body +
                           '% \u00b7 CP ' +
@@ -608,7 +633,7 @@ const CattleHomeView = ({
         {!loadError && activeHerdsWithCows.length > 0 && (
           <div>
             <div style={{display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10}}>
-              <div style={{fontSize: 13, fontWeight: 600, color: '#4b5563', letterSpacing: 0.3}}>
+              <div style={{fontSize: 13, fontWeight: 600, color: 'var(--ink-muted)', letterSpacing: 0.3}}>
                 HERDS {'\u2014'} ROLLING WINDOW
               </div>
               <PeriodToggle
@@ -635,7 +660,7 @@ const CattleHomeView = ({
                     {...openableProps(() => setView('cattleherds'))}
                     style={{
                       background: 'white',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid var(--border)',
                       borderRadius: 14,
                       overflow: 'hidden',
                       cursor: 'pointer',
@@ -644,8 +669,8 @@ const CattleHomeView = ({
                   >
                     <div
                       style={{
-                        background: '#fef2f2',
-                        borderBottom: '1px solid #fecaca',
+                        background: 'white',
+                        borderBottom: '1px solid var(--divider)',
                         borderLeft: '4px solid ' + accent,
                         padding: '12px 20px',
                         display: 'flex',
@@ -657,11 +682,11 @@ const CattleHomeView = ({
                       <span style={{fontSize: 16, fontWeight: 700, color: accent}}>
                         {renderCattleIconLabel(HERD_LABELS[h], {size: 22})}
                       </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>
+                      <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                         {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
                       </span>
                       {cur.cowUnits > 0 && (
-                        <span style={{fontSize: 11, color: '#6b7280'}}>
+                        <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                           {'\u00b7 ' + cur.cowUnits.toFixed(1) + ' cow units (avg over window)'}
                         </span>
                       )}
@@ -671,7 +696,7 @@ const CattleHomeView = ({
                         </span>
                       )}
                       {t && (
-                        <span style={{fontSize: 11, color: '#9ca3af', marginLeft: 'auto'}}>
+                        <span style={{fontSize: 11, color: 'var(--ink-faint)', marginLeft: 'auto'}}>
                           {'Target DM ' +
                             t.target_dm_pct_body +
                             '% \u00b7 CP ' +
@@ -696,18 +721,20 @@ const CattleHomeView = ({
         )}
 
         {loading && (
-          <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af', fontSize: 13}}>Loading{'\u2026'}</div>
+          <div style={{textAlign: 'center', padding: '2rem', color: 'var(--ink-faint)', fontSize: 13}}>
+            Loading{'\u2026'}
+          </div>
         )}
 
         {!loading && !loadError && totalCattle === 0 && (
           <div
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 12,
               padding: '24px',
               textAlign: 'center',
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontSize: 13,
             }}
           >

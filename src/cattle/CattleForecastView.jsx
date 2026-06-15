@@ -102,23 +102,23 @@ const WATCHLIST_REASON_LABELS = {
 const inpS = {
   fontSize: 13,
   padding: '7px 10px',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   borderRadius: 6,
   fontFamily: 'inherit',
   width: '100%',
   boxSizing: 'border-box',
 };
 
-const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+const lbl = {fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3, fontWeight: 500};
 
 const tile = {
   background: 'white',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
   borderRadius: 12,
   padding: '14px 16px',
 };
 
-const sectionHeader = {fontSize: 13, fontWeight: 600, color: '#4b5563', letterSpacing: 0.3, marginBottom: 8};
+const sectionHeader = {fontSize: 13, fontWeight: 600, color: 'var(--ink-muted)', letterSpacing: 0.3, marginBottom: 8};
 
 // Compact age string from birth_date (YYYY-MM-DD) to a target Date.
 // Renders as "Xy Ym" (e.g. "2y 4m"), or just "Ym" when under a year, or "—".
@@ -486,7 +486,7 @@ const CattleForecastView = ({
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -511,7 +511,7 @@ const CattleForecastView = ({
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         {/* Title + actions */}
         <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}} data-cattle-forecast-root>
-          <div style={{fontSize: 20, fontWeight: 700, color: '#111827'}}>Cattle Forecast</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: 'var(--ink)'}}>Cattle Forecast</div>
           {!canEdit && (
             <span
               style={{
@@ -568,9 +568,9 @@ const CattleForecastView = ({
             style={{
               padding: '7px 14px',
               borderRadius: 7,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 12,
               fontWeight: 500,
               cursor: 'pointer',
@@ -600,7 +600,7 @@ const CattleForecastView = ({
               style={{
                 fontSize: 13,
                 padding: '7px 10px',
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 borderRadius: 6,
                 fontFamily: 'inherit',
                 width: '100%',
@@ -617,9 +617,9 @@ const CattleForecastView = ({
                   fontSize: 11,
                   padding: '6px 10px',
                   borderRadius: 5,
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   background: 'white',
-                  color: '#6b7280',
+                  color: 'var(--ink-muted)',
                   cursor: 'pointer',
                   fontFamily: 'inherit',
                 }}
@@ -630,7 +630,7 @@ const CattleForecastView = ({
           </div>
         )}
 
-        {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>}
+        {loading && <div style={{textAlign: 'center', padding: '3rem', color: 'var(--ink-faint)'}}>Loading{'…'}</div>}
 
         {!loading && forecast && (
           <>
@@ -667,7 +667,7 @@ const CattleForecastView = ({
                 <SummaryTile
                   label="Watchlist"
                   value={forecast.summary.watchlistCount.toLocaleString()}
-                  color={forecast.summary.watchlistCount > 0 ? '#92400e' : '#374151'}
+                  color={forecast.summary.watchlistCount > 0 ? '#92400e' : 'var(--ink)'}
                 />
               </div>
             </div>
@@ -678,7 +678,7 @@ const CattleForecastView = ({
                 <span
                   style={{
                     fontSize: 11,
-                    color: '#6b7280',
+                    color: 'var(--ink-muted)',
                     fontWeight: 600,
                     textTransform: 'uppercase',
                     letterSpacing: 0.5,
@@ -702,7 +702,7 @@ const CattleForecastView = ({
                       {forecast.nextProcessorBatch.label} · {forecast.nextProcessorBatch.animalIds.length}{' '}
                       {forecast.nextProcessorBatch.animalIds.length === 1 ? 'cow' : 'cows'}
                     </span>
-                    <span style={{fontSize: 13, color: '#6b7280'}}>{forecast.nextProcessorBatch.name}</span>
+                    <span style={{fontSize: 13, color: 'var(--ink-muted)'}}>{forecast.nextProcessorBatch.name}</span>
                     {forecast.nextProcessorBatch.projectedTotalLbs > 0 && (
                       <span style={{fontSize: 12, color: '#065f46', fontWeight: 600}}>
                         {Math.round(forecast.nextProcessorBatch.projectedTotalLbs).toLocaleString()} lb projected
@@ -710,7 +710,7 @@ const CattleForecastView = ({
                     )}
                   </>
                 ) : (
-                  <span style={{fontSize: 13, color: '#6b7280', fontStyle: 'italic'}}>
+                  <span style={{fontSize: 13, color: 'var(--ink-muted)', fontStyle: 'italic'}}>
                     No planned batch — no eligible cattle land in the display window.
                   </span>
                 )}
@@ -720,7 +720,7 @@ const CattleForecastView = ({
                   <div
                     style={{
                       fontSize: 10,
-                      color: '#9ca3af',
+                      color: 'var(--ink-faint)',
                       textTransform: 'uppercase',
                       letterSpacing: 0.5,
                       marginBottom: 4,
@@ -836,9 +836,9 @@ const CattleForecastView = ({
                       style={{
                         padding: '7px 14px',
                         borderRadius: 7,
-                        border: '1px solid #d1d5db',
+                        border: '1px solid var(--border-strong)',
                         background: 'white',
-                        color: '#6b7280',
+                        color: 'var(--ink-muted)',
                         fontSize: 12,
                         cursor: 'pointer',
                         fontFamily: 'inherit',
@@ -846,7 +846,7 @@ const CattleForecastView = ({
                     >
                       Discard
                     </button>
-                    <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>
+                    <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
                       Settings edits don't recompute the forecast until saved.
                     </span>
                   </div>
@@ -868,7 +868,7 @@ const CattleForecastView = ({
             {/* ── Year selector ───────────────────────────────────────── */}
             {yearsInView.length > 0 && (
               <div style={{display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap'}}>
-                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4}}>YEAR</span>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600, marginRight: 4}}>YEAR</span>
                 {yearsInView.map((y) => (
                   <button
                     key={y}
@@ -882,9 +882,9 @@ const CattleForecastView = ({
                       borderRadius: 999,
                       fontSize: 12,
                       fontWeight: 600,
-                      border: yearFilter === y ? '1px solid #991b1b' : '1px solid #d1d5db',
-                      background: yearFilter === y ? '#fef2f2' : 'white',
-                      color: yearFilter === y ? '#991b1b' : '#374151',
+                      border: yearFilter === y ? '1px solid #991b1b' : '1px solid var(--border-strong)',
+                      background: 'white',
+                      color: yearFilter === y ? '#991b1b' : 'var(--ink-muted)',
                       cursor: 'pointer',
                       fontFamily: 'inherit',
                     }}
@@ -963,7 +963,7 @@ function SummaryTile({label, value, sub, color = '#991b1b', labelStrong = false}
         data-summary-tile-label={label}
         style={{
           fontSize: 10,
-          color: '#9ca3af',
+          color: 'var(--ink-faint)',
           textTransform: 'uppercase',
           letterSpacing: 0.5,
           marginBottom: 4,
@@ -973,7 +973,7 @@ function SummaryTile({label, value, sub, color = '#991b1b', labelStrong = false}
         {label}
       </div>
       <div style={{fontSize: 22, fontWeight: 700, color, lineHeight: 1}}>{value}</div>
-      {sub && <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>{sub}</div>}
+      {sub && <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 3}}>{sub}</div>}
     </div>
   );
 }
@@ -990,7 +990,7 @@ function NumField({label, value, onChange, disabled, step = '1', min, max}) {
         max={max}
         disabled={!!disabled}
         onChange={(e) => onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
-        style={{...inpS, background: disabled ? '#f9fafb' : 'white'}}
+        style={{...inpS, background: disabled ? 'var(--surface-2)' : 'white'}}
       />
     </div>
   );
@@ -1020,7 +1020,7 @@ function ForecastChart({buckets, actualBatches}) {
       <div style={{overflowX: 'auto'}} data-forecast-chart>
         <svg width={Math.max(totalWidth, 600)} height={cellHeight + 60} style={{display: 'block'}}>
           {/* y-axis baseline */}
-          <line x1="20" y1={cellHeight + 20} x2={totalWidth + 10} y2={cellHeight + 20} stroke="#e5e7eb" />
+          <line x1="20" y1={cellHeight + 20} x2={totalWidth + 10} y2={cellHeight + 20} stroke="var(--border)" />
           {buckets.map((b, i) => {
             const x = 30 + i * cellWidth;
             const month = parseMonthKey(b.monthKey).month;
@@ -1071,7 +1071,13 @@ function ForecastChart({buckets, actualBatches}) {
                   </text>
                 )}
                 {/* Month label below */}
-                <text x={x + (cellWidth - 18) / 2} y={cellHeight + 38} textAnchor="middle" fontSize="11" fill="#6b7280">
+                <text
+                  x={x + (cellWidth - 18) / 2}
+                  y={cellHeight + 38}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill="var(--ink-muted)"
+                >
                   {labels[month - 1]}
                 </text>
               </g>
@@ -1079,7 +1085,7 @@ function ForecastChart({buckets, actualBatches}) {
           })}
         </svg>
       </div>
-      <div style={{display: 'flex', gap: 14, marginTop: 6, fontSize: 11, color: '#6b7280'}}>
+      <div style={{display: 'flex', gap: 14, marginTop: 6, fontSize: 11, color: 'var(--ink-muted)'}}>
         <LegendSwatch color="#fda4af" border="#9f1239" label="Projected (planned)" />
         <LegendSwatch color="#7f1d1d" label="Actual (sent to processor)" />
       </div>
@@ -1153,8 +1159,8 @@ function MonthBucketTile({
         className="hoverable-tile"
         style={{
           padding: '12px 18px',
-          background: isFiltered ? '#fef2f2' : '#fafafa',
-          borderBottom: expanded ? '1px solid #f3f4f6' : 'none',
+          background: isFiltered ? 'white' : '#fafafa',
+          borderBottom: expanded ? '1px solid var(--divider)' : 'none',
           display: 'flex',
           alignItems: 'center',
           gap: 12,
@@ -1162,8 +1168,8 @@ function MonthBucketTile({
           cursor: 'pointer',
         }}
       >
-        <span style={{fontSize: 12, color: '#9ca3af'}}>{expanded ? '▼' : '▶'}</span>
-        <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{bucket.label}</span>
+        <span style={{fontSize: 12, color: 'var(--ink-faint)'}}>{expanded ? '▼' : '▶'}</span>
+        <span style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>{bucket.label}</span>
         {/* Pill 1: planned forecast count. Suppressed when this month
             ONLY has actual batches — operators don't want to see "0 cows
             planned" on a month that's fully processed. */}
@@ -1277,11 +1283,11 @@ function MonthBucketTile({
                         >
                           {rb.status}
                         </span>
-                        <span style={{color: '#6b7280'}}>
+                        <span style={{color: 'var(--ink-muted)'}}>
                           {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
                         </span>
                         {(rb.actual_process_date || rb.planned_process_date) && (
-                          <span style={{color: '#6b7280'}}>
+                          <span style={{color: 'var(--ink-muted)'}}>
                             {fmt ? fmt(rb.actual_process_date || rb.planned_process_date) : rb.actual_process_date}
                           </span>
                         )}
@@ -1299,7 +1305,7 @@ function MonthBucketTile({
                             <tr
                               style={{
                                 textAlign: 'left',
-                                color: '#9ca3af',
+                                color: 'var(--ink-faint)',
                                 fontSize: 10,
                                 textTransform: 'uppercase',
                                 letterSpacing: 0.4,
@@ -1329,20 +1335,24 @@ function MonthBucketTile({
                                   data-actual-batch-row={c.cattle_id}
                                   style={{borderTop: '1px solid rgba(0,0,0,.04)'}}
                                 >
-                                  <td style={{padding: '3px 8px', fontWeight: 700, color: '#111827'}}>
+                                  <td style={{padding: '3px 8px', fontWeight: 700, color: 'var(--ink)'}}>
                                     #{c.tag || cowRow?.tag || '?'}
                                   </td>
-                                  <td style={{padding: '3px 8px', color: '#6b7280'}}>{cowRow?.sex || '—'}</td>
-                                  <td style={{padding: '3px 8px', color: '#6b7280'}}>
+                                  <td style={{padding: '3px 8px', color: 'var(--ink-muted)'}}>{cowRow?.sex || '—'}</td>
+                                  <td style={{padding: '3px 8px', color: 'var(--ink-muted)'}}>
                                     {cowRow ? HERD_LABELS[cowRow.herd] || cowRow.herd : '—'}
                                   </td>
                                   <td
                                     data-actual-batch-row-age={c.cattle_id}
-                                    style={{padding: '3px 8px', color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}
+                                    style={{
+                                      padding: '3px 8px',
+                                      color: 'var(--ink-muted)',
+                                      fontVariantNumeric: 'tabular-nums',
+                                    }}
                                   >
                                     {ageAtProc}
                                   </td>
-                                  <td style={{padding: '3px 8px', textAlign: 'right', color: '#111827'}}>
+                                  <td style={{padding: '3px 8px', textAlign: 'right', color: 'var(--ink)'}}>
                                     {Number.isFinite(live) && live > 0
                                       ? Math.round(live).toLocaleString() + ' lb'
                                       : '—'}
@@ -1367,7 +1377,9 @@ function MonthBucketTile({
 
           {/* Planned (forecast) cattle assigned to this month + any hidden-here rows. */}
           {bucket.animalIds.length === 0 && hiddenHereOnly.length === 0 && actualBatches.length === 0 && (
-            <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No projected cattle this month.</div>
+            <div style={{fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+              No projected cattle this month.
+            </div>
           )}
           {(bucket.animalIds.length > 0 || hiddenHereOnly.length > 0) && (
             <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}} data-month-bucket-table>
@@ -1375,7 +1387,7 @@ function MonthBucketTile({
                 <tr
                   style={{
                     textAlign: 'left',
-                    color: '#9ca3af',
+                    color: 'var(--ink-faint)',
                     fontSize: 10,
                     textTransform: 'uppercase',
                     letterSpacing: 0.5,
@@ -1401,20 +1413,22 @@ function MonthBucketTile({
                   const row = forecast.animalRows.find((r) => r.cow.id === cid);
                   const ageInMonth = ageAt(cow.birth_date, monthStartMs(bucket.monthKey));
                   return (
-                    <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid #f3f4f6'}}>
-                      <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
-                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
-                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
-                      <td data-month-row-origin={cid} style={{padding: '6px 8px', color: '#6b7280'}}>
+                    <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid var(--divider)'}}>
+                      <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{cow.tag || '?'}</td>
+                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{cow.sex || '—'}</td>
+                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
+                        {HERD_LABELS[cow.herd] || cow.herd}
+                      </td>
+                      <td data-month-row-origin={cid} style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
                         {cow.origin || '—'}
                       </td>
                       <td
                         data-month-row-age={cid}
-                        style={{padding: '6px 8px', color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}
+                        style={{padding: '6px 8px', color: 'var(--ink-muted)', fontVariantNumeric: 'tabular-nums'}}
                       >
                         {ageInMonth}
                       </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#111827'}}>
+                      <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink)'}}>
                         {row?.latest
                           ? Math.round(row.latest.weight).toLocaleString() +
                             ' lb' +
@@ -1426,7 +1440,7 @@ function MonthBucketTile({
                           ? Math.round(row.projectedWeightAtReady).toLocaleString() + ' lb'
                           : '—'}
                       </td>
-                      <td style={{padding: '6px 8px', color: '#6b7280', fontSize: 11}}>
+                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)', fontSize: 11}}>
                         {formatAdgCalc(row)}
                         {row?.negativeAdg && (
                           <span style={{color: '#b91c1c', fontWeight: 700, marginLeft: 4}}>(neg)</span>
@@ -1482,26 +1496,28 @@ function MonthBucketTile({
                     <tr
                       key={'hidden-' + cid}
                       data-month-hidden-row={cid}
-                      style={{borderTop: '1px solid #f3f4f6', opacity: 0.55, background: '#fafafa'}}
+                      style={{borderTop: '1px solid var(--divider)', opacity: 0.55, background: '#fafafa'}}
                     >
-                      <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{cow.tag || '?'}</td>
-                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{cow.sex || '—'}</td>
-                      <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[cow.herd] || cow.herd}</td>
-                      <td data-month-hidden-row-origin={cid} style={{padding: '6px 8px', color: '#9ca3af'}}>
+                      <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{cow.tag || '?'}</td>
+                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{cow.sex || '—'}</td>
+                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
+                        {HERD_LABELS[cow.herd] || cow.herd}
+                      </td>
+                      <td data-month-hidden-row-origin={cid} style={{padding: '6px 8px', color: 'var(--ink-faint)'}}>
                         {cow.origin || '—'}
                       </td>
                       <td
                         data-month-hidden-row-age={cid}
-                        style={{padding: '6px 8px', color: '#9ca3af', fontVariantNumeric: 'tabular-nums'}}
+                        style={{padding: '6px 8px', color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums'}}
                       >
                         {hiddenAgeInMonth}
                       </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}>
+                      <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink-faint)'}}>
                         {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
                       </td>
                       <td
                         data-hidden-projected={cid}
-                        style={{padding: '6px 8px', textAlign: 'right', color: '#9ca3af'}}
+                        style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink-faint)'}}
                       >
                         {hideMonthProjected != null && Number.isFinite(hideMonthProjected) ? (
                           <>
@@ -1518,7 +1534,7 @@ function MonthBucketTile({
                           'no eligible month'
                         )}
                       </td>
-                      <td style={{padding: '6px 8px', color: '#9ca3af', fontSize: 11, fontStyle: 'italic'}}>
+                      <td style={{padding: '6px 8px', color: 'var(--ink-faint)', fontSize: 11, fontStyle: 'italic'}}>
                         hidden here
                       </td>
                       <td style={{padding: '6px 8px', textAlign: 'right'}}>
@@ -1541,7 +1557,7 @@ function MonthBucketTile({
                             Unhide
                           </button>
                         ) : (
-                          <span style={{fontSize: 10, color: '#9ca3af'}}>hidden</span>
+                          <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>hidden</span>
                         )}
                       </td>
                     </tr>
@@ -1574,7 +1590,10 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt, tagMatch}) {
     return (
       <div style={tile} data-forecast-attention data-forecast-watchlist>
         <div style={sectionHeader}>NEEDS ATTENTION</div>
-        <div data-attention-empty style={{fontSize: 12, color: '#6b7280', fontStyle: 'italic', padding: '4px 0'}}>
+        <div
+          data-attention-empty
+          style={{fontSize: 12, color: 'var(--ink-muted)', fontStyle: 'italic', padding: '4px 0'}}
+        >
           {rows && rows.length > 0 ? 'No matching attention rows.' : 'No cattle need attention.'}
         </div>
       </div>
@@ -1584,16 +1603,22 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt, tagMatch}) {
     <div style={tile} data-forecast-attention data-forecast-watchlist>
       <div style={sectionHeader}>
         NEEDS ATTENTION
-        <span style={{fontWeight: 400, color: '#9ca3af', marginLeft: 6}}>({visible.length})</span>
+        <span style={{fontWeight: 400, color: 'var(--ink-faint)', marginLeft: 6}}>({visible.length})</span>
       </div>
-      <div style={{fontSize: 11, color: '#6b7280', marginBottom: 8}}>
+      <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 8}}>
         Cattle that don't land cleanly in a planned month. Each row shows the latest weight, ADG, and why the cow didn't
         get a planned month — adjust the underlying data (weigh-in, DOB) or unhide a month to bring her back.
       </div>
       <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}}>
         <thead>
           <tr
-            style={{textAlign: 'left', color: '#9ca3af', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5}}
+            style={{
+              textAlign: 'left',
+              color: 'var(--ink-faint)',
+              fontSize: 10,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
           >
             <th style={{padding: '4px 8px'}}>Tag</th>
             <th style={{padding: '4px 8px'}}>Herd</th>
@@ -1605,10 +1630,10 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt, tagMatch}) {
         </thead>
         <tbody>
           {visible.map((r) => (
-            <tr key={r.cow.id} data-watchlist-row={r.cow.id} style={{borderTop: '1px solid #f3f4f6'}}>
-              <td style={{padding: '6px 8px', fontWeight: 700, color: '#111827'}}>#{r.cow.tag || '?'}</td>
-              <td style={{padding: '6px 8px', color: '#6b7280'}}>{HERD_LABELS[r.cow.herd] || r.cow.herd}</td>
-              <td style={{padding: '6px 8px', textAlign: 'right', color: '#111827'}}>
+            <tr key={r.cow.id} data-watchlist-row={r.cow.id} style={{borderTop: '1px solid var(--divider)'}}>
+              <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{r.cow.tag || '?'}</td>
+              <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{HERD_LABELS[r.cow.herd] || r.cow.herd}</td>
+              <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink)'}}>
                 {r.latest
                   ? Math.round(r.latest.weight).toLocaleString() +
                     ' lb' +
@@ -1619,7 +1644,7 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt, tagMatch}) {
                     ? 'no weigh-in · DOB ' + r.cow.birth_date
                     : 'no weigh-in · no DOB'}
               </td>
-              <td style={{padding: '6px 8px', color: '#6b7280', fontSize: 11}}>{formatAdgCalc(r)}</td>
+              <td style={{padding: '6px 8px', color: 'var(--ink-muted)', fontSize: 11}}>{formatAdgCalc(r)}</td>
               <td style={{padding: '6px 8px', color: '#92400e', fontSize: 11}}>
                 {r.watchlistReasons.length > 0
                   ? r.watchlistReasons.map((x) => WATCHLIST_REASON_LABELS[x] || x).join(', ')
@@ -1670,7 +1695,7 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt, tagMatch}) {
                     ))}
                   </span>
                 ) : (
-                  <span style={{color: '#9ca3af'}}>—</span>
+                  <span style={{color: 'var(--ink-faint)'}}>—</span>
                 )}
               </td>
             </tr>
@@ -1716,10 +1741,10 @@ function PastActuals({batches, fmt}) {
               >
                 {rb.status}
               </span>
-              <span style={{color: '#6b7280'}}>
+              <span style={{color: 'var(--ink-muted)'}}>
                 {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
               </span>
-              <span style={{color: '#6b7280'}}>{fmt(rb.actual_process_date || rb.planned_process_date)}</span>
+              <span style={{color: 'var(--ink-muted)'}}>{fmt(rb.actual_process_date || rb.planned_process_date)}</span>
             </div>
           );
         })}
@@ -1888,7 +1913,7 @@ function IncludeHeifersModal({
         <div
           style={{
             padding: '14px 20px',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid var(--border)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -1897,7 +1922,7 @@ function IncludeHeifersModal({
           <div style={{fontSize: 15, fontWeight: 600, color: '#991b1b'}}>Include Momma Herd Heifers</div>
           <button
             onClick={onClose}
-            style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
+            style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--ink-faint)'}}
           >
             {'×'}
           </button>
@@ -1905,14 +1930,14 @@ function IncludeHeifersModal({
         <div style={{padding: '8px 20px 0'}}>
           <InlineNotice notice={modalNotice} onDismiss={() => setModalNotice(null)} />
         </div>
-        <div style={{padding: '8px 20px 4px', fontSize: 11, color: '#6b7280'}} data-heifer-include-help>
+        <div style={{padding: '8px 20px 4px', fontSize: 11, color: 'var(--ink-muted)'}} data-heifer-include-help>
           {heifers.length} heifer{heifers.length === 1 ? '' : 's'} currently in mommas. Checked heifers are included in
           the forecast using global ADG. Uncheck an included heifer to remove her when you{' '}
           <strong>Confirm Selections</strong>. Eligible heifers stay listed so they can be included again later.
         </div>
         <div style={{padding: '12px 20px 0', maxHeight: '60vh', overflowY: 'auto'}}>
           {heifers.length === 0 ? (
-            <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic', padding: '1rem 0'}}>
+            <div style={{fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', padding: '1rem 0'}}>
               No heifers currently classified in the mommas herd.
             </div>
           ) : (
@@ -1994,10 +2019,10 @@ function IncludeHeifersModal({
                       onClick={(e) => e.stopPropagation()}
                       data-heifer-checkbox={h.id}
                     />
-                    <span style={{fontWeight: 700, fontSize: 13, color: '#111827'}}>#{h.tag || '?'}</span>
+                    <span style={{fontWeight: 700, fontSize: 13, color: 'var(--ink)'}}>#{h.tag || '?'}</span>
                     <span
                       data-heifer-age={h.id}
-                      style={{fontSize: 11, color: '#6b7280', fontVariantNumeric: 'tabular-nums'}}
+                      style={{fontSize: 11, color: 'var(--ink-muted)', fontVariantNumeric: 'tabular-nums'}}
                     >
                       {ageStr}
                     </span>
@@ -2005,15 +2030,15 @@ function IncludeHeifersModal({
                       data-heifer-latest-weight={h.id}
                       style={{
                         fontSize: 11,
-                        color: latestWeight ? '#065f46' : '#9ca3af',
+                        color: latestWeight ? '#065f46' : 'var(--ink-faint)',
                         fontWeight: latestWeight ? 600 : 400,
                       }}
                     >
                       {latestWeight ? Math.round(latestWeight).toLocaleString() + ' lb' : 'no weigh-in'}
                       {latestDate && fmt ? ' · ' + fmt(latestDate) : ''}
                     </span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>{h.breed || '—'}</span>
-                    <span style={{fontSize: 11, color: '#6b7280'}}>{h.origin || '—'}</span>
+                    <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{h.breed || '—'}</span>
+                    <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{h.origin || '—'}</span>
                     <span
                       data-heifer-inclusion-badge={h.id}
                       style={{
@@ -2073,13 +2098,13 @@ function IncludeHeifersModal({
         <div
           style={{
             padding: '12px 20px',
-            borderTop: '1px solid #e5e7eb',
+            borderTop: '1px solid var(--border)',
             display: 'flex',
             gap: 8,
             alignItems: 'center',
           }}
         >
-          <span style={{fontSize: 11, color: '#6b7280'}} data-heifer-include-footer>
+          <span style={{fontSize: 11, color: 'var(--ink-muted)'}} data-heifer-include-footer>
             {staged.size} selected after confirm
             {pendingAddCount > 0 && (
               <span style={{marginLeft: 6, color: '#1d4ed8', fontStyle: 'italic'}}>+{pendingAddCount} add pending</span>
@@ -2128,9 +2153,9 @@ function IncludeHeifersModal({
             style={{
               padding: '7px 14px',
               borderRadius: 7,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontSize: 12,
               cursor: 'pointer',
               fontFamily: 'inherit',

@@ -482,7 +482,7 @@ const CattleBatchesHub = ({
   const toolbarInputS = {
     fontSize: 12,
     padding: '6px 10px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 6,
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -490,28 +490,28 @@ const CattleBatchesHub = ({
   const savedViewGhostBtnS = {
     padding: '6px 12px',
     borderRadius: 6,
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     background: 'white',
-    color: '#374151',
+    color: 'var(--ink)',
     fontSize: 12,
     fontWeight: 600,
     cursor: 'pointer',
     fontFamily: 'inherit',
     whiteSpace: 'nowrap',
   };
-  const savedViewPrimaryBtnS = {...savedViewGhostBtnS, border: '1px solid #1d4ed8', color: '#1d4ed8'};
+  const savedViewPrimaryBtnS = {...savedViewGhostBtnS, border: '1px solid var(--brand)', color: 'var(--brand)'};
   const savedViewRadioLabelS = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 4,
     fontSize: 12,
-    color: '#374151',
+    color: 'var(--ink)',
     cursor: 'pointer',
   };
 
   return (
     <div
-      style={{minHeight: '100vh', background: '#f1f3f2'}}
+      style={{minHeight: '100vh', background: 'var(--bg-page)'}}
       data-cattle-batches-loaded={loading || loadError ? 'false' : 'true'}
     >
       {showUsers && (
@@ -534,9 +534,9 @@ const CattleBatchesHub = ({
             style={{
               padding: '7px 14px',
               borderRadius: 7,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#1d4ed8',
+              color: 'var(--brand)',
               fontSize: 12,
               fontWeight: 600,
               cursor: 'pointer',
@@ -549,9 +549,9 @@ const CattleBatchesHub = ({
         )}
         <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
-          <div style={{fontSize: 16, fontWeight: 700, color: '#111827'}} data-cattle-batches-root>
+          <div style={{fontSize: 16, fontWeight: 700, color: 'var(--ink)'}} data-cattle-batches-root>
             Processing Batches{' '}
-            <span style={{fontSize: 13, fontWeight: 400, color: '#6b7280'}}>
+            <span style={{fontSize: 13, fontWeight: 400, color: 'var(--ink-muted)'}}>
               {scheduledList.length} scheduled · {active.length} active · {completed.length} processed
             </span>
           </div>
@@ -563,9 +563,9 @@ const CattleBatchesHub = ({
               style={{
                 padding: '7px 12px',
                 borderRadius: 7,
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 background: 'white',
-                color: '#374151',
+                color: 'var(--ink)',
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -581,9 +581,9 @@ const CattleBatchesHub = ({
               style={{
                 padding: '7px 12px',
                 borderRadius: 7,
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 background: 'white',
-                color: '#374151',
+                color: 'var(--ink)',
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -610,7 +610,7 @@ const CattleBatchesHub = ({
           </div>
         </div>
 
-        {loading && <div style={{textAlign: 'center', padding: '2rem', color: '#9ca3af'}}>Loading{'…'}</div>}
+        {loading && <div style={{textAlign: 'center', padding: '2rem', color: 'var(--ink-faint)'}}>Loading{'…'}</div>}
 
         {/* Saved views row — degrades to a small notice if it can't load,
             never blocking the list/filters below. */}
@@ -619,7 +619,7 @@ const CattleBatchesHub = ({
             data-cattle-batches-saved-views-row
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 10,
               padding: '10px 14px',
               marginBottom: 8,
@@ -629,7 +629,7 @@ const CattleBatchesHub = ({
               flexWrap: 'wrap',
             }}
           >
-            <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+            <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
             {savedViewsError ? (
               <span style={{fontSize: 12, color: '#b91c1c'}} data-cattle-batches-saved-views-error>
                 Saved views unavailable. Filters still work.
@@ -774,7 +774,7 @@ const CattleBatchesHub = ({
             data-cattle-batches-toolbar
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 10,
               padding: '12px 16px',
               marginBottom: 14,
@@ -796,7 +796,7 @@ const CattleBatchesHub = ({
                 style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}
                 data-cattle-batches-status-filter
               >
-                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Status</span>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Status</span>
                 {CATTLE_BATCH_STATUS_KEYS.map((s) => {
                   const on = Array.isArray(filters && filters.status) && filters.status.includes(s);
                   return (
@@ -809,9 +809,9 @@ const CattleBatchesHub = ({
                         fontSize: 12,
                         padding: '5px 10px',
                         borderRadius: 6,
-                        border: '1px solid ' + (on ? '#1d4ed8' : '#d1d5db'),
-                        background: on ? '#eff6ff' : 'white',
-                        color: on ? '#1e40af' : '#374151',
+                        border: '1px solid ' + (on ? '#1d4ed8' : 'var(--border-strong)'),
+                        background: 'white',
+                        color: on ? '#1e40af' : 'var(--ink-muted)',
                         fontWeight: 600,
                         cursor: 'pointer',
                         fontFamily: 'inherit',
@@ -825,7 +825,7 @@ const CattleBatchesHub = ({
             </div>
             <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
               <div style={{display: 'flex', alignItems: 'center', gap: 6}} data-cattle-batches-planned-range>
-                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Process date</span>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Process date</span>
                 <input
                   type="date"
                   data-cattle-batches-planned-after
@@ -833,7 +833,7 @@ const CattleBatchesHub = ({
                   onChange={(e) => setDateBound('plannedDateRange', 'after', e.target.value)}
                   style={{...toolbarInputS, width: 'auto'}}
                 />
-                <span style={{fontSize: 11, color: '#9ca3af'}}>to</span>
+                <span style={{fontSize: 11, color: 'var(--ink-faint)'}}>to</span>
                 <input
                   type="date"
                   data-cattle-batches-planned-before
@@ -843,7 +843,7 @@ const CattleBatchesHub = ({
                 />
               </div>
               <div style={{display: 'flex', alignItems: 'center', gap: 6}} data-cattle-batches-count-range>
-                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Cows</span>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Cows</span>
                 <input
                   type="number"
                   min="0"
@@ -853,7 +853,7 @@ const CattleBatchesHub = ({
                   placeholder="min"
                   style={{...toolbarInputS, width: 72}}
                 />
-                <span style={{fontSize: 11, color: '#9ca3af'}}>to</span>
+                <span style={{fontSize: 11, color: 'var(--ink-faint)'}}>to</span>
                 <input
                   type="number"
                   min="0"
@@ -866,7 +866,7 @@ const CattleBatchesHub = ({
               </div>
               <span style={{flex: 1}} />
               <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
-                <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Sort</span>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Sort</span>
                 <select
                   data-cattle-batches-sort-key
                   value={(sortRule && sortRule.key) || 'plannedDate'}
@@ -891,7 +891,7 @@ const CattleBatchesHub = ({
               </div>
             </div>
             <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
-              <span style={{fontSize: 12, color: '#6b7280'}} data-cattle-batches-count>
+              <span style={{fontSize: 12, color: 'var(--ink-muted)'}} data-cattle-batches-count>
                 {visibleTotal} of {routableTotal} {routableTotal === 1 ? 'batch' : 'batches'}
               </span>
               {filtersActive && (
@@ -915,13 +915,14 @@ const CattleBatchesHub = ({
             count={virtualPlanned.length}
             expanded={showPlanned}
             onToggle={() => setShowPlanned((v) => !v)}
-            color="#fef2f2"
+            color="white"
             border="#fca5a5"
             text="#991b1b"
+            railColor="#991b1b"
             dataKey="planned"
           >
             {virtualPlanned.length === 0 ? (
-              <div style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}>
+              <div style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}>
                 No planned batches in the next 12 months — the forecast has no eligible cattle landing in the display
                 window.
               </div>
@@ -944,7 +945,7 @@ const CattleBatchesHub = ({
                     }}
                   >
                     <strong style={{color: '#991b1b'}}>{vb.name}</strong>
-                    <span style={{color: '#6b7280'}}>{vb.label}</span>
+                    <span style={{color: 'var(--ink-muted)'}}>{vb.label}</span>
                     <span
                       style={{
                         fontSize: 10,
@@ -959,7 +960,7 @@ const CattleBatchesHub = ({
                     >
                       Planned
                     </span>
-                    <span style={{color: '#6b7280'}}>
+                    <span style={{color: 'var(--ink-muted)'}}>
                       {vb.animalIds.length} {vb.animalIds.length === 1 ? 'cow' : 'cows'}
                     </span>
                     {vb.projectedTotalLbs > 0 && (
@@ -978,7 +979,7 @@ const CattleBatchesHub = ({
                           style={{
                             fontSize: 11,
                             padding: '3px 6px',
-                            border: '1px solid #d1d5db',
+                            border: '1px solid var(--border-strong)',
                             borderRadius: 5,
                             fontFamily: 'inherit',
                           }}
@@ -1004,7 +1005,7 @@ const CattleBatchesHub = ({
                         </button>
                       </span>
                     ) : (
-                      <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>
+                      <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
                         Created when sent to processor at WeighIns
                       </span>
                     )}
@@ -1034,7 +1035,7 @@ const CattleBatchesHub = ({
             {scheduledVisible.length === 0 ? (
               <div
                 data-cattle-batches-scheduled-empty-filtered
-                style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}
+                style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}
               >
                 No scheduled batches match the current filters.
               </div>
@@ -1077,14 +1078,14 @@ const CattleBatchesHub = ({
                     >
                       Scheduled
                     </span>
-                    <span style={{color: '#6b7280'}}>
+                    <span style={{color: 'var(--ink-muted)'}}>
                       {sb2.animalIds.length} {sb2.animalIds.length === 1 ? 'cow' : 'cows'} forecast
                     </span>
                     {sb2.planned_process_date && (
                       <span style={{color: '#065f46'}}>{fmt(sb2.planned_process_date)}</span>
                     )}
                     <span style={{flex: 1}} />
-                    <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>
+                    <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
                       Cattle remain forecast-backed until sent from WeighIns
                     </span>
                   </div>
@@ -1114,11 +1115,11 @@ const CattleBatchesHub = ({
               <div
                 style={{
                   background: 'white',
-                  border: '1px solid #e5e7eb',
+                  border: '1px solid var(--border)',
                   borderRadius: 12,
                   padding: '1.25rem',
                   textAlign: 'center',
-                  color: '#6b7280',
+                  color: 'var(--ink-muted)',
                   fontSize: 13,
                 }}
               >
@@ -1130,11 +1131,11 @@ const CattleBatchesHub = ({
                 data-cattle-batches-active-empty-filtered
                 style={{
                   background: 'white',
-                  border: '1px solid #e5e7eb',
+                  border: '1px solid var(--border)',
                   borderRadius: 12,
                   padding: '1.25rem',
                   textAlign: 'center',
-                  color: '#6b7280',
+                  color: 'var(--ink-muted)',
                   fontSize: 13,
                 }}
               >
@@ -1160,7 +1161,7 @@ const CattleBatchesHub = ({
                       className="hoverable-tile"
                       style={{
                         background: 'white',
-                        border: '1px solid #e5e7eb',
+                        border: '1px solid var(--border)',
                         borderRadius: 12,
                         padding: '12px 18px',
                         cursor: 'pointer',
@@ -1170,7 +1171,7 @@ const CattleBatchesHub = ({
                         flexWrap: 'wrap',
                       }}
                     >
-                      <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{b.name}</span>
+                      <span style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>{b.name}</span>
                       <span
                         style={{
                           fontSize: 10,
@@ -1184,7 +1185,7 @@ const CattleBatchesHub = ({
                       >
                         {b.status}
                       </span>
-                      <span style={{fontSize: 11, color: '#6b7280'}}>
+                      <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                         {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
                       </span>
                       {b.actual_process_date && (
@@ -1209,19 +1210,19 @@ const CattleBatchesHub = ({
               count={completed.length}
               expanded={showCompleted}
               onToggle={() => setShowCompleted((v) => !v)}
-              color="#f3f4f6"
-              border="#d1d5db"
-              text="#374151"
+              color="var(--divider)"
+              border="var(--border-strong)"
+              text="var(--ink)"
               dataKey="processed"
             >
               {completed.length === 0 ? (
-                <div style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}>
+                <div style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}>
                   No processed batches yet.
                 </div>
               ) : completedVisible.length === 0 ? (
                 <div
                   data-cattle-batches-processed-empty-filtered
-                  style={{padding: '0.75rem', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}
+                  style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}
                 >
                   No processed batches match the current filters.
                 </div>
@@ -1248,7 +1249,7 @@ const CattleBatchesHub = ({
                         className="hoverable-tile"
                         style={{
                           background: 'white',
-                          border: '1px solid #e5e7eb',
+                          border: '1px solid var(--border)',
                           borderRadius: 12,
                           padding: '12px 18px',
                           cursor: 'pointer',
@@ -1258,7 +1259,7 @@ const CattleBatchesHub = ({
                           flexWrap: 'wrap',
                         }}
                       >
-                        <span style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>{b.name}</span>
+                        <span style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>{b.name}</span>
                         <span
                           style={{
                             fontSize: 10,
@@ -1272,7 +1273,7 @@ const CattleBatchesHub = ({
                         >
                           {b.status}
                         </span>
-                        <span style={{fontSize: 11, color: '#6b7280'}}>
+                        <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                           {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
                         </span>
                         {(b.actual_process_date || b.planned_process_date) && (
@@ -1296,10 +1297,16 @@ const CattleBatchesHub = ({
   );
 };
 
-function CollapsibleSection({label, count, expanded, onToggle, color, border, text, children, dataKey}) {
+function CollapsibleSection({label, count, expanded, onToggle, color, border, text, railColor, children, dataKey}) {
   return (
     <div
-      style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', marginBottom: 0}}
+      style={{
+        background: 'white',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: 0,
+      }}
       data-batches-section={dataKey}
     >
       <div
@@ -1309,6 +1316,7 @@ function CollapsibleSection({label, count, expanded, onToggle, color, border, te
           padding: '12px 16px',
           background: color,
           borderBottom: expanded ? '1px solid ' + border : 'none',
+          ...(railColor ? {borderLeft: '3px solid ' + railColor} : null),
           display: 'flex',
           alignItems: 'center',
           gap: 10,

@@ -384,7 +384,7 @@ export default function CattleDailyPage({sb, authState, Header}) {
           </div>
 
           {/* ---- Feeds editor ---- */}
-          <div style={{padding: '8px 0', borderBottom: '1px solid #f3f4f6'}}>
+          <div style={{padding: '8px 0', borderBottom: '1px solid var(--divider)'}}>
             <div style={{...fieldLabel, marginBottom: 4}}>Feeds</div>
             {form.feeds.map((row, idx) => (
               <div key={idx} style={{display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap'}}>
@@ -443,7 +443,7 @@ export default function CattleDailyPage({sb, authState, Header}) {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#1d4ed8',
+                color: 'var(--brand)',
                 cursor: 'pointer',
                 fontSize: 12,
                 fontFamily: 'inherit',
@@ -456,7 +456,7 @@ export default function CattleDailyPage({sb, authState, Header}) {
           </div>
 
           {/* ---- Minerals editor ---- */}
-          <div style={{padding: '8px 0', borderBottom: '1px solid #f3f4f6'}}>
+          <div style={{padding: '8px 0', borderBottom: '1px solid var(--divider)'}}>
             <div style={{...fieldLabel, marginBottom: 4}}>Minerals</div>
             {form.minerals.map((row, idx) => (
               <div key={idx} style={{display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4}}>
@@ -505,7 +505,7 @@ export default function CattleDailyPage({sb, authState, Header}) {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#1d4ed8',
+                color: 'var(--brand)',
                 cursor: 'pointer',
                 fontSize: 12,
                 fontFamily: 'inherit',

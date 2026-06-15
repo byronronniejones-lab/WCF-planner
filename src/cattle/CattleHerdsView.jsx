@@ -191,13 +191,13 @@ const EMPTY_COW = {
 const inpS = {
   fontSize: 13,
   padding: '7px 10px',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   borderRadius: 6,
   fontFamily: 'inherit',
   width: '100%',
   boxSizing: 'border-box',
 };
-const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+const lbl = {fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3, fontWeight: 500};
 
 const chipBaseS = {
   display: 'inline-flex',
@@ -207,16 +207,16 @@ const chipBaseS = {
   borderRadius: 999,
   fontSize: 12,
   fontFamily: 'inherit',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink-muted)',
   cursor: 'pointer',
   whiteSpace: 'nowrap',
 };
 const chipActiveS = {
   ...chipBaseS,
   border: '1px solid #991b1b',
-  background: '#fef2f2',
+  background: 'white',
   color: '#991b1b',
   fontWeight: 600,
 };
@@ -1040,9 +1040,9 @@ const CattleHerdsHub = ({
           gap: 6,
           padding: '5px 10px',
           borderRadius: 6,
-          border: checked ? '1px solid #991b1b' : '1px solid #d1d5db',
+          border: checked ? '1px solid #991b1b' : '1px solid var(--border-strong)',
           background: checked ? '#fef2f2' : 'white',
-          color: checked ? '#991b1b' : '#374151',
+          color: checked ? '#991b1b' : 'var(--ink)',
           fontSize: 12,
           fontWeight: checked ? 600 : 500,
           cursor: 'pointer',
@@ -1068,7 +1068,9 @@ const CattleHerdsHub = ({
         data-filter-group={g.key}
         style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}
       >
-        <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4, minWidth: 96}}>{g.label}</span>
+        <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600, marginRight: 4, minWidth: 96}}>
+          {g.label}
+        </span>
         {g.keys.map((key) => (CHECKBOX_FILTER_KEYS.has(key) ? renderCheckboxFilter(key) : renderFilterChip(key)))}
       </div>
     ));
@@ -1079,8 +1081,10 @@ const CattleHerdsHub = ({
     const available = CATTLE_SORT_KEYS.filter((k) => !used.has(k));
     return (
       <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
-        <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4}}>Sort:</span>
-        {sortRules.length === 0 && <span style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>(none)</span>}
+        <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600, marginRight: 4}}>Sort:</span>
+        {sortRules.length === 0 && (
+          <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>(none)</span>
+        )}
         {sortRules.map((r, i) => (
           <span
             key={r.key}
@@ -1090,9 +1094,9 @@ const CattleHerdsHub = ({
               ...chipActiveS,
               cursor: 'default',
               gap: 4,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontWeight: 500,
             }}
           >
@@ -1104,8 +1108,8 @@ const CattleHerdsHub = ({
               title="Toggle direction"
               style={{
                 fontSize: 11,
-                background: '#f9fafb',
-                border: '1px solid #d1d5db',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border-strong)',
                 borderRadius: 4,
                 padding: '0 6px',
                 cursor: 'pointer',
@@ -1122,7 +1126,7 @@ const CattleHerdsHub = ({
               style={{
                 background: 'none',
                 border: 'none',
-                color: i === 0 ? '#d1d5db' : '#6b7280',
+                color: i === 0 ? 'var(--border-strong)' : 'var(--ink-muted)',
                 cursor: i === 0 ? 'not-allowed' : 'pointer',
                 fontSize: 12,
                 padding: '0 2px',
@@ -1138,7 +1142,7 @@ const CattleHerdsHub = ({
               style={{
                 background: 'none',
                 border: 'none',
-                color: i === sortRules.length - 1 ? '#d1d5db' : '#6b7280',
+                color: i === sortRules.length - 1 ? 'var(--border-strong)' : 'var(--ink-muted)',
                 cursor: i === sortRules.length - 1 ? 'not-allowed' : 'pointer',
                 fontSize: 12,
                 padding: '0 2px',
@@ -1206,13 +1210,13 @@ const CattleHerdsHub = ({
       : '48px 16px 70px 60px 160px 140px 70px 90px 1fr';
     const ellipsisCell = {
       fontSize: 11,
-      color: '#6b7280',
+      color: 'var(--ink-muted)',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',
     };
     return (
-      <div id={'cow-' + c.id} data-cow-row-tag={c.tag || ''} style={{borderBottom: '1px solid #f3f4f6'}}>
+      <div id={'cow-' + c.id} data-cow-row-tag={c.tag || ''} style={{borderBottom: '1px solid var(--divider)'}}>
         <div
           {...openableProps(() => navigate('/cattle/herds/' + c.id, recordSeqNavOptions(navList)))}
           style={{
@@ -1229,7 +1233,7 @@ const CattleHerdsHub = ({
           <span
             style={{
               fontSize: 11,
-              color: '#9ca3af',
+              color: 'var(--ink-faint)',
               fontVariantNumeric: 'tabular-nums',
               alignSelf: 'stretch',
               display: 'flex',
@@ -1239,15 +1243,15 @@ const CattleHerdsHub = ({
               paddingLeft: 8,
               marginTop: -10,
               marginBottom: -10,
-              borderRight: '1px solid #d1d5db',
+              borderRight: '1px solid var(--border-strong)',
               fontWeight: 600,
             }}
           >
             {index + 1}
           </span>
-          <span style={{fontSize: 11, color: '#9ca3af'}}>{'▶'}</span>
+          <span style={{fontSize: 11, color: 'var(--ink-faint)'}}>{'▶'}</span>
           <span
-            style={{fontWeight: 700, fontSize: 13, color: '#111827', display: 'flex', alignItems: 'center', gap: 4}}
+            style={{fontWeight: 700, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 4}}
           >
             {c.tag ? '#' + c.tag : '(no tag)'}
           </span>
@@ -1257,7 +1261,7 @@ const CattleHerdsHub = ({
                 fontSize: 11,
                 padding: '2px 8px',
                 borderRadius: 4,
-                background: hc.bg,
+                background: 'white',
                 color: hc.tx,
                 border: '1px solid ' + hc.bd,
                 fontWeight: 600,
@@ -1270,24 +1274,24 @@ const CattleHerdsHub = ({
               {HERD_LABELS[c.herd]}
             </span>
           )}
-          <span style={{fontSize: 11, color: '#6b7280'}}>{c.sex || '—'}</span>
+          <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{c.sex || '—'}</span>
           <span style={ellipsisCell}>{c.breed || '—'}</span>
           <span data-cattle-row-origin={c.id} style={ellipsisCell}>
             {c.origin || '—'}
           </span>
-          <span style={{fontSize: 11, color: '#6b7280'}}>{age(c.birth_date) || '—'}</span>
-          <span style={{fontSize: 11, color: lw ? '#065f46' : '#9ca3af', fontWeight: lw ? 600 : 400}}>
+          <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{age(c.birth_date) || '—'}</span>
+          <span style={{fontSize: 11, color: lw ? '#065f46' : 'var(--ink-faint)', fontWeight: lw ? 600 : 400}}>
             {lw ? lw.toLocaleString() + ' lb' : 'no weigh-in'}
           </span>
           <span style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-            {c.dam_tag && <span style={{fontSize: 11, color: '#9ca3af'}}>{'dam #' + c.dam_tag}</span>}
+            {c.dam_tag && <span style={{fontSize: 11, color: 'var(--ink-faint)'}}>{'dam #' + c.dam_tag}</span>}
             {isFemale && (
               <span data-calf-count={cc} style={{fontSize: 11, color: '#7f1d1d', fontWeight: 600}}>
                 {'Calves: ' + cc}
               </span>
             )}
             {isFemale && lc && (
-              <span style={{fontSize: 11, color: '#9ca3af'}}>{'last calved ' + fmt(lc.calving_date)}</span>
+              <span style={{fontSize: 11, color: 'var(--ink-faint)'}}>{'last calved ' + fmt(lc.calving_date)}</span>
             )}
             {c.breeding_blacklist && (
               <span
@@ -1324,9 +1328,9 @@ const CattleHerdsHub = ({
   const savedViewGhostBtnS = {
     padding: '6px 12px',
     borderRadius: 6,
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     background: 'white',
-    color: '#374151',
+    color: 'var(--ink)',
     fontSize: 12,
     fontWeight: 600,
     cursor: 'pointer',
@@ -1339,12 +1343,12 @@ const CattleHerdsHub = ({
     alignItems: 'center',
     gap: 4,
     fontSize: 12,
-    color: '#374151',
+    color: 'var(--ink)',
     cursor: 'pointer',
   };
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -1371,7 +1375,7 @@ const CattleHerdsHub = ({
               style={{
                 padding: '7px 14px',
                 borderRadius: 6,
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 background: 'white',
                 color: '#085041',
                 fontSize: 12,
@@ -1393,7 +1397,7 @@ const CattleHerdsHub = ({
               data-saved-views-row
               style={{
                 background: 'white',
-                border: '1px solid #e5e7eb',
+                border: '1px solid var(--border)',
                 borderRadius: 10,
                 padding: '10px 14px',
                 marginBottom: 8,
@@ -1403,7 +1407,7 @@ const CattleHerdsHub = ({
                 flexWrap: 'wrap',
               }}
             >
-              <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+              <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
               {savedViewsError ? (
                 <span style={{fontSize: 12, color: '#b91c1c'}} data-saved-views-error>
                   Saved views unavailable. Filters still work.
@@ -1542,7 +1546,7 @@ const CattleHerdsHub = ({
             <div
               style={{
                 background: 'white',
-                border: '1px solid #e5e7eb',
+                border: '1px solid var(--border)',
                 borderRadius: 10,
                 padding: '12px 16px',
                 marginBottom: 14,
@@ -1565,13 +1569,13 @@ const CattleHerdsHub = ({
                     alignItems: 'center',
                     gap: 6,
                     fontSize: 12,
-                    color: '#374151',
-                    border: '1px solid #d1d5db',
+                    color: 'var(--ink)',
+                    border: '1px solid var(--border-strong)',
                     borderRadius: 6,
                     padding: '4px 8px',
                   }}
                 >
-                  <span style={{color: '#6b7280', marginRight: 4}}>View</span>
+                  <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
                   <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
                     <input
                       type="radio"
@@ -1601,9 +1605,9 @@ const CattleHerdsHub = ({
                   style={{
                     padding: '7px 14px',
                     borderRadius: 7,
-                    border: '1px solid #d1d5db',
-                    background: loading ? '#f9fafb' : 'white',
-                    color: loading ? '#9ca3af' : '#374151',
+                    border: '1px solid var(--border-strong)',
+                    background: loading ? 'var(--surface-2)' : 'white',
+                    color: loading ? 'var(--ink-faint)' : 'var(--ink)',
                     fontWeight: 600,
                     fontSize: 12,
                     cursor: loading ? 'not-allowed' : 'pointer',
@@ -1621,9 +1625,9 @@ const CattleHerdsHub = ({
                   style={{
                     padding: '7px 14px',
                     borderRadius: 7,
-                    border: '1px solid #d1d5db',
-                    background: loading ? '#f9fafb' : 'white',
-                    color: loading ? '#9ca3af' : '#374151',
+                    border: '1px solid var(--border-strong)',
+                    background: loading ? 'var(--surface-2)' : 'white',
+                    color: loading ? 'var(--ink-faint)' : 'var(--ink)',
                     fontWeight: 600,
                     fontSize: 12,
                     cursor: loading ? 'not-allowed' : 'pointer',
@@ -1692,7 +1696,7 @@ const CattleHerdsHub = ({
 
               {sortBar()}
 
-              <div style={{fontSize: 11, color: '#6b7280'}} data-cattle-match-count>
+              <div style={{fontSize: 11, color: 'var(--ink-muted)'}} data-cattle-match-count>
                 {sortedFlat.length} {sortedFlat.length === 1 ? 'match' : 'cattle match'}
                 {filterCount > 0 && ' · ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}
                 {sortRules.length > 0 && ' · ' + sortRules.length + ' sort' + (sortRules.length === 1 ? '' : 's')}
@@ -1710,16 +1714,18 @@ const CattleHerdsHub = ({
               />
             )}
 
-            {loading && <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>}
+            {loading && (
+              <div style={{textAlign: 'center', padding: '3rem', color: 'var(--ink-faint)'}}>Loading{'…'}</div>
+            )}
             {!loading && cattle.length === 0 && (
               <div
                 style={{
                   background: 'white',
-                  border: '1px solid #e5e7eb',
+                  border: '1px solid var(--border)',
                   borderRadius: 12,
                   padding: '2rem',
                   textAlign: 'center',
-                  color: '#6b7280',
+                  color: 'var(--ink-muted)',
                   fontSize: 13,
                 }}
               >
@@ -1732,22 +1738,22 @@ const CattleHerdsHub = ({
             {!loading && isFlat && cattle.length > 0 && (
               <div
                 data-cattle-flat-list
-                style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}
+                style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden'}}
               >
                 <div
                   style={{
                     padding: '10px 16px',
-                    borderBottom: '1px solid #e5e7eb',
-                    background: '#f9fafb',
+                    borderBottom: '1px solid var(--border)',
+                    background: 'var(--surface-2)',
                     fontSize: 12,
                     fontWeight: 600,
-                    color: '#4b5563',
+                    color: 'var(--ink-muted)',
                   }}
                 >
                   {sortedFlat.length} cattle
                 </div>
                 {sortedFlat.length === 0 && (
-                  <div style={{padding: '2rem', textAlign: 'center', color: '#9ca3af', fontSize: 13}}>
+                  <div style={{padding: '2rem', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13}}>
                     No cattle match the current filter.
                   </div>
                 )}
@@ -1780,7 +1786,12 @@ const CattleHerdsHub = ({
                   return (
                     <div
                       key={h}
-                      style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}
+                      style={{
+                        background: 'white',
+                        border: '1px solid var(--border)',
+                        borderRadius: 12,
+                        overflow: 'hidden',
+                      }}
                     >
                       <div
                         {...openableProps(() => setExpandedHerds({...expandedHerds, [h]: !herdOpen}))}
@@ -1789,7 +1800,8 @@ const CattleHerdsHub = ({
                         data-herd-open={herdOpen ? '1' : '0'}
                         style={{
                           padding: '12px 18px',
-                          background: hc.bg,
+                          background: 'white',
+                          borderLeft: '3px solid ' + hc.tx,
                           borderBottom: herdOpen ? '1px solid ' + hc.bd : 'none',
                           display: 'flex',
                           alignItems: 'center',
@@ -1817,7 +1829,9 @@ const CattleHerdsHub = ({
                         )}
                       </div>
                       {herdOpen && cows.length === 0 && (
-                        <div style={{padding: '1rem 18px', color: '#9ca3af', fontSize: 12, fontStyle: 'italic'}}>
+                        <div
+                          style={{padding: '1rem 18px', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}
+                        >
                           {filterCount > 0 ? 'No cows match the current filters.' : 'No cows in this herd yet.'}
                         </div>
                       )}
@@ -1889,7 +1903,7 @@ const CattleHerdsHub = ({
             <div
               style={{
                 padding: '14px 20px',
-                borderBottom: '1px solid #e5e7eb',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -1900,7 +1914,7 @@ const CattleHerdsHub = ({
                 onClick={() => {
                   closeCowForm();
                 }}
-                style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
+                style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--ink-faint)'}}
               >
                 {'×'}
               </button>
@@ -2076,9 +2090,9 @@ const CattleHerdsHub = ({
                       style={{
                         padding: '5px 12px',
                         borderRadius: 6,
-                        border: '1px solid #d1d5db',
+                        border: '1px solid var(--border-strong)',
                         background: 'white',
-                        color: '#374151',
+                        color: 'var(--ink)',
                         fontSize: 11,
                         cursor: 'pointer',
                         fontFamily: 'inherit',
@@ -2158,7 +2172,7 @@ const CattleHerdsHub = ({
                 </div>
               )}
 
-              <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 12, marginTop: 4}}>
+              <div style={{gridColumn: '1/-1', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
                   <label
                     style={{
@@ -2166,7 +2180,7 @@ const CattleHerdsHub = ({
                       margin: 0,
                       fontSize: 12,
                       fontWeight: 600,
-                      color: '#374151',
+                      color: 'var(--ink)',
                       textTransform: 'uppercase',
                       letterSpacing: 0.5,
                     }}
@@ -2183,7 +2197,7 @@ const CattleHerdsHub = ({
                     }
                     style={{
                       fontSize: 11,
-                      color: '#1d4ed8',
+                      color: 'var(--brand)',
                       background: 'none',
                       border: '1px dashed #bfdbfe',
                       borderRadius: 5,
@@ -2195,12 +2209,12 @@ const CattleHerdsHub = ({
                     + Add Prior Tag
                   </button>
                 </div>
-                <div style={{fontSize: 11, color: '#6b7280', marginBottom: 8}}>
+                <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 8}}>
                   Tags this cow had before her current one — the purchase tag from the selling farm, plus any tags
                   swapped out over time. Multiple entries supported.
                 </div>
                 {(form.old_tags || []).length === 0 && (
-                  <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic', padding: '4px 0'}}>
+                  <div style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic', padding: '4px 0'}}>
                     No prior tags recorded.
                   </div>
                 )}
@@ -2279,7 +2293,7 @@ const CattleHerdsHub = ({
               </div>
 
               {form.sex !== 'steer' && (
-                <div style={{gridColumn: '1/-1', borderTop: '1px solid #e5e7eb', paddingTop: 12, marginTop: 4}}>
+                <div style={{gridColumn: '1/-1', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4}}>
                   <label
                     style={{
                       display: 'flex',
@@ -2300,7 +2314,7 @@ const CattleHerdsHub = ({
                     />
                     <span>Breeding blacklist</span>
                   </label>
-                  <div style={{fontSize: 11, color: '#9ca3af', marginLeft: 26, marginTop: 4}}>
+                  <div style={{fontSize: 11, color: 'var(--ink-faint)', marginLeft: 26, marginTop: 4}}>
                     Use the Issues section to record why.
                   </div>
                 </div>
@@ -2352,7 +2366,7 @@ const CattleHerdsHub = ({
                 </React.Fragment>
               )}
             </div>
-            <div style={{padding: '12px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8}}>
+            <div style={{padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8}}>
               <button
                 onClick={saveCow}
                 disabled={saving}
@@ -2395,9 +2409,9 @@ const CattleHerdsHub = ({
                 style={{
                   padding: '8px 16px',
                   borderRadius: 7,
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   background: 'white',
-                  color: '#6b7280',
+                  color: 'var(--ink-muted)',
                   fontSize: 13,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
@@ -2430,7 +2444,7 @@ function FilterChipPopover({
     top: 'calc(100% + 4px)',
     left: 0,
     background: 'white',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 8,
     padding: '10px 12px',
     boxShadow: '0 4px 16px rgba(0,0,0,.08)',
@@ -2452,7 +2466,9 @@ function FilterChipPopover({
 
   function FemaleHint() {
     return (
-      <div style={{fontSize: 10, color: '#6b7280', fontStyle: 'italic', marginTop: 4}}>Applies to females only.</div>
+      <div style={{fontSize: 10, color: 'var(--ink-muted)', fontStyle: 'italic', marginTop: 4}}>
+        Applies to females only.
+      </div>
     );
   }
 
@@ -2478,7 +2494,7 @@ function FilterChipPopover({
               style={{...inpS, width: 150}}
             />
           </div>
-          <div style={{fontSize: 10, color: '#6b7280', marginTop: 4}}>
+          <div style={{fontSize: 10, color: 'var(--ink-muted)', marginTop: 4}}>
             Cows/heifers 30+ months old whose last calving is missing or before this date.
           </div>
           <PopoverFooter
@@ -2842,7 +2858,9 @@ function FilterChipPopover({
               />
               <span style={choiceTextS}>
                 {opt.label}
-                {opt.source === 'historical' && <em style={{color: '#9ca3af', marginLeft: 4}}>(historical)</em>}
+                {opt.source === 'historical' && (
+                  <em style={{color: 'var(--ink-faint)', marginLeft: 4}}>(historical)</em>
+                )}
               </span>
             </label>
           ))}
@@ -2861,7 +2879,9 @@ function FilterChipPopover({
               />
               <span style={choiceTextS}>
                 {opt.label}
-                {opt.source === 'historical' && <em style={{color: '#9ca3af', marginLeft: 4}}>(historical)</em>}
+                {opt.source === 'historical' && (
+                  <em style={{color: 'var(--ink-faint)', marginLeft: 4}}>(historical)</em>
+                )}
               </span>
             </label>
           ))}
@@ -2913,7 +2933,7 @@ function FilterChipPopover({
 
 function PopoverFooter({onClear, onClose}) {
   return (
-    <div style={{display: 'flex', gap: 6, marginTop: 6, paddingTop: 6, borderTop: '1px solid #f3f4f6'}}>
+    <div style={{display: 'flex', gap: 6, marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--divider)'}}>
       <button
         type="button"
         onClick={onClear}
@@ -2935,9 +2955,9 @@ function PopoverFooter({onClear, onClose}) {
         onClick={onClose}
         style={{
           fontSize: 11,
-          color: '#374151',
+          color: 'var(--ink)',
           background: 'white',
-          border: '1px solid #d1d5db',
+          border: '1px solid var(--border-strong)',
           borderRadius: 5,
           padding: '3px 8px',
           cursor: 'pointer',

@@ -224,19 +224,19 @@ export default function CattleSendToProcessorModal({
           boxShadow: '0 12px 40px rgba(0,0,0,.25)',
         }}
       >
-        <div style={{fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 6}}>
+        <div style={{fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 6}}>
           {'🚩 Send ' +
             flaggedEntries.length +
             ' finisher' +
             (flaggedEntries.length === 1 ? '' : 's') +
             ' to processor'}
         </div>
-        <div style={{fontSize: 11, color: '#6b7280', marginBottom: 10}}>
+        <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 10}}>
           {'Total live weight: ' + Math.round(totalWeight).toLocaleString() + ' lb · session date ' + sessionDate}
         </div>
 
         {loading && (
-          <div style={{padding: '20px 0', textAlign: 'center', color: '#9ca3af', fontSize: 12}}>
+          <div style={{padding: '20px 0', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12}}>
             Loading forecast{'…'}
           </div>
         )}
@@ -258,8 +258,8 @@ export default function CattleSendToProcessorModal({
             >
               Next forecast batch
             </div>
-            <div style={{fontSize: 14, fontWeight: 700, color: '#111827', marginTop: 2}}>{next.name}</div>
-            <div style={{fontSize: 11, color: '#6b7280', marginTop: 2}}>
+            <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginTop: 2}}>{next.name}</div>
+            <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 2}}>
               {next.label} · {next.animalIds.length} {next.animalIds.length === 1 ? 'cow' : 'cows'} eligible
             </div>
           </div>
@@ -328,7 +328,7 @@ export default function CattleSendToProcessorModal({
         )}
 
         {!loading && next && !hardBlocked && (
-          <div style={{fontSize: 12, color: '#374151', marginBottom: 12}}>
+          <div style={{fontSize: 12, color: 'var(--ink)', marginBottom: 12}}>
             This will {next.source === 'scheduled' ? 'promote scheduled batch' : 'create active batch'}{' '}
             <strong>{next.name}</strong> and send <strong>{flaggedEntries.length}</strong>{' '}
             {flaggedEntries.length === 1 ? 'cow' : 'cattle'} to processor. Processing date will be set to{' '}

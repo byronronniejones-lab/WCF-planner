@@ -25,7 +25,7 @@ const overlayS = {
 const cardS = {
   background: 'white',
   borderRadius: 14,
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
   boxShadow: '0 14px 40px rgba(15,23,42,0.18)',
   padding: '20px 22px 22px',
   maxWidth: 520,
@@ -33,8 +33,8 @@ const cardS = {
   fontFamily: 'inherit',
 };
 
-const sectionTitle = {fontSize: 13, fontWeight: 700, color: '#111827', marginTop: 14, marginBottom: 6};
-const ulS = {paddingLeft: 18, margin: '4px 0 0', color: '#374151', fontSize: 13, lineHeight: 1.45};
+const sectionTitle = {fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginTop: 14, marginBottom: 6};
+const ulS = {paddingLeft: 18, margin: '4px 0 0', color: 'var(--ink)', fontSize: 13, lineHeight: 1.45};
 const calloutS = {
   marginTop: 14,
   background: '#fff7ed',
@@ -68,7 +68,7 @@ export default function CattleLogHowTo({onClose, canManageIssues = false}) {
     >
       <div style={cardS} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8}}>
-          <div style={{fontSize: 17, fontWeight: 800, color: '#111827'}}>How to use the Cattle Log</div>
+          <div style={{fontSize: 17, fontWeight: 800, color: 'var(--ink)'}}>How to use the Cattle Log</div>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -77,7 +77,7 @@ export default function CattleLogHowTo({onClose, canManageIssues = false}) {
               border: 'none',
               fontSize: 22,
               lineHeight: 1,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               cursor: 'pointer',
               padding: '0 4px',
               fontFamily: 'inherit',
@@ -87,7 +87,7 @@ export default function CattleLogHowTo({onClose, canManageIssues = false}) {
           </button>
         </div>
 
-        <div style={{fontSize: 13, color: '#374151', lineHeight: 1.5}}>
+        <div style={{fontSize: 13, color: 'var(--ink)', lineHeight: 1.5}}>
           The Cattle Log is the running notebook for the herd. Write what you saw, link the cows involved, and flag
           anything that needs follow-up.
         </div>
