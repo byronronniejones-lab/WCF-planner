@@ -606,6 +606,21 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             ))}
         </section>
 
+        <div className="field-tools">
+          <button type="button" className="card admin-card field-map-card lift" onClick={() => setView('pastureMap')}>
+            <span className="admin-ic field-map-ic">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 18 3 21V6l6-3 6 3 6-3v15l-6 3-6-3Z" />
+                <path d="M9 3v15" />
+                <path d="M15 6v15" />
+              </svg>
+            </span>
+            <span className="admin-title">Pasture Map</span>
+            <Chevron className="go" />
+          </button>
+          {React.createElement(HomeWeatherCard)}
+        </div>
+
         {/* Utility row — Processing + Admin side by side (design composition).
             Processing maps to a not-built top-level section: it is marked
             data-status="not-built" and clicks through to the in-app coming-soon
@@ -635,8 +650,6 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
             </button>
           )}
         </div>
-
-        {React.createElement(HomeWeatherCard)}
 
         {/* ── Animals on Farm ── */}
         {(() => {

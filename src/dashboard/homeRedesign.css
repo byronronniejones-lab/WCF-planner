@@ -190,6 +190,36 @@
   color: var(--brand);
 }
 /* utility row: Processing + Admin side by side */
+.home .field-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.home .field-tools > * {
+  min-width: 0;
+}
+.home .field-tools > div {
+  display: flex;
+}
+.home .field-tools .weather-card {
+  flex: 1;
+  min-height: 66px;
+}
+.home .field-map-card {
+  min-height: 66px;
+}
+.home .field-map-ic {
+  color: var(--brand);
+}
+.home .field-map-ic svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .home .utility {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1080,6 +1110,9 @@
 @media (max-width: 640px) {
   .home .tiles {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .home .field-tools {
+    grid-template-columns: 1fr;
   }
   .home .utility {
     grid-template-columns: 1fr;

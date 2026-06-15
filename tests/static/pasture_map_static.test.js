@@ -10,6 +10,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const mig = read('supabase-migrations/116_pasture_map_land_areas.sql');
 const mainSrc = read('src/main.jsx');
+const homeSrc = read('src/dashboard/HomeDashboard.jsx');
 const viewSrc = read('src/pasture/PastureMapView.jsx');
 
 describe('Pasture Map route + wiring', () => {
@@ -24,6 +25,13 @@ describe('Pasture Map route + wiring', () => {
     expect(mainSrc).toContain("if (view === 'pastureMap')");
     const lightAllowedBlock = mainSrc.match(/const LIGHT_ALLOWED_VIEWS[\s\S]*?new Set\(\[([\s\S]*?)\]\)/)?.[1] || '';
     expect(lightAllowedBlock).not.toContain("'pastureMap'");
+  });
+
+  it('home page exposes the Pasture Map field button', () => {
+    const fieldBlock = homeSrc.slice(homeSrc.indexOf('field-tools'), homeSrc.indexOf('Utility row'));
+    expect(fieldBlock).toContain("setView('pastureMap')");
+    expect(fieldBlock).toContain('Pasture Map');
+    expect(fieldBlock).toContain('HomeWeatherCard');
   });
 });
 

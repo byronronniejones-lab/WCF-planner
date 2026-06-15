@@ -4,8 +4,8 @@
 // Thin wrappers around the mig 116 SECDEF RPCs. All land geometry/history lives
 // in Supabase PostGIS; these calls are the only client path to it (the tables
 // are deny-all RLS). Each wrapper returns the RPC's jsonb payload and throws on
-// error so callers can try/catch. Read = any authed Pasture Map role; write =
-// management/admin (enforced server-side; surfaced as PM_VALIDATION errors).
+// error so callers can try/catch. Read = farm_team+; write = management/admin
+// (enforced server-side; surfaced as PM_VALIDATION errors).
 // ============================================================================
 import {sb} from './supabase.js';
 
