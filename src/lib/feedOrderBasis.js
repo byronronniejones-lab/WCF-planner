@@ -26,3 +26,21 @@ export function recommendedFeedOrder({needThruNext, hasCurrentCount, actualOnHan
   if (basis == null) return null;
   return Math.max(0, needThruNext - basis);
 }
+
+export function addMonthsYM(ym, delta) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+export function ymFromDate(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+// The feed-order board is calendar-pinned, not "first unsaved".
+// Example: any day in Jun 2026 shows the Jul 2026 order card. Saving Jul
+// never advances the board to Aug; the calendar flipping to Jul does.
+export function calendarOrderYM(today = new Date()) {
+  return addMonthsYM(ymFromDate(today), 1);
+}

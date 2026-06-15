@@ -3,15 +3,15 @@
 // ----------------------------------------------------------------------------
 // Minimal pig feed ledger. Answers two questions:
 //   1. How much feed do I have right now?
-//   2. How much do I need to order for the next open month?
+//   2. How much do I need to order for the next calendar order month?
 //
 // Layout:
 //   • Four top tiles: Actual On Hand · End of [current] Est. · Order for
 //     [active] · Need Thru [active+1].
 //   • Physical-count input directly below, with a "Count includes [month]
 //     order" checkbox derived from the count date's month.
-//   • Up to 6 most-recently-saved monthly cards plus exactly one active
-//     editable card. No collapsed sections, no future months past active.
+//   • Exactly one monthly order card: next calendar month. Saved history
+//     stays out of this order-entry surface.
 //   • Each monthly card reads as an equation: Start − Consumed + Ordered
 //     = End.
 //   • Feed Rate Reference at the bottom.
@@ -33,12 +33,11 @@
 //     double-count when the count was taken after that month's delivery.
 //
 // Active-month workflow:
-//   • activeOrderYM is the first month at or after today's month with no
-//     saved order. Saving advances it forward by one.
-//   • editingMonthYM lets the operator rewind to the most-recently-saved
-//     month and adjust. Edit pre-loads the draft locally; the persisted
-//     value is unchanged until Save Order writes again. Only the most
-//     recently saved month exposes Edit.
+//   • activeOrderYM is pinned to next calendar month. Saving does not
+//     advance it; the calendar month flip does.
+//   • editingMonthYM lets the operator edit the pinned saved month. Edit
+//     pre-loads the draft locally; the persisted value is unchanged until
+//     Save Order writes again.
 //
 // Helpers from src/lib/feedPlanner.js are intentionally retained as the
 // load-bearing source of pig burn + ledger-derived counts; the visual
@@ -56,7 +55,7 @@ import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
 import {useUI} from '../contexts/UIContext.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
-import {recommendedFeedOrder} from '../lib/feedOrderBasis.js';
+import {calendarOrderYM, recommendedFeedOrder} from '../lib/feedOrderBasis.js';
 
 export default function PigFeedView({
   Header,
@@ -73,8 +72,8 @@ export default function PigFeedView({
   const {feedCosts} = useFeedCosts();
   const {setView} = useUI();
 
-  // Operator draft for the active editable month + optional "edit the
-  // most-recently-saved month" rewind. The persisted feedOrders map is
+  // Operator draft for the active editable month + optional "edit the pinned
+  // saved month" rewind. The persisted feedOrders map is
   // not touched until Save Order runs.
   const [editingMonthYM, setEditingMonthYM] = React.useState(null);
   const [activeOrderDraft, setActiveOrderDraft] = React.useState('');
@@ -139,17 +138,9 @@ export default function PigFeedView({
   const curProj = projectedDailyFeed(todayDate);
 
   // ── Active-month resolution ──────────────────────────────────────────────
-  const savedOrderYMs = Object.entries(feedOrders.pig || {})
-    .filter(([, v]) => v != null && v !== '' && parseFloat(v) >= 0)
-    .map(([k]) => k)
-    .sort();
-  function firstUnsavedFrom(ym) {
-    let cur = ym;
-    while ((feedOrders.pig || {})[cur] != null) cur = addMonthsYM(cur, 1);
-    return cur;
-  }
-  const autoActiveYM = firstUnsavedFrom(thisYM);
+  const autoActiveYM = calendarOrderYM(now);
   const activeYM = editingMonthYM != null ? editingMonthYM : autoActiveYM;
+  const isActiveEditMode = editingMonthYM != null;
   const prevYM = addMonthsYM(activeYM, -1);
   const nextYM = addMonthsYM(activeYM, 1);
   const prevLabel = ymShort(prevYM);
@@ -443,20 +434,8 @@ export default function PigFeedView({
   }
 
   // ── Visible monthly cards ────────────────────────────────────────────────
-  // Order: active card first, then the most recent saved month (when not
-  // already active), then up to 5 older saved months behind a Show older
-  // months collapse. Total cap of 6 saved months on screen.
-  const [showOlderMonths, setShowOlderMonths] = React.useState(false);
-  const savedExcludingActive = savedOrderYMs.filter((ym) => ym !== activeYM);
-  const mostRecentSavedNonActiveYM = savedExcludingActive.length
-    ? savedExcludingActive[savedExcludingActive.length - 1]
-    : null;
-  // Older = everything before mostRecentSavedNonActiveYM (sorted ASC). Take
-  // the 5 most recent of those, render newest-first when expanded.
-  const olderSavedYMs = savedExcludingActive.slice(0, -1).slice(-5).reverse();
-  // (Card render slots are emitted directly from activeYM /
-  // mostRecentSavedNonActiveYM / olderSavedYMs inside the JSX below so the
-  // "Show older months" toggle can sit between them.)
+  // One visible order card only. Saving the pinned month never advances this
+  // section; it moves when the calendar month moves.
 
   // ── Count-includes-current-month checkbox ────────────────────────────────
   // Physical count is "what is on site now," not a backdated bookkeeping
@@ -686,17 +665,9 @@ export default function PigFeedView({
               const isSaved = savedVal != null && savedVal !== '';
               const projGroups = projectedFeedByGroup(ym);
               const actualGroups = actualFeedByGroup(ym);
-              const isMostRecentSavedCard = !isActive && ym === mostRecentSavedNonActiveYM;
-              // Visual hierarchy: active gets the dark green border + green
-              // tinted header; most-recent-saved gets a lighter green border
-              // + faint green header so it still reads as the "current"
-              // ledger anchor; older months are plain grey.
-              const cardBorder = isActive
-                ? '2px solid #085041'
-                : isMostRecentSavedCard
-                  ? '2px solid #a7f3d0'
-                  : '1px solid var(--border)';
-              const cardHeaderBg = isActive ? '#ecfdf5' : isMostRecentSavedCard ? '#f0fdf4' : 'white';
+              const isActiveSavedCard = isActive && isSaved && !isActiveEditMode;
+              const cardBorder = isActive ? '2px solid #085041' : '1px solid var(--border)';
+              const cardHeaderBg = isActive ? '#ecfdf5' : 'white';
               return (
                 <div
                   key={ym}
@@ -730,20 +701,6 @@ export default function PigFeedView({
                         }}
                       >
                         ACTIVE
-                      </span>
-                    )}
-                    {isMostRecentSavedCard && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: '#065f46',
-                          background: '#d1fae5',
-                          padding: '1px 8px',
-                          borderRadius: 10,
-                        }}
-                      >
-                        LAST SAVED
                       </span>
                     )}
                   </div>
@@ -830,7 +787,7 @@ export default function PigFeedView({
                       >
                         Ordered
                       </div>
-                      {isActive ? (
+                      {isActive && (!isSaved || isActiveEditMode) ? (
                         (() => {
                           // Button rules:
                           //   • Draft has a number → "Save Order" enabled, saves the typed value.
@@ -886,7 +843,7 @@ export default function PigFeedView({
                           <div style={{fontSize: 16, fontWeight: 600, color: 'var(--ink)'}}>
                             {isSaved ? Number(savedVal).toLocaleString() : '—'}
                           </div>
-                          {isMostRecentSavedCard && (
+                          {isActiveSavedCard && (
                             <button
                               onClick={() => editMonth(ym)}
                               style={{
@@ -1082,32 +1039,7 @@ export default function PigFeedView({
                 </div>
               );
             }
-            return (
-              <>
-                {renderCard(activeYM)}
-                {mostRecentSavedNonActiveYM && renderCard(mostRecentSavedNonActiveYM)}
-                {olderSavedYMs.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowOlderMonths((s) => !s)}
-                    style={{
-                      alignSelf: 'flex-start',
-                      padding: '6px 12px',
-                      background: 'transparent',
-                      border: '1px solid var(--border-strong)',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      color: 'var(--ink-muted)',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {showOlderMonths ? '▼ Hide older months' : '▶ Show older months (' + olderSavedYMs.length + ')'}
-                  </button>
-                )}
-                {showOlderMonths && olderSavedYMs.map((ym) => renderCard(ym))}
-              </>
-            );
+            return <>{renderCard(activeYM)}</>;
           })()}
         </div>
 

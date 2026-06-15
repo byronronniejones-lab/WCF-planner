@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {feedOrderBasis, recommendedFeedOrder} from './feedOrderBasis.js';
+import {addMonthsYM, calendarOrderYM, feedOrderBasis, recommendedFeedOrder, ymFromDate} from './feedOrderBasis.js';
 
 describe('feedOrderBasis', () => {
   it('uses the count-aware Actual On Hand when a current-month count exists', () => {
@@ -60,5 +60,23 @@ describe('recommendedFeedOrder — basis selection + clamping', () => {
     expect(
       recommendedFeedOrder({needThruNext: 5571, hasCurrentCount: true, actualOnHand: 5500, endOfPrevEst: null}),
     ).toBe(71);
+  });
+});
+
+describe('calendarOrderYM', () => {
+  it('pins every day in June 2026 to the July 2026 order month', () => {
+    expect(calendarOrderYM(new Date(2026, 5, 1))).toBe('2026-07');
+    expect(calendarOrderYM(new Date(2026, 5, 15))).toBe('2026-07');
+    expect(calendarOrderYM(new Date(2026, 5, 30))).toBe('2026-07');
+  });
+
+  it('advances only when the calendar month flips', () => {
+    expect(calendarOrderYM(new Date(2026, 6, 1))).toBe('2026-08');
+  });
+
+  it('handles year rollover', () => {
+    expect(calendarOrderYM(new Date(2026, 11, 15))).toBe('2027-01');
+    expect(addMonthsYM('2026-12', 1)).toBe('2027-01');
+    expect(ymFromDate(new Date(2026, 11, 15))).toBe('2026-12');
   });
 });

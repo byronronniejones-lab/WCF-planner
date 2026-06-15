@@ -126,16 +126,16 @@ describe('PigFeedView — minimal ledger contract', () => {
     expect(pigSrc).not.toMatch(/onChange:\s*function\s*\(e\)\s*\{\s*savePigOrder/);
   });
 
-  it('active month advances by deriving activeYM from "first unsaved month at or after thisYM"', () => {
-    expect(pigSrc).toMatch(/firstUnsavedFrom\(thisYM\)/);
-    expect(pigSrc).toMatch(/while \(\(feedOrders\.pig \|\| \{\}\)\[cur\] != null\)/);
+  it('active month is pinned to the next calendar month, not the first unsaved month', () => {
+    expect(pigSrc).toMatch(/calendarOrderYM\(now\)/);
+    expect(pigSrc).not.toMatch(/firstUnsavedFrom/);
+    expect(pigSrc).not.toMatch(/while \(\(feedOrders\.pig \|\| \{\}\)\[cur\] != null\)/);
   });
 
-  it('only the most-recently-saved month exposes an Edit button', () => {
-    expect(pigSrc).toMatch(/isMostRecentSavedCard/);
-    expect(pigSrc).toMatch(/ym === mostRecentSavedNonActiveYM/);
-    // Edit is only rendered when isMostRecentSavedCard is truthy.
-    expect(pigSrc).toMatch(/isMostRecentSavedCard\s*&&[\s\S]*?Edit/);
+  it('a saved pinned order month exposes Edit without advancing the board', () => {
+    expect(pigSrc).toMatch(/isActiveSavedCard\s*=\s*isActive && isSaved && !isActiveEditMode/);
+    expect(pigSrc).toMatch(/isActiveSavedCard &&[\s\S]*?editMonth\(ym\)/);
+    expect(pigSrc).not.toMatch(/isMostRecentSavedCard/);
   });
 
   it('clicking Edit pre-loads the persisted value into the draft (no DB write until Save Order)', () => {
@@ -152,47 +152,23 @@ describe('PigFeedView — minimal ledger contract', () => {
     expect(pigSrc).toMatch(/Start of Month[\s\S]*?Consumed[\s\S]*?Ordered[\s\S]*?End of Month/);
   });
 
-  it('active card renders before saved history; older cards live behind Show older months', () => {
-    // renderCard(activeYM) is the first slot emitted; mostRecentSaved is
-    // second; older saved months sit behind a Show older months toggle.
+  it('renders exactly the pinned order card, with no saved-history stack underneath', () => {
     expect(pigSrc).toMatch(/renderCard\(activeYM\)/);
-    expect(pigSrc).toMatch(/mostRecentSavedNonActiveYM && renderCard\(mostRecentSavedNonActiveYM\)/);
-    expect(pigSrc).toMatch(/showOlderMonths && olderSavedYMs\.map\(\(ym\) => renderCard\(ym\)\)/);
-    // The active card slot appears in the JSX before the most-recent-saved slot.
-    const activeIdx = pigSrc.indexOf('renderCard(activeYM)');
-    const mostRecentIdx = pigSrc.indexOf('mostRecentSavedNonActiveYM && renderCard');
-    const olderIdx = pigSrc.indexOf('showOlderMonths && olderSavedYMs.map');
-    expect(activeIdx).toBeGreaterThan(0);
-    expect(mostRecentIdx).toBeGreaterThan(activeIdx);
-    expect(olderIdx).toBeGreaterThan(mostRecentIdx);
-  });
-
-  it('Show older months toggle is rendered between the most-recent-saved card and older cards', () => {
-    expect(pigSrc).toMatch(/Show older months/);
-    expect(pigSrc).toMatch(/Hide older months/);
-    expect(pigSrc).toMatch(/setShowOlderMonths/);
-    // The toggle is only rendered when there are older months to show.
-    expect(pigSrc).toMatch(/olderSavedYMs\.length > 0 &&[\s\S]*?Show older months/);
-  });
-
-  it('saved month cap (last 6) and older newest-first selection are preserved', () => {
-    // Up to 5 older saved months render newest-first when expanded
-    // (mostRecentSaved + 5 older = 6 total saved on screen).
-    expect(pigSrc).toMatch(/savedExcludingActive\.slice\(0, -1\)\.slice\(-5\)\.reverse\(\)/);
-    // No legacy collapse / expand groups, no separate past/future sections.
+    expect(pigSrc).not.toMatch(/mostRecentSavedNonActiveYM && renderCard/);
+    expect(pigSrc).not.toMatch(/showOlderMonths/);
+    expect(pigSrc).not.toMatch(/olderSavedYMs/);
+    expect(pigSrc).not.toMatch(/Show older months/);
+    expect(pigSrc).not.toMatch(/Hide older months/);
     expect(pigSrc).not.toMatch(/UPCOMING MONTHS/);
     expect(pigSrc).not.toMatch(/PAST MONTHS/);
     expect(pigSrc).not.toMatch(/pigFeedExpandedMonths/);
   });
 
-  it('most-recent-saved card has its own visual treatment (distinct from older cards)', () => {
-    // Stronger border + lighter green header background for the
-    // most-recent-saved card; older cards stay plain grey.
-    expect(pigSrc).toMatch(/isMostRecentSavedCard/);
-    expect(pigSrc).toMatch(/'2px solid #a7f3d0'/);
-    expect(pigSrc).toMatch(/'#f0fdf4'/);
-    // LAST SAVED chip on the most-recent-saved card header.
-    expect(pigSrc).toMatch(/LAST SAVED/);
+  it('does not render the old LAST SAVED visual treatment', () => {
+    expect(pigSrc).not.toMatch(/isMostRecentSavedCard/);
+    expect(pigSrc).not.toMatch(/'2px solid #a7f3d0'/);
+    expect(pigSrc).not.toMatch(/'#f0fdf4'/);
+    expect(pigSrc).not.toMatch(/LAST SAVED/);
   });
 
   it('Order for tile keeps amber styling even when recommendation is 0 lbs', () => {
@@ -339,18 +315,13 @@ describe('BroilerFeedView — minimal ledger contract', () => {
     expect(broilerSrc).not.toMatch(/days remaining/);
   });
 
-  it('active card renders before saved history; older months are behind Show older months', () => {
+  it('renders exactly the pinned order card, with no saved-history stack underneath', () => {
     expect(broilerSrc).toMatch(/renderMonthCard\(activeYM\)/);
-    expect(broilerSrc).toMatch(/mostRecentSavedNonActiveYM && renderMonthCard\(mostRecentSavedNonActiveYM\)/);
-    expect(broilerSrc).toMatch(/showOlderMonths && olderSavedYMs\.map\(\(ym\) => renderMonthCard\(ym\)\)/);
-    expect(broilerSrc).toMatch(/Show older months/);
-    expect(broilerSrc).toMatch(/Hide older months/);
-    const activeIdx = broilerSrc.indexOf('renderMonthCard(activeYM)');
-    const mostRecentIdx = broilerSrc.indexOf('mostRecentSavedNonActiveYM && renderMonthCard');
-    const olderIdx = broilerSrc.indexOf('showOlderMonths && olderSavedYMs.map');
-    expect(activeIdx).toBeGreaterThan(0);
-    expect(mostRecentIdx).toBeGreaterThan(activeIdx);
-    expect(olderIdx).toBeGreaterThan(mostRecentIdx);
+    expect(broilerSrc).not.toMatch(/mostRecentSavedNonActiveYM && renderMonthCard/);
+    expect(broilerSrc).not.toMatch(/showOlderMonths/);
+    expect(broilerSrc).not.toMatch(/olderSavedYMs/);
+    expect(broilerSrc).not.toMatch(/Show older months/);
+    expect(broilerSrc).not.toMatch(/Hide older months/);
   });
 
   it('a month is fully saved only when all three feed-type orders are present', () => {
@@ -358,7 +329,9 @@ describe('BroilerFeedView — minimal ledger contract', () => {
     expect(broilerSrc).toMatch(
       /\(feedOrders\.starter \|\| \{\}\)\[ym\] != null &&[\s\S]*?\(feedOrders\.grower \|\| \{\}\)\[ym\] != null &&[\s\S]*?\(feedOrders\.layerfeed \|\| \{\}\)\[ym\] != null/,
     );
-    expect(broilerSrc).toMatch(/savedOrderYMs\s*=\s*\[\.\.\.allOrderYMs\]\.filter\(isMonthFullySaved\)/);
+    expect(broilerSrc).toMatch(/calendarOrderYM\(today\)/);
+    expect(broilerSrc).not.toMatch(/firstUnsavedFrom/);
+    expect(broilerSrc).not.toMatch(/savedOrderYMs/);
   });
 
   it('active card has three feed-type rows (Starter / Grower / Layer Feed) with editable inputs', () => {
@@ -397,38 +370,21 @@ describe('BroilerFeedView — minimal ledger contract', () => {
     expect(broilerSrc).toMatch(/recommendedOrder\[type\] === 0/);
   });
 
-  it('only the most-recently-saved month exposes an Edit button', () => {
-    expect(broilerSrc).toMatch(/isMostRecentSavedCard/);
-    expect(broilerSrc).toMatch(/ym === mostRecentSavedNonActiveYM/);
-    expect(broilerSrc).toMatch(/isMostRecentSavedCard && \(/);
+  it('a fully saved pinned order month exposes Edit without advancing the board', () => {
+    expect(broilerSrc).toMatch(/isActiveSavedCard\s*=\s*isActive && isMonthFullySaved\(ym\) && !isActiveEditMode/);
+    expect(broilerSrc).toMatch(/isActiveSavedCard \?/);
     expect(broilerSrc).toMatch(/function editMonth\(ym\)/);
     // Edit preloads all three drafts from persisted values.
     expect(broilerSrc).toMatch(/starter:\s*\(feedOrders\.starter \|\| \{\}\)\[ym\]/);
     expect(broilerSrc).toMatch(/grower:\s*\(feedOrders\.grower \|\| \{\}\)\[ym\]/);
     expect(broilerSrc).toMatch(/layerfeed:\s*\(feedOrders\.layerfeed \|\| \{\}\)\[ym\]/);
+    expect(broilerSrc).not.toMatch(/isMostRecentSavedCard/);
   });
 
-  it('edit mode hides LAST SAVED / Edit on older months — only the edited month is active', () => {
-    // "Once a later month is saved, older months cannot be edited." When
-    // editingMonthYM is set, the edited month is the active card; every
-    // saved month before it must sit in the Show older months collapse
-    // with no LAST SAVED chip and no Edit button.
-    expect(broilerSrc).toMatch(/mostRecentSavedNonActiveYM\s*=\s*!isActiveEditMode && savedExcludingActive\.length/);
-    // In edit mode, olderSavedYMs takes all of savedExcludingActive (not
-    // .slice(0, -1)) so no month is held back as the LAST SAVED candidate.
-    expect(broilerSrc).toMatch(
-      /olderSavedYMs\s*=\s*isActiveEditMode\s*\?\s*savedExcludingActive\.slice\(-5\)\.reverse\(\)\s*:\s*savedExcludingActive\.slice\(0, -1\)\.slice\(-5\)\.reverse\(\)/,
-    );
-  });
-
-  it('older saved months cap at 5 + most-recent-saved (newest-first when expanded)', () => {
-    expect(broilerSrc).toMatch(/savedExcludingActive\.slice\(0, -1\)\.slice\(-5\)\.reverse\(\)/);
-  });
-
-  it('most-recent-saved card has its own visual treatment distinct from older cards', () => {
-    expect(broilerSrc).toMatch(/'2px solid #a7f3d0'/);
-    expect(broilerSrc).toMatch(/'#f0fdf4'/);
-    expect(broilerSrc).toMatch(/LAST SAVED/);
+  it('does not render the old LAST SAVED visual treatment', () => {
+    expect(broilerSrc).not.toMatch(/'2px solid #a7f3d0'/);
+    expect(broilerSrc).not.toMatch(/'#f0fdf4'/);
+    expect(broilerSrc).not.toMatch(/LAST SAVED/);
   });
 
   it('monthly card equation row renders the operator glyphs Start − Consumed + Ordered = End', () => {
@@ -516,7 +472,7 @@ describe('BroilerFeedView — minimal ledger contract', () => {
     // never when any feed-type for activeYM is already persisted.
     expect(broilerSrc).toMatch(/!anyTypePersistedForActive/);
     // Edit mode bypasses the lock so all three rows become editable for
-    // the most-recently-saved month.
+    // the pinned saved month.
     expect(broilerSrc).toMatch(/isActiveEditMode\s*=\s*editingMonthYM != null/);
   });
 
