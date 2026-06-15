@@ -17,7 +17,7 @@ export default function EquipmentPlaceholder({
   loadUsers,
 }) {
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -33,7 +33,7 @@ export default function EquipmentPlaceholder({
         <div
           style={{
             background: 'white',
-            border: '1px solid #e5e7eb',
+            border: '1px solid var(--border)',
             borderRadius: 12,
             padding: '2rem',
             textAlign: 'center',
@@ -41,7 +41,7 @@ export default function EquipmentPlaceholder({
         >
           <div style={{fontSize: 48, marginBottom: 12}}>{'\ud83d\ude9c'}</div>
           <div style={{fontSize: 18, fontWeight: 700, color: '#57534e', marginBottom: 6}}>Equipment Tracking</div>
-          <div style={{fontSize: 13, color: '#6b7280', marginBottom: 18}}>
+          <div style={{fontSize: 13, color: 'var(--ink-muted)', marginBottom: 18}}>
             Tractors, implements, maintenance schedules {'\u2014'} coming in a future build.
           </div>
           <button
@@ -49,9 +49,9 @@ export default function EquipmentPlaceholder({
             style={{
               padding: '8px 20px',
               borderRadius: 7,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',

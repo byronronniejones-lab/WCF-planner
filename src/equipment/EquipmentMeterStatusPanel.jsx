@@ -124,7 +124,7 @@ export default function EquipmentMeterStatusPanel({equipment, fuelings, fmt, onR
   const sectionTitle = {
     fontSize: 11,
     fontWeight: 700,
-    color: '#4b5563',
+    color: 'var(--ink-muted)',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
@@ -133,7 +133,7 @@ export default function EquipmentMeterStatusPanel({equipment, fuelings, fmt, onR
   return (
     <div
       data-meter-status-panel="1"
-      style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}
+      style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px'}}
     >
       <div style={sectionTitle}>Meter Status</div>
       <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
@@ -188,27 +188,45 @@ export default function EquipmentMeterStatusPanel({equipment, fuelings, fmt, onR
       >
         <div>
           <div
-            style={{color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, fontSize: 10}}
+            style={{
+              color: 'var(--ink-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: 0.4,
+              fontWeight: 700,
+              fontSize: 10,
+            }}
           >
             Stored current
           </div>
-          <div style={{fontSize: 14, fontWeight: 700, color: '#111827', marginTop: 2}}>
+          <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginTop: 2}}>
             {hasCurrent ? fmtReading(currentReading, unit) : '—'}
           </div>
         </div>
         <div>
           <div
-            style={{color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, fontSize: 10}}
+            style={{
+              color: 'var(--ink-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: 0.4,
+              fontWeight: 700,
+              fontSize: 10,
+            }}
           >
             Fuel-log max
           </div>
-          <div style={{fontSize: 14, fontWeight: 700, color: '#111827', marginTop: 2}}>
+          <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginTop: 2}}>
             {hasFuelLog ? fmtReading(fuelLogMax, unit) : '—'}
           </div>
         </div>
         <div>
           <div
-            style={{color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, fontSize: 10}}
+            style={{
+              color: 'var(--ink-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: 0.4,
+              fontWeight: 700,
+              fontSize: 10,
+            }}
           >
             Difference
           </div>
@@ -216,7 +234,7 @@ export default function EquipmentMeterStatusPanel({equipment, fuelings, fmt, onR
             style={{
               fontSize: 14,
               fontWeight: 700,
-              color: diff != null && diff !== 0 ? palette.fg : '#111827',
+              color: diff != null && diff !== 0 ? palette.fg : 'var(--ink)',
               marginTop: 2,
             }}
           >
@@ -225,18 +243,28 @@ export default function EquipmentMeterStatusPanel({equipment, fuelings, fmt, onR
         </div>
         <div>
           <div
-            style={{color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, fontSize: 10}}
+            style={{
+              color: 'var(--ink-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: 0.4,
+              fontWeight: 700,
+              fontSize: 10,
+            }}
           >
             Latest fueling
           </div>
-          <div style={{fontSize: 12, color: '#111827', marginTop: 2}}>
+          <div style={{fontSize: 12, color: 'var(--ink)', marginTop: 2}}>
             {latest ? (
               <>
                 <strong>{Number.isFinite(latestReading) ? fmtReading(latestReading, unit) : '—'}</strong>
                 {latestDate && (
-                  <span style={{color: '#6b7280', fontSize: 11}}>{' · ' + (fmt ? fmt(latestDate) : latestDate)}</span>
+                  <span style={{color: 'var(--ink-muted)', fontSize: 11}}>
+                    {' · ' + (fmt ? fmt(latestDate) : latestDate)}
+                  </span>
                 )}
-                {latestTeam && <div style={{color: '#6b7280', fontSize: 11, marginTop: 2}}>by {latestTeam}</div>}
+                {latestTeam && (
+                  <div style={{color: 'var(--ink-muted)', fontSize: 11, marginTop: 2}}>by {latestTeam}</div>
+                )}
               </>
             ) : (
               '—'

@@ -232,7 +232,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
   function wfTgl(label, field) {
     return (
       <div style={{marginBottom: 12}}>
-        <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+        <label style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}>
           {label}
         </label>
         <div
@@ -241,7 +241,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
             gridTemplateColumns: '1fr 1fr',
             borderRadius: 6,
             overflow: 'hidden',
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--border-strong)',
           }}
         >
           {[
@@ -259,8 +259,8 @@ export default function PigDailysWebform({sessionSubmitter}) {
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: 'pointer',
-                background: wfForm[field] === v ? (v ? '#085041' : '#374151') : '#f9fafb',
-                color: wfForm[field] === v ? 'white' : '#6b7280',
+                background: 'white',
+                color: wfForm[field] === v ? 'var(--brand)' : 'var(--ink-muted)',
               }}
             >
               {l}
@@ -281,7 +281,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
     return f ? f.required : ['date', 'team_member', 'group'].includes(id);
   };
   const wfLbl = (text, id) => (
-    <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+    <label style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}>
       {text}
       {isReq(id) && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
     </label>
@@ -291,7 +291,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
     <div
       style={{
         background: 'white',
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--border)',
         borderRadius: 10,
         padding: 20,
         marginBottom: 16,
@@ -302,12 +302,12 @@ export default function PigDailysWebform({sessionSubmitter}) {
         style={{
           fontSize: 13,
           fontWeight: 700,
-          color: '#4b5563',
+          color: 'var(--ink-muted)',
           textTransform: 'uppercase',
           letterSpacing: 0.4,
           marginBottom: 14,
           paddingBottom: 10,
-          borderBottom: '1px solid #e5e7eb',
+          borderBottom: '1px solid var(--border)',
         }}
       >
         {title}
@@ -345,7 +345,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
 
   if (wfDoneState !== 'none')
     return (
-      <div style={{background: '#f6f8f7', minHeight: '100vh'}}>
+      <div style={{background: 'var(--bg-page)', minHeight: '100vh'}}>
         <div
           style={{
             background: 'linear-gradient(135deg,#042f23,#085041 60%,#0d6652)',
@@ -382,7 +382,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
               fontSize: 20,
               fontWeight: 700,
               marginBottom: 8,
-              color: wfDoneState === 'queued' ? '#92400e' : wfDoneState === 'stuck' ? '#b91c1c' : '#111827',
+              color: wfDoneState === 'queued' ? '#92400e' : wfDoneState === 'stuck' ? '#b91c1c' : 'var(--ink)',
             }}
           >
             {wfDoneState === 'queued'
@@ -430,7 +430,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
             </div>
           )}
           {wfDoneState === 'synced' && (
-            <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28}}>
+            <div style={{fontSize: 14, color: 'var(--ink-muted)', marginBottom: 28}}>
               <span data-submit-state="synced" style={{display: 'none'}}>
                 synced
               </span>
@@ -477,7 +477,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
     );
 
   return (
-    <div style={{background: '#f6f8f7', minHeight: '100vh'}}>
+    <div style={{background: 'var(--bg-page)', minHeight: '100vh'}}>
       {/* Header */}
       <div
         style={{
@@ -508,7 +508,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
       </div>
 
       <div style={{maxWidth: 540, margin: '0 auto', padding: '1.5rem 1rem 3rem'}}>
-        <div style={{fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 20, letterSpacing: '-.3px'}}>
+        <div style={{fontSize: 22, fontWeight: 700, color: 'var(--ink)', marginBottom: 20, letterSpacing: '-.3px'}}>
           Pig Dailys
         </div>
 
@@ -555,7 +555,9 @@ export default function PigDailysWebform({sessionSubmitter}) {
           'Report Info',
           <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
             <div>
-              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+              <label
+                style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}
+              >
                 Date{isReq('date') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
               </label>
               <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
@@ -567,12 +569,12 @@ export default function PigDailysWebform({sessionSubmitter}) {
                     fontFamily: 'inherit',
                     fontSize: 13,
                     padding: '9px 12px',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid var(--border-strong)',
                     borderRadius: 6,
                     flex: 1,
                     outline: 'none',
                     background: 'white',
-                    color: '#111827',
+                    color: 'var(--ink)',
                   }}
                 />
                 <span
@@ -603,11 +605,19 @@ export default function PigDailysWebform({sessionSubmitter}) {
               <LockedSubmitter
                 name={lockedName}
                 label="Team member"
-                labelStyle={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}
+                labelStyle={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--ink-muted)',
+                  marginBottom: 4,
+                  fontWeight: 500,
+                }}
               />
             </div>
             <div>
-              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+              <label
+                style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}
+              >
                 Pig group{isReq('group') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
               </label>
               <select
@@ -617,12 +627,12 @@ export default function PigDailysWebform({sessionSubmitter}) {
                   fontFamily: 'inherit',
                   fontSize: 13,
                   padding: '9px 12px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   borderRadius: 6,
                   width: '100%',
                   outline: 'none',
                   background: 'white',
-                  color: '#111827',
+                  color: 'var(--ink)',
                 }}
               >
                 <option value="">— Select group —</option>
@@ -640,7 +650,9 @@ export default function PigDailysWebform({sessionSubmitter}) {
           'Count & Feed',
           <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12}}>
             <div>
-              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+              <label
+                style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}
+              >
                 # Pigs in group{isReq('pig_count') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
               </label>
               <input
@@ -653,17 +665,19 @@ export default function PigDailysWebform({sessionSubmitter}) {
                   fontFamily: 'inherit',
                   fontSize: 13,
                   padding: '9px 12px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   borderRadius: 6,
                   width: '100%',
                   outline: 'none',
                   background: 'white',
                 }}
               />
-              <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>Current headcount</div>
+              <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 3}}>Current headcount</div>
             </div>
             <div>
-              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+              <label
+                style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}
+              >
                 Feed given (lbs){isReq('feed_lbs') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
               </label>
               <input
@@ -677,14 +691,14 @@ export default function PigDailysWebform({sessionSubmitter}) {
                   fontFamily: 'inherit',
                   fontSize: 13,
                   padding: '9px 12px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   borderRadius: 6,
                   width: '100%',
                   outline: 'none',
                   background: 'white',
                 }}
               />
-              <div style={{fontSize: 11, color: '#9ca3af', marginTop: 3}}>Total lbs fed today</div>
+              <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 3}}>Total lbs fed today</div>
             </div>
           </div>,
         )}
@@ -698,7 +712,9 @@ export default function PigDailysWebform({sessionSubmitter}) {
             {wfTgl('Feed troughs moved?', 'troughsMoved')}
             {wfTgl('Fence line walked?', 'fenceWalked')}
             <div>
-              <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+              <label
+                style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}
+              >
                 Fence voltage (kV){isReq('fence_voltage') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
               </label>
               <input
@@ -713,7 +729,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
                   fontFamily: 'inherit',
                   fontSize: 13,
                   padding: '9px 12px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   borderRadius: 6,
                   width: '100%',
                   outline: 'none',
@@ -727,7 +743,9 @@ export default function PigDailysWebform({sessionSubmitter}) {
         {wfCard(
           'Issues & Comments',
           <div>
-            <label style={{display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 500}}>
+            <label
+              style={{display: 'block', fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4, fontWeight: 500}}
+            >
               Notes, issues, observations{isReq('issues') && <span style={{color: '#b91c1c', marginLeft: 2}}>*</span>}
             </label>
             <textarea
@@ -739,7 +757,7 @@ export default function PigDailysWebform({sessionSubmitter}) {
                 fontFamily: 'inherit',
                 fontSize: 13,
                 padding: '9px 12px',
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 borderRadius: 6,
                 width: '100%',
                 outline: 'none',

@@ -157,13 +157,13 @@ export default function EquipmentHome({
     fontSize: 12,
     fontWeight: active ? 700 : 500,
     whiteSpace: 'nowrap',
-    border: active ? '2px solid #57534e' : '1px solid #d1d5db',
-    background: active ? '#57534e' : 'white',
-    color: active ? 'white' : '#374151',
+    border: active ? '2px solid var(--brand)' : '1px solid var(--border-strong)',
+    background: 'white',
+    color: active ? 'var(--brand)' : 'var(--ink-muted)',
   });
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -184,7 +184,7 @@ export default function EquipmentHome({
       <div
         style={{
           background: 'white',
-          borderBottom: '1px solid #e5e7eb',
+          borderBottom: '1px solid var(--border)',
           padding: '8px 1.25rem',
           display: 'flex',
           gap: 6,
@@ -225,13 +225,14 @@ export default function EquipmentHome({
             ))}
         {detailSlug && activeEq && !isEquipmentTech && (
           <>
-            <span style={{color: '#9ca3af', fontSize: 12}}>{'›'}</span>
+            <span style={{color: 'var(--ink-faint)', fontSize: 12}}>{'›'}</span>
             <span
               style={{
                 padding: '7px 14px',
                 borderRadius: 8,
-                background: '#57534e',
-                color: 'white',
+                border: '2px solid var(--brand)',
+                background: 'white',
+                color: 'var(--brand)',
                 fontSize: 12,
                 fontWeight: 700,
               }}
@@ -272,7 +273,7 @@ export default function EquipmentHome({
           return (
             <>
               {loading && !missingSchema && !isEntrySubview && (
-                <div style={{textAlign: 'center', padding: '3rem', color: '#9ca3af'}}>Loading{'…'}</div>
+                <div style={{textAlign: 'center', padding: '3rem', color: 'var(--ink-faint)'}}>Loading{'…'}</div>
               )}
 
               {!loading && !missingSchema && loadError && !isEntrySubview && (
@@ -284,7 +285,7 @@ export default function EquipmentHome({
                     style={{
                       padding: '7px 14px',
                       borderRadius: 7,
-                      border: '1px solid #d1d5db',
+                      border: '1px solid var(--border-strong)',
                       background: 'white',
                       color: '#57534e',
                       fontSize: 12,
@@ -347,11 +348,11 @@ export default function EquipmentHome({
           <div
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 12,
               padding: '2rem',
               textAlign: 'center',
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontSize: 13,
             }}
           >
@@ -380,11 +381,11 @@ export default function EquipmentHome({
           <div
             style={{
               background: 'white',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border)',
               borderRadius: 12,
               padding: '2rem',
               textAlign: 'center',
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontSize: 13,
             }}
           >
@@ -395,7 +396,7 @@ export default function EquipmentHome({
                 navigate('/fleet');
               }}
               href="#"
-              style={{color: '#1d4ed8', cursor: 'pointer'}}
+              style={{color: 'var(--brand)', cursor: 'pointer'}}
             >
               Back to Fleet
             </a>

@@ -118,7 +118,7 @@ export default function FuelSupplyWebform({onBack, sessionSubmitter}) {
 
   const cardS = {
     background: 'white',
-    border: '1px solid #e5e7eb',
+    border: '1px solid var(--border)',
     borderRadius: 12,
     padding: '14px 18px',
     marginBottom: 14,
@@ -127,7 +127,7 @@ export default function FuelSupplyWebform({onBack, sessionSubmitter}) {
     display: 'block',
     fontSize: 11,
     fontWeight: 600,
-    color: '#4b5563',
+    color: 'var(--ink-muted)',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     marginBottom: 4,
@@ -135,7 +135,7 @@ export default function FuelSupplyWebform({onBack, sessionSubmitter}) {
   const inpS = {
     fontSize: 14,
     padding: '8px 10px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 6,
     fontFamily: 'inherit',
     width: '100%',
@@ -143,7 +143,7 @@ export default function FuelSupplyWebform({onBack, sessionSubmitter}) {
   };
 
   return (
-    <div style={{minHeight: '100vh', background: '#f1f3f2'}}>
+    <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
       <div
         style={{
           background: '#085041',
@@ -281,7 +281,7 @@ export default function FuelSupplyWebform({onBack, sessionSubmitter}) {
 
           <div style={{marginBottom: 12}}>
             <label style={lblS}>
-              Notes <span style={{color: '#9ca3af', textTransform: 'none', fontWeight: 400}}>(optional)</span>
+              Notes <span style={{color: 'var(--ink-faint)', textTransform: 'none', fontWeight: 400}}>(optional)</span>
             </label>
             <textarea
               rows={3}

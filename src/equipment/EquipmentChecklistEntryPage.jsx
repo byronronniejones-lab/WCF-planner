@@ -31,7 +31,7 @@ import RecordPageLoadError from '../shared/RecordPageLoadError.jsx';
 const sectionTitle = {
   fontSize: 11,
   fontWeight: 700,
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   textTransform: 'uppercase',
   letterSpacing: 0.5,
   marginBottom: 8,
@@ -40,8 +40,8 @@ const sectionTitle = {
 function FieldRow({label, value}) {
   return (
     <div style={{display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', fontSize: 13}}>
-      <span style={{color: '#6b7280'}}>{label}</span>
-      <span style={{color: '#111827', fontWeight: 600, textAlign: 'right'}}>{value}</span>
+      <span style={{color: 'var(--ink-muted)'}}>{label}</span>
+      <span style={{color: 'var(--ink)', fontWeight: 600, textAlign: 'right'}}>{value}</span>
     </div>
   );
 }
@@ -117,9 +117,9 @@ export default function EquipmentChecklistEntryPage({
               {event.event_type}
             </span>
           )}
-          <span style={{fontSize: 11, color: '#6b7280'}}>{eq.name}</span>
+          <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{eq.name}</span>
         </div>
-        <div style={{borderTop: '1px solid #f3f4f6', paddingTop: 8}}>
+        <div style={{borderTop: '1px solid var(--divider)', paddingTop: 8}}>
           <FieldRow label="Date" value={fmt(event.event_date)} />
           {event.event_type && <FieldRow label="Service type" value={event.event_type} />}
           {event.title && <FieldRow label="Title" value={event.title} />}
@@ -135,15 +135,15 @@ export default function EquipmentChecklistEntryPage({
 
       {/* Description / notes (read-only) */}
       {event.description && (
-        <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}>
+        <div style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px'}}>
           <div style={sectionTitle}>Notes</div>
-          <div style={{fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap'}}>{event.description}</div>
+          <div style={{fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap'}}>{event.description}</div>
         </div>
       )}
 
       {/* Photos (read-only) */}
       {photos.length > 0 && (
-        <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}>
+        <div style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px'}}>
           <div style={sectionTitle}>Photos ({photos.length})</div>
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 6}}>
             {photos.map((p, i) => (
@@ -151,7 +151,13 @@ export default function EquipmentChecklistEntryPage({
                 <img
                   src={p.url}
                   alt={imageAltText(p.name, {fallback: 'Maintenance event photo', index: i, total: photos.length})}
-                  style={{width: 90, height: 90, objectFit: 'cover', borderRadius: 6, border: '1px solid #e5e7eb'}}
+                  style={{
+                    width: 90,
+                    height: 90,
+                    objectFit: 'cover',
+                    borderRadius: 6,
+                    border: '1px solid var(--border)',
+                  }}
                 />
               </a>
             ))}

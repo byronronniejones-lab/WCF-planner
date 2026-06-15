@@ -68,13 +68,13 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
   const inpS = {
     fontSize: 13,
     padding: '8px 11px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 6,
     fontFamily: 'inherit',
     width: '100%',
     boxSizing: 'border-box',
   };
-  const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 4, fontWeight: 500};
+  const lbl = {fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 4, fontWeight: 500};
 
   return (
     <div
@@ -105,7 +105,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
         <div
           style={{
             padding: '14px 20px',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid var(--border)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -114,7 +114,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
           <div style={{fontSize: 15, fontWeight: 700, color: EQUIPMENT_COLOR}}>Add Equipment</div>
           <button
             onClick={onClose}
-            style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
+            style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--ink-faint)'}}
           >
             {'×'}
           </button>
@@ -133,7 +133,8 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
           </div>
           <div style={{gridColumn: '1/-1'}}>
             <label style={lbl}>
-              URL slug <span style={{color: '#9ca3af', fontWeight: 400}}>(leave blank to auto-generate from name)</span>
+              URL slug{' '}
+              <span style={{color: 'var(--ink-faint)', fontWeight: 400}}>(leave blank to auto-generate from name)</span>
             </label>
             <input
               type="text"
@@ -142,7 +143,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
               placeholder={generateSlug()}
               style={inpS}
             />
-            <div style={{fontSize: 10, color: '#9ca3af', marginTop: 3}}>
+            <div style={{fontSize: 10, color: 'var(--ink-faint)', marginTop: 3}}>
               Will appear at /equipment/{form.slug || generateSlug()} and /fleet/{form.slug || generateSlug()}.
             </div>
           </div>
@@ -193,7 +194,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
                 gap: 8,
                 fontSize: 13,
                 fontWeight: 600,
-                color: '#374151',
+                color: 'var(--ink)',
                 marginTop: 24,
                 cursor: form.fuel_type === 'diesel' ? 'pointer' : 'not-allowed',
                 opacity: form.fuel_type === 'diesel' ? 1 : 0.4,
@@ -204,7 +205,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
                 checked={!!form.takes_def}
                 disabled={form.fuel_type !== 'diesel'}
                 onChange={(e) => setForm({...form, takes_def: e.target.checked})}
-                style={{margin: 0, width: 16, height: 16, padding: 0, border: '1px solid #d1d5db'}}
+                style={{margin: 0, width: 16, height: 16, padding: 0, border: '1px solid var(--border-strong)'}}
               />
               Takes DEF
             </label>
@@ -247,7 +248,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
         <div
           style={{
             padding: '12px 20px',
-            borderTop: '1px solid #e5e7eb',
+            borderTop: '1px solid var(--border)',
             display: 'flex',
             gap: 8,
             justifyContent: 'flex-end',
@@ -257,7 +258,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
             onClick={onClose}
             style={{
               ...recordSecondaryButton,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
             }}
           >
             Cancel
@@ -275,7 +276,7 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
             {saving ? 'Creating…' : 'Create Equipment'}
           </button>
         </div>
-        <div style={{padding: '8px 20px 16px', fontSize: 11, color: '#9ca3af', textAlign: 'center'}}>
+        <div style={{padding: '8px 20px 16px', fontSize: 11, color: 'var(--ink-faint)', textAlign: 'center'}}>
           After creation, add service intervals + every-fillup items from the detail page.
         </div>
       </div>

@@ -31,7 +31,7 @@ function mintTiInstanceId() {
 
 const wfBg = {
   minHeight: '100vh',
-  background: 'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)',
+  background: 'var(--bg-page)',
   padding: '1rem',
   fontFamily: 'inherit',
 };
@@ -46,15 +46,15 @@ const inpS = {
   fontFamily: 'inherit',
   fontSize: 14,
   padding: '10px 12px',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   borderRadius: 8,
   width: '100%',
   outline: 'none',
   background: 'white',
-  color: '#111827',
+  color: 'var(--ink)',
   boxSizing: 'border-box',
 };
-const lblS = {display: 'block', fontSize: 13, color: '#374151', marginBottom: 5, fontWeight: 500};
+const lblS = {display: 'block', fontSize: 13, color: 'var(--ink)', marginBottom: 5, fontWeight: 500};
 
 const TasksWebform = ({sb, sessionSubmitter}) => {
   const [assigneeOptions, setAssigneeOptions] = React.useState([]);
@@ -146,7 +146,7 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
   const logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
       <div style={{fontSize: 18, fontWeight: 800, color: '#085041', letterSpacing: -0.3}}>{'🌾 WCF Planner'}</div>
-      <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Submit a Task</div>
+      <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>Submit a Task</div>
     </div>
   );
 
@@ -160,7 +160,7 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
             style={{
               fontSize: 20,
               fontWeight: 700,
-              color: doneState === 'queued' ? '#92400e' : '#111827',
+              color: doneState === 'queued' ? '#92400e' : 'var(--ink)',
               marginBottom: 8,
             }}
           >
@@ -215,9 +215,9 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
               width: '100%',
               padding: 14,
               borderRadius: 10,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 15,
               fontWeight: 600,
               cursor: 'pointer',
@@ -260,11 +260,12 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
 
         <div
           style={{
-            background: '#ecfdf5',
-            border: '1px solid #a7f3d0',
+            background: 'white',
+            border: '1px solid var(--border)',
+            borderLeft: '3px solid #085041',
             borderRadius: 10,
             fontSize: 12,
-            color: '#085041',
+            color: 'var(--ink)',
             padding: '10px 16px',
             marginBottom: 16,
           }}
@@ -324,7 +325,7 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
           <label style={lblS}>Photo (optional)</label>
           {photoFile ? (
             <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-              <span style={{fontSize: 12, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis'}}>
+              <span style={{fontSize: 12, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis'}}>
                 📎 {photoFile.name || 'photo.jpg'} ({Math.round((photoFile.size || 0) / 1024)} KB)
               </span>
               <button
@@ -332,11 +333,11 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
                 onClick={() => setPhotoFile(null)}
                 style={{
                   background: 'none',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid var(--border-strong)',
                   borderRadius: 6,
                   padding: '4px 10px',
                   fontSize: 12,
-                  color: '#374151',
+                  color: 'var(--ink)',
                   cursor: 'pointer',
                   fontFamily: 'inherit',
                 }}
@@ -355,7 +356,9 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
               style={{...inpS, padding: '8px 10px'}}
             />
           )}
-          <div style={{fontSize: 11, color: '#6b7280', marginTop: 4}}>One photo max. Compressed before upload.</div>
+          <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 4}}>
+            One photo max. Compressed before upload.
+          </div>
         </div>
 
         {err && (

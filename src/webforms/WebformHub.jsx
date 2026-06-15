@@ -454,7 +454,7 @@ const WebformHub = ({
     boxShadow: '0 1px 3px rgba(0,0,0,.08)',
   };
   const YN = ({val, onChange}) => (
-    <div style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #d1d5db'}}>
+    <div style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-strong)'}}>
       {[
         {v: true, l: 'Yes'},
         {v: false, l: 'No'},
@@ -471,8 +471,8 @@ const WebformHub = ({
             fontSize: 13,
             fontWeight: 500,
             cursor: 'pointer',
-            background: val === v ? (v ? '#085041' : '#374151') : 'white',
-            color: val === v ? 'white' : '#6b7280',
+            background: 'white',
+            color: val === v ? 'var(--brand)' : 'var(--ink-muted)',
           }}
         >
           {l}
@@ -481,10 +481,10 @@ const WebformHub = ({
     </div>
   );
   const Toggle = ({opts, val, onChange}) => (
-    <div style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #d1d5db'}}>
+    <div style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-strong)'}}>
       {opts.map((o, i) => (
         <React.Fragment key={o}>
-          {i > 0 && <div style={{width: 1, background: '#d1d5db', flexShrink: 0}} />}
+          {i > 0 && <div style={{width: 1, background: 'var(--border-strong)', flexShrink: 0}} />}
           <button
             type="button"
             onClick={() => onChange(val === o ? '' : o)}
@@ -496,8 +496,8 @@ const WebformHub = ({
               fontSize: 12,
               fontWeight: 500,
               cursor: 'pointer',
-              background: val === o ? '#085041' : 'white',
-              color: val === o ? 'white' : '#6b7280',
+              background: 'white',
+              color: val === o ? 'var(--brand)' : 'var(--ink-muted)',
             }}
           >
             {o}
@@ -1343,7 +1343,7 @@ const WebformHub = ({
 
   const wfBg = {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 100%)',
+    background: 'var(--bg-page)',
     padding: '1rem',
     fontFamily: 'inherit',
   };
@@ -1504,7 +1504,7 @@ const WebformHub = ({
             })}
             className="hoverable-tile"
             style={{
-              background: '#fef3c7',
+              background: 'white',
               borderRadius: 12,
               padding: '16px 18px',
               marginBottom: 10,
@@ -1534,7 +1534,7 @@ const WebformHub = ({
               })}
               className="hoverable-tile"
               style={{
-                background: '#eff6ff',
+                background: 'white',
                 borderRadius: 12,
                 padding: '16px 18px',
                 marginBottom: 10,
@@ -1565,7 +1565,7 @@ const WebformHub = ({
               {...openableProps(() => navigate('/cattle/log'))}
               className="hoverable-tile"
               style={{
-                background: '#ecfdf5',
+                background: 'white',
                 borderRadius: 12,
                 padding: '16px 18px',
                 marginBottom: 16,
@@ -1595,7 +1595,7 @@ const WebformHub = ({
             {...openableProps(() => navigate('/dailys/tasks'))}
             className="hoverable-tile"
             style={{
-              background: '#f0fdfa',
+              background: 'white',
               borderRadius: 12,
               padding: '16px 18px',
               marginBottom: 16,
@@ -1639,12 +1639,12 @@ const WebformHub = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
-                border: '1px solid #e5e7eb',
+                border: '1px solid var(--border)',
               }}
             >
               <PlannerIcon iconKey={f.iconKey} size={22} />
-              <div style={{flex: 1, fontSize: 15, fontWeight: 600, color: '#111827'}}>{f.label}</div>
-              <div style={{color: '#9ca3af', fontSize: 18}}>›</div>
+              <div style={{flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--ink)'}}>{f.label}</div>
+              <div style={{color: 'var(--ink-faint)', fontSize: 18}}>›</div>
             </div>
           ))}
         </div>
@@ -1677,7 +1677,7 @@ const WebformHub = ({
             iconKey={ANIMAL_ICON_KEYS.broiler}
             size={22}
             gap={8}
-            style={{fontSize: 17, fontWeight: 700, color: '#085041', marginBottom: 16}}
+            style={{fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 16}}
           >
             Broiler Daily Report
           </PlannerIconLabel>
@@ -1800,11 +1800,11 @@ const WebformHub = ({
           {allowAddGroup('broiler-dailys') && (
             <div>
               {extraBroilerGroups.map((eg, ei) => (
-                <div key={ei} style={{...sectionStyle, border: '1px solid #a7f3d0', marginTop: 0}}>
+                <div key={ei} style={{...sectionStyle, border: '1px solid var(--border)', marginTop: 0}}>
                   <div
                     style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}
                   >
-                    <div style={{fontSize: 13, fontWeight: 600, color: '#085041'}}>Additional Group {ei + 2}</div>
+                    <div style={{fontSize: 13, fontWeight: 600, color: 'var(--ink)'}}>Additional Group {ei + 2}</div>
                     <button
                       type="button"
                       onClick={() => setExtraBroilerGroups((p) => p.filter((_, i) => i !== ei))}
@@ -1957,9 +1957,9 @@ const WebformHub = ({
                   width: '100%',
                   padding: 12,
                   borderRadius: 10,
-                  border: '2px dashed #fde68a',
+                  border: '2px dashed var(--border)',
                   background: 'transparent',
-                  color: '#78350f',
+                  color: 'var(--ink)',
                   fontSize: 14,
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2044,7 +2044,7 @@ const WebformHub = ({
             iconKey={ANIMAL_ICON_KEYS.layer}
             size={22}
             gap={8}
-            style={{fontSize: 17, fontWeight: 700, color: '#78350f', marginBottom: 16}}
+            style={{fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 16}}
           >
             Layer Daily Report
           </PlannerIconLabel>
@@ -2178,11 +2178,11 @@ const WebformHub = ({
           {allowAddGroup('layer-dailys') && (
             <div>
               {extraLayerGroups.map((eg, ei) => (
-                <div key={ei} style={{...sectionStyle, border: '1px solid #fde68a', marginTop: 0}}>
+                <div key={ei} style={{...sectionStyle, border: '1px solid var(--border)', marginTop: 0}}>
                   <div
                     style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}
                   >
-                    <div style={{fontSize: 13, fontWeight: 600, color: '#78350f'}}>Additional Group {ei + 2}</div>
+                    <div style={{fontSize: 13, fontWeight: 600, color: 'var(--ink)'}}>Additional Group {ei + 2}</div>
                     <button
                       type="button"
                       onClick={() => setExtraLayerGroups((p) => p.filter((_, i) => i !== ei))}
@@ -2344,9 +2344,9 @@ const WebformHub = ({
                   width: '100%',
                   padding: 12,
                   borderRadius: 10,
-                  border: '2px dashed #fde68a',
+                  border: '2px dashed var(--border)',
                   background: 'transparent',
-                  color: '#78350f',
+                  color: 'var(--ink)',
                   fontSize: 14,
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2427,7 +2427,7 @@ const WebformHub = ({
             iconKey={ANIMAL_ICON_KEYS.pig}
             size={22}
             gap={8}
-            style={{fontSize: 17, fontWeight: 700, color: '#1e40af', marginBottom: 16}}
+            style={{fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 16}}
           >
             Pig Daily Report
           </PlannerIconLabel>
@@ -2539,11 +2539,11 @@ const WebformHub = ({
           {allowAddGroup('pig-dailys') && (
             <div>
               {extraPigGroups.map((eg, ei) => (
-                <div key={ei} style={{...sectionStyle, border: '1px solid #bfdbfe', marginTop: 0}}>
+                <div key={ei} style={{...sectionStyle, border: '1px solid var(--border)', marginTop: 0}}>
                   <div
                     style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}
                   >
-                    <div style={{fontSize: 13, fontWeight: 600, color: '#1e40af'}}>Additional Group {ei + 2}</div>
+                    <div style={{fontSize: 13, fontWeight: 600, color: 'var(--ink)'}}>Additional Group {ei + 2}</div>
                     <button
                       type="button"
                       onClick={() => setExtraPigGroups((p) => p.filter((_, i) => i !== ei))}
@@ -2700,9 +2700,9 @@ const WebformHub = ({
                   width: '100%',
                   padding: 12,
                   borderRadius: 10,
-                  border: '2px dashed #fde68a',
+                  border: '2px dashed var(--border)',
                   background: 'transparent',
-                  color: '#78350f',
+                  color: 'var(--ink)',
                   fontSize: 14,
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2801,7 +2801,7 @@ const WebformHub = ({
           >
             {'\u2039 Back'}
           </button>
-          <div style={{fontSize: 17, fontWeight: 700, color: '#991b1b', marginBottom: 16}}>
+          <div style={{fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 16}}>
             {renderCattleIconLabel('Cattle Daily Report', {size: 22})}
           </div>
 
@@ -2965,9 +2965,9 @@ const WebformHub = ({
                   width: '100%',
                   padding: 10,
                   borderRadius: 8,
-                  border: '2px dashed #fca5a5',
+                  border: '2px dashed var(--border)',
                   background: 'transparent',
-                  color: '#991b1b',
+                  color: 'var(--ink)',
                   fontSize: 12,
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -3064,9 +3064,9 @@ const WebformHub = ({
                   width: '100%',
                   padding: 10,
                   borderRadius: 8,
-                  border: '2px dashed #fca5a5',
+                  border: '2px dashed var(--border)',
                   background: 'transparent',
-                  color: '#991b1b',
+                  color: 'var(--ink)',
                   fontSize: 12,
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -3147,7 +3147,7 @@ const WebformHub = ({
               padding: 14,
               border: 'none',
               borderRadius: 10,
-              background: '#991b1b',
+              background: '#085041',
               color: 'white',
               fontSize: 15,
               fontWeight: 600,
@@ -3190,7 +3190,7 @@ const WebformHub = ({
             iconKey={ANIMAL_ICON_KEYS.egg}
             size={22}
             gap={8}
-            style={{fontSize: 17, fontWeight: 700, color: '#78350f', marginBottom: 16}}
+            style={{fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 16}}
           >
             Egg Collection Report
           </PlannerIconLabel>
@@ -3336,7 +3336,7 @@ const WebformHub = ({
             iconKey={ANIMAL_ICON_KEYS.sheep}
             size={22}
             gap={8}
-            style={{fontSize: 17, fontWeight: 700, color: '#0f766e', marginBottom: 16}}
+            style={{fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 16}}
           >
             Sheep Daily Report
           </PlannerIconLabel>
@@ -3468,9 +3468,9 @@ const WebformHub = ({
                       width: '100%',
                       padding: 10,
                       borderRadius: 8,
-                      border: '2px dashed #5eead4',
+                      border: '2px dashed var(--border)',
                       background: 'transparent',
-                      color: '#0f766e',
+                      color: 'var(--ink)',
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -3573,9 +3573,9 @@ const WebformHub = ({
                       width: '100%',
                       padding: 10,
                       borderRadius: 8,
-                      border: '2px dashed #d8b4fe',
+                      border: '2px dashed var(--border)',
                       background: 'transparent',
-                      color: '#6b21a8',
+                      color: 'var(--ink)',
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -3653,7 +3653,7 @@ const WebformHub = ({
               padding: 14,
               border: 'none',
               borderRadius: 10,
-              background: '#0f766e',
+              background: '#085041',
               color: 'white',
               fontSize: 15,
               fontWeight: 600,

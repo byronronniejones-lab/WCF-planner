@@ -111,13 +111,13 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
   const inpS = {
     fontSize: 13,
     padding: '7px 10px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 6,
     fontFamily: 'inherit',
     width: '100%',
     boxSizing: 'border-box',
   };
-  const lbl = {fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3, fontWeight: 500};
+  const lbl = {fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3, fontWeight: 500};
 
   return (
     <div
@@ -148,7 +148,7 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
         <div
           style={{
             padding: '14px 20px',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid var(--border)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -159,7 +159,7 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
           </div>
           <button
             onClick={onClose}
-            style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af'}}
+            style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--ink-faint)'}}
           >
             {'×'}
           </button>
@@ -240,7 +240,13 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
                       index: i,
                       total: (form.photos || []).length,
                     })}
-                    style={{width: 80, height: 80, objectFit: 'cover', borderRadius: 6, border: '1px solid #e5e7eb'}}
+                    style={{
+                      width: 80,
+                      height: 80,
+                      objectFit: 'cover',
+                      borderRadius: 6,
+                      border: '1px solid var(--border)',
+                    }}
                   />
                   <button
                     type="button"
@@ -276,7 +282,7 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
               }}
               disabled={uploading}
             />
-            {uploading && <div style={{fontSize: 11, color: '#9ca3af', marginTop: 4}}>Uploading{'…'}</div>}
+            {uploading && <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 4}}>Uploading{'…'}</div>}
           </div>
           {err && (
             <div
@@ -296,7 +302,7 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
         <div
           style={{
             padding: '12px 20px',
-            borderTop: '1px solid #e5e7eb',
+            borderTop: '1px solid var(--border)',
             display: 'flex',
             gap: 8,
             justifyContent: 'flex-end',
@@ -306,7 +312,7 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
             onClick={onClose}
             style={{
               ...recordSecondaryButton,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
             }}
           >
             Cancel

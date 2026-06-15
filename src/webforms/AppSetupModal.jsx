@@ -20,7 +20,7 @@ const overlayS = {
 const cardS = {
   background: 'white',
   borderRadius: 14,
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--border)',
   boxShadow: '0 14px 40px rgba(15,23,42,0.18)',
   padding: '20px 22px 22px',
   maxWidth: 520,
@@ -28,8 +28,14 @@ const cardS = {
   fontFamily: 'inherit',
 };
 
-const sectionTitle = {fontSize: 13, fontWeight: 700, color: '#111827', marginTop: 14, marginBottom: 6};
-const labelS = {fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4};
+const sectionTitle = {fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginTop: 14, marginBottom: 6};
+const labelS = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: 'var(--ink-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+};
 const urlBoxS = {
   fontFamily: 'monospace',
   fontSize: 13,
@@ -41,8 +47,8 @@ const urlBoxS = {
   display: 'inline-block',
   marginTop: 4,
 };
-const olS = {paddingLeft: 18, margin: '4px 0 0', color: '#374151', fontSize: 13, lineHeight: 1.45};
-const ulS = {paddingLeft: 18, margin: '4px 0 0', color: '#374151', fontSize: 13, lineHeight: 1.45};
+const olS = {paddingLeft: 18, margin: '4px 0 0', color: 'var(--ink)', fontSize: 13, lineHeight: 1.45};
+const ulS = {paddingLeft: 18, margin: '4px 0 0', color: 'var(--ink)', fontSize: 13, lineHeight: 1.45};
 const calloutS = {
   marginTop: 14,
   background: '#fff7ed',
@@ -59,7 +65,7 @@ export default function AppSetupModal({onClose}) {
     <div style={overlayS} role="dialog" aria-modal="true" aria-label="App Setup" onClick={onClose}>
       <div style={cardS} onClick={(e) => e.stopPropagation()}>
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8}}>
-          <div style={{fontSize: 17, fontWeight: 800, color: '#111827'}}>App Setup</div>
+          <div style={{fontSize: 17, fontWeight: 800, color: 'var(--ink)'}}>App Setup</div>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -68,7 +74,7 @@ export default function AppSetupModal({onClose}) {
               border: 'none',
               fontSize: 22,
               lineHeight: 1,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               cursor: 'pointer',
               padding: '0 4px',
               fontFamily: 'inherit',
@@ -78,7 +84,7 @@ export default function AppSetupModal({onClose}) {
           </button>
         </div>
 
-        <div style={{fontSize: 13, color: '#374151', lineHeight: 1.5}}>
+        <div style={{fontSize: 13, color: 'var(--ink)', lineHeight: 1.5}}>
           Open the right URL once, then add it to your home screen so it launches like an app.
         </div>
 

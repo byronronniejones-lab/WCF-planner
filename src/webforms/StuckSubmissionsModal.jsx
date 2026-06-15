@@ -66,11 +66,11 @@ export default function StuckSubmissionsModal({
         }}
       >
         <div style={{fontSize: 20, marginBottom: 6}}>⚠️</div>
-        <div style={{fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 4}}>
+        <div style={{fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 4}}>
           {rows.length} stuck {formLabel}
           {rows.length === 1 ? '' : 's'}
         </div>
-        <div style={{fontSize: 12, color: '#4b5563', marginBottom: 14, lineHeight: 1.5}}>
+        <div style={{fontSize: 12, color: 'var(--ink-muted)', marginBottom: 14, lineHeight: 1.5}}>
           These submissions failed 3 sync attempts and are sitting on this device. Retry to send them now, or discard if
           you've already entered the data another way.
         </div>
@@ -91,11 +91,11 @@ export default function StuckSubmissionsModal({
                   color: '#78716c',
                 }}
               >
-                <div style={{fontWeight: 600, color: '#111827', marginBottom: 2}}>{summary}</div>
+                <div style={{fontWeight: 600, color: 'var(--ink)', marginBottom: 2}}>{summary}</div>
                 <div style={{marginBottom: 4}}>
                   Last error: <span style={{color: '#b91c1c'}}>{truncate(row.last_error || 'unknown', 80)}</span>
                 </div>
-                <div style={{marginBottom: 8, fontSize: 11, color: '#9ca3af'}}>
+                <div style={{marginBottom: 8, fontSize: 11, color: 'var(--ink-faint)'}}>
                   Queued {fmtTs(row.created_at)} · Last try {fmtTs(row.last_attempt_at)} · {row.retry_count} attempts
                 </div>
                 <div style={{display: 'flex', gap: 8}}>
@@ -122,7 +122,7 @@ export default function StuckSubmissionsModal({
                     style={{
                       padding: '6px 14px',
                       borderRadius: 6,
-                      border: '1px solid #d1d5db',
+                      border: '1px solid var(--border-strong)',
                       background: 'white',
                       color: '#b91c1c',
                       fontSize: 12,
@@ -145,9 +145,9 @@ export default function StuckSubmissionsModal({
             style={{
               padding: '8px 18px',
               borderRadius: 7,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 13,
               fontWeight: 500,
               cursor: 'pointer',

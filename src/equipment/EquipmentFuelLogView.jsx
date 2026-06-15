@@ -222,7 +222,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
   const inpS = {
     fontSize: 13,
     padding: '7px 10px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 6,
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -234,9 +234,9 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
   const savedViewGhostBtnS = {
     padding: '6px 12px',
     borderRadius: 6,
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     background: 'white',
-    color: '#374151',
+    color: 'var(--ink)',
     fontSize: 12,
     fontWeight: 600,
     cursor: 'pointer',
@@ -249,7 +249,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
     alignItems: 'center',
     gap: 4,
     fontSize: 12,
-    color: '#374151',
+    color: 'var(--ink)',
     cursor: 'pointer',
   };
 
@@ -259,7 +259,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
         data-equipment-fuel-log-saved-views-row
         style={{
           background: 'white',
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--border)',
           borderRadius: 10,
           padding: '10px 14px',
           marginBottom: 8,
@@ -269,7 +269,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
           flexWrap: 'wrap',
         }}
       >
-        <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+        <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
         {savedViewsError ? (
           <span
             style={{fontSize: 12, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 8}}
@@ -285,9 +285,9 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
                 fontSize: 11,
                 padding: '3px 10px',
                 borderRadius: 6,
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 background: 'white',
-                color: '#374151',
+                color: 'var(--ink)',
                 cursor: savedViewsLoading ? 'not-allowed' : 'pointer',
                 fontFamily: 'inherit',
                 fontWeight: 600,
@@ -433,7 +433,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
       <div
         style={{
           background: 'white',
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--border)',
           borderRadius: 10,
           padding: '12px 16px',
           marginBottom: 14,
@@ -484,9 +484,9 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
           style={{
             padding: '7px 14px',
             borderRadius: 6,
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--border-strong)',
             background: 'white',
-            color: '#374151',
+            color: 'var(--ink)',
             fontSize: 12,
             cursor: 'pointer',
             fontFamily: 'inherit',
@@ -501,9 +501,9 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
           style={{
             padding: '7px 14px',
             borderRadius: 6,
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--border-strong)',
             background: 'white',
-            color: '#374151',
+            color: 'var(--ink)',
             fontSize: 12,
             fontWeight: 600,
             cursor: 'pointer',
@@ -519,9 +519,9 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
           style={{
             padding: '7px 14px',
             borderRadius: 6,
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--border-strong)',
             background: 'white',
-            color: '#374151',
+            color: 'var(--ink)',
             fontSize: 12,
             fontWeight: 600,
             cursor: 'pointer',
@@ -537,7 +537,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
       <div
         style={{
           background: 'white',
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--border)',
           borderRadius: 10,
           padding: '12px 18px',
           marginBottom: 14,
@@ -548,18 +548,18 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
         }}
       >
         <div>
-          <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Entries</div>
-          <div style={{fontSize: 18, fontWeight: 700, color: '#111827'}}>{totals.count.toLocaleString()}</div>
+          <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>Entries</div>
+          <div style={{fontSize: 18, fontWeight: 700, color: 'var(--ink)'}}>{totals.count.toLocaleString()}</div>
         </div>
         <div>
-          <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Gallons</div>
+          <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>Gallons</div>
           <div style={{fontSize: 18, fontWeight: 700, color: '#1e40af'}}>
             {Math.round(totals.gallons).toLocaleString()}
           </div>
         </div>
         {totals.def_gallons > 0 && (
           <div>
-            <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>DEF Gal</div>
+            <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>DEF Gal</div>
             <div style={{fontSize: 18, fontWeight: 700, color: '#a16207'}}>
               {Math.round(totals.def_gallons).toLocaleString()}
             </div>
@@ -567,7 +567,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
         )}
         {totals.cost > 0 && (
           <div>
-            <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase'}}>Cost</div>
+            <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase'}}>Cost</div>
             <div style={{fontSize: 18, fontWeight: 700, color: '#065f46'}}>
               ${Math.round(totals.cost).toLocaleString()}
             </div>
@@ -577,21 +577,21 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
 
       <div
         data-mobile-hscroll="1"
-        style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden'}}
+        style={{background: 'white', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden'}}
       >
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: '90px 1fr 90px 70px 60px 80px 110px 1fr',
             columnGap: 14,
-            background: '#f9fafb',
+            background: 'var(--surface-2)',
             padding: '10px 14px',
             fontSize: 10,
             fontWeight: 700,
-            color: '#6b7280',
+            color: 'var(--ink-muted)',
             textTransform: 'uppercase',
             letterSpacing: 0.5,
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid var(--border)',
             minWidth: 700,
           }}
         >
@@ -605,7 +605,7 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
           <div>Comments</div>
         </div>
         {filtered.length === 0 && (
-          <div style={{padding: '2rem', textAlign: 'center', color: '#9ca3af', fontSize: 13}}>
+          <div style={{padding: '2rem', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13}}>
             No fueling entries match the current filters.
           </div>
         )}
@@ -626,16 +626,16 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
                 columnGap: 14,
                 padding: '6px 14px',
                 fontSize: 12,
-                borderBottom: i < Math.min(500, filtered.length) - 1 ? '1px solid #f3f4f6' : 'none',
+                borderBottom: i < Math.min(500, filtered.length) - 1 ? '1px solid var(--divider)' : 'none',
                 fontVariantNumeric: 'tabular-nums',
                 minWidth: 700,
               }}
             >
-              <div style={{color: '#111827'}}>{fmt(f.date)}</div>
+              <div style={{color: 'var(--ink)'}}>{fmt(f.date)}</div>
               <div
                 style={{
                   fontWeight: 600,
-                  color: '#111827',
+                  color: 'var(--ink)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -643,18 +643,18 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
               >
                 {eq ? eq.name : f.equipment_id}
               </div>
-              <div style={{color: '#6b7280'}}>{f.fuel_type || '—'}</div>
+              <div style={{color: 'var(--ink-muted)'}}>{f.fuel_type || '—'}</div>
               <div style={{textAlign: 'right', color: '#1e40af', fontWeight: 600}}>
                 {f.gallons ? Math.round(f.gallons * 10) / 10 : '—'}
               </div>
               <div style={{textAlign: 'right', color: '#a16207', fontWeight: 600}}>
                 {f.def_gallons ? Math.round(f.def_gallons * 10) / 10 : '—'}
               </div>
-              <div style={{textAlign: 'right', color: '#6b7280'}}>{reading}</div>
-              <div style={{color: '#6b7280'}}>{f.team_member || '—'}</div>
+              <div style={{textAlign: 'right', color: 'var(--ink-muted)'}}>{reading}</div>
+              <div style={{color: 'var(--ink-muted)'}}>{f.team_member || '—'}</div>
               <div
                 style={{
-                  color: '#6b7280',
+                  color: 'var(--ink-muted)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -668,7 +668,13 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
         })}
         {filtered.length > 500 && (
           <div
-            style={{padding: '10px 14px', background: '#f9fafb', color: '#9ca3af', fontSize: 11, textAlign: 'center'}}
+            style={{
+              padding: '10px 14px',
+              background: 'var(--surface-2)',
+              color: 'var(--ink-faint)',
+              fontSize: 11,
+              textAlign: 'center',
+            }}
           >
             Showing first 500 of {filtered.length.toLocaleString()} entries. Narrow the filters to see more.
           </div>

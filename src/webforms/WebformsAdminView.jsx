@@ -88,12 +88,12 @@ function TeamAvailabilityEditor({loadUsers}) {
     gap: 10,
     minHeight: 54,
     padding: '10px 12px',
-    border: '1px solid #e5e7eb',
+    border: '1px solid var(--border)',
     borderRadius: 8,
     background: '#ffffff',
     boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
     fontSize: 12,
-    color: '#1f2937',
+    color: 'var(--ink)',
     cursor: 'pointer',
     transition: 'border-color 120ms ease, box-shadow 120ms ease, background 120ms ease',
   };
@@ -133,7 +133,7 @@ function TeamAvailabilityEditor({loadUsers}) {
       <div
         style={{
           padding: '14px 16px 12px',
-          borderBottom: '1px solid #e5e7eb',
+          borderBottom: '1px solid var(--border)',
           display: 'flex',
           justifyContent: 'space-between',
           gap: 12,
@@ -189,7 +189,9 @@ function TeamAvailabilityEditor({loadUsers}) {
         </div>
         <div data-availability-assignee-grid="tasks-public" style={assigneeGridStyle}>
           {eligibleProfiles.length === 0 ? (
-            <span style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No eligible planner users yet.</span>
+            <span style={{fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+              No eligible planner users yet.
+            </span>
           ) : (
             eligibleProfiles.map((u) => {
               const isHidden = hiddenAssigneeIds.has(u.id);
@@ -202,8 +204,8 @@ function TeamAvailabilityEditor({loadUsers}) {
                   data-availability-assignee-hidden={isHidden ? '1' : '0'}
                   style={{
                     ...rowStyle,
-                    borderColor: isHidden ? '#e5e7eb' : '#b7d7ca',
-                    background: isHidden ? '#f8fafc' : '#ffffff',
+                    borderColor: isHidden ? 'var(--border)' : '#b7d7ca',
+                    background: isHidden ? 'var(--surface-2)' : '#ffffff',
                     opacity: busy ? 0.72 : 1,
                     cursor: busy ? 'wait' : 'pointer',
                   }}
@@ -229,7 +231,7 @@ function TeamAvailabilityEditor({loadUsers}) {
                     <span
                       style={{
                         display: 'block',
-                        color: isHidden ? '#64748b' : '#111827',
+                        color: isHidden ? '#64748b' : 'var(--ink)',
                         fontSize: 12,
                         fontWeight: 700,
                         overflow: 'hidden',
@@ -430,7 +432,7 @@ export default function WebformsAdminView({
       <div
         style={{
           background: 'white',
-          borderBottom: '1px solid #e5e7eb',
+          borderBottom: '1px solid var(--border)',
           padding: '8px 1.25rem',
           display: 'flex',
           gap: 6,
@@ -443,19 +445,19 @@ export default function WebformsAdminView({
           style={{
             padding: '7px 12px',
             borderRadius: 8,
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--border-strong)',
             cursor: 'pointer',
             fontSize: 12,
             fontWeight: 500,
             background: 'white',
-            color: '#6b7280',
+            color: 'var(--ink-muted)',
             fontFamily: 'inherit',
             whiteSpace: 'nowrap',
           }}
         >
           ⌂ Home
         </button>
-        <div style={{width: 1, height: 20, background: '#e5e7eb', margin: '0 4px'}} />
+        <div style={{width: 1, height: 20, background: 'var(--border)', margin: '0 4px'}} />
         {[
           {id: 'webforms', label: 'Webforms'},
           {id: 'equipment', label: 'Equipment'},
@@ -548,21 +550,21 @@ export default function WebformsAdminView({
                       setEditWfId(null);
                       setAddingTo(null);
                     }}
-                    style={{fontSize: 12, color: '#1d4ed8', background: 'none', border: 'none', cursor: 'pointer'}}
+                    style={{fontSize: 12, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer'}}
                   >
                     ← All webforms
                   </button>
-                  <span style={{color: '#d1d5db'}}>/</span>
+                  <span style={{color: 'var(--border-strong)'}}>/</span>
                   <span style={{fontSize: 14, fontWeight: 700}}>{currentWf.name}</span>
                 </div>
                 <div
                   style={{
-                    background: '#f9fafb',
-                    border: '1px solid #e5e7eb',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: 10,
                     padding: '14px 16px',
                     fontSize: 12,
-                    color: '#4b5563',
+                    color: 'var(--ink-muted)',
                     lineHeight: 1.5,
                   }}
                 >
@@ -581,11 +583,11 @@ export default function WebformsAdminView({
                       setEditWfId(null);
                       setAddingTo(null);
                     }}
-                    style={{fontSize: 12, color: '#1d4ed8', background: 'none', border: 'none', cursor: 'pointer'}}
+                    style={{fontSize: 12, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer'}}
                   >
                     ← All webforms
                   </button>
-                  <span style={{color: '#d1d5db'}}>/</span>
+                  <span style={{color: 'var(--border-strong)'}}>/</span>
                   <span style={{fontSize: 14, fontWeight: 700}}>{currentWf.name}</span>
                 </div>
                 <div
@@ -601,7 +603,7 @@ export default function WebformsAdminView({
                     gap: 10,
                   }}
                 >
-                  <span style={{color: '#6b7280'}}>Live URL:</span>
+                  <span style={{color: 'var(--ink-muted)'}}>Live URL:</span>
                   <strong style={{color: '#085041'}}>wcfplanner.com/dailys</strong>
                   <a href="/dailys" target="_blank" style={{color: '#085041', fontSize: 11, marginLeft: 'auto'}}>
                     Open form →
@@ -615,7 +617,7 @@ export default function WebformsAdminView({
 
                 {/* Sections header */}
                 <div style={{marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                  <div style={{fontSize: 13, fontWeight: 700, color: '#111827'}}>Form Sections & Fields</div>
+                  <div style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)'}}>Form Sections & Fields</div>
                   <button
                     onClick={addSection}
                     style={{
@@ -638,7 +640,7 @@ export default function WebformsAdminView({
                     key={sec.id}
                     style={{
                       background: 'white',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid var(--border)',
                       borderRadius: 10,
                       marginBottom: 12,
                       overflow: 'hidden',
@@ -648,11 +650,11 @@ export default function WebformsAdminView({
                     <div
                       style={{
                         padding: '10px 14px',
-                        background: sec.system ? '#f0fdf9' : '#f9fafb',
+                        background: sec.system ? '#f0fdf9' : 'var(--surface-2)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
-                        borderBottom: '1px solid #e5e7eb',
+                        borderBottom: '1px solid var(--border)',
                       }}
                     >
                       <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
@@ -663,7 +665,7 @@ export default function WebformsAdminView({
                             border: 'none',
                             cursor: 'pointer',
                             fontSize: 10,
-                            color: '#9ca3af',
+                            color: 'var(--ink-faint)',
                             lineHeight: 1,
                             padding: 0,
                             opacity: si === 0 ? 0.3 : 1,
@@ -678,7 +680,7 @@ export default function WebformsAdminView({
                             border: 'none',
                             cursor: 'pointer',
                             fontSize: 10,
-                            color: '#9ca3af',
+                            color: 'var(--ink-faint)',
                             lineHeight: 1,
                             padding: 0,
                             opacity: si === currentWf.sections.length - 1 ? 0.3 : 1,
@@ -716,7 +718,7 @@ export default function WebformsAdminView({
                           style={{
                             fontWeight: 600,
                             fontSize: 13,
-                            color: '#111827',
+                            color: 'var(--ink)',
                             flex: 1,
                             display: 'flex',
                             alignItems: 'center',
@@ -746,7 +748,7 @@ export default function WebformsAdminView({
                               }}
                               style={{
                                 fontSize: 11,
-                                color: '#9ca3af',
+                                color: 'var(--ink-faint)',
                                 background: 'none',
                                 border: 'none',
                                 cursor: 'pointer',
@@ -768,7 +770,7 @@ export default function WebformsAdminView({
                             fontSize: 11,
                             padding: '3px 10px',
                             borderRadius: 5,
-                            border: '1px solid #d1d5db',
+                            border: '1px solid var(--border-strong)',
                             background: 'white',
                             color: '#085041',
                             cursor: 'pointer',
@@ -796,14 +798,16 @@ export default function WebformsAdminView({
 
                     {/* Add field form */}
                     {addingTo === si && (
-                      <div style={{padding: '12px 14px', background: '#f0f7ff', borderBottom: '1px solid #e5e7eb'}}>
+                      <div
+                        style={{padding: '12px 14px', background: '#f0f7ff', borderBottom: '1px solid var(--border)'}}
+                      >
                         <div style={{fontSize: 12, fontWeight: 600, color: '#1d4ed8', marginBottom: 10}}>
                           Add field to "{sec.title}"
                         </div>
                         <InlineNotice notice={wfFieldNotice} onDismiss={() => setWfFieldNotice(null)} />
                         <div style={{display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 10}}>
                           <div>
-                            <label style={{fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3}}>
+                            <label style={{fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3}}>
                               Label *
                             </label>
                             <input
@@ -814,7 +818,7 @@ export default function WebformsAdminView({
                             />
                           </div>
                           <div>
-                            <label style={{fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3}}>
+                            <label style={{fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3}}>
                               Type
                             </label>
                             <select
@@ -832,7 +836,7 @@ export default function WebformsAdminView({
                         </div>
                         {wfFieldForm.type === 'button_toggle' && (
                           <div style={{marginBottom: 10}}>
-                            <label style={{fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 3}}>
+                            <label style={{fontSize: 11, color: 'var(--ink-muted)', display: 'block', marginBottom: 3}}>
                               Button options (min 2)
                             </label>
                             <div style={{display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6}}>
@@ -861,7 +865,7 @@ export default function WebformsAdminView({
                                       background: 'none',
                                       border: 'none',
                                       cursor: 'pointer',
-                                      color: '#6b7280',
+                                      color: 'var(--ink-muted)',
                                       fontSize: 12,
                                       padding: 0,
                                     }}
@@ -956,9 +960,9 @@ export default function WebformsAdminView({
                             style={{
                               padding: '6px 12px',
                               borderRadius: 6,
-                              border: '1px solid #d1d5db',
+                              border: '1px solid var(--border-strong)',
                               background: 'white',
-                              color: '#374151',
+                              color: 'var(--ink)',
                               fontSize: 12,
                               cursor: 'pointer',
                             }}
@@ -974,7 +978,7 @@ export default function WebformsAdminView({
                         style={{
                           padding: '12px 14px',
                           fontSize: 12,
-                          color: '#9ca3af',
+                          color: 'var(--ink-faint)',
                           textAlign: 'center',
                           fontStyle: 'italic',
                         }}
@@ -988,7 +992,7 @@ export default function WebformsAdminView({
                         key={f.id}
                         style={{
                           padding: '10px 14px',
-                          borderBottom: fi < sec.fields.length - 1 ? '1px solid #f3f4f6' : 'none',
+                          borderBottom: fi < sec.fields.length - 1 ? '1px solid var(--divider)' : 'none',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 8,
@@ -1004,7 +1008,7 @@ export default function WebformsAdminView({
                               border: 'none',
                               cursor: 'pointer',
                               fontSize: 10,
-                              color: '#9ca3af',
+                              color: 'var(--ink-faint)',
                               lineHeight: 1,
                               padding: 0,
                               opacity: fi === 0 || f.system ? 0.3 : 1,
@@ -1019,7 +1023,7 @@ export default function WebformsAdminView({
                               border: 'none',
                               cursor: 'pointer',
                               fontSize: 10,
-                              color: '#9ca3af',
+                              color: 'var(--ink-faint)',
                               lineHeight: 1,
                               padding: 0,
                               opacity: fi === sec.fields.length - 1 || f.system ? 0.3 : 1,
@@ -1054,7 +1058,7 @@ export default function WebformsAdminView({
                             />
                           ) : (
                             <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
-                              <span style={{fontSize: 13, fontWeight: 500, color: '#111827'}}>{f.label}</span>
+                              <span style={{fontSize: 13, fontWeight: 500, color: 'var(--ink)'}}>{f.label}</span>
                               {!f.system && (
                                 <button
                                   onClick={() => {
@@ -1063,7 +1067,7 @@ export default function WebformsAdminView({
                                   }}
                                   style={{
                                     fontSize: 11,
-                                    color: '#9ca3af',
+                                    color: 'var(--ink-faint)',
                                     background: 'none',
                                     border: 'none',
                                     cursor: 'pointer',
@@ -1116,7 +1120,7 @@ export default function WebformsAdminView({
                               </span>
                             )}
                             {f.type === 'button_toggle' && f.options && (
-                              <span style={{fontSize: 10, color: '#9ca3af'}}>{f.options.join(' / ')}</span>
+                              <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>{f.options.join(' / ')}</span>
                             )}
                           </div>
                         </div>
@@ -1142,9 +1146,9 @@ export default function WebformsAdminView({
                                   fontSize: 11,
                                   padding: '3px 8px',
                                   borderRadius: 5,
-                                  border: '1px solid #d1d5db',
+                                  border: '1px solid var(--border-strong)',
                                   background: f.required ? '#fef3c7' : 'white',
-                                  color: f.required ? '#92400e' : '#6b7280',
+                                  color: f.required ? '#92400e' : 'var(--ink-muted)',
                                   cursor: 'pointer',
                                   fontWeight: f.required ? 600 : 400,
                                 }}
@@ -1157,9 +1161,9 @@ export default function WebformsAdminView({
                                   fontSize: 11,
                                   padding: '3px 8px',
                                   borderRadius: 5,
-                                  border: '1px solid #d1d5db',
+                                  border: '1px solid var(--border-strong)',
                                   background: 'white',
-                                  color: '#4b5563',
+                                  color: 'var(--ink-muted)',
                                   cursor: 'pointer',
                                 }}
                               >
@@ -1191,15 +1195,15 @@ export default function WebformsAdminView({
             {!editWfId && (
               <div>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
-                  <div style={{fontSize: 15, fontWeight: 700, color: '#111827'}}>Webforms</div>
+                  <div style={{fontSize: 15, fontWeight: 700, color: 'var(--ink)'}}>Webforms</div>
                   <button
                     onClick={() => setView('home')}
                     style={{
                       padding: '5px 14px',
                       borderRadius: 7,
-                      border: '1px solid #d1d5db',
+                      border: '1px solid var(--border-strong)',
                       background: 'white',
-                      color: '#374151',
+                      color: 'var(--ink)',
                       fontSize: 12,
                       fontWeight: 500,
                       cursor: 'pointer',
@@ -1208,7 +1212,7 @@ export default function WebformsAdminView({
                     ← Home
                   </button>
                 </div>
-                <div style={{fontSize: 12, color: '#6b7280', marginBottom: 16}}>
+                <div style={{fontSize: 12, color: 'var(--ink-muted)', marginBottom: 16}}>
                   Manage sections, fields, and team members. Changes go live immediately.
                 </div>
 
@@ -1259,7 +1263,7 @@ export default function WebformsAdminView({
                             {iconPrefix}
                             {wf.name}
                           </div>
-                          <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>{wf.description}</div>
+                          <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>{wf.description}</div>
                           <a
                             href={liveHref}
                             target="_blank"
@@ -1293,7 +1297,7 @@ export default function WebformsAdminView({
                           display: 'flex',
                           gap: 16,
                           fontSize: 12,
-                          color: '#6b7280',
+                          color: 'var(--ink-muted)',
                           alignItems: 'center',
                           flexWrap: 'wrap',
                         }}
@@ -1303,7 +1307,7 @@ export default function WebformsAdminView({
                             📋 {(wf.sections || []).length} sections · {totalFields} active fields
                           </span>
                         )}
-                        <span style={{color: '#9ca3af'}}>👤 master team roster (manage from list)</span>
+                        <span style={{color: 'var(--ink-faint)'}}>👤 master team roster (manage from list)</span>
                         {!isWeighIns && (
                           <label
                             style={{
@@ -1315,7 +1319,7 @@ export default function WebformsAdminView({
                               userSelect: 'none',
                             }}
                           >
-                            <span style={{color: '#374151', fontWeight: 500, fontSize: 11}}>Add Group:</span>
+                            <span style={{color: 'var(--ink)', fontWeight: 500, fontSize: 11}}>Add Group:</span>
                             <div
                               onClick={() => {
                                 const nb = {
@@ -1351,7 +1355,7 @@ export default function WebformsAdminView({
                                 }}
                               />
                             </div>
-                            <span style={{fontSize: 11, color: wf.allowAddGroup ? '#085041' : '#9ca3af'}}>
+                            <span style={{fontSize: 11, color: wf.allowAddGroup ? '#085041' : 'var(--ink-faint)'}}>
                               {wf.allowAddGroup ? 'On' : 'Off'}
                             </span>
                           </label>

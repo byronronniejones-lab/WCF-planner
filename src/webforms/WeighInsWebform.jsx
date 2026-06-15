@@ -1297,7 +1297,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
 
   const wfBg = {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)',
+    background: 'var(--bg-page)',
     padding: '1rem',
     fontFamily: 'inherit',
   };
@@ -1312,12 +1312,12 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     fontFamily: 'inherit',
     fontSize: 14,
     padding: '10px 12px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 8,
     width: '100%',
     outline: 'none',
     background: 'white',
-    color: '#111827',
+    color: 'var(--ink)',
     boxSizing: 'border-box',
   };
   const blacklistOptionS = {backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 700};
@@ -1327,14 +1327,14 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
     border: '1px solid #f87171',
     fontWeight: 700,
   };
-  const lblS = {display: 'block', fontSize: 13, color: '#374151', marginBottom: 5, fontWeight: 500};
+  const lblS = {display: 'block', fontSize: 13, color: 'var(--ink)', marginBottom: 5, fontWeight: 500};
   const logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
       <div
         style={{
           fontSize: 18,
           fontWeight: 800,
-          color: '#1e40af',
+          color: 'var(--ink)',
           letterSpacing: -0.3,
           display: 'inline-flex',
           alignItems: 'center',
@@ -1344,7 +1344,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
         <PlannerIcon iconKey="weighins" size={22} />
         <span>WCF Planner</span>
       </div>
-      <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Weigh-Ins</div>
+      <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>Weigh-Ins</div>
     </div>
   );
 
@@ -1412,7 +1412,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
           >
             No connection right now. Your draft is queued and will sync as soon as the device is back online.
           </div>
-          <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28, lineHeight: 1.6}}>
+          <div style={{fontSize: 14, color: 'var(--ink-muted)', marginBottom: 28, lineHeight: 1.6}}>
             {entries.length} {entries.length === 1 ? 'entry' : 'entries'} captured.
           </div>
           {species !== 'broiler' && (
@@ -1437,7 +1437,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                 padding: 14,
                 borderRadius: 10,
                 border: 'none',
-                background: '#1e40af',
+                background: '#085041',
                 color: 'white',
                 fontSize: 15,
                 fontWeight: 600,
@@ -1458,9 +1458,9 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               width: '100%',
               padding: 14,
               borderRadius: 10,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 15,
               fontWeight: 600,
               cursor: 'pointer',
@@ -1482,8 +1482,8 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
         <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '2rem', textAlign: 'center'}}>
           {logoEl}
           <div style={{fontSize: 56, marginBottom: 12}}>{'\u2705'}</div>
-          <div style={{fontSize: 20, fontWeight: 700, color: '#1e40af', marginBottom: 8}}>Session Complete</div>
-          <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28, lineHeight: 1.6}}>
+          <div style={{fontSize: 20, fontWeight: 700, color: 'var(--ink)', marginBottom: 8}}>Session Complete</div>
+          <div style={{fontSize: 14, color: 'var(--ink-muted)', marginBottom: 28, lineHeight: 1.6}}>
             {entries.length} {entries.length === 1 ? 'entry' : 'entries'} saved.
             {species === 'cattle' && cattleHerd && expectedTags > 0 && entries.length < expectedTags && (
               <div style={{marginTop: 8, color: '#92400e'}}>
@@ -1511,7 +1511,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                 padding: 14,
                 borderRadius: 10,
                 border: 'none',
-                background: '#1e40af',
+                background: '#085041',
                 color: 'white',
                 fontSize: 15,
                 fontWeight: 600,
@@ -1532,9 +1532,9 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               width: '100%',
               padding: 14,
               borderRadius: 10,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 15,
               fontWeight: 600,
               cursor: 'pointer',
@@ -1555,7 +1555,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
       <div style={wfBg}>
         <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '1rem'}}>
           {logoEl}
-          <div style={{fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 20}}>
+          <div style={{fontSize: 13, color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 20}}>
             Pick what you{'\u2019'}re weighing
           </div>
           {[
@@ -1600,7 +1600,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               })}
               className="hoverable-tile"
               style={{
-                background: s.bg,
+                background: 'white',
                 borderRadius: 12,
                 padding: '18px 20px',
                 marginBottom: 10,
@@ -1629,7 +1629,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#1e40af',
+                color: 'var(--ink-muted)',
                 fontSize: 13,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
@@ -1659,7 +1659,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
             style={{
               background: 'none',
               border: 'none',
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               fontSize: 13,
               cursor: 'pointer',
               marginBottom: 12,
@@ -1681,7 +1681,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
             }
             size={20}
             gap={8}
-            style={{fontSize: 17, fontWeight: 700, color: '#1e40af', marginBottom: 16}}
+            style={{fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 16}}
           >
             {species === 'cattle' ? 'Cattle' : species === 'sheep' ? 'Sheep' : species === 'pig' ? 'Pig' : 'Broiler'}{' '}
             Weigh-In
@@ -1689,7 +1689,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
 
           {drafts.length > 0 && (
             <div style={cardS}>
-              <div style={{fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8}}>
+              <div style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8}}>
                 Resume a draft session
               </div>
               {drafts.map((d) => (
@@ -1697,8 +1697,8 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   key={d.id}
                   {...openableProps(() => resumeSession(d))}
                   style={{
-                    background: '#f9fafb',
-                    border: '1px solid #e5e7eb',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: 8,
                     padding: '10px 12px',
                     marginBottom: 6,
@@ -1706,14 +1706,14 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   }}
                   className="hoverable-tile"
                 >
-                  <div style={{fontSize: 13, fontWeight: 600, color: '#111827'}}>
+                  <div style={{fontSize: 13, fontWeight: 600, color: 'var(--ink)'}}>
                     {d.species === 'cattle' || d.species === 'sheep'
                       ? d.herd || '?'
                       : d.species === 'broiler'
                         ? (d.batch_id || '?') + (d.broiler_week ? ' \u00b7 wk ' + d.broiler_week : '')
                         : d.batch_id || '?'}
                   </div>
-                  <div style={{fontSize: 11, color: '#6b7280'}}>
+                  <div style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                     {fmt(d.date)} {'\u00b7'} {d.team_member} {'\u00b7'} started {(d.started_at || '').slice(11, 16)}
                   </div>
                 </div>
@@ -1722,7 +1722,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
           )}
 
           <div style={cardS}>
-            <div style={{fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8}}>Start a new session</div>
+            <div style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8}}>Start a new session</div>
             <div style={{marginBottom: 10}}>
               <label style={lblS}>Date</label>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inpS} />
@@ -1743,7 +1743,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     <option value="bulls">Bulls</option>
                   </select>
                   {cattleHerd && expectedTags > 0 && (
-                    <div style={{fontSize: 11, color: '#1e40af', marginTop: 4}}>
+                    <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 4}}>
                       {expectedTags + ' cows in this herd to weigh'}
                     </div>
                   )}
@@ -1756,7 +1756,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     padding: 13,
                     borderRadius: 10,
                     border: 'none',
-                    background: busy || !teamMember || !cattleHerd ? '#9ca3af' : '#1e40af',
+                    background: busy || !teamMember || !cattleHerd ? '#9ca3af' : '#085041',
                     color: 'white',
                     fontSize: 15,
                     fontWeight: 600,
@@ -1790,7 +1790,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     padding: 13,
                     borderRadius: 10,
                     border: 'none',
-                    background: busy || !teamMember || !pigBatchId ? '#9ca3af' : '#1e40af',
+                    background: busy || !teamMember || !pigBatchId ? '#9ca3af' : '#085041',
                     color: 'white',
                     fontSize: 15,
                     fontWeight: 600,
@@ -1825,7 +1825,14 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                 </div>
                 <div style={{marginBottom: 10}}>
                   <label style={lblS}>Week *</label>
-                  <div style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #d1d5db'}}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      borderRadius: 8,
+                      overflow: 'hidden',
+                      border: '1px solid var(--border-strong)',
+                    }}
+                  >
                     {[4, 6].map((w) => (
                       <button
                         key={w}
@@ -1834,13 +1841,13 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         style={{
                           flex: 1,
                           padding: '10px 0',
-                          border: 'none',
+                          border: broilerWeek === w ? '1px solid var(--brand)' : '1px solid var(--border-strong)',
                           fontFamily: 'inherit',
                           fontSize: 13,
                           fontWeight: 600,
                           cursor: 'pointer',
-                          background: broilerWeek === w ? '#1e40af' : 'white',
-                          color: broilerWeek === w ? 'white' : '#6b7280',
+                          background: 'white',
+                          color: broilerWeek === w ? 'var(--brand)' : 'var(--ink-muted)',
                         }}
                       >
                         {'Week ' + w}
@@ -1856,7 +1863,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     padding: 13,
                     borderRadius: 10,
                     border: 'none',
-                    background: busy || !teamMember || !broilerBatchLabel ? '#9ca3af' : '#1e40af',
+                    background: busy || !teamMember || !broilerBatchLabel ? '#9ca3af' : '#085041',
                     color: 'white',
                     fontSize: 15,
                     fontWeight: 600,
@@ -1880,7 +1887,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     <option value="feeders">Feeders</option>
                   </select>
                   {sheepFlock && sheepExpectedTags > 0 && (
-                    <div style={{fontSize: 11, color: '#0f766e', marginTop: 4}}>
+                    <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 4}}>
                       {sheepExpectedTags + ' sheep in this flock to weigh'}
                     </div>
                   )}
@@ -1893,7 +1900,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     padding: 13,
                     borderRadius: 10,
                     border: 'none',
-                    background: busy || !teamMember || !sheepFlock ? '#9ca3af' : '#0f766e',
+                    background: busy || !teamMember || !sheepFlock ? '#9ca3af' : '#085041',
                     color: 'white',
                     fontSize: 15,
                     fontWeight: 600,
@@ -1936,20 +1943,20 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
           <div style={cardS}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10}}>
               <div>
-                <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>
                   {species === 'cattle' || species === 'sheep'
                     ? session.herd || '?'
                     : species === 'broiler'
                       ? (session.batch_id || '?') + ' \u00b7 wk ' + session.broiler_week
                       : session.batch_id || '?'}
                 </div>
-                <div style={{fontSize: 11, color: '#6b7280'}}>
+                <div style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                   {fmt(session.date)} {'\u00b7'} {session.team_member}
                 </div>
               </div>
               <div style={{textAlign: 'right'}}>
-                <div style={{fontSize: 18, fontWeight: 700, color: '#1e40af'}}>{entries.length}</div>
-                <div style={{fontSize: 10, color: '#6b7280'}}>
+                <div style={{fontSize: 18, fontWeight: 700, color: 'var(--ink)'}}>{entries.length}</div>
+                <div style={{fontSize: 10, color: 'var(--ink-muted)'}}>
                   {species === 'cattle'
                     ? 'of ' + expectedTags
                     : species === 'sheep'
@@ -2076,9 +2083,10 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   style={{
                     marginBottom: 10,
                     padding: 10,
-                    background: '#ecfdf5',
+                    background: 'white',
                     borderRadius: 8,
-                    border: '1px solid #a7f3d0',
+                    border: '1px solid var(--border)',
+                    borderLeft: '3px solid #047857',
                   }}
                 >
                   <div
@@ -2086,7 +2094,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   >
                     <div style={{fontSize: 11, fontWeight: 700, color: '#065f46'}}>
                       {'\u2795 New Cow'}
-                      <span style={{fontWeight: 400, color: '#374151'}}>
+                      <span style={{fontWeight: 400, color: 'var(--ink)'}}>
                         {' \u00b7 will be created in ' + (cattleHerd || 'this herd')}
                       </span>
                     </div>
@@ -2104,7 +2112,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         borderRadius: 6,
                         border: '1px solid #6b7280',
                         background: 'white',
-                        color: '#374151',
+                        color: 'var(--ink)',
                         fontSize: 11,
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -2126,7 +2134,14 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   </div>
                   <div style={{marginBottom: 8}}>
                     <label style={lblS}>Sex *</label>
-                    <div style={{display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #d1d5db'}}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        borderRadius: 8,
+                        overflow: 'hidden',
+                        border: '1px solid var(--border-strong)',
+                      }}
+                    >
                       {['cow', 'heifer', 'bull', 'steer'].map((s) => (
                         <button
                           key={s}
@@ -2135,13 +2150,13 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                           style={{
                             flex: 1,
                             padding: '8px 0',
-                            border: 'none',
+                            border: newCowSex === s ? '1px solid var(--brand)' : '1px solid var(--border-strong)',
                             fontFamily: 'inherit',
                             fontSize: 12,
                             fontWeight: 600,
                             cursor: 'pointer',
-                            background: newCowSex === s ? '#047857' : 'white',
-                            color: newCowSex === s ? 'white' : '#6b7280',
+                            background: 'white',
+                            color: newCowSex === s ? 'var(--brand)' : 'var(--ink-muted)',
                             textTransform: 'capitalize',
                           }}
                         >
@@ -2152,7 +2167,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   </div>
                   <div style={{marginBottom: 8}}>
                     <label style={lblS}>
-                      DOB <span style={{fontSize: 10, color: '#9ca3af'}}>(optional)</span>
+                      DOB <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>(optional)</span>
                     </label>
                     <input
                       type="date"
@@ -2168,9 +2183,10 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   style={{
                     marginBottom: 10,
                     padding: 10,
-                    background: '#eff6ff',
+                    background: 'white',
                     borderRadius: 8,
-                    border: '1px solid #bfdbfe',
+                    border: '1px solid var(--border)',
+                    borderLeft: '3px solid #1e40af',
                   }}
                 >
                   <div
@@ -2178,7 +2194,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   >
                     <div style={{fontSize: 11, fontWeight: 700, color: '#1e40af'}}>
                       {'\u21bb Swap Tag'}
-                      <span style={{fontWeight: 400, color: '#374151'}}>
+                      <span style={{fontWeight: 400, color: 'var(--ink)'}}>
                         {' \u00b7 swap a known cow\u2019s tag on the spot'}
                       </span>
                     </div>
@@ -2196,7 +2212,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         borderRadius: 6,
                         border: '1px solid #6b7280',
                         background: 'white',
-                        color: '#374151',
+                        color: 'var(--ink)',
                         fontSize: 11,
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -2209,7 +2225,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   <div style={{marginBottom: 8}}>
                     <label style={lblS}>
                       Prior tag # *
-                      <span style={{fontSize: 10, color: '#9ca3af', fontWeight: 400}}>
+                      <span style={{fontSize: 10, color: 'var(--ink-faint)', fontWeight: 400}}>
                         {' \u00b7 selling-farm or older WCF tag'}
                       </span>
                     </label>
@@ -2238,9 +2254,10 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   style={{
                     marginBottom: 10,
                     padding: 10,
-                    background: '#fffbeb',
+                    background: 'white',
                     borderRadius: 8,
-                    border: '1px solid #fde68a',
+                    border: '1px solid var(--border)',
+                    borderLeft: '3px solid #b45309',
                   }}
                 >
                   <div
@@ -2248,7 +2265,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   >
                     <div style={{fontSize: 11, fontWeight: 700, color: '#92400e'}}>
                       {'\u26a0\ufe0f Missing Tag'}
-                      <span style={{fontWeight: 400, color: '#374151'}}>
+                      <span style={{fontWeight: 400, color: 'var(--ink)'}}>
                         {' \u00b7 reconcile later if cow is unknown now'}
                       </span>
                     </div>
@@ -2265,7 +2282,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         borderRadius: 6,
                         border: '1px solid #6b7280',
                         background: 'white',
-                        color: '#374151',
+                        color: 'var(--ink)',
                         fontSize: 11,
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -2299,7 +2316,10 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               </div>
               <div style={{marginBottom: 10}}>
                 <label style={lblS}>
-                  Note <span style={{fontSize: 10, color: '#9ca3af'}}>(saves to cow{'\u2019'}s comment timeline)</span>
+                  Note{' '}
+                  <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>
+                    (saves to cow{'\u2019'}s comment timeline)
+                  </span>
                 </label>
                 <textarea
                   value={noteInput}
@@ -2341,7 +2361,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   padding: 13,
                   borderRadius: 10,
                   border: 'none',
-                  background: busy || !tagInput || !weightInput ? '#9ca3af' : '#1e40af',
+                  background: busy || !tagInput || !weightInput ? '#9ca3af' : '#085041',
                   color: 'white',
                   fontSize: 15,
                   fontWeight: 600,
@@ -2384,7 +2404,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               </div>
               <div style={{marginBottom: 10}}>
                 <label style={lblS}>
-                  Note <span style={{fontSize: 10, color: '#9ca3af'}}>(saves to sheep comment timeline)</span>
+                  Note <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>(saves to sheep comment timeline)</span>
                 </label>
                 <textarea
                   value={noteInput}
@@ -2416,7 +2436,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   padding: 13,
                   borderRadius: 10,
                   border: 'none',
-                  background: busy || !tagInput || !weightInput ? '#9ca3af' : '#0f766e',
+                  background: busy || !tagInput || !weightInput ? '#9ca3af' : '#085041',
                   color: 'white',
                   fontSize: 15,
                   fontWeight: 600,
@@ -2445,7 +2465,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               </div>
               <div style={{marginBottom: 10}}>
                 <label style={lblS}>
-                  Note <span style={{fontSize: 10, color: '#9ca3af'}}>(optional)</span>
+                  Note <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>(optional)</span>
                 </label>
                 <textarea
                   value={noteInput}
@@ -2482,7 +2502,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   padding: 13,
                   borderRadius: 10,
                   border: 'none',
-                  background: busy || !weightInput ? '#9ca3af' : '#1e40af',
+                  background: busy || !weightInput ? '#9ca3af' : '#085041',
                   color: 'white',
                   fontSize: 15,
                   fontWeight: 600,
@@ -2512,11 +2532,11 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                       style={{
                         fontSize: 11,
                         fontWeight: 700,
-                        color: '#374151',
+                        color: 'var(--ink)',
                         textAlign: 'center',
                         padding: '4px 0',
                         marginBottom: 4,
-                        background: '#eef2ff',
+                        background: 'var(--surface-2)',
                         borderRadius: 6,
                       }}
                     >
@@ -2529,7 +2549,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                           <span
                             style={{
                               fontSize: 10,
-                              color: '#9ca3af',
+                              color: 'var(--ink-faint)',
                               minWidth: 18,
                               textAlign: 'right',
                               fontVariantNumeric: 'tabular-nums',
@@ -2561,7 +2581,8 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               </div>
               <div style={{marginBottom: 10}}>
                 <label style={lblS}>
-                  Session note <span style={{fontSize: 10, color: '#9ca3af'}}>(one note for this whole session)</span>
+                  Session note{' '}
+                  <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>(one note for this whole session)</span>
                 </label>
                 <textarea
                   value={noteInput}
@@ -2593,7 +2614,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   padding: 13,
                   borderRadius: 10,
                   border: 'none',
-                  background: busy ? '#9ca3af' : '#1e40af',
+                  background: busy ? '#9ca3af' : '#085041',
                   color: 'white',
                   fontSize: 15,
                   fontWeight: 600,
@@ -2613,7 +2634,9 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
             grid. */}
           {species === 'pig' && entries.length >= 1 && pigMetrics && (
             <div style={cardS}>
-              <div style={{fontSize: 12, fontWeight: 700, color: '#4b5563', marginBottom: 8}}>Session metrics</div>
+              <div style={{fontSize: 12, fontWeight: 700, color: 'var(--ink-muted)', marginBottom: 8}}>
+                Session metrics
+              </div>
               {pigMetrics.available ? (
                 <div
                   style={{
@@ -2623,8 +2646,10 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   }}
                 >
                   <div data-pig-metric="age">
-                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Age at weigh-in</div>
-                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                    <div style={{fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase'}}>
+                      Age at weigh-in
+                    </div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>
                       {formatAgeRange({
                         minDays: pigMetrics.age_min_days,
                         maxDays: pigMetrics.age_max_days,
@@ -2633,26 +2658,26 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     </div>
                   </div>
                   <div data-pig-metric="feed">
-                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Feed/pig</div>
-                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                    <div style={{fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase'}}>Feed/pig</div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>
                       {formatFeedPerPig(pigMetrics.feed_per_pig_lbs)}
                     </div>
                   </div>
                   <div data-pig-metric="adg">
-                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Group ADG</div>
-                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                    <div style={{fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase'}}>Group ADG</div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>
                       {formatGroupAdg(pigMetrics.group_adg_lbs_per_day)}
                     </div>
                   </div>
                   <div data-pig-metric="avg">
-                    <div style={{fontSize: 10, color: '#6b7280', textTransform: 'uppercase'}}>Avg weight</div>
-                    <div style={{fontSize: 14, fontWeight: 700, color: '#111827'}}>
+                    <div style={{fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase'}}>Avg weight</div>
+                    <div style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>
                       {formatAvgWeight(pigMetrics.avg_weight_lbs)}
                     </div>
                   </div>
                 </div>
               ) : (
-                <div style={{fontSize: 12, color: '#6b7280', fontStyle: 'italic'}}>Metrics unavailable</div>
+                <div style={{fontSize: 12, color: 'var(--ink-muted)', fontStyle: 'italic'}}>Metrics unavailable</div>
               )}
             </div>
           )}
@@ -2676,7 +2701,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               });
               return (
                 <div style={cardS}>
-                  <div style={{fontSize: 12, fontWeight: 700, color: '#4b5563', marginBottom: 8}}>
+                  <div style={{fontSize: 12, fontWeight: 700, color: 'var(--ink-muted)', marginBottom: 8}}>
                     {'Recent entries (' + entries.length + ')'}
                   </div>
                   {displayed.map((e) => {
@@ -2688,14 +2713,14 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                           key={e.id}
                           style={{
                             padding: '8px 0',
-                            borderBottom: '1px solid #f3f4f6',
+                            borderBottom: '1px solid var(--divider)',
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 6,
                           }}
                         >
                           <div style={{display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap'}}>
-                            <span style={{fontWeight: 700, color: '#111827', minWidth: 40, fontSize: 12}}>
+                            <span style={{fontWeight: 700, color: 'var(--ink)', minWidth: 40, fontSize: 12}}>
                               #{entryNum}
                             </span>
                             <input
@@ -2708,7 +2733,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                               style={{
                                 fontSize: 13,
                                 padding: '6px 10px',
-                                border: '1px solid #d1d5db',
+                                border: '1px solid var(--border-strong)',
                                 borderRadius: 6,
                                 fontFamily: 'inherit',
                                 width: 90,
@@ -2722,7 +2747,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                               style={{
                                 fontSize: 13,
                                 padding: '6px 10px',
-                                border: '1px solid #d1d5db',
+                                border: '1px solid var(--border-strong)',
                                 borderRadius: 6,
                                 fontFamily: 'inherit',
                                 flex: 1,
@@ -2736,9 +2761,9 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                               style={{
                                 padding: '5px 12px',
                                 borderRadius: 6,
-                                border: '1px solid #d1d5db',
+                                border: '1px solid var(--border-strong)',
                                 background: 'white',
-                                color: '#6b7280',
+                                color: 'var(--ink-muted)',
                                 fontSize: 12,
                                 cursor: 'pointer',
                                 fontFamily: 'inherit',
@@ -2753,7 +2778,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                                 padding: '5px 14px',
                                 borderRadius: 6,
                                 border: 'none',
-                                background: busy || !(parseFloat(editDraft.weight) > 0) ? '#9ca3af' : '#1e40af',
+                                background: busy || !(parseFloat(editDraft.weight) > 0) ? '#9ca3af' : '#085041',
                                 color: 'white',
                                 fontSize: 12,
                                 fontWeight: 600,
@@ -2771,7 +2796,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         key={e.id}
                         style={{
                           padding: '6px 0',
-                          borderBottom: '1px solid #f3f4f6',
+                          borderBottom: '1px solid var(--divider)',
                           fontSize: 12,
                           display: 'flex',
                           gap: 10,
@@ -2779,13 +2804,13 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                           flexWrap: 'wrap',
                         }}
                       >
-                        <span style={{fontWeight: 700, color: '#111827', minWidth: 40}}>#{entryNum}</span>
-                        <span style={{color: '#9ca3af'}}>{'·'}</span>
-                        <span style={{fontWeight: 600, color: '#1e40af'}}>{e.weight} lb</span>
+                        <span style={{fontWeight: 700, color: 'var(--ink)', minWidth: 40}}>#{entryNum}</span>
+                        <span style={{color: 'var(--ink-faint)'}}>{'·'}</span>
+                        <span style={{fontWeight: 600, color: 'var(--ink)'}}>{e.weight} lb</span>
                         {e.note && (
                           <>
-                            <span style={{color: '#9ca3af'}}>{'·'}</span>
-                            <span style={{fontSize: 11, color: '#6b7280', fontStyle: 'italic'}}>{e.note}</span>
+                            <span style={{color: 'var(--ink-faint)'}}>{'·'}</span>
+                            <span style={{fontSize: 11, color: 'var(--ink-muted)', fontStyle: 'italic'}}>{e.note}</span>
                           </>
                         )}
                         <div style={{marginLeft: 'auto', display: 'flex', gap: 4}}>
@@ -2793,7 +2818,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                             onClick={() => startEditEntry(e)}
                             style={{
                               fontSize: 11,
-                              color: '#1d4ed8',
+                              color: 'var(--brand)',
                               background: 'none',
                               border: 'none',
                               cursor: 'pointer',
@@ -2871,7 +2896,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                       data-breeding-blacklist-recent-entry={isBlacklisted ? '1' : undefined}
                       style={{
                         padding: isBlacklisted ? '8px 8px' : '8px 0',
-                        borderBottom: '1px solid #f3f4f6',
+                        borderBottom: '1px solid var(--divider)',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 6,
@@ -2937,7 +2962,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                                 flex: '1 1 120px',
                                 padding: '6px 8px',
                                 borderRadius: 7,
-                                border: '1px solid #d1d5db',
+                                border: '1px solid var(--border-strong)',
                                 background: editDraft.newTagFlag ? 'white' : '#ecfdf5',
                                 color: '#065f46',
                                 fontSize: 11,
@@ -3002,9 +3027,9 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                           style={{
                             padding: '5px 12px',
                             borderRadius: 6,
-                            border: '1px solid #d1d5db',
+                            border: '1px solid var(--border-strong)',
                             background: 'white',
-                            color: '#6b7280',
+                            color: 'var(--ink-muted)',
                             fontSize: 12,
                             cursor: 'pointer',
                             fontFamily: 'inherit',
@@ -3019,7 +3044,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                             padding: '5px 14px',
                             borderRadius: 6,
                             border: 'none',
-                            background: editSaveDisabled ? '#9ca3af' : species === 'sheep' ? '#0f766e' : '#1e40af',
+                            background: editSaveDisabled ? '#9ca3af' : '#085041',
                             color: 'white',
                             fontSize: 12,
                             fontWeight: 600,
@@ -3038,7 +3063,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     data-breeding-blacklist-recent-entry={isBlacklisted ? '1' : undefined}
                     style={{
                       padding: isBlacklisted ? '6px 8px' : '6px 0',
-                      borderBottom: '1px solid #f3f4f6',
+                      borderBottom: '1px solid var(--divider)',
                       fontSize: 12,
                       display: 'flex',
                       flexDirection: 'column',
@@ -3051,15 +3076,15 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   >
                     <div data-public-weighin-recent-entry-grid="1" style={recentEntryGridS}>
                       <span
-                        style={{...recentEntryCellS, fontWeight: 700, color: isBlacklisted ? '#991b1b' : '#111827'}}
+                        style={{...recentEntryCellS, fontWeight: 700, color: isBlacklisted ? '#991b1b' : 'var(--ink)'}}
                       >
                         {e.tag ? '#' + e.tag : '\u2014'}
                       </span>
-                      <span style={{...recentEntryCellS, fontSize: 11, color: '#6b7280'}}>{age}</span>
-                      <span style={{...recentEntryCellS, fontSize: 11, color: '#6b7280'}}>
+                      <span style={{...recentEntryCellS, fontSize: 11, color: 'var(--ink-muted)'}}>{age}</span>
+                      <span style={{...recentEntryCellS, fontSize: 11, color: 'var(--ink-muted)'}}>
                         {prior ? 'prior ' + Math.round(prior.weight) + ' lb' : 'no prior'}
                       </span>
-                      <span style={{...recentEntryCellS, fontWeight: 600, color: '#1e40af'}}>{e.weight} lb</span>
+                      <span style={{...recentEntryCellS, fontWeight: 600, color: 'var(--ink)'}}>{e.weight} lb</span>
                       <span style={recentEntryCellS}>
                         {adg != null ? (
                           <span
@@ -3106,7 +3131,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                               fontWeight: 700,
                               padding: '3px 8px',
                               borderRadius: 5,
-                              border: '1px solid ' + (e.send_to_processor ? '#991b1b' : '#d1d5db'),
+                              border: '1px solid ' + (e.send_to_processor ? '#991b1b' : 'var(--border-strong)'),
                               background: e.send_to_processor ? '#991b1b' : 'white',
                               color: e.send_to_processor ? 'white' : '#6b7280',
                               cursor: 'pointer',
@@ -3132,7 +3157,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                           onClick={() => startEditEntry(e)}
                           style={{
                             fontSize: 11,
-                            color: '#1d4ed8',
+                            color: 'var(--brand)',
                             background: 'none',
                             border: 'none',
                             cursor: 'pointer',
@@ -3163,7 +3188,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                         style={{
                           marginLeft: 0,
                           fontSize: 11,
-                          color: '#6b7280',
+                          color: 'var(--ink-muted)',
                           fontStyle: 'italic',
                           overflowWrap: 'anywhere',
                         }}
@@ -3185,11 +3210,11 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
               return (
                 <React.Fragment>
                   <div style={cardS}>
-                    <div style={{fontSize: 12, fontWeight: 700, color: '#4b5563', marginBottom: 8}}>
+                    <div style={{fontSize: 12, fontWeight: 700, color: 'var(--ink-muted)', marginBottom: 8}}>
                       {'Recent entries (' + unflagged.length + ')'}
                     </div>
                     {unflagged.length === 0 && (
-                      <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>
+                      <div style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
                         All entries have been flagged for the processor. See below.
                       </div>
                     )}
@@ -3237,10 +3262,10 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     marginBottom: 6,
                   }}
                 >
-                  <div style={{fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 5}}>
+                  <div style={{fontSize: 12, fontWeight: 700, color: 'var(--ink)', marginBottom: 5}}>
                     {'New tag #' + e.tag + ' \u00b7 ' + e.weight + ' lb'}
                     {e.note ? (
-                      <span style={{fontWeight: 400, color: '#6b7280', fontStyle: 'italic'}}>
+                      <span style={{fontWeight: 400, color: 'var(--ink-muted)', fontStyle: 'italic'}}>
                         {' \u00b7 ' + e.note}
                       </span>
                     ) : null}
@@ -3349,7 +3374,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                     padding: 14,
                     borderRadius: 10,
                     border: 'none',
-                    background: pigDisabled ? '#9ca3af' : '#1e40af',
+                    background: pigDisabled ? '#9ca3af' : '#085041',
                     color: 'white',
                     fontSize: 15,
                     fontWeight: 700,
@@ -3388,7 +3413,7 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
                   padding: 14,
                   borderRadius: 10,
                   border: 'none',
-                  background: disabled ? '#9ca3af' : '#047857',
+                  background: disabled ? '#9ca3af' : '#085041',
                   color: 'white',
                   fontSize: 15,
                   fontWeight: 700,

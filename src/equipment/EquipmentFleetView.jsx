@@ -76,7 +76,7 @@ const SORT_KEY_LABELS = {
 const inpS = {
   fontSize: 13,
   padding: '7px 10px',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   borderRadius: 6,
   fontFamily: 'inherit',
   boxSizing: 'border-box',
@@ -85,9 +85,9 @@ const inpS = {
 const ghostBtnS = {
   padding: '6px 12px',
   borderRadius: 6,
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--border-strong)',
   background: 'white',
-  color: '#374151',
+  color: 'var(--ink)',
   fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
@@ -100,7 +100,7 @@ const radioLabelS = {
   alignItems: 'center',
   gap: 4,
   fontSize: 12,
-  color: '#374151',
+  color: 'var(--ink)',
   cursor: 'pointer',
 };
 
@@ -443,8 +443,9 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
         {...openableProps(eq)}
         className="hoverable-tile"
         style={{
-          background: eq.status === 'sold' ? '#f9fafb' : 'white',
-          border: '1px solid ' + cat.bd,
+          background: eq.status === 'sold' ? 'var(--surface-2)' : 'white',
+          border: '1px solid var(--border)',
+          borderLeft: '3px solid ' + cat.bd,
           borderRadius: 12,
           padding: '14px 18px',
           cursor: 'pointer',
@@ -453,7 +454,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
         }}
       >
         <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap'}}>
-          <span style={{fontSize: 15, fontWeight: 700, color: cat.color}}>{eq.name}</span>
+          <span style={{fontSize: 15, fontWeight: 700, color: 'var(--ink)'}}>{eq.name}</span>
           <span
             style={{
               fontSize: 10,
@@ -467,23 +468,23 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           >
             {eq.status}
           </span>
-          {eq.fuel_type && <span style={{fontSize: 11, color: '#6b7280'}}>{eq.fuel_type}</span>}
+          {eq.fuel_type && <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{eq.fuel_type}</span>}
         </div>
         <div
           style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, fontSize: 11}}
         >
           <div>
-            <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
+            <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
               {eq.tracking_unit === 'km' ? 'Current KM' : 'Current Hours'}
             </div>
-            <div style={{fontWeight: 700, color: '#111827'}}>{fmtReading(reading, eq.tracking_unit)}</div>
+            <div style={{fontWeight: 700, color: 'var(--ink)'}}>{fmtReading(reading, eq.tracking_unit)}</div>
           </div>
           {latestFuel && (
             <div>
-              <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
+              <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
                 Last fueling
               </div>
-              <div style={{fontWeight: 600, color: missedFuel ? '#b91c1c' : '#111827'}}>
+              <div style={{fontWeight: 600, color: missedFuel ? '#b91c1c' : 'var(--ink)'}}>
                 {fmt(latestFuel.date)}
                 {daysSinceFuel != null ? ' (' + daysSinceFuel + 'd)' : ''}
               </div>
@@ -491,7 +492,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           )}
           {dueInfo && (
             <div>
-              <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
+              <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
                 Next service
               </div>
               <div style={{fontWeight: 700, color: dueInfo.overdue ? '#b91c1c' : '#a16207'}}>
@@ -503,7 +504,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           )}
           {warrantyExpiresSoon && (
             <div>
-              <div style={{color: '#9ca3af', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
+              <div style={{color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4}}>
                 Warranty
               </div>
               <div style={{fontWeight: 700, color: '#a16207'}}>{fmt(eq.warranty_expiration)}</div>
@@ -531,12 +532,12 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           alignItems: 'center',
           gap: 10,
           padding: '10px 16px',
-          borderBottom: i < sorted.length - 1 ? '1px solid #f3f4f6' : 'none',
+          borderBottom: i < sorted.length - 1 ? '1px solid var(--divider)' : 'none',
           cursor: 'pointer',
-          background: eq.status === 'sold' ? '#f9fafb' : 'white',
+          background: eq.status === 'sold' ? 'var(--surface-2)' : 'white',
         }}
       >
-        <span style={{fontSize: 11, color: '#9ca3af', fontVariantNumeric: 'tabular-nums', fontWeight: 600}}>
+        <span style={{fontSize: 11, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', fontWeight: 600}}>
           {i + 1}
         </span>
         <span style={{display: 'flex', alignItems: 'center', gap: 8, minWidth: 0}}>
@@ -544,7 +545,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
             style={{
               fontSize: 13,
               fontWeight: 700,
-              color: cat.color,
+              color: 'var(--ink)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -552,7 +553,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           >
             {eq.name}
           </span>
-          {eq.fuel_type && <span style={{fontSize: 10, color: '#9ca3af'}}>{eq.fuel_type}</span>}
+          {eq.fuel_type && <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>{eq.fuel_type}</span>}
         </span>
         <span style={{fontSize: 11, color: cat.color, fontWeight: 600}}>{cat.label || eq.category || '—'}</span>
         <span
@@ -569,8 +570,10 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
         >
           {eq.status}
         </span>
-        <span style={{fontSize: 11, fontWeight: 600, color: '#111827'}}>{fmtReading(reading, eq.tracking_unit)}</span>
-        <span style={{fontSize: 11, color: missedFuel ? '#b91c1c' : latestFuel ? '#111827' : '#9ca3af'}}>
+        <span style={{fontSize: 11, fontWeight: 600, color: 'var(--ink)'}}>
+          {fmtReading(reading, eq.tracking_unit)}
+        </span>
+        <span style={{fontSize: 11, color: missedFuel ? '#b91c1c' : latestFuel ? 'var(--ink)' : 'var(--ink-faint)'}}>
           {latestFuel
             ? fmt(latestFuel.date) + (daysSinceFuel != null ? ' (' + daysSinceFuel + 'd)' : '')
             : 'no fueling'}
@@ -579,7 +582,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           style={{
             fontSize: 11,
             fontWeight: 700,
-            color: dueInfo ? (dueInfo.overdue ? '#b91c1c' : '#a16207') : '#9ca3af',
+            color: dueInfo ? (dueInfo.overdue ? '#b91c1c' : '#a16207') : 'var(--ink-faint)',
           }}
         >
           {dueInfo
@@ -598,11 +601,11 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       <div
         style={{
           background: 'white',
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--border)',
           borderRadius: 12,
           padding: '2rem',
           textAlign: 'center',
-          color: '#6b7280',
+          color: 'var(--ink-muted)',
           fontSize: 13,
         }}
       >
@@ -620,7 +623,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
         data-equipment-saved-views-row
         style={{
           background: 'white',
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--border)',
           borderRadius: 10,
           padding: '10px 14px',
           display: 'flex',
@@ -629,7 +632,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           flexWrap: 'wrap',
         }}
       >
-        <span style={{fontSize: 11, color: '#6b7280', fontWeight: 600}}>Saved views</span>
+        <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
         {savedViewsError ? (
           <span
             style={{fontSize: 12, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 8}}
@@ -645,9 +648,9 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
                 fontSize: 11,
                 padding: '3px 10px',
                 borderRadius: 6,
-                border: '1px solid #d1d5db',
+                border: '1px solid var(--border-strong)',
                 background: 'white',
-                color: '#374151',
+                color: 'var(--ink)',
                 cursor: savedViewsLoading ? 'not-allowed' : 'pointer',
                 fontFamily: 'inherit',
                 fontWeight: 600,
@@ -785,7 +788,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
         data-equipment-fleet-toolbar
         style={{
           background: 'white',
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--border)',
           borderRadius: 10,
           padding: '12px 16px',
           display: 'flex',
@@ -844,9 +847,9 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
                     ...ghostBtnS,
                     padding: '5px 10px',
                     borderRadius: 999,
-                    border: active ? '1px solid ' + EQUIPMENT_COLOR : '1px solid #d1d5db',
-                    background: active ? '#fafaf9' : 'white',
-                    color: active ? EQUIPMENT_COLOR : '#374151',
+                    border: active ? '1px solid var(--brand)' : '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: active ? 'var(--brand)' : 'var(--ink-muted)',
                   }}
                 >
                   {o.label}
@@ -872,13 +875,13 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
               alignItems: 'center',
               gap: 6,
               fontSize: 12,
-              color: '#374151',
-              border: '1px solid #d1d5db',
+              color: 'var(--ink)',
+              border: '1px solid var(--border-strong)',
               borderRadius: 6,
               padding: '4px 8px',
             }}
           >
-            <span style={{color: '#6b7280', marginRight: 4}}>Sort</span>
+            <span style={{color: 'var(--ink-muted)', marginRight: 4}}>Sort</span>
             <select
               data-equipment-fleet-sort-key
               value={sortRule.key}
@@ -907,13 +910,13 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
               alignItems: 'center',
               gap: 6,
               fontSize: 12,
-              color: '#374151',
-              border: '1px solid #d1d5db',
+              color: 'var(--ink)',
+              border: '1px solid var(--border-strong)',
               borderRadius: 6,
               padding: '4px 8px',
             }}
           >
-            <span style={{color: '#6b7280', marginRight: 4}}>View</span>
+            <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
             <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
               <input
                 type="radio"
@@ -964,12 +967,12 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
               type="button"
               data-equipment-fleet-clear-filters
               onClick={clearAllFilters}
-              style={{...ghostBtnS, color: '#6b7280'}}
+              style={{...ghostBtnS, color: 'var(--ink-muted)'}}
             >
               Clear filters
             </button>
           )}
-          <span data-equipment-fleet-count style={{fontSize: 12, color: '#6b7280'}}>
+          <span data-equipment-fleet-count style={{fontSize: 12, color: 'var(--ink-muted)'}}>
             {sorted.length} of {totalCount} equipment
             {filterCount > 0 ? ' · ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's') : ''}
           </span>
@@ -995,11 +998,11 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           data-equipment-fleet-no-match
           style={{
             background: 'white',
-            border: '1px solid #e5e7eb',
+            border: '1px solid var(--border)',
             borderRadius: 12,
             padding: '2rem',
             textAlign: 'center',
-            color: '#6b7280',
+            color: 'var(--ink-muted)',
             fontSize: 13,
           }}
         >
@@ -1025,7 +1028,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
                 >
                   {g.label}
                 </span>
-                <span style={{fontSize: 11, color: '#6b7280'}}>
+                <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                   {g.rows.length} piece{g.rows.length === 1 ? '' : 's'}
                 </span>
               </div>
@@ -1036,7 +1039,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           ))}
           {uncategorized.length > 0 && (
             <div data-equipment-fleet-group="uncategorized">
-              <div style={{fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6}}>
+              <div style={{fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6}}>
                 OTHER ({uncategorized.length})
               </div>
               <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10}}>
@@ -1051,7 +1054,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       {!filteredEmpty && viewMode === 'flat' && (
         <div
           data-equipment-fleet-flat
-          style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden'}}
+          style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden'}}
         >
           <div
             style={{
@@ -1060,11 +1063,11 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
               alignItems: 'center',
               gap: 10,
               padding: '10px 16px',
-              borderBottom: '1px solid #e5e7eb',
-              background: '#f9fafb',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--surface-2)',
               fontSize: 11,
               fontWeight: 600,
-              color: '#6b7280',
+              color: 'var(--ink-muted)',
               textTransform: 'uppercase',
               letterSpacing: 0.4,
             }}

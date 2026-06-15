@@ -30,7 +30,7 @@ import RecordPageLoadError from '../shared/RecordPageLoadError.jsx';
 const sectionTitle = {
   fontSize: 11,
   fontWeight: 700,
-  color: '#4b5563',
+  color: 'var(--ink-muted)',
   textTransform: 'uppercase',
   letterSpacing: 0.5,
   marginBottom: 8,
@@ -39,8 +39,8 @@ const sectionTitle = {
 function FieldRow({label, value}) {
   return (
     <div style={{display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', fontSize: 13}}>
-      <span style={{color: '#6b7280'}}>{label}</span>
-      <span style={{color: '#111827', fontWeight: 600, textAlign: 'right'}}>{value}</span>
+      <span style={{color: 'var(--ink-muted)'}}>{label}</span>
+      <span style={{color: 'var(--ink)', fontWeight: 600, textAlign: 'right'}}>{value}</span>
     </div>
   );
 }
@@ -110,12 +110,12 @@ export default function EquipmentFuelingEntryPage({
           <RecordTitle fontSize={20} margin="0" style={{color: EQUIPMENT_COLOR}}>
             Fueling — {fmt(fueling.date)}
           </RecordTitle>
-          <span style={{fontSize: 11, color: '#6b7280'}}>
+          <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
             {eq.name}
             {eq.fuel_type ? ' · ' + eq.fuel_type : ''}
           </span>
         </div>
-        <div style={{borderTop: '1px solid #f3f4f6', paddingTop: 8}}>
+        <div style={{borderTop: '1px solid var(--divider)', paddingTop: 8}}>
           <FieldRow label="Date" value={fmt(fueling.date)} />
           <FieldRow
             label={(eq.fuel_type || 'Fuel') + ' gallons'}
@@ -134,17 +134,19 @@ export default function EquipmentFuelingEntryPage({
 
       {/* Notes */}
       {noteText && (
-        <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}>
+        <div style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px'}}>
           <div style={sectionTitle}>Notes</div>
-          <div style={{fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap'}}>{noteText}</div>
+          <div style={{fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap'}}>{noteText}</div>
         </div>
       )}
 
       {/* Every fuel fill up checklist (read-only) */}
-      <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}>
+      <div style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px'}}>
         <div style={sectionTitle}>Every Fuel Fill Up Checklist</div>
         {fillupChecks.length === 0 && (
-          <div style={{fontSize: 12, color: '#9ca3af', fontStyle: 'italic'}}>No fillup items ticked on this entry.</div>
+          <div style={{fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+            No fillup items ticked on this entry.
+          </div>
         )}
         {fillupChecks.length > 0 && (
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 4}}>
@@ -169,7 +171,7 @@ export default function EquipmentFuelingEntryPage({
 
       {/* Service / checklist interval completions (read-only) */}
       {completed.length > 0 && (
-        <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}>
+        <div style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px'}}>
           <div style={sectionTitle}>Service / Checklist Completed ({completed.length})</div>
           <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
             {completed.map((c, i) => {
@@ -192,7 +194,7 @@ export default function EquipmentFuelingEntryPage({
                 >
                   {c.attachment_name ? c.attachment_name + ' — ' : ''}
                   {c.label || c.interval + unitChar}
-                  <span style={{fontSize: 10, fontWeight: 500, marginLeft: 8, color: '#6b7280'}}>
+                  <span style={{fontSize: 10, fontWeight: 500, marginLeft: 8, color: 'var(--ink-muted)'}}>
                     {done}/{total} tasks {isFull ? '· full' : done > 0 ? '· partial' : ''}
                   </span>
                 </div>
@@ -204,7 +206,7 @@ export default function EquipmentFuelingEntryPage({
 
       {/* Photos (read-only) */}
       {photos.length > 0 && (
-        <div style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 20px'}}>
+        <div style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px'}}>
           <div style={sectionTitle}>Photos ({photos.length})</div>
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 6}}>
             {photos.map((p, i) => (
@@ -212,7 +214,13 @@ export default function EquipmentFuelingEntryPage({
                 <img
                   src={p.url}
                   alt={imageAltText(p.name, {fallback: 'Fueling photo', index: i, total: photos.length})}
-                  style={{width: 90, height: 90, objectFit: 'cover', borderRadius: 6, border: '1px solid #e5e7eb'}}
+                  style={{
+                    width: 90,
+                    height: 90,
+                    objectFit: 'cover',
+                    borderRadius: 6,
+                    border: '1px solid var(--border)',
+                  }}
                 />
               </a>
             ))}

@@ -377,7 +377,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
 
   const wfBg = {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg,#fafaf9 0%,#e7e5e4 100%)',
+    background: 'var(--bg-page)',
     padding: '1rem',
     fontFamily: 'inherit',
   };
@@ -392,18 +392,18 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     fontFamily: 'inherit',
     fontSize: 14,
     padding: '10px 12px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 8,
     width: '100%',
     outline: 'none',
     background: 'white',
-    color: '#111827',
+    color: 'var(--ink)',
     boxSizing: 'border-box',
   };
   const lblS = {
     display: 'block',
     fontSize: 12,
-    color: '#6b7280',
+    color: 'var(--ink-muted)',
     marginBottom: 5,
     fontWeight: 600,
     textTransform: 'uppercase',
@@ -415,7 +415,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         style={{
           fontSize: 18,
           fontWeight: 800,
-          color: '#57534e',
+          color: 'var(--ink)',
           letterSpacing: -0.3,
           display: 'inline-flex',
           alignItems: 'center',
@@ -425,7 +425,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         <PlannerIcon iconKey="fueling" size={22} />
         <span>WCF Planner</span>
       </div>
-      <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Fueling Log</div>
+      <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>Fueling Log</div>
     </div>
   );
 
@@ -439,10 +439,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         >
           {logoEl}
           <div style={{fontSize: 56, marginBottom: 12}}>{queued ? '📡' : '✅'}</div>
-          <div style={{fontSize: 20, fontWeight: 700, color: queued ? '#92400e' : '#57534e', marginBottom: 8}}>
+          <div style={{fontSize: 20, fontWeight: 700, color: queued ? '#92400e' : 'var(--ink)', marginBottom: 8}}>
             {queued ? 'Saved on this device' : 'Fueling saved'}
           </div>
-          <div style={{fontSize: 14, color: '#4b5563', marginBottom: queued ? 12 : 28}}>
+          <div style={{fontSize: 14, color: 'var(--ink-muted)', marginBottom: queued ? 12 : 28}}>
             {eq ? eq.name : ''} · {gallons} gal {fuelLabel}
             {defGallons ? ' + ' + defGallons + ' gal DEF' : ''}
           </div>
@@ -480,7 +480,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               padding: 14,
               borderRadius: 10,
               border: 'none',
-              background: '#57534e',
+              background: '#085041',
               color: 'white',
               fontSize: 15,
               fontWeight: 600,
@@ -497,9 +497,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               width: '100%',
               padding: 14,
               borderRadius: 10,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 15,
               fontWeight: 600,
               cursor: 'pointer',
@@ -522,7 +522,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
           style={{
             background: 'none',
             border: 'none',
-            color: '#57534e',
+            color: 'var(--ink-muted)',
             fontSize: 13,
             cursor: 'pointer',
             marginBottom: 12,
@@ -595,13 +595,13 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               };
               return (
                 <div>
-                  <div style={{fontSize: 18, fontWeight: 700, color: '#57534e'}}>{eq.name}</div>
-                  <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>
+                  <div style={{fontSize: 18, fontWeight: 700, color: 'var(--ink)'}}>{eq.name}</div>
+                  <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>
                     {eq.fuel_type ? eq.fuel_type.charAt(0).toUpperCase() + eq.fuel_type.slice(1) : ''}
                     {eq.takes_def ? ' + DEF' : ''} · tracks {readingLabel}
                   </div>
                   {lastReadingNum != null && (
-                    <div style={{fontSize: 12, color: '#1e40af', marginTop: 6, fontWeight: 600}}>
+                    <div style={{fontSize: 12, color: 'var(--ink)', marginTop: 6, fontWeight: 600}}>
                       Last reading: {Number(lastReadingNum).toLocaleString()} {lastUnit}
                       {lastFueling.team_member ? ` · ${lastFueling.team_member}` : ''}
                       {lastFueling.date ? ` · ${fmtDate(lastFueling.date)}` : ''}
@@ -698,7 +698,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               placeholder={'Current ' + readingLabel.toLowerCase()}
               style={inpS}
             />
-            <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>
+            <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 6}}>
               Every-fillup and service-interval checklists appear below once you enter this.
             </div>
           </div>
@@ -708,7 +708,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             the checklist section doesn't open before we know what to show. */}
         {eq && hasReading && (eq.every_fillup_items || []).length > 0 && (
           <div style={cardS}>
-            <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', marginBottom: eq.every_fillup_help ? 4 : 10}}>
+            <div
+              style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: eq.every_fillup_help ? 4 : 10}}
+            >
               Every-fillup checks
             </div>
             {eq.every_fillup_help && (
@@ -765,7 +767,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                           width: 18,
                           height: 18,
                           padding: 0,
-                          border: '1px solid #d1d5db',
+                          border: '1px solid var(--border-strong)',
                         }}
                       />
                       <span
@@ -824,7 +826,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             return (
               <div style={cardS}>
                 <div style={{fontSize: 13, fontWeight: 700, color: '#991b1b', marginBottom: 4}}>⚠ Service due</div>
-                <div style={{fontSize: 11, color: '#6b7280', marginBottom: 12}}>
+                <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 12}}>
                   Based on {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any
                   service you performed during this fill.
                   {mostRecentFull && (
@@ -880,7 +882,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                                 width: 18,
                                 height: 18,
                                 padding: 0,
-                                border: '1px solid #d1d5db',
+                                border: '1px solid var(--border-strong)',
                               }}
                             />
                           )}
@@ -888,7 +890,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                             <div style={{fontWeight: 700, color: done ? '#1e40af' : '#991b1b', fontSize: 14}}>
                               {iv.label}
                             </div>
-                            <div style={{fontSize: 11, color: '#6b7280', marginTop: 3}}>
+                            <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 3}}>
                               {iv.missed_count > 1
                                 ? `Missed ${iv.missed_count} times since ${iv.first_missed_at.toLocaleString()}${unitShort}`
                                 : `Passed ${iv.first_missed_at.toLocaleString()}${unitShort}`}
@@ -1009,7 +1011,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                                       width: 16,
                                       height: 16,
                                       padding: 0,
-                                      border: '1px solid #d1d5db',
+                                      border: '1px solid var(--border-strong)',
                                     }}
                                   />
                                   <span style={{color: ticked ? '#065f46' : '#374151', fontWeight: ticked ? 600 : 500}}>
@@ -1033,10 +1035,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             reading is entered. Tick only the attachment you used. */}
         {eq && hasReading && Array.isArray(eq.attachment_checklists) && eq.attachment_checklists.length > 0 && (
           <div style={cardS}>
-            <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', marginBottom: 4}}>
+            <div style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4}}>
               Attachment-specific checklists
             </div>
-            <div style={{fontSize: 11, color: '#6b7280', marginBottom: 12}}>
+            <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 12}}>
               Only tick tasks for the attachment you actually used this session.
             </div>
             <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
@@ -1056,9 +1058,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                       padding: '12px 14px',
                     }}
                   >
-                    <div style={{fontWeight: 700, color: '#57534e', fontSize: 13, marginBottom: 6}}>
+                    <div style={{fontWeight: 700, color: 'var(--ink)', fontSize: 13, marginBottom: 6}}>
                       {a.name}{' '}
-                      <span style={{fontSize: 11, color: '#6b7280', fontWeight: 500}}>
+                      <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 500}}>
                         · {a.hours_or_km === 0 ? 'Every Use' : a.hours_or_km + (a.kind === 'km' ? 'km' : 'h')}
                       </span>
                     </div>
@@ -1107,7 +1109,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                                   width: 16,
                                   height: 16,
                                   padding: 0,
-                                  border: '1px solid #d1d5db',
+                                  border: '1px solid var(--border-strong)',
                                 }}
                               />
                               <span style={{color: ticked ? '#065f46' : '#374151', fontWeight: ticked ? 600 : 500}}>
@@ -1118,7 +1120,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                         })}
                       </div>
                     ) : (
-                      <div style={{fontSize: 11, color: '#9ca3af', fontStyle: 'italic'}}>No tasks configured.</div>
+                      <div style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+                        No tasks configured.
+                      </div>
                     )}
                     {anyTicked && (
                       <div
@@ -1138,8 +1142,8 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             ask for "TAKE PICTURES SHOWING EACH SIDE"). */}
         {eq && hasReading && (
           <div style={cardS}>
-            <div style={{fontSize: 13, fontWeight: 700, color: '#57534e', marginBottom: 4}}>Photos</div>
-            <div style={{fontSize: 11, color: '#6b7280', marginBottom: 10}}>
+            <div style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4}}>Photos</div>
+            <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 10}}>
               Attach photos of the machine, damage, or anything else the next team member should see.
             </div>
             {photos.length > 0 && (
@@ -1149,7 +1153,13 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                     <img
                       src={p.url}
                       alt={imageAltText(p.name, {fallback: 'Fueling photo', index: i, total: photos.length})}
-                      style={{width: 80, height: 80, objectFit: 'cover', borderRadius: 6, border: '1px solid #e5e7eb'}}
+                      style={{
+                        width: 80,
+                        height: 80,
+                        objectFit: 'cover',
+                        borderRadius: 6,
+                        border: '1px solid var(--border)',
+                      }}
                     />
                     <button
                       type="button"
@@ -1187,7 +1197,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               disabled={uploadingPhoto}
               style={{fontSize: 13}}
             />
-            {uploadingPhoto && <div style={{fontSize: 11, color: '#9ca3af', marginTop: 6}}>Uploading{'…'}</div>}
+            {uploadingPhoto && (
+              <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 6}}>Uploading{'…'}</div>
+            )}
           </div>
         )}
 
@@ -1233,7 +1245,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             padding: 14,
             borderRadius: 10,
             border: 'none',
-            background: submitting || !eq ? '#9ca3af' : '#57534e',
+            background: submitting || !eq ? '#9ca3af' : '#085041',
             color: 'white',
             fontSize: 15,
             fontWeight: 700,

@@ -30,7 +30,13 @@ export default function ManualsCard({equipment}) {
 
   return (
     <div
-      style={{background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 12, overflow: 'hidden'}}
+      style={{
+        background: 'white',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        marginBottom: 12,
+        overflow: 'hidden',
+      }}
     >
       <button
         type="button"
@@ -49,27 +55,27 @@ export default function ManualsCard({equipment}) {
         }}
       >
         <span style={{fontSize: 16}}>📖</span>
-        <span style={{flex: 1, fontSize: 13, fontWeight: 700, color: '#4b5563'}}>
+        <span style={{flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--ink-muted)'}}>
           Manuals &amp; Videos{' '}
-          <span style={{color: '#9ca3af', fontWeight: 500, marginLeft: 6}}>({manuals.length})</span>
+          <span style={{color: 'var(--ink-faint)', fontWeight: 500, marginLeft: 6}}>({manuals.length})</span>
         </span>
-        <span style={{fontSize: 12, color: '#9ca3af'}}>{open ? '▾' : '▸'}</span>
+        <span style={{fontSize: 12, color: 'var(--ink-faint)'}}>{open ? '▾' : '▸'}</span>
       </button>
       {open && isEmpty && (
         <div style={{padding: '0 16px 14px'}}>
           <div
             style={{
               fontSize: 12,
-              color: '#9ca3af',
+              color: 'var(--ink-faint)',
               fontStyle: 'italic',
               padding: '10px 12px',
               background: '#fafafa',
               borderRadius: 6,
-              border: '1px dashed #e5e7eb',
+              border: '1px dashed var(--border)',
             }}
           >
             No instructional manuals or videos added for this piece yet. Admins can add them via{' '}
-            <code style={{background: 'white', padding: '1px 5px', borderRadius: 3, border: '1px solid #e5e7eb'}}>
+            <code style={{background: 'white', padding: '1px 5px', borderRadius: 3, border: '1px solid var(--border)'}}>
               /admin
             </code>{' '}
             → Equipment → (click piece) → Manuals &amp; Videos.
@@ -104,7 +110,7 @@ export default function ManualsCard({equipment}) {
                       alignItems: 'center',
                       gap: 10,
                       padding: '8px 10px',
-                      background: '#fffbeb',
+                      background: 'white',
                       border: '1px solid #fde68a',
                       borderRadius: 6,
                       textDecoration: 'none',
@@ -146,7 +152,7 @@ export default function ManualsCard({equipment}) {
                       rel="noopener noreferrer"
                       style={{
                         display: 'block',
-                        background: '#fef2f2',
+                        background: 'white',
                         border: '1px solid #fecaca',
                         borderRadius: 6,
                         overflow: 'hidden',

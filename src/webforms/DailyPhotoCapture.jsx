@@ -72,9 +72,9 @@ export default function DailyPhotoCapture({files, statuses = [], onChange, disab
           style={{
             padding: '6px 12px',
             borderRadius: 6,
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--border-strong)',
             background: disabled || atCap ? '#f3f4f6' : 'white',
-            color: disabled || atCap ? '#9ca3af' : '#374151',
+            color: disabled || atCap ? 'var(--ink-faint)' : 'var(--ink)',
             fontSize: 12,
             fontWeight: 600,
             cursor: disabled || atCap ? 'not-allowed' : 'pointer',
@@ -83,7 +83,7 @@ export default function DailyPhotoCapture({files, statuses = [], onChange, disab
         >
           📷 Add photos
         </button>
-        <span style={{fontSize: 11, color: '#6b7280'}}>
+        <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
           {files.length} of {MAX_PHOTOS_PER_REPORT} {files.length === 1 ? 'photo' : 'photos'}
           {atCap && ' (max reached)'}
         </span>

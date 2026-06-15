@@ -15,10 +15,10 @@ export default function LockedSubmitter({name, label = 'Team member', labelStyle
   const boxStyle = style || {
     fontSize: 14,
     padding: '10px 12px',
-    border: '1px solid #e5e7eb',
+    border: '1px solid var(--border)',
     borderRadius: 6,
-    background: '#f9fafb',
-    color: '#374151',
+    background: 'var(--surface-2)',
+    color: 'var(--ink)',
     width: '100%',
     boxSizing: 'border-box',
     display: 'flex',
@@ -31,7 +31,7 @@ export default function LockedSubmitter({name, label = 'Team member', labelStyle
       <div style={boxStyle}>
         <span aria-hidden="true">🔒</span>
         <span style={{fontWeight: 600}}>{name || 'Signed-in user'}</span>
-        <span style={{marginLeft: 'auto', fontSize: 11, color: '#9ca3af'}}>signed in</span>
+        <span style={{marginLeft: 'auto', fontSize: 11, color: 'var(--ink-faint)'}}>signed in</span>
       </div>
     </div>
   );

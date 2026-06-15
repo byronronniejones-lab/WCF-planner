@@ -53,7 +53,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
 
   const wfBg = {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg,#fafaf9 0%,#e7e5e4 100%)',
+    background: 'var(--bg-page)',
     padding: '1rem',
     fontFamily: 'inherit',
   };
@@ -63,7 +63,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
         style={{
           fontSize: 18,
           fontWeight: 800,
-          color: '#57534e',
+          color: 'var(--ink)',
           letterSpacing: -0.3,
           display: 'inline-flex',
           alignItems: 'center',
@@ -73,7 +73,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
         <PlannerIcon iconKey="fueling" size={22} />
         <span>WCF Planner</span>
       </div>
-      <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Fueling Log</div>
+      <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>Fueling Log</div>
     </div>
   );
 
@@ -103,7 +103,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
       <div style={wfBg}>
         <div style={{maxWidth: 480, margin: '0 auto', paddingTop: '1rem'}}>
           {logoEl}
-          <div style={{textAlign: 'center', color: '#9ca3af'}}>Loading{'…'}</div>
+          <div style={{textAlign: 'center', color: 'var(--ink-faint)'}}>Loading{'…'}</div>
         </div>
       </div>
     );
@@ -118,11 +118,11 @@ export default function FuelingHub({sb, sessionSubmitter}) {
             <div
               style={{
                 background: 'white',
-                border: '1px solid #e5e7eb',
+                border: '1px solid var(--border)',
                 borderRadius: 12,
                 padding: '1rem',
                 textAlign: 'center',
-                color: '#6b7280',
+                color: 'var(--ink-muted)',
               }}
             >
               No equipment with slug <code>{slug}</code>.
@@ -131,7 +131,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
                   onClick={() => navigate('/equipment')}
                   style={{
                     marginTop: 10,
-                    color: '#1d4ed8',
+                    color: 'var(--brand)',
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
@@ -183,7 +183,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
               padding: '6px 14px',
               fontSize: 12,
               fontWeight: 600,
-              color: '#57534e',
+              color: 'var(--ink)',
               cursor: 'pointer',
               fontFamily: 'inherit',
             }}
@@ -191,7 +191,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
             📲 App Setup
           </button>
         </div>
-        <div style={{fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 20}}>
+        <div style={{fontSize: 13, color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 20}}>
           Tap your equipment to log a fueling
         </div>
 
@@ -200,7 +200,13 @@ export default function FuelingHub({sb, sessionSubmitter}) {
             <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingLeft: 4}}>
               <EquipmentCategoryIcon category={g} size={20} />
               <span
-                style={{fontSize: 13, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: 0.4}}
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: 'var(--ink)',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.4,
+                }}
               >
                 {g.label}
               </span>
@@ -211,7 +217,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
                   key={eq.id}
                   onClick={() => navigate('/equipment/' + eq.slug)}
                   style={{
-                    background: g.bg,
+                    background: 'white',
                     border: '1px solid ' + g.bd,
                     borderRadius: 10,
                     padding: '14px 14px',
@@ -235,7 +241,13 @@ export default function FuelingHub({sb, sessionSubmitter}) {
           <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingLeft: 4}}>
             <PlannerIcon iconKey="fueling" size={20} />
             <span
-              style={{fontSize: 13, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.4}}
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: 'var(--ink)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}
             >
               Other
             </span>
@@ -244,7 +256,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
             <button
               onClick={() => navigate('/equipment/supply')}
               style={{
-                background: '#fffbeb',
+                background: 'white',
                 border: '1px solid #fde68a',
                 borderRadius: 10,
                 padding: '14px 14px',
@@ -279,7 +291,7 @@ export default function FuelingHub({sb, sessionSubmitter}) {
             style={{
               background: 'none',
               border: 'none',
-              color: '#57534e',
+              color: 'var(--ink)',
               fontSize: 13,
               cursor: 'pointer',
               fontFamily: 'inherit',

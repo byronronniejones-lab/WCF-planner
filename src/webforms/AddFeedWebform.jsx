@@ -421,7 +421,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
 
   var wfBg = {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)',
+    background: 'var(--bg-page)',
     padding: '1rem',
     fontFamily: 'inherit',
   };
@@ -436,15 +436,15 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
     fontFamily: 'inherit',
     fontSize: 14,
     padding: '10px 12px',
-    border: '1px solid #d1d5db',
+    border: '1px solid var(--border-strong)',
     borderRadius: 8,
     width: '100%',
     outline: 'none',
     background: 'white',
-    color: '#111827',
+    color: 'var(--ink)',
     boxSizing: 'border-box',
   };
-  var lblS = {display: 'block', fontSize: 13, color: '#374151', marginBottom: 5, fontWeight: 500};
+  var lblS = {display: 'block', fontSize: 13, color: 'var(--ink)', marginBottom: 5, fontWeight: 500};
   var logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
       <div
@@ -461,7 +461,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
         <PlannerIcon iconKey="feed" size={22} />
         <span>WCF Planner</span>
       </div>
-      <div style={{fontSize: 12, color: '#6b7280', marginTop: 2}}>Quick Feed Log</div>
+      <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>Quick Feed Log</div>
     </div>
   );
 
@@ -475,7 +475,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
             style={{
               fontSize: 20,
               fontWeight: 700,
-              color: doneState === 'queued' ? '#92400e' : '#111827',
+              color: doneState === 'queued' ? '#92400e' : 'var(--ink)',
               marginBottom: 8,
             }}
           >
@@ -505,7 +505,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
               synced
             </div>
           )}
-          <div style={{fontSize: 14, color: '#4b5563', marginBottom: 28, lineHeight: 1.6}}>
+          <div style={{fontSize: 14, color: 'var(--ink-muted)', marginBottom: 28, lineHeight: 1.6}}>
             {program === 'cattle'
               ? cattleHerd +
                 ' \u2014 ' +
@@ -572,9 +572,9 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
               width: '100%',
               padding: 14,
               borderRadius: 10,
-              border: '1px solid #d1d5db',
+              border: '1px solid var(--border-strong)',
               background: 'white',
-              color: '#374151',
+              color: 'var(--ink)',
               fontSize: 15,
               fontWeight: 600,
               cursor: 'pointer',
@@ -616,7 +616,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                     });
                   });
                 },
-                style: {background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 18},
+                style: {background: 'none', border: 'none', color: 'var(--ink-faint)', cursor: 'pointer', fontSize: 18},
               },
               '\u00d7',
             ),
@@ -693,14 +693,14 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                   style: {
                     flex: 1,
                     padding: '10px 0',
-                    border: 'none',
+                    border: ft === f ? '1px solid var(--brand)' : '1px solid var(--border-strong)',
                     borderRight: fi < arr.length - 1 ? '1px solid #d1d5db' : 'none',
                     fontFamily: 'inherit',
                     fontSize: 12,
                     fontWeight: 600,
                     cursor: 'pointer',
-                    background: ft === f ? '#085041' : 'white',
-                    color: ft === f ? 'white' : '#6b7280',
+                    background: 'white',
+                    color: ft === f ? 'var(--brand)' : 'var(--ink-muted)',
                   },
                 },
                 f,
@@ -824,7 +824,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                     cursor: 'pointer',
                     fontFamily: 'inherit',
                     border: program === p.key ? '2px solid ' + p.color : '2px solid #e5e7eb',
-                    background: program === p.key ? p.bg : 'white',
+                    background: 'white',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -889,7 +889,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
               width: '100%',
               padding: 12,
               borderRadius: 10,
-              border: '2px dashed #a7f3d0',
+              border: '2px dashed var(--border)',
               background: 'transparent',
               color: '#085041',
               fontSize: 13,
@@ -953,7 +953,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                         },
                         React.createElement(
                           'div',
-                          {style: {fontSize: 13, fontWeight: 600, color: '#991b1b'}},
+                          {style: {fontSize: 13, fontWeight: 600, color: 'var(--ink)'}},
                           'Feed ' + (ri + 1),
                         ),
                         React.createElement(
@@ -970,7 +970,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                             style: {
                               background: 'none',
                               border: 'none',
-                              color: '#9ca3af',
+                              color: 'var(--ink-faint)',
                               cursor: 'pointer',
                               fontSize: 18,
                             },
@@ -1061,7 +1061,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                   width: '100%',
                   padding: 12,
                   borderRadius: 10,
-                  border: '2px dashed #fca5a5',
+                  border: '2px dashed var(--border)',
                   background: 'transparent',
                   color: '#991b1b',
                   fontSize: 13,
@@ -1124,7 +1124,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                         },
                         React.createElement(
                           'div',
-                          {style: {fontSize: 13, fontWeight: 600, color: '#0f766e'}},
+                          {style: {fontSize: 13, fontWeight: 600, color: 'var(--ink)'}},
                           'Feed ' + (ri + 1),
                         ),
                         React.createElement(
@@ -1141,7 +1141,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                             style: {
                               background: 'none',
                               border: 'none',
-                              color: '#9ca3af',
+                              color: 'var(--ink-faint)',
                               cursor: 'pointer',
                               fontSize: 18,
                             },
@@ -1201,7 +1201,7 @@ const AddFeedWebform = ({sb, sessionSubmitter}) => {
                   width: '100%',
                   padding: 12,
                   borderRadius: 10,
-                  border: '2px dashed #5eead4',
+                  border: '2px dashed var(--border)',
                   background: 'transparent',
                   color: '#0f766e',
                   fontSize: 13,
