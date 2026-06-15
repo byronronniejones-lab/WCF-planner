@@ -2784,7 +2784,7 @@ function App() {
     sbSave('ppp-archived-sows-v1', nb);
   }
   function persistBreeders(nb) {
-    sbSave('ppp-breeders-v1', nb);
+    return sbSave('ppp-breeders-v1', nb);
   }
   function persistBreedOptions(nb) {
     sbSave('ppp-breed-options-v1', nb);

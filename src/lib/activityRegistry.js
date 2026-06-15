@@ -16,6 +16,7 @@ export const ENTITY_TYPES = {
   SHEEP_ANIMAL: 'sheep.animal',
   EQUIPMENT_ITEM: 'equipment.item',
   PIG_BATCH: 'pig.batch',
+  PIG_BREEDER: 'pig.breeder',
   CATTLE_PROCESSING: 'cattle.processing',
   CATTLE_FORECAST: 'cattle.forecast',
   CATTLE_BREEDING: 'cattle.breeding',
@@ -74,6 +75,11 @@ export const ACTIVITY_REGISTRY = {
   [ENTITY_TYPES.PIG_BATCH]: {
     displayLabel: (id, ctx) => (ctx && ctx.batchName ? ctx.batchName : id),
     route: (id) => '/pig/batches/' + encodeURIComponent(id),
+    program: 'pig',
+  },
+  [ENTITY_TYPES.PIG_BREEDER]: {
+    displayLabel: (id, ctx) => (ctx && ctx.tag ? '#' + ctx.tag : id),
+    route: (id) => '/pig/sows/' + encodeURIComponent(id),
     program: 'pig',
   },
   [ENTITY_TYPES.CATTLE_PROCESSING]: {
@@ -220,6 +226,7 @@ export function routeToView(routePath) {
     '/layer/dailys': 'layerdailys',
     '/layer/eggs': 'eggdailys',
     '/pig/batches': 'pigbatches',
+    '/pig/sows': 'sows',
     '/pig/dailys': 'pigdailys',
     '/cattle/batches': 'cattlebatches',
     '/cattle/herds': 'cattleherds',
@@ -238,6 +245,7 @@ export function routeToView(routePath) {
   if (path.startsWith('/sheep/batches/')) return {view: 'sheepbatches', search: search || ''};
   if (path.startsWith('/broiler/dailys/')) return {view: 'broilerdailys', search: search || ''};
   if (path.startsWith('/pig/batches/')) return {view: 'pigbatches', search: search || ''};
+  if (path.startsWith('/pig/sows/')) return {view: 'sows', search: search || ''};
   if (path.startsWith('/pig/dailys/')) return {view: 'pigdailys', search: search || ''};
   if (path.startsWith('/cattle/dailys/')) return {view: 'cattledailys', search: search || ''};
   if (path.startsWith('/sheep/dailys/')) return {view: 'sheepdailys', search: search || ''};
