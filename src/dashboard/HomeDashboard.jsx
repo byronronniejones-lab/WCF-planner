@@ -122,7 +122,7 @@ function WrenchGlyph() {
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 function ComingSoonPage({Header, label, onBack}) {
   return (
-    <div className="home theme-crisp">
+    <div className="home theme-crisp home-dashboard">
       <Header />
       <main className="home-col">
         <section className="card" data-coming-soon={label} style={{padding: '44px 28px', textAlign: 'center'}}>
@@ -426,7 +426,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
       key={label}
       style={{
         background: 'white',
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--border)',
         borderRadius: 12,
         padding: '14px 16px',
         boxShadow: '0 1px 3px rgba(0,0,0,.06)',
@@ -454,7 +454,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   }
 
   return (
-    <div className="home theme-crisp">
+    <div className="home theme-crisp home-dashboard">
       {showUsers && (
         <UsersModal
           sb={sb}
@@ -1051,7 +1051,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                     style={{
                                       background: shadeBg,
                                       borderRadius: 7,
-                                      border: notable ? '1.5px solid #fca5a5' : '1px solid #e5e7eb',
+                                      border: notable ? '1.5px solid #fca5a5' : '1px solid var(--border)',
                                       padding: '8px 12px',
                                       cursor: 'pointer',
                                       display: 'flex',
@@ -1090,7 +1090,7 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                                             borderRadius: 4,
                                             background: '#f1f5f9',
                                             color: '#475569',
-                                            border: '1px solid #e2e8f0',
+                                            border: '1px solid var(--border)',
                                             textAlign: 'center',
                                             whiteSpace: 'nowrap',
                                             overflow: 'hidden',

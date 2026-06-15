@@ -4,7 +4,7 @@
    Ported from "WCF Planner Redesign/modern-base.css" + the theme-crisp tokens
    from modern-themes.css. EVERYTHING is namespaced under `.home` so it cannot
    leak into the rest of the app (the app is otherwise inline-styled). The
-   HomeDashboard root carries `className="home theme-crisp"`. Header styling is
+   HomeDashboard root carries `className="home theme-crisp home-dashboard"`. Header styling is
    NOT here — the global Header (src/shared/Header.jsx) owns its own green-crisp
    styling. Icons are rendered as <img>/PlannerIcon in JSX; this file only
    styles their containers.
@@ -51,6 +51,11 @@
      the viewport so there is no seam against the body background. */
   background: oklch(0.991 0.002 225);
   min-height: 100vh;
+}
+
+.home.theme-crisp.home-dashboard {
+  --border: oklch(0.84 0.008 230);
+  --border-strong: oklch(0.72 0.011 230);
 }
 
 /* The redesigned content column (inside the existing app frame, below Header). */
