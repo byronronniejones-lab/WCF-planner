@@ -118,6 +118,11 @@ describe('SheepFlocksView - filter/sort parity with cattle herds', () => {
 
   it('renders grouped filter chips and ordered sort controls', () => {
     expect(flocksView).toContain('data-sheep-filter-groups');
+    expect(flocksView).toContain("openToolPanel === 'filters'");
+    expect(flocksView).toContain('data-sheep-flocks-filters-toggle="1"');
+    expect(flocksView).toContain('data-sheep-flocks-saved-views-toggle="1"');
+    expect(flocksView).toContain('data-sheep-flocks-sort-toggle="1"');
+    expect(flocksView).toContain('data-sheep-flocks-view-toggle="1"');
     expect(flocksView).toContain('data-sheep-filter-group={group.key}');
     expect(flocksView).toContain('data-sheep-filter-chip={key}');
     expect(flocksView).toContain('data-sheep-sort-rule={rule.key}');

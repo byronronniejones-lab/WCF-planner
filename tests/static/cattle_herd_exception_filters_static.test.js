@@ -78,6 +78,11 @@ describe('Cattle herd filters — always-visible organized groups', () => {
 
   it('renders three organized filter groups and no Exceptions group', () => {
     expect(herdsView).toContain('data-cattle-filter-groups');
+    expect(herdsView).toContain("openToolPanel === 'filters'");
+    expect(herdsView).toContain('data-cattle-herds-filters-toggle="1"');
+    expect(herdsView).toContain('data-cattle-herds-saved-views-toggle="1"');
+    expect(herdsView).toContain('data-cattle-herds-sort-toggle="1"');
+    expect(herdsView).toContain('data-cattle-herds-view-toggle="1"');
     expect(herdsView).toContain('data-filter-group');
     expect(herdsView).toContain("label: 'Core'");
     expect(herdsView).toContain("label: 'Calving/Breeding'");

@@ -65,8 +65,10 @@ describe('CattleBatchesView imports + uses the pure filter lib', () => {
   });
 
   it('builds a predicate + a single-rule comparator from toolbar state', () => {
-    expect(batchesView).toContain('const batchPredicate = buildCattleBatchPredicate(filters)');
-    expect(batchesView).toContain('const batchComparator = buildCattleBatchComparator(sortRule)');
+    expect(batchesView).toContain('const EXTENDED_LIST_CONTROLS_ENABLED = false;');
+    expect(batchesView).toContain('const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};');
+    expect(batchesView).toContain('const batchPredicate = buildCattleBatchPredicate(effectiveFilters)');
+    expect(batchesView).toContain('const batchComparator = buildCattleBatchComparator(effectiveSortRule)');
     // Single active sort rule (right-sized), not a multi-rule array.
     expect(batchesView).toMatch(/sortRule.*=.*usePersistentViewState\('cattle\.batches\.sortRule'/);
   });

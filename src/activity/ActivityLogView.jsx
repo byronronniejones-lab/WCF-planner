@@ -64,6 +64,7 @@ const ENTITY_FILTERS = [
   {value: 'sheep.daily', label: 'Sheep Daily'},
   {value: 'weighin.session', label: 'Weigh-In Sessions'},
 ];
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 export default function ActivityLogView({Header}) {
   const navigate = useNavigate();
@@ -81,6 +82,8 @@ export default function ActivityLogView({Header}) {
   const [hasMore, setHasMore] = React.useState(false);
   const [reloadKey, setReloadKey] = React.useState(0);
   const [exportNotice, setExportNotice] = React.useState(null);
+  const effectiveSearch = EXTENDED_LIST_CONTROLS_ENABLED ? search : '';
+  const effectiveEntityFilter = EXTENDED_LIST_CONTROLS_ENABLED ? entityFilter : '';
   const exportColumns = React.useMemo(
     () => buildActivityLogExportColumns({entityTypeLabels: ENTITY_TYPE_LABELS, eventTypeLabels: EVENT_TYPE_LABELS}),
     [],
@@ -103,8 +106,8 @@ export default function ActivityLogView({Header}) {
         const data = await loadGlobalActivity(sb, {
           limit: 50,
           before,
-          entityType: entityFilter || undefined,
-          search: search.trim() || undefined,
+          entityType: effectiveEntityFilter || undefined,
+          search: effectiveSearch.trim() || undefined,
         });
         if (append) {
           setRows((prev) => [...prev, ...data]);
@@ -126,13 +129,13 @@ export default function ActivityLogView({Header}) {
       if (append) setLoadingMore(false);
       else setLoading(false);
     },
-    [entityFilter, search, rows, loadingMore],
+    [effectiveEntityFilter, effectiveSearch, rows, loadingMore],
   );
 
   React.useEffect(() => {
     load(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityFilter, reloadKey]);
+  }, [effectiveEntityFilter, reloadKey]);
 
   function handleSearch(e) {
     e.preventDefault();
@@ -216,83 +219,84 @@ export default function ActivityLogView({Header}) {
       ),
 
       // Filters
-      React.createElement(
-        'form',
-        {
-          onSubmit: handleSearch,
-          style: {display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center'},
-        },
-        React.createElement('input', {
-          type: 'text',
-          value: search,
-          onChange: (e) => setSearch(e.target.value),
-          placeholder: 'Search activity...',
-          style: {...inputStyle, flex: 1, minWidth: 160},
-        }),
+      EXTENDED_LIST_CONTROLS_ENABLED &&
         React.createElement(
-          'select',
-          {value: entityFilter, onChange: (e) => setEntityFilter(e.target.value), style: inputStyle},
-          ENTITY_FILTERS.map((f) => React.createElement('option', {key: f.value, value: f.value}, f.label)),
-        ),
-        React.createElement(
-          'button',
+          'form',
           {
-            type: 'submit',
-            style: {
-              padding: '6px 14px',
-              borderRadius: 6,
-              border: '1px solid #085041',
-              background: '#085041',
-              color: 'white',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            },
+            onSubmit: handleSearch,
+            style: {display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center'},
           },
-          'Search',
-        ),
-        React.createElement(
-          'button',
-          {
-            type: 'button',
-            onClick: handleExportCsv,
-            'data-activity-log-export-csv': '1',
-            style: {
-              padding: '6px 14px',
-              borderRadius: 6,
-              border: '1px solid var(--border-strong)',
-              background: 'white',
-              color: 'var(--ink)',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
+          React.createElement('input', {
+            type: 'text',
+            value: search,
+            onChange: (e) => setSearch(e.target.value),
+            placeholder: 'Search activity...',
+            style: {...inputStyle, flex: 1, minWidth: 160},
+          }),
+          React.createElement(
+            'select',
+            {value: entityFilter, onChange: (e) => setEntityFilter(e.target.value), style: inputStyle},
+            ENTITY_FILTERS.map((f) => React.createElement('option', {key: f.value, value: f.value}, f.label)),
+          ),
+          React.createElement(
+            'button',
+            {
+              type: 'submit',
+              style: {
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: '1px solid #085041',
+                background: '#085041',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              },
             },
-          },
-          'Export CSV',
-        ),
-        React.createElement(
-          'button',
-          {
-            type: 'button',
-            onClick: handlePrintRows,
-            'data-activity-log-print': '1',
-            style: {
-              padding: '6px 14px',
-              borderRadius: 6,
-              border: '1px solid var(--border-strong)',
-              background: 'white',
-              color: 'var(--ink)',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
+            'Search',
+          ),
+          React.createElement(
+            'button',
+            {
+              type: 'button',
+              onClick: handleExportCsv,
+              'data-activity-log-export-csv': '1',
+              style: {
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: '1px solid var(--border-strong)',
+                background: 'white',
+                color: 'var(--ink)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              },
             },
-          },
-          'Print',
+            'Export CSV',
+          ),
+          React.createElement(
+            'button',
+            {
+              type: 'button',
+              onClick: handlePrintRows,
+              'data-activity-log-print': '1',
+              style: {
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: '1px solid var(--border-strong)',
+                background: 'white',
+                color: 'var(--ink)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              },
+            },
+            'Print',
+          ),
         ),
-      ),
       exportNotice && React.createElement(InlineNotice, {notice: exportNotice, onDismiss: () => setExportNotice(null)}),
 
       // Error

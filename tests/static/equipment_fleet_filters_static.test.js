@@ -57,14 +57,16 @@ describe('EquipmentFleetView — imports the pure filter lib', () => {
   });
 
   it('applies predicate then comparator (filter then sort)', () => {
-    expect(fleetView).toContain('buildEquipmentFleetPredicate(filters, filterCtx)');
-    expect(fleetView).toContain('[...filtered].sort(buildEquipmentFleetComparator(sortRule, filterCtx))');
+    expect(fleetView).toContain('const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};');
+    expect(fleetView).toContain('buildEquipmentFleetPredicate(effectiveFilters, filterCtx)');
+    expect(fleetView).toContain('[...filtered].sort(buildEquipmentFleetComparator(effectiveSortRule, filterCtx))');
   });
 });
 
 describe('EquipmentFleetView — toolbar + saved views (surface_key equipment.fleet)', () => {
   it('declares the equipment.fleet surface key', () => {
     expect(fleetView).toContain("EQUIPMENT_FLEET_SURFACE_KEY = 'equipment.fleet'");
+    expect(fleetView).toContain('const EXTENDED_LIST_CONTROLS_ENABLED = false;');
   });
 
   it('imports the saved-views API and renders save/select/update/delete controls', () => {

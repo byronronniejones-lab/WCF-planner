@@ -32,6 +32,7 @@ import {
 import SheepBatchPage from './SheepBatchPage.jsx';
 
 const SHEEP_BATCHES_SURFACE_KEY = 'sheep.batches';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 const SHEEP_BATCH_SORT_LABELS = {
   batchName: 'Batch name',
@@ -211,15 +212,18 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
     [batches],
   );
 
+  const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};
+  const effectiveSortRule = EXTENDED_LIST_CONTROLS_ENABLED ? sortRule : {key: 'plannedDate', dir: 'desc'};
+
   const filteredBatches = useMemo(() => {
-    const predicate = buildSheepBatchPredicate(filters, {});
+    const predicate = buildSheepBatchPredicate(effectiveFilters, {});
     return augmentedBatches.filter(predicate);
-  }, [augmentedBatches, filters]);
+  }, [augmentedBatches, effectiveFilters]);
 
   const sortedBatches = useMemo(() => {
-    const cmp = buildSheepBatchComparator(sortRule, {});
+    const cmp = buildSheepBatchComparator(effectiveSortRule, {});
     return [...filteredBatches].sort(cmp);
-  }, [filteredBatches, sortRule]);
+  }, [filteredBatches, effectiveSortRule]);
 
   // The SORTED set is the single source of truth for the visible rows, the
   // record-sequence nav order, and the CSV/print export rows.
@@ -228,12 +232,16 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
   const exportColumns = buildProcessingBatchExportColumns({fmt, animalLabel: 'Sheep'});
 
   const activeFilterCount =
-    (Array.isArray(filters.status) && filters.status.length > 0 ? 1 : 0) +
-    (filters.plannedDateRange && (filters.plannedDateRange.after || filters.plannedDateRange.before) ? 1 : 0) +
-    (filters.animalCountRange && (filters.animalCountRange.min != null || filters.animalCountRange.max != null)
+    (Array.isArray(effectiveFilters.status) && effectiveFilters.status.length > 0 ? 1 : 0) +
+    (effectiveFilters.plannedDateRange &&
+    (effectiveFilters.plannedDateRange.after || effectiveFilters.plannedDateRange.before)
       ? 1
       : 0) +
-    (typeof filters.textSearch === 'string' && filters.textSearch.trim() ? 1 : 0);
+    (effectiveFilters.animalCountRange &&
+    (effectiveFilters.animalCountRange.min != null || effectiveFilters.animalCountRange.max != null)
+      ? 1
+      : 0) +
+    (typeof effectiveFilters.textSearch === 'string' && effectiveFilters.textSearch.trim() ? 1 : 0);
   const hasActiveFilters = activeFilterCount > 0;
 
   function setFilter(key, value) {
@@ -474,42 +482,46 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
             </span>
           </div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              data-sheep-batches-export-csv="1"
-              style={{
-                padding: '7px 12px',
-                borderRadius: 7,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintRows}
-              data-sheep-batches-print="1"
-              style={{
-                padding: '7px 12px',
-                borderRadius: 7,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Print
-            </button>
+            {EXTENDED_LIST_CONTROLS_ENABLED && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  data-sheep-batches-export-csv="1"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 7,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: 'var(--ink)',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintRows}
+                  data-sheep-batches-print="1"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 7,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: 'var(--ink)',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Print
+                </button>
+              </>
+            )}
             {canEdit && (
               <button
                 type="button"
@@ -532,7 +544,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
           </div>
         </div>
 
-        {!loadError && !showForm && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !loadError && !showForm && (
           <>
             {/* Saved views (surface_key sheep.batches) — degrades to a small
                 notice on load failure; never blocks the list or filters. */}

@@ -9,6 +9,7 @@ import {printRows} from '../lib/printExport.js';
 import {listSavedViews, createSavedView, updateSavedView, deleteSavedView} from '../lib/savedViewsApi.js';
 
 const EQUIPMENT_FUEL_LOG_SURFACE_KEY = 'equipment.fuelLog';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 export default function EquipmentFuelLogView({sb, authState, equipment, fuelings, fmt}) {
   const [eqFilter, setEqFilter] = usePersistentViewState('equipment.fuelLog.equipmentFilter', '');
@@ -59,12 +60,17 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
     return Array.from(set).sort();
   }, [fuelings]);
 
+  const effectiveEqFilter = EXTENDED_LIST_CONTROLS_ENABLED ? eqFilter : '';
+  const effectiveFuelFilter = EXTENDED_LIST_CONTROLS_ENABLED ? fuelFilter : '';
+  const effectiveTeamFilter = EXTENDED_LIST_CONTROLS_ENABLED ? teamFilter : '';
+  const effectiveFromDate = EXTENDED_LIST_CONTROLS_ENABLED ? fromDate : '';
+  const effectiveToDate = EXTENDED_LIST_CONTROLS_ENABLED ? toDate : '';
   const filtered = fuelings.filter((f) => {
-    if (eqFilter && f.equipment_id !== eqFilter) return false;
-    if (fuelFilter && f.fuel_type !== fuelFilter) return false;
-    if (teamFilter && f.team_member !== teamFilter) return false;
-    if (fromDate && (f.date || '') < fromDate) return false;
-    if (toDate && (f.date || '') > toDate) return false;
+    if (effectiveEqFilter && f.equipment_id !== effectiveEqFilter) return false;
+    if (effectiveFuelFilter && f.fuel_type !== effectiveFuelFilter) return false;
+    if (effectiveTeamFilter && f.team_member !== effectiveTeamFilter) return false;
+    if (effectiveFromDate && (f.date || '') < effectiveFromDate) return false;
+    if (effectiveToDate && (f.date || '') > effectiveToDate) return false;
     return true;
   });
   const selectedView = savedViews.find((v) => v.id === selectedViewId) || null;
@@ -255,117 +261,119 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
 
   return (
     <div>
-      <div
-        data-equipment-fuel-log-saved-views-row
-        style={{
-          background: 'white',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          padding: '10px 14px',
-          marginBottom: 8,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
-        {savedViewsError ? (
-          <span
-            style={{fontSize: 12, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 8}}
-            data-equipment-fuel-log-saved-views-error
-          >
-            Saved views unavailable. Filters still work.
-            <button
-              type="button"
-              data-equipment-fuel-log-saved-views-retry
-              onClick={loadSavedViews}
-              disabled={savedViewsLoading}
-              style={{
-                fontSize: 11,
-                padding: '3px 10px',
-                borderRadius: 6,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                cursor: savedViewsLoading ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-                fontWeight: 600,
-              }}
+      {EXTENDED_LIST_CONTROLS_ENABLED && (
+        <div
+          data-equipment-fuel-log-saved-views-row
+          style={{
+            background: 'white',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            padding: '10px 14px',
+            marginBottom: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
+          {savedViewsError ? (
+            <span
+              style={{fontSize: 12, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 8}}
+              data-equipment-fuel-log-saved-views-error
             >
-              {savedViewsLoading ? 'Retrying…' : 'Retry'}
-            </button>
-          </span>
-        ) : (
-          <>
-            <select
-              data-equipment-fuel-log-saved-view-select
-              value={selectedViewId}
-              disabled={savedViewsLoading}
-              onChange={(e) => onSelectSavedView(e.target.value)}
-              style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
-            >
-              <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
-              {myViews.length > 0 && (
-                <optgroup label="My views">
-                  {myViews.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
-                    </option>
-                  ))}
-                </optgroup>
+              Saved views unavailable. Filters still work.
+              <button
+                type="button"
+                data-equipment-fuel-log-saved-views-retry
+                onClick={loadSavedViews}
+                disabled={savedViewsLoading}
+                style={{
+                  fontSize: 11,
+                  padding: '3px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-strong)',
+                  background: 'white',
+                  color: 'var(--ink)',
+                  cursor: savedViewsLoading ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  fontWeight: 600,
+                }}
+              >
+                {savedViewsLoading ? 'Retrying…' : 'Retry'}
+              </button>
+            </span>
+          ) : (
+            <>
+              <select
+                data-equipment-fuel-log-saved-view-select
+                value={selectedViewId}
+                disabled={savedViewsLoading}
+                onChange={(e) => onSelectSavedView(e.target.value)}
+                style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
+              >
+                <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
+                {myViews.length > 0 && (
+                  <optgroup label="My views">
+                    {myViews.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {publicOtherViews.length > 0 && (
+                  <optgroup label="Public views">
+                    {publicOtherViews.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {selectedViewIsMine && (
+                <>
+                  <button
+                    type="button"
+                    data-equipment-fuel-log-saved-view-update
+                    onClick={updateSelectedView}
+                    disabled={savedViewBusy}
+                    style={savedViewGhostBtnS}
+                  >
+                    Update to current
+                  </button>
+                  <button
+                    type="button"
+                    data-equipment-fuel-log-saved-view-delete
+                    onClick={deleteSelectedView}
+                    disabled={savedViewBusy}
+                    style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                  >
+                    Delete
+                  </button>
+                </>
               )}
-              {publicOtherViews.length > 0 && (
-                <optgroup label="Public views">
-                  {publicOtherViews.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
-                </optgroup>
+              <span style={{flex: 1}} />
+              {savedViewNotice && (
+                <span style={{fontSize: 12, color: savedViewNotice.kind === 'success' ? '#065f46' : '#b91c1c'}}>
+                  {savedViewNotice.message}
+                </span>
               )}
-            </select>
-            {selectedViewIsMine && (
-              <>
-                <button
-                  type="button"
-                  data-equipment-fuel-log-saved-view-update
-                  onClick={updateSelectedView}
-                  disabled={savedViewBusy}
-                  style={savedViewGhostBtnS}
-                >
-                  Update to current
-                </button>
-                <button
-                  type="button"
-                  data-equipment-fuel-log-saved-view-delete
-                  onClick={deleteSelectedView}
-                  disabled={savedViewBusy}
-                  style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
-                >
-                  Delete
-                </button>
-              </>
-            )}
-            <span style={{flex: 1}} />
-            {savedViewNotice && (
-              <span style={{fontSize: 12, color: savedViewNotice.kind === 'success' ? '#065f46' : '#b91c1c'}}>
-                {savedViewNotice.message}
-              </span>
-            )}
-            <button
-              type="button"
-              data-equipment-fuel-log-saved-view-save-open
-              onClick={openSaveViewForm}
-              disabled={savedViewBusy || savedViewsLoading}
-              style={savedViewPrimaryBtnS}
-            >
-              Save current view
-            </button>
-          </>
-        )}
-      </div>
-      {showSaveViewForm && (
+              <button
+                type="button"
+                data-equipment-fuel-log-saved-view-save-open
+                onClick={openSaveViewForm}
+                disabled={savedViewBusy || savedViewsLoading}
+                style={savedViewPrimaryBtnS}
+              >
+                Save current view
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {EXTENDED_LIST_CONTROLS_ENABLED && showSaveViewForm && (
         <div
           data-equipment-fuel-log-saved-view-form
           style={{
@@ -430,107 +438,109 @@ export default function EquipmentFuelLogView({sb, authState, equipment, fuelings
           </button>
         </div>
       )}
-      <div
-        style={{
-          background: 'white',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          padding: '12px 16px',
-          marginBottom: 14,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          flexWrap: 'wrap',
-        }}
-      >
-        <select value={eqFilter} onChange={(e) => setEqFilter(e.target.value)} style={{...inpS, width: 'auto'}}>
-          <option value="">All equipment</option>
-          {equipment.map((eq) => (
-            <option key={eq.id} value={eq.id}>
-              {eq.name}
-            </option>
-          ))}
-        </select>
-        <select value={fuelFilter} onChange={(e) => setFuelFilter(e.target.value)} style={{...inpS, width: 'auto'}}>
-          <option value="">All fuel types</option>
-          <option value="diesel">Diesel</option>
-          <option value="gasoline">Gasoline</option>
-          <option value="def">DEF</option>
-        </select>
-        <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} style={{...inpS, width: 'auto'}}>
-          <option value="">All team members</option>
-          {teamMembers.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <input
-          type="date"
-          value={fromDate}
-          onChange={(e) => setFromDate(e.target.value)}
-          style={inpS}
-          title="From date"
-        />
-        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inpS} title="To date" />
-        <button
-          onClick={() => {
-            setEqFilter('');
-            setFuelFilter('');
-            setTeamFilter('');
-            setFromDate('');
-            setToDate('');
-          }}
+      {EXTENDED_LIST_CONTROLS_ENABLED && (
+        <div
           style={{
-            padding: '7px 14px',
-            borderRadius: 6,
-            border: '1px solid var(--border-strong)',
             background: 'white',
-            color: 'var(--ink)',
-            fontSize: 12,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            padding: '12px 16px',
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
           }}
         >
-          Clear
-        </button>
-        <button
-          type="button"
-          data-equipment-fuel-log-export-csv="1"
-          onClick={handleExportCsv}
-          style={{
-            padding: '7px 14px',
-            borderRadius: 6,
-            border: '1px solid var(--border-strong)',
-            background: 'white',
-            color: 'var(--ink)',
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          Export CSV
-        </button>
-        <button
-          type="button"
-          data-equipment-fuel-log-print="1"
-          onClick={handlePrintRows}
-          style={{
-            padding: '7px 14px',
-            borderRadius: 6,
-            border: '1px solid var(--border-strong)',
-            background: 'white',
-            color: 'var(--ink)',
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          Print
-        </button>
-      </div>
+          <select value={eqFilter} onChange={(e) => setEqFilter(e.target.value)} style={{...inpS, width: 'auto'}}>
+            <option value="">All equipment</option>
+            {equipment.map((eq) => (
+              <option key={eq.id} value={eq.id}>
+                {eq.name}
+              </option>
+            ))}
+          </select>
+          <select value={fuelFilter} onChange={(e) => setFuelFilter(e.target.value)} style={{...inpS, width: 'auto'}}>
+            <option value="">All fuel types</option>
+            <option value="diesel">Diesel</option>
+            <option value="gasoline">Gasoline</option>
+            <option value="def">DEF</option>
+          </select>
+          <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} style={{...inpS, width: 'auto'}}>
+            <option value="">All team members</option>
+            {teamMembers.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={inpS}
+            title="From date"
+          />
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inpS} title="To date" />
+          <button
+            onClick={() => {
+              setEqFilter('');
+              setFuelFilter('');
+              setTeamFilter('');
+              setFromDate('');
+              setToDate('');
+            }}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 6,
+              border: '1px solid var(--border-strong)',
+              background: 'white',
+              color: 'var(--ink)',
+              fontSize: 12,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            data-equipment-fuel-log-export-csv="1"
+            onClick={handleExportCsv}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 6,
+              border: '1px solid var(--border-strong)',
+              background: 'white',
+              color: 'var(--ink)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            data-equipment-fuel-log-print="1"
+            onClick={handlePrintRows}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 6,
+              border: '1px solid var(--border-strong)',
+              background: 'white',
+              color: 'var(--ink)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Print
+          </button>
+        </div>
+      )}
 
       {exportNotice && <div style={{marginBottom: 14, color: '#b91c1c', fontSize: 12}}>{exportNotice}</div>}
 

@@ -53,6 +53,7 @@ import {useUI} from '../contexts/UIContext.jsx';
 import BroilerBatchPage from './BroilerBatchPage.jsx';
 
 const BROILER_BATCHES_SURFACE_KEY = 'broiler.batches';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 // Sort dropdown options (single active sort rule). Mirrors the hub's sort keys
 // from broilerBatchFilters.js as labeled key:dir pairs.
@@ -187,13 +188,15 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
     () => ({statusOf: (b) => calcPoultryStatus(b), totalFeedLbsOf: totalFeedLbsFor}),
     [totalFeedLbsFor],
   );
+  const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};
+  const effectiveSortRule = EXTENDED_LIST_CONTROLS_ENABLED ? sortRule : {key: 'batchName', dir: 'asc'};
   const filtered = React.useMemo(
-    () => batches.filter(buildBroilerBatchPredicate(filters, filterCtx)),
-    [batches, filters, filterCtx],
+    () => batches.filter(buildBroilerBatchPredicate(effectiveFilters, filterCtx)),
+    [batches, effectiveFilters, filterCtx],
   );
   const sorted = React.useMemo(
-    () => [...filtered].sort(buildBroilerBatchComparator(sortRule, filterCtx)),
-    [filtered, sortRule, filterCtx],
+    () => [...filtered].sort(buildBroilerBatchComparator(effectiveSortRule, filterCtx)),
+    [filtered, effectiveSortRule, filterCtx],
   );
 
   // Section views derived from the SORTED set (broiler has a real planned →
@@ -210,7 +213,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
 
   const totalCount = batches.length;
   const visibleCount = sorted.length;
-  const filterCount = Object.keys(filters).length;
+  const filterCount = Object.keys(effectiveFilters).length;
 
   function setFilter(key, value) {
     setFilters((prev) => {
@@ -453,42 +456,46 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
       <Header />
       <div style={{padding: '1rem'}} data-broiler-batches-loaded={dataLoaded ? 'true' : 'false'}>
         <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', marginBottom: 10}}>
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            data-broiler-batches-export-csv="1"
-            style={{
-              padding: '7px 12px',
-              borderRadius: 8,
-              border: '1px solid var(--border-strong)',
-              background: 'white',
-              color: 'var(--ink)',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: 0.1,
-            }}
-          >
-            Export CSV
-          </button>
-          <button
-            type="button"
-            onClick={handlePrintRows}
-            data-broiler-batches-print="1"
-            style={{
-              padding: '7px 12px',
-              borderRadius: 8,
-              border: '1px solid var(--border-strong)',
-              background: 'white',
-              color: 'var(--ink)',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: 0.1,
-            }}
-          >
-            Print
-          </button>
+          {EXTENDED_LIST_CONTROLS_ENABLED && (
+            <>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                data-broiler-batches-export-csv="1"
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-strong)',
+                  background: 'white',
+                  color: 'var(--ink)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: 0.1,
+                }}
+              >
+                Export CSV
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintRows}
+                data-broiler-batches-print="1"
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-strong)',
+                  background: 'white',
+                  color: 'var(--ink)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: 0.1,
+                }}
+              >
+                Print
+              </button>
+            </>
+          )}
           <button
             style={{
               padding: '7px 18px',
@@ -509,90 +516,92 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
         </div>
         <InlineNotice notice={listNotice} onDismiss={() => setListNotice(null)} />
         {/* Saved views row — degrades gracefully when the API fails */}
-        <div
-          data-broiler-saved-views-row
-          style={{
-            background: 'white',
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            padding: '10px 14px',
-            marginBottom: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
-          {savedViewsError ? (
-            <span style={{fontSize: 12, color: '#b91c1c'}} data-broiler-saved-views-error>
-              Saved views unavailable. Filters still work.
-            </span>
-          ) : (
-            <>
-              <select
-                data-broiler-saved-view-select
-                value={selectedViewId}
-                disabled={savedViewsLoading}
-                onChange={(e) => onSelectSavedView(e.target.value)}
-                style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
-              >
-                <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
-                {myViews.length > 0 && (
-                  <optgroup label="My views">
-                    {myViews.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
-                      </option>
-                    ))}
-                  </optgroup>
+        {EXTENDED_LIST_CONTROLS_ENABLED && (
+          <div
+            data-broiler-saved-views-row
+            style={{
+              background: 'white',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '10px 14px',
+              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
+            {savedViewsError ? (
+              <span style={{fontSize: 12, color: '#b91c1c'}} data-broiler-saved-views-error>
+                Saved views unavailable. Filters still work.
+              </span>
+            ) : (
+              <>
+                <select
+                  data-broiler-saved-view-select
+                  value={selectedViewId}
+                  disabled={savedViewsLoading}
+                  onChange={(e) => onSelectSavedView(e.target.value)}
+                  style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
+                >
+                  <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
+                  {myViews.length > 0 && (
+                    <optgroup label="My views">
+                      {myViews.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {publicOtherViews.length > 0 && (
+                    <optgroup label="Public views">
+                      {publicOtherViews.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {selectedViewIsMine && (
+                  <>
+                    <button
+                      type="button"
+                      data-broiler-saved-view-update
+                      onClick={updateSelectedView}
+                      disabled={savedViewBusy}
+                      style={savedViewGhostBtnS}
+                    >
+                      Update to current
+                    </button>
+                    <button
+                      type="button"
+                      data-broiler-saved-view-delete
+                      onClick={deleteSelectedView}
+                      disabled={savedViewBusy}
+                      style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                    >
+                      Delete
+                    </button>
+                  </>
                 )}
-                {publicOtherViews.length > 0 && (
-                  <optgroup label="Public views">
-                    {publicOtherViews.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              {selectedViewIsMine && (
-                <>
-                  <button
-                    type="button"
-                    data-broiler-saved-view-update
-                    onClick={updateSelectedView}
-                    disabled={savedViewBusy}
-                    style={savedViewGhostBtnS}
-                  >
-                    Update to current
-                  </button>
-                  <button
-                    type="button"
-                    data-broiler-saved-view-delete
-                    onClick={deleteSelectedView}
-                    disabled={savedViewBusy}
-                    style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
-                  >
-                    Delete
-                  </button>
-                </>
-              )}
-              <span style={{flex: 1}} />
-              <button
-                type="button"
-                data-broiler-saved-view-save-open
-                onClick={openSaveViewForm}
-                disabled={savedViewBusy}
-                style={savedViewPrimaryBtnS}
-              >
-                Save current view
-              </button>
-            </>
-          )}
-        </div>
-        {showSaveViewForm && (
+                <span style={{flex: 1}} />
+                <button
+                  type="button"
+                  data-broiler-saved-view-save-open
+                  onClick={openSaveViewForm}
+                  disabled={savedViewBusy}
+                  style={savedViewPrimaryBtnS}
+                >
+                  Save current view
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {EXTENDED_LIST_CONTROLS_ENABLED && showSaveViewForm && (
           <div
             data-broiler-saved-view-form
             style={{
@@ -658,110 +667,112 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
           </div>
         )}
         {/* Top toolbar — search + status + breed + start-date range + sort */}
-        <div
-          data-broiler-batches-toolbar
-          style={{
-            background: 'white',
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            padding: '12px 16px',
-            marginBottom: 12,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
-          <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setFilter('textSearch', e.target.value)}
-              placeholder="Search batch name, breed, hatchery..."
-              data-broiler-search
-              style={{...inpS, flex: 1, minWidth: 200, width: '100%'}}
-            />
-            <select
-              value={statusFilterValue}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              data-broiler-status-filter
-              style={{...inpS, width: 'auto'}}
-            >
-              <option value="">All statuses</option>
-              {BROILER_BATCH_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {BROILER_STATUS_LABELS[s] || s}
-                </option>
-              ))}
-            </select>
-            <select
-              value={breedFilterValue}
-              onChange={(e) => setBreedFilter(e.target.value)}
-              data-broiler-breed-filter
-              style={{...inpS, width: 'auto'}}
-            >
-              <option value="">All breeds</option>
-              {breedFilterOptions.map((o) => (
-                <option key={o.code} value={o.code}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <label
-              style={{fontSize: 11, color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-            >
-              Hatch after
+        {EXTENDED_LIST_CONTROLS_ENABLED && (
+          <div
+            data-broiler-batches-toolbar
+            style={{
+              background: 'white',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '12px 16px',
+              marginBottom: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
               <input
-                type="date"
-                value={startAfter}
-                onChange={(e) => setStartDateBound('after', e.target.value)}
-                data-broiler-start-after
-                style={{...inpS, width: 'auto'}}
+                type="text"
+                value={search}
+                onChange={(e) => setFilter('textSearch', e.target.value)}
+                placeholder="Search batch name, breed, hatchery..."
+                data-broiler-search
+                style={{...inpS, flex: 1, minWidth: 200, width: '100%'}}
               />
-            </label>
-            <label
-              style={{fontSize: 11, color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-            >
-              before
-              <input
-                type="date"
-                value={startBefore}
-                onChange={(e) => setStartDateBound('before', e.target.value)}
-                data-broiler-start-before
+              <select
+                value={statusFilterValue}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                data-broiler-status-filter
                 style={{...inpS, width: 'auto'}}
-              />
-            </label>
-            <select
-              value={sortValue}
-              onChange={(e) => setSortValue(e.target.value)}
-              data-broiler-sort
-              style={{...inpS, width: 'auto'}}
-            >
-              {BROILER_SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={flipSortDir}
-              data-broiler-sort-dir
-              title="Flip sort direction"
-              style={savedViewGhostBtnS}
-            >
-              {sortRule.dir === 'desc' ? '↓' : '↑'}
-            </button>
-            {filterCount > 0 && (
-              <button type="button" onClick={clearAllFilters} data-broiler-clear-filters style={savedViewGhostBtnS}>
-                Clear filters
+              >
+                <option value="">All statuses</option>
+                {BROILER_BATCH_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {BROILER_STATUS_LABELS[s] || s}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={breedFilterValue}
+                onChange={(e) => setBreedFilter(e.target.value)}
+                data-broiler-breed-filter
+                style={{...inpS, width: 'auto'}}
+              >
+                <option value="">All breeds</option>
+                {breedFilterOptions.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <label
+                style={{fontSize: 11, color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              >
+                Hatch after
+                <input
+                  type="date"
+                  value={startAfter}
+                  onChange={(e) => setStartDateBound('after', e.target.value)}
+                  data-broiler-start-after
+                  style={{...inpS, width: 'auto'}}
+                />
+              </label>
+              <label
+                style={{fontSize: 11, color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              >
+                before
+                <input
+                  type="date"
+                  value={startBefore}
+                  onChange={(e) => setStartDateBound('before', e.target.value)}
+                  data-broiler-start-before
+                  style={{...inpS, width: 'auto'}}
+                />
+              </label>
+              <select
+                value={sortValue}
+                onChange={(e) => setSortValue(e.target.value)}
+                data-broiler-sort
+                style={{...inpS, width: 'auto'}}
+              >
+                {BROILER_SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={flipSortDir}
+                data-broiler-sort-dir
+                title="Flip sort direction"
+                style={savedViewGhostBtnS}
+              >
+                {sortRule.dir === 'desc' ? '↓' : '↑'}
               </button>
-            )}
+              {filterCount > 0 && (
+                <button type="button" onClick={clearAllFilters} data-broiler-clear-filters style={savedViewGhostBtnS}>
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <div style={{fontSize: 12, color: 'var(--ink-muted)'}} data-broiler-count>
+              Showing {visibleCount} of {totalCount} batches
+              {filterCount > 0 && ' - ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}
+            </div>
           </div>
-          <div style={{fontSize: 12, color: 'var(--ink-muted)'}} data-broiler-count>
-            Showing {visibleCount} of {totalCount} batches
-            {filterCount > 0 && ' - ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}
-          </div>
-        </div>
+        )}
         <div style={{...S.card, overflowX: 'auto'}}>
           <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900}}>
             <thead>

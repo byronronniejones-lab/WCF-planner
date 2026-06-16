@@ -760,12 +760,11 @@ describe('Pig weigh-in list — Active/Complete sections (pig redesign)', () => 
     expect(livestockSrc).toContain("sessions.filter((s) => s.status === 'complete')");
   });
 
-  it('hides saved views, export, print, and the status filter for the pig list (broiler keeps them)', () => {
-    // Saved-view row and the export/print/status-filter toolbar are gated so
-    // they render for broiler but never for pig.
-    expect(livestockSrc).toContain('{!loadFailed && !isPig && (');
-    expect(livestockSrc).toContain('{!isPig && (');
-    // The features still exist in the file for the broiler branch.
+  it('hides saved views, export, print, and the status filter behind the site-wide list-control gate', () => {
+    expect(livestockSrc).toContain('const EXTENDED_LIST_CONTROLS_ENABLED = false;');
+    expect(livestockSrc).toContain('{EXTENDED_LIST_CONTROLS_ENABLED && !loadFailed && !isPig && (');
+    expect(livestockSrc).toContain('{EXTENDED_LIST_CONTROLS_ENABLED && !isPig && (');
+    // The mechanics still exist in source, but the runtime UI is gated off here.
     expect(livestockSrc).toContain('data-livestock-weighins-export-csv="1"');
     expect(livestockSrc).toContain('data-livestock-weighins-print="1"');
   });
@@ -775,7 +774,9 @@ describe('Pig weigh-in list — Active/Complete sections (pig redesign)', () => 
   });
 
   it('bases the pig header/summary on sessions, ignoring statusFilter', () => {
-    expect(livestockSrc).toContain('const visibleSessions = isPig ? sessions : filtered');
+    expect(livestockSrc).toContain(
+      'const visibleSessions = EXTENDED_LIST_CONTROLS_ENABLED && !isPig ? filtered : sessions',
+    );
     expect(livestockSrc).toContain('const visibleTotalEntries = visibleSessions.reduce(');
     // Header renders the visible (unfiltered for pig) counts.
     expect(livestockSrc).toContain('{visibleSessions.length} sessions');
@@ -789,10 +790,11 @@ describe('Pig weigh-in list — Active/Complete sections (pig redesign)', () => 
     expect(livestockSrc).toMatch(/emptyStateHint =\s*isPig \|\| emptyStateKind === 'none'/);
   });
 
-  it('does not load saved views for pig but still loads them for broiler', () => {
-    // Effect returns early for pig after clearing saved-view state.
-    expect(livestockSrc).toMatch(/if \(isPig\) \{[\s\S]{0,260}setSavedViews\(\[\]\)[\s\S]{0,260}return;/);
-    // Broiler path still calls loadSavedViews().
+  it('does not load saved views while the site-wide list-control gate is disabled', () => {
+    expect(livestockSrc).toMatch(
+      /if \(isPig \|\| !EXTENDED_LIST_CONTROLS_ENABLED\) \{[\s\S]{0,320}setSavedViews\(\[\]\)[\s\S]{0,320}return;/,
+    );
+    // Re-enable path still calls loadSavedViews().
     expect(livestockSrc).toContain('loadSavedViews();');
   });
 });

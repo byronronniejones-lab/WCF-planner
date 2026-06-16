@@ -277,6 +277,7 @@ const CattleHerdsHub = ({
   const [filters, setFilters] = usePersistentViewState('cattle.herds.filters', {});
   const [sortRules, setSortRules] = usePersistentViewState('cattle.herds.sortRules', [{key: 'tag', dir: 'asc'}]);
   const [openFilter, setOpenFilter] = useState(null); // chip popover state — string key
+  const [openToolPanel, setOpenToolPanel] = useState(null); // savedViews | filters | sort | view
 
   // Saved views (migration 095). Load failures must NOT break the list — they
   // surface as a disabled control + inline message (cold-boot safety).
@@ -567,6 +568,7 @@ const CattleHerdsHub = ({
     setSortRules(Array.isArray(st.sortRules) ? st.sortRules : []);
     setViewMode(st.viewMode === 'flat' ? 'flat' : 'grouped');
     setOpenFilter(null);
+    setOpenToolPanel(null);
   }
   function onSelectSavedView(id) {
     setSelectedViewId(id);
@@ -1346,6 +1348,33 @@ const CattleHerdsHub = ({
     color: 'var(--ink)',
     cursor: 'pointer',
   };
+  const toolButtonS = (active = false) => ({
+    width: 34,
+    height: 34,
+    borderRadius: 6,
+    border: active ? '1px solid #991b1b' : '1px solid var(--border-strong)',
+    background: active ? '#fff7f7' : 'white',
+    color: active ? '#991b1b' : 'var(--ink)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    flex: '0 0 auto',
+  });
+  const toolPanelS = {
+    borderTop: '1px solid var(--border)',
+    paddingTop: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  };
+  function toggleToolPanel(panel) {
+    setOpenFilter(null);
+    setOpenToolPanel((cur) => (cur === panel ? null : panel));
+  }
 
   return (
     <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
@@ -1392,91 +1421,92 @@ const CattleHerdsHub = ({
 
         {!loadError && (
           <>
-            {/* Saved views control (migration 095) */}
-            <div
-              data-saved-views-row
-              style={{
-                background: 'white',
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                padding: '10px 14px',
-                marginBottom: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
-              {savedViewsError ? (
-                <span style={{fontSize: 12, color: '#b91c1c'}} data-saved-views-error>
-                  Saved views unavailable. Filters still work.
-                </span>
-              ) : (
-                <>
-                  <select
-                    data-saved-view-select
-                    value={selectedViewId}
-                    disabled={savedViewsLoading}
-                    onChange={(e) => onSelectSavedView(e.target.value)}
-                    style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
-                  >
-                    <option value="">{savedViewsLoading ? 'Loading…' : '— Select a saved view —'}</option>
-                    {myViews.length > 0 && (
-                      <optgroup label="My views">
-                        {myViews.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name + (v.visibility === 'public' ? ' · public' : ' · private')}
-                          </option>
-                        ))}
-                      </optgroup>
+            {openToolPanel === 'savedViews' && (
+              <div
+                data-saved-views-row
+                style={{
+                  background: 'white',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
+                {savedViewsError ? (
+                  <span style={{fontSize: 12, color: '#b91c1c'}} data-saved-views-error>
+                    Saved views unavailable. Filters still work.
+                  </span>
+                ) : (
+                  <>
+                    <select
+                      data-saved-view-select
+                      value={selectedViewId}
+                      disabled={savedViewsLoading}
+                      onChange={(e) => onSelectSavedView(e.target.value)}
+                      style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
+                    >
+                      <option value="">{savedViewsLoading ? 'Loading…' : '— Select a saved view —'}</option>
+                      {myViews.length > 0 && (
+                        <optgroup label="My views">
+                          {myViews.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name + (v.visibility === 'public' ? ' · public' : ' · private')}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {publicOtherViews.length > 0 && (
+                        <optgroup label="Public views">
+                          {publicOtherViews.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    {selectedViewIsMine && (
+                      <>
+                        <button
+                          type="button"
+                          data-saved-view-update
+                          onClick={updateSelectedView}
+                          disabled={savedViewBusy}
+                          style={savedViewGhostBtnS}
+                        >
+                          Update to current
+                        </button>
+                        <button
+                          type="button"
+                          data-saved-view-delete
+                          onClick={deleteSelectedView}
+                          disabled={savedViewBusy}
+                          style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                        >
+                          Delete
+                        </button>
+                      </>
                     )}
-                    {publicOtherViews.length > 0 && (
-                      <optgroup label="Public views">
-                        {publicOtherViews.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                  {selectedViewIsMine && (
-                    <>
-                      <button
-                        type="button"
-                        data-saved-view-update
-                        onClick={updateSelectedView}
-                        disabled={savedViewBusy}
-                        style={savedViewGhostBtnS}
-                      >
-                        Update to current
-                      </button>
-                      <button
-                        type="button"
-                        data-saved-view-delete
-                        onClick={deleteSelectedView}
-                        disabled={savedViewBusy}
-                        style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
-                  <span style={{flex: 1}} />
-                  <button
-                    type="button"
-                    data-saved-view-save-open
-                    onClick={openSaveViewForm}
-                    disabled={savedViewBusy}
-                    style={savedViewPrimaryBtnS}
-                  >
-                    Save current view
-                  </button>
-                </>
-              )}
-            </div>
-            {showSaveViewForm && (
+                    <span style={{flex: 1}} />
+                    <button
+                      type="button"
+                      data-saved-view-save-open
+                      onClick={openSaveViewForm}
+                      disabled={savedViewBusy}
+                      style={savedViewPrimaryBtnS}
+                    >
+                      Save current view
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {openToolPanel === 'savedViews' && showSaveViewForm && (
               <div
                 data-saved-view-form
                 style={{
@@ -1563,79 +1593,115 @@ const CattleHerdsHub = ({
                   placeholder="Search by tag, dam, sire, breed, origin..."
                   style={{...inpS, flex: 1, minWidth: 200}}
                 />
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
-                    color: 'var(--ink)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: 6,
-                    padding: '4px 8px',
-                  }}
+                <button
+                  type="button"
+                  data-cattle-herds-saved-views-toggle="1"
+                  aria-label="Saved views"
+                  title="Saved views"
+                  aria-expanded={openToolPanel === 'savedViews'}
+                  onClick={() => toggleToolPanel('savedViews')}
+                  style={toolButtonS(openToolPanel === 'savedViews')}
                 >
-                  <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
-                  <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-                    <input
-                      type="radio"
-                      name="cattleViewMode"
-                      checked={viewMode === 'grouped'}
-                      onChange={() => setViewMode('grouped')}
-                      data-view-mode="grouped"
-                    />
-                    Grouped
-                  </label>
-                  <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-                    <input
-                      type="radio"
-                      name="cattleViewMode"
-                      checked={viewMode === 'flat'}
-                      onChange={() => setViewMode('flat')}
-                      data-view-mode="flat"
-                    />
-                    Flat
-                  </label>
-                </div>
+                  ☆
+                </button>
+                <button
+                  type="button"
+                  data-cattle-herds-filters-toggle="1"
+                  aria-label="Filters"
+                  title="Filters"
+                  aria-expanded={openToolPanel === 'filters'}
+                  onClick={() => toggleToolPanel('filters')}
+                  style={toolButtonS(openToolPanel === 'filters')}
+                >
+                  ≡
+                </button>
+                <button
+                  type="button"
+                  data-cattle-herds-sort-toggle="1"
+                  aria-label="Sort"
+                  title="Sort"
+                  aria-expanded={openToolPanel === 'sort'}
+                  onClick={() => toggleToolPanel('sort')}
+                  style={toolButtonS(openToolPanel === 'sort')}
+                >
+                  ↕
+                </button>
+                <button
+                  type="button"
+                  data-cattle-herds-view-toggle="1"
+                  aria-label="View mode"
+                  title="View mode"
+                  aria-expanded={openToolPanel === 'view'}
+                  onClick={() => toggleToolPanel('view')}
+                  style={toolButtonS(openToolPanel === 'view')}
+                >
+                  ▦
+                </button>
+                {openToolPanel === 'view' && (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      color: 'var(--ink)',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                    }}
+                  >
+                    <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
+                    <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                      <input
+                        type="radio"
+                        name="cattleViewMode"
+                        checked={viewMode === 'grouped'}
+                        onChange={() => setViewMode('grouped')}
+                        data-view-mode="grouped"
+                      />
+                      Grouped
+                    </label>
+                    <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                      <input
+                        type="radio"
+                        name="cattleViewMode"
+                        checked={viewMode === 'flat'}
+                        onChange={() => setViewMode('flat')}
+                        data-view-mode="flat"
+                      />
+                      Flat
+                    </label>
+                  </div>
+                )}
                 <button
                   type="button"
                   data-cattle-herds-export-csv="1"
+                  aria-label="Export CSV"
+                  title="Export CSV"
                   onClick={handleExportCsv}
                   disabled={loading}
                   style={{
-                    padding: '7px 14px',
-                    borderRadius: 7,
-                    border: '1px solid var(--border-strong)',
-                    background: loading ? 'var(--surface-2)' : 'white',
-                    color: loading ? 'var(--ink-faint)' : 'var(--ink)',
-                    fontWeight: 600,
-                    fontSize: 12,
+                    ...toolButtonS(false),
                     cursor: loading ? 'not-allowed' : 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
+                    opacity: loading ? 0.65 : 1,
                   }}
                 >
-                  Export CSV
+                  CSV
                 </button>
                 <button
                   type="button"
                   data-cattle-herds-print="1"
+                  aria-label="Print"
+                  title="Print"
                   onClick={handlePrintRows}
                   disabled={loading}
                   style={{
-                    padding: '7px 14px',
-                    borderRadius: 7,
-                    border: '1px solid var(--border-strong)',
-                    background: loading ? 'var(--surface-2)' : 'white',
-                    color: loading ? 'var(--ink-faint)' : 'var(--ink)',
-                    fontWeight: 600,
-                    fontSize: 12,
+                    ...toolButtonS(false),
                     cursor: loading ? 'not-allowed' : 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
+                    opacity: loading ? 0.65 : 1,
                   }}
                 >
-                  Print
+                  ⎙
                 </button>
                 <button
                   onClick={() => setShowBulkImport(true)}
@@ -1673,28 +1739,29 @@ const CattleHerdsHub = ({
                 </button>
               </div>
 
-              {/* Organized filter groups — always visible (no More/Hide toggle). */}
-              <div data-cattle-filter-groups style={{display: 'flex', flexDirection: 'column', gap: 8}}>
-                {renderFilterGroups()}
-                {filterCount > 0 && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      style={{
-                        ...chipBaseS,
-                        color: '#b91c1c',
-                        border: '1px solid #fecaca',
-                        background: '#fef2f2',
-                      }}
-                    >
-                      Clear all filters
-                    </button>
-                  </div>
-                )}
-              </div>
+              {openToolPanel === 'filters' && (
+                <div data-cattle-filter-groups style={toolPanelS}>
+                  {renderFilterGroups()}
+                  {filterCount > 0 && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        style={{
+                          ...chipBaseS,
+                          color: '#b91c1c',
+                          border: '1px solid #fecaca',
+                          background: '#fef2f2',
+                        }}
+                      >
+                        Clear all filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {sortBar()}
+              {openToolPanel === 'sort' && <div style={toolPanelS}>{sortBar()}</div>}
 
               <div style={{fontSize: 11, color: 'var(--ink-muted)'}} data-cattle-match-count>
                 {sortedFlat.length} {sortedFlat.length === 1 ? 'match' : 'cattle match'}

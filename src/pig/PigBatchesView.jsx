@@ -66,6 +66,7 @@ import {useUI} from '../contexts/UIContext.jsx';
 import {RecordPageLoading, RecordPageNotFound} from '../shared/RecordPageShell.jsx';
 
 const PIG_BATCHES_SURFACE_KEY = 'pig.batches';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 const PIG_BATCH_SORT_KEY_LABELS = {
   batchName: 'Batch name',
   status: 'Status',
@@ -226,9 +227,15 @@ export default function PigBatchesView({
   // array is the rendered set, the record-sequence order passed to row
   // click-through, and the CSV/print export feed. One unified row stack (no
   // status swimlanes).
-  const pigBatchesAfterToggle = (feederGroups || []).filter((g) => showArchBatches || g.status !== 'processed');
-  const filteredPigBatches = pigBatchesAfterToggle.filter(buildPigBatchPredicate(filters, pigBatchFilterCtx));
-  const visiblePigBatches = filteredPigBatches.slice().sort(buildPigBatchComparator(sortRule, pigBatchFilterCtx));
+  const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};
+  const effectiveSortRule = EXTENDED_LIST_CONTROLS_ENABLED ? sortRule : {key: 'status', dir: 'asc'};
+  const pigBatchesAfterToggle = (feederGroups || []).filter(
+    (g) => !EXTENDED_LIST_CONTROLS_ENABLED || showArchBatches || g.status !== 'processed',
+  );
+  const filteredPigBatches = pigBatchesAfterToggle.filter(buildPigBatchPredicate(effectiveFilters, pigBatchFilterCtx));
+  const visiblePigBatches = filteredPigBatches
+    .slice()
+    .sort(buildPigBatchComparator(effectiveSortRule, pigBatchFilterCtx));
   const goToBatch = (id, rows) =>
     navigate(
       '/pig/batches/' + encodeURIComponent(id),
@@ -301,8 +308,8 @@ export default function PigBatchesView({
   function clearAllFilters() {
     setFilters({});
   }
-  const activeFilterCount = Object.keys(filters).filter((k) => {
-    const v = filters[k];
+  const activeFilterCount = Object.keys(effectiveFilters).filter((k) => {
+    const v = effectiveFilters[k];
     if (v == null) return false;
     if (typeof v === 'string') return v.trim() !== '' && v !== 'all';
     if (typeof v === 'object') return Object.values(v).some((x) => x != null && x !== '');
@@ -1052,59 +1059,63 @@ export default function PigBatchesView({
         {!recordMode && (
           <div style={{display: 'flex', justifyContent: 'flex-end', marginBottom: 12}}>
             <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end'}}>
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                data-pig-batches-export-csv="1"
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-strong)',
-                  background: 'white',
-                  color: 'var(--ink)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontFamily: 'inherit',
-                  fontWeight: 600,
-                }}
-              >
-                Export CSV
-              </button>
-              <button
-                type="button"
-                onClick={handlePrintRows}
-                data-pig-batches-print="1"
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border-strong)',
-                  background: 'white',
-                  color: 'var(--ink)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontFamily: 'inherit',
-                  fontWeight: 600,
-                }}
-              >
-                Print
-              </button>
-              {feederGroups.some((g) => g.status === 'processed') && (
-                <button
-                  onClick={() => setShowArchBatches((s) => !s)}
-                  style={{
-                    padding: '7px 14px',
-                    borderRadius: 8,
-                    border: '1px solid var(--border-strong)',
-                    background: 'white',
-                    color: 'var(--ink-muted)',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {showArchBatches ? 'Hide processed' : 'Show processed'} (
-                  {feederGroups.filter((g) => g.status === 'processed').length})
-                </button>
+              {EXTENDED_LIST_CONTROLS_ENABLED && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    data-pig-batches-export-csv="1"
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border-strong)',
+                      background: 'white',
+                      color: 'var(--ink)',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontFamily: 'inherit',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintRows}
+                    data-pig-batches-print="1"
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border-strong)',
+                      background: 'white',
+                      color: 'var(--ink)',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontFamily: 'inherit',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Print
+                  </button>
+                  {feederGroups.some((g) => g.status === 'processed') && (
+                    <button
+                      onClick={() => setShowArchBatches((s) => !s)}
+                      style={{
+                        padding: '7px 14px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-strong)',
+                        background: 'white',
+                        color: 'var(--ink-muted)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {showArchBatches ? 'Hide processed' : 'Show processed'} (
+                      {feederGroups.filter((g) => g.status === 'processed').length})
+                    </button>
+                  )}
+                </>
               )}
               <button
                 onClick={() => {
@@ -1671,7 +1682,7 @@ export default function PigBatchesView({
             mode whenever there's at least one batch so the operator can always
             narrow the list. Right-sized — one row, single sort rule (no
             multi-rule chip popovers). */}
-        {!recordMode && (feederGroups || []).length > 0 && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !recordMode && (feederGroups || []).length > 0 && (
           <div
             data-pig-batches-toolbar="1"
             style={{marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8}}

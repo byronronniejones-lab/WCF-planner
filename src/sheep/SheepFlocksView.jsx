@@ -170,6 +170,7 @@ const SheepFlocksHub = ({
   const [filters, setFilters] = usePersistentViewState('sheep.flocks.filters', {});
   const [sortRules, setSortRules] = usePersistentViewState('sheep.flocks.sortRules', [{key: 'tag', dir: 'asc'}]);
   const [openFilter, setOpenFilter] = useState(null);
+  const [openToolPanel, setOpenToolPanel] = useState(null);
   const [savedViews, setSavedViews] = useState([]);
   const [savedViewsError, setSavedViewsError] = useState(null);
   const [savedViewsLoading, setSavedViewsLoading] = useState(true);
@@ -380,6 +381,7 @@ const SheepFlocksHub = ({
       setViewMode(st.statusFilter && st.statusFilter !== 'active' ? 'flat' : 'grouped');
     }
     setOpenFilter(null);
+    setOpenToolPanel(null);
   }
   function onSelectSavedView(id) {
     setSelectedViewId(id);
@@ -933,6 +935,33 @@ const SheepFlocksHub = ({
     color: 'var(--ink)',
     cursor: 'pointer',
   };
+  const toolButtonS = (active = false) => ({
+    width: 34,
+    height: 34,
+    borderRadius: 6,
+    border: active ? '1px solid #0f766e' : '1px solid var(--border-strong)',
+    background: active ? '#f0fdfa' : 'white',
+    color: active ? '#0f766e' : 'var(--ink)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    flex: '0 0 auto',
+  });
+  const toolPanelS = {
+    borderTop: '1px solid var(--border)',
+    paddingTop: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  };
+  function toggleToolPanel(panel) {
+    setOpenFilter(null);
+    setOpenToolPanel((cur) => (cur === panel ? null : panel));
+  }
 
   return (
     <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
@@ -978,90 +1007,92 @@ const SheepFlocksHub = ({
         )}
         {!loadError && (
           <>
-            <div
-              data-sheep-saved-views-row
-              style={{
-                background: 'white',
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                padding: '10px 14px',
-                marginBottom: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
-              {savedViewsError ? (
-                <span style={{fontSize: 12, color: '#b91c1c'}} data-sheep-saved-views-error>
-                  Saved views unavailable. Filters still work.
-                </span>
-              ) : (
-                <>
-                  <select
-                    data-sheep-saved-view-select
-                    value={selectedViewId}
-                    disabled={savedViewsLoading}
-                    onChange={(e) => onSelectSavedView(e.target.value)}
-                    style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
-                  >
-                    <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
-                    {myViews.length > 0 && (
-                      <optgroup label="My views">
-                        {myViews.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
-                          </option>
-                        ))}
-                      </optgroup>
+            {openToolPanel === 'savedViews' && (
+              <div
+                data-sheep-saved-views-row
+                style={{
+                  background: 'white',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
+                {savedViewsError ? (
+                  <span style={{fontSize: 12, color: '#b91c1c'}} data-sheep-saved-views-error>
+                    Saved views unavailable. Filters still work.
+                  </span>
+                ) : (
+                  <>
+                    <select
+                      data-sheep-saved-view-select
+                      value={selectedViewId}
+                      disabled={savedViewsLoading}
+                      onChange={(e) => onSelectSavedView(e.target.value)}
+                      style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
+                    >
+                      <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
+                      {myViews.length > 0 && (
+                        <optgroup label="My views">
+                          {myViews.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {publicOtherViews.length > 0 && (
+                        <optgroup label="Public views">
+                          {publicOtherViews.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    {selectedViewIsMine && (
+                      <>
+                        <button
+                          type="button"
+                          data-sheep-saved-view-update
+                          onClick={updateSelectedView}
+                          disabled={savedViewBusy}
+                          style={savedViewGhostBtnS}
+                        >
+                          Update to current
+                        </button>
+                        <button
+                          type="button"
+                          data-sheep-saved-view-delete
+                          onClick={deleteSelectedView}
+                          disabled={savedViewBusy}
+                          style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                        >
+                          Delete
+                        </button>
+                      </>
                     )}
-                    {publicOtherViews.length > 0 && (
-                      <optgroup label="Public views">
-                        {publicOtherViews.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                  {selectedViewIsMine && (
-                    <>
-                      <button
-                        type="button"
-                        data-sheep-saved-view-update
-                        onClick={updateSelectedView}
-                        disabled={savedViewBusy}
-                        style={savedViewGhostBtnS}
-                      >
-                        Update to current
-                      </button>
-                      <button
-                        type="button"
-                        data-sheep-saved-view-delete
-                        onClick={deleteSelectedView}
-                        disabled={savedViewBusy}
-                        style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
-                  <span style={{flex: 1}} />
-                  <button
-                    type="button"
-                    data-sheep-saved-view-save-open
-                    onClick={openSaveViewForm}
-                    disabled={savedViewBusy}
-                    style={savedViewPrimaryBtnS}
-                  >
-                    Save current view
-                  </button>
-                </>
-              )}
-            </div>
-            {showSaveViewForm && (
+                    <span style={{flex: 1}} />
+                    <button
+                      type="button"
+                      data-sheep-saved-view-save-open
+                      onClick={openSaveViewForm}
+                      disabled={savedViewBusy}
+                      style={savedViewPrimaryBtnS}
+                    >
+                      Save current view
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {openToolPanel === 'savedViews' && showSaveViewForm && (
               <div
                 data-sheep-saved-view-form
                 style={{
@@ -1147,107 +1178,151 @@ const SheepFlocksHub = ({
                   placeholder="Search tag, dam, sire, breed, origin..."
                   style={{...inpS, flex: 1, minWidth: 200}}
                 />
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  style={{...inpS, width: 'auto'}}
+                <button
+                  type="button"
+                  data-sheep-flocks-saved-views-toggle="1"
+                  aria-label="Saved views"
+                  aria-pressed={openToolPanel === 'savedViews'}
+                  title="Saved views"
+                  onClick={() => toggleToolPanel('savedViews')}
+                  style={toolButtonS(openToolPanel === 'savedViews')}
                 >
-                  <option value="active">All Active Flocks</option>
-                  <option value="all">All (including outcomes)</option>
-                  <option disabled>{'───'}</option>
-                  {FLOCKS.map((f) => (
-                    <option key={f} value={f}>
-                      {FLOCK_LABELS[f]}
-                    </option>
-                  ))}
-                  <option disabled>{'───'}</option>
-                  {OUTCOMES.map((f) => (
-                    <option key={f} value={f}>
-                      {FLOCK_LABELS[f]}
-                    </option>
-                  ))}
-                </select>
-                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{...inpS, width: 'auto'}}>
-                  <option value="tag-asc">Tag {'↑'}</option>
-                  <option value="tag-desc">Tag {'↓'}</option>
-                  <option value="age-asc">Age (youngest first)</option>
-                  <option value="age-desc">Age (oldest first)</option>
-                  <option value="weight-desc">Weight {'↓'}</option>
-                  <option value="weight-asc">Weight {'↑'}</option>
-                </select>
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
-                    color: 'var(--ink)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: 6,
-                    padding: '4px 8px',
-                  }}
+                  ☆
+                </button>
+                <button
+                  type="button"
+                  data-sheep-flocks-filters-toggle="1"
+                  aria-label="Filters"
+                  aria-pressed={openToolPanel === 'filters'}
+                  title="Filters"
+                  onClick={() => toggleToolPanel('filters')}
+                  style={toolButtonS(openToolPanel === 'filters')}
                 >
-                  <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
-                  <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-                    <input
-                      type="radio"
-                      name="sheepFlocksViewMode"
-                      checked={viewMode === 'grouped'}
-                      onChange={() => setViewMode('grouped')}
-                      data-sheep-view-mode="grouped"
-                    />
-                    Grouped
-                  </label>
-                  <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-                    <input
-                      type="radio"
-                      name="sheepFlocksViewMode"
-                      checked={viewMode === 'flat'}
-                      onChange={() => setViewMode('flat')}
-                      data-sheep-view-mode="flat"
-                    />
-                    Flat
-                  </label>
-                </div>
+                  ≡
+                </button>
+                <button
+                  type="button"
+                  data-sheep-flocks-sort-toggle="1"
+                  aria-label="Sort"
+                  aria-pressed={openToolPanel === 'sort'}
+                  title="Sort"
+                  onClick={() => toggleToolPanel('sort')}
+                  style={toolButtonS(openToolPanel === 'sort')}
+                >
+                  ↕
+                </button>
+                <button
+                  type="button"
+                  data-sheep-flocks-view-toggle="1"
+                  aria-label="View mode"
+                  aria-pressed={openToolPanel === 'view'}
+                  title="View mode"
+                  onClick={() => toggleToolPanel('view')}
+                  style={toolButtonS(openToolPanel === 'view')}
+                >
+                  ▦
+                </button>
+                {openToolPanel === 'filters' && (
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    style={{...inpS, width: 'auto'}}
+                  >
+                    <option value="active">All Active Flocks</option>
+                    <option value="all">All (including outcomes)</option>
+                    <option disabled>{'───'}</option>
+                    {FLOCKS.map((f) => (
+                      <option key={f} value={f}>
+                        {FLOCK_LABELS[f]}
+                      </option>
+                    ))}
+                    <option disabled>{'───'}</option>
+                    {OUTCOMES.map((f) => (
+                      <option key={f} value={f}>
+                        {FLOCK_LABELS[f]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {openToolPanel === 'sort' && (
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{...inpS, width: 'auto'}}>
+                    <option value="tag-asc">Tag {'↑'}</option>
+                    <option value="tag-desc">Tag {'↓'}</option>
+                    <option value="age-asc">Age (youngest first)</option>
+                    <option value="age-desc">Age (oldest first)</option>
+                    <option value="weight-desc">Weight {'↓'}</option>
+                    <option value="weight-asc">Weight {'↑'}</option>
+                  </select>
+                )}
+                {openToolPanel === 'view' && (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      color: 'var(--ink)',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                    }}
+                  >
+                    <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
+                    <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                      <input
+                        type="radio"
+                        name="sheepFlocksViewMode"
+                        checked={viewMode === 'grouped'}
+                        onChange={() => setViewMode('grouped')}
+                        data-sheep-view-mode="grouped"
+                      />
+                      Grouped
+                    </label>
+                    <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                      <input
+                        type="radio"
+                        name="sheepFlocksViewMode"
+                        checked={viewMode === 'flat'}
+                        onChange={() => setViewMode('flat')}
+                        data-sheep-view-mode="flat"
+                      />
+                      Flat
+                    </label>
+                  </div>
+                )}
                 <button
                   type="button"
                   data-sheep-flocks-export-csv="1"
+                  aria-label="Export CSV"
+                  title="Export CSV"
                   onClick={handleExportCsv}
                   disabled={loading || loadError}
                   style={{
-                    padding: '7px 14px',
-                    borderRadius: 7,
-                    border: '1px solid var(--border-strong)',
+                    ...toolButtonS(false),
                     background: loading || loadError ? 'var(--surface-2)' : 'white',
                     color: loading || loadError ? 'var(--ink-faint)' : 'var(--ink)',
-                    fontWeight: 600,
-                    fontSize: 12,
                     cursor: loading || loadError ? 'not-allowed' : 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
+                    opacity: loading || loadError ? 0.75 : 1,
                   }}
                 >
-                  Export CSV
+                  CSV
                 </button>
                 <button
                   type="button"
                   data-sheep-flocks-print="1"
+                  aria-label="Print"
+                  title="Print"
                   onClick={handlePrintRows}
                   disabled={loading || loadError}
                   style={{
-                    padding: '7px 14px',
-                    borderRadius: 7,
-                    border: '1px solid var(--border-strong)',
+                    ...toolButtonS(false),
                     background: loading || loadError ? 'var(--surface-2)' : 'white',
                     color: loading || loadError ? 'var(--ink-faint)' : 'var(--ink)',
-                    fontWeight: 600,
-                    fontSize: 12,
                     cursor: loading || loadError ? 'not-allowed' : 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
+                    opacity: loading || loadError ? 0.75 : 1,
                   }}
                 >
-                  Print
+                  ⎙
                 </button>
                 <button
                   onClick={() => setShowBulkImport(true)}
@@ -1284,30 +1359,32 @@ const SheepFlocksHub = ({
                   + Add Sheep
                 </button>
               </div>
-              <div data-sheep-filter-groups style={{display: 'flex', flexDirection: 'column', gap: 8}}>
-                {renderFilterGroups()}
-                {filterCount > 0 && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      style={{
-                        padding: '5px 10px',
-                        borderRadius: 6,
-                        border: '1px solid var(--border-strong)',
-                        background: 'white',
-                        color: 'var(--ink-muted)',
-                        fontSize: 12,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Clear filters
-                    </button>
-                  </div>
-                )}
-              </div>
-              {sortBar()}
+              {openToolPanel === 'filters' && (
+                <div data-sheep-filter-groups style={toolPanelS}>
+                  {renderFilterGroups()}
+                  {filterCount > 0 && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-strong)',
+                          background: 'white',
+                          color: 'var(--ink-muted)',
+                          fontSize: 12,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        Clear filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {openToolPanel === 'sort' && <div style={toolPanelS}>{sortBar()}</div>}
               <div style={{fontSize: 12, color: 'var(--ink-muted)'}}>
                 Showing {sorted.length} of {sheep.length} sheep
                 {filterCount > 0 && ' - ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}

@@ -25,6 +25,7 @@ const TABS = [
 ];
 
 const SOURCE_LABEL = {planner: 'Planner', legacy: 'Legacy spreadsheet'};
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 function programLabel(programKey) {
   return PROGRAM_BY_KEY[programKey]?.label.replace('/doz', '') || programKey;
@@ -271,7 +272,10 @@ export default function ProductionPage({Header, setView}) {
     for (const row of activeRows) if (!seen.has(row.status)) seen.set(row.status, row.statusLabel);
     return [...seen.entries()].map(([status, statusLabel]) => ({status, statusLabel}));
   }, [activeRows]);
-  const filteredRows = React.useMemo(() => applyFilters(activeRows, filters), [activeRows, filters]);
+  const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED
+    ? filters
+    : {program: 'all', source: 'all', status: 'all', search: ''};
+  const filteredRows = React.useMemo(() => applyFilters(activeRows, effectiveFilters), [activeRows, effectiveFilters]);
 
   const exportCsv = React.useCallback(() => {
     const isSummary = tab === 'summary';
@@ -368,14 +372,16 @@ export default function ProductionPage({Header, setView}) {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="btn-clear production-export"
-            onClick={exportCsv}
-            disabled={loading || (tab !== 'summary' && filteredRows.length === 0)}
-          >
-            Export CSV
-          </button>
+          {EXTENDED_LIST_CONTROLS_ENABLED && (
+            <button
+              type="button"
+              className="btn-clear production-export"
+              onClick={exportCsv}
+              disabled={loading || (tab !== 'summary' && filteredRows.length === 0)}
+            >
+              Export CSV
+            </button>
+          )}
         </div>
 
         {tab === 'summary' ? (
@@ -403,7 +409,9 @@ export default function ProductionPage({Header, setView}) {
                 ? 'Every event that contributes to the per-program totals above, with its reconciliation status.'
                 : 'Every legacy backfill row and whether it counted or was held out so Planner wins, with the reason.'}
             </p>
-            <FilterBar filters={filters} setFilters={setFilters} statusOptions={statusOptions} />
+            {EXTENDED_LIST_CONTROLS_ENABLED && (
+              <FilterBar filters={filters} setFilters={setFilters} statusOptions={statusOptions} />
+            )}
             <LedgerTable rows={filteredRows} />
           </section>
         )}

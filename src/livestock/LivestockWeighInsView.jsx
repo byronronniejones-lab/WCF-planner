@@ -26,6 +26,7 @@ import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 
 const WEIGHIN_SESSION_SURFACE_KEYS = {pig: 'pig.weighins', broiler: 'broiler.weighins'};
 const VALID_WEIGHIN_STATUS_FILTERS = new Set(['all', 'draft', 'complete']);
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 const LivestockWeighInsView = ({
   sb,
@@ -63,9 +64,8 @@ const LivestockWeighInsView = ({
   const myProfileId = authState?.user?.id || null;
 
   const speciesLabel = species === 'broiler' ? 'Broiler' : 'Pig';
-  // Pig redesign: no saved views / export / print / status filter. Sessions are
-  // split into Active vs Complete sections instead. Broiler keeps the full
-  // toolbar unchanged.
+  // Compact-list controls are only retained on cattle herds, sheep flocks, and
+  // daily views. Pig also keeps its active/complete section split.
   const isPig = species === 'pig';
   const savedViewSurfaceKey = WEIGHIN_SESSION_SURFACE_KEYS[species] || species + '.weighins';
 
@@ -133,8 +133,8 @@ const LivestockWeighInsView = ({
   }
 
   useEffect(() => {
-    if (isPig) {
-      // Pig list has no saved views; never load or render them.
+    if (isPig || !EXTENDED_LIST_CONTROLS_ENABLED) {
+      // This list has no saved views; never load or render them.
       setSavedViews([]);
       setSavedViewsError(null);
       setSavedViewsLoading(false);
@@ -177,8 +177,7 @@ const LivestockWeighInsView = ({
   }, [species, sessions, entries]);
 
   const filtered = sessions.filter((s) => statusFilter === 'all' || s.status === statusFilter);
-  // Pig ignores statusFilter entirely (no filter UI); broiler keeps it.
-  const visibleSessions = isPig ? sessions : filtered;
+  const visibleSessions = EXTENDED_LIST_CONTROLS_ENABLED && !isPig ? filtered : sessions;
   const visibleTotalEntries = visibleSessions.reduce(
     (s, sess) => s + (entries[sess.id] ? entries[sess.id].length : 0),
     0,
@@ -386,7 +385,7 @@ const LivestockWeighInsView = ({
             Retry
           </button>
         )}
-        {!loadFailed && !isPig && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !loadFailed && !isPig && (
           <>
             <div
               data-livestock-weighins-saved-views-row
@@ -561,7 +560,7 @@ const LivestockWeighInsView = ({
             </div>
           </div>
           <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
-            {!isPig && (
+            {EXTENDED_LIST_CONTROLS_ENABLED && !isPig && (
               <>
                 <div
                   style={{

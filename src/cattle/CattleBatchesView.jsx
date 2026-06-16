@@ -28,6 +28,7 @@ import {
 import CattleBatchPage from './CattleBatchPage.jsx';
 
 const CATTLE_BATCHES_SURFACE_KEY = 'cattle.batches';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 const CATTLE_BATCH_STATUS_LABELS = {scheduled: 'Scheduled', active: 'Active', complete: 'Processed'};
 const CATTLE_BATCH_SORT_LABELS = {
@@ -258,8 +259,10 @@ const CattleBatchesHub = ({
   // section (scheduled / active / processed). Filtering runs on the enriched
   // shape; we keep each section's ORIGINAL rows aligned so render + nav still
   // pass the real batch objects through. Single active sort rule (right-sized).
-  const batchPredicate = buildCattleBatchPredicate(filters);
-  const batchComparator = buildCattleBatchComparator(sortRule);
+  const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};
+  const effectiveSortRule = EXTENDED_LIST_CONTROLS_ENABLED ? sortRule : {key: 'plannedDate', dir: 'desc'};
+  const batchPredicate = buildCattleBatchPredicate(effectiveFilters);
+  const batchComparator = buildCattleBatchComparator(effectiveSortRule);
   function applyToolbar(rows) {
     return rows
       .map((b) => ({raw: b, enriched: enrichBatch(b)}))
@@ -289,7 +292,7 @@ const CattleBatchesHub = ({
   // the total when its section is expanded (same rule as the rendered set).
   const routableTotal = scheduledList.length + active.length + (showCompleted ? completed.length : 0);
   const visibleTotal = batchSeqRows.length;
-  const filtersActive = Object.keys(filters || {}).length > 0;
+  const filtersActive = Object.keys(effectiveFilters || {}).length > 0;
 
   const exportColumns = buildProcessingBatchExportColumns({fmt, animalLabel: 'Cow'});
 
@@ -556,42 +559,46 @@ const CattleBatchesHub = ({
             </span>
           </div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              data-cattle-batches-export-csv="1"
-              style={{
-                padding: '7px 12px',
-                borderRadius: 7,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintRows}
-              data-cattle-batches-print="1"
-              style={{
-                padding: '7px 12px',
-                borderRadius: 7,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Print
-            </button>
+            {EXTENDED_LIST_CONTROLS_ENABLED && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  data-cattle-batches-export-csv="1"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 7,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: 'var(--ink)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintRows}
+                  data-cattle-batches-print="1"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 7,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: 'var(--ink)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Print
+                </button>
+              </>
+            )}
             {!canEdit && (
               <span
                 style={{
@@ -614,7 +621,7 @@ const CattleBatchesHub = ({
 
         {/* Saved views row — degrades to a small notice if it can't load,
             never blocking the list/filters below. */}
-        {!loading && !loadError && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !loading && !loadError && (
           <div
             data-cattle-batches-saved-views-row
             style={{
@@ -699,7 +706,7 @@ const CattleBatchesHub = ({
             )}
           </div>
         )}
-        {!loading && !loadError && showSaveViewForm && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !loading && !loadError && showSaveViewForm && (
           <div
             data-cattle-batches-saved-view-form
             style={{
@@ -769,7 +776,7 @@ const CattleBatchesHub = ({
             count range + sort + direction, filtering/sorting across every
             pipeline section at once. Right-sized: a single flat row, not the
             multi-group chip popovers of the herds tab. */}
-        {!loading && !loadError && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !loading && !loadError && (
           <div
             data-cattle-batches-toolbar
             style={{

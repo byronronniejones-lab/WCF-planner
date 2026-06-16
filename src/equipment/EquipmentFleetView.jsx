@@ -42,6 +42,7 @@ import {
 } from '../lib/equipmentFleetFilters.js';
 
 const EQUIPMENT_FLEET_SURFACE_KEY = 'equipment.fleet';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 const STATUS_OPTIONS = [
   {key: 'active', label: 'Active'},
@@ -197,19 +198,21 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
   // filtered = rows.filter(predicate); sorted = [...filtered].sort(comparator).
   // Sold rows stay filtered/sorted, but render in a collapsed section after
   // active rows instead of intermixing with the operational fleet.
+  const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};
+  const effectiveSortRule = EXTENDED_LIST_CONTROLS_ENABLED ? sortRule : {key: 'name', dir: 'asc'};
   const filtered = useMemo(
-    () => (equipment || []).filter(buildEquipmentFleetPredicate(filters, filterCtx)),
-    [equipment, filters, filterCtx],
+    () => (equipment || []).filter(buildEquipmentFleetPredicate(effectiveFilters, filterCtx)),
+    [equipment, effectiveFilters, filterCtx],
   );
   const sorted = useMemo(
-    () => [...filtered].sort(buildEquipmentFleetComparator(sortRule, filterCtx)),
-    [filtered, sortRule, filterCtx],
+    () => [...filtered].sort(buildEquipmentFleetComparator(effectiveSortRule, filterCtx)),
+    [filtered, effectiveSortRule, filterCtx],
   );
   const activeSorted = useMemo(() => sorted.filter((eq) => eq.status !== 'sold'), [sorted]);
   const soldSorted = useMemo(() => sorted.filter((eq) => eq.status === 'sold'), [sorted]);
 
   const totalCount = (equipment || []).length;
-  const filterCount = Object.keys(filters).length;
+  const filterCount = Object.keys(effectiveFilters).length;
 
   // Category groups over the active SORTED+filtered set (grouped mode); the visible/
   // rendered order is exactly the sorted order within each category, then any
@@ -679,112 +682,132 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
 
   return (
     <div style={{display: 'flex', flexDirection: 'column', gap: 14}} data-equipment-fleet-loaded="true">
-      {/* Saved views row */}
-      <div
-        data-equipment-saved-views-row
-        style={{
-          background: 'white',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          padding: '10px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
-        {savedViewsError ? (
-          <span
-            style={{fontSize: 12, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 8}}
-            data-equipment-saved-views-error
-          >
-            Saved views unavailable. Filters still work.
-            <button
-              type="button"
-              data-equipment-saved-views-retry
-              onClick={loadSavedViews}
-              disabled={savedViewsLoading}
-              style={{
-                fontSize: 11,
-                padding: '3px 10px',
-                borderRadius: 6,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                cursor: savedViewsLoading ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-                fontWeight: 600,
-              }}
-            >
-              {savedViewsLoading ? 'Retrying…' : 'Retry'}
-            </button>
-          </span>
-        ) : (
-          <>
-            <select
-              data-equipment-saved-view-select
-              value={selectedViewId}
-              disabled={savedViewsLoading}
-              onChange={(e) => onSelectSavedView(e.target.value)}
-              style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
-            >
-              <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
-              {myViews.length > 0 && (
-                <optgroup label="My views">
-                  {myViews.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {publicOtherViews.length > 0 && (
-                <optgroup label="Public views">
-                  {publicOtherViews.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-            {selectedViewIsMine && (
-              <>
-                <button
-                  type="button"
-                  data-equipment-saved-view-update
-                  onClick={updateSelectedView}
-                  disabled={savedViewBusy}
-                  style={ghostBtnS}
-                >
-                  Update to current
-                </button>
-                <button
-                  type="button"
-                  data-equipment-saved-view-delete
-                  onClick={deleteSelectedView}
-                  disabled={savedViewBusy}
-                  style={{...ghostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
-                >
-                  Delete
-                </button>
-              </>
-            )}
-            <span style={{flex: 1}} />
-            <button
-              type="button"
-              data-equipment-saved-view-save-open
-              onClick={openSaveViewForm}
-              disabled={savedViewBusy}
-              style={primaryBtnS}
-            >
-              Save current view
-            </button>
-          </>
-        )}
+      <div style={{display: 'flex', justifyContent: 'flex-end'}}>
+        <button
+          onClick={() => setShowAdd(true)}
+          style={{
+            padding: '7px 16px',
+            borderRadius: 8,
+            border: 'none',
+            background: EQUIPMENT_COLOR,
+            color: 'white',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          + Add Equipment
+        </button>
       </div>
-      {showSaveViewForm && (
+      {/* Saved views row */}
+      {EXTENDED_LIST_CONTROLS_ENABLED && (
+        <div
+          data-equipment-saved-views-row
+          style={{
+            background: 'white',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
+          {savedViewsError ? (
+            <span
+              style={{fontSize: 12, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 8}}
+              data-equipment-saved-views-error
+            >
+              Saved views unavailable. Filters still work.
+              <button
+                type="button"
+                data-equipment-saved-views-retry
+                onClick={loadSavedViews}
+                disabled={savedViewsLoading}
+                style={{
+                  fontSize: 11,
+                  padding: '3px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-strong)',
+                  background: 'white',
+                  color: 'var(--ink)',
+                  cursor: savedViewsLoading ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  fontWeight: 600,
+                }}
+              >
+                {savedViewsLoading ? 'Retrying…' : 'Retry'}
+              </button>
+            </span>
+          ) : (
+            <>
+              <select
+                data-equipment-saved-view-select
+                value={selectedViewId}
+                disabled={savedViewsLoading}
+                onChange={(e) => onSelectSavedView(e.target.value)}
+                style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
+              >
+                <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
+                {myViews.length > 0 && (
+                  <optgroup label="My views">
+                    {myViews.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {publicOtherViews.length > 0 && (
+                  <optgroup label="Public views">
+                    {publicOtherViews.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {selectedViewIsMine && (
+                <>
+                  <button
+                    type="button"
+                    data-equipment-saved-view-update
+                    onClick={updateSelectedView}
+                    disabled={savedViewBusy}
+                    style={ghostBtnS}
+                  >
+                    Update to current
+                  </button>
+                  <button
+                    type="button"
+                    data-equipment-saved-view-delete
+                    onClick={deleteSelectedView}
+                    disabled={savedViewBusy}
+                    style={{...ghostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+              <span style={{flex: 1}} />
+              <button
+                type="button"
+                data-equipment-saved-view-save-open
+                onClick={openSaveViewForm}
+                disabled={savedViewBusy}
+                style={primaryBtnS}
+              >
+                Save current view
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {EXTENDED_LIST_CONTROLS_ENABLED && showSaveViewForm && (
         <div
           data-equipment-saved-view-form
           style={{
@@ -845,200 +868,202 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       )}
 
       {/* Toolbar */}
-      <div
-        data-equipment-fleet-toolbar
-        style={{
-          background: 'white',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          padding: '12px 16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-        }}
-      >
-        <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
-          <input
-            type="text"
-            data-equipment-fleet-search
-            value={search}
-            onChange={(e) => setFilter('textSearch', e.target.value)}
-            placeholder="Search name, category, serial..."
-            style={{...inpS, flex: 1, minWidth: 200}}
-          />
-          <select
-            data-equipment-fleet-status-filter
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{...inpS, width: 'auto'}}
-          >
-            <option value="">All statuses</option>
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.key} value={o.key}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <select
-            data-equipment-fleet-category-filter
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            style={{...inpS, width: 'auto'}}
-          >
-            <option value="">All categories</option>
-            {EQUIPMENT_CATEGORIES.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <div
-            data-equipment-fleet-fuel-filter
-            style={{display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}
-          >
-            {FUEL_TYPE_OPTIONS.map((o) => {
-              const active = Array.isArray(filters.fuelType) && filters.fuelType.includes(o.key);
-              return (
-                <button
-                  key={o.key}
-                  type="button"
-                  data-equipment-fuel-type={o.key}
-                  onClick={() => toggleArrayValue('fuelType', o.key)}
-                  style={{
-                    ...ghostBtnS,
-                    padding: '5px 10px',
-                    borderRadius: 999,
-                    border: active ? '1px solid var(--brand)' : '1px solid var(--border-strong)',
-                    background: 'white',
-                    color: active ? 'var(--brand)' : 'var(--ink-muted)',
-                  }}
-                >
-                  {o.label}
-                </button>
-              );
-            })}
-          </div>
-          <select
-            data-equipment-fleet-fueling-tier
-            value={filters.fuelingTier || ''}
-            onChange={(e) => setFilter('fuelingTier', e.target.value)}
-            style={{...inpS, width: 'auto'}}
-          >
-            {FUELING_TIER_OPTIONS.map((o) => (
-              <option key={o.key} value={o.key}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              color: 'var(--ink)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: 6,
-              padding: '4px 8px',
-            }}
-          >
-            <span style={{color: 'var(--ink-muted)', marginRight: 4}}>Sort</span>
+      {EXTENDED_LIST_CONTROLS_ENABLED && (
+        <div
+          data-equipment-fleet-toolbar
+          style={{
+            background: 'white',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            padding: '12px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+            <input
+              type="text"
+              data-equipment-fleet-search
+              value={search}
+              onChange={(e) => setFilter('textSearch', e.target.value)}
+              placeholder="Search name, category, serial..."
+              style={{...inpS, flex: 1, minWidth: 200}}
+            />
             <select
-              data-equipment-fleet-sort-key
-              value={sortRule.key}
-              onChange={(e) => setSortRule({key: e.target.value, dir: sortRule.dir})}
-              style={{...inpS, width: 'auto', fontSize: 12, padding: '4px 8px'}}
+              data-equipment-fleet-status-filter
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{...inpS, width: 'auto'}}
             >
-              {EQUIPMENT_FLEET_SORT_KEYS.map((key) => (
-                <option key={key} value={key}>
-                  {SORT_KEY_LABELS[key] || key}
+              <option value="">All statuses</option>
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              data-equipment-fleet-sort-dir={sortRule.dir}
-              onClick={flipSortDir}
-              title="Toggle sort direction"
-              style={{...ghostBtnS, padding: '4px 10px'}}
+            <select
+              data-equipment-fleet-category-filter
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              style={{...inpS, width: 'auto'}}
             >
-              {sortRule.dir === 'asc' ? '↑ Asc' : '↓ Desc'}
+              <option value="">All categories</option>
+              {EQUIPMENT_CATEGORIES.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <div
+              data-equipment-fleet-fuel-filter
+              style={{display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}
+            >
+              {FUEL_TYPE_OPTIONS.map((o) => {
+                const active = Array.isArray(filters.fuelType) && filters.fuelType.includes(o.key);
+                return (
+                  <button
+                    key={o.key}
+                    type="button"
+                    data-equipment-fuel-type={o.key}
+                    onClick={() => toggleArrayValue('fuelType', o.key)}
+                    style={{
+                      ...ghostBtnS,
+                      padding: '5px 10px',
+                      borderRadius: 999,
+                      border: active ? '1px solid var(--brand)' : '1px solid var(--border-strong)',
+                      background: 'white',
+                      color: active ? 'var(--brand)' : 'var(--ink-muted)',
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+            <select
+              data-equipment-fleet-fueling-tier
+              value={filters.fuelingTier || ''}
+              onChange={(e) => setFilter('fuelingTier', e.target.value)}
+              style={{...inpS, width: 'auto'}}
+            >
+              {FUELING_TIER_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                color: 'var(--ink)',
+                border: '1px solid var(--border-strong)',
+                borderRadius: 6,
+                padding: '4px 8px',
+              }}
+            >
+              <span style={{color: 'var(--ink-muted)', marginRight: 4}}>Sort</span>
+              <select
+                data-equipment-fleet-sort-key
+                value={sortRule.key}
+                onChange={(e) => setSortRule({key: e.target.value, dir: sortRule.dir})}
+                style={{...inpS, width: 'auto', fontSize: 12, padding: '4px 8px'}}
+              >
+                {EQUIPMENT_FLEET_SORT_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {SORT_KEY_LABELS[key] || key}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                data-equipment-fleet-sort-dir={sortRule.dir}
+                onClick={flipSortDir}
+                title="Toggle sort direction"
+                style={{...ghostBtnS, padding: '4px 10px'}}
+              >
+                {sortRule.dir === 'asc' ? '↑ Asc' : '↓ Desc'}
+              </button>
+            </div>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                color: 'var(--ink)',
+                border: '1px solid var(--border-strong)',
+                borderRadius: 6,
+                padding: '4px 8px',
+              }}
+            >
+              <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
+              <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                <input
+                  type="radio"
+                  name="equipmentFleetViewMode"
+                  checked={viewMode === 'grouped'}
+                  onChange={() => setViewMode('grouped')}
+                  data-equipment-view-mode="grouped"
+                />
+                Grouped
+              </label>
+              <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                <input
+                  type="radio"
+                  name="equipmentFleetViewMode"
+                  checked={viewMode === 'flat'}
+                  onChange={() => setViewMode('flat')}
+                  data-equipment-view-mode="flat"
+                />
+                Flat
+              </label>
+            </div>
+            <button type="button" data-equipment-fleet-export-csv="1" onClick={handleExportCsv} style={ghostBtnS}>
+              Export CSV
+            </button>
+            <button type="button" data-equipment-fleet-print="1" onClick={handlePrintRows} style={ghostBtnS}>
+              Print
+            </button>
+            <button
+              onClick={() => setShowAdd(true)}
+              style={{
+                padding: '7px 16px',
+                borderRadius: 8,
+                border: 'none',
+                background: EQUIPMENT_COLOR,
+                color: 'white',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              + Add Equipment
             </button>
           </div>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              color: 'var(--ink)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: 6,
-              padding: '4px 8px',
-            }}
-          >
-            <span style={{color: 'var(--ink-muted)', marginRight: 4}}>View</span>
-            <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-              <input
-                type="radio"
-                name="equipmentFleetViewMode"
-                checked={viewMode === 'grouped'}
-                onChange={() => setViewMode('grouped')}
-                data-equipment-view-mode="grouped"
-              />
-              Grouped
-            </label>
-            <label style={{display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-              <input
-                type="radio"
-                name="equipmentFleetViewMode"
-                checked={viewMode === 'flat'}
-                onChange={() => setViewMode('flat')}
-                data-equipment-view-mode="flat"
-              />
-              Flat
-            </label>
+          <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+            {filterCount > 0 && (
+              <button
+                type="button"
+                data-equipment-fleet-clear-filters
+                onClick={clearAllFilters}
+                style={{...ghostBtnS, color: 'var(--ink-muted)'}}
+              >
+                Clear filters
+              </button>
+            )}
+            <span data-equipment-fleet-count style={{fontSize: 12, color: 'var(--ink-muted)'}}>
+              {sorted.length} of {totalCount} equipment
+              {filterCount > 0 ? ' · ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's') : ''}
+            </span>
           </div>
-          <button type="button" data-equipment-fleet-export-csv="1" onClick={handleExportCsv} style={ghostBtnS}>
-            Export CSV
-          </button>
-          <button type="button" data-equipment-fleet-print="1" onClick={handlePrintRows} style={ghostBtnS}>
-            Print
-          </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            style={{
-              padding: '7px 16px',
-              borderRadius: 8,
-              border: 'none',
-              background: EQUIPMENT_COLOR,
-              color: 'white',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            + Add Equipment
-          </button>
         </div>
-        <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
-          {filterCount > 0 && (
-            <button
-              type="button"
-              data-equipment-fleet-clear-filters
-              onClick={clearAllFilters}
-              style={{...ghostBtnS, color: 'var(--ink-muted)'}}
-            >
-              Clear filters
-            </button>
-          )}
-          <span data-equipment-fleet-count style={{fontSize: 12, color: 'var(--ink-muted)'}}>
-            {sorted.length} of {totalCount} equipment
-            {filterCount > 0 ? ' · ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's') : ''}
-          </span>
-        </div>
-      </div>
+      )}
 
       <InlineNotice notice={exportNotice} onDismiss={() => setExportNotice(null)} />
       {showAdd && (

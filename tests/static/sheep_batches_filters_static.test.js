@@ -190,8 +190,9 @@ describe('sheep batches view — filtered + sorted export feed (shared owners un
 
   it('runs the augment -> filter -> sort pipeline off one array', () => {
     expect(batchesView).toContain('const augmentedBatches');
-    expect(batchesView).toContain('buildSheepBatchPredicate(filters');
-    expect(batchesView).toContain('buildSheepBatchComparator(sortRule');
+    expect(batchesView).toContain('const EXTENDED_LIST_CONTROLS_ENABLED = false;');
+    expect(batchesView).toContain('buildSheepBatchPredicate(effectiveFilters');
+    expect(batchesView).toContain('buildSheepBatchComparator(effectiveSortRule');
     expect(batchesView).toContain('[...filteredBatches].sort(cmp)');
   });
 });

@@ -29,6 +29,7 @@ import {usePig} from '../contexts/PigContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 
 const BREEDING_PIG_ENTITY_TYPE = 'pig.breeder';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 const BREEDING_PIG_GRID = '44px 16px 76px 70px 92px 92px 128px 128px 106px 106px 128px 96px minmax(180px,1fr) 64px';
 const BREEDER_ACTIVITY_LABELS = {
   tag: 'Tag',
@@ -1104,44 +1105,48 @@ export default function SowsView({
             )}
           </div>
           <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
-            <button
-              type="button"
-              data-breeding-pigs-export-csv="1"
-              onClick={handleExportCsv}
-              disabled={breedingPigSeqRows.length === 0}
-              style={{
-                padding: '7px 12px',
-                borderRadius: 6,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: breedingPigSeqRows.length === 0 ? 'var(--ink-faint)' : '#085041',
-                cursor: breedingPigSeqRows.length === 0 ? 'not-allowed' : 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: 'inherit',
-              }}
-            >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              data-breeding-pigs-print="1"
-              onClick={handlePrintRows}
-              disabled={breedingPigSeqRows.length === 0}
-              style={{
-                padding: '7px 12px',
-                borderRadius: 6,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: breedingPigSeqRows.length === 0 ? 'var(--ink-faint)' : '#085041',
-                cursor: breedingPigSeqRows.length === 0 ? 'not-allowed' : 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: 'inherit',
-              }}
-            >
-              Print
-            </button>
+            {EXTENDED_LIST_CONTROLS_ENABLED && (
+              <>
+                <button
+                  type="button"
+                  data-breeding-pigs-export-csv="1"
+                  onClick={handleExportCsv}
+                  disabled={breedingPigSeqRows.length === 0}
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: breedingPigSeqRows.length === 0 ? 'var(--ink-faint)' : '#085041',
+                    cursor: breedingPigSeqRows.length === 0 ? 'not-allowed' : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  data-breeding-pigs-print="1"
+                  onClick={handlePrintRows}
+                  disabled={breedingPigSeqRows.length === 0}
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: breedingPigSeqRows.length === 0 ? 'var(--ink-faint)' : '#085041',
+                    cursor: breedingPigSeqRows.length === 0 ? 'not-allowed' : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Print
+                </button>
+              </>
+            )}
             <button
               onClick={() => {
                 setNotice(null);

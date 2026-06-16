@@ -19,6 +19,7 @@ import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 const FLOCK_LABELS = {rams: 'Rams', ewes: 'Ewes', feeders: 'Feeders'};
 const SHEEP_WEIGHINS_SURFACE_KEY = 'sheep.weighins';
 const VALID_WEIGHIN_STATUS_FILTERS = new Set(['all', 'draft', 'complete']);
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 const SheepWeighInsView = ({
   sb,
@@ -125,9 +126,11 @@ const SheepWeighInsView = ({
     navigate('/weigh-in-sessions/' + id);
   }
 
-  const tagQ = tagSearch.trim().toLowerCase();
+  const effectiveStatusFilter = EXTENDED_LIST_CONTROLS_ENABLED ? statusFilter : 'all';
+  const effectiveTagSearch = EXTENDED_LIST_CONTROLS_ENABLED ? tagSearch : '';
+  const tagQ = effectiveTagSearch.trim().toLowerCase();
   const entryMatchesTag = (e) => !tagQ || (e.tag || '').toLowerCase().includes(tagQ);
-  const statusFiltered = sessions.filter((s) => statusFilter === 'all' || s.status === statusFilter);
+  const statusFiltered = sessions.filter((s) => effectiveStatusFilter === 'all' || s.status === effectiveStatusFilter);
   const filtered = tagQ ? statusFiltered.filter((s) => (entries[s.id] || []).some(entryMatchesTag)) : statusFiltered;
   const totalEntries = filtered.reduce((s, sess) => s + (entries[sess.id] || []).length, 0);
   const matchedSessionCount = tagQ ? filtered.length : null;
@@ -341,7 +344,7 @@ const SheepWeighInsView = ({
             Retry
           </button>
         )}
-        {!loadFailed && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !loadFailed && (
           <>
             <div
               data-sheep-weighins-saved-views-row
@@ -524,114 +527,123 @@ const SheepWeighInsView = ({
             </div>
           </div>
           <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
-            <div style={{position: 'relative'}}>
-              <input
-                type="search"
-                value={tagSearch}
-                onChange={(e) => setTagSearch(e.target.value)}
-                placeholder="Search by tag #..."
-                style={{
-                  fontFamily: 'inherit',
-                  fontSize: 12,
-                  padding: '6px 28px 6px 10px',
-                  border: '1px solid var(--border-strong)',
-                  borderRadius: 6,
-                  width: 160,
-                  boxSizing: 'border-box',
-                  background: 'white',
-                  color: 'var(--ink)',
-                  outline: 'none',
-                }}
-              />
-              {tagSearch && (
+            {EXTENDED_LIST_CONTROLS_ENABLED && (
+              <>
+                <div style={{position: 'relative'}}>
+                  <input
+                    type="search"
+                    value={tagSearch}
+                    onChange={(e) => setTagSearch(e.target.value)}
+                    placeholder="Search by tag #..."
+                    style={{
+                      fontFamily: 'inherit',
+                      fontSize: 12,
+                      padding: '6px 28px 6px 10px',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 6,
+                      width: 160,
+                      boxSizing: 'border-box',
+                      background: 'white',
+                      color: 'var(--ink)',
+                      outline: 'none',
+                    }}
+                  />
+                  {tagSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTagSearch('')}
+                      title="Clear search"
+                      style={{
+                        position: 'absolute',
+                        right: 4,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        fontSize: 16,
+                        lineHeight: 1,
+                        color: 'var(--ink-faint)',
+                        cursor: 'pointer',
+                        padding: '2px 6px',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {'×'}
+                    </button>
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    borderRadius: 6,
+                    overflow: 'hidden',
+                    border: '1px solid var(--border-strong)',
+                  }}
+                >
+                  {[
+                    {k: 'all', l: 'All'},
+                    {k: 'draft', l: 'Drafts'},
+                    {k: 'complete', l: 'Complete'},
+                  ].map((o, oi) => (
+                    <button
+                      key={o.k}
+                      onClick={() => setStatusFilter(o.k)}
+                      style={{
+                        padding: '5px 10px',
+                        border: 'none',
+                        borderRight: oi < 2 ? '1px solid var(--border-strong)' : 'none',
+                        fontFamily: 'inherit',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        background: 'white',
+                        color: statusFilter === o.k ? '#1e40af' : 'var(--ink-muted)',
+                      }}
+                    >
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
-                  onClick={() => setTagSearch('')}
-                  title="Clear search"
+                  data-sheep-weighins-export-csv="1"
+                  onClick={handleExportCsv}
+                  disabled={loading || loadFailed}
                   style={{
-                    position: 'absolute',
-                    right: 4,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    fontSize: 16,
-                    lineHeight: 1,
-                    color: 'var(--ink-faint)',
-                    cursor: 'pointer',
-                    padding: '2px 6px',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {'×'}
-                </button>
-              )}
-            </div>
-            <div
-              style={{display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border-strong)'}}
-            >
-              {[
-                {k: 'all', l: 'All'},
-                {k: 'draft', l: 'Drafts'},
-                {k: 'complete', l: 'Complete'},
-              ].map((o, oi) => (
-                <button
-                  key={o.k}
-                  onClick={() => setStatusFilter(o.k)}
-                  style={{
-                    padding: '5px 10px',
-                    border: 'none',
-                    borderRight: oi < 2 ? '1px solid var(--border-strong)' : 'none',
-                    fontFamily: 'inherit',
-                    fontSize: 11,
+                    padding: '7px 14px',
+                    borderRadius: 7,
+                    border: '1px solid var(--border-strong)',
+                    background: loading || loadFailed ? 'var(--surface-2)' : 'white',
+                    color: loading || loadFailed ? 'var(--ink-faint)' : 'var(--ink)',
                     fontWeight: 600,
-                    cursor: 'pointer',
-                    background: 'white',
-                    color: statusFilter === o.k ? '#1e40af' : 'var(--ink-muted)',
+                    fontSize: 12,
+                    cursor: loading || loadFailed ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
                   }}
                 >
-                  {o.l}
+                  Export CSV
                 </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              data-sheep-weighins-export-csv="1"
-              onClick={handleExportCsv}
-              disabled={loading || loadFailed}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 7,
-                border: '1px solid var(--border-strong)',
-                background: loading || loadFailed ? 'var(--surface-2)' : 'white',
-                color: loading || loadFailed ? 'var(--ink-faint)' : 'var(--ink)',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: loading || loadFailed ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              data-sheep-weighins-print="1"
-              onClick={handlePrintRows}
-              disabled={loading || loadFailed}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 7,
-                border: '1px solid var(--border-strong)',
-                background: loading || loadFailed ? 'var(--surface-2)' : 'white',
-                color: loading || loadFailed ? 'var(--ink-faint)' : 'var(--ink)',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: loading || loadFailed ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Print
-            </button>
+                <button
+                  type="button"
+                  data-sheep-weighins-print="1"
+                  onClick={handlePrintRows}
+                  disabled={loading || loadFailed}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 7,
+                    border: '1px solid var(--border-strong)',
+                    background: loading || loadFailed ? 'var(--surface-2)' : 'white',
+                    color: loading || loadFailed ? 'var(--ink-faint)' : 'var(--ink)',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: loading || loadFailed ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Print
+                </button>
+              </>
+            )}
             <button
               data-new-weighin-button="1"
               onClick={() => setShowNewModal(true)}

@@ -37,6 +37,7 @@ import LayerBatchPage from './LayerBatchPage.jsx';
 import LayerHousingPage from './LayerHousingPage.jsx';
 
 const LAYER_BATCHES_SURFACE_KEY = 'layer.batches';
+const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 const LAYER_BATCH_STATUS_OPTIONS = [
   {key: 'active', label: 'Active'},
@@ -282,15 +283,21 @@ const LayerBatchesHub = ({
     const n = parseInt(v, 10);
     return Number.isFinite(n) ? n : null;
   };
-  const filters = {
+  const rawFilters = {
     textSearch: fSearch,
     status: fStatus,
     supplier: fSupplier,
     startDateRange: {after: fStartAfter || null, before: fStartBefore || null},
     birdCountRange: {min: numOrNull(fBirdMin), max: numOrNull(fBirdMax)},
   };
-  const sortRule = {key: sortKey, dir: sortDir};
-  const hasActiveFilters = !!(fSearch || fStatus || fSupplier || fStartAfter || fStartBefore || fBirdMin || fBirdMax);
+  const rawSortRule = {key: sortKey, dir: sortDir};
+  const filters = EXTENDED_LIST_CONTROLS_ENABLED
+    ? rawFilters
+    : {textSearch: '', status: '', supplier: '', startDateRange: {}, birdCountRange: {}};
+  const sortRule = EXTENDED_LIST_CONTROLS_ENABLED ? rawSortRule : {key: 'status', dir: 'asc'};
+  const hasActiveFilters =
+    EXTENDED_LIST_CONTROLS_ENABLED &&
+    !!(fSearch || fStatus || fSupplier || fStartAfter || fStartBefore || fBirdMin || fBirdMax);
 
   // Distinct suppliers observed on the batches, for the supplier dropdown.
   const supplierOpts = [...new Set((layerBatches || []).map((b) => b.supplier).filter(Boolean))].sort();
@@ -533,40 +540,44 @@ const LayerBatchesHub = ({
             </span>
           </div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              data-layer-batches-export-csv="1"
-              style={{
-                padding: '7px 12px',
-                borderRadius: 8,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-              }}
-            >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintRows}
-              data-layer-batches-print="1"
-              style={{
-                padding: '7px 12px',
-                borderRadius: 8,
-                border: '1px solid var(--border-strong)',
-                background: 'white',
-                color: 'var(--ink)',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-              }}
-            >
-              Print
-            </button>
+            {EXTENDED_LIST_CONTROLS_ENABLED && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  data-layer-batches-export-csv="1"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: 'var(--ink)',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintRows}
+                  data-layer-batches-print="1"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-strong)',
+                    background: 'white',
+                    color: 'var(--ink)',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Print
+                </button>
+              </>
+            )}
             {canEdit && (
               <button
                 type="button"
@@ -589,7 +600,7 @@ const LayerBatchesHub = ({
           </div>
         </div>
 
-        {!loadError && (
+        {EXTENDED_LIST_CONTROLS_ENABLED && !loadError && (
           <>
             <div
               data-layer-batches-saved-views-row
