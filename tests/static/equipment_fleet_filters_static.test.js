@@ -116,6 +116,44 @@ describe('EquipmentFleetView — empty / filtered states', () => {
   });
 });
 
+describe('EquipmentFleetView — sold equipment section', () => {
+  it('splits sold equipment out of active render groups behind a collapsed section', () => {
+    expect(fleetView).toContain('const [soldOpen, setSoldOpen] = useState(false)');
+    expect(fleetView).toMatch(
+      /activeSorted\s*=\s*useMemo\(\(\) => sorted\.filter\(\(eq\) => eq\.status !== 'sold'\), \[sorted\]\)/,
+    );
+    expect(fleetView).toMatch(
+      /soldSorted\s*=\s*useMemo\(\(\) => sorted\.filter\(\(eq\) => eq\.status === 'sold'\), \[sorted\]\)/,
+    );
+    expect(fleetView).toContain('data-equipment-fleet-sold-section');
+    expect(fleetView).toContain('data-equipment-fleet-sold-toggle');
+    expect(fleetView).toContain('aria-expanded={soldOpen}');
+    expect(fleetView).toContain('{soldOpen && (');
+  });
+
+  it('builds category and uncategorized groups from active rows only', () => {
+    expect(fleetView).toContain(
+      'EQUIPMENT_CATEGORIES.map((cat) => ({...cat, rows: activeSorted.filter((e) => e.category === cat.key)}))',
+    );
+    expect(fleetView).toContain(
+      'const uncategorized = useMemo(() => activeSorted.filter((e) => !CATEGORY_BY_KEY[e.category]), [activeSorted])',
+    );
+    expect(fleetView).not.toContain('rows: sorted.filter((e) => e.category === cat.key)');
+    expect(fleetView).not.toContain('const uncategorized = useMemo(() => sorted.filter');
+  });
+
+  it('keeps sold rows after active rows for sequence/export without making no-match lie', () => {
+    expect(fleetView).toContain(
+      "viewMode === 'flat' ? activeSorted : [...grouped.flatMap((g) => g.rows), ...uncategorized]",
+    );
+    expect(fleetView).toContain(
+      'const fleetSeqRows = useMemo(() => [...activeSeqRows, ...soldSorted], [activeSeqRows, soldSorted])',
+    );
+    expect(fleetView).toContain('const filteredEmpty = sorted.length === 0');
+    expect(fleetView).toContain('{!filteredEmpty && soldSection}');
+  });
+});
+
 describe('EquipmentFleetView — export feeds the filtered+sorted rows, not raw', () => {
   it('still uses the shared export column owner unchanged', () => {
     expect(fleetView).toContain("from '../lib/operationalExportColumns.js'");
@@ -127,7 +165,12 @@ describe('EquipmentFleetView — export feeds the filtered+sorted rows, not raw'
     expect(fleetView).toContain('rowsToCsv(exportColumns, fleetExportRows)');
     expect(fleetView).toContain('rows: fleetExportRows');
     // fleetSeqRows is built from the sorted set, not the raw equipment prop.
-    expect(fleetView).toContain("viewMode === 'flat' ? sorted : [...grouped.flatMap((g) => g.rows), ...uncategorized]");
+    expect(fleetView).toContain(
+      "viewMode === 'flat' ? activeSorted : [...grouped.flatMap((g) => g.rows), ...uncategorized]",
+    );
+    expect(fleetView).toContain(
+      'const fleetSeqRows = useMemo(() => [...activeSeqRows, ...soldSorted], [activeSeqRows, soldSorted])',
+    );
     expect(fleetView).not.toContain('equipment.map((eq) => {');
   });
 

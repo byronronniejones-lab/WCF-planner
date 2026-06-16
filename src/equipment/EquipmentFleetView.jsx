@@ -2,9 +2,10 @@
 // fuel filters, a single sort rule + direction, and saved views (surface_key
 // equipment.fleet). Two layouts share one toolbar + one filtered+sorted row
 // set: a category-grouped tile view (default) and a flat unified grid (header
-// row + aligned rows, PigBatchesView-style). The SAME sorted set drives the
-// rendered rows, the record-sequence nav handed to onOpen, and the CSV/print
-// export (via the shared buildEquipmentFleetExportColumns owner).
+// row + aligned rows, PigBatchesView-style). Sold rows are split into a
+// collapsed section after the active fleet, while the filtered sequence still
+// drives record-sequence nav and CSV/print export (via the shared
+// buildEquipmentFleetExportColumns owner).
 //
 // equipment + fuelings arrive as props from EquipmentHome — that contract is
 // preserved; saved-views CRUD goes through the shared savedViewsApi using the
@@ -112,6 +113,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
   const [viewMode, setViewMode] = useState('grouped');
   const [filters, setFilters] = useState({});
   const [sortRule, setSortRule] = useState({key: 'name', dir: 'asc'});
+  const [soldOpen, setSoldOpen] = useState(false);
 
   const [savedViews, setSavedViews] = useState([]);
   const [savedViewsError, setSavedViewsError] = useState(null);
@@ -193,8 +195,8 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
   );
 
   // filtered = rows.filter(predicate); sorted = [...filtered].sort(comparator).
-  // The sorted set is the single source of truth for render, record-sequence
-  // nav, and export.
+  // Sold rows stay filtered/sorted, but render in a collapsed section after
+  // active rows instead of intermixing with the operational fleet.
   const filtered = useMemo(
     () => (equipment || []).filter(buildEquipmentFleetPredicate(filters, filterCtx)),
     [equipment, filters, filterCtx],
@@ -203,26 +205,32 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
     () => [...filtered].sort(buildEquipmentFleetComparator(sortRule, filterCtx)),
     [filtered, sortRule, filterCtx],
   );
+  const activeSorted = useMemo(() => sorted.filter((eq) => eq.status !== 'sold'), [sorted]);
+  const soldSorted = useMemo(() => sorted.filter((eq) => eq.status === 'sold'), [sorted]);
 
   const totalCount = (equipment || []).length;
   const filterCount = Object.keys(filters).length;
 
-  // Category groups over the SORTED+filtered set (grouped mode); the visible/
+  // Category groups over the active SORTED+filtered set (grouped mode); the visible/
   // rendered order is exactly the sorted order within each category, then any
-  // category not in the canonical list. The flat array `fleetSeqRows` IS the
-  // record-sequence + export order in both modes.
+  // category not in the canonical list. Sold rows are appended after that
+  // active order for record-sequence + export.
   const grouped = useMemo(
     () =>
-      EQUIPMENT_CATEGORIES.map((cat) => ({...cat, rows: sorted.filter((e) => e.category === cat.key)})).filter(
+      EQUIPMENT_CATEGORIES.map((cat) => ({...cat, rows: activeSorted.filter((e) => e.category === cat.key)})).filter(
         (g) => g.rows.length > 0,
       ),
-    [sorted],
+    [activeSorted],
   );
-  const uncategorized = useMemo(() => sorted.filter((e) => !CATEGORY_BY_KEY[e.category]), [sorted]);
+  const uncategorized = useMemo(() => activeSorted.filter((e) => !CATEGORY_BY_KEY[e.category]), [activeSorted]);
   // Record-sequence order: grouped mode walks category groups (then any
-  // uncategorized); flat mode is the plain sorted order. Either way it mirrors
-  // exactly what the operator sees, so click-through prev/next matches the list.
-  const fleetSeqRows = viewMode === 'flat' ? sorted : [...grouped.flatMap((g) => g.rows), ...uncategorized];
+  // uncategorized); flat mode is the active sorted order. Sold rows remain in
+  // the filtered sequence after active rows so exports/print/nav keep them.
+  const activeSeqRows = useMemo(
+    () => (viewMode === 'flat' ? activeSorted : [...grouped.flatMap((g) => g.rows), ...uncategorized]),
+    [activeSorted, grouped, uncategorized, viewMode],
+  );
+  const fleetSeqRows = useMemo(() => [...activeSeqRows, ...soldSorted], [activeSeqRows, soldSorted]);
 
   const fleetExportRows = useMemo(
     () =>
@@ -517,7 +525,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
 
   // Flat unified-grid row (header row + aligned rows, PigBatchesView-style).
   const FLAT_GRID = '36px 1fr 110px 80px 90px 120px 150px';
-  const flatRow = (eq, i) => {
+  const flatRow = (eq, i, isLast = i >= sorted.length - 1) => {
     const {reading, dueInfo, latestFuel, daysSinceFuel, missedFuel} = rowMeta(eq);
     const cat = CATEGORY_BY_KEY[eq.category] || {color: '#57534e', label: eq.category, bg: '#fafaf9', bd: '#d6d3d1'};
     return (
@@ -532,7 +540,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
           alignItems: 'center',
           gap: 10,
           padding: '10px 16px',
-          borderBottom: i < sorted.length - 1 ? '1px solid var(--divider)' : 'none',
+          borderBottom: !isLast ? '1px solid var(--divider)' : 'none',
           cursor: 'pointer',
           background: eq.status === 'sold' ? 'var(--surface-2)' : 'white',
         }}
@@ -594,6 +602,59 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       </div>
     );
   };
+
+  const soldSection =
+    soldSorted.length > 0 ? (
+      <section
+        data-equipment-fleet-sold-section
+        style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden'}}
+      >
+        <button
+          type="button"
+          data-equipment-fleet-sold-toggle
+          aria-expanded={soldOpen}
+          aria-controls="equipment-fleet-sold-list"
+          onClick={() => setSoldOpen((v) => !v)}
+          style={{
+            width: '100%',
+            border: 'none',
+            background: 'var(--surface-2)',
+            color: 'var(--ink)',
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            textAlign: 'left',
+          }}
+        >
+          <span style={{fontSize: 14, fontWeight: 700}}>Sold ({soldSorted.length})</span>
+          <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
+            {soldOpen ? 'Hide sold equipment' : 'Show sold equipment'}
+          </span>
+          <span aria-hidden="true" style={{marginLeft: 'auto', fontSize: 16, fontWeight: 700}}>
+            {soldOpen ? '-' : '+'}
+          </span>
+        </button>
+        {soldOpen && (
+          <div id="equipment-fleet-sold-list" style={{borderTop: '1px solid var(--border)', padding: 12}}>
+            {viewMode === 'flat' ? (
+              <div
+                data-equipment-fleet-sold-flat
+                style={{border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden'}}
+              >
+                {soldSorted.map((eq, i) => flatRow(eq, activeSorted.length + i, i === soldSorted.length - 1))}
+              </div>
+            ) : (
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10}}>
+                {soldSorted.map(tile)}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    ) : null;
 
   // True-empty (no equipment at all) keeps the original empty message.
   if (totalCount === 0) {
@@ -1011,7 +1072,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       )}
 
       {/* GROUPED MODE — category groups (default) */}
-      {!filteredEmpty && viewMode === 'grouped' && (
+      {!filteredEmpty && viewMode === 'grouped' && activeSorted.length > 0 && (
         <div style={{display: 'flex', flexDirection: 'column', gap: 18}}>
           {grouped.map((g) => (
             <div key={g.key} data-equipment-fleet-group={g.key}>
@@ -1051,7 +1112,7 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
       )}
 
       {/* FLAT MODE — unified grid (header row + aligned rows) */}
-      {!filteredEmpty && viewMode === 'flat' && (
+      {!filteredEmpty && viewMode === 'flat' && activeSorted.length > 0 && (
         <div
           data-equipment-fleet-flat
           style={{background: 'white', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden'}}
@@ -1080,9 +1141,10 @@ export default function EquipmentFleetView({sb, equipment, fuelings, fmt, onOpen
             <span>Last fueling</span>
             <span>Next service</span>
           </div>
-          {sorted.map((eq, i) => flatRow(eq, i))}
+          {activeSorted.map((eq, i) => flatRow(eq, i, i === activeSorted.length - 1))}
         </div>
       )}
+      {!filteredEmpty && soldSection}
     </div>
   );
 }
