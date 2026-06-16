@@ -266,6 +266,161 @@
   justify-content: flex-end;
 }
 
+/* ── CP2: draw/edit/measure toolbar, forms, HUD ── */
+.pm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 40px;
+  margin-bottom: 8px;
+}
+.pm-mode {
+  border: 1px solid var(--border, #d6dbd4);
+  background: #fff;
+  color: var(--text, #0f172a);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pm-mode.is-active {
+  background: #085041;
+  border-color: #085041;
+  color: #fff;
+}
+.pm-mode:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pm-toolbar-hint {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  margin-left: auto;
+}
+
+.pm-drawform,
+.pm-editbar {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.pm-drawform-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 650;
+  color: #065f46;
+}
+.pm-field input,
+.pm-field select {
+  border: 1px solid var(--border, #d6dbd4);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text, #0f172a);
+  background: #fff;
+  min-width: 160px;
+}
+.pm-drawform-metric {
+  font-size: 13px;
+  font-weight: 700;
+  color: #065f46;
+  margin-left: auto;
+}
+.pm-drawform-warn {
+  font-size: 12px;
+  color: #b91c1c;
+  margin-top: 6px;
+}
+.pm-drawform-actions,
+.pm-editbar-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.pm-editbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pm-editbar-label {
+  font-size: 13px;
+  color: #065f46;
+}
+.pm-editbar-actions {
+  margin-top: 0;
+}
+
+/* Live measure/draw HUD — fixed-ish width so the map doesn't reflow. */
+.pm-hud {
+  position: absolute;
+  z-index: 500;
+  top: 10px;
+  left: 10px;
+  background: rgba(15, 23, 42, 0.86);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 11px;
+  min-width: 150px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.25);
+}
+.pm-hud-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.pm-hud-k {
+  color: #cbd5e1;
+}
+.pm-hud-v {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pm-hud-warn {
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #fca5a5;
+}
+.pm-hud[data-hud-valid='false'] {
+  outline: 2px solid #ef4444;
+}
+
+/* List item is now a select button + actions. */
+.pm-item-select {
+  appearance: none;
+  border: none;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pm-item.is-selected {
+  outline: 2px solid #085041;
+  outline-offset: -1px;
+}
+
 /* Mobile: Pasture Map stacks above the list. */
 @media (max-width: 760px) {
   .pm-body {
@@ -276,5 +431,17 @@
   }
   .pm-list-col {
     max-height: none;
+  }
+  .pm-toolbar-hint {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .pm-field input,
+  .pm-field select {
+    min-width: 0;
+    width: 100%;
+  }
+  .pm-drawform-metric {
+    margin-left: 0;
   }
 }

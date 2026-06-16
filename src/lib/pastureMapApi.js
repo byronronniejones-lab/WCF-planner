@@ -22,6 +22,18 @@ export function newImportBatchId() {
   return 'pmb-' + uuid;
 }
 
+// Stable client id for a newly drawn land area (RPC requires ^[A-Za-z0-9-]+$).
+export function newLandAreaId() {
+  const uuid =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+  return 'la-' + uuid;
+}
+
 function unwrap({data, error}, label) {
   if (error) {
     const msg = (error.message || String(error)).replace(/^PM_VALIDATION:\s*/, '');
@@ -101,4 +113,28 @@ export async function closeLandAreaOutline(id, polygonGeojson, kind = 'unclassif
 // Soft-delete a land area (also used for the Scratch/Delete quick action).
 export async function deleteLandArea(id) {
   return unwrap(await sb.rpc('delete_land_area', {p_id: id}), 'delete_land_area');
+}
+
+// CP2 — create a NEW land area from a drawn polygon (mig 127). Writes v1 geometry
+// version; replay-idempotent by id. polygon is a GeoJSON geometry object.
+export async function createLandArea({id, name, polygon, kind = 'unclassified', source = 'drawn'}) {
+  return unwrap(
+    await sb.rpc('create_land_area', {
+      p_id: id,
+      p_name: name,
+      p_polygon_geojson: polygon,
+      p_kind: kind,
+      p_source: source,
+    }),
+    'create_land_area',
+  );
+}
+
+// CP2 — append a new boundary version to an existing area (edit, mig 127).
+// Append-only: prior versions are preserved server-side. polygon is GeoJSON.
+export async function updateLandAreaGeometry(id, polygon) {
+  return unwrap(
+    await sb.rpc('update_land_area_geometry', {p_id: id, p_polygon_geojson: polygon}),
+    'update_land_area_geometry',
+  );
 }

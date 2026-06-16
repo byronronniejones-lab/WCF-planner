@@ -19,6 +19,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@geoman-io/leaflet-geoman-free": "^2.19.3",
     "@supabase/supabase-js": "^2.45.0",
     "@tmcw/togeojson": "^7.1.2",
     "@turf/area": "^7.3.5",
