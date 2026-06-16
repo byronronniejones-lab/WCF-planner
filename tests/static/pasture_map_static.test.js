@@ -9,9 +9,12 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const mig = read('supabase-migrations/116_pasture_map_land_areas.sql');
+const mig127 = read('supabase-migrations/127_pasture_map_draw_edit.sql');
 const mainSrc = read('src/main.jsx');
 const homeSrc = read('src/dashboard/HomeDashboard.jsx');
 const viewSrc = read('src/pasture/PastureMapView.jsx');
+const canvasSrc = read('src/pasture/PastureMapCanvas.jsx');
+const apiSrc = read('src/lib/pastureMapApi.js');
 
 describe('Pasture Map route + wiring', () => {
   it('registers the canonical /pasture-map path', () => {
@@ -104,5 +107,56 @@ describe('Pasture Map view — CP1 scope boundary', () => {
     expect(viewSrc).toContain('Import OnX KML');
     expect(viewSrc).toContain('Close outline');
     expect(viewSrc).toContain('classifyLandArea');
+  });
+});
+
+describe('Migration 127 — CP2 draw/edit RPCs', () => {
+  it('create_land_area + update_land_area_geometry are SECDEF, authenticated-only, mgmt/admin gated', () => {
+    for (const fn of ['create_land_area', 'update_land_area_geometry']) {
+      expect(mig127).toContain(`CREATE OR REPLACE FUNCTION public.${fn}`);
+      expect(mig127).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\) TO authenticated`));
+    }
+    expect(mig127).toContain("v_role NOT IN ('management', 'admin')");
+  });
+
+  it('reuses the append-only version helper and rejects invalid polygons', () => {
+    expect(mig127).toContain('_land_area_add_version');
+    expect(mig127).toMatch(/ST_IsValid/);
+  });
+
+  it('an edited area records its new version as a human draw, not the original source', () => {
+    expect(mig127).toMatch(/_land_area_add_version\(\s*p_id,\s*v_geom,\s*'drawn'/);
+    expect(mig127).toContain("'origin_source', v_row.source");
+  });
+});
+
+describe('CP2 API wrappers + draw/edit UI', () => {
+  it('pastureMapApi exposes create/update-geometry wrappers over the mig 127 RPCs', () => {
+    expect(apiSrc).toContain('export async function createLandArea');
+    expect(apiSrc).toContain('export async function updateLandAreaGeometry');
+    expect(apiSrc).toContain('export function newLandAreaId');
+    expect(apiSrc).toContain("sb.rpc('create_land_area'");
+    expect(apiSrc).toContain("sb.rpc('update_land_area_geometry'");
+  });
+
+  it('view has select/draw/edit/measure modes and an in-app name+kind save form', () => {
+    for (const m of ['select', 'draw', 'edit', 'measure']) {
+      expect(viewSrc).toContain(`data-mode="${m}"`);
+    }
+    expect(viewSrc).toContain('data-pasture-drawform-name');
+    expect(viewSrc).toContain('data-pasture-drawform-kind');
+    expect(viewSrc).toContain('createLandArea');
+    expect(viewSrc).toContain('updateLandAreaGeometry');
+  });
+
+  it('uses NO raw browser alert/confirm/prompt in the view or canvas', () => {
+    for (const src of [viewSrc, canvasSrc]) {
+      expect(src).not.toMatch(/\b(?:window\.)?(?:alert|confirm|prompt)\s*\(/);
+    }
+  });
+
+  it('disables Edit for selections without a polygon (outline candidates must be closed first)', () => {
+    expect(viewSrc).toContain('function hasPolygonGeom');
+    expect(viewSrc).toContain('!selectedEditable');
   });
 });

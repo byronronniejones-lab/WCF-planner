@@ -5,13 +5,7 @@
 // uses the global DOMParser with no extra dependency.
 import {describe, it, expect} from 'vitest';
 import {DOMParser as XmlDomParser} from '@xmldom/xmldom';
-import {
-  parseKmlToPlacemarks,
-  parseAcreageNote,
-  strip2D,
-  geometryAcres,
-  closeOutlineToPolygon,
-} from './pastureKml.js';
+import {parseKmlToPlacemarks, parseAcreageNote, strip2D, geometryAcres, closeOutlineToPolygon} from './pastureKml.js';
 
 // One Polygon (2D closed, an Area with a UUID) + one LineString (3D open, the
 // OnX "boundary traced as a path" shape, notes carry an acreage).
@@ -95,13 +89,29 @@ describe('parseAcreageNote', () => {
 describe('strip2D', () => {
   it('drops the third ordinate at any nesting depth', () => {
     expect(strip2D([1, 2, 3])).toEqual([1, 2]);
-    expect(strip2D([[1, 2, 9], [3, 4, 9]])).toEqual([[1, 2], [3, 4]]);
+    expect(
+      strip2D([
+        [1, 2, 9],
+        [3, 4, 9],
+      ]),
+    ).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
   });
 });
 
 describe('closeOutlineToPolygon', () => {
   it('closes an open square line into a valid polygon with positive acres', () => {
-    const line = {type: 'LineString', coordinates: [[-86.42, 30.84], [-86.41, 30.84], [-86.41, 30.85], [-86.42, 30.85]]};
+    const line = {
+      type: 'LineString',
+      coordinates: [
+        [-86.42, 30.84],
+        [-86.41, 30.84],
+        [-86.41, 30.85],
+        [-86.42, 30.85],
+      ],
+    };
     const res = closeOutlineToPolygon(line);
     expect(res.valid).toBe(true);
     expect(res.polygon.type).toBe('Polygon');
@@ -112,20 +122,46 @@ describe('closeOutlineToPolygon', () => {
   });
 
   it('rejects a self-intersecting (bowtie) outline', () => {
-    const bowtie = {type: 'LineString', coordinates: [[0, 0], [1, 1], [1, 0], [0, 1]]};
+    const bowtie = {
+      type: 'LineString',
+      coordinates: [
+        [0, 0],
+        [1, 1],
+        [1, 0],
+        [0, 1],
+      ],
+    };
     const res = closeOutlineToPolygon(bowtie);
     expect(res.valid).toBe(false);
     expect(res.reason).toMatch(/self-intersect/i);
   });
 
   it('refuses a non-line geometry', () => {
-    const res = closeOutlineToPolygon({type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]]});
+    const res = closeOutlineToPolygon({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 0],
+        ],
+      ],
+    });
     expect(res.valid).toBe(false);
   });
 });
 
 describe('geometryAcres', () => {
   it('returns null for non-areal geometry', () => {
-    expect(geometryAcres({type: 'LineString', coordinates: [[0, 0], [1, 1]]})).toBeNull();
+    expect(
+      geometryAcres({
+        type: 'LineString',
+        coordinates: [
+          [0, 0],
+          [1, 1],
+        ],
+      }),
+    ).toBeNull();
   });
 });

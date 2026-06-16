@@ -15,7 +15,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['**/pasture_map_import.spec.js'],
+  testMatch: ['**/pasture_map_import.spec.js', '**/pasture_map_cp2.spec.js'],
   fullyParallel: false,
   workers: 1,
   retries: 0,

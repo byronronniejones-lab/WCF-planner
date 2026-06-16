@@ -1,11 +1,12 @@
 // ============================================================================
-// src/pasture/PastureMapView.jsx  —  Pasture Map CP1 (/pasture-map)
+// src/pasture/PastureMapView.jsx  —  Pasture Map (CP1 + CP2 draw/edit)
 // ----------------------------------------------------------------------------
-// The Pasture Map home surface. CP1 scope: import OnX-KML land, name/classify
-// imported shapes, see them on USGS/NAIP aerial imagery with acreage, close
-// LineString outline candidates into polygons, and GPS "you are here". NO move
-// ledger / occupancy / rest / daily-report wiring (CP3+). farm_team+ can read;
-// classify/close/delete are management/admin only.
+// CP1: import OnX-KML land, classify, close outlines, delete, GPS locate.
+// CP2: select/pan, measure, and (management/admin) draw new polygons + edit
+// existing boundaries on the map. Drawn areas require an in-app name + kind
+// before save (no raw prompt/alert/confirm). farm_team can view + measure only.
+// All geometry writes go through the mig 127 SECDEF RPCs. NO move ledger /
+// occupancy / rest / daily-report wiring (CP3+).
 // ============================================================================
 import React from 'react';
 import PastureMapCanvas from './PastureMapCanvas.jsx';
@@ -16,7 +17,10 @@ import {
   classifyLandArea,
   closeLandAreaOutline,
   deleteLandArea,
+  createLandArea,
+  updateLandAreaGeometry,
   newImportBatchId,
+  newLandAreaId,
 } from '../lib/pastureMapApi.js';
 import './pastureMap.css';
 
@@ -31,6 +35,19 @@ const KIND_LABEL = {
   outline_candidate: 'Outline (needs close)',
 };
 
+// Kinds a freshly drawn polygon may be saved as (no outline_candidate/scratch).
+const DRAW_KINDS = ['unclassified', 'pasture', 'paddock', 'feeder_pig_area', 'section', 'infrastructure'];
+
+// Vertex-edit only applies to areas that already have a polygon (drawn/imported
+// or a closed outline). Outline candidates have no polygon layer yet, so Edit is
+// disabled for them — they must be closed first.
+function hasPolygonGeom(a) {
+  if (!a) return false;
+  if (a.current_version && a.current_version.geometry) return true;
+  const rg = a.raw_geometry;
+  return !!(rg && (rg.type === 'Polygon' || rg.type === 'MultiPolygon'));
+}
+
 export default function PastureMapView({Header, authState}) {
   const role = authState && authState.role;
   const isManager = role === 'management' || role === 'admin';
@@ -39,9 +56,16 @@ export default function PastureMapView({Header, authState}) {
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
   const [busyId, setBusyId] = React.useState(null);
-  const [preview, setPreview] = React.useState(null); // {fileName, placemarks, polygons, lines}
+  const [preview, setPreview] = React.useState(null);
   const [importing, setImporting] = React.useState(false);
   const fileRef = React.useRef(null);
+
+  // CP2 state
+  const [mode, setMode] = React.useState('select'); // select | measure | draw | edit
+  const [selectedId, setSelectedId] = React.useState(null);
+  const [drawForm, setDrawForm] = React.useState(null); // {geometry, metrics, name, kind}
+  const [editGeom, setEditGeom] = React.useState(null); // {geometry, metrics}
+  const [saving, setSaving] = React.useState(false);
 
   async function reload() {
     setLoading(true);
@@ -59,6 +83,28 @@ export default function PastureMapView({Header, authState}) {
     reload();
   }, []);
 
+  function switchMode(next) {
+    setErr('');
+    setDrawForm(null);
+    setEditGeom(null);
+    setMode(next);
+  }
+  function startEdit() {
+    const a = areas.find((x) => x.id === selectedId);
+    if (!a) {
+      setErr('Select an area first (tap it on the map or in the list), then Edit.');
+      return;
+    }
+    if (!hasPolygonGeom(a)) {
+      setErr('That area is an outline with no polygon yet — use "Close outline" first, then Edit.');
+      return;
+    }
+    setErr('');
+    setEditGeom(null);
+    setMode('edit');
+  }
+
+  // ── CP1 import ──
   async function onFile(e) {
     const file = e.target.files && e.target.files[0];
     if (fileRef.current) fileRef.current.value = '';
@@ -81,7 +127,6 @@ export default function PastureMapView({Header, authState}) {
       setErr('Could not parse that file as KML: ' + (e2.message || e2));
     }
   }
-
   async function confirmImport() {
     if (!preview) return;
     setImporting(true);
@@ -114,27 +159,91 @@ export default function PastureMapView({Header, authState}) {
       setBusyId(null);
     }
   }
-
-  function classify(a, kind) {
-    return withBusy(a.id, () => classifyLandArea(a.id, kind));
-  }
-  function removeArea(a) {
-    return withBusy(a.id, () => deleteLandArea(a.id));
-  }
+  const classify = (a, kind) => withBusy(a.id, () => classifyLandArea(a.id, kind));
+  const removeArea = (a) => withBusy(a.id, () => deleteLandArea(a.id));
   function closeOutline(a) {
-    const line = a.raw_geometry;
-    const res = closeOutlineToPolygon(line);
+    const res = closeOutlineToPolygon(a.raw_geometry);
     if (!res.valid) {
-      setErr(`Cannot close "${a.name}": ${res.reason}. Vertex editing arrives in the next checkpoint.`);
+      setErr(`Cannot close "${a.name}": ${res.reason}.`);
       return;
     }
     return withBusy(a.id, () => closeLandAreaOutline(a.id, res.polygon, 'unclassified'));
   }
 
-  const counts = areas.reduce((m, a) => {
-    m[a.kind] = (m[a.kind] || 0) + 1;
-    return m;
-  }, {});
+  // ── CP2 draw / edit ──
+  function onDrawComplete(geometry, metrics) {
+    setDrawForm({geometry, metrics, name: '', kind: 'unclassified'});
+  }
+  function onEditGeometry(geometry, metrics) {
+    setEditGeom({geometry, metrics});
+  }
+  async function saveDraw() {
+    if (!drawForm) return;
+    if (!drawForm.name.trim()) {
+      setErr('Name is required to save a new area.');
+      return;
+    }
+    if (drawForm.metrics && drawForm.metrics.selfIntersects) {
+      setErr('That polygon is self-intersecting. Redraw it before saving.');
+      return;
+    }
+    setSaving(true);
+    setErr('');
+    try {
+      await createLandArea({
+        id: newLandAreaId(),
+        name: drawForm.name.trim(),
+        polygon: drawForm.geometry,
+        kind: drawForm.kind,
+        source: 'drawn',
+      });
+      setDrawForm(null);
+      setMode('select');
+      await reload();
+    } catch (e) {
+      setErr(e.message || 'Could not save the drawn area.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  function cancelDraw() {
+    setDrawForm(null);
+    setMode('select');
+  }
+  async function saveEdit() {
+    if (!selectedId) return;
+    if (!editGeom) {
+      // No vertex change captured — nothing to save.
+      setMode('select');
+      await reload();
+      return;
+    }
+    if (editGeom.metrics && editGeom.metrics.selfIntersects) {
+      setErr('The edited boundary is self-intersecting. Fix it before saving.');
+      return;
+    }
+    setSaving(true);
+    setErr('');
+    try {
+      await updateLandAreaGeometry(selectedId, editGeom.geometry);
+      setEditGeom(null);
+      setMode('select');
+      await reload();
+    } catch (e) {
+      setErr(e.message || 'Could not save the edited boundary.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function cancelEdit() {
+    setEditGeom(null);
+    setMode('select');
+    await reload(); // discard in-place vertex drags by re-rendering from the DB
+  }
+
+  const counts = areas.reduce((m, a) => ((m[a.kind] = (m[a.kind] || 0) + 1), m), {});
+  const selectedArea = areas.find((a) => a.id === selectedId) || null;
+  const selectedEditable = hasPolygonGeom(selectedArea);
 
   return (
     <div className="pm-view">
@@ -199,14 +308,155 @@ export default function PastureMapView({Header, authState}) {
 
         <div className="pm-body">
           <section className="pm-map-col">
-            <PastureMapCanvas areas={areas} onSelect={() => {}} />
+            {/* CP2 mode toolbar — stable height so the map doesn't jump. */}
+            <div className="pm-toolbar" data-pasture-toolbar="1">
+              <button
+                type="button"
+                className={'pm-mode' + (mode === 'select' ? ' is-active' : '')}
+                onClick={() => switchMode('select')}
+                data-mode="select"
+              >
+                Select
+              </button>
+              <button
+                type="button"
+                className={'pm-mode' + (mode === 'measure' ? ' is-active' : '')}
+                onClick={() => switchMode('measure')}
+                data-mode="measure"
+              >
+                Measure
+              </button>
+              {isManager && (
+                <>
+                  <button
+                    type="button"
+                    className={'pm-mode' + (mode === 'draw' ? ' is-active' : '')}
+                    onClick={() => switchMode('draw')}
+                    data-mode="draw"
+                  >
+                    Draw
+                  </button>
+                  <button
+                    type="button"
+                    className={'pm-mode' + (mode === 'edit' ? ' is-active' : '')}
+                    onClick={startEdit}
+                    disabled={!selectedId || !selectedEditable}
+                    title={selectedId && !selectedEditable ? 'Close this outline first to edit its polygon' : undefined}
+                    data-mode="edit"
+                  >
+                    Edit{selectedArea ? ` · ${selectedArea.name || 'selected'}` : ''}
+                  </button>
+                </>
+              )}
+              <span className="pm-toolbar-hint">
+                {mode === 'draw'
+                  ? 'Tap to add points; tap the first point to finish.'
+                  : mode === 'edit'
+                    ? 'Drag the white handles to reshape.'
+                    : mode === 'measure'
+                      ? 'Draw a shape to read its acres/perimeter.'
+                      : 'Tap an area to select it.'}
+              </span>
+            </div>
+
+            {/* Draw save form — in-app, never a raw prompt. */}
+            {isManager && drawForm && (
+              <div className="pm-drawform" data-pasture-drawform="1">
+                <div className="pm-drawform-row">
+                  <label className="pm-field">
+                    <span>Name</span>
+                    <input
+                      type="text"
+                      value={drawForm.name}
+                      maxLength={200}
+                      placeholder="e.g. ET-12"
+                      onChange={(e) => setDrawForm((f) => ({...f, name: e.target.value}))}
+                      data-pasture-drawform-name="1"
+                      autoFocus
+                    />
+                  </label>
+                  <label className="pm-field">
+                    <span>Kind</span>
+                    <select
+                      value={drawForm.kind}
+                      onChange={(e) => setDrawForm((f) => ({...f, kind: e.target.value}))}
+                      data-pasture-drawform-kind="1"
+                    >
+                      {DRAW_KINDS.map((k) => (
+                        <option key={k} value={k}>
+                          {KIND_LABEL[k]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="pm-drawform-metric">
+                    {drawForm.metrics && drawForm.metrics.acres != null ? `${drawForm.metrics.acres} ac` : ''}
+                  </span>
+                </div>
+                {drawForm.metrics && drawForm.metrics.selfIntersects && (
+                  <div className="pm-drawform-warn">Self-intersecting polygon — redraw before saving.</div>
+                )}
+                <div className="pm-drawform-actions">
+                  <button type="button" className="pm-btn" onClick={cancelDraw} disabled={saving}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="pm-btn pm-btn-primary"
+                    onClick={saveDraw}
+                    disabled={saving || !drawForm.name.trim() || (drawForm.metrics && drawForm.metrics.selfIntersects)}
+                    data-pasture-drawform-save="1"
+                  >
+                    {saving ? 'Saving…' : 'Save area'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Edit save/cancel bar. */}
+            {isManager && mode === 'edit' && selectedArea && !drawForm && (
+              <div className="pm-editbar" data-pasture-editbar="1">
+                <span className="pm-editbar-label">
+                  Editing <strong>{selectedArea.name || 'area'}</strong>
+                  {editGeom && editGeom.metrics && editGeom.metrics.acres != null
+                    ? ` · ${editGeom.metrics.acres} ac`
+                    : ''}
+                </span>
+                <div className="pm-editbar-actions">
+                  <button type="button" className="pm-btn" onClick={cancelEdit} disabled={saving}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="pm-btn pm-btn-primary"
+                    onClick={saveEdit}
+                    disabled={saving || (editGeom && editGeom.metrics && editGeom.metrics.selfIntersects)}
+                    data-pasture-editbar-save="1"
+                  >
+                    {saving ? 'Saving…' : 'Save boundary'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <PastureMapCanvas
+              areas={areas}
+              mode={mode}
+              canWrite={isManager}
+              editAreaId={mode === 'edit' ? selectedId : null}
+              onSelect={setSelectedId}
+              onDrawComplete={onDrawComplete}
+              onEditGeometry={onEditGeometry}
+            />
           </section>
 
           <section className="pm-list-col">
             {!loading && areas.length === 0 && (
               <div className="pm-empty">
                 No land areas yet.{' '}
-                {isManager ? 'Import an OnX KML export to get started.' : 'Ask a manager to import the farm map.'}
+                {isManager
+                  ? 'Import an OnX KML export or draw one to get started.'
+                  : 'Ask a manager to set up the farm map.'}
               </div>
             )}
             <ul className="pm-list">
@@ -217,9 +467,20 @@ export default function PastureMapView({Header, authState}) {
                   noteAc != null && acres != null && Math.abs(noteAc - acres) / Math.max(noteAc, 1) > 0.05;
                 const isOutline = a.kind === 'outline_candidate' || a.geometry_status === 'outline_candidate';
                 const busy = busyId === a.id;
+                const isSel = a.id === selectedId;
                 return (
-                  <li key={a.id} className="pm-item" data-pasture-area={a.id} data-kind={a.kind}>
-                    <div className="pm-item-main">
+                  <li
+                    key={a.id}
+                    className={'pm-item' + (isSel ? ' is-selected' : '')}
+                    data-pasture-area={a.id}
+                    data-kind={a.kind}
+                  >
+                    <button
+                      type="button"
+                      className="pm-item-main pm-item-select"
+                      onClick={() => setSelectedId(a.id)}
+                      data-pasture-area-select={a.id}
+                    >
                       <div className="pm-item-name">{a.name || 'Unnamed'}</div>
                       <div className="pm-item-meta">
                         <span className={'pm-chip pm-chip-' + a.kind}>{KIND_LABEL[a.kind] || a.kind}</span>
@@ -232,7 +493,7 @@ export default function PastureMapView({Header, authState}) {
                           <span className="pm-chip pm-chip-invalid">Invalid geometry</span>
                         )}
                       </div>
-                    </div>
+                    </button>
                     {isManager && (
                       <div className="pm-item-actions">
                         {isOutline ? (
