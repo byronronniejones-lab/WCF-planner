@@ -1382,189 +1382,191 @@ function MonthBucketTile({
             </div>
           )}
           {(bucket.animalIds.length > 0 || hiddenHereOnly.length > 0) && (
-            <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}} data-month-bucket-table>
-              <thead>
-                <tr
-                  style={{
-                    textAlign: 'left',
-                    color: 'var(--ink-faint)',
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  <th style={{padding: '4px 8px'}}>Tag</th>
-                  <th style={{padding: '4px 8px'}}>Sex</th>
-                  <th style={{padding: '4px 8px'}}>Herd</th>
-                  <th style={{padding: '4px 8px'}}>Origin</th>
-                  <th style={{padding: '4px 8px'}}>Age</th>
-                  <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
-                  <th style={{padding: '4px 8px', textAlign: 'right'}}>Projected</th>
-                  <th style={{padding: '4px 8px'}}>ADG Calc</th>
-                  <th style={{padding: '4px 8px', textAlign: 'right'}}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Assigned rows */}
-                {bucket.animalIds.map((cid) => {
-                  const cow = cowsById.get(cid);
-                  if (!cow) return null;
-                  if (!tagMatch({cow})) return null;
-                  const row = forecast.animalRows.find((r) => r.cow.id === cid);
-                  const ageInMonth = ageAt(cow.birth_date, monthStartMs(bucket.monthKey));
-                  return (
-                    <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid var(--divider)'}}>
-                      <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{cow.tag || '?'}</td>
-                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{cow.sex || '—'}</td>
-                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
-                        {HERD_LABELS[cow.herd] || cow.herd}
-                      </td>
-                      <td data-month-row-origin={cid} style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
-                        {cow.origin || '—'}
-                      </td>
-                      <td
-                        data-month-row-age={cid}
-                        style={{padding: '6px 8px', color: 'var(--ink-muted)', fontVariantNumeric: 'tabular-nums'}}
+            <div style={{overflowX: 'auto'}}>
+              <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}} data-month-bucket-table>
+                <thead>
+                  <tr
+                    style={{
+                      textAlign: 'left',
+                      color: 'var(--ink-faint)',
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    <th style={{padding: '4px 8px'}}>Tag</th>
+                    <th style={{padding: '4px 8px'}}>Sex</th>
+                    <th style={{padding: '4px 8px'}}>Herd</th>
+                    <th style={{padding: '4px 8px'}}>Origin</th>
+                    <th style={{padding: '4px 8px'}}>Age</th>
+                    <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
+                    <th style={{padding: '4px 8px', textAlign: 'right'}}>Projected</th>
+                    <th style={{padding: '4px 8px'}}>ADG Calc</th>
+                    <th style={{padding: '4px 8px', textAlign: 'right'}}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Assigned rows */}
+                  {bucket.animalIds.map((cid) => {
+                    const cow = cowsById.get(cid);
+                    if (!cow) return null;
+                    if (!tagMatch({cow})) return null;
+                    const row = forecast.animalRows.find((r) => r.cow.id === cid);
+                    const ageInMonth = ageAt(cow.birth_date, monthStartMs(bucket.monthKey));
+                    return (
+                      <tr key={cid} data-month-row={cid} style={{borderTop: '1px solid var(--divider)'}}>
+                        <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{cow.tag || '?'}</td>
+                        <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{cow.sex || '—'}</td>
+                        <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
+                          {HERD_LABELS[cow.herd] || cow.herd}
+                        </td>
+                        <td data-month-row-origin={cid} style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
+                          {cow.origin || '—'}
+                        </td>
+                        <td
+                          data-month-row-age={cid}
+                          style={{padding: '6px 8px', color: 'var(--ink-muted)', fontVariantNumeric: 'tabular-nums'}}
+                        >
+                          {ageInMonth}
+                        </td>
+                        <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink)'}}>
+                          {row?.latest
+                            ? Math.round(row.latest.weight).toLocaleString() +
+                              ' lb' +
+                              (row.latest.date && fmt ? ' · ' + fmt(String(row.latest.date).slice(0, 10)) : '')
+                            : '—'}
+                        </td>
+                        <td style={{padding: '6px 8px', textAlign: 'right', color: '#065f46', fontWeight: 600}}>
+                          {row?.projectedWeightAtReady
+                            ? Math.round(row.projectedWeightAtReady).toLocaleString() + ' lb'
+                            : '—'}
+                        </td>
+                        <td style={{padding: '6px 8px', color: 'var(--ink-muted)', fontSize: 11}}>
+                          {formatAdgCalc(row)}
+                          {row?.negativeAdg && (
+                            <span style={{color: '#b91c1c', fontWeight: 700, marginLeft: 4}}>(neg)</span>
+                          )}
+                        </td>
+                        <td style={{padding: '6px 8px', textAlign: 'right'}}>
+                          {canEdit ? (
+                            <button
+                              onClick={() => onToggleHidden(cid, bucket.monthKey, false)}
+                              data-toggle-hide={cid}
+                              style={{
+                                fontSize: 11,
+                                padding: '3px 8px',
+                                borderRadius: 10,
+                                border: '1px solid #fecaca',
+                                background: '#fef2f2',
+                                color: '#b91c1c',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                                fontWeight: 600,
+                              }}
+                            >
+                              Hide
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {/* Hidden-here rows — ALWAYS rendered, muted, with Unhide. */}
+                  {hiddenHereOnly.map((cid) => {
+                    const cow = cowsById.get(cid);
+                    if (!cow) return null;
+                    if (!tagMatch({cow})) return null;
+                    const row = forecast.animalRows.find((r) => r.cow.id === cid);
+                    // Projected weight for THIS hide month — operator wants to
+                    // see what she'd weigh if sent in this month, even though
+                    // she's excluded from the totals (Codex 2026-05-04 #3).
+                    const hideMonthProjected =
+                      row &&
+                      Number.isFinite(row.anchorWeight) &&
+                      Number.isFinite(row.anchorMs) &&
+                      Number.isFinite(row.adg)
+                        ? projectedWeightAtMonth({
+                            anchorWeight: row.anchorWeight,
+                            anchorMs: row.anchorMs,
+                            targetMonthKey: bucket.monthKey,
+                            adg: row.adg,
+                          })
+                        : null;
+                    const hiddenAgeInMonth = ageAt(cow.birth_date, monthStartMs(bucket.monthKey));
+                    return (
+                      <tr
+                        key={'hidden-' + cid}
+                        data-month-hidden-row={cid}
+                        style={{borderTop: '1px solid var(--divider)', opacity: 0.55, background: '#fafafa'}}
                       >
-                        {ageInMonth}
-                      </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink)'}}>
-                        {row?.latest
-                          ? Math.round(row.latest.weight).toLocaleString() +
-                            ' lb' +
-                            (row.latest.date && fmt ? ' · ' + fmt(String(row.latest.date).slice(0, 10)) : '')
-                          : '—'}
-                      </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right', color: '#065f46', fontWeight: 600}}>
-                        {row?.projectedWeightAtReady
-                          ? Math.round(row.projectedWeightAtReady).toLocaleString() + ' lb'
-                          : '—'}
-                      </td>
-                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)', fontSize: 11}}>
-                        {formatAdgCalc(row)}
-                        {row?.negativeAdg && (
-                          <span style={{color: '#b91c1c', fontWeight: 700, marginLeft: 4}}>(neg)</span>
-                        )}
-                      </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right'}}>
-                        {canEdit ? (
-                          <button
-                            onClick={() => onToggleHidden(cid, bucket.monthKey, false)}
-                            data-toggle-hide={cid}
-                            style={{
-                              fontSize: 11,
-                              padding: '3px 8px',
-                              borderRadius: 10,
-                              border: '1px solid #fecaca',
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                              cursor: 'pointer',
-                              fontFamily: 'inherit',
-                              fontWeight: 600,
-                            }}
-                          >
-                            Hide
-                          </button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {/* Hidden-here rows — ALWAYS rendered, muted, with Unhide. */}
-                {hiddenHereOnly.map((cid) => {
-                  const cow = cowsById.get(cid);
-                  if (!cow) return null;
-                  if (!tagMatch({cow})) return null;
-                  const row = forecast.animalRows.find((r) => r.cow.id === cid);
-                  // Projected weight for THIS hide month — operator wants to
-                  // see what she'd weigh if sent in this month, even though
-                  // she's excluded from the totals (Codex 2026-05-04 #3).
-                  const hideMonthProjected =
-                    row &&
-                    Number.isFinite(row.anchorWeight) &&
-                    Number.isFinite(row.anchorMs) &&
-                    Number.isFinite(row.adg)
-                      ? projectedWeightAtMonth({
-                          anchorWeight: row.anchorWeight,
-                          anchorMs: row.anchorMs,
-                          targetMonthKey: bucket.monthKey,
-                          adg: row.adg,
-                        })
-                      : null;
-                  const hiddenAgeInMonth = ageAt(cow.birth_date, monthStartMs(bucket.monthKey));
-                  return (
-                    <tr
-                      key={'hidden-' + cid}
-                      data-month-hidden-row={cid}
-                      style={{borderTop: '1px solid var(--divider)', opacity: 0.55, background: '#fafafa'}}
-                    >
-                      <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{cow.tag || '?'}</td>
-                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{cow.sex || '—'}</td>
-                      <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
-                        {HERD_LABELS[cow.herd] || cow.herd}
-                      </td>
-                      <td data-month-hidden-row-origin={cid} style={{padding: '6px 8px', color: 'var(--ink-faint)'}}>
-                        {cow.origin || '—'}
-                      </td>
-                      <td
-                        data-month-hidden-row-age={cid}
-                        style={{padding: '6px 8px', color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums'}}
-                      >
-                        {hiddenAgeInMonth}
-                      </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink-faint)'}}>
-                        {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
-                      </td>
-                      <td
-                        data-hidden-projected={cid}
-                        style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink-faint)'}}
-                      >
-                        {hideMonthProjected != null && Number.isFinite(hideMonthProjected) ? (
-                          <>
-                            {Math.round(hideMonthProjected).toLocaleString() + ' lb'}
-                            {row?.readyMonth && row.readyMonth !== bucket.monthKey && (
-                              <span style={{display: 'block', fontSize: 10, fontStyle: 'italic'}}>
-                                rolled to {monthLabel(row.readyMonth)}
-                              </span>
-                            )}
-                          </>
-                        ) : row?.readyMonth ? (
-                          'rolled to ' + monthLabel(row.readyMonth)
-                        ) : (
-                          'no eligible month'
-                        )}
-                      </td>
-                      <td style={{padding: '6px 8px', color: 'var(--ink-faint)', fontSize: 11, fontStyle: 'italic'}}>
-                        hidden here
-                      </td>
-                      <td style={{padding: '6px 8px', textAlign: 'right'}}>
-                        {canEdit ? (
-                          <button
-                            onClick={() => onToggleHidden(cid, bucket.monthKey, true)}
-                            data-toggle-unhide={cid}
-                            style={{
-                              fontSize: 11,
-                              padding: '3px 8px',
-                              borderRadius: 10,
-                              border: '1px solid #bfdbfe',
-                              background: '#eff6ff',
-                              color: '#1e40af',
-                              cursor: 'pointer',
-                              fontFamily: 'inherit',
-                              fontWeight: 600,
-                            }}
-                          >
-                            Unhide
-                          </button>
-                        ) : (
-                          <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>hidden</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{cow.tag || '?'}</td>
+                        <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{cow.sex || '—'}</td>
+                        <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>
+                          {HERD_LABELS[cow.herd] || cow.herd}
+                        </td>
+                        <td data-month-hidden-row-origin={cid} style={{padding: '6px 8px', color: 'var(--ink-faint)'}}>
+                          {cow.origin || '—'}
+                        </td>
+                        <td
+                          data-month-hidden-row-age={cid}
+                          style={{padding: '6px 8px', color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums'}}
+                        >
+                          {hiddenAgeInMonth}
+                        </td>
+                        <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink-faint)'}}>
+                          {row?.latest ? Math.round(row.latest.weight).toLocaleString() + ' lb' : '—'}
+                        </td>
+                        <td
+                          data-hidden-projected={cid}
+                          style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink-faint)'}}
+                        >
+                          {hideMonthProjected != null && Number.isFinite(hideMonthProjected) ? (
+                            <>
+                              {Math.round(hideMonthProjected).toLocaleString() + ' lb'}
+                              {row?.readyMonth && row.readyMonth !== bucket.monthKey && (
+                                <span style={{display: 'block', fontSize: 10, fontStyle: 'italic'}}>
+                                  rolled to {monthLabel(row.readyMonth)}
+                                </span>
+                              )}
+                            </>
+                          ) : row?.readyMonth ? (
+                            'rolled to ' + monthLabel(row.readyMonth)
+                          ) : (
+                            'no eligible month'
+                          )}
+                        </td>
+                        <td style={{padding: '6px 8px', color: 'var(--ink-faint)', fontSize: 11, fontStyle: 'italic'}}>
+                          hidden here
+                        </td>
+                        <td style={{padding: '6px 8px', textAlign: 'right'}}>
+                          {canEdit ? (
+                            <button
+                              onClick={() => onToggleHidden(cid, bucket.monthKey, true)}
+                              data-toggle-unhide={cid}
+                              style={{
+                                fontSize: 11,
+                                padding: '3px 8px',
+                                borderRadius: 10,
+                                border: '1px solid #bfdbfe',
+                                background: '#eff6ff',
+                                color: '#1e40af',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                                fontWeight: 600,
+                              }}
+                            >
+                              Unhide
+                            </button>
+                          ) : (
+                            <span style={{fontSize: 10, color: 'var(--ink-faint)'}}>hidden</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
           <div data-month-activity-log={bucket.monthKey} style={{marginTop: 12}}>
             <RecordCollaborationSection
@@ -1609,99 +1611,101 @@ function AttentionSection({rows, canEdit, onToggleHidden, fmt, tagMatch}) {
         Cattle that don't land cleanly in a planned month. Each row shows the latest weight, ADG, and why the cow didn't
         get a planned month — adjust the underlying data (weigh-in, DOB) or unhide a month to bring her back.
       </div>
-      <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}}>
-        <thead>
-          <tr
-            style={{
-              textAlign: 'left',
-              color: 'var(--ink-faint)',
-              fontSize: 10,
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}
-          >
-            <th style={{padding: '4px 8px'}}>Tag</th>
-            <th style={{padding: '4px 8px'}}>Herd</th>
-            <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
-            <th style={{padding: '4px 8px'}}>ADG Calc</th>
-            <th style={{padding: '4px 8px'}}>Reason</th>
-            <th style={{padding: '4px 8px'}}>Hidden months</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((r) => (
-            <tr key={r.cow.id} data-watchlist-row={r.cow.id} style={{borderTop: '1px solid var(--divider)'}}>
-              <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{r.cow.tag || '?'}</td>
-              <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{HERD_LABELS[r.cow.herd] || r.cow.herd}</td>
-              <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink)'}}>
-                {r.latest
-                  ? Math.round(r.latest.weight).toLocaleString() +
-                    ' lb' +
-                    (r.latest.date
-                      ? ' · ' + (fmt ? fmt(String(r.latest.date).slice(0, 10)) : String(r.latest.date).slice(0, 10))
-                      : '')
-                  : r.cow.birth_date
-                    ? 'no weigh-in · DOB ' + r.cow.birth_date
-                    : 'no weigh-in · no DOB'}
-              </td>
-              <td style={{padding: '6px 8px', color: 'var(--ink-muted)', fontSize: 11}}>{formatAdgCalc(r)}</td>
-              <td style={{padding: '6px 8px', color: '#92400e', fontSize: 11}}>
-                {r.watchlistReasons.length > 0
-                  ? r.watchlistReasons.map((x) => WATCHLIST_REASON_LABELS[x] || x).join(', ')
-                  : r.readyMonth
-                    ? 'projected ready ' + monthLabel(r.readyMonth)
-                    : 'no eligible month'}
-              </td>
-              <td style={{padding: '6px 8px', fontSize: 11}}>
-                {r.hiddenInMonths && r.hiddenInMonths.length > 0 ? (
-                  <span style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
-                    {r.hiddenInMonths.map((mk) => (
-                      <span
-                        key={mk}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '1px 6px',
-                          borderRadius: 999,
-                          background: '#eff6ff',
-                          color: '#1e40af',
-                          fontSize: 10,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {monthLabel(mk)}
-                        {canEdit && (
-                          <button
-                            onClick={() => onToggleHidden(r.cow.id, mk, true)}
-                            data-watchlist-unhide={r.cow.id + '|' + mk}
-                            title={'Unhide ' + monthLabel(mk)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#1e40af',
-                              cursor: 'pointer',
-                              fontFamily: 'inherit',
-                              fontSize: 11,
-                              padding: 0,
-                              marginLeft: 2,
-                              fontWeight: 700,
-                            }}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                  </span>
-                ) : (
-                  <span style={{color: 'var(--ink-faint)'}}>—</span>
-                )}
-              </td>
+      <div style={{overflowX: 'auto'}}>
+        <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12}}>
+          <thead>
+            <tr
+              style={{
+                textAlign: 'left',
+                color: 'var(--ink-faint)',
+                fontSize: 10,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              <th style={{padding: '4px 8px'}}>Tag</th>
+              <th style={{padding: '4px 8px'}}>Herd</th>
+              <th style={{padding: '4px 8px', textAlign: 'right'}}>Latest</th>
+              <th style={{padding: '4px 8px'}}>ADG Calc</th>
+              <th style={{padding: '4px 8px'}}>Reason</th>
+              <th style={{padding: '4px 8px'}}>Hidden months</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {visible.map((r) => (
+              <tr key={r.cow.id} data-watchlist-row={r.cow.id} style={{borderTop: '1px solid var(--divider)'}}>
+                <td style={{padding: '6px 8px', fontWeight: 700, color: 'var(--ink)'}}>#{r.cow.tag || '?'}</td>
+                <td style={{padding: '6px 8px', color: 'var(--ink-muted)'}}>{HERD_LABELS[r.cow.herd] || r.cow.herd}</td>
+                <td style={{padding: '6px 8px', textAlign: 'right', color: 'var(--ink)'}}>
+                  {r.latest
+                    ? Math.round(r.latest.weight).toLocaleString() +
+                      ' lb' +
+                      (r.latest.date
+                        ? ' · ' + (fmt ? fmt(String(r.latest.date).slice(0, 10)) : String(r.latest.date).slice(0, 10))
+                        : '')
+                    : r.cow.birth_date
+                      ? 'no weigh-in · DOB ' + r.cow.birth_date
+                      : 'no weigh-in · no DOB'}
+                </td>
+                <td style={{padding: '6px 8px', color: 'var(--ink-muted)', fontSize: 11}}>{formatAdgCalc(r)}</td>
+                <td style={{padding: '6px 8px', color: '#92400e', fontSize: 11}}>
+                  {r.watchlistReasons.length > 0
+                    ? r.watchlistReasons.map((x) => WATCHLIST_REASON_LABELS[x] || x).join(', ')
+                    : r.readyMonth
+                      ? 'projected ready ' + monthLabel(r.readyMonth)
+                      : 'no eligible month'}
+                </td>
+                <td style={{padding: '6px 8px', fontSize: 11}}>
+                  {r.hiddenInMonths && r.hiddenInMonths.length > 0 ? (
+                    <span style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+                      {r.hiddenInMonths.map((mk) => (
+                        <span
+                          key={mk}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '1px 6px',
+                            borderRadius: 999,
+                            background: '#eff6ff',
+                            color: '#1e40af',
+                            fontSize: 10,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {monthLabel(mk)}
+                          {canEdit && (
+                            <button
+                              onClick={() => onToggleHidden(r.cow.id, mk, true)}
+                              data-watchlist-unhide={r.cow.id + '|' + mk}
+                              title={'Unhide ' + monthLabel(mk)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#1e40af',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                                fontSize: 11,
+                                padding: 0,
+                                marginLeft: 2,
+                                fontWeight: 700,
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span style={{color: 'var(--ink-faint)'}}>—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
