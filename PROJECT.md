@@ -8,12 +8,10 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-17.
-Current shipped runtime checkpoint: `747d345`
-(`Merge production reconciliation cleanup`), pushed to `origin/main`.
-This `PROJECT.md` wrap update is the only local tracked change in the main
-worktree until Ronnie approves a docs commit/push.
+Current shipped runtime checkpoint: `ccacaf3`
+(`Merge task notifications hotfix`), with this `PROJECT.md` docs update on top.
 Production URL: https://wcfplanner.com.
-Latest live bundle verification after `747d345` is pending Netlify deploy
+Latest live bundle verification after `ccacaf3` is pending Netlify deploy
 completion.
 
 ---
@@ -66,18 +64,24 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: `main`/`origin/main` at `747d345`; this docs wrap is the only local
-  tracked change in the main worktree until committed.
+- Source: `main` / `origin/main` is the docs update that records runtime
+  checkpoint `ccacaf3`.
 - Extra worktrees:
   - `C:\Users\Ronni\WCF-planner` on
-    `fix/production-reconciliation-audit-collapse` at `8dfb024`, clean.
+    `fix/production-reconciliation-audit-collapse` at `8dfb024`, with CC-owned
+    local tracked edits. Do not use it for unrelated merge work.
   - `C:\Users\Ronni\WCF-planner-codex-pasture-map-completion` on `main` at
-    `747d345`, with this `PROJECT.md` edit pending.
+    the docs update on top of runtime checkpoint `ccacaf3`, with only untracked
+    pasture screenshot artifacts.
+  - `C:\Users\Ronni\WCF-planner-codex-hotfix-task-notifications` on
+    `codex/hotfix-task-notifications` at `6e6fb7a`, pushed to origin and merged
+    into `main`.
   - `C:\Users\Ronni\WCF-planner-codex-compact-controls` on
     `codex/compact-list-controls`.
   - `C:\Users\Ronni\WCF-planner-pasture-cp2` on
     `feature/pasture-map-cp2-draw-edit`.
-- Open gates: no source/PROD migration/Storage/Vault/Edge Function gate is open.
+- Open gates: PROD migration `133` and `tasks-cron` Edge Function deploy are
+  pending for the task notification hotfix. No Storage/Vault gate is open.
   Pasture Map designer feedback is pending and should be uploaded at the start
   of the next session before any pasture-map build prompt is written.
 - Local untracked artifacts in the main worktree:
@@ -88,7 +92,9 @@ Design/function invariants that govern cross-surface behavior live in
   `125` (Production legacy events), and `126` (breeding-pig Activity entity)
   were applied to PROD on 2026-06-15. `127` (Pasture Map draw/edit RPCs) was
   applied to PROD on 2026-06-16. Pasture Map `128`-`132` artifacts were verified
-  present on TEST and PROD by catalog checks on 2026-06-17.
+  present on TEST and PROD by catalog checks on 2026-06-17. Migration `133`
+  (task system generation support and To Do approval notifications) was applied
+  to TEST on 2026-06-17 and still needs PROD approval/apply.
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
@@ -96,13 +102,13 @@ Design/function invariants that govern cross-surface behavior live in
   draw/edit, move ledger, planned moves, reports, field GPS tracks, line style,
   and line patterns/defaults. Land areas are created/reviewed through
   `/pasture-map`; no fake pasture seed data is required.
-- Latest validation after the Production cleanup merge: focused Production tests
-  green (`src/lib/production.test.js` and
-  `tests/static/production_page_static.test.js`, 16 tests). Earlier focused
-  Pasture Map validation was green for `src/lib/pastureGeometry.test.js`,
-  `src/lib/pastureKml.test.js`, and `tests/static/pasture_map_static.test.js`
-  (79 tests). `npm run build` green with existing Vite dynamic-import/chunk
-  warnings.
+- Latest validation after the task notification hotfix: `npm run format:check`
+  green; targeted static task/notification tests green (131 tests);
+  hotfix-touched lint green; `npm run build` green with existing Vite
+  dynamic-import/chunk warnings; authenticated To Do approval Playwright flow
+  green on TEST (5 tests) after applying migration `133` to TEST. Full lint and
+  full Vitest still report unrelated pre-existing failures in pasture/pig/global
+  activity areas.
 - `npm install` was run in the main worktree after Pasture Map dependencies
   landed. It reported npm audit findings (11 vulnerabilities: 1 low, 3
   moderate, 6 high, 1 critical). No audit-fix lane has been scoped.
@@ -112,6 +118,19 @@ Design/function invariants that govern cross-surface behavior live in
 The following work is merged to `main` and pushed. Netlify deploys from `main`;
 latest live-bundle verification is pending where noted above.
 
+- Task notifications hotfix:
+  - `tasks-cron` still generates recurring template tasks and now also generates
+    eligible system tasks from active `task_system_rules`.
+  - System task generation reads the real planner stores:
+    `ppp-v4`, `ppp-feeders-v1`, `ppp-breeding-v1`, and `ppp-farrowing-v1`.
+  - `lead_time_days` controls when a system task is minted; `due_date` remains
+    the actual farm event date.
+  - To Do completion submitted by non-managers now notifies management/admin
+    that approval is waiting.
+  - Whoever created a To Do is notified when completion is approved or
+    auto-approved.
+  - Migration `133` is TEST-applied; PROD migration apply and Edge Function
+    deploy remain gated.
 - Site-wide Home aesthetic parity rollout:
   - Foundation/global token layer and shared openable hover primitives.
   - Admin, activity, webforms, equipment, Task Center, To Do, cattle, sheep, pig,
@@ -441,8 +460,8 @@ No operational record workspace should reintroduce legacy `ActivityPanel` or
 ### Supabase Migrations
 
 Current PROD architecture includes all applied migrations through `116`, plus
-`125`, `126`, `127`, `128`, `129`, `130`, `131`, and `132`. Recent
-load-bearing migrations:
+`125`, `126`, `127`, `128`, `129`, `130`, `131`, and `132`. Migration `133` is
+TEST-applied only until PROD approval. Recent load-bearing migrations:
 
 - `100` processing batch lifecycle RPCs.
 - `101`-`104` audited delete RPCs and hardening.
@@ -491,6 +510,12 @@ load-bearing migrations:
     intersecting geometry; acreage remains geodesic.
   - PROD-applied on 2026-06-16 with schema reload and structural/PostgREST anon
     permission smokes. No PROD land-area rows were created.
+- `133` task system generation support and To Do approval notifications:
+  - Widens `notifications_type_check` for `todo_completion_submitted`.
+  - Reissues `submit_todo_completion` so non-manager completion submissions
+    notify management/admin while approval and auto-approval still notify the
+    To Do creator.
+  - TEST-applied on 2026-06-17; PROD apply is pending approval.
 - `128` Pasture Map CP3 move ledger / occupancy / rest:
   - Adds `pasture_move_events`, `pasture_move_impacts`,
     `_land_area_current_geom`, `_pasture_move_summary`, updated
@@ -724,7 +749,9 @@ Data surfaces must fail closed on load errors:
   mentions.
 - Mention bodies stay human-readable `@Name`; UUIDs do not appear in body text.
 - Mention notifications route to the operational record page and target comment.
-- Valid notification types: `task_completed`, `mention`, `comment_mention`.
+- Valid notification types: `task_completed`, `mention`, `comment_mention`,
+  `todo_completion_approved`, `todo_completion_rejected`, `todo_converted`, and
+  `todo_completion_submitted`.
 - Notification writes happen inside SECDEF paths; client code must not insert or
   delete notifications.
 
@@ -922,7 +949,10 @@ Workflow/worktable entities:
 
 - `/tasks` is canonical. `/my-tasks` and `/admin/tasks` are aliases only.
 - Task writes go through v2 wrappers/RPCs.
-- Frontend must not call `generate_system_task_instance`.
+- Frontend must not call `generate_system_task_instance`; `tasks-cron` is the
+  runtime caller for system-task generation.
+- System task rules live in `task_system_rules`; assignee and active state stay
+  data-driven there, and the cron uses `lead_time_days` as the minting horizon.
 - `task_instance_photos` is canonical. Legacy single-photo columns are display
   fallback only.
 - Task photos are capped at 5 total per task across creation and completion;
@@ -930,6 +960,8 @@ Workflow/worktable entities:
 - To Do List lives inside Task Center at `/tasks/todo` and `/tasks/todo/<id>`.
 - To Do participants are `light`, `farm_team`, `management`, and `admin`;
   `equipment_tech` and inactive are excluded.
+- Non-manager To Do completion submissions enter `pending_approval` and notify
+  management/admin; approval or auto-approval notifies the To Do creator.
 
 ### Equipment
 
