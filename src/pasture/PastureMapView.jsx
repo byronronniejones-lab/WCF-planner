@@ -11,6 +11,7 @@
 import React from 'react';
 import PastureMapCanvas from './PastureMapCanvas.jsx';
 import {parseKmlToPlacemarks, parseAcreageNote, closeOutlineToPolygon} from '../lib/pastureKml.js';
+import {haversineM, lineMetrics} from '../lib/pastureGeometry.js';
 import {
   listLandAreas,
   importLandAreaBatch,
@@ -18,7 +19,9 @@ import {
   closeLandAreaOutline,
   deleteLandArea,
   createLandArea,
+  createLandAreaTrack,
   updateLandAreaGeometry,
+  updateLandAreaStyle,
   listPastureMoves,
   recordPastureMove,
   listPasturePlannedMoves,
@@ -29,6 +32,7 @@ import {
   listPastureStockingReport,
   newImportBatchId,
   newLandAreaId,
+  newPastureTrackId,
   newPastureMoveId,
   newPasturePlanId,
 } from '../lib/pastureMapApi.js';
@@ -57,6 +61,11 @@ const KIND_LABEL = {
 
 // Kinds a freshly drawn polygon may be saved as (no outline_candidate/scratch).
 const DRAW_KINDS = ['unclassified', 'pasture', 'paddock', 'feeder_pig_area', 'section', 'infrastructure'];
+const LINE_STYLE_COLORS = ['#15803d', '#2563eb', '#d97706', '#dc2626', '#7c3aed', '#0f172a', '#ffffff'];
+const DEFAULT_LINE_COLOR = '#15803d';
+const DEFAULT_LINE_WEIGHT = 2;
+const MIN_LINE_WEIGHT = 1;
+const MAX_LINE_WEIGHT = 10;
 
 const ANIMAL_TYPE_LABEL = {
   cattle_herd: 'Cattle herd',
@@ -139,6 +148,58 @@ function parseOptionalCount(value) {
   return count;
 }
 
+function cleanLineColor(value) {
+  if (typeof value !== 'string') return '';
+  const color = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(color) ? color : '';
+}
+
+function cleanLineWeight(value) {
+  const weight = Number.parseInt(value, 10);
+  if (!Number.isFinite(weight)) return DEFAULT_LINE_WEIGHT;
+  return Math.min(MAX_LINE_WEIGHT, Math.max(MIN_LINE_WEIGHT, weight));
+}
+
+function styleDraftFromArea(area) {
+  return {
+    lineColor: cleanLineColor(area && area.line_color) || DEFAULT_LINE_COLOR,
+    lineWeight: cleanLineWeight(area && area.line_weight),
+  };
+}
+
+function lineStyleChanged(area, draft) {
+  if (!area || !draft) return false;
+  const currentColor = cleanLineColor(area.line_color) || '';
+  const currentWeight = area.line_weight == null ? null : cleanLineWeight(area.line_weight);
+  if (
+    !currentColor &&
+    currentWeight == null &&
+    draft.lineColor === DEFAULT_LINE_COLOR &&
+    draft.lineWeight === DEFAULT_LINE_WEIGHT
+  ) {
+    return false;
+  }
+  return currentColor !== draft.lineColor || currentWeight !== draft.lineWeight;
+}
+
+function initialTrackState() {
+  return {recording: false, points: [], lastAccuracyFt: null, error: '', startedAt: null};
+}
+
+function trackGeometryFromPoints(points) {
+  return {type: 'LineString', coordinates: (points || []).map((p) => [p.lng, p.lat])};
+}
+
+function trackMetricsFromPoints(points) {
+  return lineMetrics(trackGeometryFromPoints(points));
+}
+
+function formatDistanceFt(feet) {
+  if (feet == null || !Number.isFinite(Number(feet))) return '';
+  if (feet >= 5280) return `${Math.round((feet / 5280) * 100) / 100} mi`;
+  return `${Math.round(feet).toLocaleString()} ft`;
+}
+
 function isSameLocalDate(a, b) {
   if (!a || !b) return false;
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -207,6 +268,7 @@ export default function PastureMapView({Header, authState}) {
   const role = authState && authState.role;
   const isManager = role === 'management' || role === 'admin';
   const canRecordMoves = role === 'farm_team' || role === 'management' || role === 'admin';
+  const canCreateTrack = role === 'farm_team' || role === 'management' || role === 'admin';
 
   const [areas, setAreas] = React.useState([]);
   const [moves, setMoves] = React.useState([]);
@@ -225,16 +287,20 @@ export default function PastureMapView({Header, authState}) {
   const fileRef = React.useRef(null);
 
   // CP2 state
-  const [mode, setMode] = React.useState('select'); // select | measure | draw | edit
+  const [mode, setMode] = React.useState('select'); // select | measure | draw | edit | track
   const [selectedId, setSelectedId] = React.useState(null);
+  const [styleDraft, setStyleDraft] = React.useState(() => styleDraftFromArea(null));
   const [drawForm, setDrawForm] = React.useState(null); // {geometry, metrics, name, kind}
   const [editGeom, setEditGeom] = React.useState(null); // {geometry, metrics}
+  const [track, setTrack] = React.useState(() => initialTrackState());
+  const [trackForm, setTrackForm] = React.useState(null); // {geometry, metrics, name}
   const [moveForm, setMoveForm] = React.useState(() => initialMoveForm());
   const [planForm, setPlanForm] = React.useState(() => initialPlanForm());
   const [activePlanId, setActivePlanId] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
   const [planSaving, setPlanSaving] = React.useState(false);
   const [planBusyId, setPlanBusyId] = React.useState(null);
+  const trackWatchRef = React.useRef(null);
   async function refreshQueueState() {
     try {
       setQueueState(await getPastureQueueState());
@@ -329,10 +395,28 @@ export default function PastureMapView({Header, authState}) {
     };
   }, [selectedId, moves.length]);
 
+  React.useEffect(() => {
+    return () => clearTrackWatch();
+  }, []);
+
+  function clearTrackWatch() {
+    if (trackWatchRef.current != null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.clearWatch(trackWatchRef.current);
+    }
+    trackWatchRef.current = null;
+  }
+
+  function resetTrackFlow() {
+    clearTrackWatch();
+    setTrack(initialTrackState());
+    setTrackForm(null);
+  }
+
   function switchMode(next) {
     setErr('');
     setDrawForm(null);
     setEditGeom(null);
+    if (next !== 'track') resetTrackFlow();
     setMode(next);
   }
   function startEdit() {
@@ -422,6 +506,143 @@ export default function PastureMapView({Header, authState}) {
   }
   function onEditGeometry(geometry, metrics) {
     setEditGeom({geometry, metrics});
+  }
+  function startTrack() {
+    if (!canCreateTrack) {
+      setErr('Your role cannot create field tracks.');
+      return;
+    }
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setTrack({...initialTrackState(), error: 'GPS is unavailable on this device/browser.'});
+      setMode('track');
+      return;
+    }
+    clearTrackWatch();
+    setErr('');
+    setDrawForm(null);
+    setEditGeom(null);
+    setTrackForm(null);
+    setTrack({...initialTrackState(), recording: true, startedAt: new Date().toISOString()});
+    setMode('track');
+    trackWatchRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const lng = Number(pos.coords.longitude);
+        const lat = Number(pos.coords.latitude);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        const accuracyFt =
+          Number.isFinite(Number(pos.coords.accuracy)) && Number(pos.coords.accuracy) > 0
+            ? Math.round(Number(pos.coords.accuracy) * 3.28084)
+            : null;
+        setTrack((t) => {
+          const prev = t.points[t.points.length - 1];
+          if (prev && haversineM([prev.lng, prev.lat], [lng, lat]) < 1.5) {
+            return {...t, recording: true, lastAccuracyFt: accuracyFt, error: ''};
+          }
+          return {
+            ...t,
+            recording: true,
+            points: [...t.points, {lng, lat, accuracyFt, at: new Date().toISOString()}],
+            lastAccuracyFt: accuracyFt,
+            error: '',
+          };
+        });
+      },
+      (geoErr) => {
+        setTrack((t) => ({
+          ...t,
+          recording: false,
+          error: geoErr && geoErr.message ? geoErr.message : 'GPS tracking failed.',
+        }));
+        clearTrackWatch();
+      },
+      {enableHighAccuracy: true, maximumAge: 1000, timeout: 15000},
+    );
+  }
+  function stopTrack() {
+    clearTrackWatch();
+    const geometry = trackGeometryFromPoints(track.points);
+    const metrics = lineMetrics(geometry);
+    if (!metrics.valid) {
+      setTrack((t) => ({
+        ...t,
+        recording: false,
+        error: 'Track needs at least two GPS points before it can be saved.',
+      }));
+      return;
+    }
+    setTrack((t) => ({...t, recording: false, error: ''}));
+    setTrackForm({geometry, metrics, name: ''});
+  }
+  function cancelTrack() {
+    resetTrackFlow();
+    setMode('select');
+  }
+  async function saveTrack() {
+    if (!trackForm) return;
+    if (!trackForm.name.trim()) {
+      setTrack((t) => ({...t, error: 'Name is required to save a track.'}));
+      return;
+    }
+    if (!trackForm.metrics || !trackForm.metrics.valid) {
+      setTrack((t) => ({...t, error: 'Track needs at least two GPS points before it can be saved.'}));
+      return;
+    }
+    const trackId = newPastureTrackId();
+    const createPayload = {
+      id: trackId,
+      name: trackForm.name.trim(),
+      line: trackForm.geometry,
+      source: 'drawn',
+    };
+    setSaving(true);
+    setErr('');
+    setTrack((t) => ({...t, error: ''}));
+    try {
+      const saved = await createLandAreaTrack(createPayload);
+      resetTrackFlow();
+      setMode('select');
+      setSelectedId((saved && saved.id) || trackId);
+      await reload();
+    } catch (e) {
+      if (classifyPastureOfflineError(e) === 'transient') {
+        try {
+          await enqueuePastureOperation({id: trackId, op: 'create_track', payload: createPayload});
+          const queuedArea = {
+            id: trackId,
+            kind: 'outline_candidate',
+            name: createPayload.name,
+            status: 'active',
+            review_status: 'pending_review',
+            geometry_status: 'outline_candidate',
+            baseline_no_history: true,
+            source: 'drawn',
+            raw_notes: 'created_via=field_track',
+            raw_geometry: trackForm.geometry,
+            current_version: null,
+            computed_acres: null,
+            effective_acres: null,
+            rest_state: 'baseline',
+            current_occupants: [],
+            current_occupancy_count: 0,
+            queued_offline: true,
+          };
+          const nextAreas = [...areas.filter((a) => a.id !== trackId), queuedArea];
+          setAreas(nextAreas);
+          cachePastureSnapshot({areas: nextAreas, moves, plans, restReport, stockingReport});
+          await refreshQueueState();
+          resetTrackFlow();
+          setMode('select');
+          setSelectedId(trackId);
+          setOfflineStatus('Field track saved on this device and will sync when the connection returns.');
+        } catch (queueErr) {
+          setTrack((t) => ({...t, error: queueErr.message || 'Could not queue field track.'}));
+        }
+      } else {
+        setTrack((t) => ({...t, error: e.message || 'Could not save field track.'}));
+      }
+    } finally {
+      setSaving(false);
+    }
   }
   function updateMoveType(type) {
     const preset = (GROUP_PRESETS[type] || [])[0] || {key: '', label: ''};
@@ -688,11 +909,51 @@ export default function PastureMapView({Header, authState}) {
     setMode('select');
     await reload(); // discard in-place vertex drags by re-rendering from the DB
   }
+  async function saveLineStyle() {
+    if (!selectedArea) return;
+    const lineColor = cleanLineColor(styleDraft.lineColor);
+    const lineWeight = cleanLineWeight(styleDraft.lineWeight);
+    if (!lineColor) {
+      setErr('Line color must be a 6-digit hex color.');
+      return;
+    }
+    if (selectedArea.queued_offline) {
+      setErr('This area is queued on this device. Let it sync before changing line style.');
+      return;
+    }
+    return withBusy(selectedArea.id, () => updateLandAreaStyle(selectedArea.id, {lineColor, lineWeight}));
+  }
+  async function resetLineStyle() {
+    if (!selectedArea) return;
+    if (selectedArea.queued_offline) {
+      setErr('This area is queued on this device. Let it sync before changing line style.');
+      return;
+    }
+    setStyleDraft(styleDraftFromArea(null));
+    return withBusy(selectedArea.id, () => updateLandAreaStyle(selectedArea.id, {clear: true}));
+  }
 
   const counts = areas.reduce((m, a) => ((m[a.kind] = (m[a.kind] || 0) + 1), m), {});
   const selectedArea = areas.find((a) => a.id === selectedId) || null;
   const selectedEditable = hasPolygonGeom(selectedArea);
   const selectedDensity = densityCopy(selectedArea);
+  React.useEffect(() => {
+    setStyleDraft(styleDraftFromArea(selectedArea));
+  }, [
+    selectedArea && selectedArea.id,
+    selectedArea && selectedArea.line_color,
+    selectedArea && selectedArea.line_weight,
+  ]);
+  const selectedStyleChanged = lineStyleChanged(selectedArea, styleDraft);
+  const selectedStyleBusy = selectedArea && busyId === selectedArea.id;
+  const activeTrackGeometry =
+    mode === 'track'
+      ? trackForm && trackForm.geometry
+        ? trackForm.geometry
+        : track.points.length
+          ? trackGeometryFromPoints(track.points)
+          : null
+      : null;
   const sameDayMoveWarning = React.useMemo(() => {
     const {groupKey} = resolveGroup(moveForm);
     const movedDate = new Date(moveForm.movedAt);
@@ -826,6 +1087,16 @@ export default function PastureMapView({Header, authState}) {
               >
                 Measure
               </button>
+              {canCreateTrack && (
+                <button
+                  type="button"
+                  className={'pm-mode' + (mode === 'track' ? ' is-active' : '')}
+                  onClick={() => switchMode('track')}
+                  data-mode="track"
+                >
+                  Track
+                </button>
+              )}
               {isManager && (
                 <>
                   <button
@@ -853,13 +1124,99 @@ export default function PastureMapView({Header, authState}) {
                   ? 'Tap to add points; tap the first point to finish.'
                   : mode === 'edit'
                     ? 'Drag the white handles to reshape.'
-                    : mode === 'measure'
-                      ? 'Draw a shape to read its acres/perimeter.'
-                      : 'Tap an area to select it.'}
+                    : mode === 'track'
+                      ? 'Record a GPS line while walking or driving.'
+                      : mode === 'measure'
+                        ? 'Draw a shape to read its acres/perimeter.'
+                        : 'Tap an area to select it.'}
               </span>
             </div>
 
             {/* Draw save form — in-app, never a raw prompt. */}
+            {canCreateTrack && mode === 'track' && (
+              <div className="pm-track-panel" data-pasture-track-panel="1">
+                <div className="pm-track-head">
+                  <div>
+                    <div className="pm-track-title">Field track</div>
+                    <div className="pm-track-sub">
+                      {track.recording
+                        ? 'Recording GPS points'
+                        : trackForm
+                          ? 'Ready to save as an outline'
+                          : 'Start GPS, then walk or drive the boundary'}
+                    </div>
+                  </div>
+                  <div className="pm-track-stats" data-pasture-track-stats="1">
+                    <span>{trackForm ? trackForm.metrics.points : track.points.length} pts</span>
+                    <span>
+                      {formatDistanceFt(
+                        trackForm ? trackForm.metrics.distanceFt : trackMetricsFromPoints(track.points).distanceFt,
+                      ) || '0 ft'}
+                    </span>
+                    {track.lastAccuracyFt != null && <span>GPS +/- {track.lastAccuracyFt.toLocaleString()} ft</span>}
+                  </div>
+                </div>
+                {track.error && <div className="pm-track-error">{track.error}</div>}
+                {!trackForm ? (
+                  <div className="pm-track-actions">
+                    <button
+                      type="button"
+                      className="pm-btn pm-btn-primary"
+                      onClick={startTrack}
+                      disabled={track.recording}
+                      data-pasture-track-start="1"
+                    >
+                      {track.recording ? 'Recording...' : track.points.length ? 'Restart track' : 'Start track'}
+                    </button>
+                    <button
+                      type="button"
+                      className="pm-btn"
+                      onClick={stopTrack}
+                      disabled={!track.recording && track.points.length < 2}
+                      data-pasture-track-stop="1"
+                    >
+                      Stop
+                    </button>
+                    <button type="button" className="pm-btn" onClick={cancelTrack}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="pm-drawform-row">
+                      <label className="pm-field">
+                        <span>Name</span>
+                        <input
+                          type="text"
+                          value={trackForm.name}
+                          maxLength={200}
+                          placeholder="e.g. North fence track"
+                          onChange={(e) => setTrackForm((f) => ({...f, name: e.target.value}))}
+                          data-pasture-track-name="1"
+                          autoFocus
+                        />
+                      </label>
+                      <span className="pm-drawform-metric">{formatDistanceFt(trackForm.metrics.distanceFt)}</span>
+                    </div>
+                    <div className="pm-track-actions">
+                      <button type="button" className="pm-btn" onClick={cancelTrack} disabled={saving}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="pm-btn pm-btn-primary"
+                        onClick={saveTrack}
+                        disabled={saving || !trackForm.name.trim()}
+                        data-pasture-track-save="1"
+                      >
+                        {saving ? 'Saving...' : 'Save track'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {isManager && drawForm && (
               <div className="pm-drawform" data-pasture-drawform="1">
                 <div className="pm-drawform-row">
@@ -947,6 +1304,7 @@ export default function PastureMapView({Header, authState}) {
               onSelect={setSelectedId}
               onDrawComplete={onDrawComplete}
               onEditGeometry={onEditGeometry}
+              trackGeometry={activeTrackGeometry}
             />
           </section>
 
@@ -981,6 +1339,87 @@ export default function PastureMapView({Header, authState}) {
                     <span key={fact}>{fact}</span>
                   ))}
                 </div>
+                {isManager && (
+                  <div className="pm-style-panel" data-pasture-style-panel="1">
+                    <div className="pm-style-head">
+                      <div className="pm-move-title">Line style</div>
+                      <span
+                        className="pm-style-preview"
+                        style={{
+                          '--pm-style-color': styleDraft.lineColor,
+                          '--pm-style-weight': `${styleDraft.lineWeight}px`,
+                        }}
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <div className="pm-style-grid">
+                      <label className="pm-field pm-style-color-field">
+                        <span>Color</span>
+                        <input
+                          type="color"
+                          value={styleDraft.lineColor}
+                          onChange={(e) => setStyleDraft((f) => ({...f, lineColor: e.target.value}))}
+                          data-pasture-style-color="1"
+                        />
+                      </label>
+                      <div className="pm-style-swatches" aria-label="Line colors">
+                        {LINE_STYLE_COLORS.map((color) => (
+                          <button
+                            type="button"
+                            key={color}
+                            className={'pm-swatch' + (styleDraft.lineColor === color ? ' is-active' : '')}
+                            style={{'--pm-swatch': color}}
+                            onClick={() => setStyleDraft((f) => ({...f, lineColor: color}))}
+                            aria-label={`Use ${color}`}
+                            data-pasture-style-swatch={color.slice(1)}
+                          />
+                        ))}
+                      </div>
+                      <label className="pm-field pm-style-weight-field">
+                        <span>Weight</span>
+                        <input
+                          type="range"
+                          min={MIN_LINE_WEIGHT}
+                          max={MAX_LINE_WEIGHT}
+                          value={styleDraft.lineWeight}
+                          onChange={(e) => setStyleDraft((f) => ({...f, lineWeight: cleanLineWeight(e.target.value)}))}
+                          data-pasture-style-weight="1"
+                        />
+                      </label>
+                      <label className="pm-field pm-style-weight-number">
+                        <span>Px</span>
+                        <input
+                          type="number"
+                          min={MIN_LINE_WEIGHT}
+                          max={MAX_LINE_WEIGHT}
+                          value={styleDraft.lineWeight}
+                          onChange={(e) => setStyleDraft((f) => ({...f, lineWeight: cleanLineWeight(e.target.value)}))}
+                          data-pasture-style-weight-number="1"
+                        />
+                      </label>
+                    </div>
+                    <div className="pm-style-actions">
+                      <button
+                        type="button"
+                        className="pm-btn pm-btn-sm"
+                        onClick={resetLineStyle}
+                        disabled={selectedStyleBusy || selectedArea.queued_offline}
+                        data-pasture-style-reset="1"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        className="pm-btn pm-btn-sm pm-btn-primary"
+                        onClick={saveLineStyle}
+                        disabled={selectedStyleBusy || !selectedStyleChanged || selectedArea.queued_offline}
+                        data-pasture-style-save="1"
+                      >
+                        {selectedStyleBusy ? 'Saving...' : 'Save style'}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {canRecordMoves && (
                   <div className="pm-move-form" data-pasture-move-form="1">
                     <div className="pm-move-title">Record move here</div>
@@ -1293,6 +1732,19 @@ export default function PastureMapView({Header, authState}) {
                         )}
                         {a.queued_offline && <span className="pm-chip pm-chip-queued">Queued</span>}
                         {acres != null && <span className="pm-acres">{acres} ac</span>}
+                        {(a.line_color || a.line_weight) && (
+                          <span
+                            className="pm-line-style-chip"
+                            data-pasture-line-style="1"
+                            style={{
+                              '--pm-style-color': cleanLineColor(a.line_color) || DEFAULT_LINE_COLOR,
+                              '--pm-style-weight': `${cleanLineWeight(a.line_weight)}px`,
+                            }}
+                          >
+                            <span aria-hidden="true" />
+                            {cleanLineWeight(a.line_weight)} px
+                          </span>
+                        )}
                         {mismatch && <span className="pm-note-acres">OnX note: {noteAc} ac</span>}
                         {a.geometry_status === 'invalid' && (
                           <span className="pm-chip pm-chip-invalid">Invalid geometry</span>

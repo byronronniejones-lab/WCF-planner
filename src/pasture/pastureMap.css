@@ -286,6 +286,29 @@
   font-weight: 650;
   color: var(--text, #0f172a);
 }
+.pm-line-style-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: #fff;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+.pm-line-style-chip span {
+  display: inline-block;
+  width: 24px;
+  min-width: 24px;
+  height: var(--pm-style-weight, 2px);
+  border-radius: 999px;
+  background: var(--pm-style-color, #15803d);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.14);
+}
 .pm-note-acres {
   font-size: 11px;
   color: #92400e;
@@ -409,6 +432,74 @@
   font-size: 11.5px;
   font-weight: 750;
   line-height: 1.25;
+}
+.pm-style-panel {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+.pm-style-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pm-style-preview {
+  display: inline-block;
+  width: 96px;
+  height: var(--pm-style-weight, 2px);
+  min-height: 1px;
+  border-radius: 999px;
+  background: var(--pm-style-color, #15803d);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.14);
+}
+.pm-style-grid {
+  display: grid;
+  grid-template-columns: minmax(74px, 90px) 1fr minmax(150px, 1fr) minmax(70px, 80px);
+  gap: 10px;
+  align-items: end;
+  margin-top: 8px;
+}
+.pm-style-color-field input[type='color'] {
+  min-width: 0;
+  width: 56px;
+  height: 36px;
+  padding: 3px;
+}
+.pm-style-swatches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+.pm-swatch {
+  width: 27px;
+  height: 27px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: var(--pm-swatch);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.65);
+}
+.pm-swatch.is-active {
+  outline: 2px solid #085041;
+  outline-offset: 2px;
+}
+.pm-style-weight-field input[type='range'] {
+  min-width: 0;
+  width: 100%;
+  accent-color: #085041;
+}
+.pm-style-weight-number input {
+  min-width: 0;
+  width: 72px;
+}
+.pm-style-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
 }
 .pm-move-form,
 .pm-plan-form {
@@ -549,12 +640,64 @@
 }
 
 .pm-drawform,
-.pm-editbar {
+.pm-editbar,
+.pm-track-panel {
   border: 1px solid #bbf7d0;
   background: #f0fdf4;
   border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
+}
+.pm-track-panel {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+.pm-track-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pm-track-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1e3a8a;
+}
+.pm-track-sub,
+.pm-track-error {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.pm-track-sub {
+  color: #475569;
+}
+.pm-track-error {
+  color: #b91c1c;
+}
+.pm-track-stats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.pm-track-stats span {
+  border: 1px solid #bfdbfe;
+  background: #fff;
+  color: #1e40af;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+.pm-track-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 10px;
 }
 .pm-drawform-row {
   display: flex;
@@ -580,6 +723,21 @@
   color: var(--text, #0f172a);
   background: #fff;
   min-width: 160px;
+}
+.pm-style-color-field input[type='color'] {
+  min-width: 0;
+  width: 56px;
+  height: 36px;
+  padding: 3px;
+}
+.pm-style-weight-field input[type='range'] {
+  min-width: 0;
+  width: 100%;
+  accent-color: #085041;
+}
+.pm-style-weight-number input {
+  min-width: 0;
+  width: 72px;
 }
 .pm-drawform-metric {
   font-size: 13px;
@@ -694,7 +852,23 @@
   .pm-use-facts {
     grid-template-columns: 1fr;
   }
+  .pm-style-grid {
+    grid-template-columns: 74px 1fr;
+  }
+  .pm-style-weight-field {
+    grid-column: 1 / -1;
+  }
+  .pm-style-actions .pm-btn {
+    flex: 1 1 100px;
+  }
   .pm-drawform-metric {
     margin-left: 0;
+  }
+  .pm-track-head,
+  .pm-track-actions {
+    justify-content: stretch;
+  }
+  .pm-track-actions .pm-btn {
+    flex: 1 1 110px;
   }
 }

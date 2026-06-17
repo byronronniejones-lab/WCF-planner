@@ -21,6 +21,8 @@ export default defineConfig({
     '**/pasture_map_cp3.spec.js',
     '**/pasture_map_cp4.spec.js',
     '**/pasture_map_cp5.spec.js',
+    '**/pasture_map_cp6.spec.js',
+    '**/pasture_map_cp7.spec.js',
   ],
   fullyParallel: false,
   workers: 1,

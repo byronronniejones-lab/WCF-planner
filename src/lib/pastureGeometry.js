@@ -43,6 +43,17 @@ export function geometryAcres(geometry) {
   }
 }
 
+export function lineMetrics(geometry) {
+  if (!geometry || geometry.type !== 'LineString' || !Array.isArray(geometry.coordinates)) {
+    return {distanceFt: null, points: 0, valid: false};
+  }
+  return {
+    distanceFt: Math.round(ringPerimeterM(geometry.coordinates, false) * 3.28084),
+    points: geometry.coordinates.length,
+    valid: geometry.coordinates.length >= 2,
+  };
+}
+
 // Metrics for a finished polygon geometry: acres, perimeter (ft), and a client
 // self-intersection flag. `valid` is false for non-rings or self-intersecting
 // shapes — the create/update RPCs remain the authoritative backstop.

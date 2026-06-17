@@ -12,6 +12,8 @@ const mig = read('supabase-migrations/116_pasture_map_land_areas.sql');
 const mig127 = read('supabase-migrations/127_pasture_map_draw_edit.sql');
 const mig128 = read('supabase-migrations/128_pasture_map_move_ledger.sql');
 const mig129 = read('supabase-migrations/129_pasture_map_planning_reports.sql');
+const mig130 = read('supabase-migrations/130_pasture_map_field_tracks.sql');
+const mig131 = read('supabase-migrations/131_pasture_map_line_style.sql');
 const mainSrc = read('src/main.jsx');
 const homeSrc = read('src/dashboard/HomeDashboard.jsx');
 const viewSrc = read('src/pasture/PastureMapView.jsx');
@@ -104,7 +106,7 @@ describe('Pasture Map view - CP1/CP3 scope boundary', () => {
   it('only imports pasture-scoped data modules (no daily report coupling)', () => {
     const libImports = [...viewSrc.matchAll(/import\s[^;]*?from\s+'(\.\.\/lib\/[^']+)'/g)].map((m) => m[1]);
     expect(libImports.length).toBeGreaterThan(0);
-    expect(libImports.every((p) => /pastureMapApi|pastureKml|pastureOffline/.test(p))).toBe(true);
+    expect(libImports.every((p) => /pastureMapApi|pastureKml|pastureOffline|pastureGeometry/.test(p))).toBe(true);
   });
 
   it('exposes import + classify + close-outline actions', () => {
@@ -345,6 +347,102 @@ describe('CP4 API + UI wiring', () => {
   });
 });
 
+describe('Migration 130 - CP6 field GPS tracks', () => {
+  it('adds a field-track RPC that saves LineStrings as outline candidates', () => {
+    expect(mig130).toContain('CREATE OR REPLACE FUNCTION public.create_land_area_track');
+    expect(mig130).toContain("v_role NOT IN ('farm_team', 'management', 'admin')");
+    expect(mig130).toContain("v_gtype NOT IN ('ST_LineString', 'ST_MultiLineString')");
+    expect(mig130).toContain("'outline_candidate'");
+    expect(mig130).toContain('ST_NPoints');
+    expect(mig130).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.create_land_area_track\(text, text, jsonb, text\)\s+TO authenticated/,
+    );
+  });
+});
+
+describe('CP6 API + UI wiring', () => {
+  it('pastureMapApi wraps the field-track RPC and id', () => {
+    expect(apiSrc).toContain('export function newPastureTrackId');
+    expect(apiSrc).toContain('export async function createLandAreaTrack');
+    expect(apiSrc).toContain("sb.rpc('create_land_area_track'");
+  });
+
+  it('renders mobile field-track controls and map preview wiring', () => {
+    for (const marker of [
+      'data-mode="track"',
+      'data-pasture-track-panel',
+      'data-pasture-track-start',
+      'data-pasture-track-stop',
+      'data-pasture-track-save',
+      'trackGeometry={activeTrackGeometry}',
+    ]) {
+      expect(viewSrc).toContain(marker);
+    }
+    expect(viewSrc).toContain('navigator.geolocation.watchPosition');
+    expect(canvasSrc).toContain('trackGeometry');
+  });
+
+  it('pasture Playwright lane includes CP6 coverage', () => {
+    expect(pasturePwConfig).toContain('pasture_map_cp6.spec.js');
+  });
+});
+
+describe('Migration 131 - CP7 boundary line styling', () => {
+  it('adds constrained line_color / line_weight fields and exposes them in summaries', () => {
+    expect(mig131).toContain('ADD COLUMN IF NOT EXISTS line_color text');
+    expect(mig131).toContain('ADD COLUMN IF NOT EXISTS line_weight integer');
+    expect(mig131).toContain('land_areas_line_color_check');
+    expect(mig131).toContain('land_areas_line_weight_check');
+    expect(mig131).toContain("'line_color', a.line_color");
+    expect(mig131).toContain("'line_weight', a.line_weight");
+    expect(mig131).toContain("'current_occupants', v_current");
+    expect(mig131).toContain("'rest_state', v_rest_state");
+  });
+
+  it('extends update_land_area with authenticated manager/admin style args', () => {
+    expect(mig131).toContain('p_line_color');
+    expect(mig131).toContain('p_line_weight');
+    expect(mig131).toContain('p_clear_line_style');
+    expect(mig131).toContain("v_role NOT IN ('management', 'admin')");
+    expect(mig131).toMatch(/GRANT EXECUTE ON FUNCTION public\.update_land_area\([^)]*\)\s+TO authenticated/);
+    expect(mig131).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+});
+
+describe('CP7 API + UI wiring', () => {
+  it('pastureMapApi wraps line style updates over update_land_area', () => {
+    expect(apiSrc).toContain('export async function updateLandAreaStyle');
+    expect(apiSrc).toContain('p_line_color');
+    expect(apiSrc).toContain('p_line_weight');
+    expect(apiSrc).toContain('p_clear_line_style');
+  });
+
+  it('canvas applies optional line_color / line_weight stroke overrides', () => {
+    expect(canvasSrc).toContain('line_color');
+    expect(canvasSrc).toContain('line_weight');
+    expect(canvasSrc).toContain('applyLineStyle');
+  });
+
+  it('view renders manager line-style controls and list chips', () => {
+    for (const marker of [
+      'data-pasture-style-panel',
+      'data-pasture-style-color',
+      'data-pasture-style-weight',
+      'data-pasture-style-weight-number',
+      'data-pasture-style-save',
+      'data-pasture-style-reset',
+      'data-pasture-line-style',
+    ]) {
+      expect(viewSrc).toContain(marker);
+    }
+    expect(viewSrc).toContain('LINE_STYLE_COLORS');
+  });
+
+  it('pasture Playwright lane includes CP7 coverage', () => {
+    expect(pasturePwConfig).toContain('pasture_map_cp7.spec.js');
+  });
+});
+
 describe('CP5 offline field use wiring', () => {
   it('reuses the shared offline queue owner instead of opening IndexedDB directly', () => {
     expect(offlineSrc).toContain("from './offlineQueue.js'");
@@ -361,11 +459,13 @@ describe('CP5 offline field use wiring', () => {
     expect(offlineSrc).not.toMatch(/tile|NAIP|Imagery|cacheStorage|caches\.open/i);
   });
 
-  it('queues move logging and field-created paddocks', () => {
+  it('queues move logging, field-created paddocks, and field tracks', () => {
     expect(offlineSrc).toContain("op === 'record_move'");
     expect(offlineSrc).toContain("op === 'create_area'");
+    expect(offlineSrc).toContain("op === 'create_track'");
     expect(viewSrc).toContain("op: 'record_move'");
     expect(viewSrc).toContain("op: 'create_area'");
+    expect(viewSrc).toContain("op: 'create_track'");
     expect(viewSrc).toContain('queued_offline');
   });
 

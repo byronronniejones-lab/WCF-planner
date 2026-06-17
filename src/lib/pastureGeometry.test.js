@@ -1,6 +1,6 @@
 // Unit tests for the pure CP2 geometry helpers (no Leaflet/DOM needed).
 import {describe, it, expect} from 'vitest';
-import {polygonMetrics, ringPerimeterM, geometryAcres, haversineM} from './pastureGeometry.js';
+import {polygonMetrics, ringPerimeterM, geometryAcres, haversineM, lineMetrics} from './pastureGeometry.js';
 
 // ~1 km square near WCF (same fixture the migration smokes use).
 const SQUARE = {
@@ -68,6 +68,28 @@ describe('geometryAcres', () => {
         ],
       }),
     ).toBeNull();
+  });
+});
+
+describe('lineMetrics', () => {
+  it('reports distance and point count for a GPS track line', () => {
+    const m = lineMetrics({
+      type: 'LineString',
+      coordinates: [
+        [-86.44, 30.84],
+        [-86.439, 30.84],
+        [-86.439, 30.841],
+      ],
+    });
+    expect(m.points).toBe(3);
+    expect(m.distanceFt).toBeGreaterThan(500);
+    expect(m.valid).toBe(true);
+  });
+
+  it('requires at least two track points', () => {
+    const m = lineMetrics({type: 'LineString', coordinates: [[-86.44, 30.84]]});
+    expect(m.points).toBe(1);
+    expect(m.valid).toBe(false);
   });
 });
 

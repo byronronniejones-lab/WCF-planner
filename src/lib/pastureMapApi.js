@@ -34,6 +34,17 @@ export function newLandAreaId() {
   return 'la-' + uuid;
 }
 
+export function newPastureTrackId() {
+  const uuid =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+  return 'trk-' + uuid;
+}
+
 // Stable client id for a pasture move event. The RPC is replay-idempotent by id.
 export function newPastureMoveId() {
   const uuid =
@@ -112,6 +123,9 @@ export async function updateLandArea(id, fields = {}) {
     reviewStatus: 'p_review_status',
     manualAcres: 'p_manual_acres',
     clearManual: 'p_clear_manual',
+    lineColor: 'p_line_color',
+    lineWeight: 'p_line_weight',
+    clearLineStyle: 'p_clear_line_style',
   };
   for (const [k, arg] of Object.entries(map)) {
     if (fields[k] !== undefined) args[arg] = fields[k];
@@ -123,6 +137,11 @@ export async function updateLandArea(id, fields = {}) {
 // Paddock, Infrastructure, etc.) and mark it reviewed in one call.
 export async function classifyLandArea(id, kind) {
   return updateLandArea(id, {kind, reviewStatus: 'reviewed'});
+}
+
+export async function updateLandAreaStyle(id, {lineColor = null, lineWeight = null, clear = false} = {}) {
+  if (clear) return updateLandArea(id, {clearLineStyle: true});
+  return updateLandArea(id, {lineColor, lineWeight});
 }
 
 // Promote/close an outline candidate from a human-confirmed closed polygon
@@ -156,6 +175,18 @@ export async function createLandArea({id, name, polygon, kind = 'unclassified', 
 
 // CP2 — append a new boundary version to an existing area (edit, mig 127).
 // Append-only: prior versions are preserved server-side. polygon is GeoJSON.
+export async function createLandAreaTrack({id, name, line, source = 'drawn'}) {
+  return unwrap(
+    await sb.rpc('create_land_area_track', {
+      p_id: id,
+      p_name: name,
+      p_line_geojson: line,
+      p_source: source,
+    }),
+    'create_land_area_track',
+  );
+}
+
 export async function updateLandAreaGeometry(id, polygon) {
   return unwrap(
     await sb.rpc('update_land_area_geometry', {p_id: id, p_polygon_geojson: polygon}),
