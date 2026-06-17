@@ -8,13 +8,13 @@ import fs from 'fs';
 import path from 'path';
 import {getTestAdminClient} from './setup/reset.js';
 
-const KML_PATH = 'C:\\Users\\Ronni\\OneDrive\\Desktop\\onx-markups-06152026.kml';
+const KML_PATH = path.resolve('tests/fixtures/pasture_map_onx_sample.kml');
 const SHOTS = path.resolve('pasture-cp2-shots');
 
 async function cleanPastureTables() {
   const c = getTestAdminClient();
   const {error} = await c.rpc('exec_sql', {
-    sql: 'TRUNCATE TABLE public.land_area_geometry_versions, public.pasture_import_batches, public.land_areas RESTART IDENTITY CASCADE;',
+    sql: 'TRUNCATE TABLE public.pasture_planned_moves, public.pasture_move_impacts, public.pasture_move_events, public.land_area_geometry_versions, public.pasture_import_batches, public.land_areas RESTART IDENTITY CASCADE;',
   });
   if (error) throw new Error('clean pasture tables: ' + error.message);
 }
@@ -61,14 +61,24 @@ test('CP1 regression + CP2 draw/measure/edit/cancel', async ({page}) => {
   // ── CP2 measure: HUD appears ──
   await page.locator('[data-mode="measure"]').click();
   await page.waitForTimeout(400);
-  await drawPolygon(page, [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]);
+  await drawPolygon(page, [
+    [0.4, 0.4],
+    [0.6, 0.4],
+    [0.6, 0.6],
+    [0.4, 0.6],
+  ]);
   await expect(page.locator('[data-pasture-hud]')).toBeVisible({timeout: 8000});
   await page.screenshot({path: path.join(SHOTS, '02-measure-hud.png'), fullPage: true});
 
   // ── CP2 draw: form requires name, save creates an area (10 -> 11) ──
   await page.locator('[data-mode="draw"]').click();
   await page.waitForTimeout(400);
-  await drawPolygon(page, [[0.3, 0.3], [0.5, 0.3], [0.5, 0.5], [0.3, 0.5]]);
+  await drawPolygon(page, [
+    [0.3, 0.3],
+    [0.5, 0.3],
+    [0.5, 0.5],
+    [0.3, 0.5],
+  ]);
   await expect(page.locator('[data-pasture-drawform]')).toBeVisible({timeout: 8000});
   // Save disabled until a name is entered.
   await expect(page.locator('[data-pasture-drawform-save]')).toBeDisabled();
@@ -83,7 +93,12 @@ test('CP1 regression + CP2 draw/measure/edit/cancel', async ({page}) => {
   // ── CP2 invalid: self-intersecting bowtie flags + disables save ──
   await page.locator('[data-mode="draw"]').click();
   await page.waitForTimeout(400);
-  await drawPolygon(page, [[0.32, 0.32], [0.52, 0.52], [0.52, 0.32], [0.32, 0.52]]); // bowtie
+  await drawPolygon(page, [
+    [0.32, 0.32],
+    [0.52, 0.52],
+    [0.52, 0.32],
+    [0.32, 0.52],
+  ]); // bowtie
   await expect(page.locator('[data-pasture-drawform]')).toBeVisible({timeout: 8000});
   await expect(page.locator('.pm-drawform-warn')).toBeVisible();
   await expect(page.locator('[data-pasture-drawform-save]')).toBeDisabled();

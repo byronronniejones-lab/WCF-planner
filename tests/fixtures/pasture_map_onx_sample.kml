@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>HUB</name>
+      <ExtendedData>
+        <Data name="name"><value>HUB</value></Data>
+        <Data name="notes"><value>Equipment hub</value></Data>
+        <Data name="id"><value>pm-fixture-hub</value></Data>
+        <Data name="type"><value>Area</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -86.4400,30.8400 -86.4380,30.8400 -86.4380,30.8420 -86.4400,30.8420 -86.4400,30.8400
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>SHOP</name>
+      <ExtendedData>
+        <Data name="name"><value>SHOP</value></Data>
+        <Data name="notes"><value>Shop yard</value></Data>
+        <Data name="id"><value>pm-fixture-shop</value></Data>
+        <Data name="type"><value>Area</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -86.4370,30.8400 -86.4350,30.8400 -86.4350,30.8420 -86.4370,30.8420 -86.4370,30.8400
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>FP 4</name>
+      <ExtendedData>
+        <Data name="name"><value>FP 4</value></Data>
+        <Data name="notes"><value>7.4 ac</value></Data>
+        <Data name="id"><value>pm-fixture-fp4</value></Data>
+        <Data name="type"><value>Area</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -86.4340,30.8400 -86.4310,30.8400 -86.4310,30.8430 -86.4340,30.8430 -86.4340,30.8400
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Area 10</name>
+      <ExtendedData>
+        <Data name="name"><value>Area 10</value></Data>
+        <Data name="notes"><value>Dry lot</value></Data>
+        <Data name="id"><value>pm-fixture-area10</value></Data>
+        <Data name="type"><value>Area</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -86.4300,30.8400 -86.4270,30.8400 -86.4270,30.8430 -86.4300,30.8430 -86.4300,30.8400
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>FP2</name>
+      <ExtendedData>
+        <Data name="name"><value>FP2</value></Data>
+        <Data name="notes"><value>6-3-22&#10;11.3 ac</value></Data>
+        <Data name="id"><value>pm-fixture-fp2</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <LineString>
+        <coordinates>
+          -86.4400,30.8440,50 -86.4360,30.8440,51 -86.4360,30.8480,52 -86.4400,30.8480,53
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>FP3</name>
+      <ExtendedData>
+        <Data name="name"><value>FP3</value></Data>
+        <Data name="notes"><value>8.2 ac</value></Data>
+        <Data name="id"><value>pm-fixture-fp3</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <LineString>
+        <coordinates>
+          -86.4350,30.8440,50 -86.4310,30.8440,51 -86.4310,30.8480,52 -86.4350,30.8480,53
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>FP5</name>
+      <ExtendedData>
+        <Data name="name"><value>FP5</value></Data>
+        <Data name="notes"><value>9.5 ac</value></Data>
+        <Data name="id"><value>pm-fixture-fp5</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <LineString>
+        <coordinates>
+          -86.4300,30.8440,50 -86.4260,30.8440,51 -86.4260,30.8480,52 -86.4300,30.8480,53
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>North Lane</name>
+      <ExtendedData>
+        <Data name="name"><value>North Lane</value></Data>
+        <Data name="notes"><value>5.0 ac</value></Data>
+        <Data name="id"><value>pm-fixture-north-lane</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <LineString>
+        <coordinates>
+          -86.4400,30.8490,50 -86.4360,30.8490,51 -86.4360,30.8520,52 -86.4400,30.8520,53
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>South Lane</name>
+      <ExtendedData>
+        <Data name="name"><value>South Lane</value></Data>
+        <Data name="notes"><value>4.8 ac</value></Data>
+        <Data name="id"><value>pm-fixture-south-lane</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <LineString>
+        <coordinates>
+          -86.4350,30.8490,50 -86.4310,30.8490,51 -86.4310,30.8520,52 -86.4350,30.8520,53
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>Creek Line</name>
+      <ExtendedData>
+        <Data name="name"><value>Creek Line</value></Data>
+        <Data name="notes"><value>3.6 ac</value></Data>
+        <Data name="id"><value>pm-fixture-creek-line</value></Data>
+        <Data name="color"><value>rgba(132,212,0,1)</value></Data>
+      </ExtendedData>
+      <LineString>
+        <coordinates>
+          -86.4300,30.8490,50 -86.4260,30.8490,51 -86.4260,30.8520,52 -86.4300,30.8520,53
+        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>
