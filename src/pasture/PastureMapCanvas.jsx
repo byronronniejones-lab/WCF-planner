@@ -244,7 +244,9 @@ export default function PastureMapCanvas({
             /* noop */
           }
         } else {
-          map.removeLayer(layer);
+          clearTemp();
+          tempRef.current = layer;
+          if (layer.setStyle) layer.setStyle({color: '#047857', weight: 3, fillColor: '#22c55e', fillOpacity: 0.22});
           setHud({...metrics, frozen: true, mode: 'draw'});
           try {
             map.pm.disableDraw();

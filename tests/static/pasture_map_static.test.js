@@ -153,6 +153,13 @@ describe('CP2 API wrappers + draw/edit UI', () => {
     expect(viewSrc).toContain('updateLandAreaGeometry');
   });
 
+  it('keeps a completed draw visible while the save form is open', () => {
+    const createHandler = canvasSrc.match(/map\.on\('pm:create'[\s\S]*?cbRef\.current\.onDrawComplete/)?.[0] || '';
+    const drawBranch = createHandler.match(/} else \{[\s\S]*?cbRef\.current\.onDrawComplete/)?.[0] || '';
+    expect(drawBranch).toContain('tempRef.current = layer');
+    expect(drawBranch).not.toContain('map.removeLayer(layer)');
+  });
+
   it('uses NO raw browser alert/confirm/prompt in the view or canvas', () => {
     for (const src of [viewSrc, canvasSrc]) {
       expect(src).not.toMatch(/\b(?:window\.)?(?:alert|confirm|prompt)\s*\(/);
