@@ -126,6 +126,15 @@ The following work is merged to `main`, pushed, and live unless otherwise noted:
     reduced where scoped. Green Header chrome remains.
   - Guard repairs closed stale assumptions around z-index, task photo ownership,
     My Submissions, webforms, record-page shell, and openable hover.
+- Site-wide UI cleanup core:
+  - Merged to `main` via `59bc089`.
+  - Shipped canonical primitives: `DataTable`, `Badge`, `StatusText`,
+    `EmptyState`, `SectionBand`, `Toolbar`, and `Tabs`.
+  - Shipped locked program/species accent palette in `src/lib/programColors.js`.
+  - Shipped true-black ordinary text tightening, including the `.home` island.
+  - Shipped `radius_floor_static.test.js` enforcing the 10px radius floor.
+  - Surface conversions that adopt these primitives remain WIP per Build Queue
+    item 1.
 - Feed-order month hotfix:
   - Pig and broiler feed boards use the same calendar-pinned order-month rule.
   - "Order for `<month>`" stays on the next calendar month until the calendar
@@ -265,11 +274,11 @@ Rules:
 | Decision | Status | Evidence |
 | --- | --- | --- |
 | Font scale | Ratified; shared-token enforcement active, residual legacy drift only by scoped lane | `design_token_contract_static.test.js`, `record_page_shell_static.test.js` |
-| Button corners | Ratified; `7`/`8` retired | `design_token_contract_static.test.js` |
+| Button corners | Ratified; 10px radius floor, values `1`-`9` retired outside approved carve-outs | `radius_floor_static.test.js`, `design_token_contract_static.test.js` |
 | Confirm/Delete stacking | Ratified; top destructive overlay tier | `design_token_contract_static.test.js`, `shared_ui_extraction_contract_static.test.js` |
 | Button height/padding | Ratified; standard button pad `10px 16px` | `design_token_contract_static.test.js` |
 | Save model | Ratified; submit-style vs autosave split | `save_model_contract_static.test.js` |
-| Ordinary text hierarchy | Ratified; Home and parity rollout shipped | `homeRedesign.css`, parity commits through `669fefc` |
+| Ordinary text hierarchy | Ratified; Home, parity rollout, and UI cleanup core shipped | `homeRedesign.css`, `design_token_contract_static.test.js`, `59bc089` |
 
 Locked functional invariants:
 
@@ -310,6 +319,8 @@ unless Ronnie changes the contract:
   Home-specific non-canonical micro-values globally without an amendment.
 - `getReadableText()` in `src/lib/styles.js` returns infrastructure contrast
   colors for arbitrary colored backgrounds; this is not palette drift.
+- The `.home.theme-crisp` island retains 9/12/18 radius micro-values as a
+  scoped exception to the global 10px radius floor.
 
 ---
 
@@ -565,6 +576,8 @@ Append-only upload expectations:
   builders.
 - `src/lib/feedPlanner.js` and `src/lib/feedOrderBasis.js`: feed order math and
   shared calendar-pinned order-month logic.
+- `src/lib/programColors.js`: canonical program/species accent palette and
+  program dot/pill helpers.
 - `src/livestock/WeighInSessionPage.jsx` and
   `src/livestock/LivestockWeighInsView.jsx`: shared weigh-in record/list
   surfaces, including pig table entries and pig Active/Complete session list.
@@ -573,6 +586,10 @@ Append-only upload expectations:
 - `src/lib/todoApi.js`: To Do List client owner.
 - `src/shared/DeleteModal.jsx`, `src/shared/ConfirmModal.jsx`, and
   `src/shared/useModalFocusTrap.js`: modal primitives.
+- `src/shared/DataTable.jsx`, `src/shared/Badge.jsx`,
+  `src/shared/StatusText.jsx`, `src/shared/EmptyState.jsx`,
+  `src/shared/SectionBand.jsx`, `src/shared/Toolbar.jsx`, and
+  `src/shared/Tabs.jsx`: UI cleanup core primitives.
 - `src/lib/clientErrorReporting.js` and `src/admin/ClientErrorsView.jsx`:
   runtime error capture and admin review.
 
@@ -616,6 +633,8 @@ Append-only upload expectations:
 - Intentional accent/semantic text remains allowed where color carries meaning:
   warning/error/success/info states, weather rain/freeze cues, overdue labels,
   and text inside approved semantic pastel blocks.
+- Program/species accent colors come from `src/lib/programColors.js`; do not
+  create freehand program palettes in individual surfaces.
 - A text-color cleanup must be typography-only unless the build explicitly says
   it is redesigning the affected block's background.
 
@@ -623,13 +642,17 @@ Append-only upload expectations:
 
 - Standard button pad is `10px 16px`.
 - Standard button vertical pad is `10px`.
-- Inputs/selects/textareas use radius `6`, border `1px #d1d5db`, pad `8px 11px`,
-  and brand focus treatment.
+- Inputs/selects/textareas use radius `10`, border `1px #d1d5db`, pad
+  `8px 11px`, and brand focus treatment.
 
 ### Radius
 
-- Canonical radius tokens are `4`, `6`, `10`, `14`, `999`, and `'50%'`.
-- The values `7` and `8` are retired.
+- Canonical radius tokens are `10`, `12`, `14`, `999`, and `'50%'`; `0` means
+  no rounding.
+- A 10px floor is enforced site-wide by `radius_floor_static.test.js`.
+- Values `1` through `9` are retired except genuinely decorative
+  sub-components tagged with the `radius-allow` marker.
+- The `.home.theme-crisp` island keeps 9/12/18 as a scoped exception.
 
 ### Stacking And Elevation
 
@@ -647,6 +670,10 @@ Append-only upload expectations:
 - Canonical owners include `RecordPageShell`, `RecordSequenceNav`,
   `recordPageControls`, `DeleteModal`, `ConfirmModal`, `InlineNotice`, and
   record collaboration primitives.
+- UI cleanup core primitives are available for adoption:
+  `DataTable`, `Badge`, `StatusText`, `EmptyState`, `SectionBand`, `Toolbar`,
+  and `Tabs`. Not every surface has been converted yet; see Build Queue item 1
+  before forcing a surface onto the new table system.
 
 ---
 
