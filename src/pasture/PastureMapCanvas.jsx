@@ -10,7 +10,7 @@
 // A live HUD shows acres + perimeter while drawing/editing and flags
 // self-intersection (client guard; the create/update RPCs are the backstop).
 //
-// Occupancy / rest-day coloring is still CP3 — areas color by classification.
+// Areas color by live occupancy/rest state first, then by classification.
 // ============================================================================
 import React from 'react';
 import L from 'leaflet';
@@ -22,18 +22,52 @@ import {polygonMetrics, ringPerimeterM, SQM_PER_ACRE} from '../lib/pastureGeomet
 
 const WCF_CENTER = [30.84175647927683, -86.43686683451689];
 const NAIP_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}';
+const MAP_MAX_ZOOM = 22;
+const IMAGERY_NATIVE_MAX_ZOOM = 19;
+
+function cleanLineColor(value) {
+  if (typeof value !== 'string') return null;
+  const color = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(color) ? color : null;
+}
+
+function cleanLineWeight(value) {
+  const weight = Number(value);
+  if (!Number.isFinite(weight)) return null;
+  const rounded = Math.round(weight);
+  return rounded >= 1 && rounded <= 10 ? rounded : null;
+}
+
+function applyLineStyle(a, style) {
+  const color = cleanLineColor(a && a.line_color);
+  const weight = cleanLineWeight(a && a.line_weight);
+  return {
+    ...style,
+    ...(color ? {color} : {}),
+    ...(weight ? {weight} : {}),
+  };
+}
 
 function styleForArea(a) {
-  if (a.status === 'blocked_repair') return {color: '#b91c1c', weight: 2, fillColor: '#ef4444', fillOpacity: 0.18};
+  if (a.status === 'blocked_repair')
+    return applyLineStyle(a, {color: '#b91c1c', weight: 2, fillColor: '#ef4444', fillOpacity: 0.18});
   if (a.status === 'retired')
-    return {color: '#6b7280', weight: 2, dashArray: '4,5', fillColor: '#9ca3af', fillOpacity: 0.1};
+    return applyLineStyle(a, {color: '#6b7280', weight: 2, dashArray: '4,5', fillColor: '#9ca3af', fillOpacity: 0.1});
   if (a.geometry_status === 'outline_candidate' || a.kind === 'outline_candidate')
-    return {color: '#d97706', weight: 2, dashArray: '6,6', fillColor: '#f59e0b', fillOpacity: 0.12};
+    return applyLineStyle(a, {color: '#d97706', weight: 2, dashArray: '6,6', fillColor: '#f59e0b', fillOpacity: 0.12});
   if (a.geometry_status === 'invalid')
-    return {color: '#dc2626', weight: 2, dashArray: '3,4', fillColor: '#f87171', fillOpacity: 0.1};
+    return applyLineStyle(a, {color: '#dc2626', weight: 2, dashArray: '3,4', fillColor: '#f87171', fillOpacity: 0.1});
   if (a.kind === 'infrastructure' || a.kind === 'scratch')
-    return {color: '#475569', weight: 2, fillColor: '#64748b', fillOpacity: 0.15};
-  return {color: '#15803d', weight: 2, fillColor: '#22c55e', fillOpacity: 0.14};
+    return applyLineStyle(a, {color: '#475569', weight: 2, fillColor: '#64748b', fillOpacity: 0.15});
+  if (a.rest_state === 'occupied' || Number(a.current_occupancy_count || 0) > 0)
+    return applyLineStyle(a, {color: '#991b1b', weight: 3, fillColor: '#ef4444', fillOpacity: 0.22});
+  if (a.rest_state === 'resting')
+    return applyLineStyle(a, {color: '#b45309', weight: 2, fillColor: '#f59e0b', fillOpacity: 0.2});
+  if (a.rest_state === 'baseline' || a.rest_state === 'no_history')
+    return applyLineStyle(a, {color: '#6b7280', weight: 2, dashArray: '5,5', fillColor: '#94a3b8', fillOpacity: 0.08});
+  if (a.rest_state === 'rested')
+    return applyLineStyle(a, {color: '#047857', weight: 2, fillColor: '#10b981', fillOpacity: 0.16});
+  return applyLineStyle(a, {color: '#15803d', weight: 2, fillColor: '#22c55e', fillOpacity: 0.14});
 }
 
 function areaGeom(a) {
@@ -86,6 +120,7 @@ export default function PastureMapCanvas({
   editAreaId = null,
   onDrawComplete,
   onEditGeometry,
+  trackGeometry = null,
 }) {
   const elRef = React.useRef(null);
   const mapRef = React.useRef(null);
@@ -93,7 +128,9 @@ export default function PastureMapCanvas({
   const areaLayersRef = React.useRef(new Map());
   const locateRef = React.useRef(null);
   const tempRef = React.useRef(null);
+  const trackRef = React.useRef(null);
   const editLayerRef = React.useRef(null);
+  const fitSignatureRef = React.useRef('');
   const cbRef = React.useRef({});
   cbRef.current = {onSelect, onDrawComplete, onEditGeometry};
   const [gpsMsg, setGpsMsg] = React.useState('');
@@ -102,8 +139,17 @@ export default function PastureMapCanvas({
   // ── Map init ──
   React.useEffect(() => {
     if (mapRef.current || !elRef.current) return;
-    const map = L.map(elRef.current, {center: WCF_CENTER, zoom: 15, zoomControl: true});
-    L.tileLayer(NAIP_URL, {maxZoom: 19, attribution: 'Imagery: USGS / NAIP (public domain)'}).addTo(map);
+    const map = L.map(elRef.current, {
+      center: WCF_CENTER,
+      zoom: 15,
+      maxZoom: MAP_MAX_ZOOM,
+      zoomControl: true,
+    });
+    L.tileLayer(NAIP_URL, {
+      maxZoom: MAP_MAX_ZOOM,
+      maxNativeZoom: IMAGERY_NATIVE_MAX_ZOOM,
+      attribution: 'Imagery: USGS / NAIP (public domain)',
+    }).addTo(map);
     if (map.pm) map.pm.setGlobalOptions({snappable: true, snapDistance: 20});
     mapRef.current = map;
     return () => {
@@ -119,6 +165,13 @@ export default function PastureMapCanvas({
     if (layerRef.current) layerRef.current.remove();
     areaLayersRef.current = new Map();
     const group = L.featureGroup();
+    const fitSignature = (areas || [])
+      .map((a) => {
+        const version = a.current_version && (a.current_version.id || a.current_version.version_number);
+        const rawType = a.raw_geometry && a.raw_geometry.type;
+        return [a.id, version || '', a.geometry_status || '', rawType || ''].join(':');
+      })
+      .join('|');
     (areas || []).forEach((a) => {
       const g = areaGeom(a);
       if (!g) return;
@@ -144,11 +197,52 @@ export default function PastureMapCanvas({
     layerRef.current = group;
     try {
       const b = group.getBounds();
-      if (b && b.isValid()) map.fitBounds(b, {padding: [30, 30], maxZoom: 17});
+      if (fitSignature && fitSignature !== fitSignatureRef.current && b && b.isValid()) {
+        map.fitBounds(b, {padding: [30, 30], maxZoom: 19});
+        fitSignatureRef.current = fitSignature;
+      }
     } catch {
       /* no bounds yet */
     }
   }, [areas]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (trackRef.current) {
+      trackRef.current.remove();
+      trackRef.current = null;
+    }
+    if (!trackGeometry || trackGeometry.type !== 'LineString' || !Array.isArray(trackGeometry.coordinates)) return;
+
+    const coords = trackGeometry.coordinates.filter((p) => Array.isArray(p) && p.length >= 2);
+    if (!coords.length) return;
+    const group = L.layerGroup();
+    if (coords.length >= 2) {
+      L.geoJSON(
+        {type: 'Feature', geometry: {type: 'LineString', coordinates: coords}, properties: {}},
+        {style: {color: '#2563eb', weight: 4, opacity: 0.9, dashArray: '7,5'}},
+      ).addTo(group);
+    }
+    const last = coords[coords.length - 1];
+    L.circleMarker([last[1], last[0]], {
+      radius: 6,
+      color: '#1d4ed8',
+      fillColor: '#bfdbfe',
+      fillOpacity: 1,
+      weight: 2,
+    }).addTo(group);
+    group.addTo(map);
+    trackRef.current = group;
+    if (coords.length === 1) map.setView([last[1], last[0]], Math.max(map.getZoom(), 18));
+
+    return () => {
+      if (trackRef.current === group) {
+        group.remove();
+        trackRef.current = null;
+      }
+    };
+  }, [trackGeometry]);
 
   // ── Geoman mode wiring ──
   React.useEffect(() => {
@@ -216,7 +310,9 @@ export default function PastureMapCanvas({
             /* noop */
           }
         } else {
-          map.removeLayer(layer);
+          clearTemp();
+          tempRef.current = layer;
+          if (layer.setStyle) layer.setStyle({color: '#047857', weight: 3, fillColor: '#22c55e', fillOpacity: 0.22});
           setHud({...metrics, frozen: true, mode: 'draw'});
           try {
             map.pm.disableDraw();
@@ -250,7 +346,7 @@ export default function PastureMapCanvas({
     const map = mapRef.current;
     if (!map) return;
     setGpsMsg('Locating…');
-    map.locate({setView: true, enableHighAccuracy: true, maxZoom: 18, timeout: 15000});
+    map.locate({setView: true, enableHighAccuracy: true, maxZoom: 20, timeout: 15000});
     map.once('locationfound', (e) => {
       if (locateRef.current) locateRef.current.remove();
       const g = L.layerGroup();

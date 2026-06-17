@@ -34,6 +34,41 @@ export function newLandAreaId() {
   return 'la-' + uuid;
 }
 
+export function newPastureTrackId() {
+  const uuid =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+  return 'trk-' + uuid;
+}
+
+// Stable client id for a pasture move event. The RPC is replay-idempotent by id.
+export function newPastureMoveId() {
+  const uuid =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+  return 'pmv-' + uuid;
+}
+
+// Stable client id for a planned pasture move.
+export function newPasturePlanId() {
+  const uuid =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+  return 'pmp-' + uuid;
+}
+
 function unwrap({data, error}, label) {
   if (error) {
     const msg = (error.message || String(error)).replace(/^PM_VALIDATION:\s*/, '');
@@ -88,6 +123,9 @@ export async function updateLandArea(id, fields = {}) {
     reviewStatus: 'p_review_status',
     manualAcres: 'p_manual_acres',
     clearManual: 'p_clear_manual',
+    lineColor: 'p_line_color',
+    lineWeight: 'p_line_weight',
+    clearLineStyle: 'p_clear_line_style',
   };
   for (const [k, arg] of Object.entries(map)) {
     if (fields[k] !== undefined) args[arg] = fields[k];
@@ -99,6 +137,11 @@ export async function updateLandArea(id, fields = {}) {
 // Paddock, Infrastructure, etc.) and mark it reviewed in one call.
 export async function classifyLandArea(id, kind) {
   return updateLandArea(id, {kind, reviewStatus: 'reviewed'});
+}
+
+export async function updateLandAreaStyle(id, {lineColor = null, lineWeight = null, clear = false} = {}) {
+  if (clear) return updateLandArea(id, {clearLineStyle: true});
+  return updateLandArea(id, {lineColor, lineWeight});
 }
 
 // Promote/close an outline candidate from a human-confirmed closed polygon
@@ -132,9 +175,125 @@ export async function createLandArea({id, name, polygon, kind = 'unclassified', 
 
 // CP2 — append a new boundary version to an existing area (edit, mig 127).
 // Append-only: prior versions are preserved server-side. polygon is GeoJSON.
+export async function createLandAreaTrack({id, name, line, source = 'drawn'}) {
+  return unwrap(
+    await sb.rpc('create_land_area_track', {
+      p_id: id,
+      p_name: name,
+      p_line_geojson: line,
+      p_source: source,
+    }),
+    'create_land_area_track',
+  );
+}
+
 export async function updateLandAreaGeometry(id, polygon) {
   return unwrap(
     await sb.rpc('update_land_area_geometry', {p_id: id, p_polygon_geojson: polygon}),
     'update_land_area_geometry',
+  );
+}
+
+// CP3 - recent append-only animal-group move ledger.
+export async function listPastureMoves(limit = 100) {
+  return unwrap(await sb.rpc('list_pasture_moves', {p_limit: limit}), 'list_pasture_moves');
+}
+
+// CP3 - record one move to a land area. Animal groups stay decoupled from land:
+// animalType + groupKey/Label identify the herd/flock/pig group, not a FK.
+export async function recordPastureMove({
+  moveId,
+  animalType,
+  groupKey,
+  groupLabel,
+  toLandAreaId,
+  movedAt,
+  animalCount = null,
+  notes = null,
+}) {
+  return unwrap(
+    await sb.rpc('record_pasture_move', {
+      p_move_id: moveId,
+      p_animal_type: animalType,
+      p_group_key: groupKey,
+      p_group_label: groupLabel,
+      p_to_land_area_id: toLandAreaId,
+      p_moved_at: movedAt,
+      p_animal_count: animalCount,
+      p_notes: notes,
+    }),
+    'record_pasture_move',
+  );
+}
+
+// CP4 - planned move worklist.
+export async function listPasturePlannedMoves({status = 'planned', limit = 100} = {}) {
+  return unwrap(
+    await sb.rpc('list_pasture_planned_moves', {p_status: status, p_limit: limit}),
+    'list_pasture_planned_moves',
+  );
+}
+
+export async function createPasturePlannedMove({
+  planId,
+  animalType,
+  groupKey,
+  groupLabel,
+  toLandAreaId,
+  plannedFor,
+  animalCount = null,
+  notes = null,
+}) {
+  return unwrap(
+    await sb.rpc('create_pasture_planned_move', {
+      p_plan_id: planId,
+      p_animal_type: animalType,
+      p_group_key: groupKey,
+      p_group_label: groupLabel,
+      p_to_land_area_id: toLandAreaId,
+      p_planned_for: plannedFor,
+      p_animal_count: animalCount,
+      p_notes: notes,
+    }),
+    'create_pasture_planned_move',
+  );
+}
+
+export async function updatePasturePlannedMoveStatus({planId, status, completedMoveId = null}) {
+  return unwrap(
+    await sb.rpc('update_pasture_planned_move_status', {
+      p_plan_id: planId,
+      p_status: status,
+      p_completed_move_id: completedMoveId,
+    }),
+    'update_pasture_planned_move_status',
+  );
+}
+
+export async function listPastureHistoryReport({
+  landAreaId = null,
+  animalType = null,
+  groupKey = null,
+  limit = 200,
+} = {}) {
+  return unwrap(
+    await sb.rpc('list_pasture_history_report', {
+      p_land_area_id: landAreaId,
+      p_animal_type: animalType,
+      p_group_key: groupKey,
+      p_limit: limit,
+    }),
+    'list_pasture_history_report',
+  );
+}
+
+export async function listPastureRestReport() {
+  return unwrap(await sb.rpc('list_pasture_rest_report'), 'list_pasture_rest_report');
+}
+
+export async function listPastureStockingReport({since = null, until = null} = {}) {
+  return unwrap(
+    await sb.rpc('list_pasture_stocking_report', {p_since: since, p_until: until}),
+    'list_pasture_stocking_report',
   );
 }

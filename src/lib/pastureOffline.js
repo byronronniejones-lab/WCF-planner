@@ -14,7 +14,12 @@ import {
   recoverStaleSyncing,
   retrySubmission,
 } from './offlineQueue.js';
-import {createLandArea, recordPastureMove, updatePasturePlannedMoveStatus} from './pastureMapApi.js';
+import {
+  createLandArea,
+  createLandAreaTrack,
+  recordPastureMove,
+  updatePasturePlannedMoveStatus,
+} from './pastureMapApi.js';
 
 export const PASTURE_OFFLINE_FORM_KIND = 'pasture_map';
 export const PASTURE_VECTOR_CACHE_KEY = 'wcf-pasture-map-vector-cache-v1';
@@ -106,6 +111,7 @@ async function replayPastureOperation(row) {
     return res;
   }
   if (row.record.op === 'create_area') return await createLandArea(row.record.payload);
+  if (row.record.op === 'create_track') return await createLandAreaTrack(row.record.payload);
   throw new Error(`unknown pasture queue operation ${row.record.op}`);
 }
 
