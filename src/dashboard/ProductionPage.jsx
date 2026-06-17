@@ -11,7 +11,6 @@ import {
   buildProductionModel,
   buildProductionSummary,
   buildProductionLedger,
-  buildProductionAuditView,
   formatEventQuantity,
   formatProductionDelta,
   formatProductionNumber,
@@ -20,11 +19,9 @@ import {
 
 const TABS = [
   {key: 'summary', label: 'Summary'},
-  {key: 'counted', label: 'Counted Events'},
-  {key: 'reconcile', label: 'Reconciliation'},
+  {key: 'counted', label: 'Production Events'},
 ];
 
-const SOURCE_LABEL = {planner: 'Planner', legacy: 'Legacy spreadsheet'};
 const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 function programLabel(programKey) {
@@ -52,11 +49,7 @@ function SummaryTable({rows}) {
         <thead>
           <tr>
             <th>Program</th>
-            <th>Counted</th>
-            <th>Planner</th>
-            <th>Legacy backfill</th>
-            <th>Held out</th>
-            <th>Conflict</th>
+            <th>Total</th>
             <th>YoY</th>
           </tr>
         </thead>
@@ -68,12 +61,6 @@ function SummaryTable({rows}) {
                 {programLabel(row.programKey)}
               </td>
               <td className="prod-counted-col">{num(row.programKey, row.counted)}</td>
-              <td>{num(row.programKey, row.plannerCounted)}</td>
-              <td>{row.legacyCounted ? num(row.programKey, row.legacyCounted) : '--'}</td>
-              <td>{row.heldOut ? num(row.programKey, row.heldOut) : '--'}</td>
-              <td className={row.conflict ? 'is-down' : undefined}>
-                {row.conflict ? num(row.programKey, row.conflict) : '--'}
-              </td>
               <td className={row.yoy > 0 ? 'is-up' : row.yoy < 0 ? 'is-down' : undefined}>
                 {row.yoy === null || row.yoy === undefined ? '--' : formatProductionDelta(row.programKey, row.yoy)}
               </td>
@@ -95,16 +82,12 @@ function LedgerTable({rows}) {
             <th>Program</th>
             <th>Batch / Event</th>
             <th>Quantity</th>
-            <th>Source</th>
-            <th>Counted</th>
-            <th>Status</th>
-            <th>Reason</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan="8" className="production-empty-cell">
+              <td colSpan="4" className="production-empty-cell">
                 No records
               </td>
             </tr>
@@ -118,16 +101,6 @@ function LedgerTable({rows}) {
                 </td>
                 <td>{row.batchName || '--'}</td>
                 <td>{formatEventQuantity(row.event)}</td>
-                <td>{SOURCE_LABEL[row.source] || row.source}</td>
-                <td>
-                  <span className={`badge-soft ${row.counted ? 'badge-ok' : 'badge-warn'}`}>
-                    {row.counted ? 'Counted' : 'Held out'}
-                  </span>
-                </td>
-                <td>
-                  <span className={`badge-soft badge-${row.tone}`}>{row.statusLabel}</span>
-                </td>
-                <td className="prod-reason-cell">{row.reason}</td>
               </tr>
             ))
           )}
@@ -150,14 +123,6 @@ function FilterBar({filters, setFilters, statusOptions}) {
               {programLabel(programKey)}
             </option>
           ))}
-        </select>
-      </label>
-      <label>
-        <span>Source</span>
-        <select value={filters.source} onChange={(e) => update({source: e.target.value})}>
-          <option value="all">All</option>
-          <option value="planner">Planner</option>
-          <option value="legacy">Legacy spreadsheet</option>
         </select>
       </label>
       <label>
@@ -188,7 +153,6 @@ function applyFilters(rows, filters) {
   const search = filters.search.trim().toLowerCase();
   return rows.filter((row) => {
     if (filters.program !== 'all' && row.program !== filters.program) return false;
-    if (filters.source !== 'all' && row.source !== filters.source) return false;
     if (filters.status !== 'all' && row.status !== filters.status) return false;
     if (search && !(row.batchName || '').toLowerCase().includes(search)) return false;
     return true;
@@ -197,11 +161,7 @@ function applyFilters(rows, filters) {
 
 const SUMMARY_COLUMNS = [
   {key: 'label', header: 'Program', value: (r) => programLabel(r.programKey)},
-  {key: 'counted', header: 'Counted', value: (r) => num(r.programKey, r.counted)},
-  {key: 'plannerCounted', header: 'Planner', value: (r) => num(r.programKey, r.plannerCounted)},
-  {key: 'legacyCounted', header: 'Legacy backfill', value: (r) => num(r.programKey, r.legacyCounted)},
-  {key: 'heldOut', header: 'Held out', value: (r) => num(r.programKey, r.heldOut)},
-  {key: 'conflict', header: 'Conflict', value: (r) => num(r.programKey, r.conflict)},
+  {key: 'counted', header: 'Total', value: (r) => num(r.programKey, r.counted)},
   {
     key: 'yoy',
     header: 'YoY',
@@ -214,10 +174,6 @@ const LEDGER_COLUMNS = [
   {key: 'program', header: 'Program', value: (r) => programLabel(r.program)},
   {key: 'batchName', header: 'Batch / Event', value: (r) => r.batchName || ''},
   {key: 'quantity', header: 'Quantity', value: (r) => num(r.program, r.quantity)},
-  {key: 'source', header: 'Source', value: (r) => SOURCE_LABEL[r.source] || r.source},
-  {key: 'counted', header: 'Counted', value: (r) => (r.counted ? 'Yes' : 'No')},
-  {key: 'status', header: 'Status', value: (r) => r.statusLabel},
-  {key: 'reason', header: 'Reason'},
 ];
 
 export default function ProductionPage({Header, setView}) {
@@ -225,7 +181,7 @@ export default function ProductionPage({Header, setView}) {
   const [sources, setSources] = React.useState(null);
   const [selectedYear, setSelectedYear] = React.useState(currentYear);
   const [tab, setTab] = React.useState('summary');
-  const [filters, setFilters] = React.useState({program: 'all', source: 'all', status: 'all', search: ''});
+  const [filters, setFilters] = React.useState({program: 'all', status: 'all', search: ''});
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState(null);
 
@@ -264,9 +220,8 @@ export default function ProductionPage({Header, setView}) {
   const eggDayCount = yearEvents.filter((event) => event.program === 'egg').length;
   const summaryRows = React.useMemo(() => buildProductionSummary(model, selectedYear), [model, selectedYear]);
   const ledgerRows = React.useMemo(() => buildProductionLedger(model, selectedYear), [model, selectedYear]);
-  const auditRows = React.useMemo(() => buildProductionAuditView(model, selectedYear), [model, selectedYear]);
 
-  const activeRows = tab === 'reconcile' ? auditRows : ledgerRows;
+  const activeRows = ledgerRows;
   const statusOptions = React.useMemo(() => {
     const seen = new Map();
     for (const row of activeRows) if (!seen.has(row.status)) seen.set(row.status, row.statusLabel);
@@ -363,8 +318,8 @@ export default function ProductionPage({Header, setView}) {
                 onClick={() => {
                   setTab(entry.key);
                   // Status options are per-tab; carrying one over can leave an
-                  // invalid filter that blanks the table. Program/source/search
-                  // stay since they are valid across tabs.
+                  // invalid filter that blanks the table. Program/search stay
+                  // since they are valid across tabs.
                   setFilters((prev) => ({...prev, status: 'all'}));
                 }}
               >
@@ -390,25 +345,18 @@ export default function ProductionPage({Header, setView}) {
               <div className="card-label">Program Totals - {selectedYear}</div>
             </div>
             <p className="production-help">
-              Counted = Planner records plus legacy backfill for years before Planner tracked a program. Where Planner
-              has records, Planner wins and the legacy rows are held out (Conflict is a subset of Held out, not an extra
-              bucket). YoY is within each program. Eggs come from the Planner daily counts.
+              Totals are by program and year. YoY compares each program to its previous recorded year. Eggs display as
+              dozens.
             </p>
             <SummaryTable rows={summaryRows} />
           </section>
         ) : (
           <section className="card production-panel-card">
             <div className="stats-head">
-              <div className="card-label">
-                {tab === 'counted' ? 'Counted Events' : 'Reconciliation / Audit'} - {selectedYear}
-              </div>
+              <div className="card-label">Production Events - {selectedYear}</div>
               <span className="production-rowcount">{filteredRows.length.toLocaleString()} rows</span>
             </div>
-            <p className="production-help">
-              {tab === 'counted'
-                ? 'Every event that contributes to the per-program totals above, with its reconciliation status.'
-                : 'Every legacy backfill row and whether it counted or was held out so Planner wins, with the reason.'}
-            </p>
+            <p className="production-help">Every recorded processing or egg event for the selected year.</p>
             {EXTENDED_LIST_CONTROLS_ENABLED && (
               <FilterBar filters={filters} setFilters={setFilters} statusOptions={statusOptions} />
             )}

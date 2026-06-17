@@ -48,7 +48,7 @@ describe('Production page route and homepage card', () => {
 });
 
 describe('Production page data contracts', () => {
-  it('uses Planner-derived sources plus legacy backfill, not a combined total table', () => {
+  it('uses production sources plus historical rows internally, not a combined total table', () => {
     for (const fn of [
       'buildBroilerProductionEvents',
       'buildPigProductionEvents',
@@ -70,22 +70,30 @@ describe('Production page data contracts', () => {
     expect(helperSrc).not.toMatch(/combinedProductionTotal|productionTotal/);
   });
 
-  it('renders the tabbed reconciliation ledger with summary, counted, and audit views', () => {
+  it('keeps import/reconciliation language off the operator-facing production page', () => {
     expect(pageSrc).toContain("{key: 'summary', label: 'Summary'}");
-    expect(pageSrc).toContain("{key: 'counted', label: 'Counted Events'}");
-    expect(pageSrc).toContain("{key: 'reconcile', label: 'Reconciliation'}");
-    expect(pageSrc).toContain('Legacy backfill');
+    expect(pageSrc).toContain("{key: 'counted', label: 'Production Events'}");
+    expect(pageSrc).not.toContain("{key: 'reconcile', label: 'Reconciliation'}");
+    expect(pageSrc).not.toContain('Planner');
+    expect(pageSrc).not.toContain('Legacy');
+    expect(pageSrc).not.toContain('Historical backfill');
+    expect(pageSrc).not.toContain('backfill');
+    expect(pageSrc).not.toContain('<th>Source</th>');
+    expect(pageSrc).not.toContain('function LegacyAuditPanel');
+    expect(pageSrc).not.toContain('production-audit-details');
+    expect(pageSrc).not.toContain('Legacy Backfill Audit');
+    expect(pageSrc).not.toContain('Reconciliation / Audit');
+    expect(pageSrc).not.toContain('Counted Events');
     expect(pageSrc).toContain('buildProductionSummary');
     expect(pageSrc).toContain('buildProductionLedger');
-    expect(pageSrc).toContain('buildProductionAuditView');
+    expect(pageSrc).not.toContain('buildProductionAuditView');
     // per-program accent color is applied on the ledger/summary tables
     expect(pageSrc).toContain('PROGRAM_ACCENT_VAR');
-    // reasons are surfaced as data, not buried in a title hover
-    expect(pageSrc).toContain('prod-reason-cell');
+    expect(pageSrc).not.toContain('prod-reason-cell');
     expect(pageSrc).not.toContain('title={row.reason}');
   });
 
-  it('never references Podio on the page (internal backfill source only)', () => {
+  it('never references Podio on the page', () => {
     expect(pageSrc).not.toMatch(/Podio/i);
     expect(helperSrc).not.toMatch(/Podio/i);
   });
@@ -93,7 +101,6 @@ describe('Production page data contracts', () => {
   it('keeps the no-combined-total contract on the redesigned page', () => {
     expect(pageSrc).not.toContain('stat-total');
     expect(pageSrc).not.toContain('sdot-total');
-    expect(pageSrc).not.toMatch(/>\s*Total\s*</);
   });
 });
 
