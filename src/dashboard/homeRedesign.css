@@ -646,10 +646,10 @@
   font-variant-numeric: tabular-nums;
 }
 .home .production-summary-table {
-  min-width: 720px;
+  min-width: 420px;
 }
 .home .production-ledger-table {
-  min-width: 880px;
+  min-width: 520px;
 }
 .home .production-table th,
 .home .production-table td {
@@ -670,20 +670,12 @@
 .home .production-table td:first-child {
   text-align: left;
 }
-/* Ledger: program, batch, source, counted, status, and reason are textual and
-   read left-aligned; only the numeric Quantity column stays right-aligned. */
+/* Ledger: program, batch, and source are textual and read left-aligned; only the
+   numeric Quantity column stays right-aligned. */
 .home .production-ledger-table th:nth-child(2),
 .home .production-ledger-table td:nth-child(2),
 .home .production-ledger-table th:nth-child(3),
-.home .production-ledger-table td:nth-child(3),
-.home .production-ledger-table th:nth-child(5),
-.home .production-ledger-table td:nth-child(5),
-.home .production-ledger-table th:nth-child(6),
-.home .production-ledger-table td:nth-child(6),
-.home .production-ledger-table th:nth-child(7),
-.home .production-ledger-table td:nth-child(7),
-.home .production-ledger-table th:nth-child(8),
-.home .production-ledger-table td:nth-child(8) {
+.home .production-ledger-table td:nth-child(3) {
   text-align: left;
 }
 .home .production-table td {
