@@ -7,7 +7,7 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-17.
+Last updated: 2026-06-18.
 Current shipped runtime checkpoint: `ccacaf3`
 (`Merge task notifications hotfix`), with this `PROJECT.md` docs update on top.
 Production URL: https://wcfplanner.com.
@@ -80,8 +80,9 @@ Design/function invariants that govern cross-surface behavior live in
     `codex/compact-list-controls`.
   - `C:\Users\Ronni\WCF-planner-pasture-cp2` on
     `feature/pasture-map-cp2-draw-edit`.
-- Open gates: PROD migration `133` and `tasks-cron` Edge Function deploy are
-  pending for the task notification hotfix. No Storage/Vault gate is open.
+- Open gates: `tasks-cron` Edge Function deploy is pending for the task
+  notification hotfix. PROD migration `133` is applied. No Storage/Vault gate is
+  open.
   Pasture Map designer feedback is pending and should be uploaded at the start
   of the next session before any pasture-map build prompt is written.
 - Local untracked artifacts in the main worktree:
@@ -94,7 +95,7 @@ Design/function invariants that govern cross-surface behavior live in
   applied to PROD on 2026-06-16. Pasture Map `128`-`132` artifacts were verified
   present on TEST and PROD by catalog checks on 2026-06-17. Migration `133`
   (task system generation support and To Do approval notifications) was applied
-  to TEST on 2026-06-17 and still needs PROD approval/apply.
+  to TEST on 2026-06-17 and PROD on 2026-06-18.
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
@@ -106,9 +107,10 @@ Design/function invariants that govern cross-surface behavior live in
   green; targeted static task/notification tests green (131 tests);
   hotfix-touched lint green; `npm run build` green with existing Vite
   dynamic-import/chunk warnings; authenticated To Do approval Playwright flow
-  green on TEST (5 tests) after applying migration `133` to TEST. Full lint and
-  full Vitest still report unrelated pre-existing failures in pasture/pig/global
-  activity areas.
+  green on TEST (5 tests) after applying migration `133` to TEST. PROD migration
+  `133` applied with `psql --single-transaction` and post-apply catalog checks
+  on 2026-06-18. Full lint and full Vitest still report unrelated pre-existing
+  failures in pasture/pig/global activity areas.
 - `npm install` was run in the main worktree after Pasture Map dependencies
   landed. It reported npm audit findings (11 vulnerabilities: 1 low, 3
   moderate, 6 high, 1 critical). No audit-fix lane has been scoped.
@@ -129,8 +131,8 @@ latest live-bundle verification is pending where noted above.
     that approval is waiting.
   - Whoever created a To Do is notified when completion is approved or
     auto-approved.
-  - Migration `133` is TEST-applied; PROD migration apply and Edge Function
-    deploy remain gated.
+  - Migration `133` is TEST- and PROD-applied; Edge Function deploy remains
+    gated.
 - Site-wide Home aesthetic parity rollout:
   - Foundation/global token layer and shared openable hover primitives.
   - Admin, activity, webforms, equipment, Task Center, To Do, cattle, sheep, pig,
@@ -460,8 +462,8 @@ No operational record workspace should reintroduce legacy `ActivityPanel` or
 ### Supabase Migrations
 
 Current PROD architecture includes all applied migrations through `116`, plus
-`125`, `126`, `127`, `128`, `129`, `130`, `131`, and `132`. Migration `133` is
-TEST-applied only until PROD approval. Recent load-bearing migrations:
+`125`, `126`, `127`, `128`, `129`, `130`, `131`, `132`, and `133`. Recent
+load-bearing migrations:
 
 - `100` processing batch lifecycle RPCs.
 - `101`-`104` audited delete RPCs and hardening.
@@ -515,7 +517,7 @@ TEST-applied only until PROD approval. Recent load-bearing migrations:
   - Reissues `submit_todo_completion` so non-manager completion submissions
     notify management/admin while approval and auto-approval still notify the
     To Do creator.
-  - TEST-applied on 2026-06-17; PROD apply is pending approval.
+  - TEST-applied on 2026-06-17; PROD-applied on 2026-06-18.
 - `128` Pasture Map CP3 move ledger / occupancy / rest:
   - Adds `pasture_move_events`, `pasture_move_impacts`,
     `_land_area_current_geom`, `_pasture_move_summary`, updated
