@@ -51,7 +51,8 @@ test.describe('Daily redesign UI preview', () => {
         batch_label: 'B-26-06',
         mortality_count: 13,
         mortality_reason: 'leg issues',
-        comments: 'Noticed quite a few birds had some pretty bad leg issues. Couldn’t make it to the feeder, so we culled them.',
+        comments:
+          'Noticed quite a few birds had some pretty bad leg issues. Couldn’t make it to the feeder, so we culled them.',
         photos: [],
       },
       {...base('b5', D1), team_member: 'Simon', batch_label: 'B-26-08', feed_lbs: 300, feed_type: 'GROWER', photos: []},
@@ -97,7 +98,8 @@ test.describe('Daily redesign UI preview', () => {
         feed_lbs: 135,
         pig_count: 24,
         fence_voltage: 4.3,
-        issues: '#21 is giving birth — only saw 2 piglets at the time. Believe she is still going, will update when we know more.',
+        issues:
+          '#21 is giving birth — only saw 2 piglets at the time. Believe she is still going, will update when we know more.',
         photos: [],
       },
       {

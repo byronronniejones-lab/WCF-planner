@@ -57,6 +57,8 @@ describe('Production page data contracts', () => {
       'buildEggProductionEvents',
       'reconcileProductionEvents',
       'buildProductionModel',
+      'buildProductionMatrix',
+      'buildProductionEventsView',
       'buildProductionSummary',
       'buildProductionLedger',
       'buildProductionAuditView',
@@ -84,10 +86,15 @@ describe('Production page data contracts', () => {
     expect(pageSrc).not.toContain('Legacy Backfill Audit');
     expect(pageSrc).not.toContain('Reconciliation / Audit');
     expect(pageSrc).not.toContain('Counted Events');
-    expect(pageSrc).toContain('buildProductionSummary');
-    expect(pageSrc).toContain('buildProductionLedger');
+    // Summary is the all-years matrix; Production Events is the event/history
+    // view. The single-year summary/ledger presenters are no longer wired to the
+    // page (they still exist in the helper for reconciliation tests).
+    expect(pageSrc).toContain('buildProductionMatrix');
+    expect(pageSrc).toContain('buildProductionEventsView');
     expect(pageSrc).not.toContain('buildProductionAuditView');
-    // per-program accent color is applied on the ledger/summary tables
+    expect(pageSrc).not.toContain('buildProductionSummary');
+    expect(pageSrc).not.toContain('buildProductionLedger');
+    // per-program accent color is applied on the matrix/ledger tables
     expect(pageSrc).toContain('PROGRAM_ACCENT_VAR');
     expect(pageSrc).not.toContain('prod-reason-cell');
     expect(pageSrc).not.toContain('title={row.reason}');
@@ -101,6 +108,30 @@ describe('Production page data contracts', () => {
   it('keeps the no-combined-total contract on the redesigned page', () => {
     expect(pageSrc).not.toContain('stat-total');
     expect(pageSrc).not.toContain('sdot-total');
+  });
+});
+
+describe('Production multi-year matrix (Summary)', () => {
+  it('renders the all-years matrix component with the latest-year emphasis hook', () => {
+    expect(pageSrc).toContain('function ProductionMatrix');
+    expect(pageSrc).toContain('<ProductionMatrix matrix={matrix}');
+    // Latest recorded year column carries the is-latest styling hook.
+    expect(pageSrc).toContain('is-latest');
+    // YoY direction classes drive the green/red/muted delta colors.
+    expect(pageSrc).toContain('pm-delta-');
+  });
+
+  it('keeps the exact footer copy from the handoff', () => {
+    expect(pageSrc).toContain('Eggs in dozens');
+    expect(pageSrc).toContain('YoY compares each program to its previous recorded year');
+    expect(pageSrc).toContain('no prior / not recorded that');
+  });
+
+  it('the Summary matrix ignores the selected-year drill-in', () => {
+    // buildProductionMatrix takes the whole model (all years), not a single year.
+    expect(pageSrc).toMatch(/buildProductionMatrix\(model\)/);
+    // Production Events still narrows by the selected year.
+    expect(pageSrc).toMatch(/buildProductionEventsView\(model, \{year: selectedYear\}\)/);
   });
 });
 

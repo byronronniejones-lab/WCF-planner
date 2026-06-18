@@ -9,10 +9,9 @@ import {
   PROGRAM_BY_KEY,
   PAGE_PRODUCTION_PROGRAMS,
   buildProductionModel,
-  buildProductionSummary,
-  buildProductionLedger,
+  buildProductionMatrix,
+  buildProductionEventsView,
   formatEventQuantity,
-  formatProductionDelta,
   formatProductionNumber,
   totalsForYear,
 } from '../lib/production.js';
@@ -42,32 +41,47 @@ function ProgramDot({programKey}) {
   return <span className="prod-dot" style={{background: PROGRAM_ACCENT_VAR[programKey]}} aria-hidden="true" />;
 }
 
-function SummaryTable({rows}) {
+// Program × Year matrix: every recorded year at once, with the YoY delta under
+// each year's total. Horizontal scroll on narrow screens keeps every column
+// readable without clipping. The latest year column is emphasized (is-latest).
+function ProductionMatrix({matrix}) {
+  const {years, rows} = matrix;
   return (
-    <div className="production-table-wrap">
-      <table className="production-table production-summary-table">
-        <thead>
-          <tr>
-            <th>Program</th>
-            <th>Total</th>
-            <th>YoY</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.programKey} style={{'--row-accent': row.accent}}>
-              <td className="prod-program-cell">
-                <ProgramDot programKey={row.programKey} />
-                {programLabel(row.programKey)}
-              </td>
-              <td className="prod-counted-col">{num(row.programKey, row.counted)}</td>
-              <td className={row.yoy > 0 ? 'is-up' : row.yoy < 0 ? 'is-down' : undefined}>
-                {row.yoy === null || row.yoy === undefined ? '--' : formatProductionDelta(row.programKey, row.yoy)}
-              </td>
-            </tr>
+    <div className="production-matrix-wrap">
+      <div className="production-matrix" role="table" aria-label="Production totals by program and year">
+        <div className="pm-row pm-head" role="row">
+          <span className="pm-program-head" role="columnheader">
+            Program
+          </span>
+          {years.map((year) => (
+            <span
+              key={year}
+              className={`pm-year-head tnum${year === matrix.latest ? ' is-latest' : ''}`}
+              role="columnheader"
+            >
+              {year}
+            </span>
           ))}
-        </tbody>
-      </table>
+        </div>
+        {rows.map((row) => (
+          <div key={row.programKey} className="pm-row" role="row">
+            <span className="pm-program" role="rowheader">
+              <span className="prod-dot" style={{background: row.accent}} aria-hidden="true" />
+              <span className="pm-program-name">{row.label}</span>
+            </span>
+            {row.cells.map((cell) => (
+              <span key={cell.year} className={`pm-cell${cell.isLatest ? ' is-latest' : ''}`} role="cell">
+                <span className={`pm-total tnum${cell.isLatest ? ' is-latest' : ''}`}>{cell.totalText}</span>
+                <span className={`pm-delta pm-delta-${cell.deltaKind} tnum`}>{cell.deltaText}</span>
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+      <p className="production-matrix-foot">
+        Eggs in dozens · YoY compares each program to its previous recorded year · “—” = no prior / not recorded that
+        year
+      </p>
     </div>
   );
 }
@@ -159,16 +173,6 @@ function applyFilters(rows, filters) {
   });
 }
 
-const SUMMARY_COLUMNS = [
-  {key: 'label', header: 'Program', value: (r) => programLabel(r.programKey)},
-  {key: 'counted', header: 'Total', value: (r) => num(r.programKey, r.counted)},
-  {
-    key: 'yoy',
-    header: 'YoY',
-    value: (r) => (r.yoy === null || r.yoy === undefined ? '' : formatProductionDelta(r.programKey, r.yoy)),
-  },
-];
-
 const LEDGER_COLUMNS = [
   {key: 'date', header: 'Date'},
   {key: 'program', header: 'Program', value: (r) => programLabel(r.program)},
@@ -218,13 +222,16 @@ export default function ProductionPage({Header, setView}) {
   const yearEvents = model.events.filter((event) => event.year === selectedYear);
   const processingCount = yearEvents.filter((event) => event.program !== 'egg').length;
   const eggDayCount = yearEvents.filter((event) => event.program === 'egg').length;
-  const summaryRows = React.useMemo(() => buildProductionSummary(model, selectedYear), [model, selectedYear]);
-  const ledgerRows = React.useMemo(() => buildProductionLedger(model, selectedYear), [model, selectedYear]);
+  // Summary = all-years matrix (ignores the selected-year drill-in). Production
+  // Events = every recorded processing event, narrowed to the selected year by
+  // the picker.
+  const matrix = React.useMemo(() => buildProductionMatrix(model), [model]);
+  const eventRows = React.useMemo(() => buildProductionEventsView(model, {year: selectedYear}), [model, selectedYear]);
 
-  const activeRows = ledgerRows;
+  const activeRows = eventRows;
   const statusOptions = React.useMemo(() => {
     const seen = new Map();
-    for (const row of activeRows) if (!seen.has(row.status)) seen.set(row.status, row.statusLabel);
+    for (const row of activeRows) if (row.status && !seen.has(row.status)) seen.set(row.status, row.statusLabel);
     return [...seen.entries()].map(([status, statusLabel]) => ({status, statusLabel}));
   }, [activeRows]);
   const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED
@@ -233,12 +240,20 @@ export default function ProductionPage({Header, setView}) {
   const filteredRows = React.useMemo(() => applyFilters(activeRows, effectiveFilters), [activeRows, effectiveFilters]);
 
   const exportCsv = React.useCallback(() => {
-    const isSummary = tab === 'summary';
-    const columns = isSummary ? SUMMARY_COLUMNS : LEDGER_COLUMNS;
-    const data = isSummary ? summaryRows : filteredRows;
-    const csv = rowsToCsv(columns, data);
-    downloadCsv(csvFilename(`production-${tab}-${selectedYear}`), csv);
-  }, [tab, summaryRows, filteredRows, selectedYear]);
+    if (tab === 'summary') {
+      const columns = [
+        {key: 'program', header: 'Program', value: (r) => r.label},
+        ...matrix.years.map((year) => ({
+          key: year,
+          header: year,
+          value: (r) => r.cells.find((cell) => cell.year === year)?.totalText ?? '—',
+        })),
+      ];
+      downloadCsv(csvFilename('production-summary'), rowsToCsv(columns, matrix.rows));
+      return;
+    }
+    downloadCsv(csvFilename(`production-events-${selectedYear}`), rowsToCsv(LEDGER_COLUMNS, filteredRows));
+  }, [tab, matrix, filteredRows, selectedYear]);
 
   return (
     <div className="home theme-crisp production-page" data-production-loaded={loading ? 'false' : 'true'}>
@@ -342,13 +357,10 @@ export default function ProductionPage({Header, setView}) {
         {tab === 'summary' ? (
           <section className="card production-panel-card">
             <div className="stats-head">
-              <div className="card-label">Program Totals - {selectedYear}</div>
+              <div className="card-label">Program Totals</div>
+              <span className="production-rowcount">all recorded years</span>
             </div>
-            <p className="production-help">
-              Totals are by program and year. YoY compares each program to its previous recorded year. Eggs display as
-              dozens.
-            </p>
-            <SummaryTable rows={summaryRows} />
+            <ProductionMatrix matrix={matrix} />
           </section>
         ) : (
           <section className="card production-panel-card">
@@ -356,7 +368,7 @@ export default function ProductionPage({Header, setView}) {
               <div className="card-label">Production Events - {selectedYear}</div>
               <span className="production-rowcount">{filteredRows.length.toLocaleString()} rows</span>
             </div>
-            <p className="production-help">Every recorded processing or egg event for the selected year.</p>
+            <p className="production-help">Every processing event recorded for the selected year.</p>
             {EXTENDED_LIST_CONTROLS_ENABLED && (
               <FilterBar filters={filters} setFilters={setFilters} statusOptions={statusOptions} />
             )}
