@@ -52,8 +52,8 @@ describe('BroilerListView wiring', () => {
     expect(view).toContain('buildBroilerBatchComparator');
   });
 
-  it('applies predicate then comparator to derive the filtered + sorted set', () => {
-    expect(view).toMatch(/batches\.filter\(buildBroilerBatchPredicate\(/);
+  it('applies predicate then comparator to derive the filtered + sorted PROCESSED set', () => {
+    expect(view).toMatch(/processedBatches\.filter\(buildBroilerBatchPredicate\(/);
     expect(view).toMatch(/\[\.\.\.filtered\]\.sort\(buildBroilerBatchComparator\(/);
   });
 
@@ -70,9 +70,9 @@ describe('BroilerListView wiring', () => {
     expect(view).toMatch(/buildViewState\(\{filters, sortRules, viewMode: 'grouped'\}\)/);
   });
 
-  it('feeds the SORTED set to the export rows (not the raw batches)', () => {
-    // broilerExportRows must map over `sorted`, the filtered+sorted set.
-    expect(view).toMatch(/const broilerExportRows = sorted\.map\(/);
+  it('feeds the processed filtered+sorted set to the export rows (not the raw batches)', () => {
+    // broilerExportRows must map over the processed filtered+sorted set.
+    expect(view).toMatch(/const broilerExportRows = processedCardRows\.map\(/);
     // The old hard-coded raw concatenation must be gone.
     expect(view).not.toContain('[...activeRows, ...processedCardRows].map');
   });
@@ -81,20 +81,23 @@ describe('BroilerListView wiring', () => {
     expect(view).toContain('buildBroilerBatchExportColumns({fmt})');
   });
 
-  it('derives the rendered sections from the sorted set', () => {
-    expect(view).toMatch(/const activeRows = sorted\.filter\(/);
-    expect(view).toMatch(/const processedCardRows = sorted\.filter\(/);
+  it('pins active/planned on top and scopes the filter/sort to the processed set', () => {
+    // Active/planned: unfiltered, fixed name order. Processed: the controls apply.
+    expect(view).toMatch(/const activeRows = React\.useMemo\(/);
+    expect(view).toMatch(
+      /const processedBatches = React\.useMemo\(\(\) => batches\.filter\(\(b\) => b\.status === 'processed'\)/,
+    );
+    expect(view).toMatch(/const processedCardRows = React\.useMemo\(/);
   });
 
-  it('distinguishes true-empty from filtered-no-results', () => {
-    expect(view).toContain("data-broiler-batches-empty={totalCount === 0 ? 'true' : 'filtered'}");
+  it('shows a filtered-no-results state on the processed table', () => {
+    expect(view).toContain("data-broiler-batches-empty={processedTotal === 0 ? 'true' : 'filtered'}");
     expect(view).toContain('No broiler batches match the current filters');
   });
 
   it('exposes the toolbar controls + count', () => {
     for (const hook of [
       'data-broiler-search',
-      'data-broiler-status-filter',
       'data-broiler-breed-filter',
       'data-broiler-sort',
       'data-broiler-clear-filters',
@@ -104,8 +107,70 @@ describe('BroilerListView wiring', () => {
     }
   });
 
+  it('adds a column/display picker for the processed table, persisted in saved views', () => {
+    expect(view).toContain('data-broiler-batches-columns-toggle="1"');
+    expect(view).toContain('data-broiler-column-toggle');
+    expect(view).toContain("openToolPanel === 'columns'");
+    // Visible columns are part of the saved-view state and restored on apply.
+    expect(view).toMatch(/usePersistentViewState\(\s*'broiler\.batches\.columns'/);
+    expect(view).toMatch(/columns: visibleColumns/);
+    expect(view).toMatch(/setVisibleColumns\(Array\.isArray\(st\.columns\)/);
+    // Export columns are filtered to the shown columns.
+    expect(view).toMatch(/buildBroilerBatchExportColumns\(\{fmt\}\)\.filter\(/);
+  });
+
   it('preserves the record-navigation contract on row click', () => {
     expect(view).toContain('openBatch(b, activeRows)');
     expect(view).toContain('openBatch(b, processedCardRows)');
+  });
+
+  it('is no longer behind the disabled extended-controls gate', () => {
+    expect(view).not.toContain('const EXTENDED_LIST_CONTROLS_ENABLED = false;');
+    expect(view).not.toMatch(/EXTENDED_LIST_CONTROLS_ENABLED \?/);
+  });
+
+  it('defaults the sort to processed-date descending', () => {
+    expect(lib).toMatch(/export const BROILER_BATCH_DEFAULT_SORT\b/);
+    expect(lib).toMatch(/key: 'processingDate', dir: 'desc'/);
+    expect(view).toContain('BROILER_BATCH_DEFAULT_SORT');
+    expect(view).toMatch(
+      /usePersistentViewState\('broiler\.batches\.sortRules', \[\s*\{\.\.\.BROILER_BATCH_DEFAULT_SORT\}/,
+    );
+  });
+
+  it('wires the expanded real-field filter controls', () => {
+    for (const hook of [
+      'data-broiler-hatchery-filter',
+      'data-broiler-brooder-filter',
+      'data-broiler-schooner-filter',
+      'data-broiler-processing-after',
+      'data-broiler-processing-before',
+      'data-broiler-range-min',
+      'data-broiler-range-max',
+    ]) {
+      expect(view).toContain(hook);
+    }
+  });
+});
+
+describe('broilerBatchFilters expanded dimensions + sort keys', () => {
+  it('declares the new real-field filter dimensions', () => {
+    for (const dim of [
+      'hatchery',
+      'brooder',
+      'schooner',
+      'processingDateRange',
+      'birdCountRange',
+      'birdsArrivedRange',
+      'toProcessorRange',
+      'mortalityRange',
+      'lbsProducedRange',
+    ]) {
+      expect(lib).toContain(`'${dim}'`);
+    }
+  });
+
+  it('adds the processingDate sort key', () => {
+    expect(lib).toContain("'processingDate'");
   });
 });

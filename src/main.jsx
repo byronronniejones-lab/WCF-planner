@@ -1230,8 +1230,7 @@ function App() {
   const {sheepForHome, setSheepForHome} = useSheepHome();
   const {wfGroups, setWfGroups, webformsConfig, setWebformsConfig} = useWebformsConfig();
   const {feedCosts, setFeedCosts, missedCleared, setMissedCleared} = useFeedCosts();
-  const {view, setView, pendingEdit, setPendingEdit, showAllComparison, setShowAllComparison, showMenu, setShowMenu} =
-    useUI();
+  const {view, setView, pendingEdit, setPendingEdit, showMenu, setShowMenu} = useUI();
 
   // Permission helpers — role-based access
   // farm_team: edit+delete own dailys only

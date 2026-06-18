@@ -11,7 +11,6 @@ function read(relPath) {
 
 const disallowedListControlFiles = [
   'src/activity/ActivityLogView.jsx',
-  'src/broiler/BroilerListView.jsx',
   'src/cattle/CattleBatchesView.jsx',
   'src/cattle/CattleWeighInsView.jsx',
   'src/dashboard/ProductionPage.jsx',
@@ -27,6 +26,7 @@ const disallowedListControlFiles = [
 
 const allowedRichControlFiles = [
   'src/broiler/BroilerDailysView.jsx',
+  'src/broiler/BroilerListView.jsx',
   'src/cattle/CattleDailysView.jsx',
   'src/cattle/CattleHerdsView.jsx',
   'src/layer/EggDailysView.jsx',
@@ -74,5 +74,21 @@ describe('site-wide list controls scope', () => {
     }
     expect(sheep).toContain("openToolPanel === 'savedViews'");
     expect(sheep).toContain("openToolPanel === 'filters'");
+  });
+
+  it('keeps broiler batches behind the same compact icon toggles', () => {
+    const broiler = read('src/broiler/BroilerListView.jsx');
+    for (const marker of [
+      'data-broiler-batches-saved-views-toggle="1"',
+      'data-broiler-batches-filters-toggle="1"',
+      'data-broiler-batches-sort-toggle="1"',
+      'data-broiler-batches-columns-toggle="1"',
+    ]) {
+      expect(broiler).toContain(marker);
+    }
+    expect(broiler).toContain("openToolPanel === 'savedViews'");
+    expect(broiler).toContain("openToolPanel === 'filters'");
+    expect(broiler).toContain("openToolPanel === 'sort'");
+    expect(broiler).toContain("openToolPanel === 'columns'");
   });
 });

@@ -45,24 +45,26 @@ import {
   buildViewState,
 } from '../lib/savedViewsApi.js';
 import {
-  BROILER_BATCH_STATUSES,
+  BROILER_BATCH_DEFAULT_SORT,
   buildBroilerBatchPredicate,
   buildBroilerBatchComparator,
   broilerBreedFilterOptions,
+  broilerDistinctFieldValues,
 } from '../lib/broilerBatchFilters.js';
 import {useAuth} from '../contexts/AuthContext.jsx';
 import {useBatches} from '../contexts/BatchesContext.jsx';
 import {useDailysRecent} from '../contexts/DailysRecentContext.jsx';
 import {useFeedCosts} from '../contexts/FeedCostsContext.jsx';
-import {useUI} from '../contexts/UIContext.jsx';
 import BroilerBatchPage from './BroilerBatchPage.jsx';
 
 const BROILER_BATCHES_SURFACE_KEY = 'broiler.batches';
-const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
 // Sort dropdown options (single active sort rule). Mirrors the hub's sort keys
-// from broilerBatchFilters.js as labeled key:dir pairs.
+// from broilerBatchFilters.js as labeled key:dir pairs. Default is processed
+// newest-first (processing date descending).
 const BROILER_SORT_OPTIONS = [
+  {value: 'processingDate:desc', key: 'processingDate', dir: 'desc', label: 'Processed date (newest)'},
+  {value: 'processingDate:asc', key: 'processingDate', dir: 'asc', label: 'Processed date (oldest)'},
   {value: 'batchName:asc', key: 'batchName', dir: 'asc', label: 'Name ↑'},
   {value: 'batchName:desc', key: 'batchName', dir: 'desc', label: 'Name ↓'},
   {value: 'status:asc', key: 'status', dir: 'asc', label: 'Status (planned first)'},
@@ -75,7 +77,67 @@ const BROILER_SORT_OPTIONS = [
   {value: 'lbsProduced:asc', key: 'lbsProduced', dir: 'asc', label: 'Feed lbs ↑'},
 ];
 
-const BROILER_STATUS_LABELS = {planned: 'Planned', active: 'Active', processed: 'Processed'};
+// Toggleable data columns for the processed-batches table (the column picker).
+// `name` (Batch) and the row actions are always shown; these are the columns the
+// operator can hide/show, and the choice is stored in saved views.
+const BROILER_PROCESSED_COLUMNS = [
+  {key: 'breed', label: 'Breed', default: true},
+  {key: 'hatchery', label: 'Hatchery', default: true},
+  {key: 'brooder', label: 'Brooder', default: false},
+  {key: 'schooner', label: 'Schooner', default: false},
+  {key: 'hatchDate', label: 'Hatch Date', default: false},
+  {key: 'brooderPeriod', label: 'Brooder Period', default: false},
+  {key: 'schoonerPeriod', label: 'Schooner Period', default: false},
+  {key: 'processingDate', label: 'Process Date', default: true},
+  {key: 'timeOnFarm', label: 'Time on Farm', default: true},
+  {key: 'birdCount', label: 'Birds Ordered', default: true},
+  {key: 'birdsArrived', label: 'Birds Arrived', default: false},
+  {key: 'toProcessor', label: 'To Processor', default: true},
+  {key: 'mortality', label: 'Mortality', default: true},
+  {key: 'mortalityPct', label: 'Mortality %', default: false},
+  {key: 'chickCost', label: 'Chick Cost', default: false},
+  {key: 'starterFeed', label: 'Starter Feed', default: false},
+  {key: 'growerFeed', label: 'Grower Feed', default: false},
+  {key: 'totalFeed', label: 'Total Feed', default: true},
+  {key: 'feedPerBird', label: 'Feed / Bird', default: false},
+  {key: 'week4Lbs', label: '4-wk Wt', default: false},
+  {key: 'week6Lbs', label: '6-wk Wt', default: false},
+  {key: 'avgBreast', label: 'Avg Breast', default: false},
+  {key: 'avgThigh', label: 'Avg Thigh', default: false},
+  {key: 'avgDressed', label: 'Avg Whole', default: false},
+  {key: 'totalMeat', label: 'Total Meat', default: false},
+  {key: 'processingCost', label: 'Processing Cost', default: false},
+  {key: 'processingPerBird', label: 'Processing / Bird', default: false},
+  {key: 'totalCost', label: 'Total Cost', default: false},
+  {key: 'perBird', label: 'Cost / Bird', default: true},
+  {key: 'status', label: 'Status', default: true},
+];
+const BROILER_DEFAULT_COLUMN_KEYS = BROILER_PROCESSED_COLUMNS.filter((c) => c.default).map((c) => c.key);
+
+// CSV/print export header -> the display column key that controls it. An export
+// column whose controlling column is hidden is dropped, so the export matches
+// the columns currently shown in the processed table. Columns with no export
+// counterpart simply don't gate any export column.
+const BROILER_EXPORT_HEADER_COLUMN = {
+  Batch: 'name',
+  'Record ID': 'name',
+  Status: 'status',
+  Breed: 'breed',
+  Hatchery: 'hatchery',
+  Schooner: 'schooner',
+  'Hatch date': 'hatchDate',
+  'Processing date': 'processingDate',
+  'Time on farm': 'timeOnFarm',
+  'Birds ordered': 'birdCount',
+  'Birds arrived': 'birdsArrived',
+  'To processor': 'toProcessor',
+  Mortality: 'mortality',
+  'Starter feed lbs': 'starterFeed',
+  'Grower feed lbs': 'growerFeed',
+  'Total feed lbs': 'totalFeed',
+  'Feed per processed bird': 'feedPerBird',
+  'Avg dressed lbs': 'avgDressed',
+};
 
 function broilerBatchHref(b) {
   return '/broiler/batches/' + encodeURIComponent(b && b.name ? b.name : '');
@@ -113,7 +175,6 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
   const {batches, setBatches} = useBatches();
   const {broilerDailys} = useDailysRecent();
   const {feedCosts} = useFeedCosts();
-  const {setView, showAllComparison, setShowAllComparison} = useUI();
 
   const role = authState?.role;
   const isAdmin = role === 'admin';
@@ -127,9 +188,27 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
   // (right-sized) but is stored as an array to match the saved-view contract.
   const [filters, setFilters] = usePersistentViewState('broiler.batches.filters', {});
   const [sortRules, setSortRules] = usePersistentViewState('broiler.batches.sortRules', [
-    {key: 'batchName', dir: 'asc'},
+    {...BROILER_BATCH_DEFAULT_SORT},
   ]);
-  const sortRule = sortRules[0] || {key: 'batchName', dir: 'asc'};
+  const sortRule = sortRules[0] || {...BROILER_BATCH_DEFAULT_SORT};
+
+  // Compact icon-panel toolbar (Cattle Herds parity): one tool panel open at a
+  // time — 'savedViews' | 'filters' | 'sort' | null.
+  const [openToolPanel, setOpenToolPanel] = React.useState(null);
+  function toggleToolPanel(panel) {
+    setOpenToolPanel((cur) => (cur === panel ? null : panel));
+  }
+
+  // Which processed-table columns are shown (the column/display picker). Persisted
+  // per surface and stored in saved views. `name` + row actions are always shown.
+  const [visibleColumns, setVisibleColumns] = usePersistentViewState(
+    'broiler.batches.columns',
+    BROILER_DEFAULT_COLUMN_KEYS,
+  );
+  function toggleColumn(key) {
+    setVisibleColumns((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]));
+  }
+  const columnVisible = (key) => key === 'name' || key === 'actions' || visibleColumns.includes(key);
 
   // Saved views (broiler.batches surface). Failure degrades gracefully — the
   // list + filters keep working; only the saved-views row shows a notice.
@@ -185,40 +264,45 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
     [broilerDailys],
   );
 
-  // ── filter + sort across ALL batches ──────────────────────────────────────
-  // Status is the EFFECTIVE poultry status so the filter agrees with the badge
-  // each row renders. The filtered + sorted set is the single source for the
-  // active table, the processed cards, the record-sequence order, and export.
+  // ── filter + sort scope ───────────────────────────────────────────────────
+  // The search/filter/sort + column controls drive the PROCESSED history table
+  // ONLY. Active/planned batches stay pinned on top in a stable name order,
+  // untouched by the controls. Status is the EFFECTIVE poultry status so the
+  // filter agrees with the badge each row renders.
   const filterCtx = React.useMemo(
     () => ({statusOf: (b) => calcPoultryStatus(b), totalFeedLbsOf: totalFeedLbsFor}),
     [totalFeedLbsFor],
   );
-  const effectiveFilters = EXTENDED_LIST_CONTROLS_ENABLED ? filters : {};
-  const effectiveSortRule = EXTENDED_LIST_CONTROLS_ENABLED ? sortRule : {key: 'batchName', dir: 'asc'};
+  const activeRows = React.useMemo(
+    () =>
+      batches
+        .filter((b) => b.status === 'planned' || b.status === 'active')
+        .sort(buildBroilerBatchComparator({key: 'batchName', dir: 'asc'}, filterCtx)),
+    [batches, filterCtx],
+  );
+  const processedBatches = React.useMemo(() => batches.filter((b) => b.status === 'processed'), [batches]);
   const filtered = React.useMemo(
-    () => batches.filter(buildBroilerBatchPredicate(effectiveFilters, filterCtx)),
-    [batches, effectiveFilters, filterCtx],
+    () => processedBatches.filter(buildBroilerBatchPredicate(filters, filterCtx)),
+    [processedBatches, filters, filterCtx],
   );
-  const sorted = React.useMemo(
-    () => [...filtered].sort(buildBroilerBatchComparator(effectiveSortRule, filterCtx)),
-    [filtered, effectiveSortRule, filterCtx],
+  const processedCardRows = React.useMemo(
+    () => [...filtered].sort(buildBroilerBatchComparator(sortRule, filterCtx)),
+    [filtered, sortRule, filterCtx],
   );
 
-  // Section views derived from the SORTED set (broiler has a real planned →
-  // active → processed pipeline, so the active table + processed cards stay,
-  // but both now scan in the chosen sort order and respect the filters).
-  const activeRows = sorted.filter((b) => b.status === 'planned' || b.status === 'active');
-  const processedCardRows = sorted.filter((b) => b.status === 'processed');
-
-  const observedBreeds = React.useMemo(() => [...new Set(batches.map((b) => b.breed).filter(Boolean))], [batches]);
+  const observedBreeds = React.useMemo(
+    () => [...new Set(processedBatches.map((b) => b.breed).filter(Boolean))],
+    [processedBatches],
+  );
   const breedFilterOptions = React.useMemo(
     () => broilerBreedFilterOptions(observedBreeds, breedLabel),
     [observedBreeds],
   );
 
   const totalCount = batches.length;
-  const visibleCount = sorted.length;
-  const filterCount = Object.keys(effectiveFilters).length;
+  const processedTotal = processedBatches.length;
+  const visibleCount = processedCardRows.length;
+  const filterCount = Object.keys(filters).length;
 
   function setFilter(key, value) {
     setFilters((prev) => {
@@ -239,22 +323,35 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
   function clearAllFilters() {
     setFilters({});
   }
-  function setStatusFilter(value) {
-    if (!value) setFilter('status', null);
-    else setFilter('status', [value]);
+  // Single-select multi-value filter (status/breed/hatchery/brooder/schooner):
+  // stored as a one-element array so the predicate's array matcher applies.
+  function setSelectFilter(key, value) {
+    setFilter(key, value ? [value] : null);
   }
-  function setBreedFilter(value) {
-    if (!value) setFilter('breed', null);
-    else setFilter('breed', [value]);
+  function selectFilterValue(key) {
+    return Array.isArray(filters[key]) && filters[key].length === 1 ? filters[key][0] : '';
   }
-  function setStartDateBound(bound, value) {
+  // Date-range bound setter for any *DateRange filter (startDateRange / processingDateRange).
+  function setDateBound(rangeKey, bound, value) {
     setFilters((prev) => {
-      const range = {...(prev.startDateRange || {})};
+      const range = {...(prev[rangeKey] || {})};
       if (value) range[bound] = value;
       else delete range[bound];
       const next = {...prev};
-      if (!range.after && !range.before) delete next.startDateRange;
-      else next.startDateRange = range;
+      if (!range.after && !range.before) delete next[rangeKey];
+      else next[rangeKey] = range;
+      return next;
+    });
+  }
+  // Numeric-range bound setter for any *Range filter (birdCountRange, etc.).
+  function setNumBound(rangeKey, bound, value) {
+    setFilters((prev) => {
+      const range = {...(prev[rangeKey] || {})};
+      if (value !== '' && value != null) range[bound] = value;
+      else delete range[bound];
+      const next = {...prev};
+      if ((range.min == null || range.min === '') && (range.max == null || range.max === '')) delete next[rangeKey];
+      else next[rangeKey] = range;
       return next;
     });
   }
@@ -267,12 +364,26 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
   }
 
   const search = filters.textSearch || '';
-  const statusFilterValue = Array.isArray(filters.status) && filters.status.length === 1 ? filters.status[0] : '';
-  const breedFilterValue = Array.isArray(filters.breed) && filters.breed.length === 1 ? filters.breed[0] : '';
-  const startAfter = (filters.startDateRange && filters.startDateRange.after) || '';
-  const startBefore = (filters.startDateRange && filters.startDateRange.before) || '';
+  const dateBound = (rangeKey, bound) => (filters[rangeKey] && filters[rangeKey][bound]) || '';
+  const numBound = (rangeKey, bound) => {
+    const v = filters[rangeKey] && filters[rangeKey][bound];
+    return v == null ? '' : v;
+  };
   const sortValue =
-    BROILER_SORT_OPTIONS.find((o) => o.key === sortRule.key && o.dir === sortRule.dir)?.value || 'batchName:asc';
+    BROILER_SORT_OPTIONS.find((o) => o.key === sortRule.key && o.dir === sortRule.dir)?.value || 'processingDate:desc';
+
+  const hatcheryOptions = React.useMemo(
+    () => broilerDistinctFieldValues(processedBatches, 'hatchery'),
+    [processedBatches],
+  );
+  const brooderOptions = React.useMemo(
+    () => broilerDistinctFieldValues(processedBatches, 'brooder'),
+    [processedBatches],
+  );
+  const schoonerOptions = React.useMemo(
+    () => broilerDistinctFieldValues(processedBatches, 'schooner'),
+    [processedBatches],
+  );
 
   // ── saved views ────────────────────────────────────────────────────────────
   const selectedView = savedViews.find((v) => v.id === selectedViewId) || null;
@@ -282,15 +393,17 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
     (v) => v.visibility === 'public' && !(myProfileId && v.owner_profile_id === myProfileId),
   );
   function broilerBatchesViewState() {
-    return buildViewState({filters, sortRules, viewMode: 'grouped'});
+    return {...buildViewState({filters, sortRules, viewMode: 'grouped'}), columns: visibleColumns};
   }
   function applyBroilerSavedView(view) {
     if (!view) return;
     const st = view.view_state || {};
     setFilters(st.filters && typeof st.filters === 'object' ? st.filters : {});
     setSortRules(
-      Array.isArray(st.sortRules) && st.sortRules.length > 0 ? [st.sortRules[0]] : [{key: 'batchName', dir: 'asc'}],
+      Array.isArray(st.sortRules) && st.sortRules.length > 0 ? [st.sortRules[0]] : [{...BROILER_BATCH_DEFAULT_SORT}],
     );
+    setVisibleColumns(Array.isArray(st.columns) && st.columns.length > 0 ? st.columns : BROILER_DEFAULT_COLUMN_KEYS);
+    setOpenToolPanel(null);
   }
   function onSelectSavedView(id) {
     setSelectedViewId(id);
@@ -364,8 +477,9 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
     else void proceedDeleteSelectedView(view);
   }
 
-  // ── export — fed the FILTERED + SORTED set (record-sequence order) ──────────
-  const broilerExportRows = sorted.map((batch) => {
+  // ── export — the processed table's filtered + sorted rows, and only the
+  // columns currently shown (the column picker drives the export too). ─────────
+  const broilerExportRows = processedCardRows.map((batch) => {
     const n = (value) => parseFloat(value) || 0;
     const stats = calcBroilerStatsFromDailys(batch, broilerDailys);
     const useManualFeedFallback = !stats.legacy && stats.starterFeed === 0 && stats.growerFeed === 0;
@@ -391,7 +505,10 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
       export_feed_per_processed_bird: processed > 0 && totalFeed > 0 ? totalFeed / processed : null,
     };
   });
-  const exportColumns = buildBroilerBatchExportColumns({fmt});
+  const exportColumns = buildBroilerBatchExportColumns({fmt}).filter((c) => {
+    const key = BROILER_EXPORT_HEADER_COLUMN[c.header];
+    return key ? columnVisible(key) : true;
+  });
 
   function handleExportCsv() {
     if (!broilerExportRows.length) {
@@ -445,6 +562,45 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
     color: 'var(--ink)',
     cursor: 'pointer',
   };
+  // Compact icon button + tool panel (Cattle Herds parity).
+  const BROILER_ACCENT = getProgramColor('broiler');
+  // Selected tool button = solid program-amber fill with a white glyph (matches
+  // the filled program tab in the top nav); unselected = white with dark glyph.
+  const toolButtonS = (active = false) => ({
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    border: active ? `1px solid ${BROILER_ACCENT}` : '1px solid var(--border-strong)',
+    background: active ? BROILER_ACCENT : 'white',
+    color: active ? '#fff' : 'var(--ink)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    flex: '0 0 auto',
+  });
+  const toolPanelS = {
+    background: 'white',
+    border: '1px solid var(--border)',
+    borderRadius: 10,
+    padding: '12px 16px',
+    marginBottom: 8,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  };
+  const filterLabelS = {
+    fontSize: 11,
+    color: 'var(--ink-muted)',
+    display: 'inline-flex',
+    flexDirection: 'column',
+    gap: 3,
+    fontWeight: 600,
+  };
+  const numInpS = {...inpS, width: 84};
 
   return (
     <div style={{minHeight: '100vh', background: 'var(--bg-page)'}}>
@@ -460,325 +616,17 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
       )}
       <Header />
       <div style={{padding: '1rem'}} data-broiler-batches-loaded={dataLoaded ? 'true' : 'false'}>
-        <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', marginBottom: 10}}>
-          {EXTENDED_LIST_CONTROLS_ENABLED && (
-            <>
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                data-broiler-batches-export-csv="1"
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: 10,
-                  border: '1px solid var(--border-strong)',
-                  background: 'white',
-                  color: 'var(--ink)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  letterSpacing: 0.1,
-                }}
-              >
-                Export CSV
-              </button>
-              <button
-                type="button"
-                onClick={handlePrintRows}
-                data-broiler-batches-print="1"
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: 10,
-                  border: '1px solid var(--border-strong)',
-                  background: 'white',
-                  color: 'var(--ink)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  letterSpacing: 0.1,
-                }}
-              >
-                Print
-              </button>
-            </>
-          )}
-          <button
-            style={{
-              padding: '7px 18px',
-              borderRadius: 10,
-              border: 'none',
-              // WI-2d: broiler primary action re-tinted to the program accent.
-              background: getProgramColor('broiler'),
-              color: getReadableText(getProgramColor('broiler')),
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: 0.1,
-              display: isMgmt ? 'block' : 'none',
-            }}
-            onClick={openAdd}
-          >
-            + Add Batch
-          </button>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--ink-faint)',
+            marginBottom: 8,
+            letterSpacing: 0.3,
+          }}
+        >
+          ACTIVE / PLANNED ({activeRows.length})
         </div>
-        <InlineNotice notice={listNotice} onDismiss={() => setListNotice(null)} />
-        {/* Saved views row — degrades gracefully when the API fails */}
-        {EXTENDED_LIST_CONTROLS_ENABLED && (
-          <div
-            data-broiler-saved-views-row
-            style={{
-              background: 'white',
-              border: '1px solid var(--border)',
-              borderRadius: 10,
-              padding: '10px 14px',
-              marginBottom: 8,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-            }}
-          >
-            <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
-            {savedViewsError ? (
-              <span style={{fontSize: 12, color: '#b91c1c'}} data-broiler-saved-views-error>
-                Saved views unavailable. Filters still work.
-              </span>
-            ) : (
-              <>
-                <select
-                  data-broiler-saved-view-select
-                  value={selectedViewId}
-                  disabled={savedViewsLoading}
-                  onChange={(e) => onSelectSavedView(e.target.value)}
-                  style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
-                >
-                  <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
-                  {myViews.length > 0 && (
-                    <optgroup label="My views">
-                      {myViews.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {publicOtherViews.length > 0 && (
-                    <optgroup label="Public views">
-                      {publicOtherViews.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                {selectedViewIsMine && (
-                  <>
-                    <button
-                      type="button"
-                      data-broiler-saved-view-update
-                      onClick={updateSelectedView}
-                      disabled={savedViewBusy}
-                      style={savedViewGhostBtnS}
-                    >
-                      Update to current
-                    </button>
-                    <button
-                      type="button"
-                      data-broiler-saved-view-delete
-                      onClick={deleteSelectedView}
-                      disabled={savedViewBusy}
-                      style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
-                <span style={{flex: 1}} />
-                <button
-                  type="button"
-                  data-broiler-saved-view-save-open
-                  onClick={openSaveViewForm}
-                  disabled={savedViewBusy}
-                  style={savedViewPrimaryBtnS}
-                >
-                  Save current view
-                </button>
-              </>
-            )}
-          </div>
-        )}
-        {EXTENDED_LIST_CONTROLS_ENABLED && showSaveViewForm && (
-          <div
-            data-broiler-saved-view-form
-            style={{
-              background: 'white',
-              border: '1px solid #a7f3d0',
-              borderRadius: 10,
-              padding: '10px 14px',
-              marginBottom: 8,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-            }}
-          >
-            <input
-              data-broiler-saved-view-name
-              type="text"
-              value={saveViewName}
-              placeholder="View name"
-              onChange={(e) => setSaveViewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submitSaveView();
-              }}
-              style={{...inpS, flex: 1, minWidth: 200}}
-            />
-            <label style={savedViewRadioLabelS}>
-              <input
-                type="radio"
-                name="saveBroilerViewVisibility"
-                checked={saveViewVisibility === 'private'}
-                onChange={() => setSaveViewVisibility('private')}
-                data-broiler-saved-view-visibility="private"
-              />
-              Private
-            </label>
-            <label style={savedViewRadioLabelS}>
-              <input
-                type="radio"
-                name="saveBroilerViewVisibility"
-                checked={saveViewVisibility === 'public'}
-                onChange={() => setSaveViewVisibility('public')}
-                data-broiler-saved-view-visibility="public"
-              />
-              Public
-            </label>
-            <button
-              type="button"
-              data-broiler-saved-view-save
-              onClick={submitSaveView}
-              disabled={savedViewBusy}
-              style={savedViewPrimaryBtnS}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSaveViewForm(false)}
-              disabled={savedViewBusy}
-              style={savedViewGhostBtnS}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        {/* Top toolbar — search + status + breed + start-date range + sort */}
-        {EXTENDED_LIST_CONTROLS_ENABLED && (
-          <div
-            data-broiler-batches-toolbar
-            style={{
-              background: 'white',
-              border: '1px solid var(--border)',
-              borderRadius: 10,
-              padding: '12px 16px',
-              marginBottom: 12,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 10,
-            }}
-          >
-            <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setFilter('textSearch', e.target.value)}
-                placeholder="Search batch name, breed, hatchery..."
-                data-broiler-search
-                style={{...inpS, flex: 1, minWidth: 200, width: '100%'}}
-              />
-              <select
-                value={statusFilterValue}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                data-broiler-status-filter
-                style={{...inpS, width: 'auto'}}
-              >
-                <option value="">All statuses</option>
-                {BROILER_BATCH_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {BROILER_STATUS_LABELS[s] || s}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={breedFilterValue}
-                onChange={(e) => setBreedFilter(e.target.value)}
-                data-broiler-breed-filter
-                style={{...inpS, width: 'auto'}}
-              >
-                <option value="">All breeds</option>
-                {breedFilterOptions.map((o) => (
-                  <option key={o.code} value={o.code}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <label
-                style={{fontSize: 11, color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              >
-                Hatch after
-                <input
-                  type="date"
-                  value={startAfter}
-                  onChange={(e) => setStartDateBound('after', e.target.value)}
-                  data-broiler-start-after
-                  style={{...inpS, width: 'auto'}}
-                />
-              </label>
-              <label
-                style={{fontSize: 11, color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              >
-                before
-                <input
-                  type="date"
-                  value={startBefore}
-                  onChange={(e) => setStartDateBound('before', e.target.value)}
-                  data-broiler-start-before
-                  style={{...inpS, width: 'auto'}}
-                />
-              </label>
-              <select
-                value={sortValue}
-                onChange={(e) => setSortValue(e.target.value)}
-                data-broiler-sort
-                style={{...inpS, width: 'auto'}}
-              >
-                {BROILER_SORT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={flipSortDir}
-                data-broiler-sort-dir
-                title="Flip sort direction"
-                style={savedViewGhostBtnS}
-              >
-                {sortRule.dir === 'desc' ? '↓' : '↑'}
-              </button>
-              {filterCount > 0 && (
-                <button type="button" onClick={clearAllFilters} data-broiler-clear-filters style={savedViewGhostBtnS}>
-                  Clear filters
-                </button>
-              )}
-            </div>
-            <div style={{fontSize: 12, color: 'var(--ink-muted)'}} data-broiler-count>
-              Showing {visibleCount} of {totalCount} batches
-              {filterCount > 0 && ' - ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}
-            </div>
-          </div>
-        )}
         <div style={{...S.card, overflowX: 'auto'}}>
           <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900}}>
             <thead>
@@ -819,18 +667,10 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
             <tbody>
               {activeRows.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={15}
-                    style={{padding: '2.5rem', textAlign: 'center', color: 'var(--ink-faint)'}}
-                    data-broiler-batches-empty={totalCount === 0 ? 'true' : 'filtered'}
-                  >
+                  <td colSpan={15} style={{padding: '2.5rem', textAlign: 'center', color: 'var(--ink-faint)'}}>
                     {totalCount === 0
                       ? 'No batches yet — click "+ Add Batch" to get started'
-                      : visibleCount === 0
-                        ? 'No broiler batches match the current filters'
-                        : filterCount > 0
-                          ? 'No active or planned batches match the current filters'
-                          : 'No active or planned batches — see processed below'}
+                      : 'No active or planned batches — see processed below'}
                   </td>
                 </tr>
               )}
@@ -1036,221 +876,533 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
             </tbody>
           </table>
         </div>
-
-        {/* ── Batch Comparison Table ── */}
-        {(() => {
-          const completedBatches = batches
-            .filter((b) => b.status === 'processed')
-            .sort((a, b) => {
-              const da = a.processingDate || '';
-              const db = b.processingDate || '';
-              return da < db ? 1 : da > db ? -1 : 0;
-            });
-          const displayed = showAllComparison ? completedBatches : completedBatches.slice(0, 10);
-          if (completedBatches.length === 0) return null;
-          return (
-            <div style={{marginTop: 24}}>
-              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8}}>
-                <div style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)', letterSpacing: 0.3}}>
-                  BATCH COMPARISON
+        <div
+          style={{
+            marginTop: 26,
+            paddingTop: 16,
+            borderTop: '2px solid var(--border)',
+            fontSize: 13,
+            fontWeight: 700,
+            color: 'var(--ink)',
+            letterSpacing: 0.3,
+            marginBottom: 10,
+          }}
+        >
+          PROCESSED BATCHES
+        </div>
+        {/* Compact icon-panel toolbar — Cattle Herds parity (controls the processed table below) */}
+        <div
+          data-broiler-batches-toolbar
+          style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8}}
+        >
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setFilter('textSearch', e.target.value)}
+            placeholder="Search batch name, breed, hatchery..."
+            data-broiler-search
+            aria-label="Search broiler batches"
+            style={{...inpS, flex: 1, minWidth: 180}}
+          />
+          <button
+            type="button"
+            data-broiler-batches-saved-views-toggle="1"
+            aria-label="Saved views"
+            title="Saved views"
+            aria-expanded={openToolPanel === 'savedViews'}
+            onClick={() => toggleToolPanel('savedViews')}
+            style={toolButtonS(openToolPanel === 'savedViews')}
+          >
+            ☆
+          </button>
+          <button
+            type="button"
+            data-broiler-batches-filters-toggle="1"
+            aria-label="Filters"
+            title="Filters"
+            aria-expanded={openToolPanel === 'filters'}
+            onClick={() => toggleToolPanel('filters')}
+            style={toolButtonS(openToolPanel === 'filters')}
+          >
+            {filterCount > 0 ? '≡ ' + filterCount : '≡'}
+          </button>
+          <button
+            type="button"
+            data-broiler-batches-sort-toggle="1"
+            aria-label="Sort"
+            title="Sort"
+            aria-expanded={openToolPanel === 'sort'}
+            onClick={() => toggleToolPanel('sort')}
+            style={toolButtonS(openToolPanel === 'sort')}
+          >
+            ↕
+          </button>
+          <span style={{position: 'relative', flex: '0 0 auto'}}>
+            <button
+              type="button"
+              data-broiler-batches-columns-toggle="1"
+              aria-label="Columns"
+              title="Columns shown in the processed table"
+              aria-expanded={openToolPanel === 'columns'}
+              onClick={() => toggleToolPanel('columns')}
+              style={toolButtonS(openToolPanel === 'columns')}
+            >
+              ▦
+            </button>
+            {openToolPanel === 'columns' && (
+              <div
+                data-broiler-batches-columns
+                style={{
+                  position: 'absolute',
+                  top: 40,
+                  right: 0,
+                  zIndex: 40,
+                  width: 440,
+                  maxWidth: '92vw',
+                  maxHeight: 520,
+                  overflowY: 'auto',
+                  background: 'white',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: 12,
+                  boxShadow: '0 8px 24px rgba(20,30,40,.16)',
+                  padding: '8px 8px 10px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--ink-muted)',
+                    fontWeight: 700,
+                    padding: '4px 6px 8px',
+                    borderBottom: '1px solid var(--border)',
+                    marginBottom: 6,
+                  }}
+                >
+                  Columns shown in the processed table ({visibleColumns.length}/{BROILER_PROCESSED_COLUMNS.length})
                 </div>
-                {completedBatches.length > 10 && (
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px'}}>
+                  {BROILER_PROCESSED_COLUMNS.map((c) => (
+                    <label
+                      key={c.key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 9,
+                        padding: '6px 8px',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        color: 'var(--ink)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.includes(c.key)}
+                        onChange={() => toggleColumn(c.key)}
+                        data-broiler-column-toggle={c.key}
+                        style={{flex: '0 0 auto', margin: 0, width: 15, height: 15}}
+                      />
+                      <span>{c.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    borderTop: '1px solid var(--border)',
+                    marginTop: 6,
+                    paddingTop: 8,
+                    display: 'flex',
+                    gap: 8,
+                    justifyContent: 'flex-end',
+                  }}
+                >
                   <button
-                    onClick={() => setShowAllComparison((v) => !v)}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                      background: 'none',
-                      border: '1px solid var(--border)',
-                      borderRadius: 10,
-                      padding: '3px 10px',
-                      cursor: 'pointer',
-                    }}
+                    type="button"
+                    onClick={() => setVisibleColumns(BROILER_PROCESSED_COLUMNS.map((c) => c.key))}
+                    data-broiler-columns-all
+                    style={savedViewGhostBtnS}
                   >
-                    {showAllComparison ? 'Show Last 10' : 'Show All ' + completedBatches.length}
+                    Show all
                   </button>
-                )}
-              </div>
-              <div style={{...S.card, overflowX: 'auto'}}>
-                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 1100}}>
-                  <thead>
-                    <tr style={{background: 'var(--surface-2)', borderBottom: '1px solid var(--border)'}}>
-                      {[
-                        'Batch',
-                        'Breed',
-                        'Hatchery',
-                        'Time on Farm',
-                        'Schooner',
-                        'Birds Arrived',
-                        '4 Wk Lbs',
-                        '6 Wk Lbs',
-                        'Feed / Bird',
-                        'Starter Feed',
-                        'Grower Feed',
-                        'Total Feed',
-                        '# Processed',
-                        'Avg Breast',
-                        'Avg Thigh',
-                        'Avg Dressed',
-                        '',
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '7px 10px',
-                            textAlign: 'left',
-                            fontWeight: 600,
-                            color: 'var(--ink)',
-                            whiteSpace: 'nowrap',
-                            fontSize: 11,
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayed.map((b, i) => {
-                      const n = (v) => parseFloat(v) || 0;
-                      // Daily-reports-aware feed totals: B-24 uses legacy manual fields,
-                      // B-25+ pulls from broilerDailys (matches dashboard's batchFeed helper)
-                      const isB24 = /^b-24-/i.test(b.name);
-                      let starter, grower;
-                      if (isB24) {
-                        starter = n(b.brooderFeedLbs);
-                        grower = n(b.schoonerFeedLbs);
-                      } else {
-                        const bd = broilerDailys.filter(
-                          (d) =>
-                            (d.batch_label || '')
-                              .toLowerCase()
-                              .trim()
-                              .replace(/^\(processed\)\s*/, '')
-                              .trim() === b.name.toLowerCase().trim(),
-                        );
-                        starter = Math.round(
-                          bd
-                            .filter((d) => d.feed_type === 'STARTER')
-                            .reduce((s, d) => s + (parseFloat(d.feed_lbs) || 0), 0),
-                        );
-                        grower = Math.round(
-                          bd
-                            .filter((d) => d.feed_type === 'GROWER')
-                            .reduce((s, d) => s + (parseFloat(d.feed_lbs) || 0), 0),
-                        );
-                        // Fall back to manual fields if no daily reports found
-                        if (starter === 0 && grower === 0) {
-                          starter = n(b.brooderFeedLbs);
-                          grower = n(b.schoonerFeedLbs);
-                        }
-                      }
-                      const totalFeed = starter + grower;
-                      const processed = n(b.totalToProcessor);
-                      const feedPerBird = processed > 0 && totalFeed > 0 ? (totalFeed / processed).toFixed(1) : null;
-                      const sch = (b.schooner || '').toString().trim();
-                      const timeOnFarm = (() => {
-                        if (!b.hatchDate || !b.processingDate) return null;
-                        const days = Math.round(
-                          (new Date(b.processingDate + 'T12:00:00') - new Date(b.hatchDate + 'T12:00:00')) / 86400000,
-                        );
-                        return `${Math.floor(days / 7)}w ${days % 7}d`;
-                      })();
-                      // WI-2a: all comparison cells are raw metrics → black ink.
-                      const cell = (v, opts = {}) => {
-                        const {bold} = opts;
-                        return (
-                          <td
-                            key={Math.random()}
-                            style={{
-                              padding: '7px 10px',
-                              whiteSpace: 'nowrap',
-                              color: v ? 'var(--ink)' : 'var(--ink-faint)',
-                              fontWeight: bold || v ? 600 : 400,
-                            }}
-                          >
-                            {v || '—'}
-                          </td>
-                        );
-                      };
-                      return (
-                        <tr
-                          key={b.id}
-                          {...openableProps(() => openBatch(b, displayed))}
-                          style={{
-                            borderBottom: '1px solid var(--border)',
-                            background: i % 2 === 0 ? 'white' : '#fafafa',
-                            cursor: 'pointer',
-                          }}
-                          className="hoverable-row"
-                        >
-                          <td style={{padding: '7px 10px', fontWeight: 700, whiteSpace: 'nowrap', color: 'var(--ink)'}}>
-                            {b.name}
-                          </td>
-                          {/* Breed is a category, not a status badge → plain text (WI-2b/WI-4). */}
-                          <td style={{padding: '7px 10px'}}>
-                            {b.breed ? (
-                              <span style={{color: 'var(--text-primary)', fontWeight: 600}}>{b.breed}</span>
-                            ) : (
-                              <span style={{color: 'var(--ink-faint)'}}>—</span>
-                            )}
-                          </td>
-                          {cell(b.hatchery || null)}
-                          {cell(timeOnFarm)}
-                          {/* Schooner is a category, not a status \u2192 plain text (WI-4). */}
-                          <td style={{padding: '7px 10px'}}>
-                            {sch ? (
-                              <span style={{fontSize: 11, fontWeight: 600, color: 'var(--text-primary)'}}>{sch}</span>
-                            ) : (
-                              <span style={{color: 'var(--ink-faint)'}}>{'\u2014'}</span>
-                            )}
-                          </td>
-                          {cell(b.birdCountActual ? parseInt(b.birdCountActual).toLocaleString() : null)}
-                          {cell(n(b.week4Lbs) > 0 ? `${n(b.week4Lbs)} lbs` : null)}
-                          {cell(n(b.week6Lbs) > 0 ? `${n(b.week6Lbs)} lbs` : null)}
-                          {cell(feedPerBird ? `${feedPerBird} lbs` : null)}
-                          {cell(starter > 0 ? `${Math.round(starter).toLocaleString()} lbs` : null)}
-                          {cell(grower > 0 ? `${Math.round(grower).toLocaleString()} lbs` : null)}
-                          {cell(totalFeed > 0 ? `${Math.round(totalFeed).toLocaleString()} lbs` : null, {bold: true})}
-                          {cell(processed > 0 ? processed.toLocaleString() : null)}
-                          {cell(n(b.avgBreastLbs) > 0 ? `${n(b.avgBreastLbs)} lbs` : null)}
-                          {cell(n(b.avgThighsLbs) > 0 ? `${n(b.avgThighsLbs)} lbs` : null)}
-                          {cell(n(b.avgDressedLbs) > 0 ? `${n(b.avgDressedLbs)} lbs` : null)}
-                          {isAdmin && (
-                            <td style={{padding: '7px 10px', whiteSpace: 'nowrap'}}>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  del(b.id);
-                                }}
-                                style={{
-                                  fontSize: 11,
-                                  color: 'var(--danger)',
-                                  background: 'none',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontFamily: 'inherit',
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {!showAllComparison && completedBatches.length > 10 && (
-                <div style={{textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', marginTop: 6}}>
-                  {completedBatches.length - 10} more batches hidden — click "Show All" to expand
+                  <button
+                    type="button"
+                    onClick={() => setVisibleColumns(BROILER_DEFAULT_COLUMN_KEYS)}
+                    data-broiler-columns-reset
+                    style={savedViewGhostBtnS}
+                  >
+                    Reset
+                  </button>
                 </div>
+              </div>
+            )}
+          </span>
+          <button
+            type="button"
+            data-broiler-batches-export-csv="1"
+            aria-label="Export CSV"
+            title="Export CSV"
+            onClick={handleExportCsv}
+            style={toolButtonS(false)}
+          >
+            CSV
+          </button>
+          <button
+            type="button"
+            data-broiler-batches-print="1"
+            aria-label="Print"
+            title="Print"
+            onClick={handlePrintRows}
+            style={toolButtonS(false)}
+          >
+            ⎙
+          </button>
+          <button
+            type="button"
+            onClick={openAdd}
+            style={{
+              padding: '0 14px',
+              height: 34,
+              borderRadius: 10,
+              border: 'none',
+              background: BROILER_ACCENT,
+              color: getReadableText(BROILER_ACCENT),
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: 0.1,
+              display: isMgmt ? 'inline-flex' : 'none',
+              alignItems: 'center',
+              flex: '0 0 auto',
+            }}
+          >
+            + Add Batch
+          </button>
+        </div>
+
+        <InlineNotice notice={listNotice} onDismiss={() => setListNotice(null)} />
+
+        {/* Saved views panel */}
+        {openToolPanel === 'savedViews' && (
+          <div data-broiler-saved-views-row style={toolPanelS}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+              <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Saved views</span>
+              {savedViewsError ? (
+                <span style={{fontSize: 12, color: '#b91c1c'}} data-broiler-saved-views-error>
+                  Saved views unavailable. Filters still work.
+                </span>
+              ) : (
+                <>
+                  <select
+                    data-broiler-saved-view-select
+                    value={selectedViewId}
+                    disabled={savedViewsLoading}
+                    onChange={(e) => onSelectSavedView(e.target.value)}
+                    style={{...inpS, width: 'auto', minWidth: 200, fontSize: 12, padding: '6px 10px'}}
+                  >
+                    <option value="">{savedViewsLoading ? 'Loading...' : 'Select a saved view'}</option>
+                    {myViews.length > 0 && (
+                      <optgroup label="My views">
+                        {myViews.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name + (v.visibility === 'public' ? ' - public' : ' - private')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {publicOtherViews.length > 0 && (
+                      <optgroup label="Public views">
+                        {publicOtherViews.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  {selectedViewIsMine && (
+                    <>
+                      <button
+                        type="button"
+                        data-broiler-saved-view-update
+                        onClick={updateSelectedView}
+                        disabled={savedViewBusy}
+                        style={savedViewGhostBtnS}
+                      >
+                        Update to current
+                      </button>
+                      <button
+                        type="button"
+                        data-broiler-saved-view-delete
+                        onClick={deleteSelectedView}
+                        disabled={savedViewBusy}
+                        style={{...savedViewGhostBtnS, color: '#b91c1c', borderColor: '#fecaca'}}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                  <span style={{flex: 1}} />
+                  <button
+                    type="button"
+                    data-broiler-saved-view-save-open
+                    onClick={openSaveViewForm}
+                    disabled={savedViewBusy}
+                    style={savedViewPrimaryBtnS}
+                  >
+                    Save current view
+                  </button>
+                </>
               )}
             </div>
-          );
-        })()}
+            {showSaveViewForm && (
+              <div
+                data-broiler-saved-view-form
+                style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}
+              >
+                <input
+                  data-broiler-saved-view-name
+                  type="text"
+                  value={saveViewName}
+                  placeholder="View name"
+                  onChange={(e) => setSaveViewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitSaveView();
+                  }}
+                  style={{...inpS, flex: 1, minWidth: 200}}
+                />
+                <label style={savedViewRadioLabelS}>
+                  <input
+                    type="radio"
+                    name="saveBroilerViewVisibility"
+                    checked={saveViewVisibility === 'private'}
+                    onChange={() => setSaveViewVisibility('private')}
+                    data-broiler-saved-view-visibility="private"
+                  />
+                  Private
+                </label>
+                <label style={savedViewRadioLabelS}>
+                  <input
+                    type="radio"
+                    name="saveBroilerViewVisibility"
+                    checked={saveViewVisibility === 'public'}
+                    onChange={() => setSaveViewVisibility('public')}
+                    data-broiler-saved-view-visibility="public"
+                  />
+                  Public
+                </label>
+                <button
+                  type="button"
+                  data-broiler-saved-view-save
+                  onClick={submitSaveView}
+                  disabled={savedViewBusy}
+                  style={savedViewPrimaryBtnS}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveViewForm(false)}
+                  disabled={savedViewBusy}
+                  style={savedViewGhostBtnS}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Filters panel */}
+        {openToolPanel === 'filters' && (
+          <div data-broiler-batches-filters style={toolPanelS}>
+            <div style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>
+              Filters apply to the processed batches below
+            </div>
+            <div style={{display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end'}}>
+              <label style={filterLabelS}>
+                Breed
+                <select
+                  value={selectFilterValue('breed')}
+                  onChange={(e) => setSelectFilter('breed', e.target.value)}
+                  data-broiler-breed-filter
+                  style={{...inpS, width: 'auto'}}
+                >
+                  <option value="">All</option>
+                  {breedFilterOptions.map((o) => (
+                    <option key={o.code} value={o.code}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={filterLabelS}>
+                Hatchery
+                <select
+                  value={selectFilterValue('hatchery')}
+                  onChange={(e) => setSelectFilter('hatchery', e.target.value)}
+                  data-broiler-hatchery-filter
+                  style={{...inpS, width: 'auto'}}
+                >
+                  <option value="">All</option>
+                  {hatcheryOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={filterLabelS}>
+                Brooder
+                <select
+                  value={selectFilterValue('brooder')}
+                  onChange={(e) => setSelectFilter('brooder', e.target.value)}
+                  data-broiler-brooder-filter
+                  style={{...inpS, width: 'auto'}}
+                >
+                  <option value="">All</option>
+                  {brooderOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={filterLabelS}>
+                Schooner
+                <select
+                  value={selectFilterValue('schooner')}
+                  onChange={(e) => setSelectFilter('schooner', e.target.value)}
+                  data-broiler-schooner-filter
+                  style={{...inpS, width: 'auto'}}
+                >
+                  <option value="">All</option>
+                  {schoonerOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div style={{display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end'}}>
+              <label style={filterLabelS}>
+                Hatch date
+                <span style={{display: 'inline-flex', gap: 4, alignItems: 'center'}}>
+                  <input
+                    type="date"
+                    value={dateBound('startDateRange', 'after')}
+                    onChange={(e) => setDateBound('startDateRange', 'after', e.target.value)}
+                    data-broiler-start-after
+                    style={{...inpS, width: 'auto'}}
+                  />
+                  <span>–</span>
+                  <input
+                    type="date"
+                    value={dateBound('startDateRange', 'before')}
+                    onChange={(e) => setDateBound('startDateRange', 'before', e.target.value)}
+                    data-broiler-start-before
+                    style={{...inpS, width: 'auto'}}
+                  />
+                </span>
+              </label>
+              <label style={filterLabelS}>
+                Processing date
+                <span style={{display: 'inline-flex', gap: 4, alignItems: 'center'}}>
+                  <input
+                    type="date"
+                    value={dateBound('processingDateRange', 'after')}
+                    onChange={(e) => setDateBound('processingDateRange', 'after', e.target.value)}
+                    data-broiler-processing-after
+                    style={{...inpS, width: 'auto'}}
+                  />
+                  <span>–</span>
+                  <input
+                    type="date"
+                    value={dateBound('processingDateRange', 'before')}
+                    onChange={(e) => setDateBound('processingDateRange', 'before', e.target.value)}
+                    data-broiler-processing-before
+                    style={{...inpS, width: 'auto'}}
+                  />
+                </span>
+              </label>
+            </div>
+            <div style={{display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end'}}>
+              {[
+                {key: 'birdCountRange', label: 'Birds', hook: 'birdcount'},
+                {key: 'birdsArrivedRange', label: 'Birds arrived', hook: 'birdsarrived'},
+                {key: 'toProcessorRange', label: 'To processor', hook: 'toprocessor'},
+                {key: 'mortalityRange', label: 'Mortality', hook: 'mortality'},
+                {key: 'lbsProducedRange', label: 'Feed lbs', hook: 'lbsproduced'},
+              ].map((r) => (
+                <label key={r.key} style={filterLabelS}>
+                  {r.label}
+                  <span style={{display: 'inline-flex', gap: 4, alignItems: 'center'}}>
+                    <input
+                      type="number"
+                      value={numBound(r.key, 'min')}
+                      onChange={(e) => setNumBound(r.key, 'min', e.target.value)}
+                      placeholder="min"
+                      data-broiler-range-min={r.hook}
+                      style={numInpS}
+                    />
+                    <span>–</span>
+                    <input
+                      type="number"
+                      value={numBound(r.key, 'max')}
+                      onChange={(e) => setNumBound(r.key, 'max', e.target.value)}
+                      placeholder="max"
+                      data-broiler-range-max={r.hook}
+                      style={numInpS}
+                    />
+                  </span>
+                </label>
+              ))}
+            </div>
+            {filterCount > 0 && (
+              <div>
+                <button type="button" onClick={clearAllFilters} data-broiler-clear-filters style={savedViewGhostBtnS}>
+                  Clear all filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sort panel */}
+        {openToolPanel === 'sort' && (
+          <div data-broiler-batches-sort-panel style={toolPanelS}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+              <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>Sort by</span>
+              <select
+                value={sortValue}
+                onChange={(e) => setSortValue(e.target.value)}
+                data-broiler-sort
+                style={{...inpS, width: 'auto'}}
+              >
+                {BROILER_SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={flipSortDir}
+                data-broiler-sort-dir
+                title="Flip sort direction"
+                style={savedViewGhostBtnS}
+              >
+                {sortRule.dir === 'desc' ? '↓ Desc' : '↑ Asc'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div style={{fontSize: 12, color: 'var(--ink-muted)', marginBottom: 10}} data-broiler-count>
+          {activeRows.length} active/planned · showing {visibleCount} of {processedTotal} processed
+          {filterCount > 0 && ' - ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}
+        </div>
 
         {/* ── Processed batches ──
             CP0 WI-3 / F014: the former card-per-row PROCESSED block (bordered
@@ -1262,7 +1414,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
             so the record-page route + prev/next sequence is unchanged. Per-card
             feed/grit/cost breakdown, weigh-in weights, and birds-arrived remain
             on the batch RECORD page (the drill-in) — no data is lost. */}
-        {processedCardRows.length > 0 &&
+        {processedTotal > 0 &&
           (() => {
             // Per-batch derived stats (same source logic as the prior cards):
             // B-24-* uses manually entered feed totals; B-25+ pulls daily reports.
@@ -1292,8 +1444,13 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
               const feedCost = starterLbs * (b.perLbStarterCost || 0) + growerLbs * (b.perLbStandardCost || 0);
               const gritCost = gritLbs * (b.perLbGritCost || 0);
               const chickCost = parseFloat(b.chickCost) || 0;
-              const totalCost = feedCost + gritCost + (b.processingCost || 0) + chickCost;
-              const perBird = b.totalToProcessor > 0 ? totalCost / b.totalToProcessor : 0;
+              const processingCost = parseFloat(b.processingCost) || 0;
+              const totalCost = feedCost + gritCost + processingCost + chickCost;
+              const toProc = parseFloat(b.totalToProcessor) || 0;
+              const perBird = toProc > 0 ? totalCost / toProc : 0;
+              const feedPerBird = toProc > 0 ? totalFeed / toProc : 0;
+              const processingPerBird = toProc > 0 ? processingCost / toProc : 0;
+              const totalMeat = (parseFloat(b.avgDressedLbs) || 0) * toProc;
               const mortalityPct = b.birdCount > 0 ? ((mortality / b.birdCount) * 100).toFixed(1) : '0';
               const tofDays =
                 b.hatchDate && b.processingDate
@@ -1302,7 +1459,41 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                     )
                   : null;
               const timeOnFarm = tofDays != null ? `${Math.floor(tofDays / 7)}w ${tofDays % 7}d` : null;
-              return {totalFeed, mortality, mortalityPct, totalCost, perBird, timeOnFarm};
+              return {
+                starterLbs,
+                growerLbs,
+                totalFeed,
+                mortality,
+                mortalityPct,
+                totalCost,
+                perBird,
+                feedPerBird,
+                processingPerBird,
+                totalMeat,
+                timeOnFarm,
+              };
+            };
+
+            // Processed-table cell formatters.
+            const money0 = (n) => (n > 0 ? '$' + Math.round(n).toLocaleString() : '—');
+            const money2 = (n) => (n > 0 ? '$' + n.toFixed(2) : '—');
+            const lbs0 = (n) => (n > 0 ? Math.round(n).toLocaleString() + ' lbs' : '—');
+            const wt2 = (v) => (parseFloat(v) > 0 ? Number(v).toFixed(2) + ' lbs' : '—');
+            const period = (b, which) => {
+              const live = calcTimeline(b.hatchDate, b.breed, b.processingDate);
+              const inD =
+                which === 'brooder'
+                  ? b.brooderIn || (live ? live.brooderIn : null)
+                  : live
+                    ? live.schoonerIn
+                    : b.schoonerIn;
+              const outD =
+                which === 'brooder'
+                  ? b.brooderOut || (live ? live.brooderOut : null)
+                  : live
+                    ? live.schoonerOut
+                    : b.schoonerOut;
+              return fmtS(inD) + ' → ' + fmtS(outD);
             };
 
             const processedColumns = [
@@ -1329,7 +1520,6 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                   );
                 },
               },
-              // Breed + schooner are categories, not status -> plain text (WI-2b/WI-4).
               {
                 key: 'breed',
                 label: 'Breed',
@@ -1342,6 +1532,36 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                 render: (b) => <StatusText tone="muted">{b.hatchery || '—'}</StatusText>,
               },
               {
+                key: 'brooder',
+                label: 'Brooder',
+                mobilePriority: false,
+                render: (b) => <StatusText tone="muted">{b.brooder || '—'}</StatusText>,
+              },
+              {
+                key: 'schooner',
+                label: 'Schooner',
+                mobilePriority: false,
+                render: (b) => <StatusText tone="muted">{b.schooner || '—'}</StatusText>,
+              },
+              {
+                key: 'hatchDate',
+                label: 'Hatch Date',
+                mobilePriority: false,
+                render: (b) => <StatusText tone="muted">{b.hatchDate ? fmt(b.hatchDate) : '—'}</StatusText>,
+              },
+              {
+                key: 'brooderPeriod',
+                label: 'Brooder Period',
+                mobilePriority: false,
+                render: (b) => <StatusText tone="muted">{period(b, 'brooder')}</StatusText>,
+              },
+              {
+                key: 'schoonerPeriod',
+                label: 'Schooner Period',
+                mobilePriority: false,
+                render: (b) => <StatusText tone="muted">{period(b, 'schooner')}</StatusText>,
+              },
+              {
                 key: 'processingDate',
                 label: 'Process Date',
                 render: (b) => <StatusText tone="muted">{b.processingDate ? fmt(b.processingDate) : '—'}</StatusText>,
@@ -1350,16 +1570,20 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                 key: 'timeOnFarm',
                 label: 'Time on Farm',
                 mobilePriority: false,
-                render: (b) => {
-                  const {timeOnFarm} = statsFor(b);
-                  return <StatusText tone="muted">{timeOnFarm || '—'}</StatusText>;
-                },
+                render: (b) => <StatusText tone="muted">{statsFor(b).timeOnFarm || '—'}</StatusText>,
               },
               {
                 key: 'birdCount',
-                label: 'Birds',
+                label: 'Birds Ordered',
                 align: 'right',
                 render: (b) => (b.birdCount || 0).toLocaleString(),
+              },
+              {
+                key: 'birdsArrived',
+                label: 'Birds Arrived',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => (parseInt(b.birdCountActual) > 0 ? parseInt(b.birdCountActual).toLocaleString() : '—'),
               },
               {
                 key: 'toProcessor',
@@ -1372,30 +1596,127 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                 label: 'Mortality',
                 align: 'right',
                 render: (b) => {
-                  const {mortality, mortalityPct} = statsFor(b);
-                  const label = `${mortality} (${mortalityPct}%)`;
-                  // Mortality over threshold keeps a danger signal (WI-2a); else black.
-                  return mortality > 20 ? <StatusText tone="danger">{label}</StatusText> : label;
+                  const {mortality} = statsFor(b);
+                  return mortality > 20 ? (
+                    <StatusText tone="danger">{mortality.toLocaleString()}</StatusText>
+                  ) : (
+                    mortality.toLocaleString()
+                  );
                 },
+              },
+              {
+                key: 'mortalityPct',
+                label: 'Mortality %',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => statsFor(b).mortalityPct + '%',
+              },
+              {
+                key: 'chickCost',
+                label: 'Chick Cost',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => money2(parseFloat(b.chickCost) || 0),
+              },
+              {
+                key: 'starterFeed',
+                label: 'Starter Feed',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => lbs0(statsFor(b).starterLbs),
+              },
+              {
+                key: 'growerFeed',
+                label: 'Grower Feed',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => lbs0(statsFor(b).growerLbs),
               },
               {
                 key: 'totalFeed',
                 label: 'Total Feed',
                 align: 'right',
-                render: (b) => {
-                  const {totalFeed} = statsFor(b);
-                  return totalFeed > 0 ? `${Math.round(totalFeed).toLocaleString()} lbs` : '—';
-                },
+                render: (b) => lbs0(statsFor(b).totalFeed),
               },
               {
-                key: 'perBird',
-                label: 'Per Bird Cost',
+                key: 'feedPerBird',
+                label: 'Feed / Bird',
                 align: 'right',
                 mobilePriority: false,
                 render: (b) => {
-                  const {perBird} = statsFor(b);
-                  return perBird > 0 ? `$${perBird.toFixed(2)}` : '—';
+                  const v = statsFor(b).feedPerBird;
+                  return v > 0 ? v.toFixed(2) + ' lbs' : '—';
                 },
+              },
+              {
+                key: 'week4Lbs',
+                label: '4-wk Wt',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => wt2(b.week4Lbs),
+              },
+              {
+                key: 'week6Lbs',
+                label: '6-wk Wt',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => wt2(b.week6Lbs),
+              },
+              {
+                key: 'avgBreast',
+                label: 'Avg Breast',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => wt2(b.avgBreastLbs),
+              },
+              {
+                key: 'avgThigh',
+                label: 'Avg Thigh',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => wt2(b.avgThighsLbs),
+              },
+              {
+                key: 'avgDressed',
+                label: 'Avg Whole',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => wt2(b.avgDressedLbs),
+              },
+              {
+                key: 'totalMeat',
+                label: 'Total Meat',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => lbs0(statsFor(b).totalMeat),
+              },
+              {
+                key: 'processingCost',
+                label: 'Processing Cost',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => money0(parseFloat(b.processingCost) || 0),
+              },
+              {
+                key: 'processingPerBird',
+                label: 'Processing / Bird',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => money2(statsFor(b).processingPerBird),
+              },
+              {
+                key: 'totalCost',
+                label: 'Total Cost',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => money0(statsFor(b).totalCost),
+              },
+              {
+                key: 'perBird',
+                label: 'Cost / Bird',
+                align: 'right',
+                mobilePriority: false,
+                render: (b) => money2(statsFor(b).perBird),
               },
               {
                 key: 'status',
@@ -1465,28 +1786,31 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
             ];
 
             return (
-              <div style={{marginTop: 20}}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: 'var(--ink-faint)',
-                    marginBottom: 8,
-                    letterSpacing: 0.3,
-                  }}
-                >
-                  PROCESSED ({processedCardRows.length})
-                </div>
-                <div style={{...S.card, overflowX: 'auto'}}>
-                  <DataTable
-                    surfaceKey="broiler-processed"
-                    rows={processedCardRows}
-                    rowKey="id"
-                    density="compact"
-                    columns={processedColumns}
-                    onRowOpen={(b) => openBatch(b, processedCardRows)}
-                  />
-                </div>
+              <div>
+                {processedCardRows.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '2.5rem',
+                      textAlign: 'center',
+                      color: 'var(--ink-faint)',
+                      ...S.card,
+                    }}
+                    data-broiler-batches-empty={processedTotal === 0 ? 'true' : 'filtered'}
+                  >
+                    No broiler batches match the current filters
+                  </div>
+                ) : (
+                  <div style={{...S.card, overflowX: 'auto'}}>
+                    <DataTable
+                      surfaceKey="broiler-processed"
+                      rows={processedCardRows}
+                      rowKey="id"
+                      density="compact"
+                      columns={processedColumns.filter((c) => columnVisible(c.key))}
+                      onRowOpen={(b) => openBatch(b, processedCardRows)}
+                    />
+                  </div>
+                )}
               </div>
             );
           })()}

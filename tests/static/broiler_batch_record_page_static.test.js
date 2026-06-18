@@ -376,15 +376,17 @@ describe('BroilerHomeView — active dashboard tiles open the batch record page'
   });
 });
 
-describe('BroilerListView — Batch Comparison Hatchery column', () => {
-  it('Hatchery header appears immediately after Breed in the Batch Comparison table', () => {
-    // The header array literal lists Breed then Hatchery then Time on Farm.
-    expect(listSrc).toMatch(/'Batch',\s*'Breed',\s*'Hatchery',\s*'Time on Farm',/);
+describe('BroilerListView — Batch Comparison removed; Processed table remains', () => {
+  it('no longer renders the Batch Comparison block or its show-all toggle', () => {
+    expect(listSrc).not.toContain('Batch Comparison');
+    expect(listSrc).not.toContain('showAllComparison');
+    // The comparison toggle was the only consumer of UIContext here.
+    expect(listSrc).not.toContain('useUI');
   });
-  it('renders a matching Hatchery body cell from b.hatchery after the Breed cell', () => {
-    // The breed badge cell is immediately followed by the hatchery cell, then
-    // the time-on-farm cell — keeps header/body columns aligned.
-    expect(listSrc).toMatch(/\{cell\(b\.hatchery \|\| null\)\}\s*\{cell\(timeOnFarm\)\}/);
+  it('keeps the processed-history DataTable as the processed-batch surface', () => {
+    expect(listSrc).toContain('surfaceKey="broiler-processed"');
+    expect(listSrc).toMatch(/const processedCardRows = React\.useMemo\(/);
+    expect(listSrc).toContain('openBatch(b, processedCardRows)');
   });
 });
 
