@@ -8,7 +8,6 @@
 //                       hash-bookmark branch is defensive backup for the case
 //                       where the Phase 3.3 shim somehow didn't run.
 //   pendingEdit       : { id, viewName } | null — pops open an edit modal after nav
-//   showAllComparison : boolean — broiler comparison-table "show all" toggle
 //   showMenu          : boolean — mobile side-menu open
 // ============================================================================
 import React, {createContext, useContext, useState} from 'react';
@@ -35,7 +34,6 @@ function initialView() {
 export function UIProvider({children}) {
   const [view, setView] = useState(initialView);
   const [pendingEdit, setPendingEdit] = useState(null);
-  const [showAllComparison, setShowAllComparison] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
   const value = {
@@ -43,8 +41,6 @@ export function UIProvider({children}) {
     setView,
     pendingEdit,
     setPendingEdit,
-    showAllComparison,
-    setShowAllComparison,
     showMenu,
     setShowMenu,
   };

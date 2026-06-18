@@ -224,16 +224,11 @@ describe('Global openable affordance - keyboard ownership', () => {
 describe('Global openable affordance - home design slices', () => {
   it('HomeWeatherCard collapsed card is a button with the card weather-card lift treatment', () => {
     const src = read('src/weather/HomeWeatherCard.jsx');
-    const anchor = src.indexOf("'data-weather-card': 'collapsed'");
+    const anchor = src.indexOf('data-weather-card="collapsed"');
     expect(anchor).toBeGreaterThan(-1);
-    // The createElement type immediately before the collapsed-card props must
-    // be 'button' (native keyboard), not a mouse-only div.
-    const head = src.slice(0, anchor);
-    const lastCreate = [...head.matchAll(/createElement\(\s*'([a-z]+)'/g)].pop();
-    expect(lastCreate && lastCreate[1]).toBe('button');
-    const propsBlock = src.slice(anchor, src.indexOf('},', anchor));
-    expect(src).toContain("className: 'card weather-card lift'");
-    expect(propsBlock.length).toBeGreaterThan(0);
+    const head = src.slice(Math.max(0, anchor - 220), anchor);
+    expect(head).toContain('<button');
+    expect(src).toContain('className="card weather-card lift"');
   });
 
   it('homeRedesign.css keeps the paint-only .litem.is-link focus ring', () => {

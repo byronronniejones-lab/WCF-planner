@@ -1,42 +1,36 @@
 // Netlify Function: weather forecast proxy.
-// Current + hourly from Tomorrow.io (rain timing, radar).
-// 10-day daily from Open-Meteo (free, no key, reliable 10 rows).
-// API key stays server-side via process.env.TOMORROW_IO_API_KEY.
+// Open-Meteo GFS/HRRR supplies structured current/hourly/daily fields.
+// Open-Meteo Archive supplies monthly precipitation history.
 
 const DEFAULT_LAT = '30.833938';
 const DEFAULT_LON = '-86.430030';
 const DEFAULT_LABEL = 'WCF';
+const TIMEZONE = 'America/Chicago';
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export async function handler() {
-  const apiKey = process.env.TOMORROW_IO_API_KEY;
-  if (!apiKey) {
-    return {statusCode: 503, body: JSON.stringify({error: 'weather_unavailable', message: 'Weather not configured'})};
-  }
-
   const lat = process.env.WCF_WEATHER_LAT || DEFAULT_LAT;
   const lon = process.env.WCF_WEATHER_LON || DEFAULT_LON;
   const label = process.env.WCF_WEATHER_LABEL || DEFAULT_LABEL;
   const loc = {lat: parseFloat(lat), lon: parseFloat(lon), label};
 
   try {
-    const [tomorrowRes, openMeteoDaily] = await Promise.all([
-      fetchTomorrow(lat, lon, apiKey),
-      fetchOpenMeteoDaily(lat, lon),
+    const [openMeteo, monthlyPrecip] = await Promise.all([
+      fetchOpenMeteoForecast(lat, lon),
+      fetchMonthlyPrecipHistory(lat, lon),
     ]);
 
-    if (!tomorrowRes) {
+    if (!openMeteo) {
       return {statusCode: 502, body: JSON.stringify({error: 'upstream_error', message: 'Forecast provider error'})};
     }
-
-    const normalized = normalize(tomorrowRes, openMeteoDaily, loc);
 
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=1800, s-maxage=1800',
+        'Cache-Control': 'public, max-age=900, s-maxage=900',
       },
-      body: JSON.stringify(normalized),
+      body: JSON.stringify(normalize(openMeteo, monthlyPrecip, loc)),
     };
   } catch (e) {
     console.error('weather-forecast error:', e);
@@ -44,120 +38,256 @@ export async function handler() {
   }
 }
 
-async function fetchTomorrow(lat, lon, apiKey) {
-  const url =
-    `https://api.tomorrow.io/v4/weather/forecast?location=${encodeURIComponent(lat + ',' + lon)}` +
-    `&timesteps=1h,1d&units=imperial&apikey=${apiKey}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    console.error('Tomorrow.io error:', res.status, await res.text());
-    return null;
-  }
-  return res.json();
-}
-
-async function fetchOpenMeteoDaily(lat, lon) {
+async function fetchMonthlyPrecipHistory(lat, lon) {
   try {
+    const currentYear = new Date().getFullYear();
+    const startDate = `${currentYear - 3}-01-01`;
+    const endDate = isoDaysAgo(1);
     const url =
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max,sunrise,sunset` +
-      `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FChicago&forecast_days=10`;
+      `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+      `&start_date=${startDate}&end_date=${endDate}&daily=precipitation_sum` +
+      `&precipitation_unit=inch&timezone=${encodeURIComponent(TIMEZONE)}`;
     const res = await fetch(url);
-    if (!res.ok) return null;
-    const raw = await res.json();
-    const d = raw.daily;
-    if (!d || !d.time) return null;
-    return d.time.map((date, i) => ({
-      date,
-      tempMax: round1(d.temperature_2m_max?.[i]),
-      tempMin: round1(d.temperature_2m_min?.[i]),
-      precipProbMax: round1(d.precipitation_probability_max?.[i]),
-      weatherCodeMax: mapWmoToTomorrow(d.weather_code?.[i]),
-      windSpeedMax: round1(d.wind_speed_10m_max?.[i]),
-      sunriseTime: d.sunrise?.[i] || null,
-      sunsetTime: d.sunset?.[i] || null,
-    }));
+    if (!res.ok) {
+      console.error('Open-Meteo archive error:', res.status, await res.text());
+      return buildMonthlyPrecip(null, currentYear);
+    }
+    return buildMonthlyPrecip(await res.json(), currentYear);
   } catch (e) {
-    console.error('Open-Meteo error:', e);
+    console.error('Open-Meteo archive fetch error:', e);
+    return buildMonthlyPrecip(null, new Date().getFullYear());
+  }
+}
+
+async function fetchOpenMeteoForecast(lat, lon) {
+  try {
+    const hourly = [
+      'temperature_2m',
+      'relative_humidity_2m',
+      'apparent_temperature',
+      'precipitation_probability',
+      'precipitation',
+      'weather_code',
+      'wind_speed_10m',
+      'wind_gusts_10m',
+    ].join(',');
+    const daily = [
+      'temperature_2m_max',
+      'temperature_2m_min',
+      'precipitation_probability_max',
+      'precipitation_sum',
+      'weather_code',
+      'wind_speed_10m_max',
+      'wind_gusts_10m_max',
+    ].join(',');
+    const current = [
+      'temperature_2m',
+      'relative_humidity_2m',
+      'apparent_temperature',
+      'weather_code',
+      'wind_speed_10m',
+      'wind_gusts_10m',
+    ].join(',');
+    const url =
+      `https://api.open-meteo.com/v1/gfs?latitude=${lat}&longitude=${lon}` +
+      `&current=${current}&hourly=${hourly}&daily=${daily}` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch` +
+      `&timezone=${encodeURIComponent(TIMEZONE)}&forecast_days=10`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error('Open-Meteo GFS error:', res.status, await res.text());
+      return null;
+    }
+    return res.json();
+  } catch (e) {
+    console.error('Open-Meteo GFS fetch error:', e);
     return null;
   }
 }
 
-function normalize(raw, openMeteoDaily, loc) {
-  const hourly = (raw.timelines?.hourly || []).slice(0, 48).map((h) => ({
-    time: h.time,
-    temp: round1(h.values?.temperature),
-    humidity: round1(h.values?.humidity),
-    precipProb: round1(h.values?.precipitationProbability),
-    precipIntensity: round2(h.values?.precipitationIntensity),
-    windSpeed: round1(h.values?.windSpeed),
-    windGust: round1(h.values?.windGust),
-    weatherCode: h.values?.weatherCode,
+function normalize(raw, monthlyPrecip, loc) {
+  const h = raw.hourly || {};
+  const hourly = (h.time || []).slice(0, 48).map((time, i) => ({
+    time,
+    temp: round1(h.temperature_2m?.[i]),
+    humidity: round1(h.relative_humidity_2m?.[i]),
+    feelsLike: round1(h.apparent_temperature?.[i]),
+    precipProb: round1(h.precipitation_probability?.[i]),
+    precipAmount: round2(h.precipitation?.[i]),
+    windSpeed: round1(h.wind_speed_10m?.[i]),
+    windGust: round1(h.wind_gusts_10m?.[i]),
+    weatherCode: mapWmoToTomorrow(h.weather_code?.[i]),
   }));
 
-  const tomorrowDaily = (raw.timelines?.daily || []).map((d) => ({
-    date: d.time ? d.time.split('T')[0] : null,
-    tempMax: round1(d.values?.temperatureMax),
-    tempMin: round1(d.values?.temperatureMin),
-    precipProbMax: round1(d.values?.precipitationProbabilityMax),
-    weatherCodeMax: d.values?.weatherCodeMax,
-    windSpeedMax: round1(d.values?.windSpeedMax),
-    sunriseTime: d.values?.sunriseTime,
-    sunsetTime: d.values?.sunsetTime,
+  const d = raw.daily || {};
+  const daily = (d.time || []).map((date, i) => ({
+    date,
+    tempMax: round1(d.temperature_2m_max?.[i]),
+    tempMin: round1(d.temperature_2m_min?.[i]),
+    precipProbMax: round1(d.precipitation_probability_max?.[i]),
+    precipAmount: round2(d.precipitation_sum?.[i]),
+    weatherCodeMax: mapWmoToTomorrow(d.weather_code?.[i]),
+    windSpeedMax: round1(d.wind_speed_10m_max?.[i]),
+    windGustMax: round1(d.wind_gusts_10m_max?.[i]),
   }));
 
-  const daily = openMeteoDaily && openMeteoDaily.length >= 10 ? openMeteoDaily : tomorrowDaily;
-  const dailySource = openMeteoDaily && openMeteoDaily.length >= 10 ? 'open-meteo' : 'tomorrow';
-
-  const now = hourly[0] || null;
-  const today = daily[0] || null;
-
-  const todayDate = today?.date;
-  const todayHourly = hourly.filter((h) => h.time && todayDate && h.time.startsWith(todayDate));
-  const rainHours = todayHourly.filter((h) => h.precipProb > 30);
-  const hourlyMax = todayHourly.length > 0 ? Math.max(...todayHourly.map((h) => h.precipProb || 0)) : 0;
-
-  let rainSummary = 'No rain expected today';
-  if (rainHours.length > 0) {
-    const firstHour = new Date(rainHours[0].time).getHours();
-    const maxProb = Math.max(...rainHours.map((h) => h.precipProb));
-    const likelihood = maxProb > 70 ? 'likely' : 'possible';
-    if (firstHour < 6) rainSummary = `Rain ${likelihood} early morning`;
-    else if (firstHour < 12) rainSummary = `Rain ${likelihood} this morning`;
-    else if (firstHour < 17) rainSummary = `Rain ${likelihood} after ${formatHour(firstHour)}`;
-    else if (firstHour < 21) rainSummary = `Rain ${likelihood} this evening`;
-    else rainSummary = `Showers ${likelihood} overnight`;
-  } else if (today && today.precipProbMax > 20 && hourlyMax <= 30) {
-    rainSummary = 'Rain chance present, timing unclear';
-  } else if (today && today.precipProbMax > 20) {
-    rainSummary = 'Low hourly rain signal today';
-  }
-
-  let freezeWarning = null;
-  for (const d of daily.slice(0, 3)) {
-    if (d.tempMin != null && d.tempMin <= 33) {
-      const dayLabel = d.date === today?.date ? 'tonight' : formatDayLabel(d.date);
-      freezeWarning = `Low near ${Math.round(d.tempMin)}° ${dayLabel}`;
-      break;
-    }
-  }
+  const c = raw.current || {};
+  const firstHour = hourly[0] || null;
+  const nowMs = Date.parse(c.time ? `${c.time}:00` : firstHour?.time || Date.now());
+  const rainWindows = buildRainWindows(hourly, Number.isFinite(nowMs) ? nowMs : Date.now());
+  const freezeWarning = buildFreezeWarning(daily);
 
   return {
     location: loc,
-    current: now
-      ? {temp: now.temp, humidity: now.humidity, windSpeed: now.windSpeed, weatherCode: now.weatherCode}
+    current: {
+      temp: round1(c.temperature_2m) ?? firstHour?.temp ?? null,
+      feelsLike: round1(c.apparent_temperature) ?? firstHour?.feelsLike ?? null,
+      humidity: round1(c.relative_humidity_2m) ?? firstHour?.humidity ?? null,
+      windSpeed: round1(c.wind_speed_10m) ?? firstHour?.windSpeed ?? null,
+      windGust: round1(c.wind_gusts_10m) ?? firstHour?.windGust ?? null,
+      weatherCode: mapWmoToTomorrow(c.weather_code) || firstHour?.weatherCode || 0,
+      observedAt: c.time || firstHour?.time || null,
+    },
+    today: daily[0]
+      ? {
+          high: daily[0].tempMax,
+          low: daily[0].tempMin,
+          precipProb: daily[0].precipProbMax,
+          precipAmount: daily[0].precipAmount,
+          windSpeedMax: daily[0].windSpeedMax,
+          windGustMax: daily[0].windGustMax,
+        }
       : null,
-    today: today ? {high: today.tempMax, low: today.tempMin, precipProb: today.precipProbMax} : null,
-    rainSummary,
+    rainWindows,
+    dryWindow: buildDryWindow(hourly, Number.isFinite(nowMs) ? nowMs : Date.now()),
     freezeWarning,
+    monthlyPrecip,
     daily,
-    dailySource,
+    dailySource: 'open-meteo-gfs',
     hourly,
+    radarUrl: 'https://radar.weather.gov/',
+    sources: {
+      forecast: 'Open-Meteo GFS/HRRR',
+      radar: 'National Weather Service',
+    },
     fetchedAt: new Date().toISOString(),
   };
 }
 
-// WMO weather codes (Open-Meteo) → Tomorrow.io codes for icon/label reuse.
+export function buildMonthlyPrecip(raw, currentYear = new Date().getFullYear()) {
+  const years = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3];
+  const byYear = new Map(
+    years.map((year) => [
+      year,
+      {
+        year,
+        values: Array(12).fill(null),
+        total: null,
+      },
+    ]),
+  );
+  const times = raw?.daily?.time || [];
+  const precip = raw?.daily?.precipitation_sum || [];
+  for (let i = 0; i < times.length; i++) {
+    const date = String(times[i] || '');
+    const year = Number(date.slice(0, 4));
+    const month = Number(date.slice(5, 7)) - 1;
+    const row = byYear.get(year);
+    const amount = Number(precip[i]);
+    if (!row || month < 0 || month > 11 || !Number.isFinite(amount)) continue;
+    row.values[month] = (row.values[month] || 0) + amount;
+  }
+
+  const rows = years.map((year) => {
+    const row = byYear.get(year);
+    const values = row.values.map((value) => (value == null ? null : round2(value)));
+    const totalRaw = values.reduce((sum, value) => (value == null ? sum : sum + value), 0);
+    const hasData = values.some((value) => value != null);
+    return {
+      year,
+      values,
+      total: hasData ? round2(totalRaw) : null,
+    };
+  });
+  return {
+    unit: 'in',
+    months: MONTH_LABELS,
+    years: rows,
+  };
+}
+
+export function buildRainWindows(hourly = [], nowMs = Date.now()) {
+  return {
+    next6h: summarizeRainWindow(hourly, nowMs, 6),
+    next24h: summarizeRainWindow(hourly, nowMs, 24),
+    next48h: summarizeRainWindow(hourly, nowMs, 48),
+  };
+}
+
+function summarizeRainWindow(hourly, nowMs, hours) {
+  const endMs = nowMs + hours * 3600 * 1000;
+  const rows = hourly.filter((row) => {
+    const t = Date.parse(row.time);
+    return Number.isFinite(t) && t >= nowMs && t <= endMs;
+  });
+  const maxProb = rows.reduce((max, row) => Math.max(max, row.precipProb || 0), 0);
+  const precipAmount = rows.reduce((sum, row) => sum + (row.precipAmount || 0), 0);
+  const wetRows = rows.filter((row) => (row.precipProb || 0) >= 35 || (row.precipAmount || 0) >= 0.01);
+  const firstWet = wetRows[0] || null;
+  const lastWet = wetRows[wetRows.length - 1] || null;
+  return {
+    hours,
+    maxProb: round1(maxProb),
+    precipAmount: round2(precipAmount),
+    startTime: firstWet?.time || null,
+    endTime: lastWet?.time || null,
+    confidence: confidenceFor(maxProb, precipAmount, wetRows.length),
+  };
+}
+
+export function buildDryWindow(hourly = [], nowMs = Date.now()) {
+  const rows = hourly.filter((row) => {
+    const t = Date.parse(row.time);
+    return Number.isFinite(t) && t >= nowMs && t <= nowMs + 24 * 3600 * 1000;
+  });
+  let best = [];
+  let run = [];
+  for (const row of rows) {
+    const dry = (row.precipProb || 0) < 25 && (row.precipAmount || 0) < 0.01 && (row.windGust || 0) < 25;
+    if (dry) {
+      run.push(row);
+      if (run.length > best.length) best = [...run];
+    } else {
+      run = [];
+    }
+  }
+  return {
+    startTime: best[0]?.time || null,
+    endTime: best[best.length - 1]?.time || null,
+    hours: best.length,
+  };
+}
+
+function confidenceFor(maxProb, precipAmount, wetHourCount) {
+  if (maxProb >= 70 || precipAmount >= 0.25) return 'high';
+  if (maxProb >= 45 || precipAmount >= 0.05 || wetHourCount >= 3) return 'medium';
+  if (maxProb >= 25 || precipAmount > 0) return 'low';
+  return 'none';
+}
+
+function buildFreezeWarning(daily) {
+  for (const d of daily.slice(0, 3)) {
+    if (d.tempMin != null && d.tempMin <= 33) {
+      return {
+        date: d.date,
+        temp: Math.round(d.tempMin),
+      };
+    }
+  }
+  return null;
+}
+
+// WMO weather codes (Open-Meteo) -> existing icon/label codes.
 function mapWmoToTomorrow(wmo) {
   if (wmo == null) return 0;
   if (wmo === 0) return 1000;
@@ -179,19 +309,14 @@ function mapWmoToTomorrow(wmo) {
 }
 
 function round1(v) {
-  return v != null ? Math.round(v * 10) / 10 : null;
+  return v != null && Number.isFinite(Number(v)) ? Math.round(Number(v) * 10) / 10 : null;
 }
+
 function round2(v) {
-  return v != null ? Math.round(v * 100) / 100 : null;
+  return v != null && Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null;
 }
-function formatHour(h) {
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12} ${suffix}`;
-}
-function formatDayLabel(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr + 'T12:00:00');
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  return days[d.getDay()] || '';
+
+function isoDaysAgo(days) {
+  const d = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
 }

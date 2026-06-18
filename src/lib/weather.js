@@ -1,10 +1,8 @@
 // Weather data fetcher for the Home Weather card.
-// Forecast: Netlify Functions proxy (Tomorrow.io current/hourly + Open-Meteo daily).
-// Radar: RainViewer (free, no key, animated frames).
+// Forecast proxy returns structured Open-Meteo GFS/HRRR fields plus precipitation history.
 
 const FORECAST_URL = '/.netlify/functions/weather-forecast';
-const RADAR_FRAMES_URL = '/.netlify/functions/weather-radar-frames';
-const CACHE_MS = 30 * 60 * 1000;
+const CACHE_MS = 15 * 60 * 1000;
 
 let cached = null;
 let cachedAt = 0;
@@ -21,16 +19,8 @@ export async function loadForecast({force = false} = {}) {
   return data;
 }
 
-export async function loadRadarFrames() {
-  const res = await fetch(RADAR_FRAMES_URL);
-  if (!res.ok) return null;
-  const data = await res.json();
-  if (!data.host || !data.radar) return null;
-  return data;
-}
-
-export function rainviewerTileUrl(host, framePath, z, x, y) {
-  return `${host}${framePath}/256/${z}/${x}/${y}/2/1_1.png`;
+export function officialRadarUrl(forecast) {
+  return forecast?.radarUrl || 'https://radar.weather.gov/';
 }
 
 const WEATHER_CODES = {
@@ -92,12 +82,4 @@ const WEATHER_ICONS = {
 
 export function weatherIcon(code) {
   return WEATHER_ICONS[code] || '☁️';
-}
-
-export function latLonToTile(lat, lon, zoom) {
-  const n = Math.pow(2, zoom);
-  const x = Math.floor(((lon + 180) / 360) * n);
-  const latRad = (lat * Math.PI) / 180;
-  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
-  return {x, y, z: zoom};
 }

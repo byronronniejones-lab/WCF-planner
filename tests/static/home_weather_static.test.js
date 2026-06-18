@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {describe, it, expect} from 'vitest';
-import {weatherIcon, weatherLabel, latLonToTile} from '../../src/lib/weather.js';
+import {officialRadarUrl, weatherIcon, weatherLabel} from '../../src/lib/weather.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -11,27 +11,23 @@ const weatherLib = fs.readFileSync(path.join(ROOT, 'src/lib/weather.js'), 'utf8'
 const cardSrc = fs.readFileSync(path.join(ROOT, 'src/weather/HomeWeatherCard.jsx'), 'utf8');
 const dashSrc = fs.readFileSync(path.join(ROOT, 'src/dashboard/HomeDashboard.jsx'), 'utf8');
 const forecastFn = fs.readFileSync(path.join(ROOT, 'netlify/functions/weather-forecast.js'), 'utf8');
-const radarFramesFn = fs.readFileSync(path.join(ROOT, 'netlify/functions/weather-radar-frames.js'), 'utf8');
-
-const tileFnExists = fs.existsSync(path.join(ROOT, 'netlify/functions/weather-tile.js'));
+const radarFramesPath = path.join(ROOT, 'netlify/functions/weather-radar-frames.js');
+const tileFnPath = path.join(ROOT, 'netlify/functions/weather-tile.js');
 
 describe('weather helper (src/lib/weather.js)', () => {
-  it('exports loadForecast, loadRadarFrames, rainviewerTileUrl, weatherIcon, weatherLabel, latLonToTile', () => {
+  it('exports the structured weather helpers only', () => {
     expect(weatherLib).toContain('export async function loadForecast');
-    expect(weatherLib).toContain('export async function loadRadarFrames');
-    expect(weatherLib).toContain('export function rainviewerTileUrl');
+    expect(weatherLib).toContain('export function officialRadarUrl');
     expect(weatherLib).toContain('export function weatherIcon');
     expect(weatherLib).toContain('export function weatherLabel');
-    expect(weatherLib).toContain('export function latLonToTile');
+    expect(weatherLib).not.toContain('loadRadarFrames');
+    expect(weatherLib).not.toContain('rainviewerTileUrl');
+    expect(weatherLib).not.toContain('latLonToTile');
   });
 
-  it('does not reference Tomorrow.io directly or export tile URL builder', () => {
-    expect(weatherLib).not.toContain('api.tomorrow.io');
-    expect(weatherLib).not.toContain('weather-tile');
-  });
-
-  it('uses RainViewer for radar frames', () => {
-    expect(weatherLib).toContain('weather-radar-frames');
+  it('does not reference RainViewer, OSM tiles, Tomorrow.io, or old tile functions', () => {
+    expect(weatherLib).not.toMatch(/RainViewer|rainviewer|openstreetmap|api\.tomorrow\.io|weather-tile/);
+    expect(cardSrc).not.toMatch(/RainViewer|rainviewer|openstreetmap|api\.tomorrow\.io|weather-tile/);
   });
 });
 
@@ -48,135 +44,48 @@ describe('weather helper functions', () => {
     expect(weatherLabel(8000)).toBe('Thunderstorm');
   });
 
-  it('latLonToTile computes valid tile coords', () => {
-    const tile = latLonToTile(30.833938, -86.43003, 7);
-    expect(tile.z).toBe(7);
-    expect(tile.x).toBeGreaterThan(0);
-    expect(tile.y).toBeGreaterThan(0);
+  it('officialRadarUrl points to NWS radar', () => {
+    expect(officialRadarUrl({radarUrl: 'https://radar.weather.gov/'})).toBe('https://radar.weather.gov/');
+    expect(officialRadarUrl(null)).toBe('https://radar.weather.gov/');
   });
 });
 
-describe('Rain timing — rolling 48h window', () => {
-  it('card filters hourly by timestamp, not date string', () => {
-    expect(cardSrc).not.toMatch(/startsWith\(todayStr\)/);
-    expect(cardSrc).not.toMatch(/startsWith\(tomorrowStr\)/);
-    expect(cardSrc).toContain('end48h');
+describe('weather forecast proxy', () => {
+  it('uses Open-Meteo forecast and archive data without a Tomorrow.io key gate', () => {
+    expect(forecastFn).toContain('api.open-meteo.com/v1/gfs');
+    expect(forecastFn).toContain('archive-api.open-meteo.com');
+    expect(forecastFn).toContain('Open-Meteo GFS/HRRR');
+    expect(forecastFn).toContain('National Weather Service');
+    expect(forecastFn).not.toContain('fetchNwsAlerts');
+    expect(forecastFn).not.toContain('alerts/active?point=');
+    expect(forecastFn).not.toContain('TOMORROW_IO_API_KEY');
+    expect(forecastFn).not.toContain('api.tomorrow.io');
   });
 
-  it('uses rolling ms comparison for 48h window', () => {
-    expect(cardSrc).toMatch(/48\s*\*\s*3600\s*\*\s*1000/);
+  it('returns structured rain windows, monthly precip, and no generated rain summary prose', () => {
+    expect(forecastFn).toContain('buildRainWindows');
+    expect(forecastFn).toContain('buildMonthlyPrecip');
+    expect(forecastFn).toContain('archive-api.open-meteo.com');
+    expect(forecastFn).toContain('monthlyPrecip');
+    expect(forecastFn).toContain('next6h');
+    expect(forecastFn).toContain('next24h');
+    expect(forecastFn).toContain('next48h');
+    expect(forecastFn).not.toContain('rainSummary');
   });
 
-  it('forecast rain summary handles daily/hourly mismatch', () => {
-    expect(forecastFn).toContain('Rain chance present, timing unclear');
-    expect(forecastFn).toContain('Low hourly rain signal today');
-  });
-
-  it('rain chart uses grid layout, not flex with wrap', () => {
-    const chartStart = cardSrc.indexOf('data-weather-rain-chart');
-    const chartSection = cardSrc.slice(chartStart, chartStart + 500);
-    expect(chartSection).toContain('grid');
-    expect(chartSection).not.toContain('flexWrap');
-  });
-
-  it('rain chart uses stable 48-slot grid layout', () => {
-    expect(cardSrc).toMatch(/repeat\(48,\s*minmax\(0,\s*1fr\)\)/);
-    expect(cardSrc).toContain('data-weather-rain-chart');
-  });
-});
-
-describe('10-day daily forecast via Open-Meteo', () => {
-  it('forecast function fetches from Open-Meteo for daily rows', () => {
-    expect(forecastFn).toContain('api.open-meteo.com');
-    expect(forecastFn).toContain('forecast_days=10');
-  });
-
-  it('forecast function maps WMO weather codes to Tomorrow.io codes', () => {
-    expect(forecastFn).toContain('mapWmoToTomorrow');
-  });
-
-  it('forecast returns dailySource field', () => {
-    expect(forecastFn).toContain('dailySource');
-    expect(forecastFn).toContain("'open-meteo'");
-  });
-
-  it('card uses dynamic daily label based on source/count', () => {
-    expect(cardSrc).toContain('dailyLabel');
-    expect(cardSrc).toContain('dailySource');
-    expect(cardSrc).toContain("'10-Day Forecast'");
-  });
-
-  it('falls back to Tomorrow daily when Open-Meteo fails', () => {
-    expect(forecastFn).toContain('tomorrowDaily');
-  });
-
-  it('selects Open-Meteo only when 10 rows are returned', () => {
-    expect(forecastFn).toMatch(/openMeteoDaily\.length >= 10/);
-  });
-});
-
-describe('RainViewer animated radar', () => {
-  it('weather-tile.js is deleted (Tomorrow.io tiles retired)', () => {
-    expect(tileFnExists).toBe(false);
-  });
-
-  it('weather-radar-frames.js fetches RainViewer metadata', () => {
-    expect(radarFramesFn).toContain('rainviewer.com');
-    expect(radarFramesFn).toContain('weather-maps.json');
-  });
-
-  it('radar frames include all past frames and nowcast', () => {
-    expect(radarFramesFn).toContain('nowcast');
-    expect(radarFramesFn).toContain('past');
-  });
-
-  it('card uses RainViewer tile URLs, not Tomorrow.io', () => {
-    expect(cardSrc).toContain('rainviewerTileUrl');
-    expect(cardSrc).not.toContain('radarTileUrl(t.z');
-  });
-
-  it('card renders OSM base map tiles', () => {
-    expect(cardSrc).toContain('openstreetmap.org');
-    expect(cardSrc).toContain('osmTileUrl');
-  });
-
-  it('tile loop order is dy outer, dx inner for row-major grid', () => {
-    expect(cardSrc).toMatch(/for\s*\(\s*let dy/);
-  });
-
-  it('card has play/pause animation controls', () => {
-    expect(cardSrc).toContain('playing');
-    expect(cardSrc).toContain('Pause');
-    expect(cardSrc).toContain('Play');
-  });
-
-  it('card shows frame time label', () => {
-    expect(cardSrc).toContain('frameTimeLabel');
-  });
-
-  it('radar is gated behind Load Radar button', () => {
-    expect(cardSrc).toContain('Load Radar');
-    expect(cardSrc).toContain('handleLoadRadar');
-  });
-
-  it('card renders center crosshair marker', () => {
-    expect(cardSrc).toContain('translate(-50%, -50%)');
-  });
-
-  it('card renders precipitation legend', () => {
-    expect(cardSrc).toContain('Light');
-    expect(cardSrc).toContain('Moderate');
-    expect(cardSrc).toContain('Heavy');
-  });
-
-  it('card includes OSM and RainViewer attribution', () => {
-    expect(cardSrc).toContain('OpenStreetMap');
-    expect(cardSrc).toContain('RainViewer');
-  });
-
-  it('shows quiet error when radar unavailable', () => {
-    expect(cardSrc).toContain('Radar unavailable');
-    expect(cardSrc).toContain('radarError');
+  it('does not contain banned vague rain copy', () => {
+    for (const banned of [
+      'Showers possible overnight',
+      'Showers likely overnight',
+      'Rain chance present, timing unclear',
+      'Low hourly rain signal today',
+      'Rain timing uncertain',
+      'Rain likely this evening',
+      'Rain possible',
+    ]) {
+      expect(forecastFn).not.toContain(banned);
+      expect(cardSrc).not.toContain(banned);
+    }
   });
 });
 
@@ -185,13 +94,44 @@ describe('HomeWeatherCard component', () => {
     expect(cardSrc).toContain("from '../lib/weather.js'");
   });
 
-  it('uses forecast.location for radar tiles', () => {
-    expect(cardSrc).toContain('forecast.location');
+  it('has collapsed and expanded states using a real button for the collapsed card', () => {
+    expect(cardSrc).toContain('data-weather-card="collapsed"');
+    expect(cardSrc).toContain('data-weather-card="expanded"');
+    expect(cardSrc).toContain('className="card weather-card lift"');
+    expect(cardSrc).toMatch(/<button[\s\S]*data-weather-card="collapsed"/);
   });
 
-  it('has collapsed and expanded states', () => {
-    expect(cardSrc).toContain("data-weather-card': 'collapsed'");
-    expect(cardSrc).toContain("data-weather-card': 'expanded'");
+  it('does not render narrative rain summary or removed operations panels', () => {
+    expect(cardSrc).not.toContain('rainSummary');
+    expect(cardSrc).not.toContain('<h2>Now</h2>');
+    expect(cardSrc).not.toContain('<h2>Rain</h2>');
+    expect(cardSrc).not.toContain('<h2>Work</h2>');
+    expect(cardSrc).not.toContain('NWS Alerts');
+    expect(cardSrc).not.toContain('data-weather-rain-structured');
+  });
+
+  it('keeps only official radar, monthly precip, and 10-day forecast in the expanded card', () => {
+    expect(cardSrc).toContain('Open NWS Radar');
+    expect(cardSrc).toContain('officialRadarUrl');
+    expect(cardSrc).toContain('Precip by Month');
+    expect(cardSrc).toContain('data-weather-monthly-precip="1"');
+    expect(cardSrc).toContain('10-Day Forecast');
+    expect(cardSrc).toContain('Updated');
+  });
+
+  it('shows sustained wind, not gusts, in the 10-day forecast rows', () => {
+    expect(cardSrc).toContain('title="Sustained wind"');
+    expect(cardSrc).toContain('d.windSpeedMax');
+    expect(cardSrc).not.toContain('round(d.windGustMax)} mph');
+  });
+
+  it('keeps the collapsed weather card compact so the Pasture Map row does not stretch', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'src/dashboard/homeRedesign.css'), 'utf8');
+    expect(cardSrc).toContain("flexWrap: 'nowrap'");
+    expect(cardSrc).not.toContain('wx-chip');
+    expect(cardSrc).not.toContain('wx-alert-chip');
+    expect(css).toContain('height: 66px');
+    expect(css).toContain('.home .field-map-card');
   });
 
   it('soft-fails hidden when no forecast data', () => {
@@ -199,33 +139,18 @@ describe('HomeWeatherCard component', () => {
   });
 });
 
+describe('Radar contract', () => {
+  it('deletes weak in-app radar endpoints and keeps only an official radar link', () => {
+    expect(fs.existsSync(tileFnPath)).toBe(false);
+    expect(fs.existsSync(radarFramesPath)).toBe(false);
+    expect(weatherLib).toContain('https://radar.weather.gov/');
+    expect(cardSrc).toContain('Open NWS Radar');
+  });
+});
+
 describe('HomeDashboard integration', () => {
   it('imports HomeWeatherCard', () => {
     expect(dashSrc).toContain('HomeWeatherCard');
     expect(dashSrc).toContain("from '../weather/HomeWeatherCard.jsx'");
-  });
-});
-
-describe('Netlify Functions — no API key exposure', () => {
-  it('forecast function reads key from process.env only', () => {
-    expect(forecastFn).toContain('process.env.TOMORROW_IO_API_KEY');
-    expect(forecastFn).not.toMatch(/VITE_/);
-  });
-
-  it('forecast function returns clean error when key is missing', () => {
-    expect(forecastFn).toContain('weather_unavailable');
-  });
-
-  it('forecast function returns location in normalized response', () => {
-    expect(forecastFn).toMatch(/location:\s*loc/);
-  });
-
-  it('no frontend Tomorrow.io direct URL', () => {
-    expect(weatherLib).not.toContain('api.tomorrow.io');
-    expect(cardSrc).not.toContain('api.tomorrow.io');
-  });
-
-  it('radar frame proxy needs no API key', () => {
-    expect(radarFramesFn).not.toContain('TOMORROW_IO_API_KEY');
   });
 });

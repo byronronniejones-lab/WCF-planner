@@ -4,20 +4,48 @@
 // batch records (app_store ppp-v4 shape).
 //
 // Right-sized for a small list (a handful to a few dozen batches): one active
-// sort rule {key, dir}, a name/id text search, a status filter over the real
-// planned/active/processed statuses, plus breed + start-date-range filters.
+// sort rule {key, dir}, a name/id text search, and a set of real-field filters
+// over the planned/active/processed batches — status, breed, hatchery, brooder,
+// schooner, hatch (start) date range, processing date range, and numeric ranges
+// for bird count, birds arrived, to-processor count, cumulative mortality, and
+// lbs produced.
 //
 // "Status" here is the EFFECTIVE poultry status. Callers pass a per-row
 // resolver via ctx.statusOf (BroilerListView wires it to calcPoultryStatus) so
-// the filter/sort agree with the badge the row renders. "lbsProduced" sorts by
-// total feed produced; callers supply it via ctx.totalFeedLbsOf because feed is
-// derived from daily reports the lib does not own.
+// the filter/sort agree with the badge the row renders. "lbsProduced" reads
+// total feed produced via ctx.totalFeedLbsOf because feed is derived from daily
+// reports the lib does not own.
 
 export const BROILER_BATCH_STATUSES = Object.freeze(['planned', 'active', 'processed']);
 
-export const BROILER_BATCH_FILTER_DIMENSIONS = Object.freeze(['status', 'breed', 'startDateRange', 'textSearch']);
+export const BROILER_BATCH_FILTER_DIMENSIONS = Object.freeze([
+  'textSearch',
+  'status',
+  'breed',
+  'hatchery',
+  'brooder',
+  'schooner',
+  'startDateRange',
+  'processingDateRange',
+  'birdCountRange',
+  'birdsArrivedRange',
+  'toProcessorRange',
+  'mortalityRange',
+  'lbsProducedRange',
+]);
 
-export const BROILER_BATCH_SORT_KEYS = Object.freeze(['batchName', 'status', 'startDate', 'birdCount', 'lbsProduced']);
+export const BROILER_BATCH_SORT_KEYS = Object.freeze([
+  'batchName',
+  'status',
+  'startDate',
+  'processingDate',
+  'birdCount',
+  'lbsProduced',
+]);
+
+// Default: processed batches newest-first (processing date descending). Batches
+// without a processing date (planned/active) always sort last, in stable order.
+export const BROILER_BATCH_DEFAULT_SORT = Object.freeze({key: 'processingDate', dir: 'desc'});
 
 const STATUS_ORDER = ['planned', 'active', 'processed'];
 
@@ -40,27 +68,67 @@ function startDateFor(batch) {
   return (batch && batch.hatchDate) || null;
 }
 
+function numField(batch, key) {
+  const v = parseFloat(batch && batch[key]);
+  return Number.isFinite(v) ? v : null;
+}
+
+// A numeric-range filter is {min, max} (either bound optional). A row with no
+// value is excluded whenever any bound is set — a range filter only matches rows
+// that actually have a value inside it (so a processing-date range never matches
+// a planned batch, etc.).
+function inNumRange(value, range) {
+  if (!range) return true;
+  const hasMin = range.min != null && range.min !== '';
+  const hasMax = range.max != null && range.max !== '';
+  if (!hasMin && !hasMax) return true;
+  if (value == null) return false;
+  if (hasMin && value < Number(range.min)) return false;
+  if (hasMax && value > Number(range.max)) return false;
+  return true;
+}
+
+// A date-range filter is {after, before} (ISO yyyy-mm-dd strings, either bound
+// optional). A row with no date is excluded whenever any bound is set.
+function inDateRange(date, range) {
+  if (!range) return true;
+  const hasAfter = !!range.after;
+  const hasBefore = !!range.before;
+  if (!hasAfter && !hasBefore) return true;
+  if (!date) return false;
+  if (hasAfter && date < range.after) return false;
+  if (hasBefore && date > range.before) return false;
+  return true;
+}
+
+// A multi-select filter is an array of accepted values (case-insensitive). An
+// empty/absent array matches everything.
+function arrayMatch(filterArr, value) {
+  if (!Array.isArray(filterArr) || filterArr.length === 0) return true;
+  const v = (value || '').toString().toLowerCase();
+  return filterArr.some((x) => (x || '').toString().toLowerCase() === v);
+}
+
 export function buildBroilerBatchPredicate(filters, ctx = {}) {
   const f = filters || {};
 
   return (batch) => {
     if (!batch) return false;
 
-    if (Array.isArray(f.status) && f.status.length > 0) {
-      if (!f.status.includes(statusFor(batch, ctx))) return false;
-    }
+    if (!arrayMatch(f.status, statusFor(batch, ctx))) return false;
+    if (!arrayMatch(f.breed, batch.breed)) return false;
+    if (!arrayMatch(f.hatchery, batch.hatchery)) return false;
+    if (!arrayMatch(f.brooder, batch.brooder)) return false;
+    if (!arrayMatch(f.schooner, batch.schooner)) return false;
 
-    if (Array.isArray(f.breed) && f.breed.length > 0) {
-      const breed = (batch.breed || '').toLowerCase();
-      if (!f.breed.some((b) => (b || '').toLowerCase() === breed)) return false;
-    }
+    if (!inDateRange(startDateFor(batch), f.startDateRange)) return false;
+    if (!inDateRange((batch && batch.processingDate) || null, f.processingDateRange)) return false;
 
-    if (f.startDateRange && (f.startDateRange.after || f.startDateRange.before)) {
-      const start = startDateFor(batch);
-      if (!start) return false;
-      if (f.startDateRange.after && start < f.startDateRange.after) return false;
-      if (f.startDateRange.before && start > f.startDateRange.before) return false;
-    }
+    if (!inNumRange(numField(batch, 'birdCount'), f.birdCountRange)) return false;
+    if (!inNumRange(numField(batch, 'birdCountActual'), f.birdsArrivedRange)) return false;
+    if (!inNumRange(numField(batch, 'totalToProcessor'), f.toProcessorRange)) return false;
+    if (!inNumRange(numField(batch, 'mortalityCumulative'), f.mortalityRange)) return false;
+    if (!inNumRange(totalFeedLbsFor(batch, ctx), f.lbsProducedRange)) return false;
 
     if (typeof f.textSearch === 'string' && f.textSearch.trim()) {
       const q = f.textSearch.toLowerCase().trim();
@@ -78,7 +146,7 @@ export function buildBroilerBatchComparator(sortRule, ctx = {}) {
   const rule =
     sortRule && sortRule.key && BROILER_BATCH_SORT_KEYS.includes(sortRule.key)
       ? sortRule
-      : {key: 'batchName', dir: 'asc'};
+      : {...BROILER_BATCH_DEFAULT_SORT};
   const dir = rule.dir === 'desc' ? 'desc' : 'asc';
 
   return (a, b) => compareByKey(rule.key, a, b, dir, ctx);
@@ -112,11 +180,20 @@ function compareByKey(key, a, b, dir, ctx) {
       if (!bd) return -1;
       return applyDir(ad.localeCompare(bd), dir);
     }
+    case 'processingDate': {
+      // Processed batches sort by processing date; batches without one
+      // (planned/active) always fall to the end, regardless of direction, so the
+      // processed-history section keeps its newest-first default.
+      const ad = (a && a.processingDate) || '';
+      const bd = (b && b.processingDate) || '';
+      if (!ad && !bd) return 0;
+      if (!ad) return 1;
+      if (!bd) return -1;
+      return applyDir(ad.localeCompare(bd), dir);
+    }
     case 'birdCount': {
-      const av = parseFloat(a.birdCount);
-      const bv = parseFloat(b.birdCount);
-      const an = Number.isFinite(av) ? av : null;
-      const bn = Number.isFinite(bv) ? bv : null;
+      const an = numField(a, 'birdCount');
+      const bn = numField(b, 'birdCount');
       if (an == null && bn == null) return 0;
       if (an == null) return 1;
       if (bn == null) return -1;
@@ -154,5 +231,24 @@ export function broilerBreedFilterOptions(observedFromBatches, breedLabelFn) {
     out.push({code: value, label: labelFor(value)});
   }
   out.sort((a, b) => a.label.localeCompare(b.label));
+  return out;
+}
+
+// Distinct non-empty values for a batch field (hatchery / brooder / schooner),
+// sorted, for populating a multi-select filter. Pure helper over the batch list.
+export function broilerDistinctFieldValues(batches, key) {
+  const seen = new Set();
+  const out = [];
+  for (const batch of batches || []) {
+    const value = batch && batch[key];
+    if (value == null || value === '') continue;
+    const str = String(value).trim();
+    if (!str) continue;
+    const lower = str.toLowerCase();
+    if (seen.has(lower)) continue;
+    seen.add(lower);
+    out.push(str);
+  }
+  out.sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'}));
   return out;
 }

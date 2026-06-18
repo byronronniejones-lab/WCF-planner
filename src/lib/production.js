@@ -10,6 +10,12 @@ export const PRODUCTION_PROGRAMS = [
 
 export const HOME_PRODUCTION_PROGRAMS = ['broiler', 'egg', 'pig', 'cattle', 'sheep'];
 export const PAGE_PRODUCTION_PROGRAMS = ['cattle', 'broiler', 'pig', 'sheep', 'egg'];
+// Designer-specified row order for the all-years matrix: Broilers, Pigs, Cattle,
+// Sheep/Lamb, then Eggs last. Production Events reuses it for the program
+// tie-break when two rows share a date.
+export const PRODUCTION_MATRIX_PROGRAM_ORDER = ['broiler', 'pig', 'cattle', 'sheep', 'egg'];
+const PLANNER_MATCH_START_DATE = '2024-01-01';
+const PLANNER_MATCH_DAY_WINDOW = 3;
 
 export const PROGRAM_BY_KEY = Object.fromEntries(PRODUCTION_PROGRAMS.map((program) => [program.key, program]));
 
@@ -427,6 +433,150 @@ export function buildProductionModel(sources = {}) {
     years,
     programRows,
   };
+}
+
+// Program × Year matrix for the Summary view. Reuses the reconciled per-program
+// year rows (model.programRows) and the union year list (model.years); ignores
+// any selected-year drill-in. Each cell is display-ready: the total on top and
+// the YoY delta beneath, where YoY compares to that program's PREVIOUS RECORDED
+// year (the row's own yoy). Missing program/year -> total "—" + delta "—"; a
+// real zero -> "0"; flat YoY -> "±0"; eggs in dozens (one decimal). The latest
+// recorded year is flagged for the emphasis wash + bold total.
+export function buildProductionMatrix(model) {
+  const years = [...new Set(((model && model.years) || []).map(String))].sort();
+  const latest = years.length ? years[years.length - 1] : null;
+  const programRows = (model && model.programRows) || {};
+  const matrixLabel = (programKey) => (PROGRAM_BY_KEY[programKey]?.label || programKey).replace('/doz', '');
+  const rows = PRODUCTION_MATRIX_PROGRAM_ORDER.map((programKey) => {
+    const byYear = new Map((programRows[programKey] || []).map((row) => [String(row.year), row]));
+    const cells = years.map((year) => {
+      const row = byYear.get(year);
+      const isLatest = year === latest;
+      if (!row) {
+        return {
+          year,
+          isLatest,
+          hasData: false,
+          total: null,
+          totalText: '—',
+          delta: null,
+          deltaText: '—',
+          deltaKind: 'none',
+        };
+      }
+      let deltaText = '—';
+      let deltaKind = 'none';
+      if (row.yoy !== null && row.yoy !== undefined) {
+        const display = quantityForDisplay(programKey, row.yoy);
+        const rounded = programKey === 'egg' ? Math.round(display * 10) / 10 : Math.round(display);
+        if (rounded === 0) {
+          deltaText = '±0';
+          deltaKind = 'flat';
+        } else {
+          deltaText = formatProductionDelta(programKey, row.yoy);
+          deltaKind = rounded > 0 ? 'up' : 'down';
+        }
+      }
+      return {
+        year,
+        isLatest,
+        hasData: true,
+        total: row.quantity,
+        totalText: formatProductionNumber(programKey, row.quantity),
+        delta: row.yoy,
+        deltaText,
+        deltaKind,
+      };
+    });
+    return {programKey, label: matrixLabel(programKey), accent: PROGRAM_ACCENT_VAR[programKey], cells};
+  });
+  return {years, latest, rows};
+}
+
+function daysBetweenIso(a, b) {
+  const da = isoDate(a);
+  const db = isoDate(b);
+  if (!da || !db) return Infinity;
+  const ta = Date.parse(`${da}T00:00:00Z`);
+  const tb = Date.parse(`${db}T00:00:00Z`);
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return Infinity;
+  return Math.abs(Math.round((ta - tb) / 86400000));
+}
+
+function eventRecordPath(event) {
+  if (!event) return null;
+  if (event.program === 'broiler' && event.batchName) {
+    return `/broiler/batches/${encodeURIComponent(event.batchName)}`;
+  }
+  if (event.program === 'pig' && event.raw && event.raw.group && event.raw.group.id) {
+    return `/pig/batches/${encodeURIComponent(event.raw.group.id)}`;
+  }
+  if (event.program === 'cattle' && event.sourceTable === 'cattle_processing_batches' && event.sourceId) {
+    return `/cattle/batches/${encodeURIComponent(event.sourceId)}`;
+  }
+  if (event.program === 'sheep' && event.sourceTable === 'sheep_processing_batches' && event.sourceId) {
+    return `/sheep/batches/${encodeURIComponent(event.sourceId)}`;
+  }
+  return null;
+}
+
+function findUniquePlannerMatch(event, plannerEvents) {
+  if (!event || event.source !== 'legacy' || event.program === 'egg' || event.date < PLANNER_MATCH_START_DATE) {
+    return null;
+  }
+  const quantity = Number(event.quantity);
+  if (!Number.isFinite(quantity)) return null;
+  const candidates = (plannerEvents || [])
+    .filter((candidate) => {
+      if (!candidate || candidate.program !== event.program || candidate.program === 'egg') return false;
+      if (Number(candidate.quantity) !== quantity) return false;
+      return daysBetweenIso(candidate.date, event.date) <= PLANNER_MATCH_DAY_WINDOW;
+    })
+    .map((candidate) => ({
+      candidate,
+      dayDistance: daysBetweenIso(candidate.date, event.date),
+      batchMatch: event.batchKey && event.batchKey === candidate.batchKey ? 0 : 1,
+    }))
+    .sort((a, b) => a.dayDistance - b.dayDistance || a.batchMatch - b.batchMatch);
+
+  if (candidates.length === 0) return null;
+  const best = candidates[0];
+  const tied = candidates.filter(
+    (item) => item.dayDistance === best.dayDistance && item.batchMatch === best.batchMatch,
+  );
+  return tied.length === 1 ? best.candidate : null;
+}
+
+// Production Events view: the operator-facing event/history log (NOT the totals
+// reconciliation). Shows actual processing events — Planner processing events
+// (eggs excluded; egg-day records are not processing events) plus EVERY imported
+// production_legacy_events row, including rows held out of Summary totals by the
+// coverage rule. Optional year filter narrows the list; within a year all
+// imported production events stay visible. Sorted by date desc, then program.
+export function buildProductionEventsView(model, {year} = {}) {
+  const order = Object.fromEntries(PRODUCTION_MATRIX_PROGRAM_ORDER.map((programKey, index) => [programKey, index]));
+  const planner = ((model && model.plannerEvents) || []).filter((event) => event.program !== 'egg');
+  const legacy = ((model && model.legacyEvents) || []).filter((event) => event.program !== 'egg');
+  const yearStr = year === null || year === undefined || year === '' ? null : String(year);
+  return [...planner, ...legacy]
+    .filter((event) => (yearStr ? event.year === yearStr : true))
+    .sort((a, b) => b.date.localeCompare(a.date) || (order[a.program] ?? 9) - (order[b.program] ?? 9))
+    .map((event) => {
+      const matchedPlannerEvent = findUniquePlannerMatch(event, planner);
+      const batchName = event.batchName || (matchedPlannerEvent && matchedPlannerEvent.batchName) || '';
+      const recordPath =
+        (event.source === 'legacy' ? null : eventRecordPath(event)) || eventRecordPath(matchedPlannerEvent) || '';
+      return {
+        id: event.id,
+        date: event.date,
+        program: event.program,
+        batchName,
+        quantity: event.quantity,
+        recordPath,
+        matchedBatchName: matchedPlannerEvent ? matchedPlannerEvent.batchName : '',
+        event,
+      };
+    });
 }
 
 export function quantityForDisplay(programKey, quantity) {
