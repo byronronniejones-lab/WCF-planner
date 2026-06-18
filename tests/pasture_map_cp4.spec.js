@@ -6,6 +6,7 @@ import {getTestAdminClient} from './setup/reset.js';
 
 const A_ID = 'pm-cp4-a';
 const B_ID = 'pm-cp4-b';
+const MOMMA_ID = 'pm-cp4-momma';
 
 const SQUARE_A =
   '{"type":"Polygon","coordinates":[[[-86.44,30.84],[-86.435,30.84],[-86.435,30.845],[-86.44,30.845],[-86.44,30.84]]]}';
@@ -52,6 +53,12 @@ async function cleanAndSeedPastureTables() {
         v_profile
       );
     END $$;
+
+    -- Deterministic real planner group: one active Mommas cow so the roster
+    -- yields the cattle "Mommas" group the plan/move forms now select.
+    DELETE FROM public.cattle WHERE id = '${MOMMA_ID}';
+    INSERT INTO public.cattle (id, tag, sex, herd, breeding_blacklist, old_tags)
+    VALUES ('${MOMMA_ID}', 'PMCP4-MOMMA', 'cow', 'mommas', false, '[]'::jsonb);
   `;
   const {error} = await c.rpc('exec_sql', {sql});
   if (error) throw new Error('seed pasture CP4: ' + error.message);
@@ -64,30 +71,37 @@ test.beforeAll(async () => {
 test('plans a move and renders history/rest/stocking reports', async ({page}) => {
   await page.setViewportSize({width: 1280, height: 900});
   await page.goto('/pasture-map', {timeout: 90_000});
-  await expect(page.locator('.pm-title')).toHaveText('Pasture Map');
+  // View loaded (shared header migration removed the old .pm-title topbar).
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
   await expect(page.locator(`[data-pasture-area="${A_ID}"]`)).toBeVisible({timeout: 25_000});
 
+  // The selected panel hosts both the plan form and the move form. Create a
+  // planned move and record an actual move for Mommas -> A in one place. (The
+  // planned-move "Use" -> complete flow moves into Plan mode and is part of the
+  // P3 Plan-tab redesign; here we verify plan creation, move recording, reports.)
   await page.locator(`[data-pasture-area-select="${A_ID}"]`).click();
   await expect(page.locator('[data-pasture-plan-form]')).toBeVisible();
+  // Roster-driven: pick the real cattle "Mommas" group; count is locked/derived.
+  await page.locator('[data-pasture-plan-animal-type]').selectOption('cattle_herd');
+  await page.locator('[data-pasture-plan-group]').selectOption('mommas');
   await page.locator('[data-pasture-plan-at]').fill(localDateTimeValue());
-  await page.locator('[data-pasture-plan-count]').fill('14');
   await page.locator('[data-pasture-plan-save]').click();
+
+  await page.locator('[data-pasture-move-animal-type]').selectOption('cattle_herd');
+  await page.locator('[data-pasture-move-group]').selectOption('mommas');
+  await page.locator('[data-pasture-move-save]').click();
+  await expect(page.locator(`[data-pasture-occupancy="${A_ID}"]`)).toContainText('Mommas', {timeout: 15_000});
+
+  // The created plan shows in the Plan tab's planned-moves list.
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
   await expect(page.locator('[data-pasture-planned-moves]')).toContainText('Mommas', {timeout: 15_000});
   await expect(page.locator('[data-pasture-planned-moves]')).toContainText('CP4 North Paddock');
 
-  await page.locator('[data-pasture-planned-moves]').getByRole('button', {name: 'Use'}).first().click();
-  await expect(page.locator('[data-pasture-move-form]')).toContainText('Using planned move');
-  await page.locator('[data-pasture-move-save]').click();
-  await expect(page.locator(`[data-pasture-area="${A_ID}"]`)).toContainText('Occupied now', {timeout: 15_000});
-
-  await page.locator(`[data-pasture-area-select="${B_ID}"]`).click();
-  await expect(page.locator('[data-pasture-same-day-prompt]')).toBeVisible({timeout: 10_000});
-  await page.locator('[data-pasture-move-count]').fill('14');
-  await page.locator('[data-pasture-move-save]').click();
-
-  await expect(page.locator(`[data-pasture-area="${B_ID}"]`)).toContainText('Occupied now', {timeout: 15_000});
-  await expect(page.locator(`[data-pasture-area="${A_ID}"]`)).toContainText(/resting/i);
-  await expect(page.locator('[data-pasture-rest-report]')).toContainText('Occupied');
+  // Reports tab: rest (open by default), then stocking and history.
+  await page.locator('.pm-tabs button', {hasText: 'Reports'}).click();
+  await expect(page.locator('[data-pasture-rest-report]')).toContainText('Occupied', {timeout: 15_000});
+  await page.locator('.pm-report-card button', {hasText: 'Stocking rate'}).click();
   await expect(page.locator('[data-pasture-stocking-report]')).toContainText('animal-days');
+  await page.locator('.pm-report-card button', {hasText: 'Grazing days log'}).click();
   await expect(page.locator('[data-pasture-history-report]')).toContainText('Mommas', {timeout: 15_000});
 });

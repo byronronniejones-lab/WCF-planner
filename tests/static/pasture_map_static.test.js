@@ -129,7 +129,9 @@ describe('Pasture Map view - CP1/CP3 scope boundary', () => {
   it('only imports pasture-scoped data modules (no daily report coupling)', () => {
     const libImports = [...viewSrc.matchAll(/import\s[^;]*?from\s+'(\.\.\/lib\/[^']+)'/g)].map((m) => m[1]);
     expect(libImports.length).toBeGreaterThan(0);
-    expect(libImports.every((p) => /pastureMapApi|pastureKml|pastureOffline|pastureGeometry/.test(p))).toBe(true);
+    expect(
+      libImports.every((p) => /pastureMapApi|pastureKml|pastureOffline|pastureGeometry|pasturePlannerGroups/.test(p)),
+    ).toBe(true);
   });
 
   it('exposes import + classify + close-outline actions', () => {
@@ -649,5 +651,48 @@ describe('P0 temp-paddock lifecycle (mig 135) API + role/occupancy contract', ()
     expect(apiSrc).toContain(
       "export const PM_AREA_OCCUPIED_COPY = 'Move animals out of this temp paddock before archiving it.'",
     );
+  });
+});
+
+describe('P1 planner-group roster wiring', () => {
+  const helperSrc = read('src/lib/pasturePlannerGroups.js');
+
+  it('helper derives the roster from real records with the canonical identity contract', () => {
+    expect(helperSrc).toContain('export function computePlannerGroupRoster');
+    expect(helperSrc).toContain("animalType: 'cattle_herd'");
+    expect(helperSrc).toContain("animalType: 'sheep_flock'");
+    expect(helperSrc).toContain("animalType: 'breeder_pigs'");
+    expect(helperSrc).toContain("animalType: 'feeder_pigs'");
+    expect(helperSrc).toContain('groupKey: `sow-${g}`');
+    expect(helperSrc).toContain("groupKey: 'boars'");
+    // Reuses the shared pig ledger helper; counts are never user-entered.
+    expect(helperSrc).toContain("from './pig.js'");
+    expect(helperSrc).toContain('computeSubCurrentCount');
+    // Feeder group_key is the stable sub id, not the (mutable) name.
+    expect(helperSrc).toContain('String(sub.id).trim()');
+  });
+
+  it('view consumes the roster + domain contexts and drops the demo group data', () => {
+    expect(viewSrc).toContain("from '../lib/pasturePlannerGroups.js'");
+    expect(viewSrc).toContain('usePig()');
+    expect(viewSrc).toContain('useCattleHome()');
+    expect(viewSrc).toContain('useSheepHome()');
+    expect(viewSrc).toContain('computePlannerGroupRoster(');
+    // Demo placeholders are gone (no fake Main Herd / preset keys).
+    expect(viewSrc).not.toContain('DEFAULT_GROUPS');
+    expect(viewSrc).not.toContain('GROUP_PRESETS');
+    expect(viewSrc).not.toContain('Main Herd');
+  });
+
+  it('current-group location is derived from the move ledger by (animal_type, group_key)', () => {
+    expect(viewSrc).toContain('m.animal_type === g.animalType && m.group_key === g.groupKey');
+    expect(viewSrc).toContain('Not placed');
+    expect(viewSrc).toContain('data-pasture-current-groups');
+  });
+
+  it('move/plan group pickers are roster-sourced and counts are locked read-only', () => {
+    expect(viewSrc).toContain('rosterGroupsForType');
+    expect(viewSrc).toContain('readOnly data-pasture-move-count="1"');
+    expect(viewSrc).toContain('readOnly data-pasture-plan-count="1"');
   });
 });
