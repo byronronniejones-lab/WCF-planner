@@ -30,6 +30,13 @@ import {
   listPastureHistoryReport,
   listPastureRestReport,
   listPastureStockingReport,
+  createTempLandArea,
+  updateTempLandAreaGeometry,
+  renameTempLandArea,
+  archiveLandArea,
+  restoreLandArea,
+  hardDeleteLandArea,
+  PM_AREA_OCCUPIED_COPY,
   newImportBatchId,
   newLandAreaId,
   newPastureTrackId,
@@ -46,6 +53,10 @@ import {
   retryPastureOperation,
   syncPastureQueue,
 } from '../lib/pastureOffline.js';
+import {computePlannerGroupRoster} from '../lib/pasturePlannerGroups.js';
+import {usePig} from '../contexts/PigContext.jsx';
+import {useCattleHome} from '../contexts/CattleHomeContext.jsx';
+import {useSheepHome} from '../contexts/SheepHomeContext.jsx';
 import './pastureMap.css';
 
 const KIND_LABEL = {
@@ -79,134 +90,14 @@ const ANIMAL_TYPE_LABEL = {
   feeder_pigs: 'Feeder pigs',
 };
 
-const GROUP_PRESETS = {
-  cattle_herd: [
-    {key: 'main', label: 'Main Herd'},
-    {key: 'stock', label: 'Stockers'},
-    {key: 'mommas', label: 'Mommas'},
-    {key: 'backgrounders', label: 'Backgrounders'},
-    {key: 'finishers', label: 'Finishers'},
-    {key: 'bulls', label: 'Bulls'},
-  ],
-  sheep_flock: [
-    {key: 'ewe', label: 'Ewe Flock'},
-    {key: 'ram', label: 'Ram & Repl.'},
-    {key: 'ewes', label: 'Ewes'},
-    {key: 'rams', label: 'Rams'},
-    {key: 'feeders', label: 'Feeders'},
-  ],
-  breeder_pigs: [
-    {key: 'sowA', label: 'Sow Group A'},
-    {key: 'sowB', label: 'Sow Group B'},
-    {key: 'sowC', label: 'Sow Group C'},
-    {key: 'sowD', label: 'Sow Group D'},
-    {key: 'breeder-pigs', label: 'Breeder pigs'},
-  ],
-  feeder_pigs: [{key: 'feeder-pigs', label: 'Feeder pigs'}],
-};
-
 const SPECIES = {
   cattle: {label: 'Cattle', animalType: 'cattle_herd', color: '#9A3B2E', ink: '#7C3023', soft: '#F4E5E2'},
   pig: {label: 'Pigs', animalType: 'breeder_pigs', color: '#A8418A', ink: '#852F6D', soft: '#F3E3EE'},
   sheep: {label: 'Sheep', animalType: 'sheep_flock', color: '#1E8A8A', ink: '#166A6A', soft: '#DEF0F0'},
 };
 
-const DEFAULT_GROUPS = [
-  {
-    id: 'main',
-    name: 'Main Herd',
-    species: 'cattle',
-    groupKey: 'main',
-    short: 'MH',
-    size: '86 cow-calf pairs',
-    day: 2,
-    plannedDays: 3,
-  },
-  {
-    id: 'stock',
-    name: 'Stockers',
-    species: 'cattle',
-    groupKey: 'stock',
-    short: 'ST',
-    size: '120 yearlings',
-    day: 1,
-    plannedDays: 2,
-  },
-  {
-    id: 'sowA',
-    name: 'Sow Group A',
-    species: 'pig',
-    groupKey: 'sowA',
-    short: 'A',
-    size: '18 sows',
-    day: 4,
-    plannedDays: 5,
-  },
-  {
-    id: 'sowB',
-    name: 'Sow Group B',
-    species: 'pig',
-    groupKey: 'sowB',
-    short: 'B',
-    size: '16 sows',
-    day: 2,
-    plannedDays: 5,
-  },
-  {
-    id: 'sowC',
-    name: 'Sow Group C',
-    species: 'pig',
-    groupKey: 'sowC',
-    short: 'C',
-    size: '15 sows',
-    day: 3,
-    plannedDays: 5,
-  },
-  {
-    id: 'sowD',
-    name: 'Sow Group D',
-    species: 'pig',
-    groupKey: 'sowD',
-    short: 'D',
-    size: '17 sows',
-    day: 1,
-    plannedDays: 5,
-  },
-  {
-    id: 'ewe',
-    name: 'Ewe Flock',
-    species: 'sheep',
-    groupKey: 'ewe',
-    short: 'EW',
-    size: '140 ewes',
-    day: 5,
-    plannedDays: 7,
-  },
-  {
-    id: 'ram',
-    name: 'Ram & Repl.',
-    species: 'sheep',
-    groupKey: 'ram',
-    short: 'RM',
-    size: '45 head',
-    day: 2,
-    plannedDays: 6,
-  },
-];
-
-const DEFAULT_ROTATION_CODES = {
-  main: ['N4', 'S2', 'N3', 'E1', 'S1', 'N1'],
-  stock: ['E3', 'E1', 'N3', 'N2'],
-  sowA: ['N5', 'N2', 'N1'],
-  sowB: ['S3', 'S2', 'S1'],
-  sowC: ['E2', 'E1'],
-  sowD: ['E4', 'E3'],
-  ewe: ['S1', 'N1', 'N3'],
-  ram: ['S4', 'S2'],
-};
-
 const MODE_TABS = [
-  {id: 'view', label: 'View / Map', hint: 'Neutral browse - select a pasture'},
+  {id: 'view', label: 'Map', hint: 'Browse groups & areas - select to inspect'},
   {id: 'plan', label: 'Plan', hint: 'Build moves per animal group'},
   {id: 'field', label: 'Field', hint: 'Phone-first execution'},
   {id: 'setup', label: 'Setup', hint: 'Manager tools - not shown in field'},
@@ -243,8 +134,8 @@ function tomorrowMorningValue() {
 function initialMoveForm() {
   return {
     animalType: 'cattle_herd',
-    groupKey: 'main',
-    groupLabel: 'Main Herd',
+    groupKey: '',
+    groupLabel: '',
     movedAt: localDateTimeValue(),
     animalCount: '',
     notes: '',
@@ -254,8 +145,8 @@ function initialMoveForm() {
 function initialPlanForm() {
   return {
     animalType: 'cattle_herd',
-    groupKey: 'main',
-    groupLabel: 'Main Herd',
+    groupKey: '',
+    groupLabel: '',
     plannedFor: tomorrowMorningValue(),
     animalCount: '',
     notes: '',
@@ -418,23 +309,6 @@ function hasPolygonGeom(a) {
   return !!(rg && (rg.type === 'Polygon' || rg.type === 'MultiPolygon'));
 }
 
-function normalizeAreaCode(value) {
-  return (value || '')
-    .toString()
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
-}
-
-function findAreaByCode(areas, code) {
-  const wanted = normalizeAreaCode(code);
-  return (
-    (areas || []).find(
-      (area) => normalizeAreaCode(area.name || area.id) === wanted || normalizeAreaCode(area.id) === wanted,
-    ) || null
-  );
-}
-
 function groupSizeCount(group) {
   const count = Number.parseInt((group && group.size) || '', 10);
   return Number.isFinite(count) && count > 0 ? count : null;
@@ -450,10 +324,6 @@ function groupAnimalType(group) {
 
 function buildInitialRotation(group, areas, index) {
   if (!areas.length) return [];
-  const codes = DEFAULT_ROTATION_CODES[group.id] || [];
-  const mapped = codes.map((code) => findAreaByCode(areas, code)).filter(Boolean);
-  const ids = mapped.map((area) => area.id);
-  if (ids.length) return [...new Set(ids)];
   const span = Math.min(Math.max(areas.length, 1), group.species === 'pig' ? 3 : 5);
   return Array.from({length: Math.min(span, areas.length)}, (_, i) => areas[(index + i) % areas.length].id);
 }
@@ -466,9 +336,28 @@ function statusLabelForState(state) {
   return 'No history';
 }
 
+// Designation label for Area Detail: the three product designations
+// (Pasture / Paddock / Temp paddock) derived from kind + permanence, else the
+// raw kind label (unclassified imports show "Needs classification").
+function designationLabel(area) {
+  if (!area) return '-';
+  if (area.permanence === 'temporary') return 'Temp paddock';
+  if (area.kind === 'pasture') return 'Pasture';
+  if (area.kind === 'paddock') return 'Paddock';
+  if (area.kind === 'unclassified') return 'Needs classification';
+  return KIND_LABEL[area.kind] || area.kind || 'Unclassified';
+}
+function isTempArea(area) {
+  return !!area && area.permanence === 'temporary';
+}
+function isArchivedArea(area) {
+  return !!area && area.status === 'retired';
+}
+
 export default function PastureMapView({Header, authState}) {
   const role = authState && authState.role;
   const isManager = role === 'management' || role === 'admin';
+  const isAdmin = role === 'admin';
   const canRecordMoves = role === 'farm_team' || role === 'management' || role === 'admin';
   const canCreateTrack = role === 'farm_team' || role === 'management' || role === 'admin';
 
@@ -499,6 +388,8 @@ export default function PastureMapView({Header, authState}) {
   const [openReport, setOpenReport] = React.useState('rest');
   const [zoomSignal, setZoomSignal] = React.useState(0);
   const [styleDraft, setStyleDraft] = React.useState(() => styleDraftFromArea(null));
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
+  const [drawIsTemp, setDrawIsTemp] = React.useState(false);
   const [drawForm, setDrawForm] = React.useState(null);
   const [editGeom, setEditGeom] = React.useState(null);
   const [track, setTrack] = React.useState(() => initialTrackState());
@@ -509,14 +400,27 @@ export default function PastureMapView({Header, authState}) {
   const [saving, setSaving] = React.useState(false);
   const [planSaving, setPlanSaving] = React.useState(false);
   const [planBusyId, setPlanBusyId] = React.useState(null);
-  const [groups, setGroups] = React.useState(() => DEFAULT_GROUPS);
+  const {breeders, feederGroups} = usePig();
+  const {cattleForHome} = useCattleHome();
+  const {sheepForHome} = useSheepHome();
+  // Derived, READ-ONLY planner roster: counts are locked from real animal
+  // records (never user-entered) via the shared pasturePlannerGroups helper.
+  const roster = React.useMemo(
+    () => computePlannerGroupRoster({cattle: cattleForHome, sheep: sheepForHome, breeders, feederGroups}),
+    [cattleForHome, sheepForHome, breeders, feederGroups],
+  );
+  // `size` is the display string the existing UI reads (groupSizeCount parses
+  // the leading count back out); day/plannedDays are neutral placeholders until
+  // the P3 Plan redesign tracks real rotation days.
+  const groups = React.useMemo(
+    () => roster.groups.map((g) => ({...g, size: `${g.count} ${g.unit}`, day: 1, plannedDays: 1})),
+    [roster],
+  );
   const [rotations, setRotations] = React.useState({});
-  const [activeGroupId, setActiveGroupId] = React.useState('main');
+  const [activeGroupId, setActiveGroupId] = React.useState(null);
   const [fieldOffline, setFieldOffline] = React.useState(true);
-  const [fieldQueue, setFieldQueue] = React.useState([
-    {id: 'demo-1', label: 'Main Herd -> N4', status: 'Queued', time: 'Today 7:43 AM'},
-    {id: 'demo-2', label: 'Close gate - S2 lane', status: 'Queued', time: 'Today 7:45 AM'},
-  ]);
+  const [fieldQueue, setFieldQueue] = React.useState([]);
+  const [fieldDupeAck, setFieldDupeAck] = React.useState(false);
   const trackWatchRef = React.useRef(null);
 
   async function refreshQueueState() {
@@ -627,12 +531,50 @@ export default function PastureMapView({Header, authState}) {
     () => areas.filter((area) => area.status !== 'retired' && area.geometry_status !== 'deleted'),
     [areas],
   );
+  // Setup lists ALL live areas (including archived/retired) so they can be
+  // restored; list_land_areas already excludes hard-deleted (deleted_at) rows.
+  const setupAreas = React.useMemo(() => areas.filter((area) => area.geometry_status !== 'deleted'), [areas]);
   const areaById = React.useMemo(() => new Map(areas.map((area) => [area.id, area])), [areas]);
-  const activeGroup = groups.find((group) => group.id === activeGroupId) || groups[0] || DEFAULT_GROUPS[0];
+  const activeGroup = groups.find((group) => group.id === activeGroupId) || groups[0] || null;
   const activeSpecies = groupSpeciesStyle(activeGroup);
-  const activeRotation = (rotations[activeGroup.id] || []).filter((id) => areaById.has(id));
+  const activeRotation = ((activeGroup && rotations[activeGroup.id]) || []).filter((id) => areaById.has(id));
   const nowArea = areaById.get(activeRotation[0]) || null;
   const nextArea = areaById.get(activeRotation[1]) || null;
+  // Current location per planner group = latest move ledger row by
+  // (animal_type, group_key). moves is sorted moved_at DESC, so the first match
+  // is the latest; no match -> Not placed (null).
+  const groupLocation = React.useMemo(() => {
+    const out = {};
+    for (const g of groups) {
+      const mv = moves.find((m) => m.animal_type === g.animalType && m.group_key === g.groupKey);
+      out[g.id] =
+        mv && mv.to_land_area_id
+          ? {areaId: mv.to_land_area_id, areaName: mv.to_land_area_name, movedAt: mv.moved_at}
+          : null;
+    }
+    return out;
+  }, [groups, moves]);
+  // Client-side occupancy for the Map canvas: area id -> occupying roster groups
+  // (animal-type color + identity), derived from the SAME (animal_type,
+  // group_key) contract as groupLocation. This — not land_areas.current_occupants
+  // — drives the map's animal-colored fills and group markers.
+  const occupantsByArea = React.useMemo(() => {
+    const out = {};
+    for (const g of groups) {
+      const loc = groupLocation[g.id];
+      if (!loc || !loc.areaId) continue;
+      const sp = SPECIES[g.species] || SPECIES.cattle;
+      (out[loc.areaId] = out[loc.areaId] || []).push({
+        species: g.species,
+        short: g.short,
+        name: g.name,
+        count: g.count,
+        color: sp.color,
+        ink: sp.ink,
+      });
+    }
+    return out;
+  }, [groups, groupLocation]);
   const selectedArea = areas.find((a) => a.id === selectedId) || null;
   const selectedEditable = hasPolygonGeom(selectedArea);
   const selectedDensity = densityCopy(selectedArea);
@@ -658,6 +600,13 @@ export default function PastureMapView({Header, authState}) {
       return next;
     });
   }, [activeAreas, groups]);
+
+  // Keep the active group pointed at a real roster group (no demo default), and
+  // prime the move/plan forms with that group's locked identity + count.
+  React.useEffect(() => {
+    if (groups.length && !groups.some((g) => g.id === activeGroupId)) setActiveGroupFromGroup(groups[0]);
+    else if (!groups.length && activeGroupId !== null) setActiveGroupId(null);
+  }, [groups, activeGroupId]);
 
   React.useEffect(() => {
     setStyleDraft(styleDraftFromArea(selectedArea));
@@ -803,7 +752,8 @@ export default function PastureMapView({Header, authState}) {
       await fn();
       await reload();
     } catch (e) {
-      setErr(e.message || 'Action failed');
+      // The server raises the bare PM_AREA_OCCUPIED sentinel; the client owns the copy.
+      setErr(e.message === 'PM_AREA_OCCUPIED' ? PM_AREA_OCCUPIED_COPY : e.message || 'Action failed');
     } finally {
       setBusyId(null);
     }
@@ -812,6 +762,29 @@ export default function PastureMapView({Header, authState}) {
   const classify = (a, kind) => withBusy(a.id, () => classifyLandArea(a.id, kind));
   const removeArea = (a) => withBusy(a.id, () => deleteLandArea(a.id));
   const saveAreaPatch = (a, fields) => withBusy(a.id, () => updateLandArea(a.id, fields));
+
+  // P0 temp-paddock lifecycle. Designations are exactly Pasture / Paddock /
+  // Temp paddock; temp = permanence 'temporary'.
+  function classifyDesignation(a, designation) {
+    if (designation === 'pasture')
+      return withBusy(a.id, () =>
+        updateLandArea(a.id, {kind: 'pasture', permanence: 'permanent', reviewStatus: 'reviewed'}),
+      );
+    if (designation === 'temp')
+      return withBusy(a.id, () =>
+        updateLandArea(a.id, {kind: 'paddock', permanence: 'temporary', reviewStatus: 'reviewed'}),
+      );
+    return withBusy(a.id, () =>
+      updateLandArea(a.id, {kind: 'paddock', permanence: 'permanent', reviewStatus: 'reviewed'}),
+    );
+  }
+  const archiveArea = (a) => withBusy(a.id, () => archiveLandArea(a.id));
+  const restoreArea = (a) => withBusy(a.id, () => restoreLandArea(a.id));
+  const renameTemp = (a, name) => withBusy(a.id, () => renameTempLandArea(a.id, name));
+  function confirmHardDelete(a) {
+    setConfirmDeleteId(null);
+    return withBusy(a.id, () => hardDeleteLandArea(a.id));
+  }
 
   function closeOutline(a) {
     const res = closeOutlineToPolygon(a.raw_geometry);
@@ -906,22 +879,34 @@ export default function PastureMapView({Header, authState}) {
       return;
     }
     const trackId = newPastureTrackId();
-    const createPayload = {id: trackId, name: trackForm.name.trim(), line: trackForm.geometry, source: 'drawn'};
+    // A GPS-walked boundary that closes into a valid polygon becomes a REAL temp
+    // paddock (farm_team-capable P0 RPC), usable across Map/Plan/Field/Reports.
+    // A 2-point trace that cannot close stays an outline candidate.
+    const closed = closeOutlineToPolygon(trackForm.geometry);
+    const asTemp = closed.valid;
+    const op = asTemp ? 'create_temp_area' : 'create_track';
+    const createPayload = asTemp
+      ? {id: trackId, name: trackForm.name.trim(), polygon: closed.polygon, source: 'drawn'}
+      : {id: trackId, name: trackForm.name.trim(), line: trackForm.geometry, source: 'drawn'};
     setSaving(true);
     setErr('');
     try {
-      const saved = await createLandAreaTrack(createPayload);
+      const saved = asTemp ? await createTempLandArea(createPayload) : await createLandAreaTrack(createPayload);
       resetTrackFlow();
       setMapMode('select');
       setSelectedId((saved && saved.id) || trackId);
       await reload();
     } catch (e) {
       if (classifyPastureOfflineError(e) === 'transient') {
-        await enqueuePastureOperation({id: trackId, op: 'create_track', payload: createPayload});
+        await enqueuePastureOperation({id: trackId, op, payload: createPayload});
         await refreshQueueState();
         resetTrackFlow();
         setMapMode('select');
-        setOfflineStatus('Field track saved on this device and will sync when the connection returns.');
+        setOfflineStatus(
+          asTemp
+            ? 'Temp paddock saved on this device and will sync when the connection returns.'
+            : 'Field track saved on this device and will sync when the connection returns.',
+        );
       } else {
         setTrack((t) => ({...t, error: e.message || 'Could not save field track.'}));
       }
@@ -930,32 +915,38 @@ export default function PastureMapView({Header, authState}) {
     }
   }
 
-  function updateMoveType(type) {
-    const preset = (GROUP_PRESETS[type] || [])[0] || {key: '', label: ''};
-    setMoveForm((f) => ({...f, animalType: type, groupKey: preset.key, groupLabel: preset.label}));
+  // Group picker is a single flat list from the locked roster (no species
+  // pre-selector, no free-form): selecting a group fills its durable
+  // (animal_type, group_key) identity and the locked count. The select value is
+  // the roster group id resolved from the form's current animal_type+group_key.
+  function rosterGroupById(id) {
+    return groups.find((g) => g.id === id) || null;
   }
-
-  function updateMovePreset(key) {
-    if (key === '__custom') {
-      setMoveForm((f) => ({...f, groupKey: '', groupLabel: ''}));
-      return;
-    }
-    const preset = (GROUP_PRESETS[moveForm.animalType] || []).find((p) => p.key === key);
-    if (preset) setMoveForm((f) => ({...f, groupKey: preset.key, groupLabel: preset.label}));
+  function rosterGroupId(form) {
+    const g = groups.find((x) => x.animalType === form.animalType && x.groupKey === form.groupKey);
+    return g ? g.id : '';
   }
-
-  function updatePlanType(type) {
-    const preset = (GROUP_PRESETS[type] || [])[0] || {key: '', label: ''};
-    setPlanForm((f) => ({...f, animalType: type, groupKey: preset.key, groupLabel: preset.label}));
+  function updateMoveGroup(id) {
+    const g = rosterGroupById(id);
+    if (g)
+      setMoveForm((f) => ({
+        ...f,
+        animalType: g.animalType,
+        groupKey: g.groupKey,
+        groupLabel: g.name,
+        animalCount: String(g.count),
+      }));
   }
-
-  function updatePlanPreset(key) {
-    if (key === '__custom') {
-      setPlanForm((f) => ({...f, groupKey: '', groupLabel: ''}));
-      return;
-    }
-    const preset = (GROUP_PRESETS[planForm.animalType] || []).find((p) => p.key === key);
-    if (preset) setPlanForm((f) => ({...f, groupKey: preset.key, groupLabel: preset.label}));
+  function updatePlanGroup(id) {
+    const g = rosterGroupById(id);
+    if (g)
+      setPlanForm((f) => ({
+        ...f,
+        animalType: g.animalType,
+        groupKey: g.groupKey,
+        groupLabel: g.name,
+        animalCount: String(g.count),
+      }));
   }
 
   async function saveMove() {
@@ -991,7 +982,8 @@ export default function PastureMapView({Header, authState}) {
         });
       }
       setActivePlanId(null);
-      setMoveForm((f) => ({...f, movedAt: localDateTimeValue(), animalCount: '', notes: ''}));
+      // animalCount stays locked to the roster group; only transient inputs reset.
+      setMoveForm((f) => ({...f, movedAt: localDateTimeValue(), notes: ''}));
       await reload();
     } catch (e) {
       if (classifyPastureOfflineError(e) === 'transient') {
@@ -1026,7 +1018,8 @@ export default function PastureMapView({Header, authState}) {
         animalCount: count,
         notes: planForm.notes,
       });
-      setPlanForm((f) => ({...f, plannedFor: tomorrowMorningValue(), animalCount: '', notes: ''}));
+      // animalCount stays locked to the roster group; only transient inputs reset.
+      setPlanForm((f) => ({...f, plannedFor: tomorrowMorningValue(), notes: ''}));
       await reload();
     } catch (e) {
       setErr(e.message || 'Could not save planned move.');
@@ -1089,11 +1082,15 @@ export default function PastureMapView({Header, authState}) {
       source: 'drawn',
     };
     try {
-      await createLandArea(createPayload);
+      // A temp paddock draw (Plan/Field/Setup) mints a real temp paddock via the
+      // farm_team-capable P0 RPC; a permanent draw uses the mgmt/admin RPC.
+      if (drawIsTemp) await createTempLandArea({id: areaId, name: createPayload.name, polygon: createPayload.polygon});
+      else await createLandArea(createPayload);
       setDrawForm(null);
+      setDrawIsTemp(false);
       setMapMode('select');
       await reload();
-      appendToRotation(activeGroup.id, areaId);
+      if (drawIsTemp && activeGroup) appendToRotation(activeGroup.id, areaId);
     } catch (e) {
       if (classifyPastureOfflineError(e) === 'transient') {
         await enqueuePastureOperation({id: areaId, op: 'create_area', payload: createPayload});
@@ -1109,6 +1106,7 @@ export default function PastureMapView({Header, authState}) {
 
   function cancelDraw() {
     setDrawForm(null);
+    setDrawIsTemp(false);
     setMapMode('select');
   }
 
@@ -1124,7 +1122,11 @@ export default function PastureMapView({Header, authState}) {
     setSaving(true);
     setErr('');
     try {
-      await updateLandAreaGeometry(selectedId, editGeom.geometry);
+      // Temp paddocks redraw through the owner-or-manager temp RPC; permanent
+      // areas through the mgmt/admin RPC.
+      if (selectedArea && selectedArea.permanence === 'temporary')
+        await updateTempLandAreaGeometry(selectedId, editGeom.geometry);
+      else await updateLandAreaGeometry(selectedId, editGeom.geometry);
       setEditGeom(null);
       setMapMode('select');
       await reload();
@@ -1161,7 +1163,7 @@ export default function PastureMapView({Header, authState}) {
   }
 
   function handleAreaClick(id) {
-    if (addMode && appMode === 'plan') {
+    if (addMode && appMode === 'plan' && activeGroup) {
       appendToRotation(activeGroup.id, id);
       return;
     }
@@ -1202,7 +1204,6 @@ export default function PastureMapView({Header, authState}) {
       const rotated = index >= 0 ? [...current.slice(index), ...current.slice(0, index)] : [areaId, ...current];
       return {...prev, [groupId]: [...new Set(rotated)]};
     });
-    setGroups((prev) => prev.map((group) => (group.id === groupId ? {...group, day: 1} : group)));
   }
 
   async function recordGroupMove(group, areaId, {offlineOnly = false} = {}) {
@@ -1266,47 +1267,6 @@ export default function PastureMapView({Header, authState}) {
     }
   }
 
-  function addGroup() {
-    const id = `group-${Date.now()}`;
-    const next = {
-      id,
-      name: 'New Group',
-      species: 'cattle',
-      groupKey: id,
-      short: 'NG',
-      size: '',
-      day: 1,
-      plannedDays: 3,
-    };
-    setGroups((prev) => [...prev, next]);
-    setActiveGroupId(id);
-  }
-
-  function updateGroup(id, patch) {
-    setGroups((prev) =>
-      prev.map((group) => {
-        if (group.id !== id) return group;
-        const next = {...group, ...patch};
-        if (patch.name !== undefined) next.groupKey = group.groupKey || slugKey(patch.name);
-        return next;
-      }),
-    );
-  }
-
-  function removeGroup(id) {
-    setGroups((prev) => {
-      if (prev.length <= 1) return prev;
-      const next = prev.filter((group) => group.id !== id);
-      if (activeGroupId === id && next.length) setActiveGroupId(next[0].id);
-      return next;
-    });
-    setRotations((prev) => {
-      const next = {...prev};
-      delete next[id];
-      return next;
-    });
-  }
-
   function setActiveGroupFromGroup(group) {
     setActiveGroupId(group.id);
     const count = groupSizeCount(group);
@@ -1327,10 +1287,15 @@ export default function PastureMapView({Header, authState}) {
   }
 
   const mapBanner = addMode
-    ? {text: `Tap paddocks to add to ${activeGroup.name}`, primary: {label: 'Done', onClick: () => setAddMode(false)}}
+    ? {
+        text: `Tap paddocks to add to ${activeGroup ? activeGroup.name : 'the group'}`,
+        primary: {label: 'Done', onClick: () => setAddMode(false)},
+      }
     : mapMode === 'draw'
       ? {
-          text: drawForm ? 'Review the new paddock details' : `Draw a temp paddock for ${activeGroup.name}`,
+          text: drawForm
+            ? 'Review the new paddock details'
+            : `Draw a temp paddock for ${activeGroup ? activeGroup.name : 'the group'}`,
           secondary: {label: 'Cancel', onClick: cancelDraw},
         }
       : mapMode === 'edit'
@@ -1576,45 +1541,22 @@ export default function PastureMapView({Header, authState}) {
         <div className="pm-move-form" data-pasture-move-form="1">
           <div className="pm-card-title">Record movement</div>
           <div className="pm-form-grid">
-            <label className="pm-field">
-              <span>Animal group</span>
-              <select value={moveForm.animalType} onChange={(e) => updateMoveType(e.target.value)}>
-                {Object.entries(ANIMAL_TYPE_LABEL).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="pm-field">
-              <span>Known group</span>
+            <label className="pm-field pm-field-wide">
+              <span>Group</span>
               <select
-                value={
-                  (GROUP_PRESETS[moveForm.animalType] || []).some((p) => p.key === moveForm.groupKey)
-                    ? moveForm.groupKey
-                    : '__custom'
-                }
-                onChange={(e) => updateMovePreset(e.target.value)}
+                value={rosterGroupId(moveForm)}
+                onChange={(e) => updateMoveGroup(e.target.value)}
+                data-pasture-move-group="1"
               >
-                {(GROUP_PRESETS[moveForm.animalType] || []).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
+                <option value="" disabled>
+                  Select group
+                </option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
                   </option>
                 ))}
-                <option value="__custom">Custom</option>
               </select>
-            </label>
-            <label className="pm-field">
-              <span>Group name</span>
-              <input
-                type="text"
-                value={moveForm.groupLabel}
-                maxLength={160}
-                onChange={(e) =>
-                  setMoveForm((f) => ({...f, groupLabel: e.target.value, groupKey: slugKey(e.target.value)}))
-                }
-                data-pasture-move-group="1"
-              />
             </label>
             <label className="pm-field">
               <span>Moved at</span>
@@ -1626,14 +1568,8 @@ export default function PastureMapView({Header, authState}) {
               />
             </label>
             <label className="pm-field">
-              <span>Count</span>
-              <input
-                type="number"
-                min="1"
-                value={moveForm.animalCount}
-                onChange={(e) => setMoveForm((f) => ({...f, animalCount: e.target.value}))}
-                data-pasture-move-count="1"
-              />
+              <span>Count (locked)</span>
+              <input type="number" value={moveForm.animalCount} readOnly data-pasture-move-count="1" />
             </label>
             <label className="pm-field pm-field-wide">
               <span>Notes</span>
@@ -1667,45 +1603,22 @@ export default function PastureMapView({Header, authState}) {
         <div className="pm-plan-form" data-pasture-plan-form="1">
           <div className="pm-card-title">Plan future move here</div>
           <div className="pm-form-grid">
-            <label className="pm-field">
-              <span>Animal group</span>
-              <select value={planForm.animalType} onChange={(e) => updatePlanType(e.target.value)}>
-                {Object.entries(ANIMAL_TYPE_LABEL).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="pm-field">
-              <span>Known group</span>
+            <label className="pm-field pm-field-wide">
+              <span>Group</span>
               <select
-                value={
-                  (GROUP_PRESETS[planForm.animalType] || []).some((p) => p.key === planForm.groupKey)
-                    ? planForm.groupKey
-                    : '__custom'
-                }
-                onChange={(e) => updatePlanPreset(e.target.value)}
+                value={rosterGroupId(planForm)}
+                onChange={(e) => updatePlanGroup(e.target.value)}
+                data-pasture-plan-group="1"
               >
-                {(GROUP_PRESETS[planForm.animalType] || []).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
+                <option value="" disabled>
+                  Select group
+                </option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
                   </option>
                 ))}
-                <option value="__custom">Custom</option>
               </select>
-            </label>
-            <label className="pm-field">
-              <span>Group name</span>
-              <input
-                type="text"
-                value={planForm.groupLabel}
-                maxLength={160}
-                onChange={(e) =>
-                  setPlanForm((f) => ({...f, groupLabel: e.target.value, groupKey: slugKey(e.target.value)}))
-                }
-                data-pasture-plan-group="1"
-              />
             </label>
             <label className="pm-field">
               <span>Planned for</span>
@@ -1717,14 +1630,8 @@ export default function PastureMapView({Header, authState}) {
               />
             </label>
             <label className="pm-field">
-              <span>Count</span>
-              <input
-                type="number"
-                min="1"
-                value={planForm.animalCount}
-                onChange={(e) => setPlanForm((f) => ({...f, animalCount: e.target.value}))}
-                data-pasture-plan-count="1"
-              />
+              <span>Count (locked)</span>
+              <input type="number" value={planForm.animalCount} readOnly data-pasture-plan-count="1" />
             </label>
             <label className="pm-field pm-field-wide">
               <span>Notes</span>
@@ -1954,10 +1861,17 @@ export default function PastureMapView({Header, authState}) {
         <div className="pm-selected-stripe" />
         <div className="pm-selected-head">
           <div>
-            <div className="pm-kicker">Selected pasture</div>
+            <div className="pm-kicker">Area detail</div>
             <div className="pm-selected-title">{selectedArea.name || 'Unnamed'}</div>
           </div>
           <span className={'pm-state-badge state-' + state}>{statusLabelForState(state)}</span>
+        </div>
+        <div className="pm-area-detail-chips" data-pasture-area-detail={selectedArea.id}>
+          <span className={'pm-chip pm-chip-' + selectedArea.kind}>{designationLabel(selectedArea)}</span>
+          {isTempArea(selectedArea) && <span className="pm-chip pm-chip-temp">Temp</span>}
+          {isArchivedArea(selectedArea) && (
+            <span className="pm-chip">{isTempArea(selectedArea) ? 'Archived temp' : 'Archived'}</span>
+          )}
         </div>
         {Array.isArray(selectedArea.current_occupants) && selectedArea.current_occupants.length > 0 && (
           <div className="pm-occupants" data-pasture-occupancy={selectedArea.id}>
@@ -1974,7 +1888,7 @@ export default function PastureMapView({Header, authState}) {
           <span>Acres</span>
           <strong>{selectedArea.effective_acres == null ? '-' : `${selectedArea.effective_acres} ac`}</strong>
           <span>Type</span>
-          <strong>{KIND_LABEL[selectedArea.kind] || selectedArea.kind || '-'}</strong>
+          <strong>{designationLabel(selectedArea)}</strong>
           <span>Last grazed</span>
           <strong>{selectedArea.last_touched_at ? formatMoveTime(selectedArea.last_touched_at) : 'No history'}</strong>
         </div>
@@ -1988,7 +1902,8 @@ export default function PastureMapView({Header, authState}) {
             <span key={fact}>{fact}</span>
           ))}
         </div>
-        {isManager && renderLineStylePanel()}
+        {/* Map is read-only "where things are": move/plan recording lives in
+            Plan, line-style editing lives in Setup. */}
         <div className="pm-selected-actions">
           <button type="button" className="pm-btn" onClick={() => setZoomSignal((n) => n + 1)}>
             Zoom to this pasture
@@ -1997,7 +1912,82 @@ export default function PastureMapView({Header, authState}) {
             Clear selection
           </button>
         </div>
-        {renderMoveAndPlanForms()}
+      </div>
+    );
+  }
+
+  // Select a planner group and, when it has a current location, select + zoom
+  // that area; otherwise clear the selection (group is Not placed).
+  function selectGroupAndLocation(group) {
+    setActiveGroupFromGroup(group);
+    const loc = groupLocation[group.id];
+    if (loc && loc.areaId) {
+      setSelectedId(loc.areaId);
+      setZoomSignal((n) => n + 1);
+    } else {
+      setSelectedId(null);
+    }
+  }
+
+  // Current Groups: roster-backed groups with locked counts and current
+  // location resolved from the move ledger by (animal_type, group_key).
+  function renderCurrentGroups() {
+    if (!groups.length) {
+      return (
+        <div className="pm-card" data-pasture-current-groups="empty">
+          <div className="pm-card-title">Current groups</div>
+          <div className="pm-empty">
+            No active planner groups. Add animals in Cattle, Sheep, or Pigs to populate the roster.
+          </div>
+        </div>
+      );
+    }
+    const placed = groups.filter((g) => groupLocation[g.id]).length;
+    return (
+      <div className="pm-card" data-pasture-current-groups="1">
+        <div className="pm-card-head">
+          <div className="pm-card-title">Current groups</div>
+          <span>
+            {placed} of {groups.length} placed
+          </span>
+        </div>
+        {roster.bySpecies.map((sec) => (
+          <div key={sec.species} className="pm-group-section">
+            <div className="pm-section-label" style={{'--species-color': sec.color}}>
+              {sec.label} - {sec.headCount} head
+            </div>
+            <div className="pm-current-rows">
+              {sec.groups.map((g) => {
+                const loc = groupLocation[g.id];
+                const isActive = activeGroup && g.id === activeGroup.id;
+                return (
+                  <button
+                    type="button"
+                    key={g.id}
+                    className={'pm-current-row' + (isActive ? ' is-active' : '')}
+                    style={{'--species-color': sec.color}}
+                    onClick={() => selectGroupAndLocation(g)}
+                    data-pasture-current-group={g.groupKey}
+                  >
+                    <span className="pm-avatar">{g.short}</span>
+                    <span className="pm-current-name">
+                      <strong>{g.name}</strong>
+                      <em>
+                        {g.count} {g.unit}
+                      </em>
+                    </span>
+                    <span
+                      className={'pm-loc-chip ' + (loc ? 'placed' : 'unplaced')}
+                      data-pasture-group-location={loc ? loc.areaId : 'none'}
+                    >
+                      {loc ? loc.areaName || 'Placed' : 'Not placed'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -2006,13 +1996,16 @@ export default function PastureMapView({Header, authState}) {
     if (selectedArea) return renderSelectedPanel();
     return (
       <>
-        <div className="pm-panel-title">
-          <span className="pm-kicker">View / Map</span>
-          <h2>Whole farm</h2>
+        <div className="pm-panel-title" data-pasture-map-header="1">
+          <span className="pm-kicker">MAP - WHERE THINGS ARE</span>
+          <h2>Current groups</h2>
           <p>
-            {activeAreas.length} active paddocks - {classifyQueue.length} needs setup
+            {groups.length
+              ? `${groups.filter((g) => groupLocation[g.id]).length} of ${groups.length} groups placed - tap a group or area`
+              : 'No active planner groups yet'}
           </p>
         </div>
+        {renderCurrentGroups()}
         <div className="pm-card pm-status-card">
           <div className="pm-card-title">Farm status</div>
           <div className="pm-metric-grid">
@@ -2029,14 +2022,6 @@ export default function PastureMapView({Header, authState}) {
               <span className="dot no-history" /> No history<strong>{statusCounts.no_history}</strong>
             </div>
           </div>
-        </div>
-        <div className="pm-info-banner">
-          <span>{groups.length} animal groups on rotation</span>
-          <strong>
-            {activeGroup.name} in {nowArea ? nowArea.name : 'no pasture'} - day {activeGroup.day}/
-            {activeGroup.plannedDays}.
-          </strong>
-          Open Plan to build moves per group.
         </div>
         <div className="pm-card">
           <div className="pm-card-title">Land areas</div>
@@ -2207,8 +2192,10 @@ export default function PastureMapView({Header, authState}) {
             onClick={() => {
               setAppMode('plan');
               setAddMode(false);
+              setDrawIsTemp(true);
               switchToolMode('draw');
             }}
+            data-pasture-draw-temp="1"
           >
             Draw temp paddock
           </button>
@@ -2218,6 +2205,20 @@ export default function PastureMapView({Header, authState}) {
   }
 
   function renderPlanPanel() {
+    if (!activeGroup)
+      return (
+        <>
+          <div className="pm-panel-title">
+            <span className="pm-kicker">Plan / Grazing cockpit</span>
+            <h2>Move planner</h2>
+          </div>
+          <div className="pm-card">
+            <div className="pm-empty">
+              No active planner groups. Add animals in Cattle, Sheep, or Pigs to plan moves.
+            </div>
+          </div>
+        </>
+      );
     return (
       <>
         <div className="pm-panel-title">
@@ -2275,8 +2276,23 @@ export default function PastureMapView({Header, authState}) {
             {saving ? 'Saving...' : `Mark ${activeGroup.short} moved`}
           </button>
         </div>
+        {nextArea && (occupantsByArea[nextArea.id] || []).some((o) => o.name !== activeGroup.name) && (
+          <div className="pm-conflict-warn" data-pasture-plan-conflict="1">
+            &#9888; {nextArea.name} is currently occupied by{' '}
+            {(occupantsByArea[nextArea.id].find((o) => o.name !== activeGroup.name) || {}).name}.
+          </div>
+        )}
         {renderRotationEditor()}
         {plans.length > 0 && renderPlannedMoves()}
+        {canRecordMoves && (
+          <div className="pm-card" data-pasture-plan-destinations="1">
+            <div className="pm-card-title">
+              {selectedArea ? `Record / plan for ${selectedArea.name}` : 'Select an area to record or plan a move'}
+            </div>
+            {renderAreaIndex(10)}
+          </div>
+        )}
+        {renderMoveAndPlanForms()}
       </>
     );
   }
@@ -2291,66 +2307,43 @@ export default function PastureMapView({Header, authState}) {
         {renderTrackPanel()}
         {renderDrawForm()}
         {renderEditBar()}
+        {selectedArea && isManager && (
+          <div className="pm-card" data-pasture-setup-linestyle="1">
+            <div className="pm-card-title">Line style - {selectedArea.name}</div>
+            {renderLineStylePanel()}
+          </div>
+        )}
         <div className="pm-card">
           <div className="pm-card-head">
             <div>
               <div className="pm-card-title">Animal groups</div>
-              <p>Add, rename, set species and head count. Changes apply across Plan and Field.</p>
+              <p>Locked roster - counts come from real animal records (Cattle, Sheep, Pigs), not edited here.</p>
             </div>
             <span>{groups.length} groups</span>
           </div>
-          <div className="pm-setup-groups">
-            {groups.map((group) => {
-              const spec = groupSpeciesStyle(group);
-              return (
-                <div key={group.id} className="pm-group-editor" style={{'--species-color': spec.color}}>
-                  <span className="pm-avatar">{group.short}</span>
-                  <input value={group.name} onChange={(e) => updateGroup(group.id, {name: e.target.value})} />
-                  <button
-                    type="button"
-                    className="pm-icon-btn danger"
-                    onClick={() => removeGroup(group.id)}
-                    disabled={groups.length <= 1}
+          {groups.length ? (
+            <div className="pm-setup-groups">
+              {groups.map((group) => {
+                const spec = groupSpeciesStyle(group);
+                return (
+                  <div
+                    key={group.id}
+                    className="pm-group-editor pm-group-readonly"
+                    style={{'--species-color': spec.color}}
+                    data-pasture-roster-group={group.groupKey}
                   >
-                    x
-                  </button>
-                  <input
-                    value={group.short}
-                    maxLength={3}
-                    onChange={(e) => updateGroup(group.id, {short: e.target.value.toUpperCase()})}
-                  />
-                  <select value={group.species} onChange={(e) => updateGroup(group.id, {species: e.target.value})}>
-                    <option value="cattle">Cattle</option>
-                    <option value="pig">Pigs</option>
-                    <option value="sheep">Sheep</option>
-                  </select>
-                  <input value={group.size} onChange={(e) => updateGroup(group.id, {size: e.target.value})} />
-                  <label>
-                    Day
-                    <input
-                      type="number"
-                      min="1"
-                      value={group.day}
-                      onChange={(e) => updateGroup(group.id, {day: Math.max(1, Number(e.target.value) || 1)})}
-                    />
-                  </label>
-                  <label>
-                    of
-                    <input
-                      type="number"
-                      min="1"
-                      value={group.plannedDays}
-                      onChange={(e) => updateGroup(group.id, {plannedDays: Math.max(1, Number(e.target.value) || 1)})}
-                    />
-                  </label>
-                  <span>days in paddock</span>
-                </div>
-              );
-            })}
-          </div>
-          <button type="button" className="pm-add-group" onClick={addGroup}>
-            Add group
-          </button>
+                    <span className="pm-avatar">{group.short}</span>
+                    <strong>{group.name}</strong>
+                    <span>{group.size}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pm-empty">
+              No active planner groups. Add animals in Cattle, Sheep, or Pigs to populate the roster.
+            </div>
+          )}
         </div>
         <div className="pm-card">
           <div className="pm-card-head">
@@ -2367,22 +2360,38 @@ export default function PastureMapView({Header, authState}) {
             </div>
           </div>
           <div className="pm-pasture-editor">
-            {activeAreas.map((area) => {
+            {setupAreas.map((area) => {
               const expanded = expandedPasture === area.id;
+              const isTemp = area.permanence === 'temporary';
+              const isArchived = area.status === 'retired';
+              const isOutline = area.kind === 'outline_candidate' || area.geometry_status === 'outline_candidate';
+              // Temp paddocks: creator/owner or manager (RPC enforces ownership).
+              // Permanent areas: management/admin only.
+              const canManageArea = isTemp ? canRecordMoves : isManager;
               return (
-                <div key={area.id} className="pm-pasture-edit-row" data-pasture-area={area.id} data-kind={area.kind}>
+                <div
+                  key={area.id}
+                  className={'pm-pasture-edit-row' + (isArchived ? ' is-archived' : '')}
+                  data-pasture-area={area.id}
+                  data-kind={area.kind}
+                  data-pasture-permanence={area.permanence || 'permanent'}
+                  data-pasture-status={area.status}
+                >
                   <span className={'dot ' + grazingState(area)} />
                   <input
                     defaultValue={area.name || ''}
+                    disabled={!canManageArea}
                     onBlur={(e) => {
                       const value = e.target.value.trim();
-                      if (value && value !== area.name) saveAreaPatch(area, {name: value});
+                      if (value && value !== area.name)
+                        isTemp ? renameTemp(area, value) : saveAreaPatch(area, {name: value});
                     }}
                   />
                   <input
                     type="number"
                     step="0.01"
                     defaultValue={area.effective_acres == null ? '' : area.effective_acres}
+                    disabled={!canManageArea}
                     onBlur={(e) => {
                       const value = e.target.value === '' ? null : Number(e.target.value);
                       if (value == null) saveAreaPatch(area, {clearManual: true});
@@ -2390,40 +2399,42 @@ export default function PastureMapView({Header, authState}) {
                     }}
                   />
                   <span>ac</span>
+                  <span className="pm-area-tags">
+                    <span className="pm-chip">{designationLabel(area)}</span>
+                    {isTemp && <span className="pm-chip pm-chip-temp">Temp</span>}
+                    {isArchived && <span className="pm-chip">{isTemp ? 'Archived temp' : 'Archived'}</span>}
+                  </span>
                   <button
                     type="button"
                     className="pm-icon-btn"
                     onClick={() => setExpandedPasture(expanded ? null : area.id)}
+                    data-pasture-expand={area.id}
                   >
                     {expanded ? '^' : 'v'}
                   </button>
                   {expanded && (
                     <div className="pm-pasture-expanded">
                       <label className="pm-field">
-                        <span>Type</span>
-                        <select value={area.kind || 'unclassified'} onChange={(e) => classify(area, e.target.value)}>
-                          {[
-                            'unclassified',
-                            'paddock',
-                            'pasture',
-                            'feeder_pig_area',
-                            'section',
-                            'infrastructure',
-                            'scratch',
-                          ].map((kind) => (
-                            <option key={kind} value={kind}>
-                              {KIND_LABEL[kind] || kind}
-                            </option>
-                          ))}
+                        <span>Designation</span>
+                        <select
+                          value={isTemp ? 'temp' : area.kind === 'pasture' ? 'pasture' : 'paddock'}
+                          disabled={!isManager}
+                          onChange={(e) => classifyDesignation(area, e.target.value)}
+                          data-pasture-designation={area.id}
+                        >
+                          <option value="pasture">Pasture</option>
+                          <option value="paddock">Paddock</option>
+                          <option value="temp">Temp paddock</option>
                         </select>
                       </label>
+                      {area.kind === 'unclassified' && (
+                        <div className="pm-needs-classification" data-pasture-needs-classification={area.id}>
+                          Needs classification
+                        </div>
+                      )}
                       <label className="pm-field">
                         <span>Rest days</span>
                         <input readOnly value={area.rest_days == null ? '' : area.rest_days} />
-                      </label>
-                      <label className="pm-field">
-                        <span>Rest target</span>
-                        <input readOnly value="30" />
                       </label>
                       <div className="pm-setup-actions">
                         <button type="button" className="pm-btn pm-btn-sm" onClick={() => setSelectedId(area.id)}>
@@ -2434,24 +2445,76 @@ export default function PastureMapView({Header, authState}) {
                           className="pm-btn pm-btn-sm"
                           onClick={() => {
                             setSelectedId(area.id);
+                            setDrawIsTemp(isTemp);
                             startEdit();
                           }}
-                          disabled={!hasPolygonGeom(area)}
+                          disabled={!hasPolygonGeom(area) || !canManageArea}
+                          data-pasture-redraw={area.id}
                         >
                           Redraw
                         </button>
-                        {(area.kind === 'outline_candidate' || area.geometry_status === 'outline_candidate') && (
-                          <button type="button" className="pm-btn pm-btn-sm" onClick={() => closeOutline(area)}>
+                        {isOutline && (
+                          <button
+                            type="button"
+                            className="pm-btn pm-btn-sm"
+                            onClick={() => closeOutline(area)}
+                            disabled={!isManager}
+                          >
                             Close outline
                           </button>
                         )}
-                        <button
-                          type="button"
-                          className="pm-btn pm-btn-sm pm-btn-danger"
-                          onClick={() => removeArea(area)}
-                        >
-                          Delete area
-                        </button>
+                        {isArchived ? (
+                          <button
+                            type="button"
+                            className="pm-btn pm-btn-sm"
+                            onClick={() => restoreArea(area)}
+                            disabled={!canManageArea}
+                            data-pasture-restore={area.id}
+                          >
+                            Restore
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="pm-btn pm-btn-sm"
+                            onClick={() => archiveArea(area)}
+                            disabled={!canManageArea}
+                            data-pasture-archive={area.id}
+                          >
+                            {isTemp ? 'Archive temp paddock' : 'Archive'}
+                          </button>
+                        )}
+                        {isAdmin &&
+                          (confirmDeleteId === area.id ? (
+                            <span className="pm-hard-delete-confirm" data-pasture-hard-delete-confirm={area.id}>
+                              Hard delete this area permanently? History will keep text snapshots, but the map shape
+                              will be removed.
+                              <button
+                                type="button"
+                                className="pm-btn pm-btn-sm pm-btn-danger"
+                                onClick={() => confirmHardDelete(area)}
+                                data-pasture-hard-delete-yes={area.id}
+                              >
+                                Hard delete
+                              </button>
+                              <button
+                                type="button"
+                                className="pm-btn pm-btn-sm"
+                                onClick={() => setConfirmDeleteId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="pm-btn pm-btn-sm pm-btn-danger"
+                              onClick={() => setConfirmDeleteId(area.id)}
+                              data-pasture-hard-delete={area.id}
+                            >
+                              Hard delete
+                            </button>
+                          ))}
                       </div>
                     </div>
                   )}
@@ -2528,7 +2591,15 @@ export default function PastureMapView({Header, authState}) {
               <strong>Measure</strong>
               <span>acres/perimeter</span>
             </button>
-            <button type="button" className="pm-tool-btn" onClick={() => switchToolMode('draw')} data-mode="draw">
+            <button
+              type="button"
+              className="pm-tool-btn"
+              onClick={() => {
+                setDrawIsTemp(false);
+                switchToolMode('draw');
+              }}
+              data-mode="draw"
+            >
               <strong>Draw Area</strong>
               <span>new polygon</span>
             </button>
@@ -2603,12 +2674,26 @@ export default function PastureMapView({Header, authState}) {
     );
   }
 
+  // Reports keep spatial/status context: every row is tagged Permanent / Temp /
+  // Archived / Archived temp, or Deleted when only a text snapshot survives
+  // (the area is gone from the live list). Archived areas are included.
+  function reportAreaTag(landAreaId) {
+    const a = areaById.get(landAreaId);
+    if (!a) return <span className="pm-report-tag deleted">Deleted</span>;
+    const isTemp = a.permanence === 'temporary';
+    const isArch = a.status === 'retired';
+    const label = isArch ? (isTemp ? 'Archived temp' : 'Archived') : isTemp ? 'Temp' : 'Permanent';
+    const cls = isArch ? 'archived' : isTemp ? 'temp' : 'permanent';
+    return <span className={'pm-report-tag ' + cls}>{label}</span>;
+  }
+
   function renderReportsPanel() {
+    const restRows = restReport.areas && restReport.areas.length ? restReport.areas : setupAreas;
     const reportCards = [
       {
         id: 'rest',
         title: 'Rest & recovery history',
-        meta: `${(restReport.areas || []).length || activeAreas.length} rows`,
+        meta: `${restRows.length} rows - incl. archived`,
         body: (
           <div data-pasture-rest-report="1">
             <div className="pm-report-metrics">
@@ -2617,9 +2702,10 @@ export default function PastureMapView({Header, authState}) {
               <span>Ready {Number(restCounts.rested || restCounts.ready || 0)}</span>
               <span>No history {Number(restCounts.baseline || restCounts.no_history || 0)}</span>
             </div>
-            {(restReport.areas || activeAreas).slice(0, 8).map((row) => (
+            {restRows.slice(0, 12).map((row) => (
               <div key={row.land_area_id || row.id} className="pm-report-row">
                 <strong>{row.land_area_name || row.name}</strong>
+                {reportAreaTag(row.land_area_id || row.id)}
                 <span>{row.rest_days == null ? restCopy(row) : `${row.rest_days}d rested`}</span>
               </div>
             ))}
@@ -2642,6 +2728,7 @@ export default function PastureMapView({Header, authState}) {
               : stockingRows.slice(0, 8).map((r) => (
                   <div key={r.land_area_id} className="pm-report-row">
                     <strong>{r.land_area_name}</strong>
+                    {reportAreaTag(r.land_area_id)}
                     <span>
                       {r.animal_days_per_acre == null ? 'No acres' : `${r.animal_days_per_acre} / ac`} - {r.animal_days}{' '}
                       animal-days
@@ -2663,6 +2750,7 @@ export default function PastureMapView({Header, authState}) {
               historyRows.slice(0, 8).map((h) => (
                 <div key={h.id} className="pm-report-row">
                   <strong>{h.group_label}</strong>
+                  {reportAreaTag(h.to_land_area_id)}
                   <span>
                     {h.to_land_area_name ? `to ${h.to_land_area_name}` : 'off map'} {formatMoveTime(h.moved_at)}
                   </span>
@@ -2672,6 +2760,7 @@ export default function PastureMapView({Header, authState}) {
               moves.slice(0, 8).map((m) => (
                 <div key={m.id} className="pm-report-row">
                   <strong>{m.group_label}</strong>
+                  {reportAreaTag(m.to_land_area_id)}
                   <span>
                     {m.to_land_area_name ? `to ${m.to_land_area_name}` : 'off map'} {formatMoveTime(m.moved_at)}
                   </span>
@@ -2718,10 +2807,28 @@ export default function PastureMapView({Header, authState}) {
 
   function renderFieldOverlay() {
     if (appMode !== 'field') return null;
+    if (!activeGroup)
+      return (
+        <div className="pm-field-overlay">
+          <div className="pm-field-caption">
+            <span className="pm-kicker">Field / Phone-first</span>
+            <h2>No active planner groups</h2>
+            <p>Add animals in Cattle, Sheep, or Pigs to use the field workflow.</p>
+          </div>
+        </div>
+      );
     const remaining = activeRotation
       .slice(2)
       .map((id) => areaById.get(id))
       .filter(Boolean);
+    // Same-day duplicate guard: has the active group already moved today?
+    const today = new Date().toDateString();
+    const fieldMovedToday = moves.some(
+      (m) =>
+        m.animal_type === activeGroup.animalType &&
+        m.group_key === activeGroup.groupKey &&
+        new Date(m.moved_at).toDateString() === today,
+    );
     return (
       <div className="pm-field-overlay">
         <div className="pm-field-caption">
@@ -2767,6 +2874,7 @@ export default function PastureMapView({Header, authState}) {
           <div className="pm-phone-map">
             {renderPastureMapCanvas({
               areas,
+              occupants: occupantsByArea,
               mode: 'select',
               canWrite: false,
               selectedId,
@@ -2826,14 +2934,27 @@ export default function PastureMapView({Header, authState}) {
             </button>
             <button type="button">Fit Farm</button>
           </div>
+          {fieldMovedToday && (
+            <div className="pm-field-dupe" data-pasture-field-dupe="1">
+              {activeGroup.name} already moved today. Record anyway?
+            </div>
+          )}
           <button
             type="button"
             className="pm-confirm-move"
             style={{'--species-color': activeSpecies.color}}
-            onClick={() => recordGroupMove(activeGroup, nextArea && nextArea.id, {offlineOnly: fieldOffline})}
+            onClick={() => {
+              if (fieldMovedToday && !fieldDupeAck) {
+                setFieldDupeAck(true);
+                return;
+              }
+              setFieldDupeAck(false);
+              recordGroupMove(activeGroup, nextArea && nextArea.id, {offlineOnly: fieldOffline});
+            }}
             disabled={!nextArea || saving}
+            data-pasture-field-confirm="1"
           >
-            Confirm move -&gt; {nextArea ? nextArea.name : 'next'}
+            {fieldMovedToday && fieldDupeAck ? 'Record anyway' : `Confirm move -> ${nextArea ? nextArea.name : 'next'}`}
           </button>
         </div>
       </div>
@@ -2879,6 +3000,7 @@ export default function PastureMapView({Header, authState}) {
         <section className="pm-map-col">
           {renderPastureMapCanvas({
             areas,
+            occupants: occupantsByArea,
             mode: mapMode,
             canWrite: isManager,
             editAreaId: mapMode === 'edit' ? selectedId : null,

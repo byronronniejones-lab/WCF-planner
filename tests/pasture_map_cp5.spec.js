@@ -5,6 +5,7 @@ import {test, expect} from '@playwright/test';
 import {getTestAdminClient} from './setup/reset.js';
 
 const A_ID = 'pm-cp5-a';
+const MOMMA_ID = 'pm-cp5-momma';
 
 const SQUARE_A =
   '{"type":"Polygon","coordinates":[[[-86.44,30.84],[-86.435,30.84],[-86.435,30.845],[-86.44,30.845],[-86.44,30.84]]]}';
@@ -34,6 +35,12 @@ async function cleanAndSeedPastureTables() {
         v_profile
       );
     END $$;
+
+    -- Deterministic real planner group so the roster yields cattle "Mommas"
+    -- (cattle load is not aborted offline, so the roster still populates).
+    DELETE FROM public.cattle WHERE id = '${MOMMA_ID}';
+    INSERT INTO public.cattle (id, tag, sex, herd, breeding_blacklist, old_tags)
+    VALUES ('${MOMMA_ID}', 'PMCP5-MOMMA', 'cow', 'mommas', false, '[]'::jsonb);
   `;
   const {error} = await c.rpc('exec_sql', {sql});
   if (error) throw new Error('seed pasture CP5: ' + error.message);
@@ -62,8 +69,11 @@ test('uses cached vectors and queues a move while pasture RPCs are offline', asy
   await expect(page.locator('[data-pasture-offline-panel]')).toBeVisible({timeout: 25_000});
   await expect(page.locator(`[data-pasture-area="${A_ID}"]`)).toContainText('CP5 Offline Paddock');
 
-  await page.locator(`[data-pasture-area-select="${A_ID}"]`).click();
-  await page.locator('[data-pasture-move-count]').fill('9');
+  // Recording lives in the Plan tab now; flat group picker, locked count.
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  await page.locator(`[data-pasture-area-select="${A_ID}"]`).first().click();
+  await expect(page.locator('[data-pasture-move-form]').first()).toBeVisible({timeout: 15_000});
+  await page.locator('[data-pasture-move-group]').selectOption({label: 'Mommas'});
   await page.locator('[data-pasture-move-save]').click();
   await expect(page.locator('[data-pasture-offline-queued]')).toContainText('1 queued', {timeout: 15_000});
 
