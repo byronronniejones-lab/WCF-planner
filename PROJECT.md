@@ -8,11 +8,10 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-18.
-Current shipped runtime checkpoint: `68f53b6`
-(`Merge originator task and todo editing`); the CP0 design-law compliance pass
-is merging on top. Latest live-bundle verification is pending Netlify deploy.
+Current shipped runtime checkpoint: `3e71b28`
+(`fix(pasture): use shared header on map`).
 Production URL: https://wcfplanner.com.
-Latest live bundle verification after `68f53b6` is pending Netlify deploy
+Latest live bundle verification after `3e71b28` is pending Netlify deploy
 completion.
 
 ---
@@ -65,34 +64,18 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: `main` / `origin/main` is the docs update that records runtime
-  checkpoint `a140689`.
+- Source: `main` / `origin/main` contains runtime checkpoint `3e71b28`
+  (`fix(pasture): use shared header on map`) plus this PROJECT wrap update.
 - Extra worktrees:
-  - `C:\Users\Ronni\WCF-planner` on
-    `fix/production-reconciliation-audit-collapse` at `8dfb024`, with CC-owned
-    local tracked edits. Do not use it for unrelated merge work.
-  - `C:\Users\Ronni\WCF-planner-codex-pasture-map-completion` on `main` at
-    the docs update on top of runtime checkpoint `a140689`, with only untracked
-    pasture screenshot artifacts.
-  - `C:\Users\Ronni\WCF-planner-codex-hotfix-task-notifications` on
-    `codex/hotfix-task-notifications` at `6e6fb7a`, pushed to origin and merged
-    into `main`.
-  - `C:\Users\Ronni\WCF-planner-codex-pasture-map-rebuild` on
-    `codex/pasture-map-rebuild` at `a3330b2`, pushed to origin and merged into
+  - `C:\Users\Ronni\WCF-planner` is the standing repo/worktree on current
     `main`.
-  - `C:\Users\Ronni\WCF-planner-codex-originator-edit-tasks-todos` on
-    `codex/originator-edit-tasks-todos` at `28c3fb6`, pushed to origin and
-    merged into `main`.
-  - `C:\Users\Ronni\WCF-planner-codex-compact-controls` on
-    `codex/compact-list-controls`.
-  - `C:\Users\Ronni\WCF-planner-pasture-cp2` on
-    `feature/pasture-map-cp2-draw-edit`.
+  - Prior merged Codex/feature worktrees were pruned during the 2026-06-18 wrap:
+    task notifications, pasture map rebuild, originator task/to-do editing,
+    compact controls, pasture CP2, and the temporary pasture-map completion
+    worktree.
 - Open gates: `tasks-cron` Edge Function deploy is pending for the task
   notification hotfix. PROD migrations `133` and `134` are applied. No
   Storage/Vault gate is open.
-- Local untracked artifacts in the main worktree:
-  `pasture-cp2-shots/`, `pasture-data-mock-shots/`, and
-  `pasture-map-shots/`. They are not staged or part of shipped code.
 - PROD-applied recent migrations include `112` through `116`, `125`, `126`,
   `127`, `128`, `129`, `130`, `131`, `132`, `133`, and `134`. `116` (Pasture
   Map CP1), `125` (Production legacy events), and `126` (breeding-pig Activity
@@ -122,6 +105,10 @@ Design/function invariants that govern cross-surface behavior live in
   Vitest still has unrelated pre-existing static failures in global activity,
   image file capture inventory, pig batch filters/planned trips, breeding pig
   record links, and pasture radius floor.
+- Latest validation after Pasture Map header polish / planner-group design wrap:
+  Prettier focused check green; focused Pasture Map + Header static tests
+  green (76 tests); `npm run lint` exits 0 with existing warnings; `npm run
+  build` green with existing Vite dynamic-import/chunk warnings.
 - `npm install` was run in the main worktree after Pasture Map dependencies
   landed. It reported npm audit findings (11 vulnerabilities: 1 low, 3
   moderate, 6 high, 1 critical). No audit-fix lane has been scoped.
@@ -152,6 +139,12 @@ latest live-bundle verification is pending where noted above.
     filters/saved-views unchanged).
   - Broiler PROCESSED cards → shared `DataTable`; weigh-in list + shared session
     page program-accented. Pasture Map intentionally untouched.
+- Pasture Map header polish:
+  - `/pasture-map` uses the shared app `Header` instead of a pasture-only header.
+  - The WCF Planner brand in the shared header is a home link.
+  - Pasture Map mode tabs are pure black text until selected, then render as a
+    pure black filled pill with pure white text.
+  - Static guards cover the shared-header route contract and tab color behavior.
 - Task notifications hotfix:
   - `tasks-cron` still generates recurring template tasks and now also generates
     eligible system tasks from active `task_system_rules`.
@@ -291,6 +284,54 @@ This is the canonical home for outstanding build/design work.
    - Success criteria: identify direct vs transitive vulnerabilities, decide
      safe upgrades, avoid breaking Vite/React/Supabase/Playwright toolchain.
    - Gate: code/dependency lockfile push; no PROD DB work expected.
+
+3. Pasture Map planner-group workflow redesign (DESIGN first)
+   - Class: `ENH`/`DECISION`. Owner direction 2026-06-18: keep the existing
+     Pasture Map layout/aesthetic and do not drop existing features, but redesign
+     organization around real planner groups, current locations, planned moves,
+     field execution, and area lifecycle.
+   - Designer brief: map stays left and data panel right. Rename `View / Map` to
+     `Map`; keep tabs `Map`, `Plan`, `Field`, `Setup`, `Reports`. Everyone can
+     view all tabs; actions are role-gated.
+   - Real group source of truth: no free-form animal-group text fields. Picker
+     order is Pigs (`Sow Group 1`, `Sow Group 2`, `Sow Group 3`, `Boars`, active
+     pig sub-batches with ledger count greater than 0), then Sheep (`Ewes`,
+     `Rams`, `Feeders`), then Cattle (`Mommas`, `Backgrounders`, `Finishers`,
+     `Bulls`). Empty groups are hidden from side panel and pickers. Counts are
+     auto-filled from planner records and locked.
+   - `Map`: default view answers what groups exist and where they are. Right
+     panel starts with `Current Groups` rows showing group, count, and location
+     or `Not placed`; selected area details remain below. Occupied map areas use
+     animal-type color.
+   - `Plan`: future moves and rotation planning. Planned moves use locked group
+     picker plus map destination, no notes/free-text, no manual count. Duplicate
+     same-group/same-date plans warn. Actual move completion matches planned
+     move by group plus destination, not date.
+   - `Field`: field execution, GPS walking/drawing temp paddocks, and confirming
+     planned moves. Light/farm-team can create temp paddocks and confirm planned
+     moves, but cannot create arbitrary animal moves or edit permanent areas.
+     Management/admin can log unplanned moves.
+   - Area lifecycle: every area is designated only as `Pasture`, `Paddock`, or
+     `Temp paddock`. Imported KML shapes require classification before active
+     use and show `Needs classification` in Setup. Farm-team/light can create
+     only temp paddocks; management/admin can create permanent areas.
+   - Temp paddocks are real working areas, visible across Map/Plan/Field/Reports
+     and usable for animals. Default names are `Temp - MM/DD/YY`, `#2`, `#3`,
+     etc. Creator can rename/edit/archive their own temp paddocks; management/
+     admin can rename/edit/archive any area; admin hard-delete remains admin-only.
+   - Archive wording replaces delete for normal removal. Archive is blocked when
+     occupied with `Move animals out of this temp paddock before archiving it.`
+     Archived areas are restorable by management/admin. Hard delete confirmation
+     must warn that text history snapshots remain but map shape is removed.
+   - Filters: status `Active` default (permanent plus active temp), `All`, and
+     `Archived`; type `All`, `Pastures`, `Paddocks`, `Temp`. Reports include
+     archived areas by default and mark history rows with area type/status such
+     as `Permanent`, `Temp`, or `Archived temp`.
+   - Validation/guards target: add static guards for locked group derivation,
+     role gates, no free-form move/planned-move fields, temp naming/archive
+     wording, and area filters; run focused Pasture Map static/unit/Playwright.
+   - Gate: design mockups/sign-off before build; code plus likely migration/RPC
+     push, PROD apply, and deploy gates once scoped.
 
 6. Design-Law Compliance — residual follow-ups
    - Class: `ENH`. The CP0 compliance pass (A1–A12 + Tabs + WI-6; the 2026-06-17
