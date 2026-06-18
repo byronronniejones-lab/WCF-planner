@@ -202,6 +202,58 @@ export async function updateLandAreaGeometry(id, polygon) {
   );
 }
 
+// P0 (mig 135) — temp-paddock lifecycle. Temp paddock = kind='paddock' +
+// permanence='temporary'. create is farm_team+; rename/redraw/archive/restore
+// are temp-owner OR management/admin (server-gated); hard delete is admin-only.
+// Archive/hard-delete on an occupied area throw the bare sentinel
+// PM_AREA_OCCUPIED (PM_VALIDATION prefix is stripped by unwrap); callers map it
+// to PM_AREA_OCCUPIED_COPY for the exact UI sentence.
+export const PM_AREA_OCCUPIED = 'PM_AREA_OCCUPIED';
+export const PM_AREA_OCCUPIED_COPY = 'Move animals out of this temp paddock before archiving it.';
+
+// Create a NEW temp paddock from a drawn/GPS-walked closed polygon (GeoJSON
+// geometry object). Replay-idempotent by id. Field "Record a track" calls this.
+export async function createTempLandArea({id, name, polygon, source = 'drawn'}) {
+  return unwrap(
+    await sb.rpc('create_temp_land_area', {
+      p_id: id,
+      p_name: name,
+      p_polygon_geojson: polygon,
+      p_source: source,
+    }),
+    'create_temp_land_area',
+  );
+}
+
+// Redraw a temp paddock boundary (append-only new version). polygon is GeoJSON.
+export async function updateTempLandAreaGeometry(id, polygon) {
+  return unwrap(
+    await sb.rpc('update_temp_land_area_geometry', {p_id: id, p_polygon_geojson: polygon}),
+    'update_temp_land_area_geometry',
+  );
+}
+
+// Rename a temp paddock.
+export async function renameTempLandArea(id, name) {
+  return unwrap(await sb.rpc('rename_temp_land_area', {p_id: id, p_name: name}), 'rename_temp_land_area');
+}
+
+// Archive (status='retired', restorable). Blocked when occupied.
+export async function archiveLandArea(id) {
+  return unwrap(await sb.rpc('archive_land_area', {p_id: id}), 'archive_land_area');
+}
+
+// Restore an archived area (status -> 'active').
+export async function restoreLandArea(id) {
+  return unwrap(await sb.rpc('restore_land_area', {p_id: id}), 'restore_land_area');
+}
+
+// Admin-only hard delete (soft-delete/snapshot path; geometry retained for v1).
+// Blocked when occupied.
+export async function hardDeleteLandArea(id) {
+  return unwrap(await sb.rpc('hard_delete_land_area', {p_id: id}), 'hard_delete_land_area');
+}
+
 // CP3 - recent append-only animal-group move ledger.
 export async function listPastureMoves(limit = 100) {
   return unwrap(await sb.rpc('list_pasture_moves', {p_limit: limit}), 'list_pasture_moves');
