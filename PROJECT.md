@@ -8,10 +8,11 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-18.
-Current shipped runtime checkpoint: `a140689`
-(`Merge pasture map cockpit rebuild`), with this `PROJECT.md` docs update on top.
+Current shipped runtime checkpoint: `68f53b6`
+(`Merge originator task and todo editing`), with this `PROJECT.md` docs update
+on top.
 Production URL: https://wcfplanner.com.
-Latest live bundle verification after `a140689` is pending Netlify deploy
+Latest live bundle verification after `68f53b6` is pending Netlify deploy
 completion.
 
 ---
@@ -79,24 +80,28 @@ Design/function invariants that govern cross-surface behavior live in
   - `C:\Users\Ronni\WCF-planner-codex-pasture-map-rebuild` on
     `codex/pasture-map-rebuild` at `a3330b2`, pushed to origin and merged into
     `main`.
+  - `C:\Users\Ronni\WCF-planner-codex-originator-edit-tasks-todos` on
+    `codex/originator-edit-tasks-todos` at `28c3fb6`, pushed to origin and
+    merged into `main`.
   - `C:\Users\Ronni\WCF-planner-codex-compact-controls` on
     `codex/compact-list-controls`.
   - `C:\Users\Ronni\WCF-planner-pasture-cp2` on
     `feature/pasture-map-cp2-draw-edit`.
 - Open gates: `tasks-cron` Edge Function deploy is pending for the task
-  notification hotfix. PROD migration `133` is applied. No Storage/Vault gate is
-  open.
+  notification hotfix. PROD migrations `133` and `134` are applied. No
+  Storage/Vault gate is open.
 - Local untracked artifacts in the main worktree:
   `pasture-cp2-shots/`, `pasture-data-mock-shots/`, and
   `pasture-map-shots/`. They are not staged or part of shipped code.
 - PROD-applied recent migrations include `112` through `116`, `125`, `126`,
-  `127`, `128`, `129`, `130`, `131`, and `132`. `116` (Pasture Map CP1),
-  `125` (Production legacy events), and `126` (breeding-pig Activity entity)
-  were applied to PROD on 2026-06-15. `127` (Pasture Map draw/edit RPCs) was
-  applied to PROD on 2026-06-16. Pasture Map `128`-`132` artifacts were verified
-  present on TEST and PROD by catalog checks on 2026-06-17. Migration `133`
-  (task system generation support and To Do approval notifications) was applied
-  to TEST on 2026-06-17 and PROD on 2026-06-18.
+  `127`, `128`, `129`, `130`, `131`, `132`, `133`, and `134`. `116` (Pasture
+  Map CP1), `125` (Production legacy events), and `126` (breeding-pig Activity
+  entity) were applied to PROD on 2026-06-15. `127` (Pasture Map draw/edit RPCs)
+  was applied to PROD on 2026-06-16. Pasture Map `128`-`132` artifacts were
+  verified present on TEST and PROD by catalog checks on 2026-06-17. Migration
+  `133` (task system generation support and To Do approval notifications) was
+  applied to TEST on 2026-06-17 and PROD on 2026-06-18. Migration `134`
+  (originator task/to-do edit photos) was applied to PROD on 2026-06-18.
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
@@ -111,6 +116,12 @@ Design/function invariants that govern cross-surface behavior live in
   warnings; `npm run build` green with existing Vite dynamic-import/chunk
   warnings. Earlier task notification validation remains green as recorded in
   git history; migration `133` was applied to PROD on 2026-06-18.
+- Latest validation after originator task/to-do editing: focused related static
+  tests green (240 tests); `npm run lint` exits 0 with existing warnings; `npm
+  run build` green with existing Vite dynamic-import/chunk warnings. Full
+  Vitest still has unrelated pre-existing static failures in global activity,
+  image file capture inventory, pig batch filters/planned trips, breeding pig
+  record links, and pasture radius floor.
 - `npm install` was run in the main worktree after Pasture Map dependencies
   landed. It reported npm audit findings (11 vulnerabilities: 1 low, 3
   moderate, 6 high, 1 critical). No audit-fix lane has been scoped.
@@ -133,6 +144,13 @@ latest live-bundle verification is pending where noted above.
     auto-approved.
   - Migration `133` is TEST- and PROD-applied; Edge Function deploy remains
     gated.
+- Originator task/to-do editing:
+  - Task creators and admins can edit open task title, details, due date,
+    assignee, and append request photos from the task record page.
+  - To Do creators/managers can edit existing To Do data and append additional
+    origination photos from the To Do record edit panel.
+  - Migration `134` is PROD-applied and preserves RPC-only writes, append-only
+    private photo storage, and the shared 5-photo total cap.
 - Site-wide Home aesthetic parity rollout:
   - Foundation/global token layer and shared openable hover primitives.
   - Admin, activity, webforms, equipment, Task Center, To Do, cattle, sheep, pig,
