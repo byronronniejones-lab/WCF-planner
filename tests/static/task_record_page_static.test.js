@@ -63,6 +63,14 @@ describe('TaskInstancePage — record page structure', () => {
   it('fires TASK_CHANGE_EVENT on mutations', () => {
     expect(pageSrc).toContain('fireTaskChangeEvent');
   });
+  it('edits task details inline on the record page through the audited v2 wrapper', () => {
+    expect(pageSrc).toContain('data-task-record-edit-panel="1"');
+    expect(pageSrc).toContain('data-task-record-edit-save="1"');
+    expect(pageSrc).toContain('updateTaskInstanceDetailsV2');
+    expect(pageSrc).toContain('uploadTaskCreationPhotos');
+    expect(pageSrc).toContain('fireActivityChangeEvent');
+    expect(pageSrc).not.toContain('EditTaskDetailsModal');
+  });
 });
 
 describe('ActivityPanel/ActivityModal removal from list views', () => {
@@ -80,6 +88,22 @@ describe('ActivityPanel/ActivityModal removal from list views', () => {
   });
   it('CompleteTaskModal does not import ActivityPanel', () => {
     expect(completeModalSrc).not.toMatch(/import ActivityPanel/);
+  });
+});
+
+describe('Task list rows open record pages like To Do rows', () => {
+  it('MyTasksTab makes task rows whole-tile keyboard openables', () => {
+    expect(myTasksSrc).toContain("from '../shared/openable.js'");
+    expect(myTasksSrc).toContain('className="hoverable-tile"');
+    expect(myTasksSrc).toContain('...openableProps(openTask)');
+    expect(myTasksSrc).toContain('aria-label={`Open task: ${ti.title}`}');
+  });
+
+  it('CompletedTab makes completed task rows whole-tile keyboard openables', () => {
+    expect(completedSrc).toContain("from '../shared/openable.js'");
+    expect(completedSrc).toContain('className="hoverable-tile"');
+    expect(completedSrc).toContain('...openableProps(openTask)');
+    expect(completedSrc).toContain('aria-label={`Open completed task: ${ti.title}`}');
   });
 });
 

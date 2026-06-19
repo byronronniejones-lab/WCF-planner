@@ -8,7 +8,6 @@ const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const mig134 = read('supabase-migrations/134_originator_task_todo_edit_photos.sql');
 const taskMutations = read('src/lib/tasksCenterMutationsApi.js');
 const taskPage = read('src/tasks/TaskInstancePage.jsx');
-const editTaskModal = read('src/tasks/EditTaskDetailsModal.jsx');
 const todoApi = read('src/lib/todoApi.js');
 const todoPage = read('src/tasks/TodoItemPage.jsx');
 
@@ -97,24 +96,29 @@ describe('originator edit client wrappers', () => {
 });
 
 describe('originator edit UI wiring', () => {
-  it('TaskInstancePage exposes the details edit modal only to admins or creators', () => {
-    expect(taskPage).toMatch(/import EditTaskDetailsModal/);
+  it('TaskInstancePage exposes inline details editing only to admins or creators', () => {
+    expect(taskPage).not.toMatch(/import EditTaskDetailsModal/);
     expect(taskPage).toMatch(/function canEditDetails/);
     expect(taskPage).toMatch(/ti\.created_by_profile_id === callerProfileId/);
     expect(taskPage).toMatch(/data-task-edit-details-button="1"/);
-    expect(taskPage).toMatch(/EditTaskDetailsModal/);
+    expect(taskPage).toMatch(/data-task-record-edit-panel="1"/);
   });
 
-  it('EditTaskDetailsModal edits data and appends photos without capture', () => {
-    expect(editTaskModal).toMatch(/loadTaskInstancePhotos/);
-    expect(editTaskModal).toMatch(/updateTaskInstanceDetailsV2/);
-    expect(editTaskModal).toMatch(/uploadTaskCreationPhotos/);
-    expect(editTaskModal).toMatch(/existingCreationCount/);
-    expect(editTaskModal).toMatch(/existingPhotoCount/);
-    expect(editTaskModal).toMatch(/data-edit-task-field="photos"/);
-    expect(editTaskModal).toMatch(/type="file"/);
-    expect(editTaskModal).toMatch(/accept="image\/\*"/);
-    expect(editTaskModal).not.toMatch(/capture=/);
+  it('TaskInstancePage edits data and appends photos without capture', () => {
+    expect(taskPage).toMatch(/loadTaskInstancePhotos/);
+    expect(taskPage).toMatch(/updateTaskInstanceDetailsV2/);
+    expect(taskPage).toMatch(/uploadTaskCreationPhotos/);
+    expect(taskPage).toMatch(/existingCreationCount/);
+    expect(taskPage).toMatch(/existingPhotoCount/);
+    expect(taskPage).toMatch(/data-task-record-edit-field="photos"/);
+    expect(taskPage).toMatch(/type="file"/);
+    expect(taskPage).toMatch(/accept="image\/\*"/);
+    expect(taskPage).not.toMatch(/capture=/);
+  });
+
+  it('TaskInstancePage refreshes task activity after the audited edit RPC returns', () => {
+    expect(taskPage).toMatch(/fireActivityChangeEvent/);
+    expect(taskPage).toMatch(/TASK_ENTITY_TYPE,\s*record\.id/);
   });
 
   it('TodoItemPage lets the existing edit panel append origination photos', () => {

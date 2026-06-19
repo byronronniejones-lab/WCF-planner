@@ -22,10 +22,13 @@ import {
   recordFormCard,
   recordFieldRowClass,
   recordFieldLabel,
+  recordControl,
+  recordTextarea,
   recordSaveButton,
   recordSecondaryButton,
   recordDeleteButton,
 } from '../shared/recordPageControls.jsx';
+import {fireActivityChangeEvent} from '../lib/activityApi.js';
 import {
   loadTaskInstanceById,
   loadTaskInstancePhotos,
@@ -35,11 +38,17 @@ import {
   dueStateFor,
   photoPresenceFor,
 } from '../lib/tasksCenterApi.js';
-import {TASK_CHANGE_EVENT, fireTaskChangeEvent} from '../lib/tasksCenterMutationsApi.js';
+import {
+  MAX_TASK_PHOTOS_PER_TASK,
+  TASK_CHANGE_EVENT,
+  fireTaskChangeEvent,
+  remainingTaskPhotoSlots,
+  updateTaskInstanceDetailsV2,
+  uploadTaskCreationPhotos,
+} from '../lib/tasksCenterMutationsApi.js';
 import {fmt, fmtCentralDateTime, todayCentralISO} from '../lib/dateUtils.js';
 import CompleteTaskModal from './CompleteTaskModal.jsx';
 import TaskPhotoLightbox from './TaskPhotoLightbox.jsx';
-import EditTaskDetailsModal from './EditTaskDetailsModal.jsx';
 import EditDueDateModal from './EditDueDateModal.jsx';
 import AssignTaskModal from './AssignTaskModal.jsx';
 import DeleteTaskModal from './DeleteTaskModal.jsx';
@@ -54,6 +63,23 @@ const BADGE_BASE = {
 };
 const BADGE_RECURRING = {...BADGE_BASE, background: '#eef2ff', color: '#3730a3'};
 const BADGE_SYSTEM = {...BADGE_BASE, background: '#ecfdf5', color: '#047857'};
+const TASK_ENTITY_TYPE = 'task.instance';
+
+function taskPhotoCounts(task, photoRows) {
+  const paths = new Set();
+  let creation = 0;
+  for (const row of photoRows || []) {
+    const key = row && (row.storage_path || row.id);
+    if (key) paths.add(key);
+    if (row && row.kind === 'creation') creation += 1;
+  }
+  if (task?.request_photo_path) {
+    paths.add(task.request_photo_path);
+    if (creation === 0) creation = 1;
+  }
+  if (task?.completion_photo_path) paths.add(task.completion_photo_path);
+  return {total: paths.size, creation};
+}
 
 export default function TaskInstancePage({sb, authState, Header}) {
   const navigate = useNavigate();
@@ -75,15 +101,33 @@ export default function TaskInstancePage({sb, authState, Header}) {
   const [recordPhotoRows, setRecordPhotoRows] = React.useState([]);
 
   const [completeTarget, setCompleteTarget] = React.useState(null);
-  const [editDetailsTarget, setEditDetailsTarget] = React.useState(null);
   const [editDueTarget, setEditDueTarget] = React.useState(null);
   const [assignTarget, setAssignTarget] = React.useState(null);
   const [deleteTarget, setDeleteTarget] = React.useState(null);
   const [photoTarget, setPhotoTarget] = React.useState(null);
   const [reloadKey, setReloadKey] = React.useState(0);
+  const [editingDetails, setEditingDetails] = React.useState(false);
+  const [editTitle, setEditTitle] = React.useState('');
+  const [editDescription, setEditDescription] = React.useState('');
+  const [editDueDate, setEditDueDate] = React.useState('');
+  const [editAssigneeId, setEditAssigneeId] = React.useState('');
+  const [editPhotos, setEditPhotos] = React.useState([]);
+  const [editSaving, setEditSaving] = React.useState(false);
+  const [editError, setEditError] = React.useState('');
 
   const callerProfileId = authState && authState.user ? authState.user.id : null;
   const isAdmin = authState && authState.role === 'admin';
+  const editProfileOptions = React.useMemo(() => {
+    const map = new Map();
+    for (const p of Object.values(assignableProfiles || {})) {
+      if (p && p.id && p.full_name) map.set(p.id, p);
+    }
+    const current = record?.assignee_profile_id ? profiles[record.assignee_profile_id] : null;
+    if (current && current.id && current.full_name && !map.has(current.id)) {
+      map.set(current.id, current);
+    }
+    return Array.from(map.values()).sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+  }, [assignableProfiles, profiles, record?.assignee_profile_id]);
 
   async function loadAll() {
     setLoading(true);
@@ -119,6 +163,10 @@ export default function TaskInstancePage({sb, authState, Header}) {
     setLoading(true);
     setNotice(null);
     setLoadError(null);
+    setEditingDetails(false);
+    setEditPhotos([]);
+    setEditError('');
+    setEditSaving(false);
     loadAll();
   }, [recordId, reloadKey]);
 
@@ -171,6 +219,88 @@ export default function TaskInstancePage({sb, authState, Header}) {
       ti.created_by_profile_id === callerProfileId &&
       ti.assignee_profile_id === callerProfileId
     );
+  }
+
+  function startEditDetails() {
+    if (!record || !canEditDetails(record)) return;
+    setEditTitle(record.title || '');
+    setEditDescription(record.description || '');
+    setEditDueDate(record.due_date || '');
+    setEditAssigneeId(record.assignee_profile_id || '');
+    setEditPhotos([]);
+    setEditError('');
+    setEditingDetails(true);
+  }
+
+  function stopEditDetails() {
+    setEditPhotos([]);
+    setEditError('');
+    setEditSaving(false);
+    setEditingDetails(false);
+  }
+
+  function addEditPhotos(fileList) {
+    const files = Array.from(fileList || []).filter((f) => f && f.type && f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    const counts = taskPhotoCounts(record, recordPhotoRows);
+    const available = Math.max(0, remainingTaskPhotoSlots(counts.total) - editPhotos.length);
+    if (available <= 0) {
+      setEditError(`Tasks can have up to ${MAX_TASK_PHOTOS_PER_TASK} photos.`);
+      return;
+    }
+    setEditPhotos([...editPhotos, ...files.slice(0, available)]);
+    if (files.length > available) {
+      setEditError(`Tasks can have up to ${MAX_TASK_PHOTOS_PER_TASK} photos.`);
+    }
+  }
+
+  async function saveEditDetails() {
+    if (!record || editSaving) return;
+    setEditError('');
+    if (editTitle.trim().length < 3) {
+      setEditError('Title must be at least 3 characters.');
+      return;
+    }
+    if (!editDueDate) {
+      setEditError('Due date is required.');
+      return;
+    }
+    if (!editAssigneeId) {
+      setEditError('Assignee is required.');
+      return;
+    }
+
+    const counts = taskPhotoCounts(record, recordPhotoRows);
+    const remaining = remainingTaskPhotoSlots(counts.total);
+    if (editPhotos.length > remaining) {
+      setEditError(`Tasks can have up to ${MAX_TASK_PHOTOS_PER_TASK} photos.`);
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const photoPaths = await uploadTaskCreationPhotos(sb, record.id, editPhotos, {
+        existingCreationCount: counts.creation,
+        existingPhotoCount: counts.total,
+      });
+      await updateTaskInstanceDetailsV2(sb, {
+        id: record.id,
+        title: editTitle.trim(),
+        description: editDescription,
+        dueDate: editDueDate,
+        assigneeProfileId: editAssigneeId,
+        creationPhotoPaths: photoPaths,
+      });
+      setEditingDetails(false);
+      setEditPhotos([]);
+      setNotice({kind: 'success', message: 'Task updated.'});
+      fireTaskChangeEvent();
+      fireActivityChangeEvent(TASK_ENTITY_TYPE, record.id);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setEditError(e && e.message ? e.message : String(e));
+      setEditSaving(false);
+    }
   }
 
   function nameFor(profileId) {
@@ -240,70 +370,238 @@ export default function TaskInstancePage({sb, authState, Header}) {
               </span>
             </div>
 
-            <div>
-              <div className={recordFieldRowClass}>
-                <span style={recordFieldLabel}>Due date</span>
-                <span>
-                  {fmt(record.due_date)}
-                  {(() => {
-                    const due = dueStateFor(record, todayCentralISO());
-                    if (record.status !== 'open') return null;
-                    if (due === 'overdue')
+            {editingDetails ? (
+              <div data-task-record-edit-panel="1">
+                <div className={recordFieldRowClass}>
+                  <label htmlFor="task-record-edit-title" style={recordFieldLabel}>
+                    Title
+                  </label>
+                  <input
+                    id="task-record-edit-title"
+                    data-task-record-edit-field="title"
+                    type="text"
+                    value={editTitle}
+                    maxLength={140}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    style={recordControl}
+                  />
+                </div>
+                <div className={recordFieldRowClass}>
+                  <label htmlFor="task-record-edit-description" style={recordFieldLabel}>
+                    Description
+                  </label>
+                  <textarea
+                    id="task-record-edit-description"
+                    data-task-record-edit-field="description"
+                    value={editDescription}
+                    rows={4}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    style={recordTextarea}
+                  />
+                </div>
+                <div className={recordFieldRowClass}>
+                  <label htmlFor="task-record-edit-assignee" style={recordFieldLabel}>
+                    Assignee
+                  </label>
+                  <select
+                    id="task-record-edit-assignee"
+                    data-task-record-edit-field="assignee"
+                    value={editAssigneeId}
+                    onChange={(e) => setEditAssigneeId(e.target.value)}
+                    style={recordControl}
+                  >
+                    <option value="">Select</option>
+                    {editProfileOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={recordFieldRowClass}>
+                  <label htmlFor="task-record-edit-due-date" style={recordFieldLabel}>
+                    Due date
+                  </label>
+                  <input
+                    id="task-record-edit-due-date"
+                    data-task-record-edit-field="due-date"
+                    type="date"
+                    value={editDueDate}
+                    onChange={(e) => setEditDueDate(e.target.value)}
+                    style={recordControl}
+                  />
+                </div>
+                <div className={recordFieldRowClass}>
+                  <span style={recordFieldLabel}>Add request photos</span>
+                  <div>
+                    {(() => {
+                      const counts = taskPhotoCounts(record, recordPhotoRows);
+                      const available = Math.max(0, remainingTaskPhotoSlots(counts.total) - editPhotos.length);
                       return (
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            color: '#991b1b',
-                            background: '#fef2f2',
-                            padding: '1px 6px',
-                            borderRadius: 999,
-                          }}
-                        >
-                          Overdue
-                        </span>
+                        <>
+                          <input
+                            data-task-record-edit-field="photos"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            disabled={editSaving || available <= 0}
+                            onChange={(e) => {
+                              addEditPhotos(e.target.files);
+                              e.target.value = '';
+                            }}
+                            style={{fontSize: 13, fontFamily: 'inherit'}}
+                          />
+                          <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 4}}>
+                            {available} of {MAX_TASK_PHOTOS_PER_TASK} photo slots left.
+                          </div>
+                        </>
                       );
-                    if (due === 'today')
-                      return (
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            color: '#92400e',
-                            background: '#fffbeb',
-                            padding: '1px 6px',
-                            borderRadius: 999,
-                          }}
-                        >
-                          Due today
-                        </span>
-                      );
-                    return null;
-                  })()}
-                </span>
-              </div>
-              <div className={recordFieldRowClass}>
-                <span style={recordFieldLabel}>Assigned to</span>
-                <span>{nameFor(record.assignee_profile_id) || 'Unassigned'}</span>
-              </div>
-              {(() => {
-                const attr = attributionFor(record);
-                if (!attr) return null;
-                return (
-                  <div className={recordFieldRowClass}>
-                    <span style={recordFieldLabel}>{attr.label}</span>
-                    <span>{attr.name}</span>
+                    })()}
+                    {editPhotos.length > 0 && (
+                      <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8}}>
+                        {editPhotos.map((p, i) => (
+                          <span
+                            key={i}
+                            data-task-record-edit-photo={i}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: 12,
+                              padding: '4px 8px',
+                              background: 'var(--divider)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 10,
+                            }}
+                          >
+                            {p.name || `Photo ${i + 1}`}
+                            <button
+                              type="button"
+                              aria-label={`Remove photo ${i + 1}`}
+                              onClick={() => setEditPhotos(editPhotos.filter((_, j) => j !== i))}
+                              disabled={editSaving}
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                color: '#b91c1c',
+                                cursor: 'pointer',
+                                padding: 0,
+                                fontSize: 14,
+                              }}
+                            >
+                              x
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                );
-              })()}
-            </div>
-
-            {record.description && (
-              <div style={{marginTop: 10, fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap'}}>
-                {record.description}
+                </div>
+                {editError && (
+                  <div
+                    data-task-record-edit-error="1"
+                    style={{
+                      marginTop: 10,
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      color: '#991b1b',
+                      fontSize: 13,
+                    }}
+                  >
+                    {editError}
+                  </div>
+                )}
+                <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', marginTop: 12}}>
+                  <button
+                    type="button"
+                    data-task-record-edit-cancel="1"
+                    onClick={stopEditDetails}
+                    disabled={editSaving}
+                    style={recordSecondaryButton}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    data-task-record-edit-save="1"
+                    onClick={saveEditDetails}
+                    disabled={editSaving}
+                    style={{...recordSaveButton, opacity: editSaving ? 0.7 : 1}}
+                  >
+                    {editSaving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div>
+                  <div className={recordFieldRowClass}>
+                    <span style={recordFieldLabel}>Due date</span>
+                    <span>
+                      {fmt(record.due_date)}
+                      {(() => {
+                        const due = dueStateFor(record, todayCentralISO());
+                        if (record.status !== 'open') return null;
+                        if (due === 'overdue')
+                          return (
+                            <span
+                              style={{
+                                marginLeft: 8,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: '#991b1b',
+                                background: '#fef2f2',
+                                padding: '1px 6px',
+                                borderRadius: 999,
+                              }}
+                            >
+                              Overdue
+                            </span>
+                          );
+                        if (due === 'today')
+                          return (
+                            <span
+                              style={{
+                                marginLeft: 8,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: '#92400e',
+                                background: '#fffbeb',
+                                padding: '1px 6px',
+                                borderRadius: 999,
+                              }}
+                            >
+                              Due today
+                            </span>
+                          );
+                        return null;
+                      })()}
+                    </span>
+                  </div>
+                  <div className={recordFieldRowClass}>
+                    <span style={recordFieldLabel}>Assigned to</span>
+                    <span>{nameFor(record.assignee_profile_id) || 'Unassigned'}</span>
+                  </div>
+                  {(() => {
+                    const attr = attributionFor(record);
+                    if (!attr) return null;
+                    return (
+                      <div className={recordFieldRowClass}>
+                        <span style={recordFieldLabel}>{attr.label}</span>
+                        <span>{attr.name}</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {record.description && (
+                  <div style={{marginTop: 10, fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap'}}>
+                    {record.description}
+                  </div>
+                )}
+              </>
             )}
 
             {record.status === 'completed' && (
@@ -373,11 +671,11 @@ export default function TaskInstancePage({sb, authState, Header}) {
                     Complete
                   </button>
                 )}
-                {canEditDetails(record) && (
+                {!editingDetails && canEditDetails(record) && (
                   <button
                     type="button"
                     data-task-edit-details-button="1"
-                    onClick={() => setEditDetailsTarget(record)}
+                    onClick={startEditDetails}
                     style={recordSecondaryButton}
                   >
                     Edit
@@ -443,19 +741,6 @@ export default function TaskInstancePage({sb, authState, Header}) {
             task: photoTarget,
             isOpen: !!photoTarget,
             onClose: () => setPhotoTarget(null),
-          })}
-          {React.createElement(EditTaskDetailsModal, {
-            sb,
-            task: editDetailsTarget,
-            isOpen: !!editDetailsTarget,
-            profilesById: profiles,
-            assignableProfilesById: assignableProfiles,
-            onClose: () => setEditDetailsTarget(null),
-            onUpdated: () => {
-              setEditDetailsTarget(null);
-              fireTaskChangeEvent();
-              setReloadKey((k) => k + 1);
-            },
           })}
           {React.createElement(EditDueDateModal, {
             sb,

@@ -20,6 +20,7 @@
 
 import React from 'react';
 import {useNavigate} from 'react-router-dom';
+import {openableProps} from '../shared/openable.js';
 import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 import {
   loadCompletedTaskInstances,
@@ -191,8 +192,19 @@ function CompletedRow({sb, ti, profilesById, onOpenPhotos, onNavigate}) {
   const attribution = attributionFor(ti);
   const assigneeName = nameFor(ti.assignee_profile_id, profilesById);
   const completedByName = nameFor(ti.completed_by_profile_id, profilesById);
+  const openTask = () => {
+    if (onNavigate) onNavigate(ti);
+  };
   return (
-    <div data-task-row={ti.id} data-task-designation={ti.designation || ''} data-task-status="completed" style={CARD}>
+    <div
+      className="hoverable-tile"
+      data-task-row={ti.id}
+      data-task-designation={ti.designation || ''}
+      data-task-status="completed"
+      {...openableProps(openTask)}
+      aria-label={`Open completed task: ${ti.title}`}
+      style={CARD}
+    >
       <div
         style={{
           display: 'flex',
@@ -212,20 +224,7 @@ function CompletedRow({sb, ti, profilesById, onOpenPhotos, onNavigate}) {
             wordBreak: 'break-word',
           }}
         >
-          <span
-            role="link"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onNavigate) onNavigate(ti);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && onNavigate) onNavigate(ti);
-            }}
-            style={{cursor: 'pointer', color: 'var(--ink)', textDecoration: 'none'}}
-          >
-            {ti.title}
-          </span>
+          <span>{ti.title}</span>
           {ti.designation === 'recurring' && (
             <span data-task-badge="recurring" style={BADGE_RECURRING}>
               Recurring
@@ -272,7 +271,10 @@ function CompletedRow({sb, ti, profilesById, onOpenPhotos, onNavigate}) {
         </div>
       )}
       {(photo.hasRequest || photo.hasCompletion) && (
-        <div style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 6}}>
+        <div
+          style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 6}}
+          onClick={(e) => e.stopPropagation()}
+        >
           <TaskPhotoThumbnailButton sb={sb} task={ti} onClick={() => onOpenPhotos && onOpenPhotos(ti)} />
         </div>
       )}

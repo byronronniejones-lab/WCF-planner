@@ -40,6 +40,7 @@
 
 import React from 'react';
 import {useNavigate} from 'react-router-dom';
+import {openableProps} from '../shared/openable.js';
 import {recordSeqNavOptions, labeledSeqItems} from '../lib/recordSequence.js';
 import {
   loadOpenTaskInstances,
@@ -255,8 +256,18 @@ function TaskRow({
   const due = dueStateFor(ti, todayStr);
   const attribution = attributionFor(ti);
   const photo = photoPresenceFor(ti);
+  const openTask = () => {
+    if (onNavigate) onNavigate(ti);
+  };
   return (
-    <div data-task-row={ti.id} data-task-designation={ti.designation || ''} style={CARD}>
+    <div
+      className="hoverable-tile"
+      data-task-row={ti.id}
+      data-task-designation={ti.designation || ''}
+      {...openableProps(openTask)}
+      aria-label={`Open task: ${ti.title}`}
+      style={CARD}
+    >
       <div
         style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap'}}
       >
@@ -270,20 +281,7 @@ function TaskRow({
             wordBreak: 'break-word',
           }}
         >
-          <span
-            role="link"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onNavigate) onNavigate(ti);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && onNavigate) onNavigate(ti);
-            }}
-            style={{cursor: 'pointer', color: 'var(--ink)', textDecoration: 'none'}}
-          >
-            {ti.title}
-          </span>
+          <span>{ti.title}</span>
           {ti.designation === 'recurring' && (
             <span data-task-badge="recurring" style={BADGE_RECURRING}>
               Recurring
@@ -317,7 +315,10 @@ function TaskRow({
           {attribution.label}: <span style={{color: 'var(--ink)'}}>{attribution.name}</span>
         </div>
       )}
-      <div style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8}}>
+      <div
+        style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8}}
+        onClick={(e) => e.stopPropagation()}
+      >
         {(photo.hasRequest || photo.hasCompletion) && (
           <TaskPhotoThumbnailButton sb={sb} task={ti} onClick={() => onOpenPhotos && onOpenPhotos(ti)} />
         )}
