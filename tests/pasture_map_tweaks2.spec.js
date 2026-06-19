@@ -119,9 +119,11 @@ test('animal occupancy survives toggling the boundary overlay off', async ({page
   await page.goto('/pasture-map', {timeout: 90_000});
   await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
 
-  // Record Mommas -> Paddock A in the Plan tab.
-  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  // Record Mommas -> Paddock A: select on the read-only Map list, then use Plan's
+  // secondary Manual move / correction panel (Plan has no area list).
   await page.locator(`[data-pasture-area-select="${A_ID}"]`).first().click();
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  await page.locator('[data-pasture-manual-move-toggle]').click();
   await expect(page.locator('[data-pasture-move-form]').first()).toBeVisible({timeout: 15_000});
   await page.locator('[data-pasture-move-group]').selectOption({label: 'Mommas'});
   await page.locator('[data-pasture-move-save]').click();
@@ -136,4 +138,45 @@ test('animal occupancy survives toggling the boundary overlay off', async ({page
   await page.locator('[data-pasture-boundary="paddock"]').click();
   await expect(page.locator('[data-pasture-boundary="paddock"]')).toHaveAttribute('data-pasture-boundary-on', '0');
   await expect(marker).toHaveCount(1);
+});
+
+test('Plan tab: one combined group/move card, no area list, secondary manual move', async ({page}) => {
+  await exec(`
+    ${TRUNCATE}
+    DO $$ DECLARE v_profile uuid; BEGIN
+      SELECT id INTO v_profile FROM public.profiles LIMIT 1;
+      INSERT INTO public.land_areas (id, kind, name, status, review_status, geometry_status, baseline_no_history, source, created_by) VALUES
+        ('${A_ID}','paddock','TW2 Plan A','active','reviewed','none',true,'drawn',v_profile);
+      PERFORM public._land_area_add_version('${A_ID}', extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON('${SQUARE_A}'),4326),'drawn','{}'::jsonb,v_profile);
+    END $$;
+    DELETE FROM public.cattle WHERE id='${MOMMA_ID}';
+    INSERT INTO public.cattle (id,tag,sex,herd,breeding_blacklist,old_tags) VALUES ('${MOMMA_ID}','PMTW2-MOMMA','cow','mommas',false,'[]'::jsonb);
+  `);
+  await page.setViewportSize({width: 1280, height: 900});
+  await page.goto('/pasture-map', {timeout: 90_000});
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+
+  // One combined group/move card with a plain "Move" button.
+  const card = page.locator('[data-pasture-group-move]');
+  await expect(card).toBeVisible({timeout: 15_000});
+  await expect(card.getByRole('button', {name: 'Move', exact: true})).toBeVisible();
+  await expect(card.locator('[data-pasture-time-in-area]')).toBeVisible();
+  // No abbreviation / day badge / progress copy.
+  await expect(card).not.toContainText('Day 1/1');
+  await expect(card).not.toContainText('Move due now');
+
+  // No full area list in Plan.
+  await expect(page.locator('[data-pasture-area-select]')).toHaveCount(0);
+
+  // Manual move is secondary: not shown until an area is selected on the map.
+  await expect(page.locator('[data-pasture-manual-move]')).toHaveCount(0);
+  await page.locator('.pm-tabs button', {hasText: 'Map'}).click();
+  await page.locator(`[data-pasture-area-select="${A_ID}"]`).first().click();
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  await expect(page.locator('[data-pasture-manual-move]')).toBeVisible({timeout: 15_000});
+  // Move form stays collapsed until the toggle is used.
+  await expect(page.locator('[data-pasture-move-form]')).toHaveCount(0);
+  await page.locator('[data-pasture-manual-move-toggle]').click();
+  await expect(page.locator('[data-pasture-move-form]').first()).toBeVisible();
 });

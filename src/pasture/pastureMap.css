@@ -476,13 +476,16 @@
    occupancy fills or group markers. */
 .pm-boundary-toggle {
   position: absolute;
-  top: 14px;
-  left: 14px;
+  /* Sits BELOW the Leaflet +/- zoom control (top-left) so the two never overlap
+     on desktop or mobile. */
+  top: 84px;
+  left: 10px;
   z-index: 600;
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 8px;
+  max-width: 168px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid var(--pm-border-strong);
@@ -1530,6 +1533,93 @@
   overflow: hidden;
 }
 
+/* Combined active-group + now/next move card (Plan). One card: group identity,
+   current area + time-in-paddock, next area, single "Move" button. */
+.pm-group-move-card {
+  border-top: 4px solid var(--species-color);
+}
+
+.pm-group-move-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pm-group-move-head > div {
+  min-width: 0;
+}
+
+.pm-group-move-head strong {
+  display: block;
+  color: var(--pm-text);
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.pm-group-move-head em {
+  display: block;
+  color: var(--pm-muted);
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.pm-group-move-grid {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.pm-group-move-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pm-group-move-cell > span {
+  color: var(--pm-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pm-group-move-cell > strong {
+  color: var(--pm-text);
+  font-size: 15px;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.pm-group-move-cell > em {
+  color: var(--pm-muted);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pm-move-btn {
+  width: 100%;
+}
+
+/* Secondary manual move / correction (Plan) — collapsed by default. */
+.pm-manual-move-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--pm-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .pm-now-stripe {
   position: absolute;
   top: 0;
@@ -1816,17 +1906,41 @@
   color: #fff;
 }
 
+/* Flex-wrap row so nothing overflows the side panel: dot + name + acres on the
+   first line, status chips wrap to their own line, expand pinned right. */
 .pm-pasture-edit-row {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) 82px 22px 28px;
-  gap: 7px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 7px;
   padding-bottom: 9px;
   border-bottom: 1px solid #eceef0;
 }
 
+.pm-pasture-edit-row > input {
+  width: auto;
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+.pm-area-acres-ro {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--pm-text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pm-pasture-edit-row .pm-area-tags {
+  flex: 1 1 100%;
+}
+
+.pm-pasture-edit-row .pm-icon-btn {
+  margin-left: auto;
+}
+
 .pm-pasture-expanded {
-  grid-column: 1 / -1;
+  flex: 1 1 100%;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 9px;

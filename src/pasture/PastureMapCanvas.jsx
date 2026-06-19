@@ -608,23 +608,6 @@ export default function PastureMapCanvas({
     }
   }
 
-  function zoomSelected() {
-    const map = mapRef.current;
-    if (!map || !selectedId) {
-      fitFarm();
-      return;
-    }
-    const layer = areaLayersRef.current.get(selectedId);
-    if (layer && layer.getBounds) {
-      const b = layer.getBounds();
-      if (b && b.isValid()) {
-        map.fitBounds(b, {padding: [50, 50], maxZoom: 20});
-        return;
-      }
-    }
-    fitFarm();
-  }
-
   function locate() {
     const map = mapRef.current;
     if (!map) return;
@@ -678,9 +661,6 @@ export default function PastureMapCanvas({
         <div className="pm-map-controls">
           <button type="button" className="pm-map-control" onClick={fitFarm}>
             Fit Farm
-          </button>
-          <button type="button" className="pm-map-control" onClick={zoomSelected}>
-            Zoom Selected
           </button>
           <button type="button" className="pm-map-control" onClick={locate}>
             My Location

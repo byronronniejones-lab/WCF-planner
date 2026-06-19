@@ -67,10 +67,12 @@ test('Map tab: current groups, locations, group->location select, area detail', 
   await expect(mommaRow).toContainText('Not placed');
   await expect(mommaRow.locator('[data-pasture-group-location="none"]')).toBeVisible();
 
-  // Recording lives in the Plan tab now (Map is read-only). Single flat Group
-  // picker; pick "Mommas" and record Mommas -> Paddock A.
-  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  // Recording lives in the Plan tab now (Map is read-only). Plan no longer shows
+  // a full area list: select the destination on the read-only Map list, then open
+  // the secondary "Manual move / correction" panel in Plan and record Mommas -> A.
   await page.locator(`[data-pasture-area-select="${A_ID}"]`).first().click();
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  await page.locator('[data-pasture-manual-move-toggle]').click();
   await expect(page.locator('[data-pasture-move-form]').first()).toBeVisible({timeout: 15_000});
   await page.locator('[data-pasture-move-group]').selectOption({label: 'Mommas'});
   await page.locator('[data-pasture-move-save]').click();
@@ -82,6 +84,8 @@ test('Map tab: current groups, locations, group->location select, area detail', 
   // The occupant marker is a 0x0 Leaflet divIcon whose pill overflows visibly,
   // so assert presence (it renders) rather than box-visibility.
   await expect(page.locator('.pm-occupant-marker').filter({hasText: 'Mommas'})).toHaveCount(1, {timeout: 15_000});
+  // Legend is collapsed by default now; expand it to read the occupancy key.
+  await page.locator('.pm-legend-head').click();
   await expect(page.locator('.pm-legend-body')).toContainText('Occupied - Cattle');
 
   // Clear any carried selection to see the Current Groups panel.
