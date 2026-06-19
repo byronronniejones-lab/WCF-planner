@@ -1,6 +1,11 @@
 // Pasture Map CP7 - manager-controlled boundary line style.
-// Seeds one paddock, changes its stroke color/weight/pattern through the selected-area
-// panel, and verifies both the rendered map stroke and persisted DB values.
+// Seeds one paddock, changes its stroke color/weight/pattern, and verifies the
+// rendered map stroke, the persisted DB values, and the line-style chip.
+//
+// Updated for the planner-group redesign: line-style editing moved into the
+// Setup tab (Map is read-only). Select the area on the read-only Map, switch to
+// Setup to edit its style, then read the line-style chip back on the Map area
+// list.
 import {test, expect} from '@playwright/test';
 import {getTestAdminClient} from './setup/reset.js';
 
@@ -39,27 +44,48 @@ test.beforeAll(async () => {
 test('CP7: manager changes paddock line color, weight, and pattern', async ({page}) => {
   await page.setViewportSize({width: 1280, height: 900});
   await page.goto('/pasture-map', {timeout: 90_000});
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
 
+  // Select the area on the read-only Map area list.
   const row = page.locator(`[data-pasture-area="${A_ID}"]`).first();
   await expect(row).toContainText('CP7 Styled Paddock', {timeout: 25_000});
-  await row.locator(`[data-pasture-area-select="${A_ID}"]`).click();
+  await page.locator(`[data-pasture-area-select="${A_ID}"]`).first().click();
 
-  await expect(page.locator('[data-pasture-style-panel]')).toBeVisible();
+  // Style editing lives in Setup now.
+  await page.locator('.pm-tabs button', {hasText: 'Setup'}).click();
+  await expect(page.locator('[data-pasture-style-panel]')).toBeVisible({timeout: 15_000});
   await page.locator('[data-pasture-style-swatch="2563eb"]').click();
   await page.locator('[data-pasture-style-pattern="dashed"]').click();
   await page.locator('[data-pasture-style-weight-number]').fill('6');
   await page.locator('[data-pasture-style-save]').click();
 
-  await expect(row.locator('[data-pasture-line-style]')).toContainText('6 px Dashed', {timeout: 15_000});
+  // Persisted values (poll so we don't read mid-save).
+  await expect
+    .poll(
+      async () => {
+        const {data} = await getTestAdminClient()
+          .from('land_areas')
+          .select('line_color,line_weight,line_pattern')
+          .eq('id', A_ID)
+          .single();
+        return data;
+      },
+      {timeout: 15_000},
+    )
+    .toEqual({line_color: '#2563eb', line_weight: 6, line_pattern: 'dashed'});
+
+  // Clear the carried selection (selected areas render with the dark highlight
+  // stroke) so the map shows the area's own line style, and the Map area list
+  // exposes the line-style chip.
+  await page.locator('.pm-tabs button', {hasText: 'Map'}).click();
+  const clearBtn = page.locator('[data-pasture-selected-panel]').getByRole('button', {name: 'Clear selection'});
+  if (await clearBtn.count()) await clearBtn.click();
+
+  // Map stroke reflects the saved style now that nothing is selected.
   const styledPath = page.locator('.leaflet-overlay-pane path[stroke="#2563eb"]').first();
-  await expect(styledPath).toHaveAttribute('stroke-width', '6', {timeout: 10_000});
+  await expect(styledPath).toHaveAttribute('stroke-width', '6', {timeout: 15_000});
   await expect(styledPath).toHaveAttribute('stroke-dasharray', '10,8', {timeout: 10_000});
 
-  const {data, error} = await getTestAdminClient()
-    .from('land_areas')
-    .select('line_color,line_weight,line_pattern')
-    .eq('id', A_ID)
-    .single();
-  expect(error).toBeFalsy();
-  expect(data).toEqual({line_color: '#2563eb', line_weight: 6, line_pattern: 'dashed'});
+  // Line-style chip shows on the Map area list.
+  await expect(row.locator('[data-pasture-line-style]')).toContainText('6 px Dashed', {timeout: 15_000});
 });

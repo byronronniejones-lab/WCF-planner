@@ -1,5 +1,10 @@
 // Pasture Map CP6 - mobile field GPS tracks. Uses a mocked browser geolocation
-// provider so the UI path is deterministic: Track -> Start -> Stop -> Save.
+// provider so the UI path is deterministic: Setup -> GPS Boundary -> Stop -> Save.
+//
+// Updated for the planner-group redesign: the GPS boundary tool lives in the
+// Setup tab; clicking it (data-mode="track") starts recording immediately. The
+// saved 2-point trace stays an outline candidate and surfaces on the read-only
+// Map area list with its default field-track line style.
 import {test, expect} from '@playwright/test';
 import {getTestAdminClient} from './setup/reset.js';
 
@@ -44,16 +49,25 @@ test('CP6: mobile GPS track saves as an outline candidate', async ({page}) => {
   });
 
   await page.goto('/pasture-map', {timeout: 90_000});
-  await expect(page.locator('.pm-title')).toHaveText('Pasture Map');
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
+
+  // GPS boundary tools live in Setup; the tool starts recording on click.
+  await page.locator('.pm-tabs button', {hasText: 'Setup'}).click();
   await page.locator('[data-mode="track"]').click();
   await expect(page.locator('[data-pasture-track-panel]')).toBeVisible();
-  await page.locator('[data-pasture-track-start]').click();
   await expect(page.locator('[data-pasture-track-stats]')).toContainText('2 pts', {timeout: 10_000});
   await page.locator('[data-pasture-track-stop]').click();
   await page.locator('[data-pasture-track-name]').fill('Mobile Track Test');
   await page.locator('[data-pasture-track-save]').click();
 
-  const row = page.locator('.pm-item', {hasText: 'Mobile Track Test'}).first();
+  // The saved trace appears on the read-only Map area list. Saving selects the
+  // new area, so wait for its detail panel and clear the selection to reveal the
+  // area index (with its line-style chip).
+  await page.locator('.pm-tabs button', {hasText: 'Map'}).click();
+  await expect(page.locator('[data-pasture-selected-panel]')).toBeVisible({timeout: 15_000});
+  await page.locator('[data-pasture-selected-panel]').getByRole('button', {name: 'Clear selection'}).click();
+
+  const row = page.locator('[data-pasture-area]', {hasText: 'Mobile Track Test'}).first();
   await expect(row).toBeVisible({timeout: 15_000});
   await expect(row.locator('.pm-chip-outline_candidate')).toBeVisible();
   await expect(row.locator('[data-pasture-line-style]')).toContainText('5 px Dashed');

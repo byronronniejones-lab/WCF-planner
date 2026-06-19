@@ -3,6 +3,11 @@
 // UI on port 5199 (cannot collide with other lanes). Drawing uses real Geoman
 // map clicks; metrics/validation correctness is also proven by the mig 127
 // authenticated RPC smoke, so this focuses on the UI flow + CP1 regression.
+//
+// Updated for the planner-group redesign: the boundary tools (move / track /
+// measure / draw / edit), the import flow, classification, and the draw/edit
+// forms now live in the Setup tab. The in-panel .pm-title was replaced by the
+// shared header, and area rows are surfaced via data-pasture-area.
 import {test, expect} from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
@@ -17,6 +22,23 @@ async function cleanPastureTables() {
     sql: 'TRUNCATE TABLE public.pasture_planned_moves, public.pasture_move_impacts, public.pasture_move_events, public.land_area_geometry_versions, public.pasture_import_batches, public.land_areas RESTART IDENTITY CASCADE;',
   });
   if (error) throw new Error('clean pasture tables: ' + error.message);
+}
+
+async function areaIdByName(name) {
+  const {data, error} = await getTestAdminClient().from('land_areas').select('id').eq('name', name).single();
+  if (error) throw new Error(`lookup area "${name}": ` + error.message);
+  return data.id;
+}
+
+async function firstOutlineCandidateId() {
+  const {data, error} = await getTestAdminClient()
+    .from('land_areas')
+    .select('id')
+    .eq('kind', 'outline_candidate')
+    .limit(1);
+  if (error) throw new Error('lookup outline candidate: ' + error.message);
+  if (!data.length) throw new Error('no outline candidate found');
+  return data[0].id;
 }
 
 async function mapClick(page, box, fx, fy) {
@@ -40,22 +62,29 @@ test.beforeAll(async () => {
 test('CP1 regression + CP2 draw/measure/edit/cancel', async ({page}) => {
   await page.setViewportSize({width: 1280, height: 900});
   await page.goto('/pasture-map', {timeout: 90_000});
-  await expect(page.locator('.pm-title')).toHaveText('Pasture Map');
-  // Toolbar modes present for admin.
-  for (const m of ['move', 'select', 'measure', 'draw', 'edit']) {
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
+
+  // Boundary tools live in the Setup tab for managers/admins.
+  await page.locator('.pm-tabs button', {hasText: 'Setup'}).click();
+  for (const m of ['move', 'track', 'measure', 'draw', 'edit']) {
     await expect(page.locator(`[data-mode="${m}"]`)).toBeVisible();
   }
   await page.waitForTimeout(2000);
 
-  // ── CP1 regression: import + classify ──
+  // ── CP1 regression: import + classify (import auto-stays on the Setup tab) ──
   await page.locator('[data-pasture-import-input]').setInputFiles(KML_PATH);
   await expect(page.locator('[data-pasture-import-preview]')).toBeVisible();
   await page.getByRole('button', {name: /^Import \d+$/}).click();
-  await expect(page.locator('.pm-item')).toHaveCount(10, {timeout: 25_000});
-  const hub = page.locator('.pm-item', {hasText: 'HUB'}).first();
-  await hub.getByRole('button', {name: 'Infra'}).click();
-  await expect(hub.locator('.pm-chip-infrastructure')).toBeVisible({timeout: 10_000});
-  await page.waitForTimeout(1500);
+  await expect(page.locator('[data-pasture-area]')).toHaveCount(10, {timeout: 25_000});
+
+  // Classify an unclassified import as a paddock via the Setup designation control.
+  const unclassifiedRow = page.locator('[data-pasture-area][data-kind="unclassified"]').first();
+  const classifyId = await unclassifiedRow.getAttribute('data-pasture-area');
+  await page.locator(`[data-pasture-expand="${classifyId}"]`).click();
+  await page.locator(`[data-pasture-designation="${classifyId}"]`).selectOption('paddock');
+  await expect(page.locator(`[data-pasture-area="${classifyId}"]`)).toHaveAttribute('data-kind', 'paddock', {
+    timeout: 10_000,
+  });
   await page.screenshot({path: path.join(SHOTS, '01-cp1-import-classify.png'), fullPage: true});
 
   // ── CP2 measure: HUD appears ──
@@ -86,8 +115,9 @@ test('CP1 regression + CP2 draw/measure/edit/cancel', async ({page}) => {
   await page.locator('[data-pasture-drawform-kind]').selectOption('paddock');
   await page.screenshot({path: path.join(SHOTS, '03-draw-form.png'), fullPage: true});
   await page.locator('[data-pasture-drawform-save]').click();
-  await expect(page.locator('.pm-item')).toHaveCount(11, {timeout: 15_000});
-  await expect(page.locator('.pm-item', {hasText: 'CP2 Test Paddock'})).toBeVisible();
+  await expect(page.locator('[data-pasture-area]')).toHaveCount(11, {timeout: 15_000});
+  const drawnId = await areaIdByName('CP2 Test Paddock');
+  await expect(page.locator(`[data-pasture-area="${drawnId}"]`)).toBeVisible();
   await page.screenshot({path: path.join(SHOTS, '04-after-draw-save.png'), fullPage: true});
 
   // ── CP2 invalid: self-intersecting bowtie flags + disables save ──
@@ -106,22 +136,33 @@ test('CP1 regression + CP2 draw/measure/edit/cancel', async ({page}) => {
   await expect(page.locator('[data-pasture-drawform]')).toHaveCount(0);
 
   // ── CP2 edit: select the drawn polygon, enter edit, edit bar appears, cancel ──
-  await page.locator('[data-pasture-area-select]', {hasText: 'CP2 Test Paddock'}).first().click();
+  // The left map column keeps reflowing as imagery tiles load, so the Setup row
+  // controls jitter; force the selection clicks (the targets are stable buttons).
+  await page.locator(`[data-pasture-expand="${drawnId}"]`).click();
+  await page
+    .locator(`[data-pasture-area="${drawnId}"]`)
+    .getByRole('button', {name: 'Select', exact: true})
+    .click({force: true});
   await page.locator('[data-mode="edit"]').click();
   await expect(page.locator('[data-pasture-editbar]')).toBeVisible({timeout: 8000});
   await page.screenshot({path: path.join(SHOTS, '05-edit-bar.png'), fullPage: true});
-  await page.locator('[data-pasture-editbar]').getByRole('button', {name: 'Exit edit'}).click();
+  await page.locator('[data-pasture-editbar-exit]').click();
   await expect(page.locator('[data-pasture-editbar]')).toHaveCount(0);
 
   // ── Edit is disabled for an outline candidate (no polygon yet) ──
-  const outline = page.locator('.pm-item[data-kind="outline_candidate"] [data-pasture-area-select]').first();
-  await outline.click();
+  const outlineId = await firstOutlineCandidateId();
+  await page.locator(`[data-pasture-expand="${outlineId}"]`).click();
+  await page
+    .locator(`[data-pasture-area="${outlineId}"]`)
+    .getByRole('button', {name: 'Select', exact: true})
+    .click({force: true});
   await expect(page.locator('[data-mode="edit"]')).toBeDisabled();
 
   // ── Mobile ──
   await page.setViewportSize({width: 390, height: 844});
   await page.reload();
-  await expect(page.locator('.pm-item').first()).toBeVisible({timeout: 25_000});
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
+  await page.locator('.pm-tabs button', {hasText: 'Setup'}).click();
   await page.locator('[data-mode="draw"]').click();
   await page.waitForTimeout(800);
   await page.screenshot({path: path.join(SHOTS, '06-mobile-draw-mode.png'), fullPage: true});
