@@ -569,6 +569,68 @@
   color: var(--pm-text-soft, #5b6770);
 }
 
+/* Area Detail close (X) — obvious dismissal alongside Clear selection + Esc. */
+.pm-selected-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-left: 8px;
+  border: 1px solid var(--pm-border-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--pm-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pm-selected-close:hover {
+  background: var(--pm-surface-2, #f1f3f4);
+}
+
+/* Open outlines (needs closing) — prominent Setup surface. */
+.pm-open-outlines .pm-open-outline-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fbe7e3;
+  color: #a23927;
+  font-weight: 850;
+  font-size: 13px;
+}
+
+.pm-open-outline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--pm-border);
+}
+
+.pm-open-outline-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--pm-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.pm-open-outline-name:hover {
+  text-decoration: underline;
+}
+
 .pm-gps-msg,
 .pm-hud {
   position: absolute;

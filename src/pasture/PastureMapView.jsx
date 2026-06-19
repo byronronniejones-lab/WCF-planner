@@ -625,6 +625,19 @@ export default function PastureMapView({Header, authState}) {
     setStyleDraft(styleDraftFromArea(selectedArea));
   }, [selectedArea]);
 
+  // Escape clears the current selection (and any open inline confirms) so the
+  // Area Detail panel and selected highlight can always be dismissed.
+  React.useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      setSelectedId(null);
+      setConfirmDeleteId(null);
+      setConfirmPromoteId(null);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const sameDayMoveWarning = React.useMemo(() => {
     const {groupKey} = resolveGroup(moveForm);
     const movedDate = new Date(moveForm.movedAt);
@@ -1896,6 +1909,16 @@ export default function PastureMapView({Header, authState}) {
             <div className="pm-selected-title">{selectedArea.name || 'Unnamed'}</div>
           </div>
           <span className={'pm-state-badge state-' + state}>{statusLabelForState(state)}</span>
+          <button
+            type="button"
+            className="pm-selected-close"
+            onClick={() => setSelectedId(null)}
+            aria-label="Close area detail"
+            title="Close (Esc)"
+            data-pasture-clear-selection="1"
+          >
+            ✕
+          </button>
         </div>
         <div className="pm-area-detail-chips" data-pasture-area-detail={selectedArea.id}>
           <span className={'pm-chip pm-chip-' + selectedArea.kind}>{designationLabel(selectedArea)}</span>
@@ -2328,6 +2351,51 @@ export default function PastureMapView({Header, authState}) {
     );
   }
 
+  // Imported KML lines / traced shapes that are not closed polygons yet. Surfaced
+  // as a dedicated, prominent card so they are not buried in the full area list.
+  function renderOpenOutlines() {
+    const open = activeAreas.filter(isOutlineCandidateArea);
+    if (!open.length) return null;
+    return (
+      <div className="pm-card pm-open-outlines" data-pasture-open-outlines="1">
+        <div className="pm-card-head">
+          <div>
+            <div className="pm-card-title">Open outlines - needs closing</div>
+            <p>Imported lines or traced shapes that are not closed polygons yet.</p>
+          </div>
+          <span className="pm-open-outline-count" data-pasture-open-outline-count="1">
+            {open.length}
+          </span>
+        </div>
+        {open.map((a) => (
+          <div key={a.id} className="pm-open-outline-row" data-pasture-open-outline={a.id}>
+            <button
+              type="button"
+              className="pm-open-outline-name"
+              onClick={() => {
+                setSelectedId(a.id);
+                setZoomSignal((n) => n + 1);
+              }}
+              data-pasture-open-outline-zoom={a.id}
+            >
+              <span className="pm-chip pm-chip-outline_candidate">Open outline</span>
+              {a.name || 'Unnamed'}
+            </button>
+            <button
+              type="button"
+              className="pm-btn pm-btn-sm"
+              onClick={() => closeOutline(a)}
+              disabled={!isManager || busyId === a.id}
+              data-pasture-open-outline-close={a.id}
+            >
+              Close outline
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   function renderSetupPanel() {
     return (
       <>
@@ -2335,6 +2403,7 @@ export default function PastureMapView({Header, authState}) {
           <span className="pm-kicker">Setup / Manager only</span>
           <h2>Land & boundaries</h2>
         </div>
+        {renderOpenOutlines()}
         {renderTrackPanel()}
         {renderDrawForm()}
         {renderEditBar()}

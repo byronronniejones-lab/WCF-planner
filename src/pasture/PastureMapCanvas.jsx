@@ -303,6 +303,11 @@ export default function PastureMapCanvas({
   const fitSignatureRef = React.useRef('');
   const cbRef = React.useRef({});
   cbRef.current = {onSelect, onDrawComplete, onEditGeometry};
+  const modeRef = React.useRef(mode);
+  modeRef.current = mode;
+  // Set when an area feature is clicked so the subsequent map-background click
+  // (which Leaflet also fires) does not immediately clear the new selection.
+  const featureClickRef = React.useRef(false);
   const [gpsMsg, setGpsMsg] = React.useState('');
   const [hud, setHud] = React.useState(null);
 
@@ -324,6 +329,16 @@ export default function PastureMapCanvas({
     }).addTo(map);
     L.control.scale({imperial: true, metric: false, position: 'bottomright'}).addTo(map);
     if (map.pm) map.pm.setGlobalOptions({snappable: true, snapDistance: 20});
+    // Clicking empty map background clears the current selection (but not while
+    // drawing/editing/measuring/tracking, and not when the click was on an area).
+    map.on('click', () => {
+      if (featureClickRef.current) {
+        featureClickRef.current = false;
+        return;
+      }
+      if (['draw', 'edit', 'measure', 'track'].includes(modeRef.current)) return;
+      if (cbRef.current.onSelect) cbRef.current.onSelect(null);
+    });
     mapRef.current = map;
     setTimeout(() => map.invalidateSize(), 50);
     return () => {
@@ -357,13 +372,16 @@ export default function PastureMapCanvas({
         {style: g.kind === 'line' ? {...style, fill: false} : style},
       );
       // Clean default: do NOT permanently label every area. Names show on hover;
-      // occupied areas carry their own always-on group/count marker (below).
+      // occupied areas carry their own always-on group/count marker (below). The
+      // currently SELECTED area shows its label permanently.
       lyr.bindTooltip(labelFor(a) + (g.kind === 'line' ? ' (outline)' : ''), {
         direction: 'center',
         className: 'pm-map-label',
-        permanent: false,
+        permanent: a.id === selectedId,
       });
       lyr.on('click', () => {
+        // Flag so the map-background click handler doesn't clear this selection.
+        featureClickRef.current = true;
         if (!['draw', 'edit', 'measure', 'track'].includes(mode) && cbRef.current.onSelect)
           cbRef.current.onSelect(a.id);
       });
