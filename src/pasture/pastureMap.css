@@ -730,6 +730,13 @@
   outline: 2px solid #ef4444;
 }
 
+/* Measure HUD lifecycle controls (Clear measurement / Done). */
+.pm-hud-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .pm-panel-title {
   margin-bottom: 12px;
 }

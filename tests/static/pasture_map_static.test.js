@@ -1080,3 +1080,38 @@ describe('Plan-centric IA: Setup tab removed, contextual area modal', () => {
     expect(viewSrc).not.toContain('<span>Rest days</span>');
   });
 });
+
+describe('Tool lifecycle hardening (Measure P0, exits, archived recovery)', () => {
+  it('measure is transient with Clear / Done controls and never persists', () => {
+    expect(canvasSrc).toContain('function clearMeasure');
+    expect(canvasSrc).toContain('data-pasture-measure-clear');
+    expect(canvasSrc).toContain('data-pasture-measure-done');
+    expect(canvasSrc).toContain("hud.mode === 'measure'");
+    // Done exits the tool via the onExitTool callback.
+    expect(canvasSrc).toContain('onExitTool');
+    expect(viewSrc).toContain('onExitTool: () => switchToolMode(');
+    // Switching tools tears down the transient layer + HUD.
+    expect(canvasSrc).toContain('clearTemp()');
+    expect(canvasSrc).toContain('setHud(null)');
+  });
+
+  it('Escape exits an active map tool (draw/edit/measure/track) before clearing selection', () => {
+    expect(viewSrc).toMatch(
+      /\['draw', 'edit', 'measure', 'track'\]\.includes\(escStateRef\.current\.mapMode\)\) \{\s*\n\s*switchToolMode\('select'\)/,
+    );
+  });
+
+  it('removes confusing "was Move/Track/Edit" helper subtext', () => {
+    expect(viewSrc).not.toContain('was Move');
+    expect(viewSrc).not.toContain('was Track');
+    expect(viewSrc).not.toContain('was Edit');
+  });
+
+  it('archived areas have a recovery surface in Plan', () => {
+    expect(viewSrc).toContain('function renderArchivedAreas');
+    expect(viewSrc).toContain('{renderArchivedAreas()}');
+    expect(viewSrc).toContain('data-pasture-archived');
+    expect(viewSrc).toContain('data-pasture-archived-restore');
+    expect(viewSrc).toMatch(/archivedAreas = React\.useMemo\([\s\S]*?status === 'retired'/);
+  });
+});

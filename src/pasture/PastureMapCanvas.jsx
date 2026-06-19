@@ -293,6 +293,7 @@ export default function PastureMapCanvas({
   appMode = 'view',
   draftLinesVisible = false,
   onToggleDraftLines,
+  onExitTool,
 }) {
   const elRef = React.useRef(null);
   const mapRef = React.useRef(null);
@@ -618,6 +619,29 @@ export default function PastureMapCanvas({
     }
   }
 
+  // Measurement is transient: clear the drawn shape + HUD and restart drawing so
+  // the user can measure another. Never persists anything.
+  function clearMeasure() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (tempRef.current) {
+      try {
+        map.removeLayer(tempRef.current);
+      } catch {
+        /* already gone */
+      }
+      tempRef.current = null;
+    }
+    setHud(null);
+    if (modeRef.current === 'measure' && map.pm) {
+      try {
+        map.pm.enableDraw('Polygon', {snappable: true, snapDistance: 20, continueDrawing: false});
+      } catch {
+        /* noop */
+      }
+    }
+  }
+
   function locate() {
     const map = mapRef.current;
     if (!map) return;
@@ -650,6 +674,21 @@ export default function PastureMapCanvas({
             <span className="pm-hud-v">{hud.perimeterFt != null ? `${hud.perimeterFt.toLocaleString()} ft` : '-'}</span>
           </div>
           {hud.selfIntersects && <div className="pm-hud-warn">Self-intersecting - fix before saving</div>}
+          {hud.mode === 'measure' && (
+            <div className="pm-hud-actions" data-pasture-measure-actions="1">
+              <button type="button" className="pm-mini-btn" onClick={clearMeasure} data-pasture-measure-clear="1">
+                Clear measurement
+              </button>
+              <button
+                type="button"
+                className="pm-mini-btn is-primary"
+                onClick={() => onExitTool && onExitTool()}
+                data-pasture-measure-done="1"
+              >
+                Done
+              </button>
+            </div>
+          )}
         </div>
       )}
       {!compact && mapBanner && (

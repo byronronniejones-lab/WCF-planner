@@ -568,6 +568,12 @@ export default function PastureMapView({Header, authState}) {
     [activeAreas],
   );
   const trackLineAreas = React.useMemo(() => activeAreas.filter((area) => isOutlineCandidateArea(area)), [activeAreas]);
+  // Archived (retired) areas left the active lists when Setup was removed; this is
+  // their recovery surface in Plan.
+  const archivedAreas = React.useMemo(
+    () => areas.filter((area) => area.status === 'retired' && area.geometry_status !== 'deleted'),
+    [areas],
+  );
   const areaById = React.useMemo(() => new Map(areas.map((area) => [area.id, area])), [areas]);
   const activeGroup = groups.find((group) => group.id === activeGroupId) || groups[0] || null;
   const activeSpecies = groupSpeciesStyle(activeGroup);
@@ -647,11 +653,18 @@ export default function PastureMapView({Header, authState}) {
     setStyleDraft(styleDraftFromArea(selectedArea));
   }, [selectedArea]);
 
-  // Escape clears the current selection (and any open inline confirms) so the
-  // Area Detail panel and selected highlight can always be dismissed.
+  // Escape: exit an active map tool (draw/edit/measure/track) if one is running,
+  // otherwise clear the current selection + any open inline confirms. The tool
+  // switch also clears the tool's transient layer/HUD (see switchToolMode).
+  const escStateRef = React.useRef({mapMode});
+  escStateRef.current = {mapMode};
   React.useEffect(() => {
     function onKey(e) {
       if (e.key !== 'Escape') return;
+      if (['draw', 'edit', 'measure', 'track'].includes(escStateRef.current.mapMode)) {
+        switchToolMode('select');
+        return;
+      }
       setSelectedId(null);
       setConfirmDeleteId(null);
       setConfirmPromoteId(null);
@@ -2362,6 +2375,7 @@ export default function PastureMapView({Header, authState}) {
             manual / off-rotation move also lives in that modal. */}
         {renderTracksLines()}
         {renderClassificationQueue()}
+        {renderArchivedAreas()}
         {renderBoundaryTools()}
         {invalidArea && (
           <div className="pm-invalid-banner">
@@ -2441,6 +2455,34 @@ export default function PastureMapView({Header, authState}) {
   // Boundary tools (relocated from the removed Setup tab into Plan). Collapsible
   // so Plan stays focused on rotation/moves until tools are needed. Draw / track /
   // edit forms surface here when active.
+  // Archived-area recovery (Plan). Retired areas are off the active lists; restore
+  // them here. Management/admin only (restore RPC enforces it too).
+  function renderArchivedAreas() {
+    if (!isManager || !archivedAreas.length) return null;
+    return (
+      <div className="pm-card" data-pasture-archived="1">
+        <div className="pm-card-title">Archived areas</div>
+        {archivedAreas.map((a) => (
+          <div key={a.id} className="pm-classify-row" data-pasture-archived-row={a.id}>
+            <span>
+              {a.name || 'Unnamed'}
+              {isTempArea(a) ? ' (temp)' : ''}
+            </span>
+            <button
+              type="button"
+              className="pm-btn pm-btn-sm"
+              onClick={() => restoreArea(a)}
+              disabled={busyId === a.id}
+              data-pasture-archived-restore={a.id}
+            >
+              Restore
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   function renderBoundaryTools() {
     if (!isManager) return null;
     return (
@@ -2466,11 +2508,11 @@ export default function PastureMapView({Header, authState}) {
               <div className="pm-tool-grid">
                 <button type="button" className="pm-tool-btn" onClick={() => switchToolMode('select')} data-mode="move">
                   <strong>Map / Pan</strong>
-                  <span>was Move</span>
+                  <span>browse &amp; select</span>
                 </button>
                 <button type="button" className="pm-tool-btn" onClick={startTrack} data-mode="track">
                   <strong>GPS Boundary</strong>
-                  <span>was Track</span>
+                  <span>walk a line</span>
                 </button>
                 <button
                   type="button"
@@ -2480,7 +2522,7 @@ export default function PastureMapView({Header, authState}) {
                   data-mode="edit"
                 >
                   <strong>Edit Boundary</strong>
-                  <span>was Edit</span>
+                  <span>reshape selected</span>
                 </button>
                 <button
                   type="button"
@@ -3163,6 +3205,7 @@ export default function PastureMapView({Header, authState}) {
             appMode,
             draftLinesVisible,
             onToggleDraftLines: toggleDraftLines,
+            onExitTool: () => switchToolMode('select'),
           })}
         </section>
         <aside className="pm-side-panel">

@@ -191,3 +191,94 @@ test('Plan tab: one combined group/move card, no area list, move in the area mod
   await expect(page.locator('[data-pasture-area-modal]')).toBeVisible({timeout: 15_000});
   await expect(page.locator('[data-pasture-move-form]').first()).toBeVisible();
 });
+
+async function drawMeasure(page) {
+  const box = await page.locator('.pm-map').boundingBox();
+  const pts = [
+    [0.4, 0.4],
+    [0.6, 0.4],
+    [0.6, 0.6],
+    [0.4, 0.6],
+  ];
+  for (const [fx, fy] of pts) {
+    await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+    await page.waitForTimeout(160);
+  }
+  await page.mouse.click(box.x + box.width * pts[0][0], box.y + box.height * pts[0][1]);
+  await page.waitForTimeout(350);
+}
+
+test('Measure is transient: HUD with Clear + Done, and Escape/Map-Pan dismiss it', async ({page}) => {
+  await seedTwoAreas();
+  await page.setViewportSize({width: 1280, height: 900});
+  await page.goto('/pasture-map', {timeout: 90_000});
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  await page.locator('[data-pasture-boundary-tools-toggle]').click();
+
+  // Measure -> draw -> HUD with lifecycle controls.
+  await page.locator('[data-mode="measure"]').click();
+  await drawMeasure(page);
+  await expect(page.locator('[data-pasture-hud]')).toBeVisible({timeout: 8000});
+  await expect(page.locator('[data-pasture-measure-actions]')).toBeVisible();
+
+  // Clear measurement removes the HUD (transient; nothing saved).
+  await page.locator('[data-pasture-measure-clear]').click();
+  await expect(page.locator('[data-pasture-hud]')).toHaveCount(0, {timeout: 8000});
+
+  // Measure again, then Done exits the tool.
+  await drawMeasure(page);
+  await expect(page.locator('[data-pasture-hud]')).toBeVisible({timeout: 8000});
+  await page.locator('[data-pasture-measure-done]').click();
+  await expect(page.locator('[data-pasture-hud]')).toHaveCount(0, {timeout: 8000});
+
+  // Measure again, then Escape clears/exits.
+  await page.locator('[data-mode="measure"]').click();
+  await drawMeasure(page);
+  await expect(page.locator('[data-pasture-hud]')).toBeVisible({timeout: 8000});
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-pasture-hud]')).toHaveCount(0, {timeout: 8000});
+
+  // Measurement never created a land area (still just the two seeded paddocks).
+  const {count} = await getTestAdminClient()
+    .from('land_areas')
+    .select('id', {count: 'exact', head: true})
+    .is('deleted_at', null);
+  expect(count).toBe(2);
+});
+
+test('Archived areas have a recovery surface in Plan', async ({page}) => {
+  await exec(`
+    ${TRUNCATE}
+    DO $$ DECLARE v_profile uuid; BEGIN
+      SELECT id INTO v_profile FROM public.profiles LIMIT 1;
+      INSERT INTO public.land_areas (id, kind, name, permanence, status, review_status, geometry_status, baseline_no_history, source, created_by) VALUES
+        ('${A_ID}','paddock','TW2 Archived Temp','temporary','retired','reviewed','none',true,'drawn',v_profile);
+      PERFORM public._land_area_add_version('${A_ID}', extensions.ST_SetSRID(extensions.ST_GeomFromGeoJSON('${SQUARE_A}'),4326),'drawn','{}'::jsonb,v_profile);
+    END $$;
+  `);
+  await page.setViewportSize({width: 1280, height: 900});
+  await page.goto('/pasture-map', {timeout: 90_000});
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
+
+  // Archived area is NOT on the Map active list.
+  await expect(page.locator(`[data-pasture-area-select="${A_ID}"]`)).toHaveCount(0);
+
+  // It is recoverable from the Plan "Archived areas" section.
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  await expect(page.locator('[data-pasture-archived]')).toBeVisible({timeout: 15_000});
+  await expect(page.locator(`[data-pasture-archived-row="${A_ID}"]`)).toBeVisible();
+  await page.locator(`[data-pasture-archived-restore="${A_ID}"]`).click();
+
+  // Restored -> active again (back on the Map list, gone from Archived).
+  await expect(page.locator(`[data-pasture-archived-row="${A_ID}"]`)).toHaveCount(0, {timeout: 15_000});
+  await expect
+    .poll(
+      async () => {
+        const {data} = await getTestAdminClient().from('land_areas').select('status').eq('id', A_ID).single();
+        return data?.status;
+      },
+      {timeout: 15_000},
+    )
+    .toBe('active');
+});
