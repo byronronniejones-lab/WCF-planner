@@ -585,7 +585,7 @@
   }
 }
 
-/* Locked permanent line-style note + temp promotion controls (Setup). */
+/* Locked permanent line-style note + temp promotion controls (area modal). */
 .pm-style-locked-note {
   margin: 0;
   font-size: 12.5px;
@@ -635,7 +635,7 @@
   background: var(--pm-surface-2, #f1f3f4);
 }
 
-/* Open outlines (needs closing) — prominent Setup surface. */
+/* Open outlines / Tracks-Lines cleanup surface. */
 .pm-open-outlines .pm-open-outline-count {
   display: inline-flex;
   align-items: center;
@@ -1440,7 +1440,7 @@
   color: #2f7a46;
 }
 
-/* One-shot: Setup area tags + lifecycle, Reports tags, Plan conflict, Field dupe */
+/* One-shot: area tags + lifecycle, Reports tags, Plan conflict, Field dupe */
 .pm-area-tags {
   display: inline-flex;
   gap: 5px;

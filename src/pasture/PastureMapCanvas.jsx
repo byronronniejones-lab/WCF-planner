@@ -370,7 +370,7 @@ export default function PastureMapCanvas({
       if (!g) return;
       // Draft lines (GPS tracks / open lines) are hidden on the Map by default.
       // They render only on Field when the Draft-lines toggle is on, or when the
-      // line itself is the current selection (so Setup zoom-to-track still shows).
+      // line itself is the current selection (so Plan/Tracks zoom still shows).
       if (g.kind === 'line') {
         const showDraft = appMode === 'plan' || (appMode === 'field' && draftLinesVisible) || a.id === selectedId;
         if (!showDraft) return;

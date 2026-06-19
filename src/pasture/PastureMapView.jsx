@@ -2,7 +2,7 @@
 // src/pasture/PastureMapView.jsx - Pasture Map
 // ----------------------------------------------------------------------------
 // Redesign handoff rebuild: a grazing planning cockpit with five modes
-// (View / Map, Plan, Field, Setup, Reports). Existing backend contracts remain:
+// (Map, Plan, Field, Reports). Existing backend contracts remain:
 // geometry, import/classification, draw/edit, move ledger, planned moves,
 // reports, offline replay, field tracks, and line styling all go through the
 // pasture-scoped SECDEF RPC wrappers.
@@ -553,8 +553,8 @@ export default function PastureMapView({Header, authState}) {
     () => areas.filter((area) => area.status !== 'retired' && area.geometry_status !== 'deleted'),
     [areas],
   );
-  // Setup lists ALL live areas (including archived/retired) so they can be
-  // restored; list_land_areas already excludes hard-deleted (deleted_at) rows.
+  // The manage/recovery source keeps ALL live areas (including archived/retired)
+  // so they can be restored; list_land_areas already excludes hard-deleted rows.
   // Outline candidates (tracks / open lines) are NOT areas — they live in the
   // dedicated Tracks / Lines section, not the Area Setup classification list.
   const setupAreas = React.useMemo(
@@ -1174,7 +1174,7 @@ export default function PastureMapView({Header, authState}) {
       source: 'drawn',
     };
     try {
-      // A temp paddock draw (Plan/Field/Setup) mints a real temp paddock via the
+      // A temp paddock draw (Plan/Field) mints a real temp paddock via the
       // farm_team-capable P0 RPC; a permanent draw uses the mgmt/admin RPC.
       if (drawIsTemp) await createTempLandArea({id: areaId, name: createPayload.name, polygon: createPayload.polygon});
       else await createLandArea(createPayload);
@@ -1985,8 +1985,8 @@ export default function PastureMapView({Header, authState}) {
             <span key={fact}>{fact}</span>
           ))}
         </div>
-        {/* Map is read-only "where things are": move/plan recording lives in
-            Plan, line-style editing lives in Setup. */}
+        {/* Map is read-only "where things are"; move/plan recording lives in
+            Plan and area management lives in the contextual modal. */}
         <div className="pm-selected-actions">
           <button type="button" className="pm-btn" onClick={() => setZoomSignal((n) => n + 1)}>
             Zoom to this pasture

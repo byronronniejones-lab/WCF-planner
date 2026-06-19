@@ -7,12 +7,12 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-18.
-Current shipped runtime checkpoint: `7ffb72d`
-(`Merge pasture-map planner-group redesign into main`).
+Last updated: 2026-06-19.
+Current source checkpoint: `1a200ae`
+(`Merge Pasture Map Plan-centric IA + tool-lifecycle lanes into main`).
 Production URL: https://wcfplanner.com.
-Latest verified live bundle (after `7ffb72d`, deployed 2026-06-18):
-`assets/main-BVVMjz38.js` / `assets/main-DXIsMnOM.css`.
+Netlify auto-deploys from GitHub `main`. This docs wrap verified git state, not
+the final Netlify bundle id for `1a200ae`.
 
 ---
 
@@ -64,59 +64,61 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: `main` / `origin/main` contains runtime checkpoint `7ffb72d`
-  (`Merge pasture-map planner-group redesign into main`). Netlify production
-  deploy is live and serving the bundle listed above.
+- Source: `main` / `origin/main` is `1a200ae`
+  (`Merge Pasture Map Plan-centric IA + tool-lifecycle lanes into main`). The
+  push to `origin/main` is complete; Netlify deploy verification for this exact
+  commit was not available from the local CLI during this docs wrap.
 - Extra worktrees:
   - `C:\Users\Ronni\WCF-planner` is the standing repo/worktree on current
-    `main`.
-  - `C:\Users\Ronni\WCF-planner-pasture-map` is the completed pasture feature
-    worktree on `feature/pasture-map-planner-groups`; it is behind `origin/main`
-    after the no-ff merge and has untracked review screenshots in `p2-shots/`.
-    Treat it as review artifact state, not an active build lane.
+    `main`; it is the canonical place to inspect `origin/main` state.
+  - `C:\Users\Ronni\WCF-planner-pasture-map` is an old completed pasture review
+    worktree on `feature/pasture-map-planner-groups`; its tip is already
+    reachable from `origin/main`, it is behind current main, and it has
+    untracked review screenshots in `p2-shots/`. Treat it as review artifact
+    state, not an active build lane.
   - `C:\Users\Ronni\WCF-planner-production-events-hotfix` and
-    `C:\Users\Ronni\WCF-planner-weather-rebuild` are completed Codex branches
-    whose work is already merged to `main`.
-- Open gates: migration `135_pasture_map_temp_paddocks.sql` is TEST-applied
-  only and must be explicitly approved before PROD apply. The deployed frontend
-  includes temp-paddock lifecycle UI/API calls that expect the `135` RPCs, so
-  production temp-paddock create/rename/redraw/archive/restore/hard-delete
-  actions may error until that PROD gate closes. `tasks-cron` Edge Function
-  deploy is still pending for the task notification hotfix. No Storage/Vault
-  gate is open.
+    `C:\Users\Ronni\WCF-planner-weather-rebuild` are completed Codex worktrees
+    whose tips are already reachable from `origin/main`.
+  - `C:\Users\Ronni\WCF-planner-task-record-pages-hotfix` is a completed Codex
+    worktree whose tip is already reachable from `origin/main`; it is not an
+    active lane unless Ronnie explicitly reopens it.
+- Open gates: no approved-but-unrun PROD migration, Edge Function deploy,
+  Storage/Vault, or data-repair gate is open as of this wrap. Migration `135`
+  is PROD-applied/verified; `tasks-cron` v3 is deployed/smoked; B-26-08 wk6 is
+  repaired in PROD.
 - PROD-applied recent migrations include `112` through `116`, `125`, `126`,
-  `127`, `128`, `129`, `130`, `131`, `132`, `133`, and `134`. `116` (Pasture
+  `127`, `128`, `129`, `130`, `131`, `132`, `133`, `134`, and `135`. `116` (Pasture
   Map CP1), `125` (Production legacy events), and `126` (breeding-pig Activity
   entity) were applied to PROD on 2026-06-15. `127` (Pasture Map draw/edit RPCs)
   was applied to PROD on 2026-06-16. Pasture Map `128`-`132` artifacts were
   verified present on TEST and PROD by catalog checks on 2026-06-17. Migration
   `133` (task system generation support and To Do approval notifications) was
   applied to TEST on 2026-06-17 and PROD on 2026-06-18. Migration `134`
-  (originator task/to-do edit photos) was applied to PROD on 2026-06-18.
-  Migration `135` (temp-paddock lifecycle RPCs) is present in source and
-  TEST-applied/verified only; it is not PROD-applied.
+  (originator task/to-do edit photos) was applied to PROD on 2026-06-18. Migration
+  `135` (temp-paddock lifecycle RPCs) was PROD-applied and verified before the
+  Pasture Map Plan-centric/tool-lifecycle wrap.
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
 - Pasture Map PROD state: CP1-CP7 schema/RPC support is present for import,
   draw/edit, move ledger, planned moves, reports, field GPS tracks, line style,
-  and line patterns/defaults. The planner-group redesign is merged to `main`
-  and deployed: Map/Plan/Field/Setup/Reports are built around real planner
-  groups, locked counts, current locations, animal-color occupancy, temp areas,
-  and read-only Map inspection. New temp-paddock lifecycle RPCs from migration
-  `135` remain TEST-only until Ronnie approves PROD apply.
-- Latest validation after the Pasture Map planner-group one-shot merge:
-  one-shot branch validation was format/lint/build clean, 115 focused pasture
-  static/unit tests passed, and Playwright `p2_map`, `cp3`, `cp4`, `cp5`, and
-  `setup` passed. After integrating current `origin/main`, CC re-ran focused
-  pasture static tests (94 pass) and `npm run build`; after the no-ff merge to
-  main, pasture static tests (94 pass) and build were re-validated.
-- Latest validation after originator task/to-do editing: focused related static
-  tests green (240 tests); `npm run lint` exits 0 with existing warnings; `npm
-  run build` green with existing Vite dynamic-import/chunk warnings. Full
-  Vitest still has unrelated pre-existing static failures in global activity,
-  image file capture inventory, pig batch filters/planned trips, breeding pig
-  record links, and pasture radius floor.
+  line patterns/defaults, and temp-paddock lifecycle. The shipped IA is now
+  Map / Plan / Field / Reports; Setup tab is removed. Plan owns Boundary tools,
+  Tracks / Lines, classification queue, archived-area recovery, and rotation/
+  move planning. Selecting an area opens a contextual modal. Measure is
+  transient and clearable via Clear, Done, Escape, or tool switch.
+- Latest Pasture Map validation after merge `1a200ae`: `format:check` clean;
+  lint 0 errors with 793 existing warnings; build green; static pasture guards
+  111 passed; all 10 pasture Playwright specs passed (`p2_map`, `setup`,
+  `cp2`-`cp7`, `import`, `tweaks2`, 35 tests total).
+- Broiler derived-data drift lane is closed: merge `6b94d37` contains Codex
+  `c639311` and CC#2 `6ff36c7`; code is deployed/verified; B-26-08 wk6 PROD
+  repair was run through `recomputeBroilerBatchWeekAvg(sb, 'B-26-08', 6)` and
+  verified cached `ppp-v4.week6Lbs=5.76` equals canonical 5.76 from 30 weights.
+- `tasks-cron` Edge Function v3 is active and smoked in PROD. It generates
+  recurring tasks, system-task instances, and To Do approval/originator
+  notifications; the smoke created 6 catch-up instances, proved idempotency,
+  and left no rollback needed.
 - `npm install` was run in the main worktree after Pasture Map dependencies
   landed. It reported npm audit findings (11 vulnerabilities: 1 low, 3
   moderate, 6 high, 1 critical). No audit-fix lane has been scoped.
@@ -124,27 +126,60 @@ Design/function invariants that govern cross-surface behavior live in
 ### Latest Shipped Checkpoint
 
 The following work is merged to `main` and pushed. Netlify deploys from `main`;
-the live bundle is verified in the header above.
+the current source checkpoint is listed in the header above.
 
+- Pasture Map Plan-centric IA and tool lifecycle (merge `1a200ae`, pushed
+  2026-06-19):
+  - `359ac46`: Setup tab removed. Tabs are Map / Plan / Field / Reports. Plan
+    owns Boundary tools, Tracks / Lines, classification queue, archived-area
+    recovery, rotation planning, and move controls. Selecting a pasture/paddock/
+    temp paddock opens a contextual area modal instead of a Setup side-list.
+  - `3af3489`: tool lifecycle hardening. Measure creates only a transient
+    HUD/shape and exits via Clear measurement, Done, Escape, or switching tools;
+    Escape exits active draw/edit/track/measure flows; confusing "was ..."
+    button subtext was removed.
+  - Tracks / Lines are GPS tracks and manually drawn open lines only: draft
+    geometry, no acreage, no move destination, no direct permanent promotion.
+    They can be zoomed, deleted, or closed into a temp paddock by management/
+    admin. Open-line editing is intentionally deferred pending a new RPC.
+  - Validation after rebase onto `6b94d37`: `format:check` clean; lint 0
+    errors with 793 pre-existing warnings; build green; 111 static pasture
+    guards passed; all 10 pasture Playwright specs passed (`p2_map`, `setup`,
+    `cp2`-`cp7`, `import`, `tweaks2`, 35 tests total).
+- Broiler derived-data drift hardening (merge `6b94d37`, pushed 2026-06-19):
+  - `c639311`: broiler batch record Week 4/6 display reads canonical averages
+    from completed weigh-in sessions via `loadBroilerBatchWeekAverages`; shared
+    average/stamp helpers converge read/write/recompute logic; `ppp-v4` read/
+    upsert failures surface as `{ok:false,message}` instead of silent no-ops.
+  - `6ff36c7`: `main.jsx` broiler `persist(nb)` syncs webform mirrors via
+    `syncWebformConfig(null, null, nb, layerGroups, layerHousings)`, keeping
+    anonymous weigh-in dropdown/meta/schooner labels fresh after broiler create/
+    edit/status/schooner/brooder changes.
+  - B-26-08 wk6 one-time PROD repair is complete: before `week6Lbs=0`, after
+    `week6Lbs=5.76`; only B-26-08 and only that key changed; canonical average
+    remains 5.76 from 30 weights.
+  - Validation: `format:check` clean; lint 0 errors with 786 pre-existing
+    warnings at lane time; build green; focused broiler/weigh-in/webform tests
+    352 passed.
 - Pasture Map planner-group redesign (merge `7ffb72d`, deployed 2026-06-18):
   - P0 `661068c`: migration `135_pasture_map_temp_paddocks.sql` plus
-    `pastureMapApi` wrappers for temp-paddock lifecycle RPCs. TEST-applied and
-    behaviorally verified; NOT PROD-applied.
+    `pastureMapApi` wrappers for temp-paddock lifecycle RPCs. TEST- and
+    PROD-applied/verified.
   - P1 `4ca2dd2`: real planner-group roster helper with derived/locked counts
     for pigs, sheep, and cattle. Canonical move keys are `cattle_herd` herd key,
     `sheep_flock` flock key, `breeder_pigs` `sow-1`/`sow-2`/`sow-3`/`boars`,
     and `feeder_pigs` sub-batch id.
   - P2+ one-shot `3cf334b`: `PastureMapView`/canvas/CSS/offline support
-    redesigned across Map, Plan, Field, Setup, and Reports. Map is read-only and
+    originally redesigned across Map, Plan, Field, Setup, and Reports. The
+    later `1a200ae` lane removed Setup and moved its useful tools into Plan.
+    Map is read-only and
     answers where groups are: occupied polygons use animal-type colors and group
     markers derived from the roster plus latest move ledger. Plan owns move and
     planned-move recording with flat roster group pickers and locked counts.
     Field owns phone-first execution/offline queue/confirm planned move/record
-    track -> temp area. Setup owns classification, line style, archive/restore,
-    redraw/rename, and hard-delete UI. Reports carry type/status tags and
-    include archived context.
-  - Existing CP2/CP6/CP7/import Playwright drift remains a separate repair lane;
-    do not mix it into feedback fixes unless Ronnie explicitly re-scopes it.
+    track. Reports carry type/status tags and include archived context.
+  - CP2/CP6/CP7/import Playwright drift was repaired in the later pasture lanes;
+    all 10 pasture Playwright specs are green at `1a200ae`.
 - Weather rebuild and follow-ups:
   - `d7f761a`/`be11e60` rebuilt the Home Weather card around structured
     Open-Meteo forecast data, an official NWS radar link, a 10-day forecast, and
@@ -231,8 +266,8 @@ the live bundle is verified in the header above.
     that approval is waiting.
   - Whoever created a To Do is notified when completion is approved or
     auto-approved.
-  - Migration `133` is TEST- and PROD-applied; Edge Function deploy remains
-    gated.
+  - Migration `133` is TEST- and PROD-applied; `tasks-cron` Edge Function v3 is
+    deployed, active, and smoked in PROD.
 - Originator task/to-do editing:
   - Task creators and admins can edit open task title, details, due date,
     assignee, and append request photos from the task record page.
@@ -308,35 +343,46 @@ the live bundle is verified in the header above.
 - Pasture Map:
   - Home shows a Pasture Map button beside Weather above Processing/Admin.
   - `/pasture-map` renders the redesigned one-page grazing cockpit with Map,
-    Plan, Field, Setup, and Reports modes.
-  - Map is the primary read-only current-location surface; the side panel is the
-    secondary index/detail surface.
+    Plan, Field, and Reports modes. Setup tab is removed.
+  - Map is the primary read-only current-location surface. Selecting an area
+    opens a contextual area modal; Map/Pan, explicit zoom actions, Escape, and
+    modal dismissal are the exit paths.
+  - Plan is the working cockpit: move/rotation controls, Boundary tools,
+    Tracks / Lines, classification queue, archived-area recovery, and area
+    management all live there.
   - Occupancy visuals are derived from the real planner-group roster and latest
     `pasture_move_events` by canonical `(animal_type, group_key)`, not from
     ad-hoc/free-form groups. Occupied polygons fill by animal type and show
     group markers.
   - Field mode provides phone-first execution controls, offline queue/sync
-    state, GPS track/temp-area controls, `My Location`, `Fit Farm`, and
-    `Zoom Selected`.
+    state, selected group movement, `My Location`, `Fit Farm`, and draft-lines
+    visibility when applicable.
   - Client parses OnX KML with `@tmcw/togeojson`; Polygons import as reviewable
     areas; LineStrings import as outline candidates and are never auto-closed.
-  - Read access starts at `farm_team`; management/admin can import/classify/
-    close/delete permanent areas and draw/edit/style permanent geometry.
-    Farm-team users can view/measure, confirm planned moves, and create temp
-    paddocks/tracks through the gated temp lifecycle once migration `135` is
-    PROD-applied. Light users are excluded.
+  - Tracks / Lines are draft LineStrings only. They have no acreage, are hidden
+    from normal Map view by default, are excluded from move destinations and
+    rotation seeding, and can be zoomed/deleted/closed into a temp paddock. Edit
+    for open LineStrings is deferred until a new line-geometry RPC exists.
+  - Read access starts at `farm_team`; management/admin can import/classify,
+    close/delete permanent areas, draw/edit permanent geometry, promote temp
+    areas, and manage Tracks / Lines. Farm-team users can view/measure, confirm
+    planned moves, and create temp paddocks/tracks through the temp lifecycle.
+    Light users are excluded.
   - Map rendering uses Leaflet with Esri World Imagery as the primary online
     imagery source. Geometry is provider-neutral GeoJSON/PostGIS; Google is not
     the geometry source.
-  - Draw/edit uses Leaflet-Geoman with snapping, a measure HUD, client
-    self-intersection warnings, and DB-side validity checks.
-  - Geometry edits are append-only versions and preserve manual acreage override
-    separately from computed geodesic acreage.
-  - Baseline/no-history pastures render solid gray by default; dashed styling is
-    reserved for semantic review/problem states or explicit saved line patterns.
-  - Migrations `116`, `127`, `128`, `129`, `130`, `131`, and `132` are present on
-    TEST and PROD. Migration `135` is TEST-only. Offline imagery cache is not
-    built; vector/cache/queue behavior is present.
+  - Draw/edit uses Leaflet-Geoman with snapping, transient measure HUD, client
+    self-intersection warnings, Escape exits, and DB-side validity checks.
+    Measure never persists geometry.
+  - Geometry edits are append-only versions. UI acreage is computed/read-only;
+    raw OnX/manual acreage is a cross-check, not the normal editing path.
+  - Permanent pasture boundaries are fixed blue 4px and permanent paddock
+    boundaries are fixed bright green 4px. Temp paddocks default to white dashed
+    5px and are style-editable. Only temp paddocks and GPS/field tracks have
+    editable line style.
+  - Migrations `116`, `127`, `128`, `129`, `130`, `131`, `132`, and `135` are
+    present on TEST and PROD. Offline imagery cache is not built; vector/cache/
+    queue behavior is present.
   - `design_handoff_pasture_map/` is committed as the design reference bundle;
     production code does not import from it.
 
@@ -347,51 +393,55 @@ the live bundle is verified in the header above.
 Treat these as product lanes, not hotfixes, unless Ronnie says otherwise.
 This is the canonical home for outstanding build/design work.
 
-1. Pasture Map migration `135` PROD apply gate
-   - Class: `DEFECT`/`DB-GATE`.
-   - Scope: apply `supabase-migrations/135_pasture_map_temp_paddocks.sql` to
-     PROD only after Ronnie explicitly approves the exact apply plan.
-   - Why: the deployed Pasture Map frontend includes temp-paddock lifecycle
-     calls, but the required PROD RPCs are not present until migration `135` is
-     applied.
-   - Success criteria: PROD has the narrow temp-paddock lifecycle RPCs; PostgREST
-     schema is reloaded; role/anon rejection and admin/farm-team lifecycle
-     behavior are verified without creating durable farm data beyond named
-     throwaway test rows.
-   - Gate: explicit Ronnie PROD approval. Use `psql` with `ON_ERROR_STOP=1`; do
-     not use PROD `exec_sql`.
+1. Pasture Map open-line Edit fast-follow
+   - Class: `ENH`/`DB-GATE`.
+   - Scope: allow editing saved Tracks / Lines LineString geometry. Current
+     polygon edit RPCs intentionally reject line geometry; open lines can be
+     zoomed, deleted, or closed into a temp paddock, but not edited in place.
+   - Success criteria: add a narrow RPC such as
+     `update_land_area_track(p_id text, p_line_geojson jsonb)` gated to
+     management/admin, validating LineString/MultiLineString only; wire Geoman
+     line edit UI; preserve Tracks / Lines semantics (no acreage, no move
+     destination, no direct permanent promotion); add static and Playwright
+     coverage.
+   - Gate: TEST migration apply inside lane; explicit Ronnie PROD approval for
+     the new migration and PostgREST schema reload. No manual PROD JSON edits.
 
-2. Pasture Map live review feedback
-   - Class: `ENH`/`DEFECT`.
-   - Scope: after Ronnie tests the live redesigned Pasture Map, implement
-     feedback as scoped follow-up fixes. Keep feedback separate from the CP2/CP6/
-     CP7/import Playwright repair unless Ronnie explicitly combines them.
-   - Success criteria: feedback fixes preserve the one-shot contracts: read-only
-     Map, real roster groups, locked counts, canonical group keys, animal-color
-     occupancy, temp areas as real working areas, and role gates.
-   - Gate: code-only unless a feedback item changes SQL/RLS/RPC/storage.
+2. Pasture Map post-deploy smoke and live-review polish
+   - Class: `VERIFY`/`ENH`.
+   - Scope: once Netlify serves `1a200ae`, smoke the live UI: Setup tab absent;
+     Plan owns Boundary tools, Tracks / Lines, classification, and Archived
+     areas; Measure Clear/Done/Escape works; area click opens the modal; Map
+     remains clean with occupancy fills and boundary toggles.
+   - Success criteria: smoke result is recorded in chat/next handoff. Any
+     follow-up tweaks are scoped as code-only lanes unless they require SQL/RPC/
+     RLS/storage.
+   - Gate: no PROD DB gate for smoke; code changes need normal commit/push
+     approval.
 
-3. Pasture Playwright lane repair
+3. Eggmobile 3 / P2-2 layer display lane
    - Class: `DEFECT`.
-   - Scope: repair pre-existing pasture Playwright drift for CP2/CP6/CP7/import:
-     shared-header `.pm-title` removal, boundary tools moved to Setup,
-     `.pm-item` -> `.pm-area-row`, line-style chip text, and KML import count
-     assumptions.
-   - Success criteria: `tests/pasture_map_import.spec.js`,
-     `tests/pasture_map_cp2.spec.js`, `tests/pasture_map_cp6.spec.js`, and
-     `tests/pasture_map_cp7.spec.js` reflect the shipped redesigned UI and pass
-     against TEST without weakening product assertions.
-   - Gate: code/test-only; no PROD DB work expected.
+   - Current known data point: Eggmobile 3 is part of `L-25-01`; the physical
+     anchor currently reads `current_count=0`, but the latest positive daily
+     count was 115 on 2026-04-10 and three mortalities after that imply a
+     projected 112 hens. The UI label "Physical: 0" is misleading if the
+     intended display is projected live birds.
+   - Scope: audit layer housing/current-count display only. Decide whether the
+     fix is display wording, projected-count calculation, stale classification,
+     or a one-time data correction. Do not fold this into broiler/pasture work.
+   - Success criteria: Eggmobile 3 clearly shows the right state for farm use,
+     and tests cover physical anchor vs projected count wording.
+   - Gate: code-only unless the scoped decision requires a PROD data correction,
+     which needs explicit approval.
 
-4. Task notification Edge Function deploy
-   - Class: `DEFECT`/`OPS-GATE`.
-   - Scope: deploy the updated `tasks-cron` Edge Function that generates system
-     tasks from real planner stores and sends To Do approval/originator
-     notifications. Migration `133` is already TEST- and PROD-applied.
-   - Success criteria: deployed function version matches source; scheduled/manual
-     smoke confirms recurring task generation still works and eligible system
-     tasks/notifications are generated once.
-   - Gate: explicit deploy approval; no new migration expected.
+4. P3 derived-data durability/audit residuals
+   - Class: `DEFECT`/`ENH`.
+   - Scope candidates from CC#2 audit: pig mortality/trips durability, cosmetic
+     `calcPoultryStatus` cleanup, and orphan system-task detection/cleanup.
+     These are not active lanes and should be scoped one at a time.
+   - Success criteria: each sub-lane states source of truth, write path,
+     read path, guard tests, and whether a one-time data repair is needed.
+   - Gate: depends on sub-lane; data cleanup needs explicit PROD approval.
 
 5. Parity Residuals
    - Class: `ENH`.
@@ -613,9 +663,8 @@ No operational record workspace should reintroduce legacy `ActivityPanel` or
 ### Supabase Migrations
 
 Current PROD architecture includes all applied migrations through `116`, plus
-`125`, `126`, `127`, `128`, `129`, `130`, `131`, `132`, `133`, and `134`.
-Migration `135` is source-present and TEST-applied only; it is not part of PROD
-architecture until Ronnie approves a PROD apply. Recent load-bearing migrations:
+`125`, `126`, `127`, `128`, `129`, `130`, `131`, `132`, `133`, `134`, and
+`135`. Recent load-bearing migrations:
 
 - `100` processing batch lifecycle RPCs.
 - `101`-`104` audited delete RPCs and hardening.
@@ -698,8 +747,8 @@ architecture until Ronnie approves a PROD apply. Recent load-bearing migrations:
     archive/restore, and admin hard-delete using `kind='paddock'` plus
     `permanence='temporary'`; existing permanent-area create/update/delete RPCs
     remain management/admin locked.
-  - TEST-applied and behaviorally verified; NOT PROD-applied. Production UI
-    calls that depend on these RPCs will fail until the PROD gate closes.
+  - TEST- and PROD-applied/verified. Production temp-paddock lifecycle calls are
+    supported.
 
 Special migration notes:
 
@@ -753,9 +802,10 @@ Append-only upload expectations:
 - `supabase-migrations/116_pasture_map_land_areas.sql`,
   `127_pasture_map_draw_edit.sql`, `128_pasture_map_move_ledger.sql`,
   `129_pasture_map_planning_reports.sql`, `130_pasture_map_field_tracks.sql`,
-  `131_pasture_map_line_style.sql`, and
-  `132_pasture_map_line_patterns_and_defaults.sql`: Pasture Map schema/RPC
-  lanes through line patterns/defaults.
+  `131_pasture_map_line_style.sql`,
+  `132_pasture_map_line_patterns_and_defaults.sql`, and
+  `135_pasture_map_temp_paddocks.sql`: Pasture Map schema/RPC lanes through
+  temp-paddock lifecycle.
 - `scripts/apply_test_mig_127.cjs` through `scripts/apply_test_mig_132.cjs`:
   TEST apply/smoke helpers for the Pasture Map lanes.
 - `src/pig/SowsView.jsx`: breeding-pig grouped tables and record pages.
@@ -1023,12 +1073,16 @@ Workflow/worktable entities:
 - Imported/drawn land starts `baseline_no_history=true`; no fake last-grazed
   date is seeded.
 - LineStrings are outline candidates and require human close/validation. Never
-  auto-close an OnX LineString.
-- Computed acreage is geodesic; note/manual acreage is cross-check/override, not
-  geometry truth. Editing geometry must not overwrite manual acreage override.
+  auto-close an OnX LineString. In the UI these are called Tracks / Lines and
+  are draft geometry only: no acreage, no move destination, no direct permanent
+  promotion.
+- Computed acreage is geodesic and the UI shows it read-only. OnX/raw/manual
+  acreage can exist as cross-check data, but the normal editing path must not
+  ask users to type acreage or rest days.
 - Draw/edit controls use Leaflet-Geoman. Snapping, live area/perimeter measure,
-  and client self-intersection warnings are UI requirements; the migration `127`
-  RPC validity gates are the database backstop.
+  Escape exit, and client self-intersection warnings are UI requirements; the
+  migration `127` RPC validity gates are the database backstop. Measure is
+  transient and must never persist a land area/track/temp paddock.
 - Planner groups are derived, not user-entered. Canonical move/planning keys are:
   cattle herds -> `animal_type='cattle_herd'`, `group_key=herd`; sheep flocks ->
   `animal_type='sheep_flock'`, `group_key=flock`; breeder pigs ->
@@ -1036,22 +1090,34 @@ Workflow/worktable entities:
   feeder pigs -> `animal_type='feeder_pigs'`, `group_key=sub.id`.
 - Access: `farm_team`, `management`, `admin` can read/view/measure. Map is
   read-only inspection for all allowed roles. Management/admin own permanent
-  area import/classify/close/draw/edit/style and unplanned move logging.
-  Farm-team can confirm planned moves and create/edit/archive their own temp
-  paddocks only after migration `135` exists in the target database. `light`,
-  `equipment_tech`, and inactive are excluded.
-- Current Pasture Map includes the real-roster Map/Plan/Field/Setup/Reports
-  redesign, move ledger, animal-color occupancy, planned moves, history/rest/
-  stocking reports, offline vector snapshot/queue, GPS field tracks, and line
-  styling/pattern controls. It does not include offline imagery cache or
-  daily-report wiring. In PROD, temp-paddock lifecycle actions remain blocked by
-  the migration `135` PROD gate until approved/applied.
-- Baseline/no-history pastures render solid by default. Dashed strokes are
-  reserved for outline candidates, invalid/retired states, GPS field tracks, or
-  explicit saved line patterns.
-- Future Pasture Map lanes should preserve the shipped cockpit IA and the
-  provider-neutral geometry/RPC model unless a new Ronnie-approved decision
-  explicitly reopens either.
+  area import/classify/close/draw/edit, Tracks / Lines cleanup, promotion, and
+  permanent-area lifecycle actions. Farm-team can confirm planned moves and
+  create/edit/archive their own temp paddocks/tracks through migration `135`.
+  `light`, `equipment_tech`, and inactive users are excluded.
+- Current Pasture Map tabs are Map / Plan / Field / Reports. Setup is removed.
+  Map stays clean for selection/current-location inspection; Plan owns Boundary
+  tools, Tracks / Lines, classification queue, archived-area recovery, rotation
+  planning, move controls, and contextual area management. Field is phone-first
+  execution/offline queue. Reports are separate read/report surfaces.
+- Boundary visibility toggles hide/show pasture, paddock, or temp-paddock
+  strokes only. Animal occupancy fills and group markers remain visible. Draft
+  lines are hidden on Map by default; Field has a Draft lines toggle; selected
+  draft lines can be shown for context.
+- Permanent pasture stroke is locked blue 4px; permanent paddock stroke is
+  locked bright green 4px. Temp paddocks default to white dashed 5px and can be
+  restyled. Only temp paddocks and GPS/field tracks have editable line style.
+- Open-line edit is not built. It needs a future narrow RPC such as
+  `update_land_area_track(p_id text, p_line_geojson jsonb)` plus TEST/PROD
+  migration gates. Until then, saved Tracks / Lines can be zoomed, deleted, or
+  closed into temp paddocks, but not edited in place.
+- Current Pasture Map includes the real-roster redesign, move ledger,
+  animal-color occupancy, planned moves, history/rest/stocking reports, offline
+  vector snapshot/queue, GPS field tracks, line styling/pattern controls, and
+  temp-paddock lifecycle. It does not include offline imagery cache,
+  daily-report wiring, or open-line edit.
+- Future Pasture Map lanes should preserve the shipped Map/Plan/Field/Reports
+  IA and the provider-neutral geometry/RPC model unless a new Ronnie-approved
+  decision explicitly reopens either.
 
 ### Daily Reports
 
@@ -1137,9 +1203,24 @@ Workflow/worktable entities:
 - Login-gated `/weighins` cannot read or mutate `app_store.ppp-v4` directly.
 - Week 4/6 completion uses `stamp_broiler_batch_avg` RPC.
 - Broiler batch record Week 4 and Week 6 weight fields are read-only display
-  values sourced from completed weigh-ins.
+  values sourced from completed weigh-ins via `loadBroilerBatchWeekAverages`;
+  this is canonical for record display and prevents stale `ppp-v4` cache values
+  from showing as "Not recorded."
+- `ppp-v4.week4Lbs` / `week6Lbs` remain the mirror used by list/production
+  surfaces. Admin/session-page write paths use `writeBroilerBatchAvg` and
+  `recomputeBroilerBatchWeekAvg`; real `app_store` read/upsert failures must
+  surface as `{ok:false,message}`. True no-data cases may no-op with
+  `{ok:true}`.
+- Broiler `persist(nb)` in `src/main.jsx` must keep the anonymous weigh-in
+  webform mirrors fresh by calling
+  `syncWebformConfig(null, null, nb, layerGroups, layerHousings)`.
+- B-26-08 wk6 was repaired in PROD after the drift hardening deploy:
+  `ppp-v4.week6Lbs` is 5.76 and matches canonical 5.76 from 30 completed
+  weigh-in weights.
 - Layer `current_count` is the physical anchor; projected count subtracts
-  mortalities since anchor.
+  mortalities since anchor. Eggmobile 3 / `L-25-01` has an open display lane:
+  "Physical: 0" is misleading when projected current hens are expected to be
+  112 from latest positive count/mortality history.
 - Feed math lives in `src/lib/feedPlanner.js` and `src/lib/feedOrderBasis.js`.
 - Feed-order recommendations use the latest active-month physical count when
   present; otherwise they fall back to previous-month estimate.
@@ -1162,6 +1243,10 @@ Workflow/worktable entities:
   runtime caller for system-task generation.
 - System task rules live in `task_system_rules`; assignee and active state stay
   data-driven there, and the cron uses `lead_time_days` as the minting horizon.
+- `tasks-cron` v3 is deployed and active in PROD. The deployed function includes
+  system-task generation and To Do approval/originator notifications; the daily
+  cron remains `tasks-cron-daily` at `0 4 * * *` UTC through
+  `public.invoke_tasks_cron()`.
 - `task_instance_photos` is canonical. Legacy single-photo columns are display
   fallback only.
 - Task photos are capped at 5 total per task across creation and completion;
@@ -1304,11 +1389,11 @@ Focused starting points:
 | Record pages | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js` |
 | Home / dashboard alerts | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/home_animal_history_static.test.js`, `src/lib/animalHistory.test.js`, `tests/static/light_user_portal_static.test.js` |
 | Production | `src/lib/production.test.js`, `tests/static/production_page_static.test.js` |
-| Pasture Map | `src/lib/pastureKml.test.js`, `src/lib/pastureGeometry.test.js`, `src/lib/pasturePlannerGroups.test.js`, `tests/static/pasture_map_static.test.js`, `tests/pasture_map_p2_map.spec.js`, `tests/pasture_map_setup.spec.js`, `tests/pasture_map_import.spec.js`, `tests/pasture_map_cp2.spec.js`, `tests/pasture_map_cp3.spec.js`, `tests/pasture_map_cp4.spec.js`, `tests/pasture_map_cp5.spec.js`, `tests/pasture_map_cp6.spec.js`, `tests/pasture_map_cp7.spec.js`, `playwright.pasture.config.js` |
+| Pasture Map | `src/lib/pastureKml.test.js`, `src/lib/pastureGeometry.test.js`, `src/lib/pasturePlannerGroups.test.js`, `tests/static/pasture_map_static.test.js`, `tests/pasture_map_p2_map.spec.js`, `tests/pasture_map_setup.spec.js`, `tests/pasture_map_tweaks2.spec.js`, `tests/pasture_map_import.spec.js`, `tests/pasture_map_cp2.spec.js`, `tests/pasture_map_cp3.spec.js`, `tests/pasture_map_cp4.spec.js`, `tests/pasture_map_cp5.spec.js`, `tests/pasture_map_cp6.spec.js`, `tests/pasture_map_cp7.spec.js`, `playwright.pasture.config.js` |
 | Breeding pigs | `tests/static/breeding_pigs_parity_static.test.js` |
 | Feed planning | `src/lib/feedPlanner.test.js`, `src/lib/feedOrderBasis.test.js`, `tests/static/feed_order_board_static.test.js` |
 | Pig | `src/lib/pig*.test.js`, `src/lib/pigBatchGridMetrics.test.js`, `tests/static/pig_batches_planned_trips_static.test.js`, `tests/static/weighin_session_record_page_static.test.js`, `tests/pig_*.spec.js` |
-| Broiler/layer | `src/lib/broiler.test.js`, `tests/static/broiler_hatch_activation_static.test.js`, `tests/static/broiler_batch_record_page_static.test.js`, `src/layer/*.test.js`, `tests/broiler_*.spec.js`, `tests/layer_*.spec.js` |
+| Broiler/layer | `src/lib/broiler.test.js`, `tests/static/broiler_hatch_activation_static.test.js`, `tests/static/broiler_batch_record_page_static.test.js`, `tests/static/weighin_session_record_page_static.test.js`, `tests/static/webform_config_boundary_static.test.js`, `src/layer/*.test.js`, `tests/broiler_*.spec.js`, `tests/layer_*.spec.js` |
 | Cattle | `tests/static/cattle_*.test.js`, `tests/cattle_*.spec.js`, `src/lib/cattleHerdFilters.test.js` |
 | Sheep | `tests/static/sheep_*.test.js`, `tests/sheep_*.spec.js`, `src/lib/sheepFlockFilters.test.js` |
 | Daily reports | `tests/static/daily_*.test.js`, `tests/static/cp2_daily_writes_via_rpc_static.test.js`, `tests/daily_*.spec.js` |
