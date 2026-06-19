@@ -849,8 +849,9 @@ describe('Designation boundary styling + promotion + boundary overlay (lane)', (
     expect(canvasSrc).toContain('function applyBoundaryVisibility');
     // stroke:false hides the outline while leaving the fill polygon + marker.
     expect(canvasSrc).toContain('return {...style, stroke: false}');
-    // Clean default: no permanently-on labels for every area.
-    expect(canvasSrc).toContain('permanent: false');
+    // Clean default: only the selected area is permanently labeled (no always-on
+    // labels for every area).
+    expect(canvasSrc).toContain('permanent: a.id === selectedId');
     expect(canvasSrc).not.toContain('permanent: !compact && g.kind');
     // boundaryFilter feeds styleForArea + the toggle control exists.
     expect(canvasSrc).toContain('styleForArea(a, a.id === selectedId, occ, boundaryFilter)');
@@ -895,5 +896,104 @@ describe('Designation boundary styling + promotion + boundary overlay (lane)', (
     // Promotion UI is manager-only and warns the style locks.
     expect(viewSrc).toMatch(/isManager &&\s*\n\s*\(confirmPromoteId === area\.id/);
     expect(viewSrc).toContain('boundary style locks to the fixed permanent style');
+  });
+});
+
+describe('Pasture Map tweaks #2: default labels / occupancy / dismissal / open outlines', () => {
+  it('default map is clean: only the selected area is permanently labeled', () => {
+    expect(canvasSrc).toContain('permanent: a.id === selectedId');
+    expect(canvasSrc).not.toContain('permanent: !compact');
+  });
+
+  it('occupancy fill + group marker survive the boundary overlay (stroke-only hide)', () => {
+    // Overlay toggle hides strokes only; fill + the separate occupant marker stay.
+    expect(canvasSrc).toContain('return {...style, stroke: false}');
+    expect(canvasSrc).toContain('pm-occupant-marker');
+    // The occupant marker is added unconditionally for occupied polygons, not
+    // gated on boundaryFilter.
+    const markerBlock = canvasSrc.slice(canvasSrc.indexOf('if (occ && g.kind'), canvasSrc.indexOf('group.addTo(map)'));
+    expect(markerBlock).not.toContain('boundaryFilter');
+  });
+
+  it('canvas clears selection on empty-background click (guarded against feature clicks)', () => {
+    expect(canvasSrc).toContain("map.on('click'");
+    expect(canvasSrc).toContain('featureClickRef');
+    expect(canvasSrc).toContain('cbRef.current.onSelect(null)');
+    // Feature clicks set the guard flag so they do not also clear.
+    expect(canvasSrc).toContain('featureClickRef.current = true');
+    // Background click is suppressed while drawing/editing/measuring/tracking.
+    expect(canvasSrc).toMatch(/\['draw', 'edit', 'measure', 'track'\]\.includes\(modeRef\.current\)/);
+  });
+
+  it('view clears selection on Escape and via an X close button', () => {
+    expect(viewSrc).toMatch(/e\.key !== 'Escape'/);
+    expect(viewSrc).toContain("window.addEventListener('keydown'");
+    expect(viewSrc).toContain('data-pasture-clear-selection');
+    expect(viewSrc).toContain('Close area detail');
+    // Existing Clear selection button retained too.
+    expect(viewSrc).toContain('Clear selection');
+  });
+
+  it('Setup surfaces open outlines (needs closing) with count, zoom, and close', () => {
+    expect(viewSrc).toContain('function renderOpenOutlines');
+    expect(viewSrc).toContain('{renderOpenOutlines()}');
+    expect(viewSrc).toContain('data-pasture-open-outlines');
+    expect(viewSrc).toContain('data-pasture-open-outline-count');
+    expect(viewSrc).toContain('data-pasture-open-outline-zoom');
+    expect(viewSrc).toContain('data-pasture-open-outline-close');
+    expect(viewSrc).toContain('activeAreas.filter(isOutlineCandidateArea)');
+  });
+});
+
+describe('Pasture Map tweaks #3-#5: Plan card, Setup classification, map controls', () => {
+  it('does not reintroduce abbreviation/day/progress copy', () => {
+    expect(viewSrc).not.toContain('Mark ${activeGroup.short} moved');
+    expect(viewSrc).not.toContain('Move due now');
+    expect(viewSrc).not.toMatch(/Day \{activeGroup\.day\}/);
+    expect(viewSrc).not.toContain('Record / plan for');
+    expect(viewSrc).not.toContain('manualAcres');
+    expect(canvasSrc).not.toContain('Zoom Selected');
+    expect(canvasSrc).not.toContain('function zoomSelected');
+  });
+
+  it('Plan shows one combined group/move card with a plain "Move" button and time-in-paddock', () => {
+    expect(viewSrc).toContain('data-pasture-group-move');
+    expect(viewSrc).toContain('data-pasture-move="1"');
+    expect(viewSrc).toContain('data-pasture-time-in-area');
+    expect(viewSrc).toContain('function formatTimeInArea');
+    expect(viewSrc).toContain('Time in paddock unknown');
+    // The move button copy is exactly "Move" (no abbreviation).
+    expect(viewSrc).toMatch(/saving \? 'Saving\.\.\.' : 'Move'/);
+  });
+
+  it('Plan has no area list; manual move is secondary (selection + explicit toggle)', () => {
+    const planBody = viewSrc.slice(
+      viewSrc.indexOf('function renderPlanPanel'),
+      viewSrc.indexOf('function renderOpenOutlines'),
+    );
+    expect(planBody).not.toContain('renderAreaIndex');
+    expect(planBody).not.toContain('data-pasture-plan-destinations');
+    // Manual move only when an area is selected, behind a toggle.
+    expect(planBody).toContain('canRecordMoves && selectedArea');
+    expect(planBody).toContain('data-pasture-manual-move-toggle');
+    expect(planBody).toContain('manualMoveOpen && renderMoveAndPlanForms()');
+  });
+
+  it('Setup panel is "Area Setup" with read-only acreage and a classification selector', () => {
+    expect(viewSrc).toContain('data-pasture-area-setup');
+    expect(viewSrc).toContain('Area Setup');
+    expect(viewSrc).toContain('data-pasture-acres-readonly');
+    // No editable acreage input remains in Setup rows.
+    expect(viewSrc).not.toMatch(/saveAreaPatch\(area, \{manualAcres/);
+    expect(viewSrc).not.toContain('clearManual: true');
+    // Classification select exposes the unclassified state + Pasture/Paddock.
+    expect(viewSrc).toContain('<span>Classification</span>');
+    expect(viewSrc).toMatch(/<option value="unclassified" disabled>/);
+  });
+
+  it('map: legend collapsed by default and boundary toggle sits clear of the zoom control', () => {
+    expect(viewSrc).toMatch(/legendOpen, setLegendOpen\] = React\.useState\(false\)/);
+    // Boundary toggle repositioned below the Leaflet zoom control (no overlap).
+    expect(pastureCss).toMatch(/\.pm-boundary-toggle \{[\s\S]*?top: 84px/);
   });
 });

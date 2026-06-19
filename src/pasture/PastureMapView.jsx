@@ -347,6 +347,17 @@ function designationLabel(area) {
   if (area.kind === 'unclassified') return 'Needs classification';
   return KIND_LABEL[area.kind] || area.kind || 'Unclassified';
 }
+// "2d 4h" / "6h" elapsed since a group entered its current paddock. null when
+// there is no usable move timestamp (caller shows "Time in paddock unknown").
+function formatTimeInArea(movedAt) {
+  if (!movedAt) return null;
+  const ms = Date.now() - new Date(movedAt).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const totalHours = Math.floor(ms / 3600000);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+}
 function isTempArea(area) {
   return !!area && area.permanence === 'temporary';
 }
@@ -391,7 +402,7 @@ export default function PastureMapView({Header, authState}) {
   const [appMode, setAppMode] = React.useState('view');
   const [mapMode, setMapMode] = React.useState('select');
   const [selectedId, setSelectedId] = React.useState(null);
-  const [legendOpen, setLegendOpen] = React.useState(true);
+  const [legendOpen, setLegendOpen] = React.useState(false);
   const [showRotationPath, setShowRotationPath] = React.useState(true);
   const [listView, setListView] = React.useState(false);
   const [addMode, setAddMode] = React.useState(false);
@@ -401,6 +412,7 @@ export default function PastureMapView({Header, authState}) {
   const [styleDraft, setStyleDraft] = React.useState(() => styleDraftFromArea(null));
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
   const [confirmPromoteId, setConfirmPromoteId] = React.useState(null);
+  const [manualMoveOpen, setManualMoveOpen] = React.useState(false);
   const [boundaryFilter, setBoundaryFilter] = React.useState({pasture: true, paddock: true, temp: true});
   const [drawIsTemp, setDrawIsTemp] = React.useState(false);
   const [drawForm, setDrawForm] = React.useState(null);
@@ -423,12 +435,9 @@ export default function PastureMapView({Header, authState}) {
     [cattleForHome, sheepForHome, breeders, feederGroups],
   );
   // `size` is the display string the existing UI reads (groupSizeCount parses
-  // the leading count back out); day/plannedDays are neutral placeholders until
-  // the P3 Plan redesign tracks real rotation days.
-  const groups = React.useMemo(
-    () => roster.groups.map((g) => ({...g, size: `${g.count} ${g.unit}`, day: 1, plannedDays: 1})),
-    [roster],
-  );
+  // the leading count back out). Rotation "day count / planned days" was a neutral
+  // placeholder and is no longer shown; time-in-paddock comes from the move ledger.
+  const groups = React.useMemo(() => roster.groups.map((g) => ({...g, size: `${g.count} ${g.unit}`})), [roster]);
   const [rotations, setRotations] = React.useState({});
   const [activeGroupId, setActiveGroupId] = React.useState(null);
   const [fieldOffline, setFieldOffline] = React.useState(true);
@@ -624,6 +633,19 @@ export default function PastureMapView({Header, authState}) {
   React.useEffect(() => {
     setStyleDraft(styleDraftFromArea(selectedArea));
   }, [selectedArea]);
+
+  // Escape clears the current selection (and any open inline confirms) so the
+  // Area Detail panel and selected highlight can always be dismissed.
+  React.useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      setSelectedId(null);
+      setConfirmDeleteId(null);
+      setConfirmPromoteId(null);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const sameDayMoveWarning = React.useMemo(() => {
     const {groupKey} = resolveGroup(moveForm);
@@ -1896,6 +1918,16 @@ export default function PastureMapView({Header, authState}) {
             <div className="pm-selected-title">{selectedArea.name || 'Unnamed'}</div>
           </div>
           <span className={'pm-state-badge state-' + state}>{statusLabelForState(state)}</span>
+          <button
+            type="button"
+            className="pm-selected-close"
+            onClick={() => setSelectedId(null)}
+            aria-label="Close area detail"
+            title="Close (Esc)"
+            data-pasture-clear-selection="1"
+          >
+            ✕
+          </button>
         </div>
         <div className="pm-area-detail-chips" data-pasture-area-detail={selectedArea.id}>
           <span className={'pm-chip pm-chip-' + selectedArea.kind}>{designationLabel(selectedArea)}</span>
@@ -2258,55 +2290,57 @@ export default function PastureMapView({Header, authState}) {
           <p>Pick a group, then build its rotation. Drag to reorder; tap the map to add a stop.</p>
         </div>
         {renderGroupSwitcher()}
-        <div
-          className="pm-card pm-now-card"
-          style={{'--species-color': activeSpecies.color, '--species-soft': activeSpecies.soft}}
-        >
-          <div className="pm-now-stripe" />
-          <div className="pm-now-head">
-            <span className="pm-avatar">{activeGroup.short}</span>
-            <div>
-              <strong>{activeGroup.name}</strong>
-              <em>
-                {activeSpecies.label} - {activeGroup.size} - in {nowArea ? nowArea.name : 'no pasture'}
-              </em>
+        {(() => {
+          const curLoc = groupLocation[activeGroup.id] || null;
+          const currentArea = curLoc ? areaById.get(curLoc.areaId) || {name: curLoc.areaName} : nowArea;
+          const timeInArea = curLoc ? formatTimeInArea(curLoc.movedAt) : null;
+          const timeCopy = currentArea
+            ? timeInArea
+              ? `In ${currentArea.name} for ${timeInArea}`
+              : 'Time in paddock unknown'
+            : 'Not placed';
+          return (
+            <div
+              className="pm-card pm-group-move-card"
+              style={{'--species-color': activeSpecies.color, '--species-soft': activeSpecies.soft}}
+              data-pasture-group-move="1"
+            >
+              <div className="pm-group-move-head">
+                <span className="pm-avatar">{activeGroup.short}</span>
+                <div>
+                  <strong>{activeGroup.name}</strong>
+                  <em>
+                    {activeSpecies.label} &middot; {activeGroup.size}
+                  </em>
+                </div>
+              </div>
+              <div className="pm-group-move-grid">
+                <div className="pm-group-move-cell">
+                  <span>Current area</span>
+                  <strong>{currentArea ? currentArea.name : 'No pasture'}</strong>
+                  <em data-pasture-time-in-area="1">{timeCopy}</em>
+                </div>
+                <div className="pm-next-arrow" aria-hidden="true">
+                  -&gt;
+                </div>
+                <div className="pm-group-move-cell">
+                  <span>Next area</span>
+                  <strong>{nextArea ? nextArea.name : '-'}</strong>
+                  <em>{nextArea && nextArea.rest_days != null ? `${nextArea.rest_days}d rested` : 'Rest unknown'}</em>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="pm-btn pm-btn-primary pm-move-btn"
+                onClick={() => recordGroupMove(activeGroup, nextArea && nextArea.id)}
+                disabled={!nextArea || saving || !canRecordMoves}
+                data-pasture-move="1"
+              >
+                {saving ? 'Saving...' : 'Move'}
+              </button>
             </div>
-            <span className="pm-day-badge">
-              Day {activeGroup.day}/{activeGroup.plannedDays}
-            </span>
-          </div>
-          <div className="pm-progress">
-            <span>
-              {activeGroup.day >= activeGroup.plannedDays
-                ? 'Move due now'
-                : `Move in ${activeGroup.plannedDays - activeGroup.day}d`}
-            </span>
-            <i style={{width: `${Math.min(100, (activeGroup.day / Math.max(activeGroup.plannedDays, 1)) * 100)}%`}} />
-          </div>
-        </div>
-        <div
-          className="pm-card pm-next-card"
-          style={{'--species-color': activeSpecies.color, '--species-soft': activeSpecies.soft}}
-        >
-          <div>
-            <span>Now</span>
-            <strong>{nowArea ? nowArea.name : '-'}</strong>
-          </div>
-          <div className="pm-next-arrow">-&gt;</div>
-          <div>
-            <span>Next</span>
-            <strong>{nextArea ? nextArea.name : '-'}</strong>
-            <em>{nextArea && nextArea.rest_days != null ? `${nextArea.rest_days}d rested` : 'rest unknown'}</em>
-          </div>
-          <button
-            type="button"
-            className="pm-btn pm-btn-primary"
-            onClick={() => recordGroupMove(activeGroup, nextArea && nextArea.id)}
-            disabled={!nextArea || saving || !canRecordMoves}
-          >
-            {saving ? 'Saving...' : `Mark ${activeGroup.short} moved`}
-          </button>
-        </div>
+          );
+        })()}
         {nextArea && (occupantsByArea[nextArea.id] || []).some((o) => o.name !== activeGroup.name) && (
           <div className="pm-conflict-warn" data-pasture-plan-conflict="1">
             &#9888; {nextArea.name} is currently occupied by{' '}
@@ -2315,16 +2349,70 @@ export default function PastureMapView({Header, authState}) {
         )}
         {renderRotationEditor()}
         {plans.length > 0 && renderPlannedMoves()}
-        {canRecordMoves && (
-          <div className="pm-card" data-pasture-plan-destinations="1">
-            <div className="pm-card-title">
-              {selectedArea ? `Record / plan for ${selectedArea.name}` : 'Select an area to record or plan a move'}
-            </div>
-            {renderAreaIndex(10)}
+        {/* Manual / off-rotation move is SECONDARY: it only appears after an area
+            is selected on the map, and stays collapsed behind an explicit toggle.
+            No full area list and no classification controls live in Plan. */}
+        {canRecordMoves && selectedArea && (
+          <div className="pm-card" data-pasture-manual-move="1">
+            <button
+              type="button"
+              className="pm-manual-move-toggle"
+              onClick={() => setManualMoveOpen((v) => !v)}
+              aria-expanded={manualMoveOpen}
+              data-pasture-manual-move-toggle="1"
+            >
+              <span>Manual move / correction - {selectedArea.name}</span>
+              <span aria-hidden="true">{manualMoveOpen ? '-' : '+'}</span>
+            </button>
+            {manualMoveOpen && renderMoveAndPlanForms()}
           </div>
         )}
-        {renderMoveAndPlanForms()}
       </>
+    );
+  }
+
+  // Imported KML lines / traced shapes that are not closed polygons yet. Surfaced
+  // as a dedicated, prominent card so they are not buried in the full area list.
+  function renderOpenOutlines() {
+    const open = activeAreas.filter(isOutlineCandidateArea);
+    if (!open.length) return null;
+    return (
+      <div className="pm-card pm-open-outlines" data-pasture-open-outlines="1">
+        <div className="pm-card-head">
+          <div>
+            <div className="pm-card-title">Open outlines - needs closing</div>
+            <p>Imported lines or traced shapes that are not closed polygons yet.</p>
+          </div>
+          <span className="pm-open-outline-count" data-pasture-open-outline-count="1">
+            {open.length}
+          </span>
+        </div>
+        {open.map((a) => (
+          <div key={a.id} className="pm-open-outline-row" data-pasture-open-outline={a.id}>
+            <button
+              type="button"
+              className="pm-open-outline-name"
+              onClick={() => {
+                setSelectedId(a.id);
+                setZoomSignal((n) => n + 1);
+              }}
+              data-pasture-open-outline-zoom={a.id}
+            >
+              <span className="pm-chip pm-chip-outline_candidate">Open outline</span>
+              {a.name || 'Unnamed'}
+            </button>
+            <button
+              type="button"
+              className="pm-btn pm-btn-sm"
+              onClick={() => closeOutline(a)}
+              disabled={!isManager || busyId === a.id}
+              data-pasture-open-outline-close={a.id}
+            >
+              Close outline
+            </button>
+          </div>
+        ))}
+      </div>
     );
   }
 
@@ -2335,6 +2423,7 @@ export default function PastureMapView({Header, authState}) {
           <span className="pm-kicker">Setup / Manager only</span>
           <h2>Land & boundaries</h2>
         </div>
+        {renderOpenOutlines()}
         {renderTrackPanel()}
         {renderDrawForm()}
         {renderEditBar()}
@@ -2386,11 +2475,11 @@ export default function PastureMapView({Header, authState}) {
             </div>
           )}
         </div>
-        <div className="pm-card">
+        <div className="pm-card" data-pasture-area-setup="1">
           <div className="pm-card-head">
             <div>
-              <div className="pm-card-title">Pastures</div>
-              <p>Edit classification, manual acres, line style, and boundary actions.</p>
+              <div className="pm-card-title">Area Setup</div>
+              <p>Classify each area and manage boundaries. Acreage is computed from the map.</p>
             </div>
             <div className="pm-state-dots">
               <span className="dot occupied" />
@@ -2428,18 +2517,10 @@ export default function PastureMapView({Header, authState}) {
                         isTemp ? renameTemp(area, value) : saveAreaPatch(area, {name: value});
                     }}
                   />
-                  <input
-                    type="number"
-                    step="0.01"
-                    defaultValue={area.effective_acres == null ? '' : area.effective_acres}
-                    disabled={!canManageArea}
-                    onBlur={(e) => {
-                      const value = e.target.value === '' ? null : Number(e.target.value);
-                      if (value == null) saveAreaPatch(area, {clearManual: true});
-                      else if (Number.isFinite(value)) saveAreaPatch(area, {manualAcres: value});
-                    }}
-                  />
-                  <span>ac</span>
+                  {/* Acreage is computed from map geometry and shown read-only. */}
+                  <span className="pm-area-acres-ro" data-pasture-acres-readonly={area.id}>
+                    {area.effective_acres == null ? '-' : `${area.effective_acres} ac`}
+                  </span>
                   <span className="pm-area-tags">
                     <span className="pm-chip">{designationLabel(area)}</span>
                     {isTemp && <span className="pm-chip pm-chip-temp">Temp</span>}
@@ -2503,13 +2584,18 @@ export default function PastureMapView({Header, authState}) {
                         </div>
                       ) : (
                         <label className="pm-field">
-                          <span>Designation</span>
+                          <span>Classification</span>
                           <select
-                            value={area.kind === 'pasture' ? 'pasture' : 'paddock'}
+                            value={
+                              area.kind === 'pasture' ? 'pasture' : area.kind === 'paddock' ? 'paddock' : 'unclassified'
+                            }
                             disabled={!isManager}
                             onChange={(e) => classifyDesignation(area, e.target.value)}
                             data-pasture-designation={area.id}
                           >
+                            <option value="unclassified" disabled>
+                              Needs classification
+                            </option>
                             <option value="pasture">Pasture</option>
                             <option value="paddock">Paddock</option>
                           </select>
@@ -2517,7 +2603,8 @@ export default function PastureMapView({Header, authState}) {
                       )}
                       {area.kind === 'unclassified' && (
                         <div className="pm-needs-classification" data-pasture-needs-classification={area.id}>
-                          Needs classification
+                          Needs classification - choose Pasture or Paddock. New land is added as a temp paddock via
+                          Draw.
                         </div>
                       )}
                       <label className="pm-field">
@@ -2980,9 +3067,7 @@ export default function PastureMapView({Header, authState}) {
               <div>
                 <span>Now</span>
                 <strong>{nowArea ? nowArea.name : '-'}</strong>
-                <em>
-                  Day {activeGroup.day}/{activeGroup.plannedDays} - {activeGroup.name}
-                </em>
+                <em>{activeGroup.name}</em>
               </div>
               <div>
                 <span>Next</span>

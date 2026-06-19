@@ -44,6 +44,23 @@ async function expandTemp(page) {
   await expect(actions.first()).toBeVisible({timeout: 10_000});
 }
 
+// Record a group move onto an area. Plan no longer has an area list, so select the
+// destination on the read-only Map list, then use the secondary "Manual move /
+// correction" panel in Plan.
+async function recordMove(page, areaId, groupLabel) {
+  await page.locator('.pm-tabs button', {hasText: 'Map'}).click();
+  // Clear any carried selection so the Map area list (not the detail panel) shows.
+  await page.keyboard.press('Escape');
+  await page.locator(`[data-pasture-area-select="${areaId}"]`).first().click();
+  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
+  if ((await page.locator('[data-pasture-move-form]').count()) === 0)
+    await page.locator('[data-pasture-manual-move-toggle]').click();
+  await expect(page.locator('[data-pasture-move-form]').first()).toBeVisible({timeout: 15_000});
+  await page.locator('[data-pasture-move-group]').selectOption({label: groupLabel});
+  await page.locator('[data-pasture-move-save]').click();
+  await page.waitForTimeout(800);
+}
+
 test('Setup: temp paddock archive/restore, occupied block, admin hard delete', async ({page}) => {
   await page.setViewportSize({width: 1280, height: 900});
   await page.goto('/pasture-map', {timeout: 90_000});
@@ -66,12 +83,7 @@ test('Setup: temp paddock archive/restore, occupied block, admin hard delete', a
 
   // Occupied-archive block: move Mommas onto the temp paddock, then archiving is
   // blocked with the exact copy.
-  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
-  await page.locator(`[data-pasture-area-select="${T_ID}"]`).first().click();
-  await expect(page.locator('[data-pasture-move-form]').first()).toBeVisible({timeout: 15_000});
-  await page.locator('[data-pasture-move-group]').selectOption({label: 'Mommas'});
-  await page.locator('[data-pasture-move-save]').click();
-  await page.waitForTimeout(800);
+  await recordMove(page, T_ID, 'Mommas');
   await page.locator('.pm-tabs button', {hasText: 'Setup'}).click();
   await expandTemp(page);
   await page.locator(`[data-pasture-archive="${T_ID}"]`).click();
@@ -81,11 +93,7 @@ test('Setup: temp paddock archive/restore, occupied block, admin hard delete', a
 
   // Admin hard delete uses an inline confirm; move the group away first so it is
   // not blocked, then hard-delete and confirm the area leaves the list.
-  await page.locator('.pm-tabs button', {hasText: 'Plan'}).click();
-  await page.locator(`[data-pasture-area-select="${A_ID}"]`).first().click();
-  await page.locator('[data-pasture-move-group]').selectOption({label: 'Mommas'});
-  await page.locator('[data-pasture-move-save]').click();
-  await page.waitForTimeout(800);
+  await recordMove(page, A_ID, 'Mommas');
   await page.locator('.pm-tabs button', {hasText: 'Setup'}).click();
   await expandTemp(page);
   await page.locator(`[data-pasture-hard-delete="${T_ID}"]`).click();
