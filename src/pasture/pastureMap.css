@@ -788,8 +788,7 @@
 
 .pm-card-head,
 .pm-selected-head,
-.pm-now-head,
-.pm-queue-head {
+.pm-now-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1503,15 +1502,6 @@
   font-weight: 700;
   font-size: 12.5px;
 }
-.pm-field-dupe {
-  background: rgba(248, 240, 218, 0.95);
-  color: #8a6a1e;
-  border-radius: 10px;
-  padding: 6px 10px;
-  font-weight: 700;
-  font-size: 12px;
-  margin: 6px 0;
-}
 
 .pm-group-pills {
   display: flex;
@@ -1886,21 +1876,10 @@
   font-weight: 700;
 }
 
-.pm-suggestion-row,
 .pm-plan-tools {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid #eceef0;
-}
-
-.pm-suggestion-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--pm-muted);
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .pm-setup-groups,
@@ -2262,279 +2241,6 @@
   font-weight: 800;
 }
 
-.pm-field-overlay {
-  position: fixed;
-  inset: 108px 0 0;
-  z-index: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(24px, 6vw, 72px);
-  padding: 24px;
-  background: radial-gradient(circle at 35% 30%, #1b2620, #0d1411 72%);
-  color: #fff;
-}
-
-.pm-field-caption {
-  width: min(330px, 36vw);
-}
-
-.pm-field-caption h2 {
-  margin: 8px 0 16px;
-  color: #fff;
-  font-size: 30px;
-  line-height: 1.1;
-  font-weight: 850;
-}
-
-.pm-field-caption p,
-.pm-field-caption li {
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 14px;
-  line-height: 1.45;
-  font-weight: 700;
-}
-
-.pm-field-caption ul {
-  display: grid;
-  gap: 9px;
-  margin: 18px 0 22px;
-  padding-left: 18px;
-}
-
-.pm-field-toggle {
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  cursor: pointer;
-  padding: 11px 16px;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.pm-phone {
-  width: 372px;
-  height: min(744px, calc(100vh - 140px));
-  min-height: 560px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 10px solid #101816;
-  border-radius: 34px;
-  background: #0f1713;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
-}
-
-.pm-phone-top {
-  height: 52px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 14px;
-  color: #fff;
-}
-
-.pm-field-status {
-  border-radius: 999px;
-  background: #e6f4ec;
-  color: #2f7a46;
-  padding: 5px 9px;
-  font-size: 11px;
-  font-weight: 850;
-}
-
-.pm-field-status.is-offline {
-  background: #f8f0da;
-  color: #8a6a1e;
-}
-
-.pm-phone-groups {
-  flex: none;
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 0 10px 8px;
-}
-
-.pm-phone-groups button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  cursor: pointer;
-  padding: 5px 9px 5px 5px;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.pm-phone-groups button.is-active {
-  background: #fff;
-  color: var(--species-ink);
-}
-
-.pm-phone-groups span {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--species-color);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 850;
-}
-
-.pm-phone-map {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 190px;
-}
-
-.pm-phone-sheet {
-  flex: none;
-  margin: 8px 12px 0;
-  overflow: hidden;
-  border-radius: 14px;
-  background: #fff;
-  color: var(--pm-text);
-}
-
-.pm-phone-now {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.pm-phone-now > div {
-  padding: 12px;
-}
-
-.pm-phone-now > div + div {
-  border-left: 1px solid #eceef0;
-}
-
-.pm-phone-now span,
-.pm-phone-now em,
-.pm-phone-then span {
-  display: block;
-  color: var(--pm-muted);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 850;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.pm-phone-now strong {
-  display: block;
-  margin-top: 3px;
-  font-size: 18px;
-  font-weight: 850;
-}
-
-.pm-phone-then {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-  border-top: 1px solid #eceef0;
-  padding: 10px 12px;
-}
-
-.pm-phone-then b {
-  border-radius: 999px;
-  background: #f1f3f4;
-  padding: 4px 8px;
-  font-size: 11px;
-}
-
-.pm-queue-head {
-  align-items: center;
-  padding: 11px 12px 6px;
-}
-
-.pm-queue-head button {
-  border: none;
-  border-radius: 999px;
-  background: #f1f3f4;
-  color: var(--pm-muted);
-  cursor: pointer;
-  padding: 5px 9px;
-  font-size: 11px;
-  font-weight: 850;
-}
-
-.pm-queue-row {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-  gap: 7px;
-  align-items: center;
-  padding: 7px 12px;
-  border-top: 1px solid #eceef0;
-}
-
-.pm-queue-row > span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #c7920a;
-}
-
-.pm-queue-row strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-}
-
-.pm-queue-row em,
-.pm-queue-row b {
-  color: var(--pm-muted);
-  font-size: 10.5px;
-  font-style: normal;
-}
-
-.pm-queue-row b {
-  grid-column: 3;
-  font-weight: 850;
-}
-
-.pm-phone-controls {
-  flex: none;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 10px 12px 0;
-}
-
-.pm-phone-controls button,
-.pm-confirm-move {
-  min-height: 48px;
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.pm-phone-controls button {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
-.pm-confirm-move {
-  margin: 10px 12px 12px;
-  background: var(--species-color);
-  color: #fff;
-}
-
 .pm-empty {
   border: 1px dashed var(--pm-border-strong);
   border-radius: 8px;
@@ -2565,22 +2271,6 @@
     max-height: none;
     border-left: none;
     border-top: 1px solid var(--pm-border);
-  }
-
-  .pm-field-overlay {
-    inset: 108px 0 0;
-    align-items: flex-start;
-    overflow-y: auto;
-    flex-direction: column;
-  }
-
-  .pm-field-caption {
-    width: min(100%, 560px);
-  }
-
-  .pm-phone {
-    width: min(372px, 100%);
-    margin: 0 auto;
   }
 }
 
@@ -2743,4 +2433,162 @@
   font-size: 11.5px;
   color: #8a3528;
   margin: 4px 0 8px;
+}
+
+/* ── OnX-style Field cockpit ──────────────────────────────────────────────
+   Field = full-screen real map (hero) + dark map-forward chrome. The side
+   panel is hidden; controls live in a top status pill, the right-rail map
+   controls, and a dark bottom toolbar. */
+.pm-layout.is-field {
+  position: relative;
+}
+
+.pm-layout.is-field .pm-side-panel {
+  display: none;
+}
+
+.pm-layout.is-field .pm-map-col {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+}
+
+.pm-field-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 600;
+  pointer-events: none; /* let the map pan/zoom through; children re-enable */
+}
+
+.pm-field-chrome > * {
+  pointer-events: auto;
+}
+
+/* top status row */
+.pm-field-top {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.pm-field-title {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: 0.3px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.pm-field-net {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(12, 18, 14, 0.86);
+  color: #d7e4d8;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.pm-field-net i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+}
+
+.pm-field-net.is-offline {
+  color: #f4d8a8;
+}
+
+.pm-field-net.is-offline i {
+  background: #f0a93a;
+}
+
+/* active build-tool save forms sit just above the toolbar */
+.pm-field-forms {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 104px;
+  display: grid;
+  gap: 8px;
+}
+
+.pm-field-forms:empty {
+  display: none;
+}
+
+/* OnX-style right rail for the map's Fit Farm / My Location controls */
+.pm-map-wrap.is-field .pm-map-controls {
+  top: auto;
+  bottom: 120px;
+  right: 12px;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pm-map-wrap.is-field .pm-map-control {
+  background: rgba(12, 18, 14, 0.86);
+  color: #fff;
+  border: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* dark bottom toolbar */
+.pm-field-toolbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(transparent, rgba(7, 10, 8, 0.94) 38%);
+}
+
+.pm-field-tool {
+  flex: 1;
+  border: none;
+  border-radius: 15px;
+  padding: 11px 4px;
+  cursor: pointer;
+  background: rgba(22, 30, 24, 0.94);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.pm-field-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pm-field-tool-ic {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.pm-field-tool.is-record {
+  background: #e0552b; /* OnX-orange record */
+}
+
+.pm-field-tool.is-draw {
+  background: #2f7a46; /* WCF green */
+}
+
+.pm-field-tool.is-active {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
 }

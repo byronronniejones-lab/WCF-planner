@@ -873,12 +873,19 @@ describe('One-shot redesign: Setup lifecycle / Reports tags / Plan conflict / Fi
     expect(viewSrc).toContain('is currently occupied by');
   });
 
-  it('Field: walked track becomes a real temp paddock + same-day duplicate Record-anyway', () => {
+  it('Field: walked GPS track becomes a real temp paddock; OnX-style spatial build/measure tool', () => {
+    // GPS walk -> temp paddock save path is preserved.
     expect(viewSrc).toContain('closeOutlineToPolygon(trackForm.geometry)');
     expect(viewSrc).toContain('const asTemp = closed.valid');
-    expect(viewSrc).toContain('fieldMovedToday');
-    expect(viewSrc).toContain('data-pasture-field-dupe');
-    expect(viewSrc).toContain('Record anyway');
+    // OnX-style field chrome: Walk paddock / Draw paddock / Measure / Layers + real online state.
+    expect(viewSrc).toContain('data-pasture-field-chrome');
+    expect(viewSrc).toContain('data-pasture-field-walk');
+    expect(viewSrc).toContain('data-pasture-field-draw');
+    expect(viewSrc).toContain('data-pasture-field-measure');
+    expect(viewSrc).toContain('data-pasture-field-online');
+    // The fake phone mockup + field move-recording are gone (moves live in Plan).
+    expect(viewSrc).not.toContain('data-pasture-field-confirm');
+    expect(viewSrc).not.toContain('pm-phone-groups');
   });
 
   it('canvas fills occupied polygons by animal type + renders a group marker', () => {
@@ -1050,7 +1057,8 @@ describe('Tracks / Lines lane (no-DB option B)', () => {
       "appMode === 'plan' || (appMode === 'field' && draftLinesVisible) || a.id === selectedId",
     );
     expect(canvasSrc).toContain('data-pasture-draftlines-toggle');
-    expect(canvasSrc).toContain("appMode === 'field' && onToggleDraftLines");
+    // Draft-lines toggle lives behind the Field "Layers" button now.
+    expect(canvasSrc).toContain("appMode === 'field' && fieldLayersOpen && onToggleDraftLines");
     expect(viewSrc).toContain('draftLinesVisible');
     expect(viewSrc).toContain('onToggleDraftLines: toggleDraftLines');
   });

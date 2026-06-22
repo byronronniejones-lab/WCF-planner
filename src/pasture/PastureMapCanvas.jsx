@@ -292,6 +292,7 @@ export default function PastureMapCanvas({
   boundaryFilter = null,
   onToggleBoundary,
   appMode = 'view',
+  fieldLayersOpen = false,
   draftLinesVisible = false,
   onToggleDraftLines,
   onExitTool,
@@ -736,7 +737,7 @@ export default function PastureMapCanvas({
   }
 
   return (
-    <div className={'pm-map-wrap' + (compact ? ' is-compact' : '')}>
+    <div className={'pm-map-wrap' + (compact ? ' is-compact' : '') + (appMode === 'field' ? ' is-field' : '')}>
       <div ref={elRef} className="pm-map" data-pasture-map-canvas="1" />
       {hud && (
         <div className="pm-hud" data-pasture-hud="1" data-hud-valid={hud.valid === false ? 'false' : 'true'}>
@@ -791,7 +792,7 @@ export default function PastureMapCanvas({
           </button>
         </div>
       )}
-      {!compact && boundaryFilter && onToggleBoundary && (
+      {!compact && boundaryFilter && onToggleBoundary && (appMode !== 'field' || fieldLayersOpen) && (
         <div className="pm-boundary-toggle" data-pasture-boundary-toggle="1" role="group" aria-label="Boundary overlay">
           <span className="pm-boundary-toggle-label">Boundaries</span>
           {[
@@ -817,7 +818,7 @@ export default function PastureMapCanvas({
           })}
         </div>
       )}
-      {!compact && appMode === 'field' && onToggleDraftLines && (
+      {!compact && appMode === 'field' && fieldLayersOpen && onToggleDraftLines && (
         <div className="pm-draftlines-toggle" data-pasture-draftlines-toggle="1">
           <button
             type="button"

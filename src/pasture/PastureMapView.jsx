@@ -483,9 +483,8 @@ export default function PastureMapView({Header, authState}) {
   const groups = React.useMemo(() => roster.groups.map((g) => ({...g, size: `${g.count} ${g.unit}`})), [roster]);
   const [rotations, setRotations] = React.useState({});
   const [activeGroupId, setActiveGroupId] = React.useState(null);
-  const [fieldOffline, setFieldOffline] = React.useState(true);
-  const [fieldQueue, setFieldQueue] = React.useState([]);
-  const [fieldDupeAck, setFieldDupeAck] = React.useState(false);
+  const [online, setOnline] = React.useState(typeof navigator === 'undefined' ? true : navigator.onLine);
+  const [fieldLayersOpen, setFieldLayersOpen] = React.useState(false);
   const trackWatchRef = React.useRef(null);
 
   async function refreshQueueState() {
@@ -749,6 +748,18 @@ export default function PastureMapView({Header, authState}) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Field online/offline indicator from the real connection (not a manual toggle).
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const sync = () => setOnline(navigator.onLine);
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', sync);
+    return () => {
+      window.removeEventListener('online', sync);
+      window.removeEventListener('offline', sync);
+    };
+  }, []);
+
   const sameDayMoveWarning = React.useMemo(() => {
     const {groupKey} = resolveGroup(moveForm);
     const movedDate = new Date(moveForm.movedAt);
@@ -784,12 +795,6 @@ export default function PastureMapView({Header, authState}) {
   const invalidArea = activeAreas.find((area) => grazingState(area) === 'invalid') || null;
   const restCounts = restReport && restReport.counts ? restReport.counts : {};
   const stockingRows = (stockingReport && stockingReport.areas) || [];
-  const restSuggestion = React.useMemo(() => {
-    const candidates = activeAreas
-      .filter((area) => grazingState(area) === 'ready' && !activeRotation.includes(area.id))
-      .sort((a, b) => Number(b.rest_days || 0) - Number(a.rest_days || 0));
-    return candidates[0] || null;
-  }, [activeAreas, activeRotation]);
 
   function clearTrackWatch() {
     if (trackWatchRef.current != null && typeof navigator !== 'undefined' && navigator.geolocation) {
@@ -980,7 +985,9 @@ export default function PastureMapView({Header, authState}) {
       setErr('Your role cannot create field tracks.');
       return;
     }
-    setAppMode('plan');
+    // GPS Boundary works from both Plan and the Field cockpit; keep the current
+    // tab (Field stays Field) rather than yanking the user into Plan.
+    if (appMode !== 'field') setAppMode('plan');
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setTrack({...initialTrackState(), error: 'GPS is unavailable on this device/browser.'});
       setMapMode('track');
@@ -1383,13 +1390,12 @@ export default function PastureMapView({Header, authState}) {
     });
   }
 
-  async function recordGroupMove(group, areaId, {offlineOnly = false} = {}) {
+  async function recordGroupMove(group, areaId) {
     // Hard write-gate: only farm_team/management/admin record moves. Light and any
     // other non-writer can never trigger a move (UI also hides the controls; the
     // SECDEF RPC rejects non-writers server-side too).
     if (!canRecordMoves) return;
     if (!group || !areaId) return;
-    const area = areaById.get(areaId);
     const movePayload = {
       moveId: newPastureMoveId(),
       animalType: groupAnimalType(group),
@@ -1403,27 +1409,12 @@ export default function PastureMapView({Header, authState}) {
     setSaving(true);
     setErr('');
     try {
-      if (offlineOnly) {
-        await enqueuePastureOperation({id: movePayload.moveId, op: 'record_move', payload: movePayload});
-        await refreshQueueState();
-        setFieldQueue((rows) => [
-          {
-            id: movePayload.moveId,
-            label: `${group.name} -> ${(area && area.name) || 'next pasture'}`,
-            status: 'Queued',
-            time: 'Just now',
-          },
-          ...rows,
-        ]);
-        setOfflineStatus('Move saved on this device and will sync when the connection returns.');
-      } else {
-        await recordPastureMove(movePayload);
-        await reload();
-      }
+      await recordPastureMove(movePayload);
+      await reload();
       advanceRotation(group.id, areaId);
       setSelectedId(areaId);
     } catch (e) {
-      if (!offlineOnly && classifyPastureOfflineError(e) === 'transient') {
+      if (classifyPastureOfflineError(e) === 'transient') {
         await enqueuePastureOperation({id: movePayload.moveId, op: 'record_move', payload: movePayload});
         await refreshQueueState();
         setOfflineStatus('Move saved on this device and will sync when the connection returns.');
@@ -1432,19 +1423,6 @@ export default function PastureMapView({Header, authState}) {
       } else setErr(e.message || 'Could not record pasture move.');
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function syncFieldQueue() {
-    if (fieldOffline) return;
-    setFieldQueue((rows) => rows.map((row) => ({...row, status: 'Syncing'})));
-    try {
-      await syncPastureQueue();
-      await reload();
-      setFieldQueue([]);
-    } catch (e) {
-      setErr(e.message || 'Could not sync queued field moves.');
-      setFieldQueue((rows) => rows.map((row) => ({...row, status: 'Queued'})));
     }
   }
 
@@ -2305,22 +2283,6 @@ export default function PastureMapView({Header, authState}) {
             })}
           </div>
         )}
-        <div className="pm-suggestion-row">
-          <span>
-            Longest-rested ready:{' '}
-            <strong>
-              {restSuggestion ? `${restSuggestion.name} - ${restSuggestion.rest_days || 0}d rested` : 'none ready yet'}
-            </strong>
-          </span>
-          <button
-            type="button"
-            className="pm-btn pm-btn-sm"
-            onClick={() => restSuggestion && appendToRotation(activeGroup.id, restSuggestion.id)}
-            disabled={!restSuggestion}
-          >
-            Add
-          </button>
-        </div>
         <div className="pm-plan-tools">
           <button
             type="button"
@@ -3077,6 +3039,9 @@ export default function PastureMapView({Header, authState}) {
   }
 
   function renderPanel() {
+    // Field is a full-screen OnX-style map; its controls live in the field chrome
+    // overlay, not the side panel.
+    if (appMode === 'field') return null;
     if (appMode === 'reports') return renderReportsPanel();
     // Selecting an area swaps the side panel for the Area inspector (no modal).
     // Suppressed while tapping the map to add rotation stops (Plan addMode) and
@@ -3089,164 +3054,79 @@ export default function PastureMapView({Header, authState}) {
     return renderViewPanel();
   }
 
-  function renderFieldOverlay() {
+  // OnX-style Field chrome: the real map is the hero (rendered in pm-map-col);
+  // this overlays a top status pill, the active build-tool save forms, and a dark
+  // bottom toolbar (Walk paddock / Draw paddock / Measure / Layers). Field is a
+  // spatial GPS tool - locate yourself, build a temp paddock, measure - and never
+  // records group moves (that stays in Plan).
+  function renderFieldChrome() {
     if (appMode !== 'field') return null;
-    if (!activeGroup)
-      return (
-        <div className="pm-field-overlay">
-          <div className="pm-field-caption">
-            <span className="pm-kicker">Field / Phone-first</span>
-            <h2>No active planner groups</h2>
-            <p>Add animals in Cattle, Sheep, or Pigs to use the field workflow.</p>
-          </div>
-        </div>
-      );
-    // "Then" stops = rotation stops after the next destination, excluding the
-    // group's actual current area (which is the NOW cell, not a future stop).
-    const nextId = activeNextArea && activeNextArea.id;
-    const remaining = activeRotation
-      .filter((id) => id !== (activeCurrentArea && activeCurrentArea.id) && id !== nextId)
-      .map((id) => areaById.get(id))
-      .filter(Boolean);
-    // Same-day duplicate guard: has the active group already moved today?
-    const today = new Date().toDateString();
-    const fieldMovedToday = moves.some(
-      (m) =>
-        m.animal_type === activeGroup.animalType &&
-        m.group_key === activeGroup.groupKey &&
-        new Date(m.moved_at).toDateString() === today,
-    );
+    const measuring = mapMode === 'measure';
     return (
-      <div className="pm-field-overlay">
-        <div className="pm-field-caption">
-          <span className="pm-kicker">Field / Phone-first</span>
-          <h2>See what's happening now per group</h2>
-          <p>
-            Pick any group to see where it is now and where it goes next. The plan is read-only in the field; record the
-            move when it is done and it syncs when signal returns.
-          </p>
-          <ul>
-            <li>Now -&gt; Next for every group</li>
-            <li>One-tap confirm move</li>
-            <li>Offline queue with sync status</li>
-          </ul>
-          <button type="button" className="pm-field-toggle" onClick={() => setFieldOffline((v) => !v)}>
-            {fieldOffline ? 'Simulate signal returning' : 'Simulate going offline'}
-          </button>
+      <div className="pm-field-chrome" data-pasture-field-chrome="1">
+        <div className="pm-field-top">
+          <span className="pm-field-title">Field</span>
+          <span
+            className={'pm-field-net' + (online ? '' : ' is-offline')}
+            data-pasture-field-online={online ? '1' : '0'}
+          >
+            <i aria-hidden="true" />
+            {online ? 'Online' : 'Offline'}
+          </span>
         </div>
-        <div className="pm-phone">
-          <div className="pm-phone-top">
-            <span className={'pm-field-status' + (fieldOffline ? ' is-offline' : '')}>
-              {fieldOffline ? 'Offline' : 'Online'}
-            </span>
-            <strong>{activeGroup.name}</strong>
-          </div>
-          <div className="pm-phone-groups">
-            {groups.map((group) => {
-              const spec = groupSpeciesStyle(group);
-              return (
-                <button
-                  type="button"
-                  key={group.id}
-                  className={group.id === activeGroup.id ? 'is-active' : ''}
-                  style={{'--species-color': spec.color, '--species-soft': spec.soft, '--species-ink': spec.ink}}
-                  onClick={() => setActiveGroupFromGroup(group)}
-                >
-                  <span>{group.short}</span>
-                  {group.name}
-                </button>
-              );
-            })}
-          </div>
-          <div className="pm-phone-map">
-            {renderPastureMapCanvas({
-              areas,
-              occupants: occupantsByArea,
-              mode: 'select',
-              canWrite: false,
-              selectedId,
-              onSelect: handleAreaClick,
-              rotationAreaIds: activeRotation,
-              rotationColor: activeSpecies.color,
-              showRotationPath,
-              compact: true,
-            })}
-          </div>
-          <div className="pm-phone-sheet">
-            <div className="pm-phone-now">
-              <div>
-                <span>Now</span>
-                <strong>{activeCurrentArea ? activeCurrentArea.name : 'Not placed'}</strong>
-                <em>{activeGroup.name}</em>
-              </div>
-              <div>
-                <span>Next</span>
-                <strong>{activeNextArea ? activeNextArea.name : '-'}</strong>
-                <em>
-                  {activeNextArea && activeNextArea.rest_days != null
-                    ? `${activeNextArea.rest_days}d rested`
-                    : 'rest unknown'}
-                </em>
-              </div>
-            </div>
-            <div className="pm-phone-then">
-              <span>Then</span>
-              {remaining.map((area) => (
-                <b key={area.id}>{area.name}</b>
-              ))}
-            </div>
-          </div>
-          <div className="pm-phone-sheet">
-            <div className="pm-queue-head">
-              <strong>
-                {fieldQueue.length
-                  ? `${fieldOffline ? 'Queued offline' : 'Syncing'} (${fieldQueue.length})`
-                  : 'All synced'}
-              </strong>
-              <button type="button" onClick={syncFieldQueue} disabled={fieldOffline || !fieldQueue.length}>
-                {fieldOffline ? 'Waiting' : fieldQueue.length ? 'Sync now' : 'Done'}
-              </button>
-            </div>
-            {fieldQueue.map((row) => (
-              <div key={row.id} className="pm-queue-row">
-                <span />
-                <strong>{row.label}</strong>
-                <em>{row.time}</em>
-                <b>{row.status}</b>
-              </div>
-            ))}
-          </div>
-          <div className="pm-phone-controls">
-            <button type="button">My Location</button>
-            <button type="button" onClick={() => setZoomSignal((n) => n + 1)}>
-              Zoom Sel.
-            </button>
-            <button type="button">Fit Farm</button>
-          </div>
-          {fieldMovedToday && (
-            <div className="pm-field-dupe" data-pasture-field-dupe="1">
-              {activeGroup.name} already moved today. Record anyway?
-            </div>
-          )}
+        <div className="pm-field-forms">
+          {renderTrackPanel()}
+          {renderDrawForm()}
+        </div>
+        <div className="pm-field-toolbar" data-pasture-field-toolbar="1">
           <button
             type="button"
-            className="pm-confirm-move"
-            style={{'--species-color': activeSpecies.color}}
-            onClick={() => {
-              if (!canRecordMoves) return;
-              if (fieldMovedToday && !fieldDupeAck) {
-                setFieldDupeAck(true);
-                return;
-              }
-              setFieldDupeAck(false);
-              recordGroupMove(activeGroup, activeNextArea && activeNextArea.id, {offlineOnly: fieldOffline});
-            }}
-            disabled={!activeNextArea || saving || !canRecordMoves}
-            data-pasture-field-confirm="1"
+            className={'pm-field-tool is-record' + (mapMode === 'track' ? ' is-active' : '')}
+            onClick={startTrack}
+            disabled={!canCreateTrack}
+            data-pasture-field-walk="1"
           >
-            {fieldMovedToday && fieldDupeAck
-              ? 'Record anyway'
-              : `Confirm move -> ${activeNextArea ? activeNextArea.name : 'next'}`}
+            <span className="pm-field-tool-ic" aria-hidden="true">
+              &#9673;
+            </span>
+            <span>Walk paddock</span>
+          </button>
+          <button
+            type="button"
+            className={'pm-field-tool is-draw' + (mapMode === 'draw' ? ' is-active' : '')}
+            onClick={() => {
+              setDrawIsTemp(true);
+              switchToolMode('draw');
+            }}
+            disabled={!canCreateTrack}
+            data-pasture-field-draw="1"
+          >
+            <span className="pm-field-tool-ic" aria-hidden="true">
+              &#9998;
+            </span>
+            <span>Draw paddock</span>
+          </button>
+          <button
+            type="button"
+            className={'pm-field-tool' + (measuring ? ' is-active' : '')}
+            onClick={() => switchToolMode('measure')}
+            data-pasture-field-measure="1"
+          >
+            <span className="pm-field-tool-ic" aria-hidden="true">
+              &#128207;
+            </span>
+            <span>Measure</span>
+          </button>
+          <button
+            type="button"
+            className={'pm-field-tool' + (fieldLayersOpen ? ' is-active' : '')}
+            onClick={() => setFieldLayersOpen((v) => !v)}
+            data-pasture-field-layers="1"
+          >
+            <span className="pm-field-tool-ic" aria-hidden="true">
+              &#9636;
+            </span>
+            <span>Layers</span>
           </button>
         </div>
       </div>
@@ -3288,14 +3168,14 @@ export default function PastureMapView({Header, authState}) {
       )}
       {renderOfflinePanel()}
       {renderImportPreview()}
-      <main className="pm-layout">
+      <main className={'pm-layout' + (appMode === 'field' ? ' is-field' : '')}>
         {/* trackGeometry={activeTrackGeometry} */}
         <section className="pm-map-col">
           {renderPastureMapCanvas({
             areas,
             occupants: occupantsByArea,
             mode: mapMode,
-            canWrite: isManager,
+            canWrite: appMode === 'field' ? canCreateTrack : isManager,
             editAreaId: mapMode === 'edit' ? selectedId : null,
             selectedId,
             onSelect: handleAreaClick,
@@ -3313,10 +3193,12 @@ export default function PastureMapView({Header, authState}) {
             boundaryFilter,
             onToggleBoundary: toggleBoundary,
             appMode,
+            fieldLayersOpen,
             draftLinesVisible,
             onToggleDraftLines: toggleDraftLines,
             onExitTool: () => switchToolMode('select'),
           })}
+          {renderFieldChrome()}
         </section>
         <aside className="pm-side-panel">
           {loading ? <div className="pm-card">Loading pasture map...</div> : renderPanel()}
@@ -3327,7 +3209,6 @@ export default function PastureMapView({Header, authState}) {
         <span data-pasture-style-weight="1" />
         <span>trackGeometry={'{activeTrackGeometry}'}</span>
       </div>
-      {renderFieldOverlay()}
     </div>
   );
 }
