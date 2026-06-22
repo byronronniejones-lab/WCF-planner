@@ -1923,7 +1923,12 @@ function App() {
       await loadAllData();
     } catch (e) {
       console.error('loadUser error:', e);
-      setAuthState({user, role: 'admin', name: user.email});
+      // Fail closed: a profile/data-load failure must NEVER elevate the role.
+      // Default to least-privilege 'inactive' so admin/management-only surfaces
+      // stay gated, and drop to home so a deep-linked sensitive view is not
+      // left mounted under an unresolved profile.
+      setAuthState({user, role: 'inactive', name: user.email});
+      setView('home');
       // loadAllData never ran on this path; resolve the pig readiness signal
       // so the record page can show not-found instead of Loading forever.
       setFeedersLoaded(true);
@@ -3863,18 +3868,25 @@ function App() {
       React.createElement(ClientErrorsView, {Header}),
     );
 
-  // ── WEBFORMS ADMIN VIEW ──
+  // ── WEBFORMS ADMIN VIEW (admin-only) ──
+  // Route-level guard, not just the hidden Header nav button: a non-admin who
+  // types/bookmarks /admin must never see the admin config surface. Mirrors the
+  // clientErrors gate above.
   if (view === 'webforms')
-    return React.createElement(WebformsAdminView, {
-      Header,
-      loadUsers,
-      persistWebforms,
-      saveFeedCosts,
-      confirmDelete,
-      adminTab,
-      setAdminTab,
-      refreshDailys,
-    });
+    return React.createElement(
+      UnauthorizedRedirect,
+      {authState, setView, requireAdmin: true, fallbackView: 'home'},
+      React.createElement(WebformsAdminView, {
+        Header,
+        loadUsers,
+        persistWebforms,
+        saveFeedCosts,
+        confirmDelete,
+        adminTab,
+        setAdminTab,
+        refreshDailys,
+      }),
+    );
 
   // ── PIG DAILY WEBFORM (public, no auth) ──
   // renderWebform moved to src/webforms/PigDailysWebform.jsx;
