@@ -83,7 +83,9 @@ describe('HomeDashboard — green banner includes breeding stock', () => {
   });
 
   it('hasAnyActivePig is driven by active feeder daily targets (no bare parent-group fallback)', () => {
-    expect(dashSrc).toMatch(/hasAnyActivePig[\s\S]*?activePigFeederDailyTargets\(feederGroups\)\.length/);
+    expect(dashSrc).toMatch(
+      /hasAnyActivePig[\s\S]*?activePigFeederDailyTargets\(feederGroups,\s*\{breeders\}\)\.length/,
+    );
     expect(dashSrc).not.toMatch(/hasAnyActivePig[\s\S]*?feederGroups\.some\(\(g\)\s*=>\s*g\.status === 'active'\)/);
   });
 
@@ -99,7 +101,9 @@ describe('HomeDashboard — green banner includes breeding stock', () => {
 
 describe('HomeDashboard — pig feeder missed targets via shared helper (no parent fallback)', () => {
   it('derives feeder missed targets from activePigFeederDailyTargets', () => {
-    expect(alertSrc).toContain('activePigFeederDailyTargets(asArray(feederGroups)).forEach');
+    expect(alertSrc).toContain(
+      'activePigFeederDailyTargets(asArray(feederGroups), {breeders: asArray(breeders)}).forEach',
+    );
   });
 
   it('labels feeder missed rows with the parent batch name from the target', () => {
@@ -115,7 +119,7 @@ describe('HomeDashboard — pig feeder missed targets via shared helper (no pare
 describe('main.jsx — pig webform active_groups via shared helper (no parent fallback)', () => {
   it('builds pigGroups from SOWS/BOARS plus activePigFeederDailyTargets names', () => {
     expect(mainSrc).toMatch(
-      /pigGroups = \[\s*'SOWS',\s*'BOARS',\s*\.\.\.activePigFeederDailyTargets\(fgs\)\.map\(\(t\) => t\.name\)/,
+      /pigGroups = \[\s*'SOWS',\s*'BOARS',\s*\.\.\.activePigFeederDailyTargets\(fgs,\s*\{breeders\}\)\.map\(\(t\) => t\.name\)/,
     );
   });
 

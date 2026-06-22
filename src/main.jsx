@@ -2697,11 +2697,10 @@ function App() {
       const cfg = {...rawCfg, webforms: normalizeWebforms(rawCfg.webforms)};
       const fgs = feeders || feederGroups;
       // Feeder daily targets are active sub-batches of active feeder groups
-      // only — no parent-batch fallback. A parent feeder group with no active
-      // sub-batches is not a pig daily webform option (it has no daily report
-      // until an active sub-batch splits it). SOWS/BOARS stay as the fixed
-      // breeding-stock daily groups.
-      const pigGroups = ['SOWS', 'BOARS', ...activePigFeederDailyTargets(fgs).map((t) => t.name)];
+      // with pigs remaining only - no parent-batch fallback. A parent feeder
+      // group with no active/live sub-batches is not a pig daily webform option.
+      // SOWS/BOARS stay as the fixed breeding-stock daily groups.
+      const pigGroups = ['SOWS', 'BOARS', ...activePigFeederDailyTargets(fgs, {breeders}).map((t) => t.name)];
       // Use explicit batchData param to avoid stale closure — batches state may not be set yet
       const batchList = batchData || batches || [];
       // Public broiler mirror — single source of truth for the dropdown list AND

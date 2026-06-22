@@ -228,7 +228,7 @@ export function buildMissedDailyReports({
         }
       });
 
-    activePigFeederDailyTargets(asArray(feederGroups)).forEach((t) => {
+    activePigFeederDailyTargets(asArray(feederGroups), {breeders: asArray(breeders)}).forEach((t) => {
       const key = `${t.id}|${checkDate}`;
       if (!pigCheck.has((t.name || '').toLowerCase().trim()) && !cleared.has(key)) {
         allMissed.push({

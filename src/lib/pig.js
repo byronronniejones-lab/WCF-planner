@@ -155,21 +155,24 @@ export function resolveSubByBatchId(parentGroup, batchId) {
 }
 
 // Active pig feeder daily-report targets. Each ACTIVE feeder group contributes
-// its ACTIVE sub-batches only — there is no parent-batch fallback. A parent
-// feeder group with zero sub-batches (or whose sub-batches are all
-// processed/inactive) contributes no feeder daily target: feeder daily reports
-// exist only once an active sub-batch splits the group. SOWS/BOARS breeding
-// stock are separate non-feeder daily targets handled by the caller.
+// its ACTIVE sub-batches with ledger-current pigs only — there is no parent-batch
+// fallback. A parent feeder group with zero sub-batches (or whose sub-batches
+// are all processed/inactive/empty) contributes no feeder daily target: feeder
+// daily reports exist only while an active sub-batch still has pigs on farm.
+// SOWS/BOARS breeding stock are separate non-feeder daily targets handled by
+// the caller.
 //
 // Returns [{id, name, parentBatchName}] in feeder-group order, then sub order,
 // so callers (webform active_groups in main.jsx, Home missed-report loop) share
 // one derivation and cannot drift.
-export function activePigFeederDailyTargets(feederGroups) {
+export function activePigFeederDailyTargets(feederGroups, {breeders = [], tripSourceSummary = null} = {}) {
   const out = [];
   for (const g of feederGroups || []) {
     if (!g || g.status !== 'active') continue;
     for (const s of g.subBatches || []) {
-      if (s && s.status === 'active') out.push({id: s.id, name: s.name, parentBatchName: g.batchName});
+      if (!s || s.status !== 'active') continue;
+      if (computeSubCurrentCount(g, s, breeders, {tripSourceSummary}) <= 0) continue;
+      out.push({id: s.id, name: s.name, parentBatchName: g.batchName});
     }
   }
   return out;

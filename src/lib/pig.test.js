@@ -203,8 +203,8 @@ describe('activePigFeederDailyTargets', () => {
         batchName: 'P-26-01',
         status: 'active',
         subBatches: [
-          {id: 'a', name: 'P-26-01A', status: 'active'},
-          {id: 'b', name: 'P-26-01B', status: 'active'},
+          {id: 'a', name: 'P-26-01A', status: 'active', giltCount: 6, boarCount: 0},
+          {id: 'b', name: 'P-26-01B', status: 'active', giltCount: 0, boarCount: 6},
         ],
       },
     ];
@@ -221,12 +221,54 @@ describe('activePigFeederDailyTargets', () => {
         batchName: 'P-26-01',
         status: 'active',
         subBatches: [
-          {id: 'a', name: 'P-26-01A', status: 'active'},
-          {id: 'b', name: 'P-26-01B', status: 'processed'},
+          {id: 'a', name: 'P-26-01A', status: 'active', giltCount: 6, boarCount: 0},
+          {id: 'b', name: 'P-26-01B', status: 'processed', giltCount: 0, boarCount: 6},
         ],
       },
     ];
     expect(activePigFeederDailyTargets(groups)).toEqual([{id: 'a', name: 'P-26-01A', parentBatchName: 'P-26-01'}]);
+  });
+
+  it('excludes active sub-batches fully emptied by processing trips', () => {
+    const groups = [
+      {
+        id: 'g1',
+        batchName: 'P-26-02',
+        status: 'active',
+        processingTrips: [{id: 't1', pigCount: 13, subAttributions: [{subId: 'b', count: 13}]}],
+        subBatches: [{id: 'b', name: 'P-26-02B', status: 'active', giltCount: 0, boarCount: 13}],
+      },
+    ];
+    expect(activePigFeederDailyTargets(groups)).toEqual([]);
+  });
+
+  it('excludes active sub-batches fully emptied by mortality', () => {
+    const groups = [
+      {
+        id: 'g1',
+        batchName: 'P-26-03',
+        status: 'active',
+        pigMortalities: [{sub_batch_name: 'P-26-03A', count: 4}],
+        subBatches: [{id: 'a', name: 'P-26-03A', status: 'active', giltCount: 4, boarCount: 0}],
+      },
+    ];
+    expect(activePigFeederDailyTargets(groups)).toEqual([]);
+  });
+
+  it('excludes active sub-batches fully emptied by breeder transfers when breeders are passed', () => {
+    const groups = [
+      {
+        id: 'g1',
+        batchName: 'P-26-04',
+        status: 'active',
+        subBatches: [{id: 'a', name: 'P-26-04A', status: 'active', giltCount: 2, boarCount: 0}],
+      },
+    ];
+    const breeders = [
+      {sex: 'Gilt', transferredFromBatch: {batchName: 'P-26-04', subBatchName: 'P-26-04A'}},
+      {sex: 'Gilt', transferredFromBatch: {batchName: 'P-26-04', subBatchName: 'P-26-04A'}},
+    ];
+    expect(activePigFeederDailyTargets(groups, {breeders})).toEqual([]);
   });
 
   it('returns [] when an active parent has sub-batches but all are inactive', () => {
@@ -255,15 +297,20 @@ describe('activePigFeederDailyTargets', () => {
 
   it('preserves feeder-group order then sub order across multiple groups', () => {
     const groups = [
-      {id: 'g1', batchName: 'B1', status: 'active', subBatches: [{id: 'a', name: 'B1A', status: 'active'}]},
+      {
+        id: 'g1',
+        batchName: 'B1',
+        status: 'active',
+        subBatches: [{id: 'a', name: 'B1A', status: 'active', giltCount: 1, boarCount: 0}],
+      },
       {id: 'g2', batchName: 'B2', status: 'active', subBatches: []},
       {
         id: 'g3',
         batchName: 'B3',
         status: 'active',
         subBatches: [
-          {id: 'c', name: 'B3A', status: 'active'},
-          {id: 'd', name: 'B3B', status: 'active'},
+          {id: 'c', name: 'B3A', status: 'active', giltCount: 1, boarCount: 0},
+          {id: 'd', name: 'B3B', status: 'active', giltCount: 0, boarCount: 1},
         ],
       },
     ];

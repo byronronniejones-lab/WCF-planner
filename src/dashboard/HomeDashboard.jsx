@@ -501,10 +501,11 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
 
   const activeBroilerBatches2 = batches.filter((b) => calcPoultryStatus(b) === 'active');
   // All-clear banner reflects ACTUAL pig daily targets: active feeder
-  // sub-batches or non-archived breeders. An active parent feeder group with
-  // no active sub-batches is not a daily target, so it no longer counts here.
+  // sub-batches with pigs remaining or non-archived breeders. An active parent
+  // feeder group with no active/live sub-batches is not a daily target, so it
+  // no longer counts here.
   const hasAnyActivePig =
-    activePigFeederDailyTargets(feederGroups).length > 0 || (breeders || []).some((b) => !b.archived);
+    activePigFeederDailyTargets(feederGroups, {breeders}).length > 0 || (breeders || []).some((b) => !b.archived);
   const activeLayerGroups2 = (layerGroups || []).filter((g) => g.status === 'active');
   const productionModel = React.useMemo(() => buildProductionModel(productionSources || {}), [productionSources]);
   const productionStats = React.useMemo(
