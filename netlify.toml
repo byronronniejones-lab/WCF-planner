@@ -12,8 +12,10 @@
   command = "npm run build"
   publish = "dist"
 
+# Vite 8 requires Node ^20.19 || >=22.12. Pin to 22 (current LTS) so the build
+# environment unambiguously satisfies the toolchain and isn't tied to EOL Node 20.
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
 
 [functions]
   directory = "netlify/functions"
