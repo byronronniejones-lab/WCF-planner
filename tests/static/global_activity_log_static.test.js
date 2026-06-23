@@ -150,7 +150,7 @@ describe('ActivityLogView', () => {
     expect(viewSrc).toContain('onClick: () => setReloadKey((k) => k + 1)');
     expect(viewSrc).toContain("'data-activity-log-retry': 'true'");
     expect(viewSrc).toMatch(
-      /React\.useEffect\(\(\) => \{[\s\S]*?load\(false\);[\s\S]*?\}, \[entityFilter, reloadKey\]\)/,
+      /React\.useEffect\(\(\) => \{[\s\S]*?load\(false\);[\s\S]*?\}, \[effectiveEntityFilter, reloadKey\]\)/,
     );
     expect(viewSrc).not.toContain('<InlineNotice notice={loadError} onDismiss');
   });

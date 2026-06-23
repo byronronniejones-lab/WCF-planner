@@ -457,8 +457,8 @@ describe('CP3 — /pig/batches/<id> record-page routing + hub/record branch', ()
     // the bottom — that grouping moved into buildPigBatchComparator (the lib
     // sorts processed below active before the active key), so the view applies
     // the predicate then the comparator over the show/hide-processed slice.
-    expect(viewSrc).toMatch(/\.filter\(buildPigBatchPredicate\(filters, pigBatchFilterCtx\)\)/);
-    expect(viewSrc).toMatch(/\.sort\(buildPigBatchComparator\(sortRule, pigBatchFilterCtx\)\)/);
+    expect(viewSrc).toMatch(/\.filter\(buildPigBatchPredicate\(effectiveFilters, pigBatchFilterCtx\)\)/);
+    expect(viewSrc).toMatch(/\.sort\(buildPigBatchComparator\(effectiveSortRule, pigBatchFilterCtx\)\)/);
     // The tile owns the same shared column template so header + rows align.
     expect(tileSrc).toMatch(/export const PIG_BATCH_GRID_COLUMNS =/);
     expect(tileSrc).toContain('export const PIG_BATCH_GRID_HEADERS = Object.freeze');

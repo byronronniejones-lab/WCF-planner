@@ -196,8 +196,8 @@ describe('PigBatchesView wiring', () => {
   });
 
   it('applies predicate then comparator to produce the rendered/visible set', () => {
-    expect(viewSrc).toMatch(/\.filter\(buildPigBatchPredicate\(filters, pigBatchFilterCtx\)\)/);
-    expect(viewSrc).toMatch(/\.sort\(buildPigBatchComparator\(sortRule, pigBatchFilterCtx\)\)/);
+    expect(viewSrc).toMatch(/\.filter\(buildPigBatchPredicate\(effectiveFilters, pigBatchFilterCtx\)\)/);
+    expect(viewSrc).toMatch(/\.sort\(buildPigBatchComparator\(effectiveSortRule, pigBatchFilterCtx\)\)/);
   });
 
   it('feeds the FILTERED+SORTED rows (visiblePigBatches) to the export, never raw feederGroups', () => {

@@ -34,8 +34,11 @@ describe('Lane 14 - breeding pig record pages', () => {
     expect(sowsSrc).toContain(
       'const breedingPigSeqRows = [...activeSows, ...activeBoars, ...(showArchived ? archivedPigs : [])]',
     );
-    expect(sowsSrc).toContain('data-breeding-pig-record-link={pig.id}');
-    expect(sowsSrc).toContain('openBreedingPigRecord(pig, breedingPigSeqRows)');
+    // Record-page entry point is the canonical DataTable row-open (migrated off the
+    // standalone data-breeding-pig-record-link element); the row marker + onRowOpen
+    // navigate into the record with the visible-order sequence.
+    expect(sowsSrc).toContain('onRowOpen={(pig) => openBreedingPigRecord(pig, rows)}');
+    expect(sowsSrc).toContain("'data-breeding-pig-row': pig.id");
     expect(sowsSrc).toContain("recordSeqNavOptions(labeledSeqItems(rows, 'tag'))");
     expect(sowsSrc).toContain('setShowBreederForm(true)');
   });
