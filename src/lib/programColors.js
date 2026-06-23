@@ -75,7 +75,8 @@ export function programDotStyle(key, size = 9) {
 /**
  * Inline style for a tab/nav pill. Unselected = transparent, no border (A12 /
  * Tab decision). Selected = solid program fill with auto-contrast text.
- * `radius` defaults to the 10px floor (CP0 §A3).
+ * `radius` defaults to 999 — a selected nav/tab pill is fully rounded (CP0 Tabs decision),
+ * not a floor-radius control; pass `radius` to override.
  */
 export function programPillStyle(key, selected, {radius = 999} = {}) {
   const fill = getProgramColor(key);

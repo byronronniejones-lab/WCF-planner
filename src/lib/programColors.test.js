@@ -106,6 +106,6 @@ describe('style helpers', () => {
     const on = programPillStyle('cattle', true);
     expect(on.background).toBe('#8E3328');
     expect(on.color).toBe('white');
-    expect(on.borderRadius).toBe(10); // 10px floor (A3)
+    expect(on.borderRadius).toBe(999); // selected program pill is fully-rounded (canonical pill radius), not a floor-radius control
   });
 });
