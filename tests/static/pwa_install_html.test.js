@@ -152,6 +152,10 @@ describe('vite.config.js multi-page build inputs', () => {
     expect(viteConfig).toMatch(/equipment:\s*resolve\(__dirname,\s*'equipment\.html'\)/);
   });
 
+  it('pins the production syntax target below modern Safari-only defaults for older mobile browsers', () => {
+    expect(viteConfig).toContain("target: 'es2018'");
+  });
+
   it('imports resolve from node:path so the inputs use absolute paths', () => {
     expect(viteConfig).toMatch(/import\s*\{[^}]*\bresolve\b[^}]*\}\s*from\s*'node:path'/);
   });

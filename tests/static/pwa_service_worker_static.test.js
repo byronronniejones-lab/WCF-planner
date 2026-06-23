@@ -65,6 +65,15 @@ describe('PWA app-shell service worker contract', () => {
     expect(sw).toMatch(/caches\.keys\(\)[\s\S]*caches\.delete\(name\)/);
   });
 
+  it('fetches JS and CSS build assets from the network first so mobile PWAs do not stay pinned to stale bundles', () => {
+    expect(sw).toContain("const CACHE_VERSION = '2026-06-23-mobile-load-hotfix-v1';");
+    expect(sw).toContain('event.respondWith(networkFirstThenCache(request));');
+    expect(sw).toContain('function isFreshBuildAssetRequest(request, url)');
+    expect(sw).toContain("request.destination === 'script' || request.destination === 'style'");
+    expect(sw).toContain("url.pathname.startsWith('/assets/') && /\\.(?:js|css)$/.test(url.pathname)");
+    expect(sw).toContain("fetch(request, {cache: 'no-store'})");
+  });
+
   it('App Setup copy distinguishes offline app cache from queued submission storage', () => {
     expect(setupModal).not.toContain('does not have offline-cache yet');
     expect(setupModal).toContain('Offline cache starts after the app has opened online at least once.');

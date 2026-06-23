@@ -1,4 +1,4 @@
-const CACHE_VERSION = '2026-06-13-pwa-cache-v1';
+const CACHE_VERSION = '2026-06-23-mobile-load-hotfix-v1';
 const SHELL_CACHE = `wcf-app-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `wcf-runtime-${CACHE_VERSION}`;
 const CACHE_NAMES = new Set([SHELL_CACHE, RUNTIME_CACHE]);
@@ -49,6 +49,11 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(handleNavigation(request));
+    return;
+  }
+
+  if (isFreshBuildAssetRequest(request, url)) {
+    event.respondWith(networkFirstThenCache(request));
     return;
   }
 
@@ -156,6 +161,26 @@ async function cacheFirstThenNetwork(request) {
     await cache.put(request, response.clone());
   }
   return response;
+}
+
+async function networkFirstThenCache(request) {
+  try {
+    const response = await fetch(request, {cache: 'no-store'});
+    if (response && response.ok) {
+      const cache = await caches.open(RUNTIME_CACHE);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch (_error) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    throw _error;
+  }
+}
+
+function isFreshBuildAssetRequest(request, url) {
+  if (request.destination === 'script' || request.destination === 'style') return true;
+  return url.pathname.startsWith('/assets/') && /\.(?:js|css)$/.test(url.pathname);
 }
 
 function isCacheableAssetRequest(request, url) {
