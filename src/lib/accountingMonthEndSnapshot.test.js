@@ -1,11 +1,14 @@
 import {describe, expect, it} from 'vitest';
 import {
   accountingMonthEndISO,
+  accountingSnapshotMaxMonth,
   accountingSnapshotMinMonth,
+  accountingSnapshotMonthEndISO,
   accountingSnapshotRows,
   animalGroupAsOfMonthEnd,
   currentAccountingMonth,
   formatAccountingMonthEnd,
+  isPastAccountingSnapshotMonth,
   shiftAccountingMonth,
 } from './accountingMonthEndSnapshot.js';
 
@@ -21,8 +24,12 @@ describe('accounting month-end helpers', () => {
     const todayMs = Date.UTC(2026, 5, 24, 12);
     expect(currentAccountingMonth(todayMs)).toBe('2026-06');
     expect(accountingSnapshotMinMonth(todayMs)).toBe('2025-06');
+    expect(accountingSnapshotMaxMonth(todayMs)).toBe('2026-05');
     expect(shiftAccountingMonth('2026-01', -1)).toBe('2025-12');
     expect(accountingMonthEndISO('2026-02')).toBe('2026-02-28');
+    expect(accountingSnapshotMonthEndISO('2026-05', todayMs)).toBe('2026-05-31');
+    expect(accountingSnapshotMonthEndISO('2026-06', todayMs)).toBe(null);
+    expect(isPastAccountingSnapshotMonth('2026-07', todayMs)).toBe(false);
     expect(formatAccountingMonthEnd('2026-06')).toBe('June 30, 2026');
   });
 
@@ -49,7 +56,7 @@ describe('accounting month-end helpers', () => {
       },
     ];
 
-    const rows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-05');
+    const rows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-05', Date.UTC(2026, 5, 24, 12));
     expect(rows).toHaveLength(1);
     expect(rows[0].herd).toBe('finishers');
     expect(rows[0]._accountingSnapshotOriginalGroup).toBe('sold');
@@ -72,8 +79,8 @@ describe('accounting month-end helpers', () => {
       },
     ];
 
-    const mayRows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-05');
-    const aprilRows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-04');
+    const mayRows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-05', Date.UTC(2026, 5, 24, 12));
+    const aprilRows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-04', Date.UTC(2026, 5, 24, 12));
 
     expect(mayRows).toHaveLength(1);
     expect(mayRows[0].herd).toBe('finishers');
@@ -91,11 +98,12 @@ describe('accounting month-end helpers', () => {
       created_at: '2026-07-01T12:00:00Z',
     };
 
-    expect(accountingSnapshotRows([cow], [], cattleConfig, '2026-06')).toEqual([]);
-    expect(accountingSnapshotRows([cow], [], cattleConfig, '2026-07')).toHaveLength(1);
+    const todayMs = Date.UTC(2026, 8, 15, 12);
+    expect(accountingSnapshotRows([cow], [], cattleConfig, '2026-06', todayMs)).toEqual([]);
+    expect(accountingSnapshotRows([cow], [], cattleConfig, '2026-07', todayMs)).toHaveLength(1);
   });
 
-  it('keeps future snapshots simple: current active animals remain active', () => {
+  it('does not build snapshots for the current month or future months', () => {
     const cow = {
       id: 'cow-current-active',
       tag: '100',
@@ -103,10 +111,14 @@ describe('accounting month-end helpers', () => {
       birth_date: '2024-03-01',
       created_at: '2024-03-01T12:00:00Z',
     };
+    const todayMs = Date.UTC(2026, 5, 24, 12);
 
-    const rows = accountingSnapshotRows([cow], [], cattleConfig, '2028-01');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].herd).toBe('mommas');
+    expect(accountingSnapshotMonthEndISO('2026-06', todayMs)).toBe(null);
+    expect(accountingSnapshotMonthEndISO('2028-01', todayMs)).toBe(null);
+    expect(accountingSnapshotRows([cow], [], cattleConfig, '2026-06', todayMs)).toEqual([cow]);
+    expect(accountingSnapshotRows([cow], [], cattleConfig, '2028-01', todayMs)[0]._accountingSnapshotEndDate).toBe(
+      undefined,
+    );
   });
 
   it('returns the current group when the snapshot month is invalid', () => {

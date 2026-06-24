@@ -54,10 +54,25 @@ export function accountingSnapshotMinMonth(todayMs = Date.now(), pastMonths = 12
   return current ? shiftAccountingMonth(current, -pastMonths) : '';
 }
 
+export function accountingSnapshotMaxMonth(todayMs = Date.now()) {
+  const current = currentAccountingMonth(todayMs);
+  return current ? shiftAccountingMonth(current, -1) : '';
+}
+
+export function isPastAccountingSnapshotMonth(month, todayMs = Date.now()) {
+  if (!parseAccountingMonth(month)) return false;
+  const maxMonth = accountingSnapshotMaxMonth(todayMs);
+  return !!maxMonth && month <= maxMonth;
+}
+
 export function accountingMonthEndISO(month) {
   const parsed = parseAccountingMonth(month);
   if (!parsed) return null;
   return new Date(Date.UTC(parsed.year, parsed.monthIndex + 1, 0, 12)).toISOString().slice(0, 10);
+}
+
+export function accountingSnapshotMonthEndISO(month, todayMs = Date.now()) {
+  return isPastAccountingSnapshotMonth(month, todayMs) ? accountingMonthEndISO(month) : null;
 }
 
 export function formatAccountingMonthEnd(month) {
@@ -110,8 +125,8 @@ export function animalGroupAsOfMonthEnd(row, transfersByAnimal, config, month) {
   return group;
 }
 
-export function animalWasActiveAtMonthEnd(row, transfersByAnimal, config, month) {
-  const endDate = accountingMonthEndISO(month);
+export function animalWasActiveAtMonthEnd(row, transfersByAnimal, config, month, todayMs = Date.now()) {
+  const endDate = accountingSnapshotMonthEndISO(month, todayMs);
   if (!row || !endDate) return false;
 
   const entryDate = entryDateForAnimal(row);
@@ -130,13 +145,13 @@ export function animalWasActiveAtMonthEnd(row, transfersByAnimal, config, month)
   return config.activeGroups.includes(group);
 }
 
-export function accountingSnapshotRows(rows, transfers, config, month) {
-  const endDate = accountingMonthEndISO(month);
+export function accountingSnapshotRows(rows, transfers, config, month, todayMs = Date.now()) {
+  const endDate = accountingSnapshotMonthEndISO(month, todayMs);
   if (!endDate) return rows || [];
 
   const transfersByAnimal = groupTransfersByAnimal(transfers, config.transferEntityIdField);
   return (rows || [])
-    .filter((row) => animalWasActiveAtMonthEnd(row, transfersByAnimal, config, month))
+    .filter((row) => animalWasActiveAtMonthEnd(row, transfersByAnimal, config, month, todayMs))
     .map((row) => {
       const groupAsOf = animalGroupAsOfMonthEnd(row, transfersByAnimal, config, month);
       return {

@@ -116,6 +116,6 @@ describe('CattleHerdsView — dead client transfer helper removed', () => {
   it('no longer defines a client transferCow that inserts cattle_transfers', () => {
     const herds = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleHerdsView.jsx'), 'utf8');
     expect(herds).not.toContain('async function transferCow');
-    expect(herds).not.toContain("from('cattle_transfers')");
+    expect(herds).not.toMatch(/from\('cattle_transfers'\)[\s\S]{0,250}\.(insert|update|delete|upsert)\s*\(/);
   });
 });

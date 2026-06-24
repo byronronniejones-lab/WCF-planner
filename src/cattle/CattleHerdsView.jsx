@@ -60,8 +60,9 @@ import {deleteCattleCalvingRecord} from '../lib/cattleCalvingApi.js';
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {
-  accountingMonthEndISO,
+  accountingSnapshotMaxMonth,
   accountingSnapshotMinMonth,
+  accountingSnapshotMonthEndISO,
   accountingSnapshotRows,
   formatAccountingMonthEnd,
 } from '../lib/accountingMonthEndSnapshot.js';
@@ -464,9 +465,11 @@ const CattleHerdsHub = ({
   );
   const calvingEvidence = useMemo(() => buildCalvingEvidence(cattle, calvingRecs), [cattle, calvingRecs]);
   const accountingSnapshotMonth = filters.accountingSnapshotMonth || '';
-  const accountingSnapshotEndDate = accountingMonthEndISO(accountingSnapshotMonth);
+  const accountingSnapshotEndDate = accountingSnapshotMonthEndISO(accountingSnapshotMonth);
   const accountingSnapshotLabel = accountingSnapshotEndDate ? formatAccountingMonthEnd(accountingSnapshotMonth) : '';
+  const accountingSnapshotInputMonth = accountingSnapshotEndDate ? accountingSnapshotMonth : '';
   const accountingSnapshotMinValue = useMemo(() => accountingSnapshotMinMonth(Date.now()), []);
+  const accountingSnapshotMaxValue = useMemo(() => accountingSnapshotMaxMonth(Date.now()), []);
   const cattleForFilters = useMemo(
     () =>
       accountingSnapshotEndDate
@@ -1792,8 +1795,15 @@ const CattleHerdsHub = ({
                     type="month"
                     aria-label="Accounting snapshot month"
                     min={accountingSnapshotMinValue}
-                    value={accountingSnapshotMonth}
-                    onChange={(e) => setFilter('accountingSnapshotMonth', e.target.value)}
+                    max={accountingSnapshotMaxValue}
+                    value={accountingSnapshotInputMonth}
+                    onChange={(e) => {
+                      const nextMonth = e.target.value;
+                      setFilter(
+                        'accountingSnapshotMonth',
+                        nextMonth && nextMonth <= accountingSnapshotMaxValue ? nextMonth : null,
+                      );
+                    }}
                     data-cattle-accounting-snapshot-month="1"
                     style={{
                       flex: '1 1 128px',
@@ -1807,7 +1817,7 @@ const CattleHerdsHub = ({
                     }}
                   />
                 </label>
-                {accountingSnapshotMonth && (
+                {accountingSnapshotInputMonth && (
                   <button
                     type="button"
                     data-cattle-accounting-snapshot-clear="1"

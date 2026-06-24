@@ -41,8 +41,9 @@ import {loadSheepWeighInsCached} from '../lib/sheepCache.js';
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {
-  accountingMonthEndISO,
+  accountingSnapshotMaxMonth,
   accountingSnapshotMinMonth,
+  accountingSnapshotMonthEndISO,
   accountingSnapshotRows,
   formatAccountingMonthEnd,
 } from '../lib/accountingMonthEndSnapshot.js';
@@ -379,9 +380,11 @@ const SheepFlocksHub = ({
   );
   const lambingEvidence = useMemo(() => buildLambingEvidence(sheep, lambingRecs), [sheep, lambingRecs]);
   const accountingSnapshotMonth = filters.accountingSnapshotMonth || '';
-  const accountingSnapshotEndDate = accountingMonthEndISO(accountingSnapshotMonth);
+  const accountingSnapshotEndDate = accountingSnapshotMonthEndISO(accountingSnapshotMonth);
   const accountingSnapshotLabel = accountingSnapshotEndDate ? formatAccountingMonthEnd(accountingSnapshotMonth) : '';
+  const accountingSnapshotInputMonth = accountingSnapshotEndDate ? accountingSnapshotMonth : '';
   const accountingSnapshotMinValue = useMemo(() => accountingSnapshotMinMonth(Date.now()), []);
+  const accountingSnapshotMaxValue = useMemo(() => accountingSnapshotMaxMonth(Date.now()), []);
   const sheepForFilters = useMemo(
     () =>
       accountingSnapshotEndDate
@@ -1440,8 +1443,15 @@ const SheepFlocksHub = ({
                     type="month"
                     aria-label="Accounting snapshot month"
                     min={accountingSnapshotMinValue}
-                    value={accountingSnapshotMonth}
-                    onChange={(e) => setFilter('accountingSnapshotMonth', e.target.value)}
+                    max={accountingSnapshotMaxValue}
+                    value={accountingSnapshotInputMonth}
+                    onChange={(e) => {
+                      const nextMonth = e.target.value;
+                      setFilter(
+                        'accountingSnapshotMonth',
+                        nextMonth && nextMonth <= accountingSnapshotMaxValue ? nextMonth : null,
+                      );
+                    }}
                     data-sheep-accounting-snapshot-month="1"
                     style={{
                       flex: '1 1 128px',
@@ -1455,7 +1465,7 @@ const SheepFlocksHub = ({
                     }}
                   />
                 </label>
-                {accountingSnapshotMonth && (
+                {accountingSnapshotInputMonth && (
                   <button
                     type="button"
                     data-sheep-accounting-snapshot-clear="1"

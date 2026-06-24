@@ -14,6 +14,8 @@ describe('cattle/sheep accounting month-end snapshots', () => {
   it('keeps the snapshot math in a shared pure helper', () => {
     expect(helper).toContain('export function accountingSnapshotRows');
     expect(helper).toContain('export function animalGroupAsOfMonthEnd');
+    expect(helper).toContain('export function accountingSnapshotMaxMonth');
+    expect(helper).toContain('export function accountingSnapshotMonthEndISO');
     expect(helper).toContain('purchase_date || row.birth_date || row.created_at');
     expect(helper).toContain("import {centralISOFor} from './dateUtils.js'");
     expect(helper).toContain('centralISOFor(transfer.transferred_at || transfer.created_at)');
@@ -28,7 +30,13 @@ describe('cattle/sheep accounting month-end snapshots', () => {
     expect(cattleView).toContain("transferEntityIdField: 'cattle_id'");
     expect(cattleView).toContain("transferFromField: 'from_herd'");
     expect(cattleView).toContain('data-cattle-accounting-snapshot-month="1"');
-    expect(cattleView).toContain("setFilter('accountingSnapshotMonth', e.target.value)");
+    expect(cattleView).toContain('accountingSnapshotMaxMonth(Date.now())');
+    expect(cattleView).toContain(
+      'const accountingSnapshotInputMonth = accountingSnapshotEndDate ? accountingSnapshotMonth :',
+    );
+    expect(cattleView).toContain('max={accountingSnapshotMaxValue}');
+    expect(cattleView).toContain('value={accountingSnapshotInputMonth}');
+    expect(cattleView).toContain('nextMonth && nextMonth <= accountingSnapshotMaxValue ? nextMonth : null');
     expect(cattleView).toContain('Snapshot herd');
     expect(cattleView).toContain("label: 'Snapshot Herd'");
     expect(cattleView).toContain('HERD_LABELS[c._accountingSnapshotOriginalGroup]');
@@ -44,7 +52,13 @@ describe('cattle/sheep accounting month-end snapshots', () => {
     expect(sheepView).toContain("transferEntityIdField: 'sheep_id'");
     expect(sheepView).toContain("transferFromField: 'from_flock'");
     expect(sheepView).toContain('data-sheep-accounting-snapshot-month="1"');
-    expect(sheepView).toContain("setFilter('accountingSnapshotMonth', e.target.value)");
+    expect(sheepView).toContain('accountingSnapshotMaxMonth(Date.now())');
+    expect(sheepView).toContain(
+      'const accountingSnapshotInputMonth = accountingSnapshotEndDate ? accountingSnapshotMonth :',
+    );
+    expect(sheepView).toContain('max={accountingSnapshotMaxValue}');
+    expect(sheepView).toContain('value={accountingSnapshotInputMonth}');
+    expect(sheepView).toContain('nextMonth && nextMonth <= accountingSnapshotMaxValue ? nextMonth : null');
     expect(sheepView).toContain('Snapshot flock');
     expect(sheepView).toContain("label: 'Snapshot Flock'");
     expect(sheepView).toContain('FLOCK_LABELS[s._accountingSnapshotOriginalGroup]');
