@@ -54,6 +54,8 @@ describe('weather forecast proxy', () => {
   it('uses Open-Meteo forecast and archive data without a Tomorrow.io key gate', () => {
     expect(forecastFn).toContain('api.open-meteo.com/v1/gfs');
     expect(forecastFn).toContain('archive-api.open-meteo.com');
+    expect(forecastFn).toContain('process.env.WCF_FARM_WEATHER_LAT || DEFAULT_LAT');
+    expect(forecastFn).not.toContain('process.env.WCF_WEATHER_LAT || DEFAULT_LAT');
     expect(forecastFn).toContain("const DEFAULT_LAT = '30.844206';");
     expect(forecastFn).toContain("const DEFAULT_LON = '-86.436543';");
     expect(forecastFn).toContain('const PRECIP_HISTORY_YEARS = 10;');
