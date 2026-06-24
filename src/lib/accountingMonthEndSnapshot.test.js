@@ -56,6 +56,31 @@ describe('accounting month-end helpers', () => {
     expect(rows[0]._accountingSnapshotEndDate).toBe('2026-05-31');
   });
 
+  it('counts transfers on the month-end evening in farm-local Central time', () => {
+    const cow = {
+      id: 'cow-moved-late-month-end',
+      tag: '55',
+      herd: 'finishers',
+      purchase_date: '2026-01-01',
+    };
+    const transfers = [
+      {
+        cattle_id: cow.id,
+        from_herd: 'backgrounders',
+        to_herd: 'finishers',
+        transferred_at: '2026-06-01T02:00:00Z', // May 31, 2026 at 9:00 PM CDT.
+      },
+    ];
+
+    const mayRows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-05');
+    const aprilRows = accountingSnapshotRows([cow], transfers, cattleConfig, '2026-04');
+
+    expect(mayRows).toHaveLength(1);
+    expect(mayRows[0].herd).toBe('finishers');
+    expect(aprilRows).toHaveLength(1);
+    expect(aprilRows[0].herd).toBe('backgrounders');
+  });
+
   it('excludes animals not yet on farm by the selected month end', () => {
     const cow = {
       id: 'cow-not-purchased-yet',

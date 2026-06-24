@@ -1,3 +1,5 @@
+import {centralISOFor} from './dateUtils.js';
+
 const MONTH_NAMES = Object.freeze([
   'January',
   'February',
@@ -95,14 +97,13 @@ export function animalGroupAsOfMonthEnd(row, transfersByAnimal, config, month) {
   const endDate = accountingMonthEndISO(month);
   if (!row || !endDate) return row ? row[config.groupField] || null : null;
 
-  const cutoffMs = new Date(endDate + 'T23:59:59.999Z').getTime();
   const animalTransfers = transfersByAnimal.get(String(row.id)) || [];
   let group = row[config.groupField] || null;
 
   for (const transfer of animalTransfers) {
-    const ms = transferDateMs(transfer);
-    if (ms == null) continue;
-    if (ms <= cutoffMs) break;
+    const transferDate = centralISOFor(transfer.transferred_at || transfer.created_at);
+    if (!transferDate) continue;
+    if (transferDate <= endDate) break;
     if (transfer[config.transferFromField]) group = transfer[config.transferFromField];
   }
 

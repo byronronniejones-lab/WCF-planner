@@ -15,7 +15,8 @@ describe('cattle/sheep accounting month-end snapshots', () => {
     expect(helper).toContain('export function accountingSnapshotRows');
     expect(helper).toContain('export function animalGroupAsOfMonthEnd');
     expect(helper).toContain('purchase_date || row.birth_date || row.created_at');
-    expect(helper).toContain("endDate + 'T23:59:59.999Z'");
+    expect(helper).toContain("import {centralISOFor} from './dateUtils.js'");
+    expect(helper).toContain('centralISOFor(transfer.transferred_at || transfer.created_at)');
   });
 
   it('wires cattle snapshots through transfer history and saved filter state', () => {
