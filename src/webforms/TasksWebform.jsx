@@ -193,7 +193,7 @@ const TasksWebform = ({sb, sessionSubmitter}) => {
   const logoEl = (
     <div style={{textAlign: 'center', marginBottom: 20}}>
       <div style={{fontSize: 18, fontWeight: 800, color: '#085041', letterSpacing: -0.3}}>{'🌾 WCF Planner'}</div>
-      <div style={{fontSize: 12, color: 'var(--ink)', marginTop: 2}}>Submit a Task or a Todo</div>
+      <div style={{fontSize: 12, color: 'var(--ink)', marginTop: 2}}>Submit a Task or a To Do</div>
     </div>
   );
 

@@ -1633,7 +1633,7 @@ const WebformHub = ({
           >
             <PlannerIcon iconKey="checkmark" size={32} />
             <div style={{flex: 1}}>
-              <div style={{fontSize: 16, fontWeight: 700, color: 'var(--ink)'}}>Submit a Task or a Todo</div>
+              <div style={{fontSize: 16, fontWeight: 700, color: 'var(--ink)'}}>Submit a Task or a To Do</div>
               <div style={{fontSize: 12, lineHeight: 1.35, color: 'var(--ink-muted)'}}>
                 Use this to assign tasks to a Wcf Planner user when there is a repair needed or anything that shouldn't
                 be forgotten.
