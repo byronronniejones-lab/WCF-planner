@@ -29,7 +29,9 @@ describe('cattle/sheep accounting month-end snapshots', () => {
     expect(cattleView).toContain("transferFromField: 'from_herd'");
     expect(cattleView).toContain('data-cattle-accounting-snapshot-month="1"');
     expect(cattleView).toContain("setFilter('accountingSnapshotMonth', e.target.value)");
-    expect(cattleView).toContain('Current herd');
+    expect(cattleView).toContain('Snapshot herd');
+    expect(cattleView).toContain("label: 'Snapshot Herd'");
+    expect(cattleView).toContain('HERD_LABELS[c._accountingSnapshotOriginalGroup]');
     expect(cattleView).toContain('active cattle at');
   });
 
@@ -43,7 +45,9 @@ describe('cattle/sheep accounting month-end snapshots', () => {
     expect(sheepView).toContain("transferFromField: 'from_flock'");
     expect(sheepView).toContain('data-sheep-accounting-snapshot-month="1"');
     expect(sheepView).toContain("setFilter('accountingSnapshotMonth', e.target.value)");
-    expect(sheepView).toContain('Current flock');
+    expect(sheepView).toContain('Snapshot flock');
+    expect(sheepView).toContain("label: 'Snapshot Flock'");
+    expect(sheepView).toContain('FLOCK_LABELS[s._accountingSnapshotOriginalGroup]');
     expect(sheepView).toContain('active sheep at');
   });
 });

@@ -518,13 +518,21 @@ const CattleHerdsHub = ({
         ? [
             {header: 'Snapshot date', value: (c) => c._accountingSnapshotEndDate || accountingSnapshotEndDate},
             {
-              header: 'Current herd',
-              value: (c) => HERD_LABELS[c._accountingSnapshotOriginalGroup] || c._accountingSnapshotOriginalGroup || '',
+              header: 'Snapshot herd',
+              value: (c) => HERD_LABELS[c.herd] || c.herd || '',
             },
           ]
         : []),
       {header: 'Tag', value: (c) => c.tag || ''},
-      {header: 'Herd', value: (c) => HERD_LABELS[c.herd] || c.herd || ''},
+      {
+        header: 'Herd',
+        value: (c) =>
+          HERD_LABELS[c._accountingSnapshotOriginalGroup] ||
+          c._accountingSnapshotOriginalGroup ||
+          HERD_LABELS[c.herd] ||
+          c.herd ||
+          '',
+      },
       {header: 'Sex', value: (c) => c.sex || ''},
       {header: 'Breed', value: (c) => c.breed || ''},
       {header: 'Origin', value: (c) => c.origin || ''},
@@ -1301,11 +1309,28 @@ const CattleHerdsHub = ({
         label: 'Herd',
         render: (c) => (
           <span style={{fontSize: 11, color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap'}}>
-            {HERD_LABELS[c.herd]}
+            {HERD_LABELS[c._accountingSnapshotOriginalGroup] || HERD_LABELS[c.herd]}
           </span>
         ),
       },
-      {key: 'sex', label: 'Sex', render: (c) => <StatusText tone="muted">{c.sex || '—'}</StatusText>},
+      ...(accountingSnapshotEndDate
+        ? [
+            {
+              key: 'snapshotHerd',
+              label: 'Snapshot Herd',
+              render: (c) => (
+                <span style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600, whiteSpace: 'nowrap'}}>
+                  {HERD_LABELS[c.herd] || c.herd || '—'}
+                </span>
+              ),
+            },
+          ]
+        : []),
+      {
+        key: 'sex',
+        label: 'Sex',
+        render: (c) => <StatusText tone="muted">{c.sex || '—'}</StatusText>,
+      },
       {
         key: 'breed',
         label: 'Breed',

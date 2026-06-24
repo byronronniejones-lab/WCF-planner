@@ -528,14 +528,21 @@ const SheepFlocksHub = ({
         ? [
             {header: 'Snapshot date', value: (s) => s._accountingSnapshotEndDate || accountingSnapshotEndDate},
             {
-              header: 'Current flock',
-              value: (s) =>
-                FLOCK_LABELS[s._accountingSnapshotOriginalGroup] || s._accountingSnapshotOriginalGroup || '',
+              header: 'Snapshot flock',
+              value: (s) => FLOCK_LABELS[s.flock] || s.flock || '',
             },
           ]
         : []),
       {header: 'Tag', value: (s) => s.tag || ''},
-      {header: 'Flock', value: (s) => FLOCK_LABELS[s.flock] || s.flock || ''},
+      {
+        header: 'Flock',
+        value: (s) =>
+          FLOCK_LABELS[s._accountingSnapshotOriginalGroup] ||
+          s._accountingSnapshotOriginalGroup ||
+          FLOCK_LABELS[s.flock] ||
+          s.flock ||
+          '',
+      },
       {header: 'Sex', value: (s) => s.sex || ''},
       {header: 'Breed', value: (s) => s.breed || ''},
       {header: 'Origin', value: (s) => s.origin || ''},
@@ -1098,10 +1105,21 @@ const SheepFlocksHub = ({
               background: 'var(--ink-faint)',
             }}
           />
-          <span style={{fontSize: 12, color: 'var(--text-primary)'}}>{FLOCK_LABELS[s.flock]}</span>
+          <span style={{fontSize: 12, color: 'var(--text-primary)'}}>
+            {FLOCK_LABELS[s._accountingSnapshotOriginalGroup] || FLOCK_LABELS[s.flock]}
+          </span>
         </span>
       ),
     },
+    ...(accountingSnapshotEndDate
+      ? [
+          {
+            key: 'snapshotFlock',
+            label: 'Snapshot Flock',
+            render: (s) => <StatusText tone="muted">{FLOCK_LABELS[s.flock] || s.flock || '—'}</StatusText>,
+          },
+        ]
+      : []),
     {key: 'sex', label: 'Sex', render: (s) => s.sex || '—'},
     {key: 'breed', label: 'Breed', mobilePriority: false, render: (s) => s.breed || '—'},
     {key: 'origin', label: 'Origin', render: (s) => colText(s.origin)},
