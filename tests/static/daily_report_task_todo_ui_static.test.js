@@ -27,8 +27,8 @@ describe('Daily Report form toggles', () => {
 
 describe('Daily Reports task-or-todo entry', () => {
   it('renames the Daily Reports tile and Tasks form heading', () => {
-    expect(hubSrc).toContain('Submit a Task or a Todo');
-    expect(tasksFormSrc).toContain('Submit a Task or a Todo');
+    expect(hubSrc).toContain('Submit a Task or a To Do');
+    expect(tasksFormSrc).toContain('Submit a Task or a To Do');
   });
 
   it('renders a Task / To Do mode toggle with filled selected-state styling', () => {
