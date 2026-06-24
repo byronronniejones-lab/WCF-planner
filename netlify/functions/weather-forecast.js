@@ -10,9 +10,9 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 const PRECIP_HISTORY_YEARS = 10;
 
 export async function handler() {
-  const lat = process.env.WCF_WEATHER_LAT || DEFAULT_LAT;
-  const lon = process.env.WCF_WEATHER_LON || DEFAULT_LON;
-  const label = process.env.WCF_WEATHER_LABEL || DEFAULT_LABEL;
+  const lat = process.env.WCF_FARM_WEATHER_LAT || DEFAULT_LAT;
+  const lon = process.env.WCF_FARM_WEATHER_LON || DEFAULT_LON;
+  const label = process.env.WCF_FARM_WEATHER_LABEL || DEFAULT_LABEL;
   const loc = {lat: parseFloat(lat), lon: parseFloat(lon), label};
 
   try {
