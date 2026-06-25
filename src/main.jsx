@@ -1416,6 +1416,7 @@ function App() {
   const subAutoSaveTimer = React.useRef(null);
   const tripAutoSaveTimer = React.useRef(null);
   const breedAutoSaveTimer = React.useRef(null);
+  const webformConfigWriteCache = React.useRef(new Map());
   const [feedOrders, setFeedOrders] = useState({pig: {}, starter: {}, grower: {}, layerfeed: {}});
   const [pigFeedInventory, setPigFeedInventory] = useState(null); // {count, date} or null
   const [poultryFeedInventory, setPoultryFeedInventory] = useState(null); // {starter:{count,date}, grower:{count,date}, layer:{count,date}}
@@ -2448,8 +2449,8 @@ function App() {
         {
           const {groups: bGroups, meta: bMeta} = buildBroilerPublicMirror(store['ppp-v4'] || []);
           Promise.all([
-            sb.from('webform_config').upsert({key: 'broiler_groups', data: bGroups}, {onConflict: 'key'}),
-            sb.from('webform_config').upsert({key: 'broiler_batch_meta', data: bMeta}, {onConflict: 'key'}),
+            upsertWebformConfigIfChanged('broiler_groups', bGroups),
+            upsertWebformConfigIfChanged('broiler_batch_meta', bMeta),
           ]).then(() => {});
         }
       } else if (!error) {
@@ -2621,6 +2622,47 @@ function App() {
     setTimeout(() => setSaveStatus(''), 4000);
   }
 
+  function stableWebformConfigJson(value) {
+    function normalize(input) {
+      if (Array.isArray(input)) return input.map(normalize);
+      if (!input || typeof input !== 'object') return input === undefined ? null : input;
+      return Object.keys(input)
+        .sort()
+        .reduce((acc, key) => {
+          const next = input[key];
+          if (next !== undefined) acc[key] = normalize(next);
+          return acc;
+        }, {});
+    }
+    return JSON.stringify(normalize(value));
+  }
+
+  async function upsertWebformConfigIfChanged(key, data) {
+    const nextJson = stableWebformConfigJson(data);
+    if (webformConfigWriteCache.current.get(key) === nextJson) return {skipped: true};
+
+    try {
+      const {data: existing, error: selectError} = await sb
+        .from('webform_config')
+        .select('data')
+        .eq('key', key)
+        .maybeSingle();
+
+      if (!selectError && existing && stableWebformConfigJson(existing.data) === nextJson) {
+        webformConfigWriteCache.current.set(key, nextJson);
+        return {skipped: true};
+      }
+
+      const {error} = await sb.from('webform_config').upsert({key, data}, {onConflict: 'key'});
+      if (error) throw error;
+      webformConfigWriteCache.current.set(key, nextJson);
+      return {skipped: false};
+    } catch (e) {
+      console.warn(`webform_config sync skipped for ${key}:`, e.message);
+      return {error: e};
+    }
+  }
+
   async function signOut() {
     await sb.auth.signOut();
   }
@@ -2652,11 +2694,6 @@ function App() {
   function persistLayerGroups(nb) {
     setLayerGroups(nb);
     sbSave('ppp-layer-groups-v1', nb);
-    // Sync active layer group names to webform_config for anon access
-    const activeNames = nb.filter((g) => g.status === 'active').map((g) => g.name);
-    sb.from('webform_config')
-      .upsert({key: 'layer_groups', value: {groups: activeNames}}, {onConflict: 'key'})
-      .then(() => {});
     syncWebformConfig(null, null, batches, nb, layerHousings);
   }
   function persistLayerHousings(nb) {
@@ -2668,14 +2705,6 @@ function App() {
     setWebformsConfig(nb);
     sbSave('ppp-webforms-v1', nb);
     syncWebformConfig(nb, null, batches, layerGroups, layerHousings);
-    // Sync allowAddGroup to webform_settings key for anon access
-    const allowAddGroup = {};
-    (nb.webforms || []).forEach((wf) => {
-      allowAddGroup[wf.id] = !!wf.allowAddGroup;
-    });
-    sb.from('webform_config')
-      .upsert({key: 'webform_settings', data: {allowAddGroup}}, {onConflict: 'key'})
-      .then(() => {});
   }
   function persistFeedersAndSync(nb) {
     setFeederGroups(nb);
@@ -2733,39 +2762,30 @@ function App() {
         allowAddGroup[wf.id] = !!wf.allowAddGroup;
       });
       await Promise.all([
-        sb.from('webform_config').upsert({key: 'active_groups', data: pigGroups}, {onConflict: 'key'}),
-        sb.from('webform_config').upsert({key: 'broiler_groups', data: broilerGroupList}, {onConflict: 'key'}),
-        sb.from('webform_config').upsert({key: 'broiler_batch_meta', data: broilerBatchMeta}, {onConflict: 'key'}),
-        sb.from('webform_config').upsert({key: 'webform_settings', data: {allowAddGroup}}, {onConflict: 'key'}),
+        upsertWebformConfigIfChanged('active_groups', pigGroups),
+        upsertWebformConfigIfChanged('broiler_groups', broilerGroupList),
+        upsertWebformConfigIfChanged('broiler_batch_meta', broilerBatchMeta),
+        upsertWebformConfigIfChanged('webform_settings', {allowAddGroup}),
         // Push housing→batch mapping for webform info display
-        sb.from('webform_config').upsert(
-          {
-            key: 'housing_batch_map',
-            data: Object.fromEntries(
-              (lhData || layerHousings || [])
-                .filter((h) => h.status === 'active')
-                .map((h) => {
-                  const b = (layerBatches || []).find((lb) => lb.id === h.batch_id);
-                  return [h.housing_name, b ? b.name : null];
-                })
-                .filter(([, v]) => v),
-            ),
-          },
-          {onConflict: 'key'},
+        upsertWebformConfigIfChanged(
+          'housing_batch_map',
+          Object.fromEntries(
+            (lhData || layerHousings || [])
+              .filter((h) => h.status === 'active')
+              .map((h) => {
+                const b = (layerBatches || []).find((lb) => lb.id === h.batch_id);
+                return [h.housing_name, b ? b.name : null];
+              })
+              .filter(([, v]) => v),
+          ),
         ),
         // Push full form config for anon access — include layer batch names as selectable groups
-        sb.from('webform_config').upsert(
-          {
-            key: 'full_config',
-            data: {
-              webforms: cfg.webforms,
-              teamMembers: cfg.teamMembers,
-              broilerGroups: broilerGroupList,
-              layerGroups: lgListWithBatches,
-            },
-          },
-          {onConflict: 'key'},
-        ),
+        upsertWebformConfigIfChanged('full_config', {
+          webforms: cfg.webforms,
+          teamMembers: cfg.teamMembers,
+          broilerGroups: broilerGroupList,
+          layerGroups: lgListWithBatches,
+        }),
       ]);
     } catch (e) {
       console.warn('syncWebformConfig error:', e.message);

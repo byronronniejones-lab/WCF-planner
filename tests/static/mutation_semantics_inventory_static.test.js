@@ -21,7 +21,9 @@ const EXPECTED_LITERAL_MUTATION_TOTALS = new Map([
   ['update', 82],
   // -3 upsert from deleting teamMembers.js (2) + teamAvailability.js (1), the
   //    webform_config roster/availability writers (roster teardown).
-  ['upsert', 40],
+  // -9 upsert from collapsing main.jsx public-webform mirror writers behind
+  //    a compare-before-write helper (Disk IO budget protection).
+  ['upsert', 31],
 ]);
 
 const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
@@ -92,7 +94,7 @@ const EXPECTED_OWNER_OPERATION_COUNTS = new Map([
   ['src/livestock/WeighInSessionPage.jsx|update', 15],
   ['src/livestock/WeighInSessionPage.jsx|upsert', 6],
   ['src/main.jsx|update', 1],
-  ['src/main.jsx|upsert', 14],
+  ['src/main.jsx|upsert', 5],
   ['src/pig/PigBatchesView.jsx|upsert', 1],
   ['src/pig/PigDailysView.jsx|insert', 1],
   ['src/pig/usePigMortality.js|upsert', 2],
@@ -192,7 +194,7 @@ const EXPECTED_TABLE_OPERATION_COUNTS = new Map([
   ['task_templates|delete', 2],
   ['task_templates|update', 1],
   ['task_templates|upsert', 2],
-  ['webform_config|upsert', 11],
+  ['webform_config|upsert', 2],
   ['weigh_in_sessions|delete', 1],
   ['weigh_in_sessions|insert', 6],
   ['weigh_in_sessions|update', 7],

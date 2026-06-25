@@ -10,7 +10,7 @@ const EXPECTED_WEBFORM_CONFIG_OWNERS = new Map([
   ['src/lib/tasksAdminApi.js', 3],
   ['src/lib/tasksCenterApi.js', 1],
   ['src/lib/tasksPublicApi.js', 1],
-  ['src/main.jsx', 11],
+  ['src/main.jsx', 3],
   ['src/shared/AdminAddReportModal.jsx', 6],
   ['src/shared/AdminNewWeighInModal.jsx', 2],
   ['src/webforms/AddFeedWebform.jsx', 6],
@@ -71,7 +71,7 @@ describe('webform_config boundary', () => {
       .filter(([rel, count]) => seen.get(rel) !== count)
       .map(([rel, count]) => `${rel}: expected ${count}, saw ${seen.get(rel) ?? 0}`);
 
-    expect(total).toBe(39);
+    expect(total).toBe(31);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);

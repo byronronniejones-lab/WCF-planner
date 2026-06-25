@@ -7,10 +7,11 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-24.
-Current runtime code checkpoint: `95636f0`
-(`Merge pull request #32 from feature/system-task-batch-names`).
-Current docs checkpoint: this 2026-06-24 release wrap.
+Last updated: 2026-06-25.
+Current product checkpoint: `d18736f`
+(`Merge pull request #38 from feature/pasture-area-modal-reports-reset-move`),
+plus this 2026-06-25 docs/TEST Disk IO maintenance lane.
+Current docs checkpoint: this 2026-06-25 pasture/newsletter wrap.
 Production URL: https://wcfplanner.com.
 Netlify auto-deploys from GitHub `main`.
 
@@ -64,12 +65,20 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: `main` is currently `d18736f` after PR #38 (Pasture Map reset-history
-  + move-to-side-bar). PR #37 (`05b03e5`) shipped the Pasture Map Area modal +
-  Reports accordion before it. See Recent Shipped Checkpoints for both.
+- Source: latest product merge is `d18736f` after PR #38 (Pasture Map
+  reset-history + move-to-side-bar). PR #37 (`05b03e5`) shipped the Pasture Map
+  Area modal + Reports accordion before it. See Recent Shipped Checkpoints for
+  both.
 - Active lane: Build Queue item 1 (Pasture Map groups + grazing-history-edit +
   parent-pasture coloring) is the next build — investigation done, no code
-  written; branch `feature/pasture-groups-grazing-edit` off `main` `d18736f`.
+  written; branch `feature/pasture-groups-grazing-edit` was prepared off
+  `d18736f` and should be rebased onto current `main` before build work.
+- Parallel active lane: Build Queue item 2 (Monthly Newsletter Engine) is in
+  CC#2's isolated worktree `C:/Users/Ronni/WCF-planner-newsletter`, branch
+  `feature/newsletter-engine`. It was originally branched from `origin/main`
+  `05b03e5`; rebase/merge onto current `main` `d18736f` before release.
+  Foundation migrations `144`/`145` are being built locally only (not PROD-
+  applied/deployed/merged yet) and include the accepted security fixes below.
 - Source history note: prior to PR #37, `main` was `1411981` after PR #36, the
   Pasture Map Map/Plan merge. Latest `main` includes mobile
   app-shell repair, weather farm-point 10-year precipitation, Daily Report task/
@@ -77,16 +86,20 @@ Design/function invariants that govern cross-surface behavior live in
   hardening, Vite 8 / Vitest 4 / SheetJS 0.20.3 / Node 22, cattle/sheep
   accounting month-end snapshots, Pasture Map V1, and system-generated task
   titles with batch/group labels.
-- Active PRs / gates: none open. PRs #37 and #38 are merged. Next gates belong
-  to Build Queue item 1 (a new per-move-delete migration apply + commit/push/
-  merge).
+- Active PRs / gates: none open on `main`. PRs #37 and #38 are merged. Next
+  gates belong to Build Queue item 1 (a new per-move-delete migration apply +
+  commit/push/merge) and Build Queue item 2 (newsletter migrations/buckets/Edge
+  Function/cron/Vault secret/release gates when CC#2 reaches that point).
 - Local worktree risk: before the next lane, run `git status`; the post-PR #36
   worktree may still have untracked pasture screenshot folders.
-- Open production gates: none known. PROD migrations `139`-`142` are applied
-  and verified, and `tasks-cron` was deployed after migration `142`.
+- Open production gates: none for current `main`. Pending newsletter gates, once
+  CC#2 is ready and Ronnie explicitly approves release, are: create/apply the
+  newsletter storage buckets, apply newsletter migrations `144`/`145`/`146`,
+  deploy the newsletter Edge Function, add the AI provider Vault/API secret, and
+  enable the monthly `pg_cron` schedule.
 - PROD-applied recent migrations include `112` through `116`, `125`, `126`,
   `127`, `128`, `129`, `130`, `131`, `132`, `133`, `134`, `135`, `136`, `137`,
-  `138`, `139`, `140`, `141`, and `142`. `116`
+  `138`, `139`, `140`, `141`, `142`, and `143`. `116`
   (Pasture Map CP1), `125` (Production legacy events), and `126` (breeding-pig
   Activity entity) were applied to PROD on 2026-06-15. `127` (Pasture Map
   draw/edit RPCs) was applied to PROD on 2026-06-16. Pasture Map `128`-`132`
@@ -525,9 +538,10 @@ This is the canonical home for outstanding build/design work.
      no code written yet. This is the active top-priority lane.
    - Class: `ENH`/`IA`/`DEFECT` plus one `DB-GATE` (a new per-move delete RPC),
      and a second `DB-GATE` if the color fix is done server-side.
-   - Base: fresh branch `feature/pasture-groups-grazing-edit` off `main`
-     `d18736f` (after PR #38). The prior accordion/modal lane (old Build Queue
-     item 1) SHIPPED via PR #37 + PR #38 — see Recent Shipped Checkpoints.
+   - Base: `feature/pasture-groups-grazing-edit` was prepared from `d18736f`
+     (after PR #38); rebase onto current `main` before implementation if this
+     docs/maintenance lane has merged. The prior accordion/modal lane (old Build
+     Queue item 1) SHIPPED via PR #37 + PR #38 — see Recent Shipped Checkpoints.
    - Ronnie direction (verbatim asks, 2026-06-25):
      1. Remove the per-area "Reset grazing history" button entirely. No
         whole-area history wipe from a button.
@@ -619,7 +633,78 @@ This is the canonical home for outstanding build/design work.
      ledger is append-only — correction is delete + re-record), open-line
      geometry edit.
 
-2. Pasture Map open-line Edit fast-follow
+2. Monthly Newsletter Engine
+   - Status: ACTIVE in CC#2's isolated worktree
+     `C:/Users/Ronni/WCF-planner-newsletter`, branch
+     `feature/newsletter-engine`. Foundation SQL/security review is updated;
+     public surface, admin one-pass editor, AI generation, automation, tests,
+     deploy/release gates remain.
+   - Class: `ENH`/`AI`/`DB-GATE`/`SECURITY`/`AUTOMATION`.
+   - Product decision: web only. Public no-login archive lives at a sensible
+     `/newsletter` URL, with past months navigable and a latest issue route.
+     Public pages are intentionally `noindex`; there is no email/PDF/RSS/login
+     requirement for readers. The admin/build surface is admin-only inside the
+     planner.
+   - Editorial decision: title format like `White Creek Farm June Review`; visual
+     style should match the farm's current email style, not a new marketing
+     landing page. Target length is about two pages. Every issue should include
+     at least a few photos, chosen/recommended from what was noteworthy that
+     month, but admins can add/remove/approve photos before publication.
+   - Content decision: fact-based positive PR for owners/periphery staff.
+     Communicate animal-on-farm numbers, births, production/processing/yield
+     highs, and other factually noteworthy accomplishments from the prior month.
+     Do NOT include finances or mortalities. First names of team members are OK;
+     do not expose sensitive/private details.
+   - Workflow decision: one coordinated late-month task/reminder drives the
+     monthly intake. The planner should keep reminding until the issue is ready.
+     A short monthly Q&A/checklist should ask about noteworthy events the
+     planner data may not show, then request specific photo suggestions based on
+     the facts found. Ronnie keeps final editorial approval.
+   - AI decision: use a static prompt/template in the API/Edge Function setup so
+     the generation stays consistent and inside the planner. AI output must be
+     structured blocks rendered by a whitelist; no raw AI HTML.
+   - Data/security foundation in CC#2 worktree:
+     - Migration `144_newsletter_engine.sql` adds
+       `newsletter_issues`, `newsletter_fact_candidates`, `newsletter_photos`,
+       `newsletter_runs`, and `newsletter_settings`; deny-all RLS; admin-only
+       SECDEF RPCs; and exactly three anon read RPCs:
+       `list_published_newsletters()`, `get_published_newsletter(slug)`, and
+       `get_newsletter_preview(slug, token)`.
+     - Migration `145_newsletter_public_bucket.sql` was revised into two
+       buckets: private `newsletter-staging` for uploads/copies before consent
+       and public-read/admin-write `newsletter-public` for approved bytes only.
+     - Accepted security fixes: preview RPC returns approved photos only;
+       approval is the explicit staging-to-public copy gate; unapprove deletes
+       public bytes; preview tokens have `preview_enabled` +
+       `preview_expires_at`, expire after 30 days, and are rotated/disabled on
+       publish; `noindex` is locked true in anon payloads; month validation is
+       strict `YYYY-MM` with calendar round-trip validation.
+     - Public boundary target: deny-all tables; no anon draft reads except
+       token-gated unexpired preview; no public fact/intake/run/settings access;
+       no `source_private_path` exposure; only approved public photo paths.
+   - Remaining build steps for next newsletter session:
+     - Build public `/newsletter`, `/newsletter/latest`, issue slug, and preview
+       routes with auth bypass, noindex meta, archive navigation, and structured
+       block renderer.
+     - Build `/admin/newsletter` one-pass editor/intake surface: issue creation,
+       fact candidate include/exclude/manual facts, monthly Q&A, photo upload/
+       suggestion/approval/cover controls, preview, publish/unpublish.
+     - Build fact detectors for animal counts, births, production records,
+       processing/yield highs, and other positive noteworthy events; keep the
+       "no finances/no mortalities" rule enforced.
+     - Build AI adapter/Edge Function (`newsletter-harvest`) with static prompt,
+       structured JSON/block output, run logging, and final-editor workflow.
+     - Add migration `146` for monthly automation/`pg_cron` and any required
+       Vault secret references; schedule one coordinated late-month task.
+     - Add TEST validation, public/admin route guards, anon-boundary tests,
+       bucket permission tests, noindex/preview-token tests, and renderer
+       whitelist tests.
+   - Gates: TEST apply may happen inside the lane. PROD storage bucket creation,
+     PROD migrations `144`/`145`/`146`, Edge Function deploy, Vault/API secret,
+     `pg_cron` enablement, commit/push/merge, and final release all require
+     Ronnie approval.
+
+3. Pasture Map open-line Edit fast-follow
    - Class: `ENH`/`DB-GATE`.
    - Scope: allow editing saved Tracks / Lines LineString geometry. Current
      polygon edit RPCs intentionally reject line geometry; open lines can be
@@ -633,7 +718,7 @@ This is the canonical home for outstanding build/design work.
    - Gate: TEST migration apply inside lane; explicit Ronnie PROD approval for
      the new migration and PostgREST schema reload. No manual PROD JSON edits.
 
-3. P3 derived-data durability/audit residuals
+4. P3 derived-data durability/audit residuals
    - Class: `DEFECT`/`ENH`.
    - Scope candidates from CC#2 audit: pig mortality/trips durability, cosmetic
      `calcPoultryStatus` cleanup, and orphan system-task detection/cleanup.
@@ -642,7 +727,7 @@ This is the canonical home for outstanding build/design work.
      path, guard tests, and whether a one-time data repair is needed.
    - Gate: depends on sub-lane; data cleanup needs explicit PROD approval.
 
-4. Parity Residuals
+5. Parity Residuals
    - Class: `ENH`.
    - Known small follow-up from the parity rollout: Home quick-nav tiles need a
      narrow-phone fix because `.home .tile` is missing `min-width: 0`, which can
@@ -651,7 +736,7 @@ This is the canonical home for outstanding build/design work.
      new audit.
    - Gate: code-only unless a touched surface needs a guard update.
 
-5. Design-Law Compliance residual follow-ups
+6. Design-Law Compliance residual follow-ups
    - Class: `ENH`. The CP0 compliance pass (A1-A12 + Tabs + WI-6; the 2026-06-17
      designer audit) shipped 2026-06-18. Source of truth for the laws is
      `CP0-SIGNOFF.md`, folded into Global Decisions + Design System above. These
@@ -690,13 +775,13 @@ Rules:
 | Button height/padding | Ratified; standard button pad `10px 16px` | `design_token_contract_static.test.js` |
 | Save model | Ratified; submit-style vs autosave split | `save_model_contract_static.test.js` |
 | Ordinary text hierarchy | Ratified; Home + parity + CP0 true-black sweep shipped | `homeRedesign.css`, `index.html`, `src/shared/DataTable.css`, `design_token_contract_static.test.js` |
-| Design-law package (CP0) | Ratified 2026-06-16 (CP0-SIGNOFF A1–A12 + Tabs); compliance pass shipped 2026-06-18 | folded into Global Decisions + Design System; residual follow-ups in Build Queue 4 |
+| Design-law package (CP0) | Ratified 2026-06-16 (CP0-SIGNOFF A1–A12 + Tabs); compliance pass shipped 2026-06-18 | folded into Global Decisions + Design System; residual follow-ups in Build Queue 6 |
 | True-black text (CP0 §A1) | Ratified; `--text-primary`/`--ink`/island `--text` = `#000`; `getReadableText` exempt | `design_token_contract_static.test.js`, island/openable guards |
 | One border gray (CP0 §A2) | Ratified; `--border` == `--border-strong` (one defined gray) | `index.html` token layer |
-| Program-color tabs (CP0 Tabs) | Selected tab = filled pill in program color; unselected = plain text; header sub-nav adopts it; top green chrome stays | `Header.jsx` sub-nav + `Tabs.jsx`; no dedicated static guard (Build Queue 4) |
+| Program-color tabs (CP0 Tabs) | Selected tab = filled pill in program color; unselected = plain text; header sub-nav adopts it; top green chrome stays | `Header.jsx` sub-nav + `Tabs.jsx`; no dedicated static guard (Build Queue 6) |
 | Closed badge set (CP0 §A4) | `ok·warn·danger·info·neutral`; ≤1 per row; soft signals = colored text | `Badge.jsx`; broiler/pig/cattle batch static guards assert `<Badge>` adoption |
 | One table system (CP0 §A6) | hairline rows, no zebra, right-aligned numbers, status as text first, whole-row openable | `DataTable.jsx`, `DataTable.css` |
-| Color discipline (CP0 §A12) | program accent only on pill/dot/one-figure/brand-button; closed text-color set; species = dot + black label | enforced by the sweep + `design_token_contract`/`openable_hover` guards; no dedicated grep guard (Build Queue 4) |
+| Color discipline (CP0 §A12) | program accent only on pill/dot/one-figure/brand-button; closed text-color set; species = dot + black label | enforced by the sweep + `design_token_contract`/`openable_hover` guards; no dedicated grep guard (Build Queue 6) |
 | Universal hover affordance (CP0 WI-6) | tile/card openables lift 3px/300ms + trailing chevron; table rows signal via wash + cell-border + chevron without `<tr>` transform; daily record lists use div-based `.hoverable-tile` cards to get the Home-tile lift | `openable_hover_affordance_static.test.js` |
 
 Locked functional invariants:
@@ -858,7 +943,7 @@ No operational record workspace should reintroduce legacy `ActivityPanel` or
 
 Current PROD architecture includes all applied migrations through `116`, plus
 `125`, `126`, `127`, `128`, `129`, `130`, `131`, `132`, `133`, `134`, `135`,
-`136`, `137`, `138`, `139`, `140`, `141`, and `142`. Recent load-bearing
+`136`, `137`, `138`, `139`, `140`, `141`, `142`, and `143`. Recent load-bearing
 migrations:
 
 - `100` processing batch lifecycle RPCs.
@@ -984,6 +1069,25 @@ migrations:
     being removed in Build Queue item 1 (Ronnie wants per-entry grazing delete);
     the RPC stays deployed but unused. Append-only ledger background lives in the
     Pasture Map Load-Bearing Contract below.
+- `144` Newsletter Engine data/RPC boundary (IN BUILD, not PROD-applied):
+  - Planned tables: `newsletter_issues`, `newsletter_fact_candidates`,
+    `newsletter_photos`, `newsletter_runs`, and `newsletter_settings`.
+  - Deny-all RLS; admin-only SECDEF RPCs for issue/intake/fact/photo/settings
+    management; exactly three anon read RPCs for published list, published issue,
+    and token-gated preview.
+  - Public payloads use structured JSON blocks and approved photo paths only;
+    no raw AI HTML and no `source_private_path` exposure.
+  - Preview tokens are enabled/expiring, rotate on publish/unpublish/regenerate,
+    and publish disables pre-publication preview links. Anon `noindex` is
+    literal/locked true. Month inputs validate strict calendar `YYYY-MM`.
+- `145` Newsletter storage buckets (IN BUILD, not PROD-applied):
+  - Private `newsletter-staging` bucket: admin-only read/write for uploads and
+    copied planner photos before public consent.
+  - Public `newsletter-public` bucket: public read, admin-only write, populated
+    only after admin photo approval; unapprove deletes the public copy.
+- `146` Newsletter automation (RESERVED, not written/applied):
+  - Expected to own monthly `pg_cron`, newsletter harvest/generation scheduling,
+    Edge Function/Vault secret references, and any DB-side automation helpers.
 
 Special migration notes:
 
@@ -1010,6 +1114,11 @@ Known document/photo surfaces are locked by static guards:
 - `fuel-bills`.
 - `cattle-feed-pdfs`.
 - `batch-documents`.
+
+Newsletter lane pending buckets (not current PROD until Build Queue item 2
+ships): `newsletter-staging` is private/admin-only for uploads and copied
+planner photos before approval; `newsletter-public` is public-read/admin-write
+and receives only approved newsletter photo bytes.
 
 Append-only upload expectations:
 
@@ -1298,6 +1407,42 @@ Workflow/worktable entities:
 - Processing events should link to record pages when a matching planner record
   can be confidently resolved, including broiler batch links by date/count.
 - Light users are excluded by route allowlist and RPC role gate.
+
+### Monthly Newsletter
+
+- The newsletter is a public no-login web archive at `/newsletter`, with past
+  months navigable and a latest-issue route. Public issue pages must be
+  `noindex`; this is an invariant, not a setting admins can accidentally drift.
+- Admin creation/editing lives inside the planner and is admin-only. The public
+  reader surface is web-only; no PDF, email send, RSS, or reader login is part
+  of the current requirement.
+- The newsletter voice is factual positive PR for owners and periphery staff,
+  styled like White Creek Farm's current emails. Titles follow the pattern
+  `White Creek Farm June Review`; target length is about two pages.
+- Content should be based on prior-month facts: animals on farm, births, notable
+  processing/production/yield records, and other genuinely noteworthy good-news
+  events. Do not include finances or mortalities. First names of team members
+  are OK; avoid sensitive/private details and never expose private file paths.
+- The monthly workflow is one coordinated late-month task/reminder plus an
+  admin Q&A/intake pass that asks for events the planner may not know. Photo
+  requests should be generated from what is noteworthy; admins can add/remove
+  suggestions and must approve photos before publication. Every issue should
+  have at least a few photos.
+- AI generation must stay inside the planner via a fixed prompt/template in the
+  API/Edge Function setup. The model returns structured blocks only; the
+  renderer whitelists block types and never renders raw AI HTML. Ronnie remains
+  the final editorial approver.
+- Data boundary: newsletter tables are deny-all RLS and exposed only through
+  narrow SECURITY DEFINER RPCs. The anon surface is exactly published list,
+  published issue, and token-gated preview. Public and preview payloads expose
+  approved photo paths only; draft facts, intake, runs, settings, and private
+  source paths stay admin-only.
+- Photo boundary: uploads/copies start in private `newsletter-staging`. Approval
+  copies bytes to public `newsletter-public`; unapproval deletes the public copy.
+  A photo row being present or suggested is not public consent.
+- Preview boundary: preview links require `preview_enabled=true`, a matching
+  token, and an unexpired `preview_expires_at`. Publish rotates/disables preview
+  links so a pre-publication URL cannot expose later draft edits.
 
 ### Pasture Map
 
