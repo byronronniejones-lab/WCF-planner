@@ -64,14 +64,22 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: `main` is currently `1411981` after PR #36, the Pasture Map Map/Plan
-  merge. Latest `main` includes mobile
+- Source: `main` is currently `d18736f` after PR #38 (Pasture Map reset-history
+  + move-to-side-bar). PR #37 (`05b03e5`) shipped the Pasture Map Area modal +
+  Reports accordion before it. See Recent Shipped Checkpoints for both.
+- Active lane: Build Queue item 1 (Pasture Map groups + grazing-history-edit +
+  parent-pasture coloring) is the next build — investigation done, no code
+  written; branch `feature/pasture-groups-grazing-edit` off `main` `d18736f`.
+- Source history note: prior to PR #37, `main` was `1411981` after PR #36, the
+  Pasture Map Map/Plan merge. Latest `main` includes mobile
   app-shell repair, weather farm-point 10-year precipitation, Daily Report task/
   To Do copy and filled toggles, Eggmobile 3 layer display, security/dependency
   hardening, Vite 8 / Vitest 4 / SheetJS 0.20.3 / Node 22, cattle/sheep
   accounting month-end snapshots, Pasture Map V1, and system-generated task
   titles with batch/group labels.
-- Active PRs / gates: none known. PR #36 is merged.
+- Active PRs / gates: none open. PRs #37 and #38 are merged. Next gates belong
+  to Build Queue item 1 (a new per-move-delete migration apply + commit/push/
+  merge).
 - Local worktree risk: before the next lane, run `git status`; the post-PR #36
   worktree may still have untracked pasture screenshot folders.
 - Open production gates: none known. PROD migrations `139`-`142` are applied
@@ -99,17 +107,33 @@ Design/function invariants that govern cross-surface behavior live in
   were PROD-applied on 2026-06-24 in one transaction-wrapped Supabase linked
   query apply; verification confirmed the two new pasture tables, six new
   pasture RPCs, the 4-arg `generate_system_task_instance` signature, and `0`
-  open system tasks without a label suffix.
+  open system tasks without a label suffix. Migration `143`
+  (`delete_land_area_grazing_history`, the per-area grazing-history reset RPC)
+  was applied to TEST and PROD on 2026-06-25 with `psql --single-transaction` +
+  PostgREST schema reload; verified SECDEF, authenticated EXECUTE, anon denied.
+  A 2026-06-25 PROD data fix reparented the FP3/FP4 paddocks under their pastures
+  (6 + 23 rows; the previously mis-parented FP3A1 corrected to FP3).
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
-- Pasture Map PROD state: V1 plus the Map/Plan merge are merged. Tabs are now
-  Map / Field / Reports. Map is the single working surface: desktop hover keeps
-  the read-only area/group readout, click/tap opens the working inspector, and
-  the planning cockpit remains reachable from Map. Field owns phone-first
-  execution/offline tools. Reports are per-area grazing records with no map
-  view. Light has pasture farm-team-level Map/Field working controls; non-
-  pasture authorization is unchanged.
+- Pasture Map PROD state: V1, the Map/Plan merge, the Area modal, the Reports
+  accordion, and the move-to-side-bar are all merged. Tabs are Map / Field /
+  Reports. Map is the single working surface: desktop hover keeps the read-only
+  area/group readout; clicking a map area opens the accessible Area modal (area
+  config only — classification, parent pasture, line style, redraw, archive,
+  admin hard-delete; NO move form). The slim side panel holds the group switcher,
+  current-group Move/Clear, the free-form "Record a move"/"Plan a move" forms,
+  the rotation editor, planned moves, and one bottom Import KML. Field owns
+  phone-first execution/offline tools. Reports are a collapsible per-area
+  accordion (pastures collapse over child paddocks; "Needs pasture assignment",
+  Tracks/Lines, archived, etc. as collapsed sections) with no map. Light has
+  pasture farm-team-level Map/Field working controls; non-pasture authorization
+  is unchanged.
+- Known pasture behaviors carried into the active lane (Build Queue item 1):
+  the per-area "Reset grazing history" button is to be removed in favor of
+  per-entry grazing delete; the parent-pasture occupancy/rest FILL bleeds from
+  child paddocks via geometric `overlap` impacts and must be suppressed; a
+  permanent paddock's bright-green STROKE is locked (not a state color).
 - Latest Pasture Map V1 validation before merge: `format:check` clean; `lint`
   0 errors; `build` green; focused static tests 162 passed; `npx playwright
   test --config=playwright.pasture.config.js` passed 31 tests.
@@ -130,6 +154,41 @@ Design/function invariants that govern cross-surface behavior live in
 The following work is merged to `main` and pushed. Netlify deploys from `main`.
 The current source checkpoint is listed in the header above.
 
+- Pasture Map Area modal, Reports accordion, reset-history, and move-to-side-bar
+  (PRs #37-#38, pushed 2026-06-25; `main` now `d18736f`):
+  - PR #37 (`05b03e5`): per-area editing moved out of the Map side panel into an
+    accessible Area modal (`role=dialog`, `aria-modal`, focus trap via
+    `useModalFocusTrap`, backdrop) opened by clicking a map area; desktop hover
+    readout unchanged. New `src/pasture/PastureAreaModal.jsx`. Reviewed permanent
+    paddocks require a parent pasture (UI-enforced, no auto-backfill);
+    parentless paddocks surface in a Reports "Needs pasture assignment" section.
+    Side panel slimmed; Tracks/Lines + classification queue + archived recovery
+    relocated to a collapsible Reports accordion (pastures collapse over child
+    paddocks via `parent_id`; Reports renders no map). The Map boundary-tools
+    grid was removed (draw/measure/GPS reachable via Field + the rotation editor
+    "Draw temp paddock"; redraw via the modal).
+  - PR #38 (`d18736f`): added migration `143`
+    `delete_land_area_grazing_history` (management/admin per-area "Reset grazing
+    history") — applied and verified on PROD (`psql --single-transaction`;
+    SECDEF, authenticated EXECUTE, anon denied; PostgREST schema reloaded).
+    Move/animal placement was pulled OUT of the Area modal and relocated to the
+    side panel ("Record a move" + "Plan a move": any roster group + any
+    destination area; the planned-move "Use" records in one click). NOTE: the
+    per-area reset BUTTON is being REMOVED again in active Build Queue item 1
+    (Ronnie wants per-entry grazing delete instead); mig `143`'s RPC stays
+    deployed but becomes unused.
+  - PROD data fix (2026-06-25): reparented FP3/FP4 paddocks under their pastures
+    via `psql --single-transaction` — 6 FP3 paddocks to the FP3 pasture (fixing
+    FP3A1, which was mis-parented to FP4) and 23 FP4 paddocks to the FP4 pasture.
+    Verified: all 6 under FP3, all 23 under FP4; the FP3 outline-candidate draft
+    line was correctly excluded.
+  - Validation before each merge: `format:check` clean; `lint` 0 errors;
+    `npm test` 6309 passed; `build` green; `playwright.pasture.config.js` 35/35.
+    The heavy sequential pasture suite has an occasional ~1/35 timing flake that
+    passes in isolation; a `mommas`-herd seed collision in
+    `pasture_map_cp2.spec.js` drove extra flake until cp2 was switched to a
+    `bulls`-herd seed (note: `cattle_herd_check` restricts herds to
+    `mommas`/`backgrounders`/`finishers`/`bulls`).
 - Pasture Map V1 reset and system-task title labels (PRs #31-#32, pushed
   2026-06-24):
   - PROD migrations `139`, `140`, `141`, and `142` are applied and verified.
@@ -461,67 +520,104 @@ The current source checkpoint is listed in the header above.
 Treat these as product lanes, not hotfixes, unless Ronnie says otherwise.
 This is the canonical home for outstanding build/design work.
 
-1. Pasture Map paddock-under-pasture modal/report accordion lane
-   - Class: `ENH`/`IA` with optional `DB-GATE` only if Ronnie chooses a hard
-     database constraint.
-   - Base: `main` at `1411981` after PR #36, the Map/Plan merge.
-   - Ronnie direction: every paddock belongs to a pasture; paddock/area info
-     editing moves out of the side panel and into an Area modal; the side panel
-     becomes animals + group switcher + Move/Clear + rotation editor, with one
-     `Import KML` button at the bottom; Reports shows collapsed pasture rows
-     that expand to their paddocks.
-   - Important finding: no migration is needed for the core parent assignment.
-     Migration `131` already gives `update_land_area` a `p_parent_id` argument,
-     and `src/lib/pastureMapApi.js` maps `parentId` to that RPC field. The RPC
-     validates parent existence, rejects self-parenting, and checks cycles.
-     `land_areas.parent_id` is nullable with `ON DELETE SET NULL`, so requiring
-     paddocks to have a parent is UI-enforced unless a later DB constraint is
-     deliberately added.
-   - Recommended decision A: ship UI-only enforcement first. The modal must
-     require a parent pasture before saving an area as a reviewed permanent
-     paddock. Defer a hard `kind='paddock' => parent_id IS NOT NULL` constraint
-     until parentless existing data is audited/backfilled.
-   - Recommended decision B: do not auto-backfill parentless paddocks. When a
-     parentless paddock is opened, require assignment before save/review; in
-     Reports, group parentless paddocks under a clear "Needs pasture assignment"
-     section until fixed.
-   - Recommended decision C: do not drop currently reachable tools. Move
-     per-area classification/parent editing, redraw, archive, delete, restore
-     where possible, and Tracks / Lines actions into the Area modal or Reports
-     review sections. Remove `Boundary tools` from the side panel, but preserve
-     the management/admin-only functions through the modal/report flows. Keep
-     Field drop-point/GPS/temp-paddock tools unchanged.
-   - Recommended decision D: click/tap on a map area opens the Area modal.
-     Desktop should use the shared accessible centered modal pattern; touch may
-     use the app's modal/sheet treatment if that is the existing responsive
-     primitive. Desktop hover readout stays.
-   - Recommended decision E: Reports accordion should default all pasture rows
-     collapsed; expanding a pasture shows child paddocks from `parent_id`.
-     Temp paddocks, feeder areas, archived areas, Tracks / Lines, and other
-     non-pasture/non-child records should remain reachable in separate collapsed
-     sections rather than disappearing.
-   - Implementation scope: update `PROJECT.md` Pasture Map IA; update
-     `PastureMapView.jsx` for the Area modal, panel slimming, classification +
-     parent-pasture UI, modal redraw/archive/delete actions, Import KML
-     placement, and report accordion; update `pastureMap.css`; remove the side
-     panel area inspector body, `renderBoundaryTools`, and visible "danger zone"
-     framing; update static/e2e guards that currently assert "never a modal" or
-     side-inspector-only area management.
-   - Success criteria: Map hover readout still works; map click/tap opens the
-     Area modal; paddock save requires a parent pasture; side panel contains
-     only current groups/group switcher, Move/Clear, rotation editor, and bottom
-     Import KML; Redraw/Archive/Delete live in the modal without a "danger zone"
-     label; Reports accordion groups paddocks under their parent pastures; no
-     map appears in Reports; Light keeps pasture farm-team-level working
-     controls; no new migration/RLS/storage changes for the core lane.
-   - Validation target: `npm run format:check`, `npm run lint`,
+1. Pasture Map groups + grazing-history-edit + parent-pasture coloring lane
+   - Status: NOT STARTED. Investigation is DONE (findings recorded below);
+     no code written yet. This is the active top-priority lane.
+   - Class: `ENH`/`IA`/`DEFECT` plus one `DB-GATE` (a new per-move delete RPC),
+     and a second `DB-GATE` if the color fix is done server-side.
+   - Base: fresh branch `feature/pasture-groups-grazing-edit` off `main`
+     `d18736f` (after PR #38). The prior accordion/modal lane (old Build Queue
+     item 1) SHIPPED via PR #37 + PR #38 — see Recent Shipped Checkpoints.
+   - Ronnie direction (verbatim asks, 2026-06-25):
+     1. Remove the per-area "Reset grazing history" button entirely. No
+        whole-area history wipe from a button.
+     2. In the Reports area record, make the grazing history EDITABLE: delete a
+        SINGLE grazing entry there.
+     3. Rename the record card title "Grazing timeline" to "Grazing History".
+     4. Remove the "Current groups" card from the Map side panel.
+     5. Add location data to the "Animal Groups" card (the group switcher pills).
+     6. Clicking an animal group opens a MODAL showing all that group's move
+        data (its full move history).
+     7. Remove the side-panel header text: "Plan / Grazing cockpit" (kicker),
+        "Move planner" (h2), and "Pick a group, then build its rotation. Drag to
+        reorder; tap the map to add a stop." (paragraph).
+     8. Bug: clearing the Ewes out of a child paddock recolored the whole parent
+        pasture FP3; resetting FP3A1 left it "green". Fix so a pasture does NOT
+        take occupancy/rest color from its own child paddocks.
+   - Investigation findings (build needs no re-investigation; line numbers are
+     approximate as of `d18736f`):
+     - STROKE vs FILL (`src/pasture/PastureMapCanvas.jsx`): permanent pasture
+       stroke is LOCKED blue `#1d4ed8`; permanent paddock stroke is LOCKED bright
+       green `#4ade80` (`withDesignationStroke`, ~L90-92, L171-192). A permanent
+       paddock is ALWAYS green-stroked regardless of occupancy. Occupancy/rest
+       state is the FILL only (`STATE_STYLE`, ~L76-83): resting fill =
+       gold/amber `#C7920A`. So "FP3A1 still green after reset" is almost
+       certainly the LOCKED green STROKE (a non-bug); the reset reloads and
+       clears the fill. Confirm and, if useful, make the stroke-vs-fill meaning
+       clearer in the UI.
+     - PARENT-PASTURE COLOR BUG root cause: `record_pasture_move`
+       (mig `128`, ~L462-476) inserts an `overlap` impact for EVERY active area
+       whose geometry `ST_Intersects` the destination. A child paddock sits
+       inside its parent pasture, so a move into the paddock gives the PARENT an
+       `overlap` impact. `_land_area_summary` (mig `128`, ~L176-227) counts
+       `destination` AND `overlap` impacts identically toward occupancy/rest, so
+       clearing the group adds a `departure`/overlap impact on the parent too and
+       the parent flips to "resting" fill. NO suppression exists today.
+       Recommended fix (server-side, cleanest): in `_land_area_summary`, exclude
+       `overlap` impacts whose move destination is a CHILD of `p_id` (a
+       `land_areas` row with `parent_id = p_id`) when deriving a pasture's
+       occupancy/rest. State is read-derived, so the existing FP3 impacts stop
+       coloring FP3 immediately after the function is replaced (one new
+       migration; TEST apply in-lane, PROD apply is a gate). Client-side
+       alternative: do not render occupancy FILL on an area that has child
+       paddocks. Server-side is more correct; confirm with Ronnie.
+     - GROUP RENDERING (`PastureMapView.jsx`): `renderCurrentGroups()` (the
+       "Current groups" card, ~L2343-2412) shows each group + a location chip
+       from `groupLocation`. `renderGroupSwitcher()` (the "Animal Groups" card,
+       ~L2491-2529) shows species pills with NO location. For asks 4-5: delete
+       the Current groups card and add the location chip (`groupLocation[g.id]`:
+       area name + time-in-area) into the Animal Groups pills. `groupLocation`
+       (~L727-737) = latest move's `to_land_area_id`/name per
+       `(animalType, groupKey)`. Note: the pill `onClick` currently calls
+       `setActiveGroupFromGroup`; for ask 6 the click should ALSO/instead open
+       the group modal.
+     - GROUP MODAL (ask 6): for one group's full move history use
+       `listPastureHistoryReport({animalType, groupKey, limit})` (NOT
+       `listPastureMoves`, which is all-groups). Group identity = `(animalType,
+       groupKey)` on the roster group object. Build an accessible modal (reuse
+       the `src/pasture/PastureAreaModal.jsx` chrome or `useModalFocusTrap`),
+       opened from a group pill; show the group's moves (in/out area, date, head
+       count, notes).
+     - PER-ENTRY GRAZING DELETE (asks 1-3): `buildGrazingStays()` (~L379-426)
+       gives each stay an `id` = the move-IN event id (`ev.id`). Stays render at
+       ~L3574-3597 (`data-pasture-report-stay`); the card title "Grazing
+       timeline" is at ~L3570. Add a per-stay delete (management/admin) targeting
+       `s.id`. Needs a NEW RPC (next free migration number after `143`), e.g.
+       `delete_pasture_move(p_move_id text)` gated management/admin: delete the
+       one `pasture_move_events` row (its `pasture_move_impacts` cascade via
+       `ON DELETE CASCADE`); state re-derives automatically. Mirror the
+       `delete_land_area` SECDEF/role-gate/REVOKE/GRANT boilerplate from
+       mig `116`.
+   - Disposition of mig `143`: the per-area
+     `delete_land_area_grazing_history` RPC (shipped + PROD-applied this session)
+     becomes UNUSED once the button is removed. Leave the RPC deployed (harmless);
+     remove only the UI button + `resetAreaHistory` handler + state +
+     `deleteLandAreaGrazingHistory` call, and update the static test that asserts
+     the reset button/RPC wiring.
+   - Decisions to confirm with Ronnie:
+     - Color fix location: server-side `_land_area_summary` change (recommended)
+       vs client-side "pastures with children show no occupancy fill".
+     - Pending from the prior lane (unrelated): should the planned-move "Use"
+       button keep recording at `now`, or pre-fill an editable date/notes.
+   - Validation target: `format:check`, `lint`,
      `npm test -- tests/static/pasture_map_static.test.js`, focused pasture
-     Playwright specs covering Map modal, parent assignment, side-panel cleanup,
-     Light access, KML import entry point, and Reports accordion, then full
-     `playwright.pasture.config.js` if stable plus `npm test`/`npm run build`.
-   - Out of scope unless Ronnie explicitly promotes it: hard DB parent
-     constraint, automatic parent backfill, open-line geometry edit, offline
-     imagery cache, and daily-report pasture wiring.
+     Playwright (groups card + group modal, per-stay delete, color fix, record
+     rename), full `playwright.pasture.config.js` if stable, `npm test`,
+     `npm run build`. New migration(s): TEST apply in-lane; PROD migration apply
+     and commit/push/merge are explicit Ronnie gates.
+   - Out of scope unless promoted: editing a move's date/notes in place (the
+     ledger is append-only — correction is delete + re-record), open-line
+     geometry edit.
 
 2. Pasture Map open-line Edit fast-follow
    - Class: `ENH`/`DB-GATE`.
@@ -879,6 +975,15 @@ migrations:
     open system task titles, and supports the corresponding `tasks-cron` deploy.
   - PROD-applied and verified on 2026-06-24; `tasks-cron` was deployed after the
     migration.
+- `143` Pasture Map reset-area-grazing-history:
+  - `delete_land_area_grazing_history(p_id text)` SECDEF, management/admin gated.
+    Clears one area's `pasture_move_impacts` and detaches it from every
+    `pasture_move_events` from/to, then resets `baseline_no_history` so state
+    re-derives to "no move history". Other areas' impacts are preserved.
+  - PROD-applied + verified 2026-06-25. NOTE: the UI button that called it is
+    being removed in Build Queue item 1 (Ronnie wants per-entry grazing delete);
+    the RPC stays deployed but unused. Append-only ledger background lives in the
+    Pasture Map Load-Bearing Contract below.
 
 Special migration notes:
 
@@ -1233,13 +1338,30 @@ Workflow/worktable entities:
   controls and is NOT read-only/Map-only; only management/admin-only actions stay
   gated, and write/report RPCs reject roles outside the granted set.
 - Current Pasture Map tabs are Map / Field / Reports. Plan is folded into Map;
-  Setup was already removed. Map is the single working surface: hover reads,
-  click/tap opens the Area inspector, and the planning cockpit (Move + Clear,
-  rotation editor, Boundary tools, Tracks / Lines, classification queue,
-  archived-area recovery, area management) is always reachable below the Current
-  groups overview. Field is phone-first execution/offline queue. Reports are
-  separate read/report surfaces (per-area grazing records; no map view). Light is
+  Setup was already removed. Map is the single working surface: hover reads;
+  clicking a map area opens the accessible Area MODAL (`PastureAreaModal.jsx`:
+  role=dialog, aria-modal, focus trap, backdrop) which owns per-area config
+  (classification, parent pasture, line style, redraw, archive/restore, admin
+  hard-delete) — there is NO move form in the modal. The slim side panel holds
+  the Animal Groups switcher, current-group Move/Clear, the free-form "Record a
+  move"/"Plan a move" forms, the rotation editor, planned moves, and one bottom
+  Import KML. Tracks / Lines, the classification/review queue, and archived
+  recovery are collapsed sections in Reports. Reviewed permanent paddocks require
+  a parent pasture (UI-enforced via `update_land_area` `p_parent_id`; no DB
+  constraint, no auto-backfill); parentless paddocks surface in a Reports "Needs
+  pasture assignment" section. Field is phone-first execution/offline queue.
+  Reports are a collapsible per-area accordion (pastures collapse over child
+  paddocks via `parent_id`; per-area grazing records; no map view). Light is
   pasture farm-team-level on the merged Map and Field.
+- Move ledger / coloring caveat (load-bearing for the active lane): an area's
+  occupancy/rest state is read-derived in `_land_area_summary` from
+  `pasture_move_impacts` (`destination`/`overlap`/`departure`), not stored on
+  `land_areas`. `record_pasture_move` writes an `overlap` impact on every active
+  area whose geometry intersects the destination, so a child paddock's group
+  also marks its containing pasture occupied/resting. A permanent paddock's
+  bright-green stroke is a LOCKED designation color, independent of state (the
+  FILL is the state). The active lane suppresses pasture-from-child overlap
+  coloring and replaces the per-area reset button with per-entry grazing delete.
 - Boundary visibility toggles hide/show pasture, paddock, or temp-paddock
   strokes only. Animal occupancy fills and group markers remain visible. Draft
   lines render on the working Map; Field has a Draft lines toggle; selected draft
@@ -1254,13 +1376,16 @@ Workflow/worktable entities:
 - Current Pasture Map includes the real-roster redesign, move ledger,
   animal-color occupancy, planned moves, history/rest/stocking reports, offline
   vector snapshot/queue, GPS field tracks, line styling/pattern controls,
-  temp-paddock lifecycle, side-panel inspectors, Map group hover preview, and
-  Light pasture farm-team-level Map/Field access. It does not include offline
-  imagery cache, daily-report wiring, or open-line edit.
-- Future Pasture Map lanes should preserve the shipped Map / Field / Reports IA
-  and the provider-neutral geometry/RPC model unless a new Ronnie-approved
-  decision explicitly reopens either. The next queued modal/report accordion lane
-  intentionally reopens the side-panel-vs-modal IA.
+  temp-paddock lifecycle, the click-to-open Area modal + Reports accordion,
+  free-form move/plan in the side panel, the per-area grazing-history reset RPC
+  (mig `143`, button being removed), Map group hover preview, and Light pasture
+  farm-team-level Map/Field access. It does not include offline imagery cache,
+  daily-report wiring, or open-line edit.
+- Future Pasture Map lanes should preserve the shipped Map / Field / Reports IA,
+  the click-to-open Area modal, the Reports accordion, and the provider-neutral
+  geometry/RPC model unless a new Ronnie-approved decision explicitly reopens
+  any of them. The active lane (Build Queue item 1) reworks groups, grazing-
+  history editing, and parent-pasture coloring.
 
 ### Daily Reports
 
