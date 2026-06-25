@@ -64,17 +64,16 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: `main` is currently `95636f0` after the 2026-06-24 Pasture Map V1
-  reset and system-task entity-label release. Latest `main` includes mobile
+- Source: `main` is currently `1411981` after PR #36, the Pasture Map Map/Plan
+  merge. Latest `main` includes mobile
   app-shell repair, weather farm-point 10-year precipitation, Daily Report task/
   To Do copy and filled toggles, Eggmobile 3 layer display, security/dependency
   hardening, Vite 8 / Vitest 4 / SheetJS 0.20.3 / Node 22, cattle/sheep
   accounting month-end snapshots, Pasture Map V1, and system-generated task
   titles with batch/group labels.
-- Active PRs / gates: none. PR #31 and PR #32 are merged; their remote feature
-  branches and local worktrees were pruned after merge.
-- Local worktree risk: none known. The only standing worktree is
-  `C:\Users\Ronni\WCF-planner` on clean `main`.
+- Active PRs / gates: none known. PR #36 is merged.
+- Local worktree risk: before the next lane, run `git status`; the post-PR #36
+  worktree may still have untracked pasture screenshot folders.
 - Open production gates: none known. PROD migrations `139`-`142` are applied
   and verified, and `tasks-cron` was deployed after migration `142`.
 - PROD-applied recent migrations include `112` through `116`, `125`, `126`,
@@ -104,14 +103,13 @@ Design/function invariants that govern cross-surface behavior live in
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
-- Pasture Map PROD state: V1 is merged. Map is the read-only snapshot surface
-  with hover/tap data, animal-group location, status strip, and no area click
-  actions. Plan is group-first with user-controlled shared rotations, all group
-  paths, and next-stop simplification. Field owns temp paddocks, location/
-  heading, Drop Point, walk tracking, saved distance measurements, KML import,
-  basemaps, and offline NAIP status/cache. Reports are read-only for pasture
-  roles including Light. Light now has farm-team-level Pasture Map permissions
-  only; non-pasture authorization is unchanged.
+- Pasture Map PROD state: V1 plus the Map/Plan merge are merged. Tabs are now
+  Map / Field / Reports. Map is the single working surface: desktop hover keeps
+  the read-only area/group readout, click/tap opens the working inspector, and
+  the planning cockpit remains reachable from Map. Field owns phone-first
+  execution/offline tools. Reports are per-area grazing records with no map
+  view. Light has pasture farm-team-level Map/Field working controls; non-
+  pasture authorization is unchanged.
 - Latest Pasture Map V1 validation before merge: `format:check` clean; `lint`
   0 errors; `build` green; focused static tests 162 passed; `npx playwright
   test --config=playwright.pasture.config.js` passed 31 tests.
@@ -463,7 +461,69 @@ The current source checkpoint is listed in the header above.
 Treat these as product lanes, not hotfixes, unless Ronnie says otherwise.
 This is the canonical home for outstanding build/design work.
 
-1. Pasture Map open-line Edit fast-follow
+1. Pasture Map paddock-under-pasture modal/report accordion lane
+   - Class: `ENH`/`IA` with optional `DB-GATE` only if Ronnie chooses a hard
+     database constraint.
+   - Base: `main` at `1411981` after PR #36, the Map/Plan merge.
+   - Ronnie direction: every paddock belongs to a pasture; paddock/area info
+     editing moves out of the side panel and into an Area modal; the side panel
+     becomes animals + group switcher + Move/Clear + rotation editor, with one
+     `Import KML` button at the bottom; Reports shows collapsed pasture rows
+     that expand to their paddocks.
+   - Important finding: no migration is needed for the core parent assignment.
+     Migration `131` already gives `update_land_area` a `p_parent_id` argument,
+     and `src/lib/pastureMapApi.js` maps `parentId` to that RPC field. The RPC
+     validates parent existence, rejects self-parenting, and checks cycles.
+     `land_areas.parent_id` is nullable with `ON DELETE SET NULL`, so requiring
+     paddocks to have a parent is UI-enforced unless a later DB constraint is
+     deliberately added.
+   - Recommended decision A: ship UI-only enforcement first. The modal must
+     require a parent pasture before saving an area as a reviewed permanent
+     paddock. Defer a hard `kind='paddock' => parent_id IS NOT NULL` constraint
+     until parentless existing data is audited/backfilled.
+   - Recommended decision B: do not auto-backfill parentless paddocks. When a
+     parentless paddock is opened, require assignment before save/review; in
+     Reports, group parentless paddocks under a clear "Needs pasture assignment"
+     section until fixed.
+   - Recommended decision C: do not drop currently reachable tools. Move
+     per-area classification/parent editing, redraw, archive, delete, restore
+     where possible, and Tracks / Lines actions into the Area modal or Reports
+     review sections. Remove `Boundary tools` from the side panel, but preserve
+     the management/admin-only functions through the modal/report flows. Keep
+     Field drop-point/GPS/temp-paddock tools unchanged.
+   - Recommended decision D: click/tap on a map area opens the Area modal.
+     Desktop should use the shared accessible centered modal pattern; touch may
+     use the app's modal/sheet treatment if that is the existing responsive
+     primitive. Desktop hover readout stays.
+   - Recommended decision E: Reports accordion should default all pasture rows
+     collapsed; expanding a pasture shows child paddocks from `parent_id`.
+     Temp paddocks, feeder areas, archived areas, Tracks / Lines, and other
+     non-pasture/non-child records should remain reachable in separate collapsed
+     sections rather than disappearing.
+   - Implementation scope: update `PROJECT.md` Pasture Map IA; update
+     `PastureMapView.jsx` for the Area modal, panel slimming, classification +
+     parent-pasture UI, modal redraw/archive/delete actions, Import KML
+     placement, and report accordion; update `pastureMap.css`; remove the side
+     panel area inspector body, `renderBoundaryTools`, and visible "danger zone"
+     framing; update static/e2e guards that currently assert "never a modal" or
+     side-inspector-only area management.
+   - Success criteria: Map hover readout still works; map click/tap opens the
+     Area modal; paddock save requires a parent pasture; side panel contains
+     only current groups/group switcher, Move/Clear, rotation editor, and bottom
+     Import KML; Redraw/Archive/Delete live in the modal without a "danger zone"
+     label; Reports accordion groups paddocks under their parent pastures; no
+     map appears in Reports; Light keeps pasture farm-team-level working
+     controls; no new migration/RLS/storage changes for the core lane.
+   - Validation target: `npm run format:check`, `npm run lint`,
+     `npm test -- tests/static/pasture_map_static.test.js`, focused pasture
+     Playwright specs covering Map modal, parent assignment, side-panel cleanup,
+     Light access, KML import entry point, and Reports accordion, then full
+     `playwright.pasture.config.js` if stable plus `npm test`/`npm run build`.
+   - Out of scope unless Ronnie explicitly promotes it: hard DB parent
+     constraint, automatic parent backfill, open-line geometry edit, offline
+     imagery cache, and daily-report pasture wiring.
+
+2. Pasture Map open-line Edit fast-follow
    - Class: `ENH`/`DB-GATE`.
    - Scope: allow editing saved Tracks / Lines LineString geometry. Current
      polygon edit RPCs intentionally reject line geometry; open lines can be
@@ -477,7 +537,7 @@ This is the canonical home for outstanding build/design work.
    - Gate: TEST migration apply inside lane; explicit Ronnie PROD approval for
      the new migration and PostgREST schema reload. No manual PROD JSON edits.
 
-2. P3 derived-data durability/audit residuals
+3. P3 derived-data durability/audit residuals
    - Class: `DEFECT`/`ENH`.
    - Scope candidates from CC#2 audit: pig mortality/trips durability, cosmetic
      `calcPoultryStatus` cleanup, and orphan system-task detection/cleanup.
@@ -486,7 +546,7 @@ This is the canonical home for outstanding build/design work.
      path, guard tests, and whether a one-time data repair is needed.
    - Gate: depends on sub-lane; data cleanup needs explicit PROD approval.
 
-3. Parity Residuals
+4. Parity Residuals
    - Class: `ENH`.
    - Known small follow-up from the parity rollout: Home quick-nav tiles need a
      narrow-phone fix because `.home .tile` is missing `min-width: 0`, which can
@@ -495,7 +555,7 @@ This is the canonical home for outstanding build/design work.
      new audit.
    - Gate: code-only unless a touched surface needs a guard update.
 
-4. Design-Law Compliance residual follow-ups
+5. Design-Law Compliance residual follow-ups
    - Class: `ENH`. The CP0 compliance pass (A1-A12 + Tabs + WI-6; the 2026-06-17
      designer audit) shipped 2026-06-18. Source of truth for the laws is
      `CP0-SIGNOFF.md`, folded into Global Decisions + Design System above. These
@@ -931,8 +991,8 @@ Append-only upload expectations:
   not trusted.
 - Light allowlist excludes `/production`, `/weighins`, program dashboards,
   `/fleet`, `/activity`, `/admin`, and client-error review. `/pasture-map` is
-  allowed for Light only as read-only/Map-only; runtime permission is enforced
-  by RPC/RLS, not only by the client allowlist.
+  allowed for Light with pasture farm-team-level Map/Field working controls;
+  runtime permission is enforced by RPC/RLS, not only by the client allowlist.
 
 ---
 
@@ -1195,11 +1255,12 @@ Workflow/worktable entities:
   animal-color occupancy, planned moves, history/rest/stocking reports, offline
   vector snapshot/queue, GPS field tracks, line styling/pattern controls,
   temp-paddock lifecycle, side-panel inspectors, Map group hover preview, and
-  Light read-only Map access. It does not include offline imagery cache,
-  daily-report wiring, or open-line edit.
-- Future Pasture Map lanes should preserve the shipped Map/Plan/Field/Reports
-  IA and the provider-neutral geometry/RPC model unless a new Ronnie-approved
-  decision explicitly reopens either.
+  Light pasture farm-team-level Map/Field access. It does not include offline
+  imagery cache, daily-report wiring, or open-line edit.
+- Future Pasture Map lanes should preserve the shipped Map / Field / Reports IA
+  and the provider-neutral geometry/RPC model unless a new Ronnie-approved
+  decision explicitly reopens either. The next queued modal/report accordion lane
+  intentionally reopens the side-panel-vs-modal IA.
 
 ### Daily Reports
 
@@ -1363,9 +1424,9 @@ Workflow/worktable entities:
   secrets.
 - Former public forms now use Supabase auth state intentionally for login and
   locked submitter identity.
-- Light is allowed only on contained report/form surfaces plus the read-only,
-  Map-only Pasture Map view. Weigh-ins and Production remain outside the Light
-  allowlist.
+- Light is allowed only on contained report/form surfaces plus pasture
+  farm-team-level `/pasture-map` access. Weigh-ins and Production remain outside
+  the Light allowlist.
 - Offline queue IndexedDB ownership is centralized in `src/lib/offlineQueue.js`.
 - Offline RPC replay goes through `useOfflineRpcSubmit` where needed.
 - Ownership stamping is server-side on replay.
