@@ -25,6 +25,11 @@ const IMAGERY_NATIVE_MAX_ZOOM = 19;
 const ESRI_TOPO_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
 const ESRI_REFERENCE_URL =
   'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+// Roads/highways reference overlay (same Esri ArcGIS Online provider already used
+// for satellite/topo/labels — no new licensing/terms). Pairs with the labels layer
+// so Hybrid reads as "satellite + roads + labels", visibly distinct from Satellite.
+const ESRI_TRANSPORTATION_URL =
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
 
 // Offline imagery layer (CP-F): serves the cached NAIP farm tiles when offline,
 // falling back to a live NAIP fetch for any tile not in the cache. Used for the
@@ -450,6 +455,10 @@ export default function PastureMapCanvas({
   // rendered layer of persisted measurements.
   const measureGeomRef = React.useRef(null);
   const measureLayerRef = React.useRef(null);
+  // Two-point distance ruler: the in-progress A/B vertices + the bound map-click
+  // handler (so it can be torn down on tool switch).
+  const measureVertsRef = React.useRef([]);
+  const measureClickRef = React.useRef(null);
   // Basemap switcher (CP-F): satellite (default) / topo / hybrid.
   const basemapRef = React.useRef(null);
   const [basemap, setBasemap] = React.useState('satellite');
@@ -466,6 +475,13 @@ export default function PastureMapCanvas({
       zoomControl: !compact,
     });
     L.control.scale({imperial: true, metric: false, position: 'bottomright'}).addTo(map);
+    // Dedicated high-z pane so the GPS/current-location marker + heading cone render
+    // ABOVE pasture boundaries, occupancy fills, measurement layers, and saved layers
+    // (circleMarker/circle otherwise share the SVG overlay pane with the polygons and
+    // can be painted over when areas re-render). Above markers/tooltips, below popups.
+    map.createPane('pm-locate-pane');
+    const locatePane = map.getPane('pm-locate-pane');
+    if (locatePane) locatePane.style.zIndex = '690';
     if (map.pm) map.pm.setGlobalOptions({snappable: true, snapDistance: 20});
     // Clicking empty map background clears the current selection (but not while
     // drawing/editing/measuring/tracking, and not when the click was on an area).
@@ -515,6 +531,11 @@ export default function PastureMapCanvas({
     if (basemap === 'topo') {
       layers.push(L.tileLayer(ESRI_TOPO_URL, {maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 19, attribution: 'Esri Topo'}));
     } else if (basemap === 'hybrid') {
+      // Base imagery + TWO transparent reference overlays (place/boundary labels and
+      // the road/highway network). The overlays must stack ABOVE the imagery (see the
+      // base-to-back / overlay-to-front ordering below) — previously every layer was
+      // sent to the back, so the labels rendered behind the imagery and Hybrid looked
+      // identical to Satellite.
       layers.push(
         L.tileLayer(ESRI_IMAGERY_URL, {
           maxZoom: MAP_MAX_ZOOM,
@@ -522,7 +543,8 @@ export default function PastureMapCanvas({
           attribution: 'Esri World Imagery - Maxar',
         }),
       );
-      layers.push(L.tileLayer(ESRI_REFERENCE_URL, {maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 19}));
+      layers.push(L.tileLayer(ESRI_REFERENCE_URL, {maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 16, opacity: 0.9}));
+      layers.push(L.tileLayer(ESRI_TRANSPORTATION_URL, {maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 19}));
     } else if (!online) {
       // Offline + satellite: serve the cached NAIP farm tiles.
       layers.push(new OfflineImageryLayer('', {maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 17}));
@@ -535,9 +557,17 @@ export default function PastureMapCanvas({
         }),
       );
     }
-    layers.forEach((l) => {
+    // The first layer is the base map (send to back, behind any reference overlay);
+    // any following layers are transparent overlays (labels/roads for Hybrid) and
+    // must sit IN FRONT of the base, in order. They still live in the tile pane, so
+    // pasture boundaries/markers (overlay/marker panes) stay on top of all of them.
+    layers.forEach((l, i) => {
       l.addTo(map);
-      if (l.bringToBack) l.bringToBack();
+      if (i === 0) {
+        if (l.bringToBack) l.bringToBack();
+      } else if (l.bringToFront) {
+        l.bringToFront();
+      }
     });
     basemapRef.current = layers;
   }, [basemap, compact, online]);
@@ -573,12 +603,17 @@ export default function PastureMapCanvas({
         if (!showDraft) return;
       }
       const occList = occupants[a.id] || [];
-      const occ = occList[0] || null;
+      // Current location = the group whose latest move DESTINATION is this area.
+      // Overlap-only impacts (the group physically lives in a different, overlapping
+      // area) must NOT paint this area as a second current placement of the same
+      // group — that made one canonical group (e.g. "Ewes - 58") look located in two
+      // places. The overlap still rides along in the hover/tap readout (occList).
+      const primaryOcc = occList.find((o) => !o.overlap) || null;
       // className keys the SVG path to the area id so polygon click selection is
       // addressable (Map + Plan inspectors open from clicking the area itself,
       // not a side-panel list).
       const style = {
-        ...styleForArea(a, a.id === selectedId, occ, boundaryFilter),
+        ...styleForArea(a, a.id === selectedId, primaryOcc, boundaryFilter),
         className: `pm-area-path pm-area-${a.id}`,
       };
       const lyr = L.geoJSON(
@@ -591,12 +626,18 @@ export default function PastureMapCanvas({
       // Map (view) shows a rich read-only hover/tap readout; other modes keep the
       // plain name label. The SELECTED area always shows its permanent name label.
       if (appMode === 'view' && g.kind === 'polygon' && a.id !== selectedId) {
+        // Read-only Map readout. Wider than the default tooltip (see CSS) and made
+        // edge-aware: clampTooltipWithin pins it inside the map container on open and
+        // on every sticky move, so it provably cannot render off-screen at the edges.
         lyr.bindTooltip(areaHoverTip(a, occList), {
           direction: 'top',
           className: 'pm-area-hover-tip',
           sticky: true,
           opacity: 1,
         });
+        const clampTip = () => clampTooltipWithin(lyr);
+        lyr.on('tooltipopen', clampTip);
+        lyr.on('mousemove', clampTip);
       } else {
         lyr.bindTooltip(labelFor(a) + (g.kind === 'line' ? ' (outline)' : ''), {
           direction: 'center',
@@ -621,33 +662,25 @@ export default function PastureMapCanvas({
       });
       areaLayersRef.current.set(a.id, inner);
 
-      // Occupied polygons carry a readable group marker at the centroid so the
-      // map answers "what group is here" at a glance (P2 Map contract).
-      if (occ && g.kind === 'polygon') {
+      // Exactly ONE current-location marker per occupied polygon, and only for the
+      // DESTINATION occupant (primaryOcc). Overlap-only impacts never get a full
+      // "Ewes - 58" marker here, so the same canonical group can never appear placed
+      // in two areas. Roster-unmatched destination occupants stay tagged + muted.
+      if (primaryOcc && g.kind === 'polygon') {
         const center = layerCenter(inner);
         if (center) {
           const more = occList.length > 1 ? `<span class="pm-occ-more">+${occList.length - 1}</span>` : '';
-          const countLabel = occ.count != null ? ` &middot; ${occ.count}` : '';
-          // Overlap-only occupancy (the group's real destination is elsewhere) and
-          // roster-unmatched ledger occupants are tagged + muted so they don't read
-          // as a fresh placement / a real roster group.
-          const tag = occ.overlap
-            ? '<span class="pm-occ-tag">overlap</span>'
-            : occ.needsReconciliation
-              ? '<span class="pm-occ-tag">needs roster</span>'
-              : '';
-          const markerCls =
-            'pm-occupant-marker' +
-            (occ.overlap ? ' is-overlap' : '') +
-            (occ.needsReconciliation ? ' is-unmatched' : '');
+          const countLabel = primaryOcc.count != null ? ` &middot; ${primaryOcc.count}` : '';
+          const tag = primaryOcc.needsReconciliation ? '<span class="pm-occ-tag">needs roster</span>' : '';
+          const markerCls = 'pm-occupant-marker' + (primaryOcc.needsReconciliation ? ' is-unmatched' : '');
           L.marker(center, {
             interactive: false,
             keyboard: false,
             icon: L.divIcon({
               className: markerCls,
               html:
-                `<span class="pm-occ-avatar" style="background:${occ.color}">${occ.short || ''}</span>` +
-                `<span class="pm-occ-name">${occ.name || ''}${countLabel}</span>${tag}${more}`,
+                `<span class="pm-occ-avatar" style="background:${primaryOcc.color}">${primaryOcc.short || ''}</span>` +
+                `<span class="pm-occ-name">${primaryOcc.name || ''}${countLabel}</span>${tag}${more}`,
               iconSize: [0, 0],
             }),
           }).addTo(group);
@@ -824,6 +857,8 @@ export default function PastureMapCanvas({
     });
     overlay.addTo(map);
     previewRef.current = overlay;
+    // Surface the previewed area's name via its bound readout tooltip (clamped by
+    // clampTooltipWithin on tooltipopen, same as a direct hover).
     try {
       layer.openTooltip();
       previewTooltipRef.current = {id: previewAreaId, layer};
@@ -872,6 +907,11 @@ export default function PastureMapCanvas({
         map.off('click', dropClickRef.current);
         dropClickRef.current = null;
       }
+      if (measureClickRef.current) {
+        map.off('click', measureClickRef.current);
+        measureClickRef.current = null;
+      }
+      measureVertsRef.current = [];
       if (dropLayerRef.current) {
         dropLayerRef.current.remove();
         dropLayerRef.current = null;
@@ -912,32 +952,11 @@ export default function PastureMapCanvas({
         cbRef.current.onDrawComplete && cbRef.current.onDrawComplete(gj, metrics);
       });
     } else if (mode === 'measure') {
-      // Measure is a LINE / distance ruler (OnX-style), never an area shape.
-      map.pm.enableDraw('Line', {snappable: true, snapDistance: 20, continueDrawing: false});
-      map.on('pm:drawstart', ({workingLayer}) => {
-        if (!workingLayer) return;
-        const upd = () => {
-          const m = liveMetricsFromLayer(workingLayer);
-          if (m) setHud({distanceFt: m.perimeterFt, points: m.points, live: true, mode: 'measure', isLine: true});
-        };
-        workingLayer.on('pm:vertexadded', upd);
-        workingLayer.on('pm:change', upd);
-      });
-      map.on('pm:create', (e) => {
-        const layer = e.layer;
-        const gj = layer.toGeoJSON().geometry;
-        const m = lineMetrics(gj);
-        measureGeomRef.current = gj;
-        clearTemp();
-        tempRef.current = layer;
-        if (layer.setStyle) layer.setStyle({color: '#2563eb', weight: 3, dashArray: '6,6'});
-        setHud({distanceFt: m.distanceFt, points: m.points, frozen: true, mode: 'measure', isLine: true});
-        try {
-          map.pm.disableDraw();
-        } catch {
-          /* noop */
-        }
-      });
+      // Two-point distance ruler (NOT Geoman, NOT an area/multi-segment tool): tap
+      // point A, tap point B, and the measurement freezes automatically into exactly
+      // one straight 2-coordinate LineString showing distance only. No 3+ point lines,
+      // no polygon behavior, no double-click-to-finish.
+      beginMeasure();
     } else if (mode === 'edit' && editAreaId) {
       const layer = areaLayersRef.current.get(editAreaId);
       if (layer && layer.pm) {
@@ -968,6 +987,9 @@ export default function PastureMapCanvas({
     }
 
     return teardown;
+    // beginMeasure/renderDropShape only read refs + stable setters; this effect is
+    // intentionally keyed to the tool inputs and must not re-run every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, editAreaId, canWrite, areas]);
 
   React.useEffect(() => {
@@ -980,6 +1002,30 @@ export default function PastureMapCanvas({
     }
   }, [zoomSignal, selectedId]);
 
+  // Edge-aware Map readout: pin a layer's open tooltip fully inside the map
+  // container (8px margin). Leaflet positions sticky tooltips by transform on every
+  // mousemove; we reset our corrective margin, measure, then nudge it back in-bounds,
+  // so the readout provably cannot render off-screen at any edge.
+  function clampTooltipWithin(layer) {
+    const map = mapRef.current;
+    const tt = layer && layer.getTooltip && layer.getTooltip();
+    const el = tt && tt.getElement && tt.getElement();
+    if (!map || !el) return;
+    el.style.marginLeft = '0px';
+    el.style.marginTop = '0px';
+    const mapRect = map.getContainer().getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const margin = 8;
+    let dx = 0;
+    let dy = 0;
+    if (r.right > mapRect.right - margin) dx = mapRect.right - margin - r.right;
+    if (r.left + dx < mapRect.left + margin) dx = mapRect.left + margin - r.left;
+    if (r.bottom > mapRect.bottom - margin) dy = mapRect.bottom - margin - r.bottom;
+    if (r.top + dy < mapRect.top + margin) dy = mapRect.top + margin - r.top;
+    if (dx) el.style.marginLeft = `${dx}px`;
+    if (dy) el.style.marginTop = `${dy}px`;
+  }
+
   function fitFarm() {
     const map = mapRef.current;
     if (!map || !layerRef.current) return;
@@ -991,8 +1037,75 @@ export default function PastureMapCanvas({
     }
   }
 
-  // Measurement is transient: clear the drawn shape + HUD and restart drawing so
-  // the user can measure another. Never persists anything.
+  // Draw the in-progress 2-point ruler: the A/B endpoint dots and, once both are
+  // placed, the single straight dashed line between them.
+  function renderMeasureShape() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (tempRef.current) {
+      try {
+        map.removeLayer(tempRef.current);
+      } catch {
+        /* already gone */
+      }
+      tempRef.current = null;
+    }
+    const verts = measureVertsRef.current.slice(0, 2);
+    if (!verts.length) return;
+    const g = L.layerGroup();
+    if (verts.length === 2) {
+      L.polyline(verts, {color: '#2563eb', weight: 3, dashArray: '6,6', interactive: false}).addTo(g);
+    }
+    verts.forEach((ll) => {
+      L.circleMarker(ll, {
+        radius: 5,
+        color: '#1d4ed8',
+        fillColor: '#ffffff',
+        fillOpacity: 1,
+        weight: 2,
+        interactive: false,
+      }).addTo(g);
+    });
+    g.addTo(map);
+    tempRef.current = g;
+  }
+
+  // Arm the two-point distance ruler: first map click = point A, second = point B,
+  // then the line freezes automatically (further clicks are ignored until Clear).
+  function beginMeasure() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (measureClickRef.current) {
+      map.off('click', measureClickRef.current);
+      measureClickRef.current = null;
+    }
+    measureVertsRef.current = [];
+    measureGeomRef.current = null;
+    renderMeasureShape();
+    // No HUD until the first point is placed (matches the prior "HUD appears once
+    // you start measuring" lifecycle; Clear/Done/Escape all return to no HUD).
+    setHud(null);
+    const onClick = (e) => {
+      if (!e || !e.latlng) return;
+      if (measureVertsRef.current.length >= 2) return; // frozen after B
+      const verts = [...measureVertsRef.current, e.latlng];
+      measureVertsRef.current = verts;
+      renderMeasureShape();
+      if (verts.length < 2) {
+        setHud({distanceFt: 0, points: 1, live: true, mode: 'measure', isLine: true});
+        return;
+      }
+      const gj = {type: 'LineString', coordinates: verts.slice(0, 2).map((ll) => [ll.lng, ll.lat])};
+      const m = lineMetrics(gj);
+      measureGeomRef.current = gj;
+      setHud({distanceFt: m.distanceFt, points: 2, frozen: true, mode: 'measure', isLine: true});
+    };
+    map.on('click', onClick);
+    measureClickRef.current = onClick;
+  }
+
+  // Measurement is transient: discard the drawn ruler + reset so the user can measure
+  // another A->B. Never persists anything.
   function clearMeasure() {
     const map = mapRef.current;
     if (!map) return;
@@ -1004,14 +1117,11 @@ export default function PastureMapCanvas({
       }
       tempRef.current = null;
     }
+    measureVertsRef.current = [];
+    measureGeomRef.current = null;
+    // Clear removes the HUD entirely (transient — nothing saved); the click handler
+    // stays armed so the next two taps start a fresh A->B measurement.
     setHud(null);
-    if (modeRef.current === 'measure' && map.pm) {
-      try {
-        map.pm.enableDraw('Line', {snappable: true, snapDistance: 20, continueDrawing: false});
-      } catch {
-        /* noop */
-      }
-    }
   }
 
   function renderLocateMarker(headingMode = locateStateRef.current === 'heading') {
@@ -1021,7 +1131,13 @@ export default function PastureMapCanvas({
     if (locateRef.current) locateRef.current.remove();
     const g = L.layerGroup();
     if (fix.accuracy) {
-      L.circle(fix.latlng, {radius: fix.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.08}).addTo(g);
+      L.circle(fix.latlng, {
+        radius: fix.accuracy,
+        color: '#3b82f6',
+        weight: 1,
+        fillOpacity: 0.08,
+        pane: 'pm-locate-pane',
+      }).addTo(g);
     }
     if (headingMode && fix.heading != null && !Number.isNaN(fix.heading)) {
       // Heading cone: a rotated arrow showing facing direction. The map stays
@@ -1029,6 +1145,7 @@ export default function PastureMapCanvas({
       L.marker(fix.latlng, {
         interactive: false,
         keyboard: false,
+        pane: 'pm-locate-pane',
         icon: L.divIcon({
           className: 'pm-gps-cone',
           html: `<i style="transform:rotate(${Math.round(fix.heading)}deg)"></i>`,
@@ -1037,7 +1154,14 @@ export default function PastureMapCanvas({
         }),
       }).addTo(g);
     }
-    L.circleMarker(fix.latlng, {radius: 7, color: '#1d4ed8', fillColor: '#3b82f6', fillOpacity: 1, weight: 2}).addTo(g);
+    L.circleMarker(fix.latlng, {
+      radius: 7,
+      color: '#1d4ed8',
+      fillColor: '#3b82f6',
+      fillOpacity: 1,
+      weight: 2,
+      pane: 'pm-locate-pane',
+    }).addTo(g);
     g.addTo(map);
     locateRef.current = g;
   }
@@ -1289,7 +1413,7 @@ export default function PastureMapCanvas({
           </button>
         </div>
       )}
-      {!compact && (
+      {!compact && (appMode !== 'field' || fieldLayersOpen) && (
         <div className="pm-basemap-switch" data-pasture-basemap="1">
           {['satellite', 'topo', 'hybrid'].map((b) => (
             <button

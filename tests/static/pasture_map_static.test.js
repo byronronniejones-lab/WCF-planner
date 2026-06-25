@@ -345,6 +345,23 @@ describe('V1 reset — basemaps + offline imagery (CP-F)', () => {
     expect(viewSrc).toContain('data-pasture-imagery-download');
     expect(viewSrc).toContain('function downloadImagery');
   });
+
+  it('Hybrid is visibly distinct from Satellite: imagery + labels + roads, overlays in front', () => {
+    // Hybrid stacks the imagery base with the place/boundary labels AND the
+    // road/highway transportation overlay (same Esri provider — no new licensing).
+    expect(canvasSrc).toContain('ESRI_TRANSPORTATION_URL');
+    const hybridBlock = canvasSrc.slice(
+      canvasSrc.indexOf("basemap === 'hybrid'"),
+      canvasSrc.indexOf('} else if (!online)'),
+    );
+    expect(hybridBlock).toContain('ESRI_IMAGERY_URL');
+    expect(hybridBlock).toContain('ESRI_REFERENCE_URL');
+    expect(hybridBlock).toContain('ESRI_TRANSPORTATION_URL');
+    // The base goes to the back and overlays to the FRONT — otherwise the labels
+    // render behind the imagery and Hybrid looks identical to Satellite.
+    expect(canvasSrc).toContain('if (l.bringToBack) l.bringToBack();');
+    expect(canvasSrc).toContain('l.bringToFront()');
+  });
 });
 
 describe('V1 reset — Walk tracker Pause/Resume + live duration (CP-D)', () => {
@@ -400,6 +417,22 @@ describe('V1 reset — Reports are historical/current only, read-only to all pas
     // Light reaches Reports: mig 139 widened the 3 report RPCs and canViewPlanning
     // includes light (asserted in the mig-139 + Light blocks above).
   });
+
+  it('Reports renders NO map: full-width reports surface, canvas only in the non-reports branch', () => {
+    // Reports is a separate read/report surface — the layout swaps the map column +
+    // side panel for a single full-width reports column; the canvas is not mounted.
+    expect(viewSrc).toContain("(appMode === 'reports' ? ' is-reports' : '')");
+    expect(viewSrc).toContain("appMode === 'reports' ? (");
+    expect(viewSrc).toContain('className="pm-reports-col"');
+    expect(viewSrc).toContain('data-pasture-reports-col');
+    // The canvas render lives in the non-reports branch only (slice the reports
+    // ternary's truthy branch: from its start to the NEXT ') : (' after it).
+    const rStart = viewSrc.indexOf("appMode === 'reports' ? (");
+    const reportsBranch = viewSrc.slice(rStart, viewSrc.indexOf(') : (', rStart));
+    expect(reportsBranch).not.toContain('renderPastureMapCanvas');
+    expect(reportsBranch).toContain('renderReportsPanel()');
+    expect(pastureCss).toContain('.pm-reports-col');
+  });
 });
 
 describe('V1 reset — Plan shows all groups rotation paths (next-stop toggle)', () => {
@@ -436,6 +469,11 @@ describe('V1 reset — Map tab is read-only (hover desktop / tap touch, status s
     expect(canvasSrc).toContain("if (appMode === 'view' && !isTouch) return;");
     expect(canvasSrc).toContain('function areaHoverTip');
     expect(canvasSrc).toContain('pm-area-hover-tip');
+    // The readout is edge-aware: clamped inside the map container so it cannot clip
+    // off-screen, and wider than the old narrow tooltip.
+    expect(canvasSrc).toContain('function clampTooltipWithin');
+    expect(canvasSrc).toContain("lyr.on('tooltipopen', clampTip)");
+    expect(pastureCss).toMatch(/\.pm-area-hover-tip \{[\s\S]*?max-width: min\(300px/);
   });
 
   it('Map status strip adds Unplaced groups + Queued/unsynced field items', () => {
@@ -1254,7 +1292,7 @@ describe('Designation boundary styling + promotion + boundary overlay (lane)', (
     expect(canvasSrc).toContain('permanent: a.id === selectedId');
     expect(canvasSrc).not.toContain('permanent: !compact && g.kind');
     // boundaryFilter feeds styleForArea + the toggle control exists.
-    expect(canvasSrc).toContain('styleForArea(a, a.id === selectedId, occ, boundaryFilter)');
+    expect(canvasSrc).toContain('styleForArea(a, a.id === selectedId, primaryOcc, boundaryFilter)');
     expect(canvasSrc).toContain('data-pasture-boundary-toggle');
     expect(canvasSrc).toContain('data-pasture-boundary');
   });
@@ -1311,10 +1349,28 @@ describe('Pasture Map tweaks #2: default labels / occupancy / dismissal / open o
     // Overlay toggle hides strokes only; fill + the separate occupant marker stay.
     expect(canvasSrc).toContain('return {...style, stroke: false}');
     expect(canvasSrc).toContain('pm-occupant-marker');
-    // The occupant marker is added unconditionally for occupied polygons, not
-    // gated on boundaryFilter.
-    const markerBlock = canvasSrc.slice(canvasSrc.indexOf('if (occ && g.kind'), canvasSrc.indexOf('group.addTo(map)'));
+    // The occupant marker is gated only on the destination occupant (primaryOcc),
+    // never on boundaryFilter.
+    const markerBlock = canvasSrc.slice(
+      canvasSrc.indexOf('if (primaryOcc && g.kind'),
+      canvasSrc.indexOf('group.addTo(map)'),
+    );
     expect(markerBlock).not.toContain('boundaryFilter');
+  });
+
+  it('renders ONE current-location marker per group: overlap-only impacts get no second marker', () => {
+    // primaryOcc = the destination occupant. An overlap-only impact (the same
+    // canonical group, but its real placement is a different overlapping area) must
+    // never paint a second full "Ewes - 58" marker or occupancy fill.
+    expect(canvasSrc).toContain('const primaryOcc = occList.find((o) => !o.overlap) || null');
+    expect(canvasSrc).toContain('if (primaryOcc && g.kind');
+    // The fill also uses primaryOcc (not occList[0]) so an overlap-only area is not
+    // colored as if the group lived there.
+    expect(canvasSrc).toContain('styleForArea(a, a.id === selectedId, primaryOcc, boundaryFilter)');
+    // The marker no longer renders an "overlap" tag/full marker for overlap impacts.
+    expect(canvasSrc).not.toContain('\'<span class="pm-occ-tag">overlap</span>\'');
+    // Overlap context still rides along in the hover/tap readout (full occList).
+    expect(canvasSrc).toContain('areaHoverTip(a, occList)');
   });
 
   it('canvas clears selection on empty-background click (guarded against feature clicks)', () => {
@@ -1519,6 +1575,23 @@ describe('Tool lifecycle hardening (Measure P0, exits, archived recovery)', () =
     // Switching tools tears down the transient layer + HUD.
     expect(canvasSrc).toContain('clearTemp()');
     expect(canvasSrc).toContain('setHud(null)');
+  });
+
+  it('Field Measure is a TWO-point distance ruler only (no Geoman line, no 3+ points)', () => {
+    // Custom 2-click flow (point A, point B -> auto-freeze), NOT a Geoman line draw
+    // and NOT a multi-segment/area tool.
+    expect(canvasSrc).toContain('function beginMeasure');
+    expect(canvasSrc).not.toContain("enableDraw('Line'");
+    // Ignores clicks past the second point, and freezes to exactly two coordinates.
+    expect(canvasSrc).toContain('if (measureVertsRef.current.length >= 2) return');
+    expect(canvasSrc).toContain("type: 'LineString', coordinates: verts.slice(0, 2)");
+    // Distance-only HUD (no acres/perimeter for measure).
+    expect(canvasSrc).toContain("mode: 'measure', isLine: true");
+  });
+
+  it('GPS/current-location marker renders above map overlays via a dedicated high-z pane', () => {
+    expect(canvasSrc).toContain("createPane('pm-locate-pane')");
+    expect(canvasSrc).toContain("pane: 'pm-locate-pane'");
   });
 
   it('Escape exits an active map tool (draw/edit/measure/track) before clearing selection', () => {

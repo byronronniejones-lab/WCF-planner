@@ -2918,7 +2918,7 @@ export default function PastureMapView({Header, authState}) {
                   data-mode="measure"
                 >
                   <strong>Measure</strong>
-                  <span>acres/perimeter</span>
+                  <span>two-point distance</span>
                 </button>
                 <button
                   type="button"
@@ -3530,46 +3530,63 @@ export default function PastureMapView({Header, authState}) {
       )}
       {renderOfflinePanel()}
       {renderImportPreview()}
-      <main className={'pm-layout' + (appMode === 'field' ? ' is-field' : '') + (appMode === 'plan' ? ' is-plan' : '')}>
+      <main
+        className={
+          'pm-layout' +
+          (appMode === 'field' ? ' is-field' : '') +
+          (appMode === 'plan' ? ' is-plan' : '') +
+          (appMode === 'reports' ? ' is-reports' : '')
+        }
+      >
         {/* trackGeometry={activeTrackGeometry} */}
-        <section className="pm-map-col">
-          {renderPastureMapCanvas({
-            areas,
-            occupants: occupantsByArea,
-            mode: mapMode,
-            canWrite: appMode === 'field' ? canCreateTrack : isManager,
-            editAreaId: mapMode === 'edit' ? selectedId : null,
-            selectedId,
-            onSelect: handleAreaClick,
-            onDrawComplete,
-            onEditGeometry,
-            trackGeometry: activeTrackGeometry,
-            rotationPaths: appMode === 'plan' ? rotationPaths : [],
-            nextStopOnly,
-            showRotationPath,
-            previewAreaId: appMode === 'view' ? previewAreaId : null,
-            legendOpen,
-            onToggleLegend: () => setLegendOpen((v) => !v),
-            mapBanner,
-            zoomSignal,
-            boundaryFilter,
-            onToggleBoundary: toggleBoundary,
-            appMode,
-            isTouch,
-            measurements,
-            onSaveMeasurement,
-            online,
-            fieldLayersOpen,
-            draftLinesVisible,
-            onToggleDraftLines: toggleDraftLines,
-            onExitTool: () => switchToolMode('select'),
-          })}
-          {appMode === 'view' && isTouch && mapMode === 'select' && renderMapPopover()}
-          {renderFieldChrome()}
-        </section>
-        <aside className="pm-side-panel">
-          {loading ? <div className="pm-card">Loading pasture map...</div> : renderPanel()}
-        </aside>
+        {/* Reports is a separate read/report surface: it renders NO map column,
+            map controls, move controls, or canvas — just the full-width reports. */}
+        {appMode === 'reports' ? (
+          <section className="pm-reports-col" data-pasture-reports-col="1">
+            {loading ? <div className="pm-card">Loading pasture map...</div> : renderReportsPanel()}
+          </section>
+        ) : (
+          <>
+            <section className="pm-map-col">
+              {renderPastureMapCanvas({
+                areas,
+                occupants: occupantsByArea,
+                mode: mapMode,
+                canWrite: appMode === 'field' ? canCreateTrack : isManager,
+                editAreaId: mapMode === 'edit' ? selectedId : null,
+                selectedId,
+                onSelect: handleAreaClick,
+                onDrawComplete,
+                onEditGeometry,
+                trackGeometry: activeTrackGeometry,
+                rotationPaths: appMode === 'plan' ? rotationPaths : [],
+                nextStopOnly,
+                showRotationPath,
+                previewAreaId: appMode === 'view' ? previewAreaId : null,
+                legendOpen,
+                onToggleLegend: () => setLegendOpen((v) => !v),
+                mapBanner,
+                zoomSignal,
+                boundaryFilter,
+                onToggleBoundary: toggleBoundary,
+                appMode,
+                isTouch,
+                measurements,
+                onSaveMeasurement,
+                online,
+                fieldLayersOpen,
+                draftLinesVisible,
+                onToggleDraftLines: toggleDraftLines,
+                onExitTool: () => switchToolMode('select'),
+              })}
+              {appMode === 'view' && isTouch && mapMode === 'select' && renderMapPopover()}
+              {renderFieldChrome()}
+            </section>
+            <aside className="pm-side-panel">
+              {loading ? <div className="pm-card">Loading pasture map...</div> : renderPanel()}
+            </aside>
+          </>
+        )}
       </main>
       <div className="pm-hidden-compat">
         <span data-mode="select" />

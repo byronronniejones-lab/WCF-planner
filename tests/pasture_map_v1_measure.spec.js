@@ -28,20 +28,14 @@ async function seed() {
   if (error) throw new Error('seed v1 measure: ' + error.message);
 }
 
-// Draw a 3-point measure line and finish it with a double-click.
+// Two-point distance ruler: click point A, then point B. The measurement freezes
+// automatically after exactly two points — no third point, no double-click finish.
 async function drawMeasure(page) {
   const box = await page.locator('.pm-map').boundingBox();
-  const pts = [
-    [0.4, 0.45],
-    [0.55, 0.45],
-    [0.62, 0.6],
-  ];
-  await page.mouse.click(box.x + box.width * pts[0][0], box.y + box.height * pts[0][1]);
-  await page.waitForTimeout(150);
-  await page.mouse.click(box.x + box.width * pts[1][0], box.y + box.height * pts[1][1]);
-  await page.waitForTimeout(150);
-  await page.mouse.dblclick(box.x + box.width * pts[2][0], box.y + box.height * pts[2][1]);
-  await page.waitForTimeout(350);
+  await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.45);
+  await page.waitForTimeout(160);
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.45);
+  await page.waitForTimeout(320);
 }
 
 test.beforeAll(seed);
