@@ -110,11 +110,14 @@ test('plans a move and renders history/rest/stocking reports', async ({page}) =>
   await page.waitForTimeout(800);
   await page.keyboard.press('Escape');
 
-  // Reports tab: rest (open by default), then stocking and history.
+  // Reports tab: the every-area list -> open this paddock's grazing record.
   await page.locator('.pm-tabs button', {hasText: 'Reports'}).click();
-  await expect(page.locator('[data-pasture-rest-report]')).toContainText('Occupied', {timeout: 15_000});
-  await page.locator('.pm-report-card button', {hasText: 'Stocking rate'}).click();
-  await expect(page.locator('[data-pasture-stocking-report]')).toContainText('animal-days');
-  await page.locator('.pm-report-card button', {hasText: 'Grazing days log'}).click();
-  await expect(page.locator('[data-pasture-history-report]')).toContainText('Mommas', {timeout: 15_000});
+  await expect(page.locator('[data-pasture-report-areas]')).toBeVisible({timeout: 15_000});
+  await page.locator(`[data-pasture-report-area-row="${A_ID}"]`).click();
+  await expect(page.locator(`[data-pasture-report-record="${A_ID}"]`)).toBeVisible({timeout: 15_000});
+  // Occupied now -> the status line names the group; the timeline shows Mommas + the
+  // computed metrics (animal-days), all from the move history (no rest/stocking RPCs).
+  await expect(page.locator('[data-pasture-report-status]')).toContainText('In use by Mommas');
+  await expect(page.locator('[data-pasture-report-timeline]')).toContainText('Mommas', {timeout: 15_000});
+  await expect(page.locator('[data-pasture-report-totals]')).toContainText('animal-days');
 });
