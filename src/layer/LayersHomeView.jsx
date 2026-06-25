@@ -33,6 +33,7 @@ export default function LayersHomeView({Header, loadUsers}) {
     v == null ? '\u2014' : '$' + v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const fmt$0 = (v) =>
     v == null ? '\u2014' : '$' + v.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
+  const EMPTY_METRIC_LABEL = 'No data yet';
   const lifetimeFromForBatch = (batch) => batch.brooder_entry_date || batch.arrival_date || '1900-01-01';
 
   // Compute stats for a given batch over an arbitrary date window.
@@ -348,6 +349,31 @@ export default function LayersHomeView({Header, loadUsers}) {
         v: showDaysDenominator && s.days ? s.reportDays + ' of ' + s.days : String(s.reportDays || 0),
       },
     ];
+    const hasDashboardData =
+      s.reportDays > 0 ||
+      s.totalFeed > 0 ||
+      s.totalEggs > 0 ||
+      s.totalMort > 0 ||
+      s.epd != null ||
+      (!hideHens && s.hens > 0);
+    if (!hasDashboardData) {
+      return (
+        <div
+          data-layer-dashboard-empty="metrics"
+          style={{
+            padding: '10px 12px',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--divider)',
+            borderRadius: 10,
+            color: 'var(--ink-muted)',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          {EMPTY_METRIC_LABEL}
+        </div>
+      );
+    }
     return (
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 8, minWidth: 0}}>
         {items.map((it) => (

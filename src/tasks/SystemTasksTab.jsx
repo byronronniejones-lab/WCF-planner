@@ -48,6 +48,7 @@ import {
 import {TASK_CHANGE_EVENT, fireTaskChangeEvent} from '../lib/tasksCenterMutationsApi.js';
 import {fmt, todayCentralISO} from '../lib/dateUtils.js';
 import SystemRuleEditModal from './SystemRuleEditModal.jsx';
+import DeleteTaskModal from './DeleteTaskModal.jsx';
 
 const CARD = {
   background: 'white',
@@ -113,6 +114,17 @@ const LOAD_RETRY_BTN = {
   fontWeight: 600,
   fontFamily: 'inherit',
   marginBottom: 12,
+};
+const ORPHAN_DELETE_BTN = {
+  padding: '4px 10px',
+  borderRadius: 10,
+  border: '1px solid #991b1b',
+  background: 'white',
+  color: '#991b1b',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 600,
+  fontFamily: 'inherit',
 };
 const GROUP_HEADER = {
   background: 'white',
@@ -194,7 +206,7 @@ function overdueCountFor(instances, todayStr) {
 }
 
 // eslint-disable-next-line no-unused-vars -- referenced via JSX <SystemInstanceLine .../> below
-function SystemInstanceLine({ti, todayStr, profilesById}) {
+function SystemInstanceLine({ti, todayStr, profilesById, onDelete}) {
   const due = dueStateFor(ti, todayStr);
   const assigneeName = nameFor(ti.assignee_profile_id, profilesById);
   return (
@@ -227,6 +239,16 @@ function SystemInstanceLine({ti, todayStr, profilesById}) {
             </span>
           )}
           <span data-due-date={ti.due_date}>{fmt(ti.due_date)}</span>
+          {onDelete && (
+            <button
+              type="button"
+              data-system-orphan-delete-button={ti.id}
+              onClick={() => onDelete(ti)}
+              style={ORPHAN_DELETE_BTN}
+            >
+              Delete orphan
+            </button>
+          )}
         </div>
       </div>
       <div style={{...SUB, marginTop: 4}}>
@@ -262,6 +284,7 @@ export default function SystemTasksTab({sb, authState}) {
   // generators first; inactive rules surface behind a toggle.
   const [showInactive, setShowInactive] = React.useState(false);
   const [editRule, setEditRule] = React.useState(null);
+  const [deleteOrphanTask, setDeleteOrphanTask] = React.useState(null);
   const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
@@ -491,7 +514,13 @@ export default function SystemTasksTab({sb, authState}) {
                   available.
                 </div>
                 {grouped.orphans.map((ti) => (
-                  <SystemInstanceLine key={ti.id} ti={ti} todayStr={todayStr} profilesById={profiles} />
+                  <SystemInstanceLine
+                    key={ti.id}
+                    ti={ti}
+                    todayStr={todayStr}
+                    profilesById={profiles}
+                    onDelete={isAdmin ? setDeleteOrphanTask : null}
+                  />
                 ))}
               </div>
             </div>
@@ -508,6 +537,17 @@ export default function SystemTasksTab({sb, authState}) {
         onClose: () => setEditRule(null),
         onSaved: () => {
           setEditRule(null);
+          fireTaskChangeEvent();
+          setReloadKey((k) => k + 1);
+        },
+      })}
+      {React.createElement(DeleteTaskModal, {
+        sb,
+        task: deleteOrphanTask,
+        isOpen: !!deleteOrphanTask,
+        onClose: () => setDeleteOrphanTask(null),
+        onDeleted: () => {
+          setDeleteOrphanTask(null);
           fireTaskChangeEvent();
           setReloadKey((k) => k + 1);
         },

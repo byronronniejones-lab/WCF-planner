@@ -103,6 +103,12 @@ describe('broiler hatch-date status promotion', () => {
     );
   });
 
+  it('treats missing batch data as planned instead of throwing', () => {
+    expect(calcPoultryStatus(null, '2026-05-05')).toBe('planned');
+    expect(calcPoultryStatus(undefined, '2026-05-05')).toBe('planned');
+    expect(calcPoultryStatus({}, '2026-05-05')).toBe('planned');
+  });
+
   it('flags only planned batches whose hatch date is today or earlier for persistence', () => {
     expect(shouldAutoActivateBroilerBatch({status: 'planned', hatchDate: '2026-05-05'}, '2026-05-05')).toBe(true);
     expect(shouldAutoActivateBroilerBatch({status: 'planned', hatchDate: '2026-05-04'}, '2026-05-05')).toBe(true);

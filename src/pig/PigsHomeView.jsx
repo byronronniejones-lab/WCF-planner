@@ -30,6 +30,7 @@ export default function PigsHomeView({Header, loadUsers}) {
     const v = arr.map(fn).filter((x) => x != null && !isNaN(x));
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
   };
+  const EMPTY_METRIC_LABEL = 'No data yet';
   const fmtN = (n, d = 1) => (n != null ? n.toFixed(d) : '—');
   const activeFeeders = feederGroups.filter((g) => g.status === 'active');
   const activeCycles2 = breedingCycles.filter((c) => calcCycleStatus(c) === 'active');
@@ -573,6 +574,13 @@ export default function PigsHomeView({Header, loadUsers}) {
                         latestCounts[d.batch_label] = parseInt(d.pig_count);
                     });
                   const currentCount = Object.values(latestCounts).reduce((s, v) => s + v, 0);
+                  const hasFeederDashboardData =
+                    currentCount > 0 ||
+                    originalCount > 0 ||
+                    totalFeed > 0 ||
+                    reportDays > 0 ||
+                    totalFeedCost != null ||
+                    costPerPig != null;
                   return (
                     <div
                       key={g.id}
@@ -606,65 +614,86 @@ export default function PigsHomeView({Header, loadUsers}) {
                         )}
                       </div>
                       <div style={{padding: '12px 18px'}}>
-                        <div
-                          style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 8}}
-                        >
-                          {[
-                            {l: 'Current', v: currentCount > 0 ? currentCount.toString() : '\u2014'},
-                            {l: 'Original', v: originalCount > 0 ? originalCount.toString() : '\u2014'},
-                            {
-                              l: 'Total Feed',
-                              v: totalFeed > 0 ? Math.round(totalFeed).toLocaleString() + ' lbs' : '\u2014',
-                            },
-                            {l: 'Feed / Pig', v: feedPerPig ? feedPerPig + ' lbs' : '\u2014'},
-                            {
-                              l: 'Feed Cost',
-                              v:
-                                totalFeedCost != null
-                                  ? '$' +
-                                    totalFeedCost.toLocaleString(undefined, {
-                                      minimumFractionDigits: 0,
-                                      maximumFractionDigits: 0,
-                                    })
-                                  : '\u2014',
-                            },
-                            {
-                              l: 'Cost / Pig',
-                              v:
-                                costPerPig != null
-                                  ? '$' +
-                                    costPerPig.toLocaleString(undefined, {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })
-                                  : '\u2014',
-                            },
-                            {l: 'Report Days', v: reportDays.toString()},
-                          ].map((t) => (
-                            <div
-                              key={t.l}
-                              style={{
-                                padding: '8px 10px',
-                                background: 'var(--surface-2)',
-                                border: '1px solid var(--divider)',
-                                borderRadius: 10,
-                              }}
-                            >
+                        {!hasFeederDashboardData ? (
+                          <div
+                            data-pig-dashboard-empty="feeder-batch"
+                            style={{
+                              padding: '10px 12px',
+                              background: 'var(--surface-2)',
+                              border: '1px solid var(--divider)',
+                              borderRadius: 10,
+                              color: 'var(--ink-muted)',
+                              fontSize: 13,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {EMPTY_METRIC_LABEL}
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))',
+                              gap: 8,
+                            }}
+                          >
+                            {[
+                              {l: 'Current', v: currentCount > 0 ? currentCount.toString() : '\u2014'},
+                              {l: 'Original', v: originalCount > 0 ? originalCount.toString() : '\u2014'},
+                              {
+                                l: 'Total Feed',
+                                v: totalFeed > 0 ? Math.round(totalFeed).toLocaleString() + ' lbs' : '\u2014',
+                              },
+                              {l: 'Feed / Pig', v: feedPerPig ? feedPerPig + ' lbs' : '\u2014'},
+                              {
+                                l: 'Feed Cost',
+                                v:
+                                  totalFeedCost != null
+                                    ? '$' +
+                                      totalFeedCost.toLocaleString(undefined, {
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 0,
+                                      })
+                                    : '\u2014',
+                              },
+                              {
+                                l: 'Cost / Pig',
+                                v:
+                                  costPerPig != null
+                                    ? '$' +
+                                      costPerPig.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })
+                                    : '\u2014',
+                              },
+                              {l: 'Report Days', v: reportDays.toString()},
+                            ].map((t) => (
                               <div
+                                key={t.l}
                                 style={{
-                                  fontSize: 9,
-                                  color: 'var(--ink-faint)',
-                                  textTransform: 'uppercase',
-                                  letterSpacing: 0.4,
-                                  marginBottom: 2,
+                                  padding: '8px 10px',
+                                  background: 'var(--surface-2)',
+                                  border: '1px solid var(--divider)',
+                                  borderRadius: 10,
                                 }}
                               >
-                                {t.l}
+                                <div
+                                  style={{
+                                    fontSize: 9,
+                                    color: 'var(--ink-faint)',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: 0.4,
+                                    marginBottom: 2,
+                                  }}
+                                >
+                                  {t.l}
+                                </div>
+                                <div style={{fontSize: 14, fontWeight: 700, color: 'var(--text-primary)'}}>{t.v}</div>
                               </div>
-                              <div style={{fontSize: 14, fontWeight: 700, color: 'var(--text-primary)'}}>{t.v}</div>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

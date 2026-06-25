@@ -169,7 +169,7 @@ export function calcPoultryStatus(batch, asOfDate = todayISO()) {
   // forward automatically once hatch day arrives.
   if (batch && batch.status === 'processed') return 'processed';
   if (batch && batch.status === 'active') return 'active';
-  if (!batch.hatchDate) return 'planned';
+  if (!batch || !batch.hatchDate) return 'planned';
   const today = String(asOfDate || todayISO()).slice(0, 10);
   const tl = calcTimeline(batch.hatchDate, batch.breed, batch.processingDate);
   if (!tl) return 'planned';
